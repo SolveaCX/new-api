@@ -17,11 +17,23 @@ FINAL_STATUSES = frozenset(
 REPLAY_STATUSES = frozenset({"passed", "failed", "unknown"})
 EXPLORATION_STATUSES = frozenset({"passed", "failed", "not_started", "unknown"})
 CLEANUP_STATUSES = frozenset({"passed", "cleanup_failed", "unknown"})
+FINDING_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+FINDING_CONFIDENCE = frozenset({"low", "medium", "high"})
 GITHUB_RUN_URL = re.compile(
     r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[1-9][0-9]*"
 )
 GCS_MANIFEST_URI = re.compile(
     r"gs://[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]/runs/[0-9]+/manifest\.json"
+)
+URLSAFE_B64 = re.compile(r"[A-Za-z0-9_-]+={0,2}")
+EMAIL_ADDRESS = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+OPENAI_SECRET_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b")
+SECRET_TERMS = re.compile(
+    r"\b("
+    r"verification|verify code|captcha|password|passcode|cookie|authorization|"
+    r"webhook|signing secret|secret"
+    r")\b",
+    re.IGNORECASE,
 )
 MAX_RESPONSE_BYTES = 16 * 1024
 
@@ -40,6 +52,7 @@ class DingTalkReport:
     cleanup_status: str
     github_run_url: str
     gcs_uri: str
+    finding_summaries: tuple[dict, ...] = ()
 
     def __post_init__(self):
         _require_member("final_status", self.final_status, FINAL_STATUSES)
@@ -52,32 +65,42 @@ class DingTalkReport:
             raise ValueError("github_run_url is invalid")
         if not isinstance(self.gcs_uri, str) or GCS_MANIFEST_URI.fullmatch(self.gcs_uri) is None:
             raise ValueError("gcs_uri is invalid")
+        _validate_finding_summaries(self.finding_summaries)
 
     def markdown(self):
-        terminal = "PASSED" if self.final_status == "passed" else "FAILED"
-        return "\n".join(
-            [
-                f"### Staging Browser QA {terminal}",
-                f"- Final status: `{self.final_status}`",
-                f"- Replay status: `{self.replay_status}`",
-                f"- Exploration status: `{self.exploration_status}`",
-                f"- Exploration actions: `{self.exploration_actions}`",
-                f"- Finding count: `{self.finding_count}`",
-                f"- Cleanup status: `{self.cleanup_status}`",
-                f"- Run: [Open GitHub Actions]({self.github_run_url})",
-                f"- Evidence: `{self.gcs_uri}`",
-            ]
-        )
+        lines = [
+            f"### Staging Browser QA {self._terminal()}",
+            f"- Final status: `{self.final_status}`",
+            f"- Replay status: `{self.replay_status}`",
+            f"- Exploration status: `{self.exploration_status}`",
+            f"- Exploration actions: `{self.exploration_actions}`",
+            f"- Finding count: `{self.finding_count}`",
+            f"- Cleanup status: `{self.cleanup_status}`",
+            f"- Run: [Open GitHub Actions]({self.github_run_url})",
+            f"- Evidence: `{self.gcs_uri}`",
+        ]
+        if self.final_status == "findings_detected":
+            lines.append("")
+            lines.append("### Findings")
+            for item in self.finding_summaries:
+                lines.append(f"- [{item['severity']}] {item['title']} ({item['confidence']}) {item['page_path']}")
+        return "\n".join(lines)
 
     def payload(self):
-        terminal = "PASSED" if self.final_status == "passed" else "FAILED"
         return {
             "msgtype": "markdown",
             "markdown": {
-                "title": f"Staging Browser QA {terminal}",
+                "title": f"Staging Browser QA {self._terminal()}",
                 "text": self.markdown(),
             },
         }
+
+    def _terminal(self):
+        if self.final_status == "passed":
+            return "PASSED"
+        if self.final_status == "findings_detected":
+            return "ALERT"
+        return "FAILED"
 
 
 def send_report(webhook, report, *, opener=None, sleeper=time.sleep, signing_secret=None):
@@ -144,6 +167,7 @@ def main():
         cleanup_status=_required_env("BROWSER_QA_CLEANUP_STATUS"),
         github_run_url=_required_env("BROWSER_QA_GITHUB_RUN_URL"),
         gcs_uri=_required_env("BROWSER_QA_GCS_URI"),
+        finding_summaries=_env_finding_summaries("BROWSER_QA_FINDING_SUMMARIES_B64"),
     )
     send_report(_required_env("DINGTALK_WEBHOOK"), report, signing_secret=_required_env("DINGTALK_SIGNING_SECRET"))
     print("DINGTALK_NOTIFICATION_SENT")
@@ -176,6 +200,64 @@ def _env_count(name):
     if not value.isascii() or not value.isdecimal():
         raise ValueError(f"{name} is invalid")
     return int(value)
+
+
+def _env_finding_summaries(name):
+    value = os.environ.get(name)
+    if value is None:
+        return ()
+    if not isinstance(value, str) or not value or len(value) % 4 != 0 or URLSAFE_B64.fullmatch(value) is None:
+        raise ValueError(f"{name} is invalid")
+    try:
+        raw = base64.b64decode(value.encode("ascii"), altchars=b"-_", validate=True)
+        payload = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError(f"{name} is invalid") from None
+    if not isinstance(payload, list):
+        raise ValueError(f"{name} is invalid")
+    summaries = tuple(payload)
+    try:
+        _validate_finding_summaries(summaries)
+    except ValueError:
+        raise ValueError(f"{name} is invalid") from None
+    return summaries
+
+
+def _validate_finding_summaries(summaries):
+    if not isinstance(summaries, tuple) or len(summaries) > 3:
+        raise ValueError("finding_summaries is invalid")
+    for item in summaries:
+        if not isinstance(item, dict) or set(item) != {"severity", "title", "confidence", "page_path"}:
+            raise ValueError("finding_summaries is invalid")
+        _require_member("finding severity", item["severity"], FINDING_SEVERITIES)
+        _require_member("finding confidence", item["confidence"], FINDING_CONFIDENCE)
+        _validate_finding_title(item["title"])
+        _validate_finding_page_path(item["page_path"])
+
+
+def _validate_finding_title(title):
+    if not isinstance(title, str) or not title:
+        raise ValueError("finding title is invalid")
+    folded = " ".join(title.split())
+    if title != folded or len(title) > 160 or _has_control_character(title):
+        raise ValueError("finding title is invalid")
+    if OPENAI_SECRET_KEY.search(title) or EMAIL_ADDRESS.search(title) or SECRET_TERMS.search(title):
+        raise ValueError("finding title is invalid")
+
+
+def _validate_finding_page_path(page_path):
+    if (
+        not isinstance(page_path, str)
+        or not page_path.startswith("/")
+        or "?" in page_path
+        or "#" in page_path
+        or _has_control_character(page_path)
+    ):
+        raise ValueError("finding page_path is invalid")
+
+
+def _has_control_character(value):
+    return any(ord(char) < 32 or ord(char) == 127 for char in value)
 
 
 def _validate_webhook(webhook):

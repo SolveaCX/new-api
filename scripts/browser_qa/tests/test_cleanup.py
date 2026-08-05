@@ -1181,8 +1181,8 @@ class CleanupTests(unittest.TestCase):
                 findings=[
                     {
                         "severity": "high",
-                        "title": "Unsafe redirect",
-                        "target_url": "https://staging-console.flatkey.ai/",
+                        "title": "Unsafe\n\t redirect",
+                        "target_url": "https://staging-console.flatkey.ai/admin?token=secret#fragment",
                         "steps": ["open page"],
                         "expected": "safe",
                         "actual": "unsafe",
@@ -1199,6 +1199,16 @@ class CleanupTests(unittest.TestCase):
                         "evidence_paths": ["screenshots/info.png"],
                         "confidence": "medium",
                     },
+                    {
+                        "severity": "medium",
+                        "title": "Second issue",
+                        "target_url": "https://staging-console.flatkey.ai/settings/profile?email=owner@example.com",
+                        "steps": ["open page"],
+                        "expected": "safe",
+                        "actual": "unsafe",
+                        "evidence_paths": ["screenshots/second.png"],
+                        "confidence": "medium",
+                    },
                 ],
             ),
         )
@@ -1210,7 +1220,21 @@ class CleanupTests(unittest.TestCase):
             "replay_status": "passed",
             "exploration_status": "passed",
             "exploration_actions": 7,
-            "finding_count": 2,
+            "finding_count": 3,
+            "finding_summaries": [
+                {
+                    "severity": "high",
+                    "title": "Unsafe redirect",
+                    "confidence": "high",
+                    "page_path": "/admin",
+                },
+                {
+                    "severity": "medium",
+                    "title": "Second issue",
+                    "confidence": "medium",
+                    "page_path": "/settings/profile",
+                },
+            ],
         })
 
     def test_main_record_rejects_malformed_result_before_summary_extraction(self):
@@ -1236,7 +1260,16 @@ class CleanupTests(unittest.TestCase):
         for summary in [
             {"replay_status": "passed", "exploration_status": "passed", "exploration_actions": -1, "finding_count": 0},
             {"replay_status": "maybe", "exploration_status": "passed", "exploration_actions": 0, "finding_count": 0},
-            {"replay_status": "passed", "exploration_status": "passed", "exploration_actions": 0, "finding_count": 0, "email": "owner@gmail.com"},
+            {**main_summary(), "email": "owner@gmail.com"},
+            {**main_summary(), "finding_summaries": "none"},
+            {**main_summary(), "finding_summaries": [finding_summary(), finding_summary(), finding_summary(), finding_summary()]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "extra": "bad"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "severity": "info"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "bad\ncontrol"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "title": "a" * 161}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "relative"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings?token=secret"}]},
+            {**main_summary(), "finding_summaries": [{**finding_summary(), "page_path": "/settings#secret"}]},
             {"cleanup_failed": "false"},
         ]:
             bad = root_manifest(executions=[execution_record("main", "main-001", IDENTITY.run_id, summary=summary)])
@@ -1456,6 +1489,18 @@ def main_summary(**overrides):
         "exploration_status": "not_started",
         "exploration_actions": 0,
         "finding_count": 0,
+        "finding_summaries": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def finding_summary(**overrides):
+    payload = {
+        "severity": "high",
+        "title": "Unsafe redirect",
+        "confidence": "high",
+        "page_path": "/admin",
     }
     payload.update(overrides)
     return payload
@@ -1473,6 +1518,7 @@ def missing_main_record(execution_id, run_id):
             "exploration_status": "not_started",
             "exploration_actions": 0,
             "finding_count": 0,
+            "finding_summaries": [],
         },
     )
 

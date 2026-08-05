@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import time
+import urllib.parse
 
 from .api import StagingApiClient
 from .cleanup import CleanupRunner
@@ -161,6 +162,7 @@ def _missing_main_record(cfg):
             "exploration_status": "not_started",
             "exploration_actions": 0,
             "finding_count": 0,
+            "finding_summaries": [],
         },
     )
 
@@ -183,6 +185,7 @@ def _is_missing_main_placeholder(record):
             "exploration_status": "not_started",
             "exploration_actions": 0,
             "finding_count": 0,
+            "finding_summaries": [],
         }
     )
 
@@ -374,6 +377,7 @@ def _main_summary(result):
         "exploration_status": validated["exploration"]["status"],
         "exploration_actions": validated["exploration"]["actions_used"],
         "finding_count": len(validated["findings"]),
+        "finding_summaries": _finding_summaries(validated["findings"]),
     }
 
 
@@ -385,7 +389,13 @@ def _validate_record_summary(kind, summary):
     if not isinstance(summary, dict):
         raise ValueError("execution record summary is invalid")
     if kind == "main":
-        if set(summary) != {"replay_status", "exploration_status", "exploration_actions", "finding_count"}:
+        if set(summary) != {
+            "replay_status",
+            "exploration_status",
+            "exploration_actions",
+            "finding_count",
+            "finding_summaries",
+        }:
             raise ValueError("main execution summary fields are invalid")
         if summary["replay_status"] not in {"passed", "failed"}:
             raise ValueError("main execution replay summary is invalid")
@@ -394,6 +404,7 @@ def _validate_record_summary(kind, summary):
         for key in ("exploration_actions", "finding_count"):
             if not isinstance(summary[key], int) or isinstance(summary[key], bool) or summary[key] < 0:
                 raise ValueError("main execution summary count is invalid")
+        _validate_finding_summaries(summary["finding_summaries"])
         return
     if set(summary) != {"cleanup_failed"} or not isinstance(summary["cleanup_failed"], bool):
         raise ValueError("cleanup execution summary is invalid")
@@ -449,6 +460,72 @@ def _validate_cleanup_manifest(manifest, cfg):
 
 def _json_bytes(payload):
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _finding_summaries(findings):
+    summaries = []
+    for finding in findings:
+        if finding["severity"] == "info":
+            continue
+        summaries.append(
+            {
+                "severity": finding["severity"],
+                "title": _summary_title(finding["title"]),
+                "confidence": finding["confidence"],
+                "page_path": _summary_page_path(finding["target_url"]),
+            }
+        )
+        if len(summaries) == 3:
+            break
+    return summaries
+
+
+def _validate_finding_summaries(summaries):
+    if not isinstance(summaries, list) or len(summaries) > 3:
+        raise ValueError("main execution finding summaries are invalid")
+    for item in summaries:
+        if not isinstance(item, dict) or set(item) != {"severity", "title", "confidence", "page_path"}:
+            raise ValueError("main execution finding summary fields are invalid")
+        if item["severity"] not in (report.SEVERITIES - {"info"}):
+            raise ValueError("main execution finding summary severity is invalid")
+        if item["confidence"] not in report.CONFIDENCE:
+            raise ValueError("main execution finding summary confidence is invalid")
+        title = item["title"]
+        if (
+            not isinstance(title, str)
+            or not title
+            or len(title) > 160
+            or title != " ".join(title.split())
+            or _has_control_character(title)
+        ):
+            raise ValueError("main execution finding summary title is invalid")
+        page_path = item["page_path"]
+        if (
+            not isinstance(page_path, str)
+            or not page_path.startswith("/")
+            or "?" in page_path
+            or "#" in page_path
+            or _has_control_character(page_path)
+        ):
+            raise ValueError("main execution finding summary page path is invalid")
+
+
+def _summary_title(title):
+    folded = "".join(" " if _is_control_character(char) else char for char in title).split()
+    return " ".join(folded)[:160]
+
+
+def _summary_page_path(target_url):
+    path = urllib.parse.urlsplit(target_url).path
+    return path if path.startswith("/") else "/"
+
+
+def _has_control_character(value):
+    return any(_is_control_character(char) for char in value)
+
+
+def _is_control_character(char):
+    return ord(char) < 32 or ord(char) == 127
 
 
 def _canonical_manifest_path(run_id, kind, execution_id):

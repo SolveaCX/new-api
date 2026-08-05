@@ -66,6 +66,7 @@ class DingTalkTests(unittest.TestCase):
             "cleanup_status": "passed",
             "github_run_url": "https://github.com/SolveaCX/new-api/actions/runs/12345",
             "gcs_uri": "gs://vocai-gemini-prod-flatkey-browser-qa-reports/runs/12345/manifest.json",
+            "finding_summaries": (),
         }
         values.update(overrides)
         return dingtalk.DingTalkReport(**values)
@@ -93,6 +94,25 @@ class DingTalkTests(unittest.TestCase):
         for forbidden in ["gmail", "password", "verification", "api key", "cookie", "authorization", "super-secret"]:
             self.assertNotIn(forbidden, markdown.lower())
 
+    def test_report_renders_alert_findings_only_for_findings_detected(self):
+        summaries = (
+            {"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin"},
+            {"severity": "medium", "title": "API Key label is visible", "confidence": "medium", "page_path": "/keys"},
+        )
+
+        alert = self.report(final_status="findings_detected", finding_count=2, finding_summaries=summaries)
+        passed = self.report(final_status="passed", finding_count=2, finding_summaries=summaries)
+        failed = self.report(final_status="cleanup_failed", finding_count=2, finding_summaries=summaries)
+
+        self.assertEqual(alert.payload()["markdown"]["title"], "Staging Browser QA ALERT")
+        self.assertIn("### Findings", alert.markdown())
+        self.assertIn("[high] Unsafe redirect (high) /admin", alert.markdown())
+        self.assertIn("[medium] API Key label is visible (medium) /keys", alert.markdown())
+        self.assertEqual(passed.payload()["markdown"]["title"], "Staging Browser QA PASSED")
+        self.assertNotIn("### Findings", passed.markdown())
+        self.assertEqual(failed.payload()["markdown"]["title"], "Staging Browser QA FAILED")
+        self.assertNotIn("### Findings", failed.markdown())
+
     def test_report_rejects_untrusted_status_counts_and_urls(self):
         invalid_overrides = [
             {"final_status": "passed\npassword=leak"},
@@ -104,6 +124,21 @@ class DingTalkTests(unittest.TestCase):
             {"finding_count": "0"},
             {"github_run_url": "https://evil.example/actions/runs/12345"},
             {"gcs_uri": "https://storage.googleapis.com/report"},
+            {"finding_summaries": []},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin", "extra": "bad"},)},
+            {"finding_summaries": tuple({"severity": "high", "title": "Leak", "confidence": "high", "page_path": f"/{index}"} for index in range(4))},
+            {"finding_summaries": ({"severity": "info", "title": "Info", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "bad\ncontrol", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "a" * 161, "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "sk-live-secret", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "owner@example.com", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "password leaked", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Authorization header leaked", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Webhook signing secret", "confidence": "high", "page_path": "/admin"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "relative"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin?token=secret"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin#secret"},)},
+            {"finding_summaries": ({"severity": "high", "title": "Leak", "confidence": "high", "page_path": "/admin\nsecret"},)},
         ]
         for override in invalid_overrides:
             with self.subTest(override=override):
@@ -170,10 +205,13 @@ class DingTalkTests(unittest.TestCase):
         self.assertEqual(len(opener.requests), 1)
 
     def test_main_reads_environment_and_prints_only_delivery_marker(self):
+        summaries_json = json.dumps(
+            [{"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin"}]
+        ).encode("utf-8")
         env = {
             "DINGTALK_WEBHOOK": WEBHOOK,
             "DINGTALK_SIGNING_SECRET": "main-signing-secret",
-            "BROWSER_QA_FINAL_STATUS": "replay_failed",
+            "BROWSER_QA_FINAL_STATUS": "findings_detected",
             "BROWSER_QA_REPLAY_STATUS": "failed",
             "BROWSER_QA_EXPLORATION_STATUS": "not_started",
             "BROWSER_QA_EXPLORATION_ACTIONS": "0",
@@ -181,6 +219,7 @@ class DingTalkTests(unittest.TestCase):
             "BROWSER_QA_CLEANUP_STATUS": "passed",
             "BROWSER_QA_GITHUB_RUN_URL": "https://github.com/SolveaCX/new-api/actions/runs/12345",
             "BROWSER_QA_GCS_URI": "gs://vocai-gemini-prod-flatkey-browser-qa-reports/runs/12345/manifest.json",
+            "BROWSER_QA_FINDING_SUMMARIES_B64": base64.urlsafe_b64encode(summaries_json).decode("ascii"),
         }
         stdout = io.StringIO()
         with mock.patch.dict(os.environ, env, clear=True):
@@ -192,12 +231,41 @@ class DingTalkTests(unittest.TestCase):
         send.assert_called_once()
         webhook, report = send.call_args.args
         self.assertEqual(webhook, WEBHOOK)
-        self.assertEqual(report.final_status, "replay_failed")
+        self.assertEqual(report.final_status, "findings_detected")
         self.assertEqual(report.finding_count, 1)
+        self.assertEqual(
+            report.finding_summaries,
+            ({"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin"},),
+        )
         self.assertEqual(stdout.getvalue(), "DINGTALK_NOTIFICATION_SENT\n")
         self.assertNotIn(WEBHOOK, stdout.getvalue())
         self.assertNotIn("main-signing-secret", stdout.getvalue())
         self.assertEqual(send.call_args.kwargs, {"signing_secret": "main-signing-secret"})
+
+    def test_main_rejects_malformed_finding_summary_env_without_echoing_input(self):
+        for encoded in [
+            "not+urlsafe==",
+            base64.urlsafe_b64encode(b'{"severity":"high"}').decode("ascii"),
+            base64.urlsafe_b64encode(b'[{"severity":"high","title":"sk-live-secret","confidence":"high","page_path":"/admin"}]').decode("ascii").rstrip("="),
+        ]:
+            with self.subTest(encoded=encoded):
+                env = {
+                    "DINGTALK_WEBHOOK": WEBHOOK,
+                    "DINGTALK_SIGNING_SECRET": "main-signing-secret",
+                    "BROWSER_QA_FINAL_STATUS": "findings_detected",
+                    "BROWSER_QA_REPLAY_STATUS": "failed",
+                    "BROWSER_QA_EXPLORATION_STATUS": "not_started",
+                    "BROWSER_QA_EXPLORATION_ACTIONS": "0",
+                    "BROWSER_QA_FINDING_COUNT": "1",
+                    "BROWSER_QA_CLEANUP_STATUS": "passed",
+                    "BROWSER_QA_GITHUB_RUN_URL": "https://github.com/SolveaCX/new-api/actions/runs/12345",
+                    "BROWSER_QA_GCS_URI": "gs://vocai-gemini-prod-flatkey-browser-qa-reports/runs/12345/manifest.json",
+                    "BROWSER_QA_FINDING_SUMMARIES_B64": encoded,
+                }
+                with mock.patch.dict(os.environ, env, clear=True):
+                    with self.assertRaises(ValueError) as raised:
+                        dingtalk.main()
+                self.assertNotIn(encoded, str(raised.exception))
 
 
 if __name__ == "__main__":
