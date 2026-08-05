@@ -5,7 +5,20 @@ export const LANGUAGE_PREFERENCE_COOKIE = "fk_locale";
 const BOT_USER_AGENT_PATTERN =
   /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|OAI-SearchBot|GPTBot|ChatGPT-User|ClaudeBot|Claude-User|Claude-SearchBot|claude-code|PerplexityBot|Perplexity-User/i;
 
-const IGNORED_PATH_PREFIXES = ["/_next", "/api", "/cdn-cgi", "/sign-in", "/sign-up", "/dashboard"];
+const IGNORED_PATH_PREFIXES = [
+  "/_next",
+  "/api",
+  "/cdn-cgi",
+  "/sign-in",
+  "/sign-up",
+  "/login",
+  "/signup",
+  "/dashboard",
+  "/console",
+  "/onboarding",
+  // Local-only paid landing-page review concepts have no translated siblings.
+  "/lp/tools-ads/claude",
+];
 const IGNORED_EXACT_PATHS = [
   "/favicon.ico",
   "/robots.txt",
@@ -13,10 +26,22 @@ const IGNORED_EXACT_PATHS = [
   "/llms.txt",
   "/install.sh",
   "/install.ps1",
+  "/legal-sla",
   // These market pages are physical single-locale routes with no localized siblings.
   "/br",
   "/in",
   "/id-market",
+  // Paid-search SKAG pages are English-only physical routes. Redirecting a
+  // returning localized visitor would send paid traffic to a missing sibling.
+  "/gpt-api-alternative",
+  "/chinese-ai",
+  "/chinese-ai-models-api",
+  "/openai-compatible",
+  "/gateway",
+  "/apify-alternative",
+  "/tools/web-scraping-api",
+  "/tools/google-search-api",
+  "/lp/tools-ads-review",
 ];
 const PUBLIC_FILE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
 
@@ -52,6 +77,7 @@ export function getLanguageRedirectPath(input: LanguageRedirectInput): string | 
 
   const pathname = normalizePathname(input.pathname);
   if (shouldIgnorePath(pathname)) return null;
+  if (pathname === "/") return null;
   if (hasLocalePrefix(pathname)) return null;
 
   const locale = resolvePreferredLocale(input.cookieLocale, input.acceptLanguage);

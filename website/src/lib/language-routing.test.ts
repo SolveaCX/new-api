@@ -28,8 +28,12 @@ describe("language routing", () => {
     expect(resolvePreferredLocale(undefined, undefined)).toBe("en");
   });
 
-  test("redirects ordinary users on non-locale public pages", () => {
-    expect(getLanguageRedirectPath({ pathname: "/", method: "GET", acceptLanguage: "ja" })).toBe("/ja");
+  test("keeps the root page on the default locale", () => {
+    expect(getLanguageRedirectPath({ pathname: "/", method: "GET", acceptLanguage: "ja" })).toBeNull();
+    expect(getLanguageRedirectPath({ pathname: "/", method: "GET", cookieLocale: "fr", acceptLanguage: "ja" })).toBeNull();
+  });
+
+  test("redirects ordinary users on non-root, non-locale public pages", () => {
     expect(getLanguageRedirectPath({ pathname: "/pricing", method: "GET", acceptLanguage: "ja" })).toBe("/ja/pricing");
     expect(getLanguageRedirectPath({ pathname: "/pricing", method: "GET", acceptLanguage: "de-DE,de;q=0.9" })).toBe("/de/pricing");
     expect(getLanguageRedirectPath({ pathname: "/lp/personal-ai", method: "GET", acceptLanguage: "zh-CN,zh;q=0.9" })).toBe("/zh/lp/personal-ai");
@@ -56,6 +60,23 @@ describe("language routing", () => {
     expect(getLanguageRedirectPath({ pathname: "/br", method: "GET", acceptLanguage: "pt-BR" })).toBeNull();
     expect(getLanguageRedirectPath({ pathname: "/in", method: "GET", acceptLanguage: "hi-IN" })).toBeNull();
     expect(getLanguageRedirectPath({ pathname: "/id-market", method: "GET", acceptLanguage: "id-ID" })).toBeNull();
+  });
+
+  test("does not localize English-only paid-search landing pages", () => {
+    for (const pathname of [
+      "/gpt-api-alternative",
+      "/chinese-ai",
+      "/chinese-ai-models-api",
+      "/openai-compatible",
+      "/gateway",
+      "/apify-alternative",
+      "/tools/web-scraping-api",
+      "/tools/google-search-api",
+      "/lp/tools-ads-review",
+      "/lp/tools-ads/claude/web-scraping-api",
+    ]) {
+      expect(getLanguageRedirectPath({ pathname, method: "GET", cookieLocale: "zh", acceptLanguage: "zh-CN" })).toBeNull();
+    }
   });
 
   test("detects search and AI crawlers", () => {

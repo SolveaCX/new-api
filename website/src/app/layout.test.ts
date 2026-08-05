@@ -44,14 +44,17 @@ describe("ATTRIBUTION_COOKIE_SCRIPT", () => {
   test("stores campaign parameters in a shared flatkey cookie", () => {
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("flatkey_ads_attribution");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("utm_");
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("keyword:1");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("yclid");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("domain=.flatkey.ai");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("SameSite=Lax");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("first_landing_path");
     expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("existing.landing_path");
-    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path!=="/sign-in"');
-    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path!=="/sign-up"');
-    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path.indexOf("/oauth/")!==0');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path !== "/sign-in"');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path !== "/sign-up"');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain('path.indexOf("/oauth/") !== 0');
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("localStorage.setItem");
+    expect(ATTRIBUTION_COOKIE_SCRIPT).toContain("expires_at");
   });
 });
 
