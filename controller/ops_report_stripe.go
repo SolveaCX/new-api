@@ -464,7 +464,7 @@ func buildOpsStripeReport(days int) (*opsStripeReport, error) {
 		sort.Strings(out)
 		return out
 	}
-	// last request IP (any log row, playground included) as an identity hint
+	// last request IP (user-initiated log rows only, playground included) as an identity hint
 	personIds := make([]int, 0, len(persons))
 	for _, a := range persons {
 		personIds = append(personIds, a.row.UserId)
