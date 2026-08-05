@@ -237,6 +237,8 @@ func PurchaseSubscription(cmd PurchaseSubscriptionCommand) (*PurchaseSubscriptio
 			RequestID:     cmd.RequestID,
 			UIMode:        cmd.UIMode,
 			RecallClaim:   cmd.RecallClaim,
+			GAClientID:    cmd.GAClientID,
+			GASessionID:   cmd.GASessionID,
 			VerifiedQuote: cmd.VerifiedQuote,
 		})
 		if err != nil {
@@ -461,6 +463,8 @@ func ReplaySubscriptionPurchase(cmd PurchaseSubscriptionCommand) (*PurchaseSubsc
 			RequestID:     cmd.RequestID,
 			UIMode:        cmd.UIMode,
 			RecallClaim:   cmd.RecallClaim,
+			GAClientID:    cmd.GAClientID,
+			GASessionID:   cmd.GASessionID,
 			VerifiedQuote: cmd.VerifiedQuote,
 		})
 		if err != nil {
