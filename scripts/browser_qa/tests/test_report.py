@@ -201,6 +201,71 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(normalized["findings"][0]["severity"], "info")
             self.assertEqual(report.classify_status(normalized), "passed")
 
+    def test_normalize_findings_downgrades_third_party_only_browser_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            browser_dir = os.path.join(tmp, "browser")
+            os.makedirs(browser_dir)
+            with open(os.path.join(browser_dir, "network.jsonl"), "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "url": "https://mixpanel.example/track",
+                    "method": "POST",
+                    "error": "blocked by browser qa egress policy",
+                }) + "\n")
+                handle.write(json.dumps({
+                    "url": "https://www.googletagmanager.com/gtm.js",
+                    "method": "GET",
+                    "error": "blocked by browser qa egress policy",
+                }) + "\n")
+            payload = valid_result(findings=[finding(
+                actual="The browser showed mixpanel.example and googletagmanager.com were blocked.",
+                evidence_paths=["browser/network.jsonl"],
+            )])
+
+            normalized = report.normalize_findings(
+                payload,
+                runtime_root=tmp,
+                proxy_events=[
+                    {"host": "mixpanel.example:443", "status": 403, "reason": "denied"},
+                    {"host": "www.googletagmanager.com:443", "status": 403, "reason": "denied"},
+                ],
+            )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "info")
+            self.assertEqual(report.classify_status(normalized), "passed")
+
+    def test_normalize_findings_preserves_mixed_product_evidence_with_denied_third_party_text(self):
+        cases = [
+            ("visual", "screenshots/proof.png", b"\x89PNG\r\n\x1a\nvisual-state"),
+            ("console", "browser/console.jsonl", json.dumps({
+                "type": "error",
+                "text": "registration submit failed",
+                "location": {"url": "https://staging-console.flatkey.ai/register"},
+            }).encode("utf-8") + b"\n"),
+            ("network", "browser/network.jsonl", json.dumps({
+                "url": "https://staging-console.flatkey.ai/api/register",
+                "method": "POST",
+                "status": 500,
+            }).encode("utf-8") + b"\n"),
+        ]
+        for name, evidence_path, content in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                os.makedirs(os.path.dirname(os.path.join(tmp, evidence_path)))
+                with open(os.path.join(tmp, evidence_path), "wb") as handle:
+                    handle.write(content)
+                payload = valid_result(findings=[finding(
+                    actual="Registration failed while mixpanel.example was also blocked.",
+                    evidence_paths=[evidence_path],
+                )])
+
+                normalized = report.normalize_findings(
+                    payload,
+                    runtime_root=tmp,
+                    proxy_events=[{"host": "mixpanel.example:443", "status": 403, "reason": "denied"}],
+                )
+
+                self.assertEqual(normalized["findings"][0]["severity"], "medium")
+                self.assertEqual(report.classify_status(normalized), "findings_detected")
+
     def test_normalize_findings_keeps_evidence_backed_same_origin_product_failure_actionable(self):
         with tempfile.TemporaryDirectory() as tmp:
             browser_dir = os.path.join(tmp, "browser")

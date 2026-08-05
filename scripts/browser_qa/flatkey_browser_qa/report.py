@@ -72,7 +72,7 @@ def normalize_findings(payload, *, runtime_root, proxy_events):
         if (
             finding["severity"] != "info"
             and _matches_denied_proxy_host(finding, denied_hosts)
-            and not _has_same_origin_5xx_network_evidence(finding, evidence)
+            and not _has_independent_product_evidence(finding, evidence)
         ):
             finding["severity"] = "info"
         dedupe_key = (
@@ -240,26 +240,48 @@ def _matches_denied_proxy_host(finding, denied_hosts):
 def _finding_evidence(runtime_root, paths):
     hashes = []
     network_events = []
+    console_events = []
+    has_visual_evidence = False
     usable = True
     for path in paths:
         evidence_path = _resolve_evidence_path(runtime_root, path)
         if evidence_path is None:
             usable = False
             continue
-        evidence = _read_evidence(evidence_path, parse_network=path == "browser/network.jsonl")
+        evidence = _read_evidence(
+            evidence_path,
+            event_stream=_event_stream_for_evidence_path(path),
+        )
         if evidence is None:
             usable = False
             continue
         hashes.append(evidence["sha256"])
         network_events.extend(evidence["network_events"])
-    return {"usable": usable, "hashes": hashes, "network_events": network_events}
+        console_events.extend(evidence["console_events"])
+        has_visual_evidence = has_visual_evidence or path.startswith("screenshots/")
+    return {
+        "usable": usable,
+        "hashes": hashes,
+        "network_events": network_events,
+        "console_events": console_events,
+        "has_visual_evidence": has_visual_evidence,
+    }
 
 
-def _read_evidence(path, *, parse_network):
+def _event_stream_for_evidence_path(path):
+    if path == "browser/network.jsonl":
+        return "network"
+    if path == "browser/console.jsonl":
+        return "console"
+    return None
+
+
+def _read_evidence(path, *, event_stream):
     digest = hashlib.sha256()
     total = 0
     pending = b""
     network_events = []
+    console_events = []
     with open(path, "rb") as handle:
         while True:
             read_size = (
@@ -274,21 +296,29 @@ def _read_evidence(path, *, parse_network):
             if total > MAX_EVIDENCE_FILE_BYTES:
                 return None
             digest.update(chunk)
-            if parse_network:
-                pending = _parse_network_chunk(pending + chunk, network_events)
-    if parse_network and pending.strip():
-        _append_network_event(pending, network_events)
-    return {"sha256": digest.hexdigest(), "network_events": network_events}
+            if event_stream:
+                pending = _parse_jsonl_chunk(pending + chunk, _events_for_stream(event_stream, network_events, console_events))
+    if event_stream and pending.strip():
+        _append_jsonl_event(pending, _events_for_stream(event_stream, network_events, console_events))
+    return {
+        "sha256": digest.hexdigest(),
+        "network_events": network_events,
+        "console_events": console_events,
+    }
 
 
-def _parse_network_chunk(data, events):
+def _events_for_stream(event_stream, network_events, console_events):
+    return network_events if event_stream == "network" else console_events
+
+
+def _parse_jsonl_chunk(data, events):
     lines = data.splitlines(keepends=True)
     if lines and not lines[-1].endswith((b"\n", b"\r")):
         pending = lines.pop()
     else:
         pending = b""
     for line in lines:
-        _append_network_event(line, events)
+        _append_jsonl_event(line, events)
     return pending
 
 
@@ -332,7 +362,7 @@ def _allowed_evidence_logical_path(logical_path):
     return False
 
 
-def _append_network_event(line, events):
+def _append_jsonl_event(line, events):
     text = line.decode("utf-8", "replace").strip()
     if not text:
         return
@@ -342,6 +372,28 @@ def _append_network_event(line, events):
         return
     if isinstance(event, dict):
         events.append(event)
+
+
+def _has_independent_product_evidence(finding, evidence):
+    return (
+        evidence["has_visual_evidence"]
+        or _has_same_origin_console_error_evidence(finding, evidence)
+        or _has_same_origin_5xx_network_evidence(finding, evidence)
+    )
+
+
+def _has_same_origin_console_error_evidence(finding, evidence):
+    target_host = _url_host(finding["target_url"])
+    if not target_host:
+        return False
+    for event in evidence["console_events"]:
+        event_type = event.get("type")
+        if event_type not in {"error", "assert"}:
+            continue
+        location = event.get("location")
+        if isinstance(location, dict) and _url_host(location.get("url")) == target_host:
+            return True
+    return False
 
 
 def _has_same_origin_5xx_network_evidence(finding, evidence):
