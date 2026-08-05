@@ -555,6 +555,8 @@ def _validate_finding_summaries(summaries):
 def _summary_title(title):
     folded = "".join(" " if _is_control_character(char) else char for char in title).split()
     summary = " ".join(folded)[:160]
+    if not summary:
+        return _SENSITIVE_TITLE_OMITTED
     if _is_sensitive_finding_title(summary):
         return _SENSITIVE_TITLE_OMITTED
     return summary

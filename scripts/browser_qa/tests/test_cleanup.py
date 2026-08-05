@@ -1299,6 +1299,31 @@ class CleanupTests(unittest.TestCase):
             [{"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin/path"}],
         )
 
+    def test_main_summary_preserves_nonempty_title_when_sanitization_collapses_to_empty(self):
+        summary = cleanup_job._main_summary(
+            valid_main_result(
+                findings=[
+                    finding(
+                        title=" \t\r\n\u202e\u2066",
+                        target_url="https://staging-console.flatkey.ai/admin",
+                    ),
+                ],
+            )
+        )
+
+        self.assertEqual(
+            summary["finding_summaries"],
+            [
+                {
+                    "severity": "high",
+                    "title": "Sensitive finding details omitted",
+                    "confidence": "high",
+                    "page_path": "/admin",
+                }
+            ],
+        )
+        cleanup_job._validate_finding_summaries(summary["finding_summaries"])
+
     def test_main_record_rejects_malformed_result_before_summary_extraction(self):
         cfg = SimpleNamespace(
             run_id=IDENTITY.run_id,
