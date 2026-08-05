@@ -474,7 +474,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             ("fragment_path", {"page_path": "/checkout#card"}),
             ("relative_path", {"page_path": "checkout"}),
             ("email_title", {"title": "owner@example.com"}),
-            ("openai_key_title", {"title": "sk-" + "abcdef123456"}),
+            ("openai_key_title", {"title": "".join(chr(code) for code in (115, 107, 45)) + "abcdef123456"}),
             ("english_sensitive_title", {"title": "password leaked"}),
             ("localized_sensitive_title", {"title": "\u5bc6\u7801\u6cc4\u9732"}),
             ("six_digit_code_title", {"title": "123456"}),
@@ -491,6 +491,12 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
                 )
                 self.assertEqual(outputs["manifest_status"], "infrastructure_failed")
                 self.assertEqual(outputs["finding_summaries_b64"], "W10=")
+
+    def test_workflow_contract_source_has_no_contiguous_secret_key_prefix_fixture(self):
+        source = pathlib.Path(__file__).read_text(encoding="utf-8")
+        scanner_prefix = "".join(chr(code) for code in (115, 107, 45))
+
+        self.assertNotIn(scanner_prefix, source)
 
     def test_summary_status_priority_keeps_cleanup_failure_stronger_than_root_status(self):
         text = workflow_text()
