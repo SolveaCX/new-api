@@ -11,8 +11,15 @@ If the run id is missing, or if this file was not explicitly loaded by the calle
 Use this policy only for isolated Flatkey staging onboarding QA:
 
 - Replay the recorded signup, email verification, starting credit, API key creation, documentation navigation, and cleanup-readiness path.
-- Explore only the staging onboarding surface needed to diagnose replay drift.
+- Explore only bounded, replay-adjacent staging hypotheses after replay checkpoint.
 - Produce a concise QA report with checkpoint state, failures, cleanup state, and redacted artifacts.
+
+Execution modes are fixed:
+
+- core = complete recorded replay -> qa_replay_checkpoint -> no exploration -> runtime cleanup -> report
+- normal = complete recorded replay -> qa_replay_checkpoint -> qa_start_exploration -> bounded exploration -> runtime cleanup -> report
+
+Normal includes the complete core replay. Exploration cannot skip, shorten, replace, or stand in for the recorded replay.
 
 ## Identity Rules
 
@@ -63,6 +70,8 @@ When this policy is active and origin checks pass, the agent is authorized to:
 - Delete the disposable staging account only as part of reaching a cleanup-ready checkpoint.
 - Read docs in an independent no-cookie context.
 
+After `qa_replay_checkpoint`, authorized normal-mode exploration may inspect only the replay-created temporary account and existing API key page state. It may use non-submitted dialog validation, repeat low-risk form actions, recovery/navigation, same-origin error checks, locale/empty-state checks, and docs entry-point checks within the exploration budget.
+
 These authorizations do not apply to real users, production origins, or non-staging accounts.
 
 ## Forbidden Actions
@@ -77,12 +86,17 @@ Never perform these actions under this policy:
 - Use a non-disposable or personally owned account.
 - Persist credentials beyond the run-scoped browser/session state required for QA.
 - Bypass, solve externally, outsource, or work around CAPTCHA, Cloudflare, or Turnstile challenges.
+- Register a second account, create a second key, create an extra API key, or rerun registration as open-ended exploration after the replay checkpoint.
 
 CAPTCHA, Cloudflare, and Turnstile fail closed. If encountered, stop the run, record the blocked state with redactions, and do not proceed to account creation, key creation, exploration, or cleanup mutations.
 
 ## Replay And Exploration Gates
 
-Replay comes before exploration.
+Replay comes before exploration. Do not explore before qa_replay_checkpoint.
+
+Core mode is replay-only. Core mode must complete the recorded replay, call `qa_replay_checkpoint`, skip exploration, allow runtime cleanup, and report. Core mode must not call `qa_start_exploration`.
+
+Normal mode includes the complete core replay. Normal mode must complete the recorded replay, call `qa_replay_checkpoint`, call `qa_start_exploration` exactly once after `qa_replay_checkpoint`, run only bounded exploration, allow runtime cleanup, and report.
 
 After replay reaches a state that is safe to clean up, call `qa_replay_checkpoint` with the run id, redacted account/key identifiers, current URL, and cleanup readiness state.
 
@@ -92,16 +106,49 @@ Before exploratory browser actions, call `qa_start_exploration` with the run id,
 
 If replay fails before reaching a cleanup-ready state, do not enter exploration. Report the replay failure and wait for supervisor or cleanup-job direction.
 
+Do not register a second account, do not create an extra API key, and do not use exploration to create a second key. Use only the temporary account created by this replay and the current API key state from that replay.
+
 ## Exploration Budget
 
 Exploration stops when the first limit is reached:
 
 - 5 minutes of wall-clock time after `qa_start_exploration`.
-- 30 Playwright actions after `qa_start_exploration`.
+- 30 browser actions after `qa_start_exploration` (the same budget may be described as 30 Playwright actions in tests or reports).
 
 Count Playwright actions that mutate or navigate browser state, including click, fill, type, press, select, check, uncheck, navigate, reload, file upload, dialog accept/dismiss, and any script evaluation that changes page state. Read-only inspection and screenshots do not count unless they trigger page mutation.
 
 When the budget is exhausted, stop taking browser actions and produce the QA report.
+
+## Bounded Hypothesis Exploration
+
+Normal-mode exploration must use a bounded hypothesis queue. For each item:
+
+1. Observe.
+2. Propose one reproducible hypothesis.
+3. Take the smallest low-risk action.
+4. Collect evidence.
+5. Discard the hypothesis if disproved, or record it if confirmed.
+6. Continue to the next hypothesis.
+
+Stop exploration when the budget is exhausted, no high-value hypothesis remains, or a safety boundary is reached.
+
+Explore in this fixed priority order:
+
+1. replay-adjacent recovery/navigation.
+2. form validation/repeat actions/loading states.
+3. same-origin API/frontend exceptions.
+4. locale/empty-state/UI consistency.
+5. low-risk adjacent allowed paths.
+
+Allowed exploration surfaces are registration, verification, onboarding, existing API-key page state, non-submitted dialog validation, and docs entry points.
+
+Forbidden exploration surfaces are payment, subscriptions, invitations, admin/global settings, production origins, real model calls, CAPTCHA bypass, second account creation, second key creation, and extra API key creation.
+
+## Finding Evidence And Noise Handling
+
+A formal finding must include at least one real evidence path from `screenshots/*.png`, `browser/console.jsonl`, or `browser/network.jsonl`. A claim without this evidence is observation/info only and must not be actionable.
+
+Failures actively denied by allowlist or egress controls for third-party services such as GTM, Mixpanel, app.solvea.cx, or similar external hosts default to environment observation/info. Do not upgrade them to a formal finding unless independent staging same-origin evidence proves product impact.
 
 ## Cleanup Authority
 

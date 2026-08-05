@@ -8,6 +8,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DOCKERFILE = REPO_ROOT / "scripts" / "browser_qa" / "Dockerfile"
 ENTRYPOINT = REPO_ROOT / "scripts" / "browser_qa" / "entrypoint.sh"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
+QA_PROMPT = REPO_ROOT / "scripts" / "browser_qa" / "config" / "qa-prompt.md"
+STAGING_POLICY = REPO_ROOT / ".agents" / "skills" / "flatkey-new-user-onboarding" / "references" / "staging-cloud-qa-policy.md"
+STAGING_SCENARIOS = REPO_ROOT / ".agents" / "skills" / "flatkey-new-user-onboarding" / "tests" / "staging-cloud-qa-scenarios.md"
 
 BASE_IMAGE = (
     "node:22.23.2-bookworm-slim@"
@@ -134,6 +137,50 @@ class ContainerContractTests(unittest.TestCase):
         self.assertLess(text.index("ln -s /opt/flatkey-browser-qa/scripts/browser_qa/tests"), text.index("USER flatkeyqa"))
         self.assertEqual(text.count("COPY scripts/browser_qa/tests scripts/browser_qa/tests"), 1)
         self.assertNotIn("COPY scripts/browser_qa/tests tests", text)
+
+    def test_container_includes_bounded_ai_policy_and_scenario_contract(self):
+        dockerfile = read(DOCKERFILE)
+        self.assertIn("COPY scripts/browser_qa/config scripts/browser_qa/config", dockerfile)
+        self.assertIn(
+            "COPY .agents/skills/flatkey-new-user-onboarding/references .agents/skills/flatkey-new-user-onboarding/references",
+            dockerfile,
+        )
+        self.assertIn(
+            "COPY .agents/skills/flatkey-new-user-onboarding/tests .agents/skills/flatkey-new-user-onboarding/tests",
+            dockerfile,
+        )
+
+        combined_contract = "\n".join(read(path) for path in [QA_PROMPT, STAGING_POLICY, STAGING_SCENARIOS])
+        for required in [
+            "core = complete recorded replay -> qa_replay_checkpoint -> no exploration -> runtime cleanup -> report",
+            "normal = complete recorded replay -> qa_replay_checkpoint -> qa_start_exploration -> bounded exploration -> runtime cleanup -> report",
+            "normal includes the complete core replay",
+            "qa_start_exploration exactly once after qa_replay_checkpoint",
+            "Do not explore before qa_replay_checkpoint",
+            "Do not register a second account",
+            "Do not create an extra API key",
+            "hypothesis queue",
+            "5 minutes",
+            "30 browser actions",
+            "screenshots/*.png",
+            "browser/console.jsonl",
+            "browser/network.jsonl",
+            "environment observation/info",
+        ]:
+            self.assertIn(required.lower(), combined_contract.lower())
+
+        scenarios = read(STAGING_SCENARIOS).lower()
+        for required in [
+            "attempt second account",
+            "attempt second key",
+            "blocked gtm/mixpanel noise",
+            "no-evidence claim",
+            "duplicate finding",
+            "same-origin 5xx with network evidence",
+        ]:
+            self.assertIn(required, scenarios)
+        for expected in ["stop", "downgrade", "dedupe", "report"]:
+            self.assertIn(expected, scenarios)
 
     def test_dockerignore_allows_only_the_selected_markdown_skill_exception(self):
         lines = [line.strip() for line in read(DOCKERIGNORE).splitlines() if line.strip()]

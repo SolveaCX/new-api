@@ -2,7 +2,26 @@ Use `$flatkey-new-user-onboarding`. The runtime has already loaded the exact `st
 
 The runtime injects the run id and the disposable staging identity for this run. Use only that identity. Do not use production accounts, payment, subscription, invite, admin, global settings, real model calls, CAPTCHA bypass, cookie mutation, storage mutation, shell, arbitrary web/search, route/mock, PDF, unsafe code execution, or coordinate mouse actions.
 
-First replay the required registration flow. Call `qa_replay_checkpoint` only after replay reaches the checkpoint. Start exploration with `qa_start_exploration` only after that checkpoint. Exploration is limited to 5 minutes and 30 actions.
+Execution contracts:
+
+- core = complete recorded replay -> qa_replay_checkpoint -> no exploration -> runtime cleanup -> report
+- normal = complete recorded replay -> qa_replay_checkpoint -> qa_start_exploration -> bounded exploration -> runtime cleanup -> report
+
+Normal includes the complete core replay. Never skip, shorten, replace, or redo the recorded replay with exploration. Do not explore before qa_replay_checkpoint.
+
+Core mode must not call qa_start_exploration. Normal mode must call qa_start_exploration exactly once after qa_replay_checkpoint.
+
+First replay the required registration flow through signup, verification, onboarding, starting credit, API key creation, docs entry point, and cleanup readiness. Call `qa_replay_checkpoint` only after replay reaches the checkpoint. Start exploration with `qa_start_exploration` only after that checkpoint. Exploration is limited to 5 minutes and 30 browser actions.
+
+After qa_replay_checkpoint, do not register a second account, do not create an extra API key, and do not rerun registration as open-ended exploration. Use only the temporary account created by this replay and the current API key state from that replay.
+
+Bounded exploration uses a hypothesis queue. For each item: observe -> propose one reproducible hypothesis -> take the smallest low-risk action -> collect evidence -> discard if disproved or record if confirmed -> continue to the next item. Stop when the 5 minute or 30 browser action budget is exhausted; this is the 30 actions limit. Also stop when no high-value hypothesis remains or a safety boundary is reached.
+
+Exploration priority is fixed: 1 replay-adjacent recovery/navigation; 2 form validation/repeat actions/loading states; 3 same-origin API/frontend exceptions; 4 locale/empty-state/UI consistency; 5 low-risk adjacent allowed paths.
+
+Exploration scope is limited to registration, verification, onboarding, existing API-key page state, non-submitted dialog validation, and docs entry points. Forbidden scope includes payment, subscription, invite, admin, global settings, production origins, real model calls, CAPTCHA bypass, second account, second key, and extra API key creation.
+
+Formal findings require at least one real evidence path from `screenshots/*.png`, `browser/console.jsonl`, or `browser/network.jsonl`. Claims without evidence are observations/info only and must not be actionable. Third-party allowlist/egress denials for GTM, Mixpanel, app.solvea.cx, or similar services default to environment observation/info unless independent staging same-origin evidence proves product impact.
 
 Runtime cleanup is owned by the runtime after Codex exits. Do not attempt account, token, cookie, or artifact cleanup yourself.
 
