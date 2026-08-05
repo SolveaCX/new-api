@@ -348,6 +348,7 @@ func migrateDB() error {
 		&SupplierUsageDailyBatchRun{},
 		&SupplierHistoricalImport{},
 		&SupplierHistoricalDailySummary{},
+		&PromptLibraryItem{},
 	)
 	if err != nil {
 		return err
@@ -468,6 +469,7 @@ func migrateDBFast() error {
 		{&APIIdempotencyRecord{}, "APIIdempotencyRecord"},
 		{&BytePlusAssetTempObject{}, "BytePlusAssetTempObject"},
 		{&BytePlusAsset{}, "BytePlusAsset"},
+		{&PromptLibraryItem{}, "PromptLibraryItem"},
 	}
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.
