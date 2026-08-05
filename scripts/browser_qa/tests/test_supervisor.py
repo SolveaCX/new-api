@@ -434,7 +434,9 @@ class SupervisorTests(unittest.TestCase):
         self.run_supervisor(process, result_payload=valid_result())
 
         prompt = process.stdin.getvalue()
-        runtime_prompt, _policy = prompt.split("-----BEGIN TRUSTED STAGING CLOUD QA POLICY-----", 1)
+        runtime_prompt_prefix, rest = prompt.split("-----BEGIN TRUSTED STAGING CLOUD QA POLICY-----", 1)
+        _policy, runtime_prompt_suffix = rest.split("-----END TRUSTED STAGING CLOUD QA POLICY-----", 1)
+        runtime_prompt = runtime_prompt_prefix + runtime_prompt_suffix
         self.assertIn("Authorized staging website origin: https://staging-website.flatkey.ai", prompt)
         self.assertIn("Authorized staging console origin: https://staging-console.flatkey.ai", prompt)
         self.assertIn("Read-only cookie-free docs origin: https://docs.flatkey.ai", prompt)
