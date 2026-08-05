@@ -11,16 +11,11 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa.yml"
-QUALIFICATION_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa-normal-qualification.yml"
 STAGING_DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-deploy-staging.yml"
 
 
 def workflow_text():
     return WORKFLOW.read_text(encoding="utf-8")
-
-
-def qualification_workflow_text():
-    return QUALIFICATION_WORKFLOW.read_text(encoding="utf-8")
 
 
 def staging_deploy_workflow_text():
@@ -172,27 +167,48 @@ def canonical_finding_summaries_b64(summaries):
 
 
 class BrowserQaWorkflowContractTests(unittest.TestCase):
-    def test_normal_qualification_wrapper_uses_branch_push_and_same_commit_reusable_workflow(self):
-        text = qualification_workflow_text()
+    def test_normal_qualification_is_staging_manual_mode_without_wrapper_workflow(self):
+        text = staging_deploy_workflow_text()
         uncommented = strip_comments(text)
 
-        self.assertRegex(uncommented, r"(?m)^name: Browser QA Normal Qualification$")
+        self.assertFalse(
+            (REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa-normal-qualification.yml").exists(),
+            "temporary qualification branch-push wrapper workflow must be removed",
+        )
         self.assertRegex(
             uncommented,
-            r"(?ms)^on:\n  push:\n    branches:\n      - browser-qa-qualification/\*\*$",
+            r"(?ms)^  workflow_dispatch:\n    inputs:\n      image_tag:\n"
+            r".*?      browser_qa_qualification_only:\n"
+            r"        description: \".*normal QA.*skip build/deploy.*\"\n"
+            r"        required: false\n"
+            r"        default: false\n"
+            r"        type: boolean\b",
         )
-        self.assertNotRegex(
-            uncommented,
-            r"(?m)^\s+(workflow_dispatch|workflow_run|pull_request|tags):\s*",
-        )
-        self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
+        self.assertNotRegex(uncommented, r"browser-qa-qualification/\*\*")
 
-        jobs_section = uncommented.split("\njobs:\n", 1)[1]
-        jobs = re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\n", jobs_section)
-        self.assertEqual(jobs, ["browser-qa-normal"])
-        qa = job_block(text, "browser-qa-normal")
-        self.assertRegex(qa, r"(?m)^    permissions:\n      contents: read\n      id-token: write\b")
+    def test_staging_qualification_topology_skips_deploy_chain_and_runs_only_normal_qa(self):
+        text = staging_deploy_workflow_text()
+
+        build = job_block(text, "build")
+        self.assertRegex(
+            build,
+            r"(?m)^    if: \$\{\{ github\.event_name == 'push' \|\| "
+            r"inputs\.browser_qa_qualification_only != true \}\}$",
+        )
+        deploy = job_block(text, "deploy")
+        self.assertRegex(deploy, r"(?m)^    needs: build$")
+        core = job_block(text, "browser-qa-core")
+        self.assertRegex(core, r"(?m)^    needs: deploy$")
+
+        qa = job_block(text, "browser-qa-normal-qualification")
+        self.assertRegex(
+            qa,
+            r"(?m)^    if: \$\{\{ github\.event_name == 'workflow_dispatch' && "
+            r"inputs\.browser_qa_qualification_only == true \}\}$",
+        )
+        self.assertNotRegex(qa, r"(?m)^    needs:")
         self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
+        self.assertRegex(qa, r"(?m)^    permissions:\n      contents: read\n      id-token: write\b")
         self.assertRegex(qa, r"(?ms)^    with:\n      mode: normal\n      fail_on_findings: false\b")
         self.assertNotIn("original_run_id", qa)
         self.assertRegex(
@@ -201,7 +217,16 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             r"      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}\n"
             r"      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET \}\}\s*$",
         )
-        self.assertNotIn("secrets: inherit", text)
+        self.assertNotIn("secrets: inherit", qa)
+
+        jobs_section = text.split("\njobs:\n", 1)[1]
+        normal_qualification_jobs = re.findall(r"(?m)^  browser-qa-normal-qualification:\n", jobs_section)
+        self.assertEqual(len(normal_qualification_jobs), 1)
+
+    def test_staging_qualification_input_is_not_interpolated_inside_shell_run_blocks(self):
+        for index, block in enumerate(run_blocks(staging_deploy_workflow_text())):
+            with self.subTest(run_block=index):
+                self.assertNotIn("${{ inputs.browser_qa_qualification_only", block)
 
     def test_workflow_supports_manual_dispatch_and_reusable_call_with_minimal_permissions_and_serial_concurrency(self):
         text = workflow_text()
