@@ -349,13 +349,26 @@ class Supervisor:
                 payload = _empty_result()
                 runtime_classification = runtime_classification or "invalid_result"
                 invalid_result = True
-            _write_private_json(result_path, redactor.clean(payload))
             try:
                 write_browser_evidence_artifacts(self.runtime_root, browser_evidence, redactor)
             except Exception as exc:
                 self._event("browser_evidence_failed", str(exc), redactor)
                 runtime_classification = runtime_classification or "invalid_result"
                 invalid_result = True
+            try:
+                proxy_events = []
+                for candidate in (proxy, docs_proxy):
+                    proxy_events.extend(getattr(candidate, "events", []) or [])
+                payload = report.normalize_findings(
+                    payload,
+                    runtime_root=self.runtime_root,
+                    proxy_events=proxy_events,
+                )
+            except Exception as exc:
+                self._event("normalization_failed", str(exc), redactor)
+                runtime_classification = runtime_classification or "invalid_result"
+                invalid_result = True
+            _write_private_json(result_path, redactor.clean(payload))
             try:
                 _cleanup_runtime_child_dir(self.runtime_root, "playwright-output")
             except Exception as exc:

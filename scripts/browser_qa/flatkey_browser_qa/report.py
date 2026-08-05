@@ -1,7 +1,10 @@
+import copy
+import hashlib
 import json
 import os
 import re
 import time
+import urllib.parse
 
 from .cleanup import CleanupResult
 from .redaction import Redactor
@@ -26,6 +29,7 @@ _PROVENANCE_FIELDS = {
     "chromium_version",
 }
 _MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
+_BROWSER_EVIDENCE_PATHS = {"browser/console.jsonl", "browser/network.jsonl"}
 
 
 def validate_result(payload):
@@ -48,6 +52,39 @@ def validate_result(payload):
         _validate_finding(item, index)
 
     return payload
+
+
+def normalize_findings(payload, *, runtime_root, proxy_events):
+    validate_result(payload)
+    normalized = copy.deepcopy(payload)
+    validate_result(normalized)
+    runtime_real = os.path.realpath(runtime_root)
+    denied_hosts = _denied_proxy_hosts(proxy_events)
+    findings = []
+    seen = set()
+    for finding in normalized["findings"]:
+        finding["target_url"] = _strip_url_query_fragment(finding["target_url"])
+        evidence = _finding_evidence(runtime_real, finding["evidence_paths"])
+        if not evidence["usable"]:
+            finding["severity"] = "info"
+        if (
+            finding["severity"] != "info"
+            and _matches_denied_proxy_host(finding, denied_hosts)
+            and not _has_same_origin_5xx_network_evidence(finding, evidence)
+        ):
+            finding["severity"] = "info"
+        dedupe_key = (
+            finding["target_url"],
+            _normalized_title(finding["title"]),
+            tuple(sorted(evidence["hashes"])),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        findings.append(finding)
+    normalized["findings"] = findings
+    validate_result(normalized)
+    return normalized
 
 
 def classify_status(payload, *, cleanup_result=None, codex_returncode=0, upload_failed=False, invalid_result=False, runtime_classification=None):
@@ -163,6 +200,144 @@ def _cleanup_to_dict(cleanup_result):
         "cleanup_failed": cleanup_result.cleanup_failed,
         "reason": cleanup_result.reason,
     }
+
+
+def _strip_url_query_fragment(url):
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
+def _normalized_title(title):
+    return " ".join(title.casefold().split())
+
+
+def _denied_proxy_hosts(proxy_events):
+    hosts = set()
+    if not isinstance(proxy_events, list):
+        return hosts
+    for event in proxy_events:
+        if not isinstance(event, dict) or event.get("reason") != "denied":
+            continue
+        host = _host_without_port(event.get("host"))
+        if host:
+            hosts.add(host)
+    return hosts
+
+
+def _matches_denied_proxy_host(finding, denied_hosts):
+    if not denied_hosts:
+        return False
+    target_host = _url_host(finding["target_url"])
+    text = " ".join([finding["title"], finding["expected"], finding["actual"]]).casefold()
+    for host in denied_hosts:
+        if host == target_host or _host_appears_in_text(host, text):
+            return True
+    return False
+
+
+def _finding_evidence(runtime_root, paths):
+    hashes = []
+    network_events = []
+    usable = True
+    for path in paths:
+        evidence_path = _resolve_evidence_path(runtime_root, path)
+        if evidence_path is None:
+            usable = False
+            continue
+        with open(evidence_path, "rb") as handle:
+            data = handle.read()
+        hashes.append(hashlib.sha256(data).hexdigest())
+        if path == "browser/network.jsonl":
+            network_events.extend(_read_network_events(data))
+    return {"usable": usable, "hashes": hashes, "network_events": network_events}
+
+
+def _resolve_evidence_path(runtime_root, logical_path):
+    if (
+        not isinstance(logical_path, str)
+        or not logical_path
+        or os.path.isabs(logical_path)
+        or "\\" in logical_path
+        or logical_path.startswith("/")
+        or logical_path.startswith("//")
+    ):
+        return None
+    parts = logical_path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    if not _allowed_evidence_logical_path(logical_path):
+        return None
+    current = runtime_root
+    for part in parts:
+        current = os.path.join(current, part)
+        try:
+            os.lstat(current)
+        except OSError:
+            return None
+        if os.path.islink(current):
+            return None
+    real = os.path.realpath(os.path.join(runtime_root, *parts))
+    if real != runtime_root and not real.startswith(runtime_root + os.sep):
+        return None
+    if not os.path.isfile(real):
+        return None
+    return real
+
+
+def _allowed_evidence_logical_path(logical_path):
+    if logical_path in _BROWSER_EVIDENCE_PATHS:
+        return True
+    if logical_path.startswith("screenshots/") and logical_path.count("/") == 1:
+        return logical_path.endswith(".png")
+    return False
+
+
+def _read_network_events(data):
+    events = []
+    for line in data.decode("utf-8", "replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def _has_same_origin_5xx_network_evidence(finding, evidence):
+    target_host = _url_host(finding["target_url"])
+    if not target_host:
+        return False
+    for event in evidence["network_events"]:
+        status = event.get("status")
+        if isinstance(status, int) and 500 <= status <= 599 and _url_host(event.get("url")) == target_host:
+            return True
+    return False
+
+
+def _url_host(url):
+    if not isinstance(url, str):
+        return ""
+    return (urllib.parse.urlsplit(url).hostname or "").casefold()
+
+
+def _host_without_port(value):
+    if not isinstance(value, str) or not value:
+        return ""
+    host = value.strip().casefold()
+    if host.startswith("["):
+        end = host.find("]")
+        return host[1:end] if end >= 0 else ""
+    if ":" in host:
+        host = host.rsplit(":", 1)[0]
+    return host.rstrip(".")
+
+
+def _host_appears_in_text(host, text):
+    pattern = rf"(?<![A-Za-z0-9.-]){re.escape(host)}(?![A-Za-z0-9.-])"
+    return re.search(pattern, text) is not None
 
 
 def _validate_finding(item, index):

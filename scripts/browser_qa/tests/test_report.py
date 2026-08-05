@@ -52,6 +52,95 @@ def valid_provenance(**overrides):
 
 
 class ReportTests(unittest.TestCase):
+    def test_normalize_findings_requires_existing_bounded_runtime_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = valid_result(findings=[finding(evidence_paths=["screenshots/missing.png"])])
+
+            normalized = report.normalize_findings(payload, runtime_root=tmp, proxy_events=[])
+
+            self.assertEqual(normalized["findings"][0]["severity"], "info")
+
+            outside = tempfile.NamedTemporaryFile(delete=False)
+            outside.close()
+            self.addCleanup(lambda: os.path.exists(outside.name) and os.remove(outside.name))
+            for evidence_path in [outside.name, "../outside.png", "result.json", "browser/unknown.jsonl"]:
+                with self.subTest(evidence_path=evidence_path):
+                    normalized = report.normalize_findings(
+                        valid_result(findings=[finding(evidence_paths=[evidence_path])]),
+                        runtime_root=tmp,
+                        proxy_events=[],
+                    )
+                    self.assertEqual(normalized["findings"][0]["severity"], "info")
+
+    def test_normalize_findings_strips_query_fragment_and_deduplicates_by_evidence_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            screenshot_dir = os.path.join(tmp, "screenshots")
+            os.makedirs(screenshot_dir)
+            for name in ["proof-a.png", "proof-b.png"]:
+                with open(os.path.join(screenshot_dir, name), "wb") as handle:
+                    handle.write(b"same-evidence")
+            first = finding(
+                target_url="https://staging-console.flatkey.ai/register?email=secret#form",
+                evidence_paths=["screenshots/proof-a.png"],
+            )
+            duplicate = finding(
+                target_url="https://staging-console.flatkey.ai/register?other=value#other",
+                evidence_paths=["screenshots/proof-b.png"],
+            )
+
+            normalized = report.normalize_findings(
+                valid_result(findings=[first, duplicate]),
+                runtime_root=tmp,
+                proxy_events=[],
+            )
+
+            self.assertEqual(len(normalized["findings"]), 1)
+            self.assertEqual(
+                normalized["findings"][0]["target_url"],
+                "https://staging-console.flatkey.ai/register",
+            )
+
+    def test_normalize_findings_downgrades_runtime_denied_third_party_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            browser_dir = os.path.join(tmp, "browser")
+            os.makedirs(browser_dir)
+            with open(os.path.join(browser_dir, "network.jsonl"), "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            payload = valid_result(findings=[finding(
+                actual="The page reported that mixpanel.example was blocked.",
+                evidence_paths=["browser/network.jsonl"],
+            )])
+
+            normalized = report.normalize_findings(
+                payload,
+                runtime_root=tmp,
+                proxy_events=[{"host": "mixpanel.example:443", "status": 403, "reason": "denied"}],
+            )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "info")
+            self.assertEqual(report.classify_status(normalized), "passed")
+
+    def test_normalize_findings_keeps_evidence_backed_same_origin_product_failure_actionable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            browser_dir = os.path.join(tmp, "browser")
+            os.makedirs(browser_dir)
+            with open(os.path.join(browser_dir, "network.jsonl"), "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            payload = valid_result(findings=[finding(
+                target_url="https://staging-console.flatkey.ai/register",
+                actual="The staging registration API returned 500.",
+                evidence_paths=["browser/network.jsonl"],
+            )])
+
+            normalized = report.normalize_findings(
+                payload,
+                runtime_root=tmp,
+                proxy_events=[{"host": "app.solvea.cx", "status": 403, "reason": "denied"}],
+            )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "medium")
+            self.assertEqual(report.classify_status(normalized), "findings_detected")
+
     def test_schema_rejects_missing_extra_invalid_type_enum_and_finding_shape(self):
         with self.assertRaises(report.ResultValidationError):
             report.validate_result({"replay": {}})

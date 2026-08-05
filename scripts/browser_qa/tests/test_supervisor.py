@@ -276,6 +276,7 @@ class FakeProxy:
         self.stopped = False
         self.host = "127.0.0.1"
         self.port = 4567
+        self.events = []
 
     def start(self):
         self.started = True
@@ -464,6 +465,57 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn("https://flatkey.ai", runtime_prompt)
         self.assertNotIn("https://console.flatkey.ai", runtime_prompt)
         self.assertNotIn("https://router.flatkey.ai", runtime_prompt)
+
+    def test_supervisor_normalizes_after_browser_evidence_before_public_result_and_manifest(self):
+        denied_proxy = FakeProxy()
+        denied_proxy.events = [{"host": "mixpanel.example:443", "status": 403, "reason": "denied"}]
+        proxies = [denied_proxy, FakeProxy()]
+
+        raw_finding = {
+            "severity": "medium",
+            "title": " Registration accepts weak confirmation state ",
+            "target_url": "https://staging-console.flatkey.ai/register?email=secret#form",
+            "steps": ["Open registration", "Submit form"],
+            "expected": "The core registration flow should remain available.",
+            "actual": "The page reported that mixpanel.example was blocked.",
+            "evidence_paths": ["browser/network.jsonl"],
+            "confidence": "high",
+        }
+        duplicate = {
+            **raw_finding,
+            "title": "registration accepts weak confirmation state",
+            "target_url": "https://staging-console.flatkey.ai/register?other=value#other",
+        }
+
+        outcome, sup = self.run_supervisor(
+            FakeProcess(0),
+            result_payload=valid_result(findings=[raw_finding, duplicate]),
+            proxy_factory=lambda policy=None: proxies.pop(0),
+        )
+
+        self.assertEqual(outcome.status, "passed")
+        self.assertTrue(os.path.exists(os.path.join(sup.runtime_root, "browser", "network.jsonl")))
+        with open(os.path.join(sup.runtime_root, "result.json"), encoding="utf-8") as handle:
+            result_payload = json.load(handle)
+        with open(os.path.join(sup.runtime_root, "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        self.assertEqual(len(result_payload["findings"]), 1)
+        self.assertEqual(result_payload["findings"][0]["severity"], "info")
+        self.assertEqual(
+            result_payload["findings"][0]["target_url"],
+            "https://staging-console.flatkey.ai/register",
+        )
+        self.assertEqual(manifest["result"], result_payload)
+
+    def test_supervisor_maps_normalization_errors_to_invalid_result_infrastructure_failure(self):
+        with mock.patch.object(supervisor.report, "normalize_findings", side_effect=supervisor.report.ResultValidationError("bad normalized result")):
+            outcome, sup = self.run_supervisor(FakeProcess(0), result_payload=valid_result())
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        with open(os.path.join(sup.runtime_root, "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        self.assertEqual(manifest["infrastructure"]["classification"], "invalid_result")
+        self.assertEqual(manifest["result"], valid_result())
 
     def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None, resource_guard_factory=None):
         tmp = tempfile.mkdtemp()
@@ -1742,7 +1794,7 @@ class SupervisorTests(unittest.TestCase):
                 "steps": [raw_alias],
                 "expected": "no leak",
                 "actual": code,
-                "evidence_paths": ["artifact.txt"],
+                "evidence_paths": ["browser/network.jsonl"],
                 "confidence": "high",
             }], exploration={"status": "passed", "actions_used": 999})
             def notify_code():
