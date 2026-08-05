@@ -11,11 +11,16 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa.yml"
+QUALIFICATION_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-browser-qa-normal-qualification.yml"
 STAGING_DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "gcp-deploy-staging.yml"
 
 
 def workflow_text():
     return WORKFLOW.read_text(encoding="utf-8")
+
+
+def qualification_workflow_text():
+    return QUALIFICATION_WORKFLOW.read_text(encoding="utf-8")
 
 
 def staging_deploy_workflow_text():
@@ -167,6 +172,37 @@ def canonical_finding_summaries_b64(summaries):
 
 
 class BrowserQaWorkflowContractTests(unittest.TestCase):
+    def test_normal_qualification_wrapper_uses_branch_push_and_same_commit_reusable_workflow(self):
+        text = qualification_workflow_text()
+        uncommented = strip_comments(text)
+
+        self.assertRegex(uncommented, r"(?m)^name: Browser QA Normal Qualification$")
+        self.assertRegex(
+            uncommented,
+            r"(?ms)^on:\n  push:\n    branches:\n      - browser-qa-qualification/\*\*$",
+        )
+        self.assertNotRegex(
+            uncommented,
+            r"(?m)^\s+(workflow_dispatch|workflow_run|pull_request|tags):\s*",
+        )
+        self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
+
+        jobs_section = uncommented.split("\njobs:\n", 1)[1]
+        jobs = re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\n", jobs_section)
+        self.assertEqual(jobs, ["browser-qa-normal"])
+        qa = job_block(text, "browser-qa-normal")
+        self.assertRegex(qa, r"(?m)^    permissions:\n      contents: read\n      id-token: write\b")
+        self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
+        self.assertRegex(qa, r"(?ms)^    with:\n      mode: normal\n      fail_on_findings: false\b")
+        self.assertNotIn("original_run_id", qa)
+        self.assertRegex(
+            qa,
+            r"(?ms)^    secrets:\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET \}\}\s*$",
+        )
+        self.assertNotIn("secrets: inherit", text)
+
     def test_workflow_supports_manual_dispatch_and_reusable_call_with_minimal_permissions_and_serial_concurrency(self):
         text = workflow_text()
         uncommented = strip_comments(text)
