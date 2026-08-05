@@ -64,6 +64,7 @@ SKILL_NAME = "flatkey-new-user-onboarding"
 PLAYWRIGHT_RUNTIME_ROOT = "/opt/flatkey-browser-qa"
 PROVENANCE_VERSION_TIMEOUT_SECONDS = 2
 MAX_PROVENANCE_VERSION_BYTES = 256
+MAX_POLICY_BYTES = 64 * 1024
 PROVENANCE_MODEL_CONFIG = {"model": "gpt-5.4", "sandbox": "workspace-write", "network_access": False}
 FLATKEY_MODEL_PROVIDER_CONFIG = """[model_providers.flatkey]
 name = "Flatkey"
@@ -965,6 +966,7 @@ def _hash_skill_tree(skill_dir):
 def build_prompt(cfg, identity, *, policy_path):
     with open(PROMPT_PATH, encoding="utf-8") as handle:
         prompt = handle.read()
+    policy = _read_installed_policy(policy_path)
     mode_contract = ""
     if cfg.mode == "core":
         mode_contract = (
@@ -975,6 +977,9 @@ def build_prompt(cfg, identity, *, policy_path):
         prompt
         + "\n\nSkill: $flatkey-new-user-onboarding\n"
         + f"Policy: {policy_path}\n"
+        + "-----BEGIN TRUSTED STAGING CLOUD QA POLICY-----\n"
+        + policy.rstrip()
+        + "\n-----END TRUSTED STAGING CLOUD QA POLICY-----\n"
         + f"Run ID: {cfg.run_id}\n"
         + f"Authorized staging website origin: {cfg.website_origin}\n"
         + f"Authorized staging console origin: {cfg.console_origin}\n"
@@ -986,6 +991,24 @@ def build_prompt(cfg, identity, *, policy_path):
         + mode_contract
         + "The runtime owns verification code, cleanup, result redaction, and upload.\n"
     )
+
+
+def _read_installed_policy(policy_path):
+    if os.path.islink(policy_path):
+        raise RuntimeError("policy symlink rejected")
+    try:
+        stat_result = os.stat(policy_path)
+    except OSError as exc:
+        raise RuntimeError("installed policy unavailable") from exc
+    if not os.path.isfile(policy_path):
+        raise RuntimeError("installed policy must be a regular file")
+    if stat_result.st_size < 1 or stat_result.st_size > MAX_POLICY_BYTES:
+        raise RuntimeError("installed policy size invalid")
+    with open(policy_path, encoding="utf-8") as handle:
+        policy = handle.read(MAX_POLICY_BYTES + 1)
+    if len(policy.encode("utf-8", "replace")) > MAX_POLICY_BYTES:
+        raise RuntimeError("installed policy size invalid")
+    return policy
 
 
 def _preflight_ok(payload):
