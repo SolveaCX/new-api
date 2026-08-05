@@ -3,7 +3,9 @@ package model
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -76,8 +78,72 @@ func TestPaymentAnalyticsOutboxRejectsStaleWorkerCompletion(t *testing.T) {
 	require.Equal(t, second[0].ClaimedAt, outbox.ClaimedAt)
 }
 
+func TestPaymentAnalyticsOutboxRetryAndDeadErrorHandling(t *testing.T) {
+	setupPaymentAnalyticsOutboxTestDB(t)
+	EnqueuePaymentAnalyticsBestEffort(paymentAnalyticsTestEvent())
+	claimed, err := ClaimPaymentAnalyticsOutbox(1, 1_800_000_100)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NoError(t, FailPaymentAnalyticsOutbox(claimed[0].Id, claimed[0].ClaimedAt, claimed[0].Attempts, "too many requests", 1_800_000_101))
+
+	claimed, err = ClaimPaymentAnalyticsOutbox(1, 1_800_000_200)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NoError(t, DeadPaymentAnalyticsOutbox(claimed[0].Id, claimed[0].ClaimedAt, strings.Repeat("界", 300), 1_800_000_201))
+
+	var outbox PaymentAnalyticsOutbox
+	require.NoError(t, DB.First(&outbox, claimed[0].Id).Error)
+	require.Equal(t, PaymentAnalyticsOutboxDead, outbox.Status)
+	require.LessOrEqual(t, len(outbox.LastError), 512)
+	require.True(t, utf8.ValidString(outbox.LastError))
+}
+
+func TestPaymentAnalyticsOutboxCleanupRetainsDeadRows(t *testing.T) {
+	setupPaymentAnalyticsOutboxTestDB(t)
+	now := int64(1_800_000_000)
+	require.NoError(t, DB.Create(&PaymentAnalyticsOutbox{EventId: "delivered-old", Status: PaymentAnalyticsOutboxDelivered, DeliveredAt: now - paymentAnalyticsOutboxDeliveredRetention - 1}).Error)
+	require.NoError(t, DB.Create(&PaymentAnalyticsOutbox{EventId: "dead-old", Status: PaymentAnalyticsOutboxDead, DeliveredAt: now - paymentAnalyticsOutboxDeliveredRetention - 1}).Error)
+	require.NoError(t, DeleteDeliveredPaymentAnalyticsOutboxBefore(now))
+
+	var count int64
+	require.NoError(t, DB.Model(&PaymentAnalyticsOutbox{}).Where("event_id = ?", "delivered-old").Count(&count).Error)
+	require.Zero(t, count)
+	require.NoError(t, DB.Model(&PaymentAnalyticsOutbox{}).Where("event_id = ?", "dead-old").Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}
+
+func TestPaymentAnalyticsOutboxSuppressesRecallAttributedSubscription(t *testing.T) {
+	event := paymentAnalyticsEventFromSubscriptionOrder(&SubscriptionOrder{
+		TradeNo: "recall-subscription", UserId: 7, PlanId: 3, Money: 12,
+		PaymentProvider: PaymentProviderStripe, PaymentMethod: PaymentMethodStripe, PaymentCurrency: "USD",
+		DiscountKind: "recall", RecallCampaignId: 11, RecallRecipientId: 12,
+	}, "Pro")
+	require.Nil(t, event)
+}
+
+func TestPaymentAnalyticsOutboxUsesUSDFallbackForHistoricalEpay(t *testing.T) {
+	event := paymentAnalyticsEventFromTopUp(&TopUp{
+		TradeNo: "historical-epay", UserId: 7, Money: 12, PaymentProvider: PaymentProviderEpay,
+		PaymentMethod: "alipay", GAClientID: "123.456", GASessionID: "789",
+	})
+	require.NotNil(t, event)
+	require.Equal(t, "USD", event.Currency)
+}
+
+func TestPaymentAnalyticsOutboxBuildsSubscriptionRenewal(t *testing.T) {
+	event := PaymentAnalyticsEventForSubscriptionRenewal(&SubscriptionOrder{
+		UserId: 7, PlanId: 3, Money: 12, PaymentProvider: PaymentProviderStripe,
+		PaymentMethod: PaymentMethodStripe, GAClientID: "123.456", GASessionID: "789",
+	}, "Pro", "in_renewal", 12.34, "USD", 1_800_000_000)
+	require.NotNil(t, event)
+	require.Equal(t, "flatkey:ga4:purchase:subscription_renewal:in_renewal", event.EventID)
+	require.Equal(t, "subscription_renewal", event.ProductType)
+	require.Equal(t, "in_renewal", event.TransactionID)
+}
+
 func TestRechargeSucceedsWhenPaymentAnalyticsEnqueueIsUnavailable(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&PaymentAnalyticsOutbox{}))
 	insertUserForPaymentGuardTest(t, 9123, 0)
 	topup := &TopUp{
 		UserId: 9123, Amount: 2, Money: 9.99, PaymentCurrency: "USD", TradeNo: "analytics-unavailable",
@@ -90,11 +156,19 @@ func TestRechargeSucceedsWhenPaymentAnalyticsEnqueueIsUnavailable(t *testing.T) 
 	paymentAnalyticsOutboxCreate = func(*PaymentAnalyticsOutbox) error {
 		return errors.New("outbox unavailable")
 	}
-	t.Cleanup(func() { paymentAnalyticsOutboxCreate = original })
 
 	credited, err := Recharge("analytics-unavailable", "cus_analytics", "127.0.0.1")
 	require.NoError(t, err)
 	require.True(t, credited)
 	require.Equal(t, common.TopUpStatusSuccess, getTopUpStatusForPaymentGuardTest(t, "analytics-unavailable"))
 	require.Equal(t, int(2*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 9123))
+
+	paymentAnalyticsOutboxCreate = original
+	t.Cleanup(func() { paymentAnalyticsOutboxCreate = original })
+	replayed, err := Recharge("analytics-unavailable", "cus_analytics", "127.0.0.1")
+	require.NoError(t, err)
+	require.False(t, replayed)
+	var count int64
+	require.NoError(t, DB.Model(&PaymentAnalyticsOutbox{}).Where("event_id = ?", "flatkey:ga4:purchase:topup:analytics-unavailable").Count(&count).Error)
+	require.EqualValues(t, 1, count)
 }

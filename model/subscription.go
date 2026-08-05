@@ -1069,6 +1069,8 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		}
 		rewardTradeNo = order.TradeNo
 		if order.Status == common.TopUpStatusSuccess {
+			analyticsOrder = &order
+			analyticsPlanTitle = "Subscription"
 			return nil
 		}
 		if order.Status != common.TopUpStatusPending {

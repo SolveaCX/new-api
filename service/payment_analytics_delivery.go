@@ -13,6 +13,8 @@ import (
 
 const paymentAnalyticsDeliveryBatchSize = 50
 
+const paymentAnalyticsCleanupInterval = 24 * time.Hour
+
 var paymentAnalyticsDeliveryOnce sync.Once
 
 func deliverPaymentAnalyticsEvent(config GAConfig, event model.PaymentAnalyticsOutbox) error {
@@ -60,6 +62,12 @@ func runPaymentAnalyticsDeliveryOnce(config GAConfig) {
 	}
 }
 
+func cleanupPaymentAnalyticsOutbox(now int64) {
+	if err := model.DeleteDeliveredPaymentAnalyticsOutboxBefore(now); err != nil {
+		logger.LogError(context.Background(), "payment analytics outbox cleanup failed: "+err.Error())
+	}
+}
+
 // StartPaymentAnalyticsDeliveryTask is master-only. Conditional claims make
 // delivery safe if a master transition briefly overlaps across nodes.
 func StartPaymentAnalyticsDeliveryTask() {
@@ -75,9 +83,17 @@ func StartPaymentAnalyticsDeliveryTask() {
 		gopool.Go(func() {
 			ticker := time.NewTicker(15 * time.Second)
 			defer ticker.Stop()
+			cleanupTicker := time.NewTicker(paymentAnalyticsCleanupInterval)
+			defer cleanupTicker.Stop()
 			runPaymentAnalyticsDeliveryOnce(config)
-			for range ticker.C {
-				runPaymentAnalyticsDeliveryOnce(config)
+			cleanupPaymentAnalyticsOutbox(common.GetTimestamp())
+			for {
+				select {
+				case <-ticker.C:
+					runPaymentAnalyticsDeliveryOnce(config)
+				case <-cleanupTicker.C:
+					cleanupPaymentAnalyticsOutbox(common.GetTimestamp())
+				}
 			}
 		})
 	})

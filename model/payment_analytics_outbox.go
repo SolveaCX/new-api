@@ -19,6 +19,8 @@ const (
 	PaymentAnalyticsOutboxDead       = "dead"
 )
 
+const paymentAnalyticsOutboxDeliveredRetention = 30 * 24 * 60 * 60
+
 // PaymentAnalyticsEvent contains the non-PII purchase facts required for a GA4
 // Measurement Protocol purchase event. It is persisted after payment commit so
 // analytics delivery can never participate in payment correctness.
@@ -69,7 +71,11 @@ func paymentAnalyticsEventFromTopUp(topUp *TopUp) *PaymentAnalyticsEvent {
 	}
 	currency := strings.ToUpper(strings.TrimSpace(topUp.PaymentCurrency))
 	if currency == "" {
-		return nil
+		if topUp.PaymentProvider != PaymentProviderEpay {
+			return nil
+		}
+		// Historical ePay orders did not persist currency and were charged in USD.
+		currency = "USD"
 	}
 	return &PaymentAnalyticsEvent{
 		EventID:         "flatkey:ga4:purchase:topup:" + topUp.TradeNo,
@@ -92,6 +98,9 @@ func paymentAnalyticsEventFromSubscriptionOrder(order *SubscriptionOrder, planTi
 	if order == nil || order.Money <= 0 || order.PaymentProvider == PaymentProviderBalance {
 		return nil
 	}
+	if SubscriptionOrderIsRecallAttributed(order) {
+		return nil
+	}
 	currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
 	if currency == "" {
 		currency = "USD"
@@ -110,6 +119,47 @@ func paymentAnalyticsEventFromSubscriptionOrder(order *SubscriptionOrder, planTi
 		ClientID:        order.GAClientID,
 		SessionID:       order.GASessionID,
 		OccurredAt:      order.CompleteTime,
+	}
+}
+
+func PaymentAnalyticsEventForSubscription(order *SubscriptionOrder, planTitle string) *PaymentAnalyticsEvent {
+	return paymentAnalyticsEventFromSubscriptionOrder(order, planTitle)
+}
+
+func SubscriptionOrderIsRecallAttributed(order *SubscriptionOrder) bool {
+	if order == nil {
+		return false
+	}
+	return strings.TrimSpace(order.DiscountKind) == "recall" ||
+		order.RecallCampaignId > 0 ||
+		order.RecallRecipientId > 0 ||
+		strings.TrimSpace(order.RecallPromotionCodeId) != "" ||
+		order.RecallDiscountAmountMinor > 0
+}
+
+func PaymentAnalyticsEventForSubscriptionRenewal(order *SubscriptionOrder, planTitle string, invoiceID string, value float64, currency string, occurredAt int64) *PaymentAnalyticsEvent {
+	if order == nil || value <= 0 || strings.TrimSpace(invoiceID) == "" ||
+		order.PaymentProvider == PaymentProviderBalance || SubscriptionOrderIsRecallAttributed(order) {
+		return nil
+	}
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "" {
+		return nil
+	}
+	return &PaymentAnalyticsEvent{
+		EventID:         "flatkey:ga4:purchase:subscription_renewal:" + strings.TrimSpace(invoiceID),
+		TransactionID:   strings.TrimSpace(invoiceID),
+		UserID:          order.UserId,
+		Value:           value,
+		Currency:        currency,
+		PaymentProvider: order.PaymentProvider,
+		PaymentMethod:   order.PaymentMethod,
+		ProductType:     "subscription_renewal",
+		ItemID:          fmt.Sprintf("subscription_plan_%d", order.PlanId),
+		ItemName:        strings.TrimSpace(planTitle),
+		ClientID:        order.GAClientID,
+		SessionID:       order.GASessionID,
+		OccurredAt:      occurredAt,
 	}
 }
 
@@ -208,6 +258,11 @@ func FailPaymentAnalyticsOutbox(id int64, claimedAt int64, attempts int, message
 func DeadPaymentAnalyticsOutbox(id int64, claimedAt int64, message string, now int64) error {
 	return DB.Model(&PaymentAnalyticsOutbox{}).Where("id = ? AND status = ? AND claimed_at = ?", id, PaymentAnalyticsOutboxDelivering, claimedAt).
 		Updates(map[string]any{"status": PaymentAnalyticsOutboxDead, "next_attempt_at": 0, "claimed_at": 0, "last_error": truncateUTF8Bytes(message, 512)}).Error
+}
+
+func DeleteDeliveredPaymentAnalyticsOutboxBefore(now int64) error {
+	return DB.Where("status = ? AND delivered_at > 0 AND delivered_at < ?", PaymentAnalyticsOutboxDelivered, now-paymentAnalyticsOutboxDeliveredRetention).
+		Delete(&PaymentAnalyticsOutbox{}).Error
 }
 
 func truncateUTF8Bytes(value string, maxBytes int) string {

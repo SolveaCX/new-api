@@ -141,6 +141,8 @@ export interface SubscriptionPayRequest {
   payment_method?: string
   request_id?: string
   recall_claim?: string
+  ga_client_id?: string
+  ga_session_id?: string
 }
 
 export interface SubscriptionPayResponse {
