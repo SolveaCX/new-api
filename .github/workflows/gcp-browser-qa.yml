@@ -26,6 +26,9 @@ on:
         description: "Required cleanup-only original run id"
         required: false
         type: string
+    secrets:
+      STAGING_BROWSER_QA_DINGTALK_WEBHOOK:
+        required: true
 
 permissions:
   contents: read
@@ -110,7 +113,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Checkout
-        if: inputs.mode != 'cleanup-only'
+        if: always()
         uses: actions/checkout@v4
 
       - name: Auth to GCP via QA WIF
@@ -301,17 +304,28 @@ jobs:
           if [[ "${fetch_status}" -ne 0 ]]; then
             if [[ "${cleanup_outcome}" != "success" ]]; then
               manifest_status="cleanup_failed"
+              cleanup_status="cleanup_failed"
             else
               manifest_status="infrastructure_failed"
+              cleanup_status="unknown"
             fi
-            echo "manifest_status=${manifest_status}" >> "$GITHUB_OUTPUT"
+            {
+              echo "manifest_status=${manifest_status}"
+              echo "replay_status=unknown"
+              echo "exploration_status=unknown"
+              echo "exploration_actions=0"
+              echo "finding_count=0"
+              echo "cleanup_status=${cleanup_status}"
+              echo "gcs_uri=${gcs_uri}"
+            } >> "$GITHUB_OUTPUT"
             {
               echo "### Browser QA"
               echo "- status: ${manifest_status}"
               echo "- replay status: unknown"
+              echo "- exploration status: unknown"
               echo "- exploration actions: 0"
               echo "- finding count: 0"
-              echo "- cleanup status: ${{ steps.cleanup.outputs.cleanup_status || 'missing' }}"
+              echo "- cleanup status: ${cleanup_status}"
               echo "- gcs_uri: ${gcs_uri}"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -389,9 +403,30 @@ jobs:
           ]
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"manifest_status={status}\n")
+              output.write(f"replay_status={main_summary['replay_status']}\n")
+              output.write(f"exploration_status={main_summary['exploration_status']}\n")
+              output.write(f"exploration_actions={main_summary['exploration_actions']}\n")
+              output.write(f"finding_count={main_summary['finding_count']}\n")
+              output.write(f"cleanup_status={cleanup_record.get('status', 'unknown')}\n")
+              output.write(f"gcs_uri={gcs_uri}\n")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
               output.write("\n".join(summary) + "\n")
           PY
+
+      - name: Send terminal Browser QA report to DingTalk
+        if: always()
+        shell: bash
+        env:
+          DINGTALK_WEBHOOK: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_WEBHOOK }}
+          BROWSER_QA_FINAL_STATUS: ${{ steps.manifest.outputs.manifest_status || 'infrastructure_failed' }}
+          BROWSER_QA_REPLAY_STATUS: ${{ steps.manifest.outputs.replay_status || 'unknown' }}
+          BROWSER_QA_EXPLORATION_STATUS: ${{ steps.manifest.outputs.exploration_status || 'unknown' }}
+          BROWSER_QA_EXPLORATION_ACTIONS: ${{ steps.manifest.outputs.exploration_actions || '0' }}
+          BROWSER_QA_FINDING_COUNT: ${{ steps.manifest.outputs.finding_count || '0' }}
+          BROWSER_QA_CLEANUP_STATUS: ${{ steps.manifest.outputs.cleanup_status || 'unknown' }}
+          BROWSER_QA_GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BROWSER_QA_GCS_URI: ${{ steps.manifest.outputs.gcs_uri || format('gs://browser-qa-report-unavailable/runs/{0}/manifest.json', github.run_id) }}
+        run: python3 -B -m scripts.browser_qa.flatkey_browser_qa.dingtalk
 
       - name: Fail standalone workflow for actionable QA states
         if: always()

@@ -105,10 +105,14 @@ def run_summary_python(manifest, *, main_outcome="success", cleanup_outcome="suc
             text=True,
         )
         output = output_path.read_text(encoding="utf-8")
-        match = re.search(r"(?m)^manifest_status=(?P<status>.+)$", output)
-        if not match:
+        outputs = dict(
+            line.split("=", 1)
+            for line in output.splitlines()
+            if line and "=" in line
+        )
+        if "manifest_status" not in outputs:
             raise AssertionError(f"manifest_status missing; stdout={completed.stdout!r} stderr={completed.stderr!r}")
-        return match.group("status"), summary_path.read_text(encoding="utf-8")
+        return outputs, summary_path.read_text(encoding="utf-8")
 
 
 def summarized_root_manifest(status, *, summary=None):
@@ -147,6 +151,10 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertNotRegex(uncommented, r"(?m)^  (push|pull_request|schedule):\s*$")
         self.assertRegex(uncommented, r"(?ms)^  workflow_call:\n    inputs:\n      mode:\n        .*?required: true\n        .*?type: string\b")
         self.assertRegex(uncommented, r"(?ms)^  workflow_call:\n    inputs:\n.*?      original_run_id:\n        .*?required: false\n        .*?type: string\b")
+        self.assertRegex(
+            uncommented,
+            r"(?ms)^  workflow_call:\n    inputs:\n.*?    secrets:\n      STAGING_BROWSER_QA_DINGTALK_WEBHOOK:\n        required: true\b",
+        )
         self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
         self.assertEqual(len(re.findall(r"(?m)^concurrency:\s*$", uncommented)), 1)
         self.assertRegex(uncommented, r"(?ms)^concurrency:\n  group: .+\n  queue: max\n  cancel-in-progress: false\b")
@@ -290,7 +298,6 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         cleanup = step_block(text, "Execute cleanup browser QA job")
 
         self.assertNotRegex(text, r"@gmail\.com\b")
-        self.assertNotIn("${{ secrets.", text)
         self.assertNotRegex(text, r"(?m)^  QA_GMAIL_BASE:")
         self.assertRegex(validate, r"(?m)^          QA_GMAIL_BASE: \$\{\{ vars\.GCP_BROWSER_QA_GMAIL_BASE \}\}$")
         self.assertRegex(main, r"(?m)^          QA_GMAIL_BASE: \$\{\{ vars\.GCP_BROWSER_QA_GMAIL_BASE \}\}$")
@@ -319,6 +326,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             "Push browser QA image",
             "Update browser QA Cloud Run resources",
             "Fetch sanitized manifest and write summary",
+            "Send terminal Browser QA report to DingTalk",
             "Fail standalone workflow for actionable QA states",
         ]:
             self.assertNotIn("QA_GMAIL_BASE", step_block(text, step))
@@ -338,6 +346,34 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("summary", summary)
         self.assertIn("validate_root_manifest", summary)
         self.assertNotIn("main_record.get(\"result\"", summary)
+
+    def test_manifest_exports_the_complete_sanitized_notification_contract(self):
+        text = workflow_text()
+        summary = step_block(text, "Fetch sanitized manifest and write summary")
+        for output_name in [
+            "manifest_status",
+            "replay_status",
+            "exploration_status",
+            "exploration_actions",
+            "finding_count",
+            "cleanup_status",
+            "gcs_uri",
+        ]:
+            self.assertRegex(summary, rf"(?m)(echo|output\.write).*{output_name}=")
+
+        outputs, _rendered = run_summary_python(summarized_root_manifest("passed"))
+        self.assertEqual(
+            outputs,
+            {
+                "manifest_status": "passed",
+                "replay_status": "passed",
+                "exploration_status": "not_started",
+                "exploration_actions": "0",
+                "finding_count": "0",
+                "cleanup_status": "unknown",
+                "gcs_uri": "gs://flatkey-browser-qa-reports/runs/12345/manifest.json",
+            },
+        )
 
     def test_summary_status_priority_keeps_cleanup_failure_stronger_than_root_status(self):
         text = workflow_text()
@@ -359,20 +395,20 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         ]
         for root_status, main_outcome, cleanup_outcome, expected in cases:
             with self.subTest(root_status=root_status, main_outcome=main_outcome, cleanup_outcome=cleanup_outcome):
-                status, rendered = run_summary_python(
+                outputs, rendered = run_summary_python(
                     summarized_root_manifest(root_status),
                     main_outcome=main_outcome,
                     cleanup_outcome=cleanup_outcome,
                 )
-                self.assertEqual(status, expected)
+                self.assertEqual(outputs["manifest_status"], expected)
                 self.assertIn(f"- status: {expected}", rendered)
 
-        status, rendered = run_summary_python(
+        outputs, rendered = run_summary_python(
             {**summarized_root_manifest("passed"), "schema_version": 99},
             main_outcome="success",
             cleanup_outcome="success",
         )
-        self.assertEqual(status, "infrastructure_failed")
+        self.assertEqual(outputs["manifest_status"], "infrastructure_failed")
         self.assertIn("- replay status: unknown", rendered)
 
     def test_standalone_failures_cover_cleanup_infra_replay_and_findings_states(self):
@@ -384,10 +420,43 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
 
     def test_no_secret_value_is_placed_in_arguments_outputs_inputs_or_summary(self):
         text = workflow_text()
-        self.assertNotIn("${{ secrets.", text)
+        notification_name = "Send terminal Browser QA report to DingTalk"
+        self.assertIn(f"- name: {notification_name}", text)
+        notification = step_block(text, notification_name)
+        self.assertRegex(
+            notification,
+            r"(?m)^          DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}$",
+        )
+        without_notification = text.replace(notification, "")
+        self.assertNotIn("${{ secrets.", without_notification)
         self.assertNotRegex(text, r"(?i)--(set-env-vars|args|update-env-vars)=[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
         self.assertNotRegex(text, r"(?i)GITHUB_OUTPUT[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
         self.assertNotRegex(text, r"(?i)GITHUB_STEP_SUMMARY[^\n]*(password|cookie|authorization|api[_-]?key|token|secret|email)")
+
+    def test_terminal_dingtalk_notification_is_always_before_the_final_gate(self):
+        text = workflow_text()
+        notification_name = "Send terminal Browser QA report to DingTalk"
+        self.assertIn(f"- name: {notification_name}", text)
+        notification = step_block(text, notification_name)
+        self.assertRegex(notification, r"(?m)^        if: always\(\)$")
+        self.assertNotIn("continue-on-error", notification)
+        self.assertIn("python3 -B -m scripts.browser_qa.flatkey_browser_qa.dingtalk", notification)
+        for safe_env in [
+            "BROWSER_QA_FINAL_STATUS",
+            "BROWSER_QA_REPLAY_STATUS",
+            "BROWSER_QA_EXPLORATION_STATUS",
+            "BROWSER_QA_EXPLORATION_ACTIONS",
+            "BROWSER_QA_FINDING_COUNT",
+            "BROWSER_QA_CLEANUP_STATUS",
+            "BROWSER_QA_GITHUB_RUN_URL",
+            "BROWSER_QA_GCS_URI",
+        ]:
+            self.assertIn(safe_env, notification)
+        self.assertIn(
+            "format('gs://browser-qa-report-unavailable/runs/{0}/manifest.json', github.run_id)",
+            notification,
+        )
+        self.assertLess(text.index(f"- name: {notification_name}"), text.index("- name: Fail standalone workflow for actionable QA states"))
 
     def test_staging_deploy_calls_same_commit_browser_qa_core_after_successful_deploy(self):
         text = staging_deploy_workflow_text()
@@ -396,6 +465,10 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertRegex(qa, r"(?m)^    needs: deploy$")
         self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
         self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\b")
+        self.assertRegex(
+            qa,
+            r"(?ms)^    secrets:\n      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}\s*$",
+        )
         self.assertNotRegex(qa, r"(?m)^    if: .*(always|failure|cancelled)\(")
         self.assertNotIn("continue-on-error", qa)
         self.assertNotRegex(qa, r"(?i)\b(rollback|restore|update-traffic|traffic restoration)\b")

@@ -282,3 +282,5 @@ jobs:
       id-token: write
     with:
       mode: core
+    secrets:
+      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_WEBHOOK }}
