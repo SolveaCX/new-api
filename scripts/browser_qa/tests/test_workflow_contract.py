@@ -1,3 +1,5 @@
+import base64
+import copy
 import json
 import pathlib
 import re
@@ -141,6 +143,29 @@ def summarized_root_manifest(status, *, summary=None):
     }
 
 
+def safe_finding_summaries():
+    return [
+        {
+            "severity": "high",
+            "title": "Checkout exposes a blocking validation error",
+            "confidence": "high",
+            "page_path": "/checkout",
+        },
+        {
+            "severity": "medium",
+            "title": "付款页展示中文错误",
+            "confidence": "medium",
+            "page_path": "/billing/payment",
+        },
+    ]
+
+
+def canonical_finding_summaries_b64(summaries):
+    return base64.urlsafe_b64encode(
+        json.dumps(summaries, ensure_ascii=False, separators=(",", ":")).encode()
+    ).decode("ascii")
+
+
 class BrowserQaWorkflowContractTests(unittest.TestCase):
     def test_workflow_supports_manual_dispatch_and_reusable_call_with_minimal_permissions_and_serial_concurrency(self):
         text = workflow_text()
@@ -170,6 +195,29 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn("DISPATCH_ORIGINAL_RUN_ID", validate)
         self.assertRegex(validate, r"case \"\$\{DISPATCH_MODE\}\" in[\s\S]*normal\|core\|cleanup-only")
         self.assertRegex(validate, r"if \[\[ ! \"\$\{DISPATCH_ORIGINAL_RUN_ID\}\" =~ \^\[0-9\]\+\$ \]\]; then")
+
+    def test_fail_on_findings_is_boolean_dispatch_and_call_input_validated_through_env(self):
+        text = workflow_text()
+        self.assertRegex(
+            text,
+            r"(?ms)^      fail_on_findings:\n"
+            r"        description: \"Fail the workflow when browser QA reports sanitized exploratory findings\"\n"
+            r"        required: false\n"
+            r"        default: false\n"
+            r"        type: boolean\b",
+        )
+        self.assertRegex(
+            text,
+            r"(?ms)^  workflow_call:\n    inputs:\n.*?      fail_on_findings:\n"
+            r"        description: \"Fail the workflow when browser QA reports sanitized exploratory findings\"\n"
+            r"        required: false\n"
+            r"        default: false\n"
+            r"        type: boolean\b",
+        )
+        validate = step_block(text, "Validate dispatch inputs")
+        self.assertRegex(validate, r"(?m)^          DISPATCH_FAIL_ON_FINDINGS: \$\{\{ inputs\.fail_on_findings \}\}$")
+        self.assertRegex(validate, r"case \"\$\{DISPATCH_FAIL_ON_FINDINGS\}\" in[\s\S]*true\|false")
+        self.assertIn("echo \"FAIL_ON_FINDINGS=${DISPATCH_FAIL_ON_FINDINGS}\"", validate)
 
     def test_dispatch_inputs_are_not_interpolated_inside_shell_run_blocks(self):
         for index, block in enumerate(run_blocks(workflow_text())):
@@ -360,6 +408,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             "finding_count",
             "cleanup_status",
             "gcs_uri",
+            "finding_summaries_b64",
         ]:
             self.assertRegex(summary, rf"(?m)(echo|output\.write).*{output_name}=")
 
@@ -374,8 +423,68 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
                 "finding_count": "0",
                 "cleanup_status": "unknown",
                 "gcs_uri": "gs://flatkey-browser-qa-reports/runs/12345/manifest.json",
+                "finding_summaries_b64": "W10=",
             },
         )
+
+    def test_summary_python_exports_canonical_safe_finding_summaries_base64(self):
+        summaries = safe_finding_summaries()
+        manifest = summarized_root_manifest(
+            "findings_detected",
+            summary={
+                "replay_status": "passed",
+                "exploration_status": "passed",
+                "exploration_actions": 7,
+                "finding_count": len(summaries),
+                "finding_summaries": summaries,
+            },
+        )
+
+        outputs, _rendered = run_summary_python(
+            manifest,
+            main_outcome="failure",
+            cleanup_outcome="success",
+        )
+
+        encoded = outputs["finding_summaries_b64"]
+        self.assertEqual(encoded, canonical_finding_summaries_b64(summaries))
+        self.assertEqual(
+            json.loads(base64.urlsafe_b64decode(encoded.encode("ascii")).decode()),
+            summaries,
+        )
+
+    def test_summary_python_rejects_malicious_finding_summary_fields_as_infrastructure_failed(self):
+        base_manifest = summarized_root_manifest(
+            "findings_detected",
+            summary={
+                "replay_status": "passed",
+                "exploration_status": "passed",
+                "exploration_actions": 7,
+                "finding_count": 1,
+                "finding_summaries": safe_finding_summaries()[:1],
+            },
+        )
+        cases = [
+            ("extra_field", {"extra": "nope"}),
+            ("info_severity", {"severity": "info"}),
+            ("bad_confidence", {"confidence": "certain"}),
+            ("multiline_title", {"title": "line one\nline two"}),
+            ("long_title", {"title": "x" * 161}),
+            ("query_path", {"page_path": "/checkout?token=secret"}),
+            ("fragment_path", {"page_path": "/checkout#card"}),
+            ("relative_path", {"page_path": "checkout"}),
+        ]
+        for name, patch in cases:
+            with self.subTest(name=name):
+                manifest = copy.deepcopy(base_manifest)
+                manifest["executions"][0]["summary"]["finding_summaries"][0].update(patch)
+                outputs, _rendered = run_summary_python(
+                    manifest,
+                    main_outcome="failure",
+                    cleanup_outcome="success",
+                )
+                self.assertEqual(outputs["manifest_status"], "infrastructure_failed")
+                self.assertEqual(outputs["finding_summaries_b64"], "W10=")
 
     def test_summary_status_priority_keeps_cleanup_failure_stronger_than_root_status(self):
         text = workflow_text()
@@ -420,6 +529,13 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             self.assertIn(state, gate)
         self.assertNotRegex(text, r"(?i)release gate|needs: .*deploy|environment:")
 
+    def test_fail_on_findings_gate_is_alert_only_when_false_and_blocking_when_true(self):
+        gate = step_block(workflow_text(), "Fail standalone workflow for actionable QA states")
+        self.assertIn('fail_on_findings="${FAIL_ON_FINDINGS:-false}"', gate)
+        self.assertRegex(gate, r"findings_detected\)[\s\S]*if \[\[ \"\$\{fail_on_findings\}\" == \"true\" \]\]; then[\s\S]*exit 1")
+        self.assertRegex(gate, r"findings_detected\)[\s\S]*alert-only[\s\S]*exit 0")
+        self.assertRegex(gate, r"cleanup_failed\|infrastructure_failed\|replay_failed\)[\s\S]*exit 1")
+
     def test_no_secret_value_is_placed_in_arguments_outputs_inputs_or_summary(self):
         text = workflow_text()
         notification_name = "Send terminal Browser QA report to DingTalk"
@@ -453,11 +569,14 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             "BROWSER_QA_EXPLORATION_STATUS",
             "BROWSER_QA_EXPLORATION_ACTIONS",
             "BROWSER_QA_FINDING_COUNT",
+            "BROWSER_QA_FINDING_SUMMARIES_B64",
             "BROWSER_QA_CLEANUP_STATUS",
             "BROWSER_QA_GITHUB_RUN_URL",
             "BROWSER_QA_GCS_URI",
         ]:
             self.assertIn(safe_env, notification)
+        self.assertIn("BROWSER_QA_FINDING_SUMMARIES_B64: ${{ steps.manifest.outputs.finding_summaries_b64 || 'W10=' }}", notification)
+        self.assertNotRegex(notification, r"(?i)result\.json|evidence|screenshots|codex-events|stderr")
         self.assertIn(
             "format('gs://browser-qa-report-unavailable/runs/{0}/manifest.json', github.run_id)",
             notification,
@@ -470,7 +589,7 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
 
         self.assertRegex(qa, r"(?m)^    needs: deploy$")
         self.assertRegex(qa, r"(?m)^    uses: \./\.github/workflows/gcp-browser-qa\.yml$")
-        self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\b")
+        self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\n      fail_on_findings: false\b")
         self.assertRegex(
             qa,
             r"(?ms)^    secrets:\n"

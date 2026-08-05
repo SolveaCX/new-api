@@ -16,6 +16,11 @@ on:
         description: "Required cleanup-only original run id"
         required: false
         type: string
+      fail_on_findings:
+        description: "Fail the workflow when browser QA reports sanitized exploratory findings"
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       mode:
@@ -26,6 +31,11 @@ on:
         description: "Required cleanup-only original run id"
         required: false
         type: string
+      fail_on_findings:
+        description: "Fail the workflow when browser QA reports sanitized exploratory findings"
+        required: false
+        default: false
+        type: boolean
     secrets:
       STAGING_BROWSER_QA_DINGTALK_WEBHOOK:
         required: true
@@ -64,6 +74,7 @@ jobs:
         env:
           DISPATCH_MODE: ${{ inputs.mode }}
           DISPATCH_ORIGINAL_RUN_ID: ${{ inputs.original_run_id }}
+          DISPATCH_FAIL_ON_FINDINGS: ${{ inputs.fail_on_findings }}
           TRUSTED_GITHUB_RUN_ID: ${{ github.run_id }}
           QA_GMAIL_BASE: ${{ vars.GCP_BROWSER_QA_GMAIL_BASE }}
         run: |
@@ -73,6 +84,14 @@ jobs:
               ;;
             *)
               echo "mode must be normal, core, or cleanup-only" >&2
+              exit 2
+              ;;
+          esac
+          case "${DISPATCH_FAIL_ON_FINDINGS}" in
+            true|false)
+              ;;
+            *)
+              echo "fail_on_findings must be true or false" >&2
               exit 2
               ;;
           esac
@@ -110,6 +129,7 @@ jobs:
           {
             echo "EFFECTIVE_RUN_ID=${EFFECTIVE_RUN_ID}"
             echo "BROWSER_QA_MODE=${BROWSER_QA_MODE}"
+            echo "FAIL_ON_FINDINGS=${DISPATCH_FAIL_ON_FINDINGS}"
             echo "MAIN_EXECUTION_ID=${MAIN_EXECUTION_ID}"
             echo "CLEANUP_EXECUTION_ID=${CLEANUP_EXECUTION_ID}"
           } >> "$GITHUB_ENV"
@@ -317,6 +337,7 @@ jobs:
               echo "exploration_status=unknown"
               echo "exploration_actions=0"
               echo "finding_count=0"
+              echo "finding_summaries_b64=W10="
               echo "cleanup_status=${cleanup_status}"
               echo "gcs_uri=${gcs_uri}"
             } >> "$GITHUB_OUTPUT"
@@ -333,13 +354,56 @@ jobs:
             exit 0
           fi
           python3 - "${manifest_path}" "${gcs_uri}" "${{ steps.main.outcome || 'skipped' }}" "${cleanup_outcome}" <<'PY'
+          import base64
           import json
           import os
           import sys
+          import unicodedata
 
           ALLOWED_ROOT_STATUS = {"passed", "findings_detected", "replay_failed", "infrastructure_failed", "cleanup_failed"}
           ALLOWED_REPLAY = {"passed", "failed"}
           ALLOWED_EXPLORATION = {"passed", "failed", "not_started"}
+          ALLOWED_FINDING_SEVERITY = {"critical", "high", "medium", "low"}
+          ALLOWED_FINDING_CONFIDENCE = {"low", "medium", "high"}
+          EMPTY_FINDING_SUMMARIES_B64 = "W10="
+
+          def finding_summaries_b64(summaries):
+              return base64.urlsafe_b64encode(
+                  json.dumps(summaries, ensure_ascii=False, separators=(",", ":")).encode()
+              ).decode("ascii")
+
+          def has_control_character(value):
+              return any(unicodedata.category(char).startswith("C") for char in value)
+
+          def validate_finding_summaries(summaries):
+              if not isinstance(summaries, list) or len(summaries) > 3:
+                  raise ValueError("main summary finding_summaries invalid")
+              for item in summaries:
+                  if not isinstance(item, dict) or set(item) != {"severity", "title", "confidence", "page_path"}:
+                      raise ValueError("main summary finding_summaries item invalid")
+                  if item["severity"] not in ALLOWED_FINDING_SEVERITY:
+                      raise ValueError("main summary finding_summaries severity invalid")
+                  if item["confidence"] not in ALLOWED_FINDING_CONFIDENCE:
+                      raise ValueError("main summary finding_summaries confidence invalid")
+                  title = item["title"]
+                  if (
+                      not isinstance(title, str)
+                      or not title
+                      or len(title) > 160
+                      or title != " ".join(title.split())
+                      or has_control_character(title)
+                  ):
+                      raise ValueError("main summary finding_summaries title invalid")
+                  page_path = item["page_path"]
+                  if (
+                      not isinstance(page_path, str)
+                      or not page_path.startswith("/")
+                      or "?" in page_path
+                      or "#" in page_path
+                      or has_control_character(page_path)
+                  ):
+                      raise ValueError("main summary finding_summaries page_path invalid")
+              return summaries
 
           def validate_root_manifest(manifest, run_id):
               if not isinstance(manifest, dict) or manifest.get("run_id") != run_id or manifest.get("schema_version") != 1:
@@ -357,12 +421,19 @@ jobs:
               if not isinstance(main, dict):
                   raise ValueError("latest.main_execution_id record missing")
               summary = main.get("summary")
-              if not isinstance(summary, dict) or set(summary) != {"replay_status", "exploration_status", "exploration_actions", "finding_count"}:
+              legacy_fields = {"replay_status", "exploration_status", "exploration_actions", "finding_count"}
+              current_fields = legacy_fields | {"finding_summaries"}
+              if not isinstance(summary, dict) or set(summary) not in (legacy_fields, current_fields):
                   raise ValueError("main summary invalid")
               if summary["replay_status"] not in ALLOWED_REPLAY or summary["exploration_status"] not in ALLOWED_EXPLORATION:
                   raise ValueError("main summary status invalid")
               if any(not isinstance(summary[name], int) or isinstance(summary[name], bool) or summary[name] < 0 for name in ["exploration_actions", "finding_count"]):
                   raise ValueError("main summary count invalid")
+              if "finding_summaries" not in summary:
+                  summary = dict(summary)
+                  summary["finding_summaries"] = []
+              else:
+                  validate_finding_summaries(summary["finding_summaries"])
               cleanup = None
               cleanup_id = latest.get("cleanup_execution_id")
               if cleanup_id is not None:
@@ -374,7 +445,7 @@ jobs:
           manifest_path, gcs_uri, main_outcome, cleanup_outcome = sys.argv[1:5]
           manifest_error = None
           root_status = "infrastructure_failed"
-          main_summary = {"replay_status": "unknown", "exploration_status": "unknown", "exploration_actions": 0, "finding_count": 0}
+          main_summary = {"replay_status": "unknown", "exploration_status": "unknown", "exploration_actions": 0, "finding_count": 0, "finding_summaries": []}
           cleanup_record = {}
           try:
               with open(manifest_path, encoding="utf-8") as handle:
@@ -393,6 +464,11 @@ jobs:
               status = "infrastructure_failed"
           else:
               status = root_status
+          encoded_finding_summaries = (
+              finding_summaries_b64(main_summary["finding_summaries"])
+              if manifest_error is None and isinstance(main_summary.get("finding_summaries"), list)
+              else EMPTY_FINDING_SUMMARIES_B64
+          )
           summary = [
               "### Browser QA",
               f"- status: {status}",
@@ -409,6 +485,7 @@ jobs:
               output.write(f"exploration_status={main_summary['exploration_status']}\n")
               output.write(f"exploration_actions={main_summary['exploration_actions']}\n")
               output.write(f"finding_count={main_summary['finding_count']}\n")
+              output.write(f"finding_summaries_b64={encoded_finding_summaries}\n")
               output.write(f"cleanup_status={cleanup_record.get('status', 'unknown')}\n")
               output.write(f"gcs_uri={gcs_uri}\n")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
@@ -426,6 +503,7 @@ jobs:
           BROWSER_QA_EXPLORATION_STATUS: ${{ steps.manifest.outputs.exploration_status || 'unknown' }}
           BROWSER_QA_EXPLORATION_ACTIONS: ${{ steps.manifest.outputs.exploration_actions || '0' }}
           BROWSER_QA_FINDING_COUNT: ${{ steps.manifest.outputs.finding_count || '0' }}
+          BROWSER_QA_FINDING_SUMMARIES_B64: ${{ steps.manifest.outputs.finding_summaries_b64 || 'W10=' }}
           BROWSER_QA_CLEANUP_STATUS: ${{ steps.manifest.outputs.cleanup_status || 'unknown' }}
           BROWSER_QA_GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BROWSER_QA_GCS_URI: ${{ steps.manifest.outputs.gcs_uri || format('gs://browser-qa-report-unavailable/runs/{0}/manifest.json', github.run_id) }}
@@ -437,11 +515,20 @@ jobs:
         run: |
           set -euo pipefail
           final_status="${{ steps.manifest.outputs.manifest_status || 'infrastructure_failed' }}"
+          fail_on_findings="${FAIL_ON_FINDINGS:-false}"
           case "${final_status}" in
             passed)
               exit 0
               ;;
-            cleanup_failed|infrastructure_failed|replay_failed|findings_detected)
+            findings_detected)
+              if [[ "${fail_on_findings}" == "true" ]]; then
+                echo "Browser QA completed with findings_detected" >&2
+                exit 1
+              fi
+              echo "Browser QA completed with findings_detected; alert-only because fail_on_findings=false" >&2
+              exit 0
+              ;;
+            cleanup_failed|infrastructure_failed|replay_failed)
               echo "Browser QA completed with ${final_status}" >&2
               exit 1
               ;;
