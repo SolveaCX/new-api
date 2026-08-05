@@ -22,14 +22,15 @@ import {
   listRecallRecipients,
   recallCampaignKeys,
 } from '../api'
+import { getRecallDeliveryErrorCopyKey } from '../copy'
 import {
   formatRecallCampaignType,
+  formatRecallCurrencyAmount,
   getRecallEmailLocaleStatus,
   getRecallPageCount,
   getRecallRecipientRetry,
   isRecallPromotionCampaign,
 } from '../helpers'
-import { getRecallDeliveryErrorCopyKey } from '../copy'
 import type {
   RecallCampaignAction,
   RecallCampaignStatus,
@@ -39,6 +40,8 @@ import type {
 } from '../types'
 import { CampaignActionDialog } from './campaign-action-dialog'
 import { CampaignEditor } from './campaign-editor'
+import { CampaignExclusionDialog } from './campaign-exclusion-dialog'
+import { CampaignMetricCardSection } from './campaign-metric-drawer'
 import { CampaignPreviewDialog } from './campaign-preview-dialog'
 
 const DETAIL_PAGE_SIZE = 100
@@ -55,9 +58,10 @@ function getRecallActivationBlockerReason(
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function getRecallActivationReadiness(
-  stages: RecallEmailStage[]
-): { ready: boolean; blockers: RecallEmailLocalizationBlocker[] } {
+export function getRecallActivationReadiness(stages: RecallEmailStage[]): {
+  ready: boolean
+  blockers: RecallEmailLocalizationBlocker[]
+} {
   const blockers: RecallEmailLocalizationBlocker[] = []
   const allowedLocales = new Set(activationLocales)
   for (const stage of stages) {
@@ -116,6 +120,7 @@ interface CampaignDetailProps {
 export function CampaignDetail(props: CampaignDetailProps) {
   const { t } = useTranslation()
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [exclusionsOpen, setExclusionsOpen] = useState(false)
   const [recipientPage, setRecipientPage] = useState(1)
   const [eventPage, setEventPage] = useState(1)
   const [focusBlocker, setFocusBlocker] =
@@ -206,6 +211,9 @@ export function CampaignDetail(props: CampaignDetailProps) {
         <Button variant='outline' onClick={() => setPreviewOpen(true)}>
           {t('Preview')}
         </Button>
+        <Button variant='outline' onClick={() => setExclusionsOpen(true)}>
+          {t('Manage exclusions')}
+        </Button>
         <Button variant='outline' onClick={downloadExport}>
           {t('Export CSV')}
         </Button>
@@ -232,9 +240,7 @@ export function CampaignDetail(props: CampaignDetailProps) {
               <Button
                 type='button'
                 variant='outline'
-                onClick={() =>
-                  setFocusBlocker(activationReadiness.blockers[0])
-                }
+                onClick={() => setFocusBlocker(activationReadiness.blockers[0])}
               >
                 {t('Generate or fix translations')}
               </Button>
@@ -247,61 +253,15 @@ export function CampaignDetail(props: CampaignDetailProps) {
             <CardContent>
               {metrics ? (
                 <>
-                  <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
-                    {[
-                      ['Candidates', metrics.candidate_count],
-                      ['Enrolled', metrics.enrolled_count],
-                      ['Excluded', metrics.excluded_count],
-                      ['Observed clicks', metrics.observed_click_count],
-                      ...(isPromotion
-                        ? [
-                            ['Direct conversions', metrics.direct_count],
-                            ['Assisted conversions', metrics.assisted_count],
-                            ['No-coupon conversions', metrics.no_coupon_count],
-                          ]
-                        : []),
-                      ['Accepted messages', metrics.messages_accepted_count],
-                    ].map(([label, value]) => (
-                      <div
-                        className='rounded-lg border p-3'
-                        key={String(label)}
-                      >
-                        <div className='text-muted-foreground text-xs'>
-                          {t(String(label))}
-                        </div>
-                        <div className='text-xl font-semibold'>{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {isPromotion ? (
-                    <div className='mt-4 grid gap-3 md:grid-cols-2'>
-                      {metrics.currency_metrics.map((currency) => (
-                        <div
-                          className='rounded-lg border p-3'
-                          key={currency.currency}
-                        >
-                          <h4 className='font-medium'>
-                            {currency.currency.toUpperCase()}
-                          </h4>
-                          <p>
-                            {t('Payment amount')}: {currency.payment_amount}
-                          </p>
-                          <p>
-                            {t('Discount amount')}: {currency.discount_amount}
-                          </p>
-                          <p>
-                            {t('Direct / assisted / no coupon')}:{' '}
-                            {currency.direct_count} / {currency.assisted_count}{' '}
-                            / {currency.no_coupon_count}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
+                  <CampaignMetricCardSection
+                    campaignId={props.campaignId}
+                    metricCards={metrics.metric_cards}
+                  />
+                  {!isPromotion ? (
                     <p className='text-muted-foreground mt-4 text-sm'>
                       {t('Promotion conversion metrics are not applicable.')}
                     </p>
-                  )}
+                  ) : null}
                 </>
               ) : (
                 <p>{t('Loading')}</p>
@@ -372,8 +332,10 @@ export function CampaignDetail(props: CampaignDetailProps) {
                             : '-'}
                         </div>
                         <div>
-                          {recipient.conversion_currency.toUpperCase()}{' '}
-                          {recipient.conversion_amount || 0}
+                          {formatRecallCurrencyAmount(
+                            recipient.conversion_currency,
+                            recipient.conversion_amount
+                          ) || '-'}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -519,6 +481,11 @@ export function CampaignDetail(props: CampaignDetailProps) {
           campaignId={props.campaignId}
           open={previewOpen}
           onOpenChange={setPreviewOpen}
+        />
+        <CampaignExclusionDialog
+          campaignId={props.campaignId}
+          open={exclusionsOpen}
+          onOpenChange={setExclusionsOpen}
         />
         {dialog ? (
           <CampaignActionDialog

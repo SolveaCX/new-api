@@ -12,6 +12,10 @@ import (
 )
 
 func SetApiRouter(router *gin.Engine) {
+	// Mailbox image proxies may refetch the same pixel; keep this response
+	// neutral by bypassing the shared API group's global rate limiter.
+	router.GET("/api/recall/open.gif", controller.TrackRecallEmailOpen)
+
 	apiRouter := router.Group("/api")
 	apiRouter.Use(middleware.RouteTag("api"))
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -220,9 +224,14 @@ func SetApiRouter(router *gin.Engine) {
 			recallCampaignRoute.GET("/smtp", controller.GetRecallActivitySMTP)
 			recallCampaignRoute.PUT("/smtp", controller.UpdateRecallActivitySMTP)
 			recallCampaignRoute.GET("/audience-users", controller.ListRecallAudienceUsers)
+			recallCampaignRoute.POST("/:id/exclusions/preview", controller.PreviewRecallCampaignExclusions)
+			recallCampaignRoute.GET("/:id/exclusions/batches/:batch_id", controller.GetRecallCampaignExclusionBatch)
+			recallCampaignRoute.POST("/:id/exclusions/batches/:batch_id/confirm", controller.ConfirmRecallCampaignExclusionBatch)
+			recallCampaignRoute.POST("/:id/email-translations/generate", middleware.CriticalRateLimit(), controller.GenerateRecallEmailTranslations)
+			recallCampaignRoute.GET("/:id/email-translations/tasks/latest", controller.GetLatestRecallEmailTranslationTask)
+			recallCampaignRoute.GET("/:id/email-translations/tasks/:task_id", controller.GetRecallEmailTranslationTask)
 			recallCampaignRoute.GET("/:id", controller.GetRecallCampaign)
 			recallCampaignRoute.PUT("/:id", controller.UpdateRecallCampaign)
-			recallCampaignRoute.POST("/:id/email-translations/generate", middleware.CriticalRateLimit(), controller.GenerateRecallEmailTranslations)
 			recallCampaignRoute.POST("/:id/preview", controller.PreviewRecallCampaign)
 			recallCampaignRoute.POST("/:id/activate", controller.ActivateRecallCampaign)
 			recallCampaignRoute.POST("/:id/pause", controller.PauseRecallCampaign)
@@ -232,6 +241,8 @@ func SetApiRouter(router *gin.Engine) {
 			recallCampaignRoute.GET("/:id/recipients", controller.ListRecallRecipients)
 			recallCampaignRoute.GET("/:id/events", controller.ListRecallEvents)
 			recallCampaignRoute.GET("/:id/metrics", controller.GetRecallCampaignMetrics)
+			recallCampaignRoute.GET("/:id/metric-users", controller.GetRecallMetricUsers)
+			recallCampaignRoute.GET("/:id/metric-users/export", controller.ExportRecallMetricUsers)
 			recallCampaignRoute.GET("/:id/export", controller.ExportRecallCampaign)
 			recallCampaignRoute.POST("/:id/recipients/:rid/retry", controller.RetryRecallRecipient)
 		}
@@ -518,6 +529,7 @@ func SetApiRouter(router *gin.Engine) {
 			modelsRoute.GET("/sync_upstream/preview", controller.SyncUpstreamPreview)
 			modelsRoute.POST("/sync_upstream", controller.SyncUpstreamModels)
 			modelsRoute.GET("/missing", controller.GetMissingModels)
+			modelsRoute.GET("/catalog-readiness", controller.GetModelCatalogReadiness)
 			modelsRoute.GET("/", controller.GetAllModelsMeta)
 			modelsRoute.GET("/search", controller.SearchModelsMeta)
 			modelsRoute.GET("/:id", controller.GetModelMeta)

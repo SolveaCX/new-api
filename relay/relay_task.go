@@ -19,6 +19,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -34,6 +35,14 @@ type TaskSubmitResult struct {
 type TaskPreflightResult struct {
 	Platform constant.TaskPlatform
 	Quota    int
+}
+
+type taskRequestValidatorAfterModelMapping interface {
+	ValidateRequestAfterModelMapping(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError
+}
+
+type taskPriceDataValidator interface {
+	ValidateTaskPriceData(info *relaycommon.RelayInfo) *dto.TaskError
 }
 
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
@@ -170,8 +179,11 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
 	}
 	adaptor.Init(info)
-	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
-		return nil, taskErr
+	postMappingValidator, validateAfterMapping := adaptor.(taskRequestValidatorAfterModelMapping)
+	if !validateAfterMapping {
+		if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+			return nil, taskErr
+		}
 	}
 
 	// 2. 确定模型名称
@@ -186,6 +198,11 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
+	if validateAfterMapping {
+		if taskErr := postMappingValidator.ValidateRequestAfterModelMapping(c, info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
 
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
@@ -199,6 +216,11 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}
 	info.PriceData = priceData
+	if validator, ok := adaptor.(taskPriceDataValidator); ok {
+		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
@@ -211,11 +233,7 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 
 	// 6. 将 OtherRatios 应用到基础额度
 	if !common.StringsContains(constant.TaskPricePatches, modelName) {
-		for _, ra := range info.PriceData.OtherRatios {
-			if ra != 1.0 {
-				info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
-			}
-		}
+		applyTaskOtherRatios(&info.PriceData)
 	}
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
@@ -239,8 +257,14 @@ func ExecutePreparedTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, pref
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
 	}
 	adaptor.Init(info)
-	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
-		return nil, taskErr
+	if postMappingValidator, ok := adaptor.(taskRequestValidatorAfterModelMapping); ok {
+		if taskErr := postMappingValidator.ValidateRequestAfterModelMapping(c, info); taskErr != nil {
+			return nil, taskErr
+		}
+	} else {
+		if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+			return nil, taskErr
+		}
 	}
 
 	// 8. 构建请求体
@@ -316,6 +340,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	return ExecutePreparedTaskSubmit(c, info, preflight)
 }
 
+func applyTaskOtherRatios(priceData *types.PriceData) {
+	for _, ratio := range priceData.OtherRatios {
+		if ratio != 1.0 {
+			priceData.Quota = int(float64(priceData.Quota) * ratio)
+		}
+	}
+}
+
 func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) *dto.TaskError {
 	statusCode := http.StatusInternalServerError
 	if resp != nil {
@@ -326,7 +358,7 @@ func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) 
 		responseBody, _ = io.ReadAll(resp.Body)
 	}
 	message := string(responseBody)
-	if string(platform) == strconv.Itoa(constant.ChannelTypeBytePlus) {
+	if channelType, err := strconv.Atoi(string(platform)); err == nil && taskcommon.ShouldWhitelabelChannelType(channelType) {
 		message = "task failed at upstream provider"
 	}
 	return service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
@@ -452,6 +484,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	}
 
 	isOpenAIVideoAPI := isOpenAIVideoFetchPath(c.Request.URL.Path)
+	isVideoToMusicAPI := isVideoToMusicFetchPath(c.Request.URL.Path)
 	isGenerationTasksAPI := isGenerationTasksFetchPath(c.Request.URL.Path)
 
 	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
@@ -464,6 +497,24 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		respBody, err = generationTaskRespBody(originTask)
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if isVideoToMusicAPI {
+		adaptor := GetTaskAdaptor(originTask.Platform)
+		if adaptor == nil {
+			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
+			return
+		}
+		converter, ok := adaptor.(channel.VideoToMusicConverter)
+		if !ok {
+			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
+			return
+		}
+		respBody, err = converter.ConvertToVideoToMusic(originTask)
+		if err != nil {
+			taskResp = service.TaskErrorWrapper(err, "convert_to_video_to_music_failed", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -504,6 +555,10 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 
 func isOpenAIVideoFetchPath(path string) bool {
 	return strings.HasPrefix(path, "/v1/videos/")
+}
+
+func isVideoToMusicFetchPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/video-to-music/")
 }
 
 func isGenerationTasksFetchPath(path string) bool {

@@ -34,9 +34,6 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:linkname controllerAssetTaskModelCommonKeyCol github.com/QuantumNous/new-api/model.commonKeyCol
-var controllerAssetTaskModelCommonKeyCol string
-
 //go:linkname registerTaskAdaptorForTest github.com/QuantumNous/new-api/relay.registerTaskAdaptorForTest
 func registerTaskAdaptorForTest(platform constant.TaskPlatform, adaptor channel.TaskAdaptor) func()
 
@@ -1673,7 +1670,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	oldUsingSQLite := common.UsingSQLite
 	oldUsingMySQL := common.UsingMySQL
 	oldUsingPostgreSQL := common.UsingPostgreSQL
-	oldCommonKeyCol := controllerAssetTaskModelCommonKeyCol
+	oldCommonKeyCol := modelCommonKeyCol
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Task{}, &model.TaskAcceptedAccountingLedger{}, &model.TaskAcceptedAccountingLogLedger{}, &model.TemporaryChannelModelSpend{}, &model.Asset{}, &model.AssetBinding{}, &model.Ability{}, &model.User{}, &model.Token{}, &model.Channel{}, &model.Log{}, &model.SubscriptionPlan{}, &model.UserSubscription{}, &model.UserSubscriptionContract{}, &model.SubscriptionPreConsumeRecord{}, &model.SubscriptionDiscountAccount{}, &model.SubscriptionDiscountEntry{}))
@@ -1686,7 +1683,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 	common.UsingSQLite = true
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
-	controllerAssetTaskModelCommonKeyCol = "`key`"
+	modelCommonKeyCol = "`key`"
 	return func() {
 		model.DB = oldDB
 		model.LOG_DB = oldLogDB
@@ -1695,7 +1692,7 @@ func useControllerAssetTaskDBForTest(t *testing.T) func() {
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
 		common.UsingPostgreSQL = oldUsingPostgreSQL
-		controllerAssetTaskModelCommonKeyCol = oldCommonKeyCol
+		modelCommonKeyCol = oldCommonKeyCol
 		model.InitChannelCache()
 		_ = sqlDB.Close()
 	}

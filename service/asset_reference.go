@@ -234,29 +234,33 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 	if err != nil {
 		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
 	}
-	fallbackReferences := make([]assetReference, 0, len(references))
-	fallbackPublicIDs := make([]string, 0, len(references))
-	for _, reference := range references {
-		if _, ok := generalized[reference.PublicID]; ok {
-			continue
-		}
-		fallbackReferences = append(fallbackReferences, reference)
-		fallbackPublicIDs = append(fallbackPublicIDs, reference.PublicID)
-	}
-	if len(fallbackReferences) == 0 {
-		return BytePlusAssetReferenceResolution{}, nil
-	}
-
-	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, fallbackPublicIDs)
+	legacyAssets, err := model.GetBytePlusAssetsByPublicIDsForUser(userID, publicIDs)
 	if err != nil {
 		return BytePlusAssetReferenceResolution{}, assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
-	}
-	if len(legacyAssets) != len(fallbackReferences) {
-		return BytePlusAssetReferenceResolution{}, nil
 	}
 	byPublicID := make(map[string]model.BytePlusAsset, len(legacyAssets))
 	for _, asset := range legacyAssets {
 		byPublicID[asset.PublicId] = asset
+	}
+	fallbackReferences := make([]assetReference, 0, len(references))
+	for _, reference := range references {
+		legacyAsset, hasLegacy := byPublicID[reference.PublicID]
+		_, hasGeneralized := generalized[reference.PublicID]
+		if hasGeneralized && (!hasLegacy || legacyAsset.RealPersonProfileId == nil) {
+			continue
+		}
+		fallbackReferences = append(fallbackReferences, reference)
+	}
+	if len(fallbackReferences) == 0 {
+		return BytePlusAssetReferenceResolution{}, nil
+	}
+	if apiErr := validateLegacyBytePlusRealPersonReferences(userID, fallbackReferences, byPublicID); apiErr != nil {
+		return BytePlusAssetReferenceResolution{}, apiErr
+	}
+	for _, reference := range fallbackReferences {
+		if _, ok := byPublicID[reference.PublicID]; !ok {
+			return BytePlusAssetReferenceResolution{}, nil
+		}
 	}
 	positiveChannels := map[int]struct{}{}
 	rewriteByChannel := map[int]map[string]string{}
@@ -291,6 +295,44 @@ func ResolveLegacyBytePlusAssetBindingReferences(userID int, req *dto.SeedanceVi
 		return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID}, assetError(errors.New("asset is not active"), types.ErrorCodeAssetNotReady, http.StatusConflict)
 	}
 	return BytePlusAssetReferenceResolution{PinnedChannelID: pinnedChannelID, RewriteMap: rewriteByChannel[pinnedChannelID]}, nil
+}
+
+func validateLegacyBytePlusRealPersonReferences(userID int, references []assetReference, byPublicID map[string]model.BytePlusAsset) *types.NewAPIError {
+	profileIDs := make(map[int64]struct{})
+	for _, reference := range references {
+		asset, ok := byPublicID[reference.PublicID]
+		if !ok {
+			continue
+		}
+		if asset.Status == model.BytePlusAssetStatusDeleted {
+			return assetError(errors.New("asset not found"), types.ErrorCodeAssetNotFound, http.StatusNotFound)
+		}
+		if asset.RealPersonProfileId != nil {
+			profileIDs[*asset.RealPersonProfileId] = struct{}{}
+		}
+	}
+	if len(profileIDs) > 1 {
+		return assetError(errors.New("asset real person profiles do not match"), types.ErrorCodeAssetProfileConflict, http.StatusConflict)
+	}
+	for profileID := range profileIDs {
+		profile, err := model.GetBytePlusRealPersonProfileByIDForUser(userID, profileID)
+		if err != nil {
+			if model.IsBytePlusRealPersonNotFound(err) {
+				return assetError(errors.New("asset not found"), types.ErrorCodeAssetNotFound, http.StatusNotFound)
+			}
+			return assetError(err, types.ErrorCodeAssetStorageError, http.StatusInternalServerError)
+		}
+		if profile.Status != model.BytePlusRealPersonProfileStatusActive {
+			return assetError(errors.New("real person profile is not active"), types.ErrorCodeRealPersonNotActive, http.StatusConflict)
+		}
+		for _, reference := range references {
+			asset, ok := byPublicID[reference.PublicID]
+			if ok && asset.RealPersonProfileId != nil && *asset.RealPersonProfileId == profileID && asset.ChannelId != profile.ChannelId {
+				return assetError(errors.New("asset channel does not match real person profile"), types.ErrorCodeAssetChannelConflict, http.StatusConflict)
+			}
+		}
+	}
+	return nil
 }
 
 func extractAssetReferences(req *dto.SeedanceVideoRequest) ([]assetReference, *types.NewAPIError) {

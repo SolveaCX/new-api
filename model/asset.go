@@ -589,10 +589,13 @@ func MigrateLegacyBytePlusAssets() error {
 			return err
 		}
 		for _, legacy := range legacyAssets {
+			lastID = legacy.Id
+			if legacy.RealPersonProfileId != nil {
+				continue
+			}
 			if err := migrateLegacyBytePlusAsset(legacy, groups[legacy.AssetGroupId]); err != nil {
 				return err
 			}
-			lastID = legacy.Id
 		}
 	}
 	return nil

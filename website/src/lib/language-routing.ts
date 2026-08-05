@@ -11,7 +11,11 @@ const IGNORED_PATH_PREFIXES = [
   "/cdn-cgi",
   "/sign-in",
   "/sign-up",
+  "/login",
+  "/signup",
   "/dashboard",
+  "/console",
+  "/onboarding",
   // Local-only paid landing-page review concepts have no translated siblings.
   "/lp/tools-ads/claude",
 ];
@@ -22,6 +26,7 @@ const IGNORED_EXACT_PATHS = [
   "/llms.txt",
   "/install.sh",
   "/install.ps1",
+  "/legal-sla",
   // These market pages are physical single-locale routes with no localized siblings.
   "/br",
   "/in",
@@ -30,6 +35,7 @@ const IGNORED_EXACT_PATHS = [
   // returning localized visitor would send paid traffic to a missing sibling.
   "/gpt-api-alternative",
   "/chinese-ai",
+  "/chinese-ai-models-api",
   "/openai-compatible",
   "/gateway",
   "/apify-alternative",
@@ -71,6 +77,7 @@ export function getLanguageRedirectPath(input: LanguageRedirectInput): string | 
 
   const pathname = normalizePathname(input.pathname);
   if (shouldIgnorePath(pathname)) return null;
+  if (pathname === "/") return null;
   if (hasLocalePrefix(pathname)) return null;
 
   const locale = resolvePreferredLocale(input.cookieLocale, input.acceptLanguage);

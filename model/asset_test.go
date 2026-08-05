@@ -263,6 +263,33 @@ func TestMigrateLegacyBytePlusAssetsPreservesPublicIDsAndBindingsIdempotently(t 
 	require.EqualValues(t, legacy.UpdatedTime, bindings[0].UpdatedAt)
 }
 
+func TestMigrateLegacyBytePlusAssetsSkipsRealPersonAssets(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
+
+	profileID := int64(42)
+	legacy := BytePlusAsset{
+		PublicId:            "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		UserId:              10,
+		ChannelId:           131,
+		UpstreamAssetId:     "real-person-upstream",
+		AssetType:           "Image",
+		Status:              BytePlusAssetStatusActive,
+		RealPersonProfileId: &profileID,
+		CreatedTime:         110,
+		UpdatedTime:         120,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	require.NoError(t, MigrateLegacyBytePlusAssets())
+
+	var assetCount int64
+	require.NoError(t, DB.Model(&Asset{}).Where("public_id = ?", legacy.PublicId).Count(&assetCount).Error)
+	require.Zero(t, assetCount)
+	var bindingCount int64
+	require.NoError(t, DB.Model(&AssetBinding{}).Count(&bindingCount).Error)
+	require.Zero(t, bindingCount)
+}
+
 func TestMigrateLegacyBytePlusAssetsDoesNotOverwriteExistingGeneralizedSource(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{}, &BytePlusAssetGroup{}, &BytePlusAsset{})
 

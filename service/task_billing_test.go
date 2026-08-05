@@ -885,6 +885,14 @@ func (m *mockAdaptor) AdjustBillingOnComplete(_ *model.Task, _ *relaycommon.Task
 	return m.adjustReturn
 }
 
+type perCallAdjustingMockAdaptor struct {
+	*mockAdaptor
+}
+
+func (m *perCallAdjustingMockAdaptor) AdjustPerCallBillingOnComplete(_ *model.Task, _ *relaycommon.TaskInfo) int {
+	return m.adjustReturn
+}
+
 // ===========================================================================
 // PerCallBilling tests — settleTaskBillingOnComplete
 // ===========================================================================
@@ -909,11 +917,35 @@ func TestSettle_PerCallBilling_SkipsAdaptorAdjust(t *testing.T) {
 
 	settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 
-	// Per-call: no adjustment despite adaptor returning 2000
+	// Per-call adaptors must explicitly opt in to completion adjustment.
 	assert.Equal(t, initQuota, getUserQuota(t, userID))
 	assert.Equal(t, tokenRemain, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, preConsumed, task.Quota)
 	assert.Equal(t, int64(0), countLogs(t))
+}
+
+func TestSettle_PerCallBilling_OptInAdaptorAdjusts(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	const userID, tokenID, channelID = 33, 33, 33
+	const initQuota, preConsumed, actualQuota = 10000, 5000, 2000
+	const tokenRemain = 8000
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-percall-opt-in", tokenRemain)
+	seedChannel(t, channelID)
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.PerCallBilling = true
+	adaptor := &perCallAdjustingMockAdaptor{mockAdaptor: &mockAdaptor{adjustReturn: actualQuota}}
+
+	settleTaskBillingOnComplete(ctx, adaptor, task, &relaycommon.TaskInfo{Status: model.TaskStatusSuccess})
+
+	assert.Equal(t, initQuota+(preConsumed-actualQuota), getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain+(preConsumed-actualQuota), getTokenRemainQuota(t, tokenID))
+	assert.Equal(t, actualQuota, task.Quota)
+	assert.Equal(t, int64(1), countLogs(t))
 }
 
 func TestSettle_PerCallBilling_SkipsTotalTokens(t *testing.T) {
@@ -941,6 +973,52 @@ func TestSettle_PerCallBilling_SkipsTotalTokens(t *testing.T) {
 	assert.Equal(t, tokenRemain, getTokenRemainQuota(t, tokenID))
 	assert.Equal(t, preConsumed, task.Quota)
 	assert.Equal(t, int64(0), countLogs(t))
+}
+
+func TestSettle_NonPerCallSeedance_UsesTotalTokensAndScenarioRatio(t *testing.T) {
+	truncate(t)
+	restoreRatioSettings(t)
+	ctx := context.Background()
+
+	const userID, tokenID, channelID = 33, 33, 33
+	const initQuota, preConsumed = 10000, 100
+	const tokenRemain = 5000
+
+	seedUser(t, userID, initQuota)
+	seedToken(t, tokenID, userID, "sk-seedance-token-settle", tokenRemain)
+	seedChannel(t, channelID)
+
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"seedance-2.0":0.391}`))
+
+	task := makeTask(userID, channelID, preConsumed, tokenID, BillingSourceWallet, 0)
+	task.Properties.OriginModelName = "seedance-2.0"
+	task.PrivateData.BillingContext = &model.TaskBillingContext{
+		ModelPrice:      -1,
+		ModelRatio:      0.391,
+		GroupRatio:      1,
+		OtherRatios:     map[string]float64{"video_input": 28.0 / 46.0},
+		OriginModelName: "seedance-2.0",
+		PerCallBilling:  false,
+	}
+
+	adaptor := &mockAdaptor{adjustReturn: 0}
+	taskResult := &relaycommon.TaskInfo{
+		Status:      model.TaskStatusSuccess,
+		TotalTokens: 1000,
+	}
+
+	settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
+
+	const actualQuota = 238
+	const quotaDelta = actualQuota - preConsumed
+	assert.Equal(t, actualQuota, task.Quota)
+	assert.Equal(t, initQuota-quotaDelta, getUserQuota(t, userID))
+	assert.Equal(t, tokenRemain-quotaDelta, getTokenRemainQuota(t, tokenID))
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	assert.Equal(t, model.LogTypeConsume, log.Type)
+	assert.Equal(t, quotaDelta, log.Quota)
 }
 
 func TestSettle_NonPerCall_AdaptorAdjustWorks(t *testing.T) {

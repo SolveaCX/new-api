@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v86"
+	"gorm.io/gorm"
 )
 
 func TestParseRecallPaymentReadsCheckoutDiscountShapes(t *testing.T) {
@@ -240,6 +243,9 @@ func TestRecallAttributionClassifiesOwnedPayments(t *testing.T) {
 			require.Len(t, events, 1)
 			require.Equal(t, "evt_123", events[0].SourceEventId)
 			require.Equal(t, recipient.Id, events[0].RecipientId)
+			var eventData map[string]any
+			require.NoError(t, common.Unmarshal([]byte(events[0].EventData), &eventData))
+			require.Equal(t, string(model.RecallRevenueCategoryDirectTopUp), eventData["payment_category"])
 		})
 	}
 }
@@ -505,22 +511,75 @@ func TestRecallAttributionMetricsKeepCurrenciesSeparate(t *testing.T) {
 		"conversion_kind":    model.RecallConversionDirect, "conversion_trade_no": "trade_usd",
 		"conversion_currency": "USD", "conversion_amount": int64(1200), "discount_amount": int64(200),
 	}).Error)
-	for _, message := range []model.RecallMessage{
-		{RecipientId: first.Id, StageNo: 1, State: model.RecallMessageAccepted},
-		{RecipientId: second.Id, StageNo: 1, State: model.RecallMessageFailed},
-		{RecipientId: codeFailure.Id, StageNo: 1, State: model.RecallMessageCancelled},
-		{RecipientId: noCoupon.Id, StageNo: 1, State: model.RecallMessageScheduled},
-	} {
-		require.NoError(t, model.DB.Create(&message).Error)
-	}
-	require.NoError(t, model.DB.Create(&model.RecallEvent{
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		return model.CreateRecallMessagesWithStateEventsTx(tx, campaign.Id, []model.RecallMessage{
+			{RecipientId: first.Id, StageNo: 1, State: model.RecallMessageAccepted},
+			{RecipientId: second.Id, StageNo: 1, State: model.RecallMessageFailed},
+			{RecipientId: codeFailure.Id, StageNo: 1, State: model.RecallMessageCancelled},
+			{RecipientId: noCoupon.Id, StageNo: 1, State: model.RecallMessageScheduled},
+		}, 1_700_000_050)
+	}))
+	run := model.RecallEvent{
 		CampaignId: campaign.Id, EventType: "campaign_run", Source: "scheduler", SourceEventId: "run_metrics",
 		EventData: `{"eligible_total":2,"exclusions":{"paid":3}}`, CreatedAt: 1_700_000_000,
-	}).Error)
+	}
+	require.NoError(t, model.DB.Create(&run).Error)
+	for _, exclusion := range []model.RecallCampaignExclusion{
+		{CampaignId: campaign.Id, RecipientIdentity: first.RecipientIdentity, UserId: first.UserId, FirstRunEventId: run.Id, LastRunEventId: run.Id, FirstSeenAt: 1_700_000_000, LastSeenAt: 1_700_000_000},
+		{CampaignId: campaign.Id, RecipientIdentity: second.RecipientIdentity, UserId: second.UserId, FirstRunEventId: run.Id, LastRunEventId: run.Id, FirstSeenAt: 1_700_000_000, LastSeenAt: 1_700_000_000},
+		{CampaignId: campaign.Id, RecipientIdentity: codeFailure.RecipientIdentity, UserId: codeFailure.UserId, FirstRunEventId: run.Id, LastRunEventId: run.Id, FirstSeenAt: 1_700_000_000, LastSeenAt: 1_700_000_000},
+	} {
+		require.NoError(t, model.DB.Create(&exclusion).Error)
+	}
 	require.NoError(t, model.DB.Create(&model.RecallEvent{
 		CampaignId: campaign.Id, RecipientId: first.Id, EventType: "observed_click", Source: "claim",
 		SourceEventId: "metrics_click", EventData: `{}`, CreatedAt: 1_700_000_100,
 	}).Error)
+	for _, event := range []model.RecallEvent{
+		{
+			CampaignId: campaign.Id, RecipientId: first.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "metrics_open_first", EventData: `{}`, CreatedAt: 1_700_000_110,
+		},
+		{
+			CampaignId: campaign.Id, RecipientId: second.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "metrics_open_second", EventData: `{}`, CreatedAt: 1_700_000_120,
+		},
+		{
+			CampaignId: campaign.Id, RecipientId: first.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "metrics_open_first_again", EventData: `{}`, CreatedAt: 1_700_000_130,
+		},
+	} {
+		require.NoError(t, model.DB.Create(&event).Error)
+	}
+	for _, conversion := range []struct {
+		recipient model.RecallRecipient
+		kind      string
+		tradeNo   string
+		currency  string
+		amount    int64
+	}{
+		{recipient: first, kind: model.RecallConversionDirect, tradeNo: "trade_usd", currency: "usd", amount: 1200},
+		{recipient: second, kind: model.RecallConversionAssisted, tradeNo: "trade_jpy", currency: "jpy", amount: 8000},
+		{recipient: noCoupon, kind: model.RecallConversionNoCoupon, tradeNo: "trade_eur", currency: "eur", amount: 3000},
+	} {
+		eventData, err := common.Marshal(map[string]any{
+			"trade_no":         conversion.tradeNo,
+			"conversion_kind":  conversion.kind,
+			"currency":         conversion.currency,
+			"amount_total":     conversion.amount,
+			"payment_category": "direct_topup",
+		})
+		require.NoError(t, err)
+		require.NoError(t, model.DB.Create(&model.RecallEvent{
+			CampaignId:    campaign.Id,
+			RecipientId:   conversion.recipient.Id,
+			EventType:     "conversion",
+			Source:        "test",
+			SourceEventId: "metrics_conversion_" + conversion.tradeNo,
+			EventData:     string(eventData),
+			CreatedAt:     1_700_000_200,
+		}).Error)
+	}
 
 	metrics, err := NewRecallAttributionService(&recallStripeFakeClient{}).GetMetrics(context.Background(), campaign.Id)
 
@@ -537,6 +596,7 @@ func TestRecallAttributionMetricsKeepCurrenciesSeparate(t *testing.T) {
 	require.Equal(t, int64(1), metrics.MessagesFailedCount)
 	require.Equal(t, int64(1), metrics.MessagesCancelledCount)
 	require.Equal(t, int64(1), metrics.ObservedClickCount)
+	require.Equal(t, int64(2), metrics.OpenedRecipientCount)
 	require.Equal(t, int64(1), metrics.DirectCount)
 	require.Equal(t, int64(1), metrics.AssistedCount)
 	require.Equal(t, int64(1), metrics.NoCouponCount)
@@ -545,6 +605,160 @@ func TestRecallAttributionMetricsKeepCurrenciesSeparate(t *testing.T) {
 		{Currency: "JPY", AssistedCount: 1, PaymentAmount: 8000, DiscountAmount: 500},
 		{Currency: "USD", DirectCount: 1, PaymentAmount: 1200, DiscountAmount: 200},
 	}, metrics.CurrencyMetrics)
+}
+
+func TestRecallRevenueServiceTotals(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	campaign, recipient := createRecallAttributionRecipient(t, "promo_revenue_service")
+	require.NoError(t, model.DB.Model(&model.RecallRecipient{}).Where("id = ?", recipient.Id).Updates(map[string]any{
+		"state":               model.RecallRecipientConverted,
+		"converted_at":        int64(1_700_000_200),
+		"conversion_trade_no": "trade_revenue_service",
+		"conversion_currency": "USD",
+		"conversion_amount":   int64(9600),
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.TopUp{
+		UserId: recipient.UserId, TradeNo: "trade_revenue_service", PaymentProvider: model.PaymentProviderStripe,
+		Status: common.TopUpStatusSuccess, PaymentCurrency: "USD", PaymentAmountMinor: 1600,
+	}).Error)
+
+	totals, err := GetRecallRevenueTotals(context.Background(), campaign.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, []model.RecallRevenueTotals{{
+		Currency: "USD", AttributedSpendMinor: 9600, AttributedUsers: 1,
+		NewExternalCashMinor: 9600, ExternalCashUsers: 1,
+		DirectTopupMinor: 9600, DirectTopupUsers: 1,
+	}}, totals)
+}
+
+func TestRecallAttributionMetricsAggregatesOpenedRecipientsInSQL(t *testing.T) {
+	db := setupRecallCampaignTestDB(t)
+	queries := captureRecallMetricSQL(t, db)
+	campaign, first := createRecallAttributionRecipient(t, "promo_sql_first")
+	secondPromotion := "promo_sql_second"
+	second := model.RecallRecipient{
+		CampaignId: campaign.Id, UserId: 9102, EligibilitySnapshot: `{}`, EmailSnapshot: "sql-second@example.com",
+		LanguageSnapshot: "en", State: model.RecallRecipientConverted, StripePromotionCodeId: &secondPromotion,
+		StripeCustomerId: "cus_sql_second",
+	}
+	require.NoError(t, model.DB.Create(&second).Error)
+	require.NoError(t, model.DB.Create(&model.RecallEvent{
+		CampaignId: campaign.Id, EventType: "campaign_run", Source: "scheduler", SourceEventId: "sql_run_metrics",
+		EventData: `{"eligible_total":2}`, CreatedAt: 1_700_000_000,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.RecallEvent{
+		CampaignId: campaign.Id, RecipientId: first.Id, EventType: "observed_click", Source: "claim",
+		SourceEventId: "sql_metrics_click", EventData: `{}`, CreatedAt: 1_700_000_100,
+	}).Error)
+	for _, event := range []model.RecallEvent{
+		{
+			CampaignId: campaign.Id, RecipientId: first.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "sql_open_first", EventData: `{}`, CreatedAt: 1_700_000_110,
+		},
+		{
+			CampaignId: campaign.Id, RecipientId: second.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "sql_open_second", EventData: `{}`, CreatedAt: 1_700_000_120,
+		},
+		{
+			CampaignId: campaign.Id, RecipientId: first.Id, EventType: "email_open", Source: "email_open",
+			SourceEventId: "sql_open_first_again", EventData: `{}`, CreatedAt: 1_700_000_130,
+		},
+	} {
+		require.NoError(t, model.DB.Create(&event).Error)
+	}
+
+	metrics, err := NewRecallAttributionService(&recallStripeFakeClient{}).GetMetrics(context.Background(), campaign.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), metrics.OpenedRecipientCount)
+	require.Equal(t, int64(1), metrics.ObservedClickCount)
+	require.True(t, hasRecallEventDistinctRecipientCount(queries), "expected recall_events COUNT(DISTINCT recipient_id) query, got %#v", queries)
+	require.True(t, hasRecallEventQueryExcludingEmailOpen(queries), "expected non-aggregate recall_events query to exclude email_open, got %#v", queries)
+}
+
+func TestRecallAttributionMetricsWithoutEmailOpensReportsZeroOpenedRecipients(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	campaign, recipient := createRecallAttributionRecipient(t, "promo_no_open")
+	require.NoError(t, model.DB.Create(&model.RecallEvent{
+		CampaignId: campaign.Id, EventType: "campaign_run", Source: "scheduler", SourceEventId: "no_open_run_metrics",
+		EventData: `{"eligible_total":1}`, CreatedAt: 1_700_000_000,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.RecallEvent{
+		CampaignId: campaign.Id, RecipientId: recipient.Id, EventType: "observed_click", Source: "claim",
+		SourceEventId: "no_open_metrics_click", EventData: `{}`, CreatedAt: 1_700_000_100,
+	}).Error)
+
+	metrics, err := NewRecallAttributionService(&recallStripeFakeClient{}).GetMetrics(context.Background(), campaign.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), metrics.CandidateCount)
+	require.Equal(t, int64(1), metrics.EnrolledCount)
+	require.Equal(t, int64(1), metrics.ObservedClickCount)
+	require.Zero(t, metrics.OpenedRecipientCount)
+}
+
+type capturedRecallMetricSQL struct {
+	SQL  string
+	Vars []any
+}
+
+func captureRecallMetricSQL(t *testing.T, db *gorm.DB) *[]capturedRecallMetricSQL {
+	t.Helper()
+	const callbackName = "recall_metrics_sql_capture"
+	queries := make([]capturedRecallMetricSQL, 0)
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		queries = append(queries, capturedRecallMetricSQL{
+			SQL:  normalizeRecallMetricSQL(tx.Statement.SQL.String()),
+			Vars: append([]any(nil), tx.Statement.Vars...),
+		})
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, db.Callback().Query().Remove(callbackName))
+	})
+	return &queries
+}
+
+func hasRecallEventDistinctRecipientCount(queries *[]capturedRecallMetricSQL) bool {
+	for _, query := range *queries {
+		if strings.Contains(query.SQL, "from recall_events") &&
+			strings.Contains(query.SQL, "count(distinct") &&
+			strings.Contains(query.SQL, "recipient_id") &&
+			recallMetricSQLVarsContain(query.Vars, "email_open") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRecallEventQueryExcludingEmailOpen(queries *[]capturedRecallMetricSQL) bool {
+	for _, query := range *queries {
+		if !strings.Contains(query.SQL, "from recall_events") ||
+			strings.Contains(query.SQL, "count(distinct") ||
+			!recallMetricSQLVarsContain(query.Vars, "email_open") {
+			continue
+		}
+		if strings.Contains(query.SQL, "event_type <>") || strings.Contains(query.SQL, "event_type !=") {
+			return true
+		}
+	}
+	return false
+}
+
+func recallMetricSQLVarsContain(vars []any, value string) bool {
+	for _, variable := range vars {
+		if variable == value {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRecallMetricSQL(sql string) string {
+	sql = strings.ToLower(sql)
+	sql = strings.NewReplacer("`", "", `"`, "", "[", "", "]", "").Replace(sql)
+	sql = regexp.MustCompile(`\s+`).ReplaceAllString(sql, " ")
+	return strings.TrimSpace(sql)
 }
 
 func TestRecallAttributionReconcileUsesOnlyRecoverableSuccessfulStripeOrders(t *testing.T) {
@@ -624,6 +838,45 @@ func TestRecallAttributionReconcileUsesOnlyRecoverableSuccessfulStripeOrders(t *
 	var subscriptions int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Count(&subscriptions).Error)
 	require.Zero(t, subscriptions, "reconciliation must never provision subscriptions")
+}
+
+func TestRecallAttributionReconcilePreservesSubscriptionPaymentCategory(t *testing.T) {
+	setupRecallCampaignTestDB(t)
+	campaign, recipient := createRecallAttributionRecipient(t, "promo_sub_category")
+	require.NoError(t, model.DB.Create(&model.User{
+		Id: recipient.UserId, Username: "subscription-category", Email: "subscription-category@example.com",
+		AffCode: "subscription-category-aff",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{Id: 1, Title: "subscription category plan"}).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId: recipient.UserId, PlanId: 1, TradeNo: "trade_sub_category", PaymentProvider: model.PaymentProviderStripe,
+		Status: common.TopUpStatusSuccess, CreateTime: 1_700_000_100, CompleteTime: 1_700_000_200,
+		ProviderPayload: `{"checkout_session_id":"cs_sub_category"}`,
+	}).Error)
+	client := &recallStripeFakeClient{getCheckoutSessionFn: func(_ context.Context, id string, _ ...string) (*stripe.CheckoutSession, error) {
+		require.Equal(t, "cs_sub_category", id)
+		return &stripe.CheckoutSession{
+			ID: id, Created: 1_700_000_100, PaymentStatus: stripe.CheckoutSessionPaymentStatusPaid,
+			AmountTotal: 5000, Currency: stripe.CurrencyUSD,
+			Metadata: map[string]string{
+				"recall_campaign_id":  fmt.Sprintf("%d", campaign.Id),
+				"recall_recipient_id": fmt.Sprintf("%d", recipient.Id),
+			},
+			TotalDetails: &stripe.CheckoutSessionTotalDetails{},
+		}, nil
+	}}
+	service := NewRecallAttributionService(client)
+	service.now = func() time.Time { return time.Unix(1_700_000_300, 0).UTC() }
+
+	processed, err := service.ReconcileBatch(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	var event model.RecallEvent
+	require.NoError(t, model.DB.Where("recipient_id = ? AND event_type = ?", recipient.Id, "conversion").First(&event).Error)
+	var eventData map[string]any
+	require.NoError(t, common.Unmarshal([]byte(event.EventData), &eventData))
+	require.Equal(t, string(model.RecallRevenueCategoryOnlineSubscription), eventData["payment_category"])
 }
 
 func TestRecallAttributionReconcileAdvancesPastTerminalOrders(t *testing.T) {

@@ -30,4 +30,31 @@ describe("SkagLandingPage", () => {
       expect(html).toContain(row.flatkey);
     }
   });
+
+  test("renders the Chinese AI models API ad intent", () => {
+    const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("chinese-ai-models-api")} />);
+
+    for (const text of ["Chinese AI Models", "DeepSeek", "Qwen", "GLM", "Kimi", "Seedance", "deepseek-v4-flash"]) {
+      expect(html).toContain(text);
+    }
+  });
+
+  test("renders the Portuguese Chinese AI models API landing", () => {
+    const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("chinese-ai-models-api", "pt")} />);
+
+    for (const text of [
+      "Modelos Chineses de IA",
+      "Obter sua chave de API para modelos chineses",
+      "Ver preços ao vivo",
+      "/pt/pricing",
+      "DeepSeek",
+      "Qwen",
+      "GLM",
+      "Kimi",
+      "Seedance",
+      "deepseek-v4-flash",
+    ]) {
+      expect(html).toContain(text);
+    }
+  });
 });

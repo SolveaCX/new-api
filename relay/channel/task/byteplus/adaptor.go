@@ -25,6 +25,13 @@ import (
 const moderationSceneHeader = "x-ark-moderation-scene"
 const moderationSceneSkip = "skip-ark-moderation"
 
+const (
+	bytePlusAssetSubmitLeaseDefaultSeconds = int64(72 * 60 * 60)
+	bytePlusAssetSubmitLeaseMaxSeconds     = int64(259200)
+)
+
+var bytePlusAssetLeaseNow = func() int64 { return time.Now().Unix() }
+
 // TaskAdaptor reuses BytePlus Ark's protocol-compatible Seedance implementation
 // while keeping BytePlus routing and server-controlled headers isolated from the
 // existing Doubao and VolcEngine channels.
@@ -34,6 +41,22 @@ type TaskAdaptor struct {
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.TaskAdaptor.Init(info)
+}
+
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	seedReq, err := taskcommon.GetSeedanceRequest(c)
+	if err != nil {
+		return nil
+	}
+	modelName := strings.TrimSpace(info.OriginModelName)
+	if modelName == "" {
+		modelName = seedReq.Model
+	}
+	ratio, ok := getVideoInputRatio(modelName, seedReq.Resolution, len(seedReq.Videos()) > 0)
+	if !ok || ratio == 1.0 {
+		return nil
+	}
+	return map[string]float64{"video_input": ratio}
 }
 
 func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
@@ -70,12 +93,96 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	rewriteMap, hasGeneralized := common.GetContextKeyType[map[string]string](c, constant.ContextKeyAssetRewriteMap)
 	if !hasGeneralized {
 		rewriteMap, _ = common.GetContextKeyType[map[string]string](c, constant.ContextKeyBytePlusAssetRewriteMap)
+		if err := extendBytePlusAssetLeasesBeforeSubmit(c, raw, rewriteMap); err != nil {
+			return nil, err
+		}
 	}
 	rewritten, err := rewriteBytePlusAssetReferences(raw, rewriteMap)
 	if err != nil {
 		return nil, err
 	}
 	return bytes.NewReader(rewritten), nil
+}
+
+func extendBytePlusAssetLeasesBeforeSubmit(c *gin.Context, raw []byte, rewriteMap map[string]string) error {
+	publicIDs, err := bytePlusLocalAssetReferencesInRequest(raw, rewriteMap)
+	if err != nil || len(publicIDs) == 0 {
+		return err
+	}
+	userID := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+	if userID == 0 {
+		return nil
+	}
+	now := bytePlusAssetLeaseNow()
+	_, err = model.ExtendBytePlusAssetLeasesForSubmit(userID, publicIDs, now+bytePlusAssetSubmitLeaseSeconds(raw), now)
+	if err != nil {
+		return fmt.Errorf("invalid byteplus asset reference")
+	}
+	return nil
+}
+
+func bytePlusAssetSubmitLeaseSeconds(raw []byte) int64 {
+	seconds := bytePlusAssetSubmitLeaseDefaultSeconds
+	var payload struct {
+		ExecutionExpiresAfter *int `json:"execution_expires_after"`
+	}
+	if err := common.Unmarshal(raw, &payload); err == nil && payload.ExecutionExpiresAfter != nil {
+		requested := int64(*payload.ExecutionExpiresAfter)
+		if requested > seconds {
+			seconds = requested
+		}
+	}
+	if seconds > bytePlusAssetSubmitLeaseMaxSeconds {
+		return bytePlusAssetSubmitLeaseMaxSeconds
+	}
+	return seconds
+}
+
+func bytePlusLocalAssetReferencesInRequest(raw []byte, rewriteMap map[string]string) ([]string, error) {
+	if !bytes.Contains(bytes.ToLower(raw), []byte("asset:")) {
+		return nil, nil
+	}
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	content, ok := payload["content"].([]any)
+	if !ok {
+		return nil, nil
+	}
+	seen := map[string]struct{}{}
+	var publicIDs []string
+	for _, itemAny := range content {
+		item, ok := itemAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, field := range []string{"image_url", "video_url", "audio_url"} {
+			media, ok := item[field].(map[string]any)
+			if !ok {
+				continue
+			}
+			urlValue, ok := media["url"].(string)
+			if !ok || !isBytePlusAssetSchemeURL(urlValue) {
+				continue
+			}
+			if !service.IsStrictBytePlusAssetURI(urlValue) {
+				return nil, fmt.Errorf("invalid byteplus asset reference")
+			}
+			if _, ok := rewriteMap[urlValue]; !ok {
+				return nil, fmt.Errorf("invalid byteplus asset reference")
+			}
+			publicID := strings.TrimPrefix(urlValue, "asset://")
+			if _, ok := seen[publicID]; ok {
+				continue
+			}
+			seen[publicID] = struct{}{}
+			publicIDs = append(publicIDs, publicID)
+		}
+	}
+	return publicIDs, nil
 }
 
 func rewriteBytePlusAssetReferences(raw []byte, rewriteMap map[string]string) ([]byte, error) {

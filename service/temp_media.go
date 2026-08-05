@@ -31,6 +31,7 @@ var (
 	ErrTempMediaServiceAccount   = errors.New("temp media service account is unavailable")
 	putTempMediaObject           = putTempMediaObjectToGCS
 	signTempMediaObject          = signTempMediaObjectWithIAM
+	deleteTempMediaObject        = deleteTempMediaObjectFromGCS
 	tempMediaNow                 = time.Now
 	tempMediaServiceAccountEmail = defaultTempMediaServiceAccountEmail
 )
@@ -120,6 +121,13 @@ func UploadTempMediaImage(ctx context.Context, request TempMediaUploadRequest) (
 
 func putTempMediaObjectToGCS(ctx context.Context, cfg TempMediaConfig, objectKey string, body io.Reader, contentType string) error {
 	return assetObjectStore.Put(ctx, cfg.Bucket, objectKey, body, contentType)
+}
+
+func deleteTempMediaObjectFromGCS(ctx context.Context, cfg TempMediaConfig, objectKey string) error {
+	if err := assetObjectStore.Delete(ctx, cfg.Bucket, objectKey, 0); err != nil && !isAssetObjectNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 func signTempMediaObjectWithIAM(ctx context.Context, cfg TempMediaConfig, objectKey string, method string) (string, error) {
