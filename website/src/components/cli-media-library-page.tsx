@@ -282,11 +282,6 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
     slug: item.slug,
   });
   const generateUrl = consoleUrl("/playground", generateParams.toString());
-  const loginParams = new URLSearchParams({
-    lng: props.locale,
-    redirect: `/playground?${generateParams.toString()}`,
-  });
-  const loginUrl = consoleUrl("/sign-in", loginParams.toString());
 
   return (
     <SiteShell locale={props.locale} pathname={currentPath}>
@@ -344,7 +339,6 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
               generateUrl={generateUrl}
               kind={props.kind}
               locale={props.locale}
-              loginUrl={loginUrl}
               model={item.model}
               ratio={item.output.ratio}
               title={copy.prompt}
