@@ -703,7 +703,7 @@ python3 scripts/browser_qa/terraform_plan_guard.py --phase workloads &lt;plan.js
       <section id="observability">
         <h2>13. 可观测性与仅告警策略</h2>
         <p>最终状态优先级由代码定义：<code>cleanup_failed</code> &gt; <code>infrastructure_failed</code> &gt; <code>replay_failed</code> &gt; <code>findings_detected</code> &gt; <code>passed</code>。GitHub Summary 展示状态、replay/exploration 摘要、finding 数量、cleanup 状态和私有 GCS URI。</p>
-        <p>首版告警载体只有 GitHub Actions 红/绿状态和 Job Summary。它不接生产审批，不发邮件/Slack/钉钉，不自动 rollback staging，不阻塞 main/production 发布。后续可以把同一个 manifest 接入通知系统，但需要保持“只告警，不自动生产变更”的边界。</p>
+        <p>当前每次 staging 发布后的 Browser QA 都会在终态向钉钉发送一份脱敏报告；通过、回放失败、发现问题、清理失败和基础设施失败都会通知。GitHub Actions 只在通知步骤临时注入 webhook 与机器人加签密钥，并按钉钉要求为每次请求生成毫秒时间戳和 HMAC-SHA256 签名；这些密钥、签名、测试邮箱、验证码和 API Key 都不会进入报告或日志。通知仍然只是告警，不会自动 rollback staging，也不会改动 main/production。</p>
       </section>
 
       <section id="operations">

@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -77,17 +80,20 @@ class DingTalkReport:
         }
 
 
-def send_report(webhook, report, *, opener=None, sleeper=time.sleep):
+def send_report(webhook, report, *, opener=None, sleeper=time.sleep, signing_secret=None):
     _validate_webhook(webhook)
     if not isinstance(report, DingTalkReport):
         raise TypeError("report must be DingTalkReport")
+    if signing_secret is not None:
+        _validate_signing_secret(signing_secret)
     if opener is None:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     body = json.dumps(report.payload(), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
     for attempt in range(3):
+        request_url = _signed_webhook(webhook, signing_secret) if signing_secret is not None else webhook
         request = urllib.request.Request(
-            webhook,
+            request_url,
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -139,7 +145,7 @@ def main():
         github_run_url=_required_env("BROWSER_QA_GITHUB_RUN_URL"),
         gcs_uri=_required_env("BROWSER_QA_GCS_URI"),
     )
-    send_report(_required_env("DINGTALK_WEBHOOK"), report)
+    send_report(_required_env("DINGTALK_WEBHOOK"), report, signing_secret=_required_env("DINGTALK_SIGNING_SECRET"))
     print("DINGTALK_NOTIFICATION_SENT")
     return 0
 
@@ -190,6 +196,23 @@ def _validate_webhook(webhook):
         or not query["access_token"][0]
     ):
         raise ValueError("DingTalk webhook is invalid")
+
+
+def _validate_signing_secret(signing_secret):
+    if not isinstance(signing_secret, str) or not signing_secret:
+        raise ValueError("DingTalk signing secret is invalid")
+
+
+def _signed_webhook(webhook, signing_secret):
+    timestamp = str(int(time.time() * 1000))
+    string_to_sign = f"{timestamp}\n{signing_secret}".encode("utf-8")
+    signature = base64.b64encode(
+        hmac.new(signing_secret.encode("utf-8"), string_to_sign, hashlib.sha256).digest()
+    ).decode("utf-8")
+    parsed = urllib.parse.urlsplit(webhook)
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query.extend([("timestamp", timestamp), ("sign", signature)])
+    return urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
 
 
 if __name__ == "__main__":

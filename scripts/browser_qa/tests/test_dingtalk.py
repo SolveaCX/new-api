@@ -1,8 +1,12 @@
+import base64
+import hashlib
+import hmac
 import io
 import json
 import os
 import unittest
 import urllib.error
+import urllib.parse
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -129,6 +133,29 @@ class DingTalkTests(unittest.TestCase):
         self.assertEqual(sent_payload, self.report().payload())
         self.assertNotIn(WEBHOOK, json.dumps(sent_payload))
 
+    def test_delivery_adds_timestamp_and_hmac_signature_when_secret_is_configured(self):
+        opener = RecordingOpener([FakeResponse(200, {"errcode": 0, "errmsg": "ok"})])
+        secret = "test-signing-secret"
+        timestamp = "1700000000123"
+        expected_sign = base64.b64encode(
+            hmac.new(secret.encode("utf-8"), f"{timestamp}\n{secret}".encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+
+        with mock.patch.object(dingtalk.time, "time", return_value=1700000000.123):
+            dingtalk.send_report(WEBHOOK, self.report(), opener=opener, sleeper=lambda _: None, signing_secret=secret)
+
+        request, _timeout = opener.requests[0]
+        parsed = urllib.parse.urlsplit(request.full_url)
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "oapi.dingtalk.com")
+        self.assertEqual(parsed.path, "/robot/send")
+        self.assertEqual(query["access_token"], ["super-secret-webhook-token"])
+        self.assertEqual(query["timestamp"], [timestamp])
+        self.assertEqual(query["sign"], [expected_sign])
+        self.assertNotIn(secret, request.full_url)
+        self.assertNotIn(expected_sign, json.dumps(json.loads(request.data)))
+
     def test_delivery_fails_closed_without_echoing_webhook_or_remote_error(self):
         opener = RecordingOpener(
             [FakeResponse(200, {"errcode": 310000, "errmsg": "super-secret-webhook-token keyword rejected"})]
@@ -145,6 +172,7 @@ class DingTalkTests(unittest.TestCase):
     def test_main_reads_environment_and_prints_only_delivery_marker(self):
         env = {
             "DINGTALK_WEBHOOK": WEBHOOK,
+            "DINGTALK_SIGNING_SECRET": "main-signing-secret",
             "BROWSER_QA_FINAL_STATUS": "replay_failed",
             "BROWSER_QA_REPLAY_STATUS": "failed",
             "BROWSER_QA_EXPLORATION_STATUS": "not_started",
@@ -168,6 +196,8 @@ class DingTalkTests(unittest.TestCase):
         self.assertEqual(report.finding_count, 1)
         self.assertEqual(stdout.getvalue(), "DINGTALK_NOTIFICATION_SENT\n")
         self.assertNotIn(WEBHOOK, stdout.getvalue())
+        self.assertNotIn("main-signing-secret", stdout.getvalue())
+        self.assertEqual(send.call_args.kwargs, {"signing_secret": "main-signing-secret"})
 
 
 if __name__ == "__main__":

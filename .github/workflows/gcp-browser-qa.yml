@@ -29,6 +29,8 @@ on:
     secrets:
       STAGING_BROWSER_QA_DINGTALK_WEBHOOK:
         required: true
+      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET:
+        required: true
 
 permissions:
   contents: read
@@ -418,6 +420,7 @@ jobs:
         shell: bash
         env:
           DINGTALK_WEBHOOK: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_WEBHOOK }}
+          DINGTALK_SIGNING_SECRET: ${{ secrets.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET }}
           BROWSER_QA_FINAL_STATUS: ${{ steps.manifest.outputs.manifest_status || 'infrastructure_failed' }}
           BROWSER_QA_REPLAY_STATUS: ${{ steps.manifest.outputs.replay_status || 'unknown' }}
           BROWSER_QA_EXPLORATION_STATUS: ${{ steps.manifest.outputs.exploration_status || 'unknown' }}

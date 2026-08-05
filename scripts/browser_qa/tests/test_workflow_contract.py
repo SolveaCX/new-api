@@ -153,7 +153,9 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertRegex(uncommented, r"(?ms)^  workflow_call:\n    inputs:\n.*?      original_run_id:\n        .*?required: false\n        .*?type: string\b")
         self.assertRegex(
             uncommented,
-            r"(?ms)^  workflow_call:\n    inputs:\n.*?    secrets:\n      STAGING_BROWSER_QA_DINGTALK_WEBHOOK:\n        required: true\b",
+            r"(?ms)^  workflow_call:\n    inputs:\n.*?    secrets:\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_WEBHOOK:\n        required: true\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET:\n        required: true\b",
         )
         self.assertRegex(uncommented, r"(?ms)^permissions:\n  contents: read\n  id-token: write\b")
         self.assertEqual(len(re.findall(r"(?m)^concurrency:\s*$", uncommented)), 1)
@@ -427,6 +429,10 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             notification,
             r"(?m)^          DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}$",
         )
+        self.assertRegex(
+            notification,
+            r"(?m)^          DINGTALK_SIGNING_SECRET: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET \}\}$",
+        )
         without_notification = text.replace(notification, "")
         self.assertNotIn("${{ secrets.", without_notification)
         self.assertNotRegex(text, r"(?i)--(set-env-vars|args|update-env-vars)=[^\n]*(password|cookie|authorization|api[_-]?key|token|secret)")
@@ -467,7 +473,9 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertRegex(qa, r"(?ms)^    with:\n      mode: core\b")
         self.assertRegex(
             qa,
-            r"(?ms)^    secrets:\n      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}\s*$",
+            r"(?ms)^    secrets:\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_WEBHOOK: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_WEBHOOK \}\}\n"
+            r"      STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET: \$\{\{ secrets\.STAGING_BROWSER_QA_DINGTALK_SIGNING_SECRET \}\}\s*$",
         )
         self.assertNotRegex(qa, r"(?m)^    if: .*(always|failure|cancelled)\(")
         self.assertNotIn("continue-on-error", qa)
