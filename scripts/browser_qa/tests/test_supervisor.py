@@ -250,6 +250,26 @@ class FakeCleanup:
         return self.result
 
 
+class FakeResourceGuard:
+    def __init__(self, *, checkpoint_captured=False, capture_error=None, verify_error=None):
+        self.checkpoint_captured = checkpoint_captured
+        self.capture_error = capture_error
+        self.verify_error = verify_error
+        self.capture_calls = []
+        self.verify_calls = []
+
+    def capture(self, identity):
+        self.capture_calls.append(identity)
+        if self.capture_error is not None:
+            raise self.capture_error
+        self.checkpoint_captured = True
+
+    def verify(self, identity):
+        self.verify_calls.append(identity)
+        if self.verify_error is not None:
+            raise self.verify_error
+
+
 class FakeProxy:
     def __init__(self):
         self.started = False
@@ -445,11 +465,13 @@ class SupervisorTests(unittest.TestCase):
         self.assertNotIn("https://console.flatkey.ai", runtime_prompt)
         self.assertNotIn("https://router.flatkey.ai", runtime_prompt)
 
-    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None):
+    def run_supervisor(self, process, *, result_payload=None, cleanup=None, uploader=None, preflight=None, clock=None, input_env=None, thread_factory=None, proxy_factory=None, subprocess_runner=None, resource_guard_factory=None):
         tmp = tempfile.mkdtemp()
         supervisor_kwargs = {}
         if thread_factory is not None:
             supervisor_kwargs["thread_factory"] = thread_factory
+        if resource_guard_factory is not None:
+            supervisor_kwargs["resource_guard_factory"] = resource_guard_factory
         supervisor_kwargs["evidence_helper_factory"] = FakeBrowserEvidenceHelper
         supervisor_kwargs["browser_factory"] = lambda **_kwargs: type(
             "FakeBrowser",
@@ -729,6 +751,8 @@ class SupervisorTests(unittest.TestCase):
         broker_env = config_text.split("[mcp_servers.broker.env]", 1)[1].split("[mcp_servers.control]", 1)[0]
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", playwright_env)
         self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", broker_env)
+        control_env = config_text.split("[mcp_servers.control.env]", 1)[1].split("[sandbox_workspace_write]", 1)[0]
+        self.assertIn("FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL", control_env)
         self.assertIn("qa_read_docs", config_text)
         self.assertIn("PATH", config_text)
         self.assertIn("PYTHONPATH", config_text)
@@ -918,6 +942,89 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn('FLATKEY_BROWSER_QA_MODE = "core"', playwright_env)
         self.assertIn('FLATKEY_BROWSER_QA_MODE = "core"', control_env)
 
+    def test_supervisor_resource_drift_is_infrastructure_and_cleanup_still_runs(self):
+        cleanup = FakeCleanup()
+        guard = FakeResourceGuard(
+            checkpoint_captured=True,
+            verify_error=RuntimeError("exploration resource drift detected token 999"),
+        )
+
+        outcome, sup = self.run_supervisor(
+            FakeProcess(0),
+            result_payload=valid_result(),
+            cleanup=cleanup,
+            resource_guard_factory=lambda _origin: guard,
+        )
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        self.assertEqual(len(guard.verify_calls), 1)
+        self.assertIs(guard.verify_calls[0], sup._identity)
+        self.assertEqual(len(cleanup.calls), 1)
+        with open(os.path.join(sup.runtime_root, "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        self.assertEqual(manifest["infrastructure"]["classification"], "exploration_resource_drift")
+        self.assertNotIn("999", json.dumps(manifest))
+
+    def test_live_supervisor_uses_control_markers_instead_of_model_checkpoint_claims(self):
+        claimed = valid_result(
+            replay={"status": "passed", "checkpoint_reached": True},
+            exploration={"status": "passed", "actions_used": 9},
+        )
+        process = FakeProcess(
+            0,
+            stdout=json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": json.dumps(claimed)},
+            }) + "\n",
+        )
+
+        outcome, sup = self.run_supervisor(process)
+
+        self.assertEqual(outcome.status, "replay_failed")
+        with open(os.path.join(sup.runtime_root, "result.json"), encoding="utf-8") as handle:
+            result = json.load(handle)
+        self.assertEqual(result["replay"], {"status": "passed", "checkpoint_reached": False})
+        self.assertEqual(result["exploration"], {"status": "not_started", "actions_used": 0})
+
+    def test_live_normal_checkpoint_without_exploration_is_infrastructure_failed(self):
+        claimed = valid_result(exploration={"status": "passed", "actions_used": 9})
+
+        def mark_checkpoint():
+            control_mcp.write_control_state(
+                sup.runtime_root,
+                {"phase": "replay_checkpoint", "updated_at": 1700000000},
+            )
+
+        process = FakeProcess(
+            0,
+            stdout=json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": json.dumps(claimed)},
+            }) + "\n",
+            on_communicate=mark_checkpoint,
+        )
+        tmp = tempfile.mkdtemp()
+        sup = supervisor.Supervisor(
+            env=env(),
+            runtime_root=tmp,
+            subprocess_runner=FakeSubprocess(process),
+            uploader=FakeUploader(),
+            cleanup_runner=FakeCleanup(),
+            proxy_factory=lambda policy=None: FakeProxy(),
+            preflight=lambda: {"data": {"register_enabled": True, "password_register_enabled": True, "email_verification": True, "turnstile_check": False}},
+            clock=FakeClock(),
+            evidence_helper_factory=FakeBrowserEvidenceHelper,
+            browser_factory=lambda **_kwargs: type("FakeBrowser", (), {"cdp_endpoint": "http://127.0.0.1:9222", "start": lambda self: self, "stop": lambda self: None})(),
+        )
+
+        outcome = sup.run()
+
+        self.assertEqual(outcome.status, "infrastructure_failed")
+        with open(os.path.join(tmp, "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        self.assertEqual(manifest["infrastructure"]["classification"], "exploration_not_started")
+        self.assertEqual(manifest["result"]["exploration"], {"status": "not_started", "actions_used": 0})
+
     def test_output_last_message_file_is_private_parsed_and_removed_on_success_and_invalid_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             valid_payload = valid_result()
@@ -927,6 +1034,15 @@ class SupervisorTests(unittest.TestCase):
                 path = args[args.index("--output-last-message") + 1]
                 with open(path, "w", encoding="utf-8") as handle:
                     json.dump(valid_payload, handle)
+                control_mcp.write_control_state(
+                    tmp,
+                    {
+                        "phase": "exploration",
+                        "updated_at": 1700000000,
+                        "monotonic_started_at": 100.0,
+                        "actions_used": 0,
+                    },
+                )
 
             process = FakeProcess(0, write_result=write_last_message)
             sup = supervisor.Supervisor(
@@ -2003,7 +2119,8 @@ class SupervisorTests(unittest.TestCase):
 
     def test_runtime_evidence_sink_registers_exact_code_and_rejects_bad_events(self):
         redactor = supervisor.Redactor(email="owner+flatkey-qa-1-x@gmail.com")
-        sink = supervisor.RuntimeEvidenceSink(redactor)
+        checkpoints = []
+        sink = supervisor.RuntimeEvidenceSink(redactor, checkpoint_handler=lambda: checkpoints.append("captured"))
         sink.start()
         try:
             request = urllib.request.Request(
@@ -2015,6 +2132,16 @@ class SupervisorTests(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=2) as response:
                 self.assertEqual(response.status, 204)
             self.assertEqual(redactor.clean("123456 654321"), "123456 [REDACTED_CODE]")
+
+            checkpoint = urllib.request.Request(
+                sink.url,
+                data=json.dumps({"type": "replay_checkpoint"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(checkpoint, timeout=2) as response:
+                self.assertEqual(response.status, 204)
+            self.assertEqual(checkpoints, ["captured"])
 
             bad = urllib.request.Request(
                 sink.url,

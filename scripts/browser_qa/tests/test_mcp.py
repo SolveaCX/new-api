@@ -101,6 +101,14 @@ class ControlClock:
         return 1700000000
 
 
+class AdvancingControlClock(ControlClock):
+    def __init__(self):
+        self.values = iter([500.25, 600.25])
+
+    def monotonic(self):
+        return next(self.values)
+
+
 def frames(*payloads):
     return "".join(json.dumps(payload) + "\n" for payload in payloads)
 
@@ -406,13 +414,13 @@ class BrokerMcpTests(unittest.TestCase):
 
 
 class ControlMcpTests(unittest.TestCase):
-    def run_server(self, requests, runtime_dir, clock=None, mode=None):
+    def run_server(self, requests, runtime_dir, clock=None, mode=None, evidence_notifier=None):
         stdin = io.StringIO(frames(*requests))
         stdout = io.StringIO()
         env = {"FLATKEY_BROWSER_QA_RUNTIME_DIR": runtime_dir}
         if mode is not None:
             env["FLATKEY_BROWSER_QA_MODE"] = mode
-        control_mcp.run(stdin, stdout, env=env, clock=clock)
+        control_mcp.run(stdin, stdout, env=env, clock=clock, evidence_notifier=evidence_notifier)
         return decode_frames(stdout.getvalue())
 
     def test_control_exposes_only_checkpoint_and_exploration_and_writes_atomic_state(self):
@@ -454,6 +462,12 @@ class ControlMcpTests(unittest.TestCase):
                 [
                     {
                         "jsonrpc": "2.0",
+                        "id": 0,
+                        "method": "tools/call",
+                        "params": {"name": "qa_replay_checkpoint", "arguments": {}},
+                    },
+                    {
+                        "jsonrpc": "2.0",
                         "id": 1,
                         "method": "tools/call",
                         "params": {"name": "qa_start_exploration", "arguments": {}},
@@ -466,6 +480,62 @@ class ControlMcpTests(unittest.TestCase):
             with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
                 state = json.load(state_file)
             self.assertEqual(state["updated_at"], 1700000000)
+            self.assertEqual(state["monotonic_started_at"], 500.25)
+
+    def test_control_checkpoint_requires_successful_supervisor_baseline_capture(self):
+        checkpoint = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "qa_replay_checkpoint", "arguments": {}},
+        }
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            calls = []
+            responses = self.run_server([checkpoint], runtime_dir, evidence_notifier=calls.append)
+
+            self.assertFalse(responses[0]["result"]["isError"])
+            self.assertEqual(calls, [{"type": "replay_checkpoint"}])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
+                self.assertEqual(json.load(state_file)["phase"], "replay_checkpoint")
+
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            def fail_capture(_event):
+                raise RuntimeError("capture failed")
+
+            responses = self.run_server([checkpoint], runtime_dir, evidence_notifier=fail_capture)
+
+            self.assertTrue(responses[0]["result"]["isError"])
+            self.assertIn("baseline", responses[0]["result"]["content"][0]["text"])
+            self.assertFalse(os.path.exists(os.path.join(runtime_dir, "control_state.json")))
+
+    def test_control_normal_mode_rejects_exploration_before_checkpoint_and_repeated_start(self):
+        start = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "qa_start_exploration", "arguments": {}},
+        }
+        checkpoint = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "qa_replay_checkpoint", "arguments": {}},
+        }
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            responses = self.run_server(
+                [start, checkpoint, start, start],
+                runtime_dir,
+                mode="normal",
+                clock=AdvancingControlClock(),
+            )
+
+            self.assertTrue(responses[0]["result"]["isError"])
+            self.assertFalse(responses[1]["result"]["isError"])
+            self.assertFalse(responses[2]["result"]["isError"])
+            self.assertTrue(responses[3]["result"]["isError"])
+            with open(os.path.join(runtime_dir, "control_state.json"), encoding="utf-8") as state_file:
+                state = json.load(state_file)
+            self.assertEqual(state["phase"], "exploration")
             self.assertEqual(state["monotonic_started_at"], 500.25)
 
     def test_control_state_path_stays_in_runtime_dir_and_fails_closed_on_symlink_or_bad_env(self):

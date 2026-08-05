@@ -27,6 +27,7 @@ from .gcp import upload_gcs_object
 from .identity import derive_identity
 from .mcp_budget_wrapper import ProcessTreeTerminator
 from .redaction import Redactor
+from .resource_guard import CheckpointResourceGuard
 
 
 INTERNAL_DEADLINE_SECONDS = 840
@@ -104,6 +105,7 @@ class Supervisor:
         thread_factory=None,
         browser_factory=None,
         evidence_helper_factory=None,
+        resource_guard_factory=None,
         chromium_startup_stderr_limit_bytes=0,
     ):
         self.env = dict(env)
@@ -121,6 +123,9 @@ class Supervisor:
         self.thread_factory = thread_factory or threading.Thread
         self.browser_factory = browser_factory or ChromiumRuntime
         self.evidence_helper_factory = evidence_helper_factory or BrowserEvidenceHelperProcess
+        self.resource_guard_factory = resource_guard_factory or (
+            lambda origin: CheckpointResourceGuard(lambda: StagingApiClient(origin))
+        )
         if not isinstance(chromium_startup_stderr_limit_bytes, int) or isinstance(chromium_startup_stderr_limit_bytes, bool) or chromium_startup_stderr_limit_bytes < 0:
             raise ValueError("chromium startup stderr limit must be a non-negative integer")
         self.chromium_startup_stderr_limit_bytes = chromium_startup_stderr_limit_bytes
@@ -170,6 +175,7 @@ class Supervisor:
         invalid_result = False
         codex_returncode = 0
         provenance = None
+        resource_guard = None
 
         payload = initial_result if initial_result is not None else _empty_result()
         runtime_classification = None if initial_result is not None else "invalid_result"
@@ -181,6 +187,7 @@ class Supervisor:
                 runtime_classification = "preflight_failed"
                 invalid_result = False
             else:
+                resource_guard = self.resource_guard_factory(cfg.console_origin)
                 proxy = self.proxy_factory()
                 proxy.start()
                 docs_proxy = _build_docs_proxy(self.proxy_factory)
@@ -208,7 +215,11 @@ class Supervisor:
                     popen_factory=self.popen_factory,
                     docs_proxy_url=f"http://{docs_proxy.host}:{docs_proxy.port}",
                 ).start()
-                evidence_sink = RuntimeEvidenceSink(redactor, evidence_helper=evidence_helper)
+                evidence_sink = RuntimeEvidenceSink(
+                    redactor,
+                    evidence_helper=evidence_helper,
+                    checkpoint_handler=lambda: resource_guard.capture(identity),
+                )
                 evidence_sink.start()
                 self._evidence_url = evidence_sink.url
                 process = self._start_codex(proxy, browser.cdp_endpoint, cfg.mode)
@@ -293,6 +304,13 @@ class Supervisor:
                     self._event("docs_proxy_stop_failed", str(exc), redactor)
                     runtime_classification = runtime_classification or "invalid_result"
                     invalid_result = True
+            if resource_guard is not None and resource_guard.checkpoint_captured:
+                try:
+                    resource_guard.verify(identity)
+                except Exception:
+                    runtime_classification = runtime_classification or "exploration_resource_drift"
+                    invalid_result = True
+                    self._event("exploration_resource_drift", "checkpoint resources changed", redactor)
             try:
                 cleanup_result = self.cleanup_runner.run(identity)
             except Exception as exc:
@@ -309,7 +327,22 @@ class Supervisor:
                 runtime_classification = runtime_classification or "provenance_failed"
                 invalid_result = True
                 self._event("provenance_failed", str(exc), redactor)
-            payload = _with_trusted_runtime_state(payload, self.runtime_root)
+            payload = _with_trusted_runtime_state(
+                payload,
+                self.runtime_root,
+                strict=initial_result is None,
+            )
+            if (
+                initial_result is None
+                and cfg.mode == "normal"
+                and isinstance(payload, dict)
+                and isinstance(payload.get("replay"), dict)
+                and payload["replay"].get("checkpoint_reached") is True
+                and isinstance(payload.get("exploration"), dict)
+                and payload["exploration"].get("status") == "not_started"
+            ):
+                runtime_classification = runtime_classification or "exploration_not_started"
+                invalid_result = True
             try:
                 report.validate_result(payload)
             except Exception:
@@ -554,7 +587,7 @@ def _empty_result():
     }
 
 
-def _with_trusted_runtime_state(payload, runtime_root):
+def _with_trusted_runtime_state(payload, runtime_root, *, strict=False):
     if not isinstance(payload, dict):
         return payload
     state_path = os.path.join(runtime_root, "control_state.json")
@@ -562,13 +595,27 @@ def _with_trusted_runtime_state(payload, runtime_root):
         with open(state_path, encoding="utf-8") as handle:
             state = json.load(handle)
     except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return payload
+        state = None
+    phase = state.get("phase") if isinstance(state, dict) else None
     actions_used = state.get("actions_used") if isinstance(state, dict) else None
-    if not isinstance(actions_used, int) or isinstance(actions_used, bool) or actions_used < 0:
-        return payload
     updated = dict(payload)
+    replay = dict(updated.get("replay", {}))
     exploration = dict(updated.get("exploration", {}))
-    exploration["actions_used"] = actions_used
+    if strict:
+        checkpoint_reached = phase in {"replay_checkpoint", "exploration"}
+        replay["checkpoint_reached"] = checkpoint_reached
+        if phase != "exploration":
+            exploration["status"] = "not_started"
+            exploration["actions_used"] = 0
+        elif isinstance(actions_used, int) and not isinstance(actions_used, bool) and actions_used >= 0:
+            exploration["actions_used"] = actions_used
+        else:
+            exploration["actions_used"] = 0
+    elif isinstance(actions_used, int) and not isinstance(actions_used, bool) and actions_used >= 0:
+        exploration["actions_used"] = actions_used
+    else:
+        return payload
+    updated["replay"] = replay
     updated["exploration"] = exploration
     return updated
 
@@ -642,6 +689,7 @@ PYTHONPATH = "{escaped_repo_root}"
 PATH = "{_toml_escape(child_env.get("PATH", ""))}"
 FLATKEY_BROWSER_QA_RUNTIME_DIR = "{escaped_runtime_dir}"
 FLATKEY_BROWSER_QA_MODE = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_MODE"])}"
+FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL = "{_toml_escape(child_env["FLATKEY_BROWSER_QA_RUNTIME_EVIDENCE_URL"])}"
 
 [sandbox_workspace_write]
 network_access = false
@@ -1535,9 +1583,19 @@ def _chromium_startup_stderr_limit_bytes_from_env(env):
 
 
 class RuntimeEvidenceSink:
-    def __init__(self, redactor, *, evidence_helper=None, host="127.0.0.1", port=0, max_bytes=1024):
+    def __init__(
+        self,
+        redactor,
+        *,
+        evidence_helper=None,
+        checkpoint_handler=None,
+        host="127.0.0.1",
+        port=0,
+        max_bytes=1024,
+    ):
         self.redactor = redactor
         self.evidence_helper = evidence_helper
+        self.checkpoint_handler = checkpoint_handler
         self.host = host
         self.port = port
         self.max_bytes = max_bytes
@@ -1601,6 +1659,14 @@ class RuntimeEvidenceSink:
                         if not _is_alias_restriction_evidence(event):
                             raise ValueError("invalid alias restriction evidence")
                         owner.runtime_classification = "alias_restriction"
+                        self.send_response(204)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    elif event_type == "replay_checkpoint":
+                        if set(event) != {"type"} or owner.checkpoint_handler is None:
+                            raise ValueError("invalid replay checkpoint request")
+                        owner.checkpoint_handler()
                         self.send_response(204)
                         self.send_header("Content-Length", "0")
                         self.end_headers()
