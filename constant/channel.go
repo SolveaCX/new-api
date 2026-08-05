@@ -68,6 +68,7 @@ const (
 	ChannelTypeElevenLabs       = 106 // ElevenLabs voice/music/SFX — native endpoints passthrough (xi-api-key)
 	ChannelTypeBytePlus         = 107 // BytePlus Ark Seedance async video API
 	ChannelTypeXaiGrokVideo     = 108 // xAI Grok Imagine async video API (submit → poll); whitelabel
+	ChannelTypeMiniMaxH3        = 110 // MiniMax H3 async video API
 	ChannelTypeDummy                  // this one is only for count, do not add any channel after this
 
 )
@@ -147,6 +148,8 @@ var ChannelBaseURLs = []string{
 	"https://api.elevenlabs.io",    // 106 ElevenLabs
 	"https://ark.ap-southeast.bytepluses.com", // 107 BytePlus
 	"https://api.x.ai",                        // 108 XaiGrokVideo
+	"",                                        // 109 reserved on staging
+	"https://api.minimax.io",                  // 110 MiniMaxH3
 }
 
 var ChannelTypeNames = map[int]string{
@@ -214,6 +217,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeElevenLabs:       "ElevenLabs",
 	ChannelTypeBytePlus:         "BytePlus",
 	ChannelTypeXaiGrokVideo:     "XaiGrokVideo",
+	ChannelTypeMiniMaxH3:        "MiniMaxH3",
 }
 
 func GetChannelTypeName(channelType int) string {
