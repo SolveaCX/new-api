@@ -1,13 +1,15 @@
 import { OnlineHomePage } from "@/components/online-home-page";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
-  title: "flatkey - One key. More models. More tools. Lower costs.",
+  title: "flatkey - One key for multimodal AI models",
   description:
-    "flatkey routes your requests to official GPT, Claude, Gemini, DeepSeek, Qwen and GLM APIs, with 300+ frontier models and 1,000+ AI tools behind one key.",
+    "flatkey routes text, image, video, and audio requests to official GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Seedance, and other frontier models with one key.",
   pathname: "/",
 });
 
-export default function Page() {
-  return <OnlineHomePage locale="en" />;
+export default async function Page() {
+  const pricingData = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
+  return <OnlineHomePage locale="en" pricingData={pricingData} />;
 }

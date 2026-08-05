@@ -134,6 +134,19 @@ type OnlineCopy = {
   };
 };
 
+const localizedFooterText: Record<Locale, { brand: string; vanta: string }> = {
+  en: { brand: "One key. More models. Lower cost.", vanta: "Vanta monitored" },
+  zh: { brand: "一个 Key，更多模型，更低成本。", vanta: "Vanta 监控" },
+  es: { brand: "Una key. Más modelos. Menor coste.", vanta: "Supervisado por Vanta" },
+  fr: { brand: "Une clé. Plus de modèles. Coût réduit.", vanta: "Suivi par Vanta" },
+  pt: { brand: "Uma key. Mais modelos. Menor custo.", vanta: "Monitorizado pela Vanta" },
+  ru: { brand: "Один ключ. Больше моделей. Ниже стоимость.", vanta: "Мониторинг Vanta" },
+  ja: { brand: "1 つの key。より多くのモデル。より低いコスト。", vanta: "Vanta 監視" },
+  vi: { brand: "Một key. Nhiều model hơn. Chi phí thấp hơn.", vanta: "Vanta giám sát" },
+  de: { brand: "Ein Key. Mehr Modelle. Niedrigere Kosten.", vanta: "Von Vanta überwacht" },
+  id: { brand: "Satu key. Lebih banyak model. Biaya lebih rendah.", vanta: "Dipantau Vanta" },
+};
+
 const en: OnlineCopy = {
   contact: {
     discord: "Join our Discord",
@@ -174,7 +187,7 @@ const en: OnlineCopy = {
     about: "About",
     apiStatus: "API status",
     blog: "Blog ↗",
-    brand: "One key. More models. More tools. Lower cost.",
+    brand: "One key. More models. Lower cost.",
     careers: "Careers",
     company: "Company",
     compute: "Compute",
@@ -203,25 +216,21 @@ const en: OnlineCopy = {
     zeroRetention: "Zero retention of request content",
   },
   home: {
-    balance: "FLATKEY BALANCE",
-    ctaKey: "Get API Key",
-    ctaModels: "Explore Models",
-    eyebrow: "300+ OFFICIAL MODELS · 1,000+ AI TOOLS",
+    balance: "PRODUCTION GATEWAY",
+    ctaKey: "Create API key",
+    ctaModels: "Compare models",
+    eyebrow: "MODEL ROUTING · MULTIMODAL ACCESS · COST CONTROL",
     heroTitle: (
       <>
-        One key.
+        Multimodal AI
         <br />
-        <span className="price">
-          More models.
-          <span className="toolLine"> More tools.</span>
-          <span className="costLine">Lower costs.</span>
-        </span>
+        <span className="price">One key to ship</span>
       </>
     ),
-    invoice: "Every model. Every tool. One invoice.",
-    pay: "Pay per successful call.",
-    savings: ["Model subscriptions", "Data tool subscriptions", "Automation subscriptions"],
-    sub: "One balance across 300+ official models and 1,000+ pay-per-call tools. No idle seats, duplicate contracts, or scattered provider keys.",
+    invoice: "Fallback, spend caps, request logs, invoices.",
+    pay: "One API surface for production AI.",
+    savings: ["Separate model accounts", "API subscriptions", "Untracked multimodal spend"],
+    sub: "Text, image, video, and audio models through one production gateway with routing, billing, and spend control.",
     terminal: {
       billed: "✓ $0.83 billed · failed calls $0.00",
       contacts: "✓ 489 contacts waterfall enriched across 5 providers",
@@ -232,25 +241,25 @@ const en: OnlineCopy = {
       runtimeLabel: "Total runtime",
       runtimeValue: "18.4 sec",
       scanned: "→ 4,857 public signals scanned across 349 sources",
-      successfulLabel: "Successful tools",
+      successfulLabel: "Successful API calls",
       successfulValue: "23 / 23",
-      title: "Flatkey Tools · agent run",
+      title: "Flatkey runtime · agent run",
     },
     toolsCommand: "Set up Flatkey from https://flatkey.ai/SKILL.md",
-    toolsCopy: "Build with Claude Code, Codex, OpenClaw, or any app. Flatkey runs search, browsers, enrichment, media generation, and actions through one balance—then bills only successful calls.",
-    toolsKicker: "SDK · CLI · API · 1,000+ TOOLS",
+    toolsCopy: "Connect Claude Code, Codex, OpenClaw, or your own product to one gateway. Models, multimodal generation, search, browser automation, enrichment, and external APIs share the same key, policies, and ledger.",
+    toolsKicker: "AGENTS · PRODUCTS · API RUNTIME",
     toolsTitle: (
       <>
-        One key, one bill,
+        Give agents APIs
         <br />
-        1,000+ tools.
+        without losing control.
       </>
     ),
-    universeCopy: "Use one Flatkey interface for leading AI models, social platforms, web data, crawlers, GTM intelligence, and more.",
-    universeKicker: "300+ MODELS · 1,000+ TOOLS",
+    universeCopy: "Choose the right model or API surface, and keep policy, usage, and billing in one place.",
+    universeKicker: "MODELS · MULTIMODAL · GOVERNANCE",
     universeTitle: (
       <>
-        Every model. Every tool.
+        Every model. Every API.
         <br />
         One key.
       </>
@@ -323,9 +332,9 @@ const en: OnlineCopy = {
         Every model included.
       </>
     ),
-    toolsLabel: "Tools Credits",
-    toolsMain: "Pay per run",
-    toolsSub: "1,000+ data APIs & MCP tools · uses Flatkey Credits",
+    toolsLabel: "Media Credits",
+    toolsMain: "Images & video",
+    toolsSub: "Multimodal generation uses shared Flatkey Credits",
   },
 };
 
@@ -371,22 +380,22 @@ const zh: OnlineCopy = {
     about: "关于我们",
     apiStatus: "API status",
     blog: "Blog ↗",
-    brand: en.footer.brand,
+    brand: localizedFooterText.zh.brand,
     careers: "加入我们",
     company: "公司",
-    compute: "Compute",
+    compute: "算力",
     console: "控制台 ↗",
     contact: "联系我们",
     developers: "开发者",
-    docs: "Docs",
+    docs: "文档",
     gdpr: "GDPR 合规",
     legalPrefix: "© 2026 flatkey.ai · VOC AI INC (San Jose, CA). 保留所有权利。",
-    models: "Models",
+    models: "模型",
     playground: "Playground",
     privacy: "隐私",
     privacyFull: "隐私政策",
     product: "产品",
-    rankings: "Rankings",
+    rankings: "排行榜",
     refund: "退款",
     refundFull: "退款政策",
     serviceLevel: "SLA",
@@ -395,31 +404,27 @@ const zh: OnlineCopy = {
     terms: "条款",
     termsFull: "服务条款",
     trusted: "认证与背书",
-    useCases: "Use cases",
-    vanta: "Vanta monitored",
+    useCases: "使用场景",
+    vanta: localizedFooterText.zh.vanta,
     zeroRetention: "请求内容零留存",
   },
   home: {
     ...en.home,
-    balance: "FLATKEY 统一余额",
-    ctaKey: "获取 API Key",
-    ctaModels: "探索模型",
-    eyebrow: "300+ 官方模型 · 1,000+ AI 工具",
+    balance: "生产级网关",
+    ctaKey: "创建 API Key",
+    ctaModels: "对比模型",
+    eyebrow: "模型路由 · 多模态接入 · 成本控制",
     heroTitle: (
       <>
-        一个 key。
+        多模态 AI
         <br />
-        <span className="price">
-          更多模型。
-          <span className="toolLine">更多工具。</span>
-          <span className="costLine">更低成本。</span>
-        </span>
+        <span className="price">一个 Key 接入</span>
       </>
     ),
-    invoice: "每个模型、每个工具，只需一张账单。",
-    pay: "仅成功调用才付费。",
-    savings: ["模型订阅", "数据工具订阅", "自动化工具订阅"],
-    sub: "一个余额覆盖 300+ 个官方模型和 1,000+ 个按调用付费工具。无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key。",
+    invoice: "故障切换、额度、请求日志、发票。",
+    pay: "生产 AI 的统一 API 控制面。",
+    savings: ["分散的模型账号", "API 订阅", "不可控的多模态花费"],
+    sub: "文本、图像、视频、音频模型统一接入；路由、账单、预算和调用记录一个网关全部搞定。",
     terminal: {
       billed: "✓ 计费 $0.83 · 失败调用 $0.00",
       contacts: "✓ 通过 5 个供应商瀑布式补全 489 位联系人",
@@ -430,25 +435,25 @@ const zh: OnlineCopy = {
       runtimeLabel: "总运行时间",
       runtimeValue: "18.4 sec",
       scanned: "→ 扫描 349 个来源中的 4,857 条公开信号",
-      successfulLabel: "成功工具调用",
+      successfulLabel: "成功 API 调用",
       successfulValue: "23 / 23",
-      title: "Flatkey Tools · Agent 运行",
+      title: "Flatkey runtime · Agent 运行",
     },
     toolsCommand: "Set up Flatkey from https://flatkey.ai/SKILL.md",
-    toolsCopy: "无论使用 Claude Code、Codex、OpenClaw 还是自己的应用，Flatkey 都能用同一份余额完成搜索、浏览器操作、数据补全、媒体生成与自动化，并且只对成功调用计费。",
-    toolsKicker: "SDK · CLI · API · 1,000+ 工具",
+    toolsCopy: "把 Claude Code、Codex、OpenClaw 或你自己的产品接到同一个网关。模型、多模态生成、搜索、浏览器自动化、数据补全和外部 API 共用同一个 key、策略与台账。",
+    toolsKicker: "Agent · 产品 · API Runtime",
     toolsTitle: (
       <>
-        一个 key，一张账单，
+        给 Agent 接 API，
         <br />
-        1,000+ 工具。
+        不失去控制权。
       </>
     ),
-    universeCopy: "通过一个 Flatkey 接口调用领先 AI 模型、社交平台、网页数据、爬虫、GTM 情报以及更多能力。",
-    universeKicker: "300+ 模型 · 1,000+ 工具",
+    universeCopy: "为每个任务选择合适模型或 API 能力，同时把权限、用量和账单留在一个地方。",
+    universeKicker: "模型 · 多模态 · 治理",
     universeTitle: (
       <>
-        每个模型，每个工具。
+        每个模型，每个 API。
         <br />
         一个 key。
       </>
@@ -466,7 +471,7 @@ const zh: OnlineCopy = {
     signin: "登录",
     start: "免费开始 →",
     status: "服务状态",
-    tools: "工具",
+    tools: "多模态",
     useCases: "使用场景",
   },
   pricing: {
@@ -521,9 +526,9 @@ const zh: OnlineCopy = {
         所有模型全包含。
       </>
     ),
-    toolsLabel: "Tools Credits",
-    toolsMain: "按次运行付费",
-    toolsSub: "1,000+ 数据 API 与 MCP 工具，使用 Flatkey Credits",
+    toolsLabel: "Media Credits",
+    toolsMain: "图片与视频",
+    toolsSub: "多模态生成共用 Flatkey Credits",
   },
 };
 
@@ -687,16 +692,22 @@ export function getOnlineStaticCopy(locale: Locale): OnlineCopy {
       about: getOnlineStaticText(locale, "ft.about", en.footer.about),
       apiStatus: getOnlineStaticText(locale, "ft.api", en.footer.apiStatus),
       blog: getOnlineStaticText(locale, "ft.blog", en.footer.blog),
+      brand: localizedFooterText[locale].brand,
       careers: getOnlineStaticText(locale, "ft.careers", en.footer.careers),
       company: getOnlineStaticText(locale, "ft.company", en.footer.company),
+      compute: getOnlineStaticText(locale, "nav.compute", en.footer.compute),
       console: getOnlineStaticText(locale, "ft.console", en.footer.console),
       contact: getOnlineStaticText(locale, "ft.contact", en.footer.contact),
       developers: getOnlineStaticText(locale, "ft.dev", en.footer.developers),
+      docs: getOnlineStaticText(locale, "nav.docs", en.footer.docs),
       gdpr: getOnlineStaticText(locale, "ft.gdpr", en.footer.gdpr),
       legalPrefix: textBeforeFirstLink(legal),
+      models: getOnlineStaticText(locale, "nav.models", en.footer.models),
+      playground: getOnlineStaticText(locale, "nav.playground", en.footer.playground),
       privacy: legalShort.privacy ?? en.footer.privacy,
       privacyFull: getOnlineStaticText(locale, "ft.privacy", en.footer.privacyFull),
       product: getOnlineStaticText(locale, "ft.product", en.footer.product),
+      rankings: getOnlineStaticText(locale, "nav.rankings", en.footer.rankings),
       refund: legalShort.refund ?? en.footer.refund,
       refundFull: getOnlineStaticText(locale, "ft.refund", en.footer.refundFull),
       serviceLevel: legalShort.serviceLevel ?? en.footer.serviceLevel,
@@ -705,6 +716,8 @@ export function getOnlineStaticCopy(locale: Locale): OnlineCopy {
       terms: legalShort.terms ?? en.footer.terms,
       termsFull: getOnlineStaticText(locale, "ft.terms", en.footer.termsFull),
       trusted: getOnlineStaticText(locale, "ft.trusted", en.footer.trusted),
+      useCases: getOnlineStaticText(locale, "nav.usecases", en.footer.useCases),
+      vanta: localizedFooterText[locale].vanta,
       zeroRetention: getOnlineStaticText(locale, "ft.zeroret", en.footer.zeroRetention),
     },
     home: {

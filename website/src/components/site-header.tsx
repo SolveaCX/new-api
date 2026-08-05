@@ -4,12 +4,12 @@ import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+import { useSiteConfig } from "@/components/site-config-provider";
 import { LANGUAGE_PREFERENCE_COOKIE } from "@/lib/language-routing";
 import { CLI_LANDING_PATH, cliLandingCopy } from "@/lib/cli-landing";
 import { getCopy } from "@/lib/copy";
 import { LOCALE_LABELS, LOCALES, type Locale, localeLanguageTag, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
-import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import { cn } from "@/lib/utils";
 
 const legacyNavLabelByLocale: Record<
@@ -21,7 +21,7 @@ const legacyNavLabelByLocale: Record<
     usecases: string;
   }
 > = withIdFallback({
-  en: { compute: "Compute", playground: "Playground", status: "Status", usecases: "Use cases" },
+  en: { compute: "Compute", playground: "Playground", status: "Status", usecases: "Use Case" },
   zh: { compute: "算力", playground: "Playground", status: "服务状态", usecases: "使用场景" },
   es: { compute: "Compute", playground: "Playground", status: "Estado", usecases: "Casos de uso" },
   fr: { compute: "Compute", playground: "Playground", status: "Statut", usecases: "Cas d'usage" },
@@ -101,7 +101,7 @@ function StaticLanguageSelect(props: { cookieDomain?: string; locale: Locale; pa
 export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
-  const toolsCopy = toolsLandingCopy[props.locale];
+  const { docsUrl } = useSiteConfig();
   const legacyLabels = legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels = navGroupLabelByLocale[props.locale] ?? navGroupLabelByLocale.en;
   const startFreeLabel = startFreeLabelByLocale[props.locale] ?? startFreeLabelByLocale.en;
@@ -114,20 +114,19 @@ export function SiteHeader(props: Props) {
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
-      { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
+      ...(docsUrl ? [{ external: true, href: docsUrl, label: copy.nav.docs }] : []),
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
       { href: "/rankings", label: copy.nav.rankings, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },
       { href: "/usecases", label: legacyLabels.usecases, publicPath: true },
     ],
-    [copy.nav.modelPricing, copy.nav.rankings, legacyLabels, toolsCopy.navLabel]
+    [copy.nav.docs, copy.nav.modelPricing, copy.nav.rankings, docsUrl, legacyLabels]
   );
   const developerItems = useMemo<NavItem[]>(
     () => [
-      { href: "/docs", label: copy.nav.docs, publicPath: true },
       { href: "/status", label: legacyLabels.status, publicPath: true },
     ],
-    [copy.nav.docs, legacyLabels.status]
+    [legacyLabels.status]
   );
   const resourceItems = useMemo<NavItem[]>(
     () => [

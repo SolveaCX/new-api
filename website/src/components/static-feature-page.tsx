@@ -18,7 +18,7 @@ function primaryHref(pageKey: StaticFeaturePageKey) {
 function secondaryHref(pageKey: StaticFeaturePageKey, locale: Locale) {
   if (pageKey === "compute" || pageKey === "status" || pageKey === "topup") return localizePath("/contact", locale);
   if (pageKey === "docs" || pageKey === "model") return localizePath("/models", locale);
-  if (pageKey === "usecases") return localizePath("/tools", locale);
+  if (pageKey === "usecases") return localizePath("/models", locale);
   return localizePath("/pricing", locale);
 }
 

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { OnlineHomePage } from "@/components/online-home-page";
 import { DEFAULT_LOCALE, isLocale, LOCALES } from "@/lib/locales";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { buildMetadata } from "@/lib/seo";
 
 type Props = {
@@ -16,10 +17,10 @@ export async function generateMetadata(props: Props) {
   if (!isLocale(params.locale)) return {};
   const zh = params.locale === "zh";
   return buildMetadata({
-    title: zh ? "flatkey — One key. More models. More tools. Lower costs." : "flatkey - One key. More models. More tools. Lower costs.",
+    title: zh ? "flatkey — 一个 Key 接入多模态 AI 模型" : "flatkey - One key for multimodal AI models",
     description: zh
-      ? "flatkey 用一个 key 把你的请求路由到 GPT、Claude、Gemini、DeepSeek、GLM——以及 Seedance 2.5 视频——的官方 API:真模型、不降智、不跑路。国产系模型官方 6 折起,每次充值送 15–50% 额度($200 送 $100)——旗舰实付低至官方 ⅔,国产系低至 4 折。改一行代码,SDK 不动。"
-      : "flatkey routes your requests to official GPT, Claude, Gemini, DeepSeek, Qwen and GLM APIs, with 300+ frontier models and 1,000+ AI tools behind one key.",
+      ? "flatkey 用一个 Key 接入文本、图像、视频、音频模型，统一路由到 GPT、Claude、Gemini、DeepSeek、Qwen、GLM、Seedance 等官方模型端点。"
+      : "flatkey routes text, image, video, and audio requests to official GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Seedance, and other frontier models with one key.",
     pathname: "/",
     locale: params.locale,
   });
@@ -28,5 +29,6 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === DEFAULT_LOCALE) notFound();
-  return <OnlineHomePage locale={params.locale} />;
+  const pricingData = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
+  return <OnlineHomePage locale={params.locale} pricingData={pricingData} />;
 }

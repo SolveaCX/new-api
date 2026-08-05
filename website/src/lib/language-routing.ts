@@ -16,8 +16,6 @@ const IGNORED_PATH_PREFIXES = [
   "/dashboard",
   "/console",
   "/onboarding",
-  // Local-only paid landing-page review concepts have no translated siblings.
-  "/lp/tools-ads/claude",
 ];
 const IGNORED_EXACT_PATHS = [
   "/favicon.ico",
@@ -38,10 +36,6 @@ const IGNORED_EXACT_PATHS = [
   "/chinese-ai-models-api",
   "/openai-compatible",
   "/gateway",
-  "/apify-alternative",
-  "/tools/web-scraping-api",
-  "/tools/google-search-api",
-  "/lp/tools-ads-review",
 ];
 const PUBLIC_FILE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
 

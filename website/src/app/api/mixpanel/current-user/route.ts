@@ -13,6 +13,12 @@ export async function GET(request: NextRequest) {
         cookie: request.headers.get("cookie") ?? "",
       },
     });
+    if (response.status === 401 || response.status === 403) {
+      return new NextResponse(null, {
+        status: 204,
+        headers: { "cache-control": "no-store" },
+      });
+    }
     const body = await response.text();
     return new NextResponse(body, {
       status: response.status,

@@ -35,4 +35,26 @@ describe("Mixpanel current user API", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("keeps anonymous visitors silent when the console returns unauthorized", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ success: false, message: "Unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        })
+      )) as typeof fetch;
+
+    try {
+      const request = new NextRequest("https://flatkey.ai/api/mixpanel/current-user");
+      const response = await GET(request);
+
+      expect(response.status).toBe(204);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.text()).toBe("");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

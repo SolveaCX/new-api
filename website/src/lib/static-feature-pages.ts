@@ -70,7 +70,7 @@ const defaultCopy = {
     stats: [
       { value: "OpenAI", label: "Compatible base URL" },
       { value: "Anthropic", label: "Native request shape" },
-      { value: "Tools", label: "Codex and Claude Code" },
+      { value: "Agents", label: "Codex and Claude Code" },
     ],
     sections: [
       {
@@ -124,7 +124,7 @@ const defaultCopy = {
     eyebrow: "Playground",
     title: "Try frontier models before wiring production.",
     description:
-      "Generate cURL, JavaScript, Python and tool snippets for Flatkey router calls, then move the same model selection into your app.",
+      "Generate cURL, JavaScript and Python snippets for Flatkey router calls, then move the same model selection into your app.",
     primary: "Open console",
     secondary: "Browse pricing",
     stats: [
@@ -141,7 +141,7 @@ const defaultCopy = {
       {
         kicker: "Copy",
         title: "Move from preview to code",
-        body: "Copy snippets for common environments and keep the same Flatkey base URL across tools.",
+        body: "Copy snippets for common environments and keep the same Flatkey base URL across model integrations.",
       },
       {
         kicker: "Operate",
@@ -216,10 +216,10 @@ const defaultCopy = {
     description:
       "Ship Codex, Claude Code and Image Buddy workflows through one subscription, one router and one operational dashboard.",
     primary: "Get a key",
-    secondary: "See tools",
+    secondary: "See models",
     stats: [
       { value: "33-60%", label: "Target savings vs list" },
-      { value: "1 line", label: "Tool setup path" },
+      { value: "1 line", label: "Model setup path" },
       { value: "Every model", label: "One subscription" },
     ],
     sections: [
@@ -263,13 +263,13 @@ const zhCopy = {
   docs: {
     eyebrow: "文档",
     title: "用官方 API 形态在 Flatkey 上上线。",
-    description: "覆盖 OpenAI 兼容路由、Anthropic 原生工作流、工具集成、模型目录、治理和账单的快速开始。",
+    description: "覆盖 OpenAI 兼容路由、Anthropic 原生工作流、多模态模型接入、模型目录、治理和账单的快速开始。",
     primary: "打开控制台",
     secondary: "查看模型",
     stats: [
       { value: "OpenAI", label: "兼容 base URL" },
       { value: "Anthropic", label: "原生请求形态" },
-      { value: "Tools", label: "Codex 与 Claude Code" },
+      { value: "Agents", label: "Codex 与 Claude Code" },
     ],
     sections: [
       { kicker: "开始", title: "用现有 SDK 接一把 key", body: "把客户端指向 Flatkey router endpoint，保留标准请求格式，并在控制台管理模型路由。" },
@@ -297,7 +297,7 @@ const zhCopy = {
   playground: {
     eyebrow: "Playground",
     title: "接生产前先试前沿模型。",
-    description: "生成 Flatkey router 调用的 cURL、JavaScript、Python 和工具代码片段，再把同样的模型选择迁到应用里。",
+    description: "生成 Flatkey router 调用的 cURL、JavaScript、Python 和模型接入代码片段，再把同样的模型选择迁到应用里。",
     primary: "打开控制台",
     secondary: "浏览价格",
     stats: [
@@ -307,7 +307,7 @@ const zhCopy = {
     ],
     sections: [
       { kicker: "原型", title: "在浏览器里验证 prompt", body: "用 Playground 工作流比较模型行为，再投入代码或预算。" },
-      { kicker: "复制", title: "从预览迁到代码", body: "复制常见环境的代码片段，并在工具间保持同一个 Flatkey base URL。" },
+      { kicker: "复制", title: "从预览迁到代码", body: "复制常见环境的代码片段，并在模型接入间保持同一个 Flatkey base URL。" },
       { kicker: "运营", title: "随时关注成本和健康度", body: "把 prompt 测试和价格、可用性上下文放在一起，确保选出的模型适合生产。" },
     ],
   },
@@ -350,10 +350,10 @@ const zhCopy = {
     title: "你的 coding agents，比标价更便宜。",
     description: "通过一个订阅、一个路由器和一个运营 dashboard 运行 Codex、Claude Code 和 Image Buddy 工作流。",
     primary: "获取 key",
-    secondary: "查看工具",
+    secondary: "查看模型",
     stats: [
       { value: "33-60%", label: "相对标价的目标节省" },
-      { value: "1 line", label: "工具接入路径" },
+      { value: "1 line", label: "模型接入路径" },
       { value: "Every model", label: "一个订阅覆盖" },
     ],
     sections: [

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+import { useSiteConfig } from "@/components/site-config-provider";
 import { getCopy } from "@/lib/copy";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
@@ -23,7 +24,6 @@ const footerLabels = withIdFallback({
     developers: "Developers",
     company: "Company",
     socials: "Socials",
-    tools: "Tools",
     playground: "Playground",
     compute: "Compute",
     usecases: "Use cases",
@@ -39,7 +39,6 @@ const footerLabels = withIdFallback({
     developers: "开发者",
     company: "公司",
     socials: "社交",
-    tools: "工具",
     playground: "Playground",
     compute: "算力",
     usecases: "使用场景",
@@ -55,7 +54,6 @@ const footerLabels = withIdFallback({
     developers: "Desarrolladores",
     company: "Empresa",
     socials: "Redes",
-    tools: "Herramientas",
     playground: "Playground",
     compute: "Compute",
     usecases: "Casos de uso",
@@ -71,7 +69,6 @@ const footerLabels = withIdFallback({
     developers: "Développeurs",
     company: "Entreprise",
     socials: "Réseaux",
-    tools: "Outils",
     playground: "Playground",
     compute: "Compute",
     usecases: "Cas d'usage",
@@ -87,7 +84,6 @@ const footerLabels = withIdFallback({
     developers: "Desenvolvedores",
     company: "Empresa",
     socials: "Redes",
-    tools: "Ferramentas",
     playground: "Playground",
     compute: "Compute",
     usecases: "Casos de uso",
@@ -103,7 +99,6 @@ const footerLabels = withIdFallback({
     developers: "Разработчикам",
     company: "Компания",
     socials: "Соцсети",
-    tools: "Инструменты",
     playground: "Playground",
     compute: "Compute",
     usecases: "Сценарии",
@@ -119,7 +114,6 @@ const footerLabels = withIdFallback({
     developers: "開発者向け",
     company: "会社",
     socials: "ソーシャル",
-    tools: "ツール",
     playground: "Playground",
     compute: "Compute",
     usecases: "ユースケース",
@@ -135,7 +129,6 @@ const footerLabels = withIdFallback({
     developers: "Nhà phát triển",
     company: "Công ty",
     socials: "Mạng xã hội",
-    tools: "Tools",
     playground: "Playground",
     compute: "Compute",
     usecases: "Use cases",
@@ -151,7 +144,6 @@ const footerLabels = withIdFallback({
     developers: "Entwickler",
     company: "Unternehmen",
     socials: "Socials",
-    tools: "Tools",
     playground: "Playground",
     compute: "Compute",
     usecases: "Anwendungsfälle",
@@ -196,13 +188,13 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
 }
 
 export function SiteFooter(props: SiteFooterProps) {
+  const { docsUrl } = useSiteConfig();
   const siteCopy = getCopy(props.locale);
   const copy = siteCopy.footer;
   const labels = footerLabels[props.locale] ?? footerLabels.en;
   const currentYear = new Date().getFullYear();
   const productLinks: FooterLink[] = [
     { href: "/models", label: siteCopy.nav.modelPricing },
-    { href: "/tools", label: labels.tools },
     { href: "/playground", label: labels.playground },
     { href: "/rankings", label: siteCopy.nav.rankings },
     { href: "/pricing", label: siteCopy.nav.pricing },
@@ -212,7 +204,7 @@ export function SiteFooter(props: SiteFooterProps) {
   ];
   const developerLinks: FooterLink[] = [
     { href: "/cli", label: "CLI" },
-    { href: "/docs", label: siteCopy.nav.docs },
+    ...(docsUrl ? [{ href: docsUrl, label: siteCopy.nav.docs, external: true }] : []),
     { href: "/status", label: labels.status },
     { href: "/llms.txt", label: "llms.txt" },
     { href: "/blog", label: `${siteCopy.nav.blog} ↗` },
