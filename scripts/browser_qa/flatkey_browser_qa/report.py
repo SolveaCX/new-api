@@ -241,7 +241,6 @@ def _finding_evidence(runtime_root, paths):
     hashes = []
     network_events = []
     console_events = []
-    has_visual_evidence = False
     usable = True
     for path in paths:
         evidence_path = _resolve_evidence_path(runtime_root, path)
@@ -258,13 +257,11 @@ def _finding_evidence(runtime_root, paths):
         hashes.append(evidence["sha256"])
         network_events.extend(evidence["network_events"])
         console_events.extend(evidence["console_events"])
-        has_visual_evidence = has_visual_evidence or path.startswith("screenshots/")
     return {
         "usable": usable,
         "hashes": hashes,
         "network_events": network_events,
         "console_events": console_events,
-        "has_visual_evidence": has_visual_evidence,
     }
 
 
@@ -376,8 +373,7 @@ def _append_jsonl_event(line, events):
 
 def _has_independent_product_evidence(finding, evidence):
     return (
-        evidence["has_visual_evidence"]
-        or _has_same_origin_console_error_evidence(finding, evidence)
+        _has_same_origin_console_error_evidence(finding, evidence)
         or _has_same_origin_5xx_network_evidence(finding, evidence)
     )
 

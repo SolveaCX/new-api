@@ -233,9 +233,28 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(normalized["findings"][0]["severity"], "info")
             self.assertEqual(report.classify_status(normalized), "passed")
 
-    def test_normalize_findings_preserves_mixed_product_evidence_with_denied_third_party_text(self):
+    def test_normalize_findings_downgrades_third_party_noise_with_unbound_screenshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            screenshot_dir = os.path.join(tmp, "screenshots")
+            os.makedirs(screenshot_dir)
+            with open(os.path.join(screenshot_dir, "proof.png"), "wb") as handle:
+                handle.write(b"\x89PNG\r\n\x1a\nvisual-state")
+            payload = valid_result(findings=[finding(
+                actual="Registration failed while mixpanel.example was also blocked.",
+                evidence_paths=["screenshots/proof.png"],
+            )])
+
+            normalized = report.normalize_findings(
+                payload,
+                runtime_root=tmp,
+                proxy_events=[{"host": "mixpanel.example:443", "status": 403, "reason": "denied"}],
+            )
+
+            self.assertEqual(normalized["findings"][0]["severity"], "info")
+            self.assertEqual(report.classify_status(normalized), "passed")
+
+    def test_normalize_findings_preserves_origin_bound_product_evidence_with_denied_third_party_text(self):
         cases = [
-            ("visual", "screenshots/proof.png", b"\x89PNG\r\n\x1a\nvisual-state"),
             ("console", "browser/console.jsonl", json.dumps({
                 "type": "error",
                 "text": "registration submit failed",
