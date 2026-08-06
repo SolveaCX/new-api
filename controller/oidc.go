@@ -132,7 +132,12 @@ func OidcAuth(c *gin.Context) {
 	user := model.User{
 		OidcId: oidcUser.OpenID,
 	}
-	if model.IsOidcIdAlreadyTaken(user.OidcId) {
+	isTaken, err := model.IsOidcIdAlreadyTaken(user.OidcId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		err := user.FillUserByOidcId()
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
@@ -198,7 +203,12 @@ func OidcBind(c *gin.Context) {
 	user := model.User{
 		OidcId: oidcUser.OpenID,
 	}
-	if model.IsOidcIdAlreadyTaken(user.OidcId) {
+	isTaken, err := model.IsOidcIdAlreadyTaken(user.OidcId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "该 OIDC 账户已被绑定",

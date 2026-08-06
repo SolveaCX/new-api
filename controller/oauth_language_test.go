@@ -39,7 +39,7 @@ func (p oauthLanguageTestProvider) GetUserInfo(ctx context.Context, token *oauth
 	return &oauth.OAuthUser{}, nil
 }
 
-func (p oauthLanguageTestProvider) IsUserIDTaken(providerUserID string) bool {
+func (p oauthLanguageTestProvider) IsUserIDTaken(providerUserID string) (bool, error) {
 	return model.IsGitHubIdAlreadyTaken(providerUserID)
 }
 
