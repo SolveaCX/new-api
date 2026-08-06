@@ -20,6 +20,31 @@ EXPLORATION_STATUSES = frozenset({"passed", "failed", "not_started", "unknown"})
 CLEANUP_STATUSES = frozenset({"passed", "cleanup_failed", "unknown"})
 FINDING_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 FINDING_CONFIDENCE = frozenset({"low", "medium", "high"})
+FINAL_STATUS_LABELS = {
+    "passed": "全部通过",
+    "findings_detected": "发现问题",
+    "replay_failed": "回放失败",
+    "infrastructure_failed": "测试基础设施失败",
+    "cleanup_failed": "清理失败",
+}
+PHASE_LABELS = {
+    "passed": "通过",
+    "failed": "失败",
+    "not_started": "未开始",
+    "unknown": "未知",
+    "cleanup_failed": "清理失败",
+}
+SEVERITY_LABELS = {
+    "critical": "严重",
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+}
+CONFIDENCE_LABELS = {
+    "high": "高",
+    "medium": "中",
+    "low": "低",
+}
 GITHUB_RUN_URL = re.compile(
     r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[1-9][0-9]*"
 )
@@ -71,41 +96,41 @@ class DingTalkReport:
         _validate_finding_summaries(self.finding_summaries)
 
     def markdown(self):
+        title = f"Staging 浏览器 QA：{_final_label(self.final_status)}"
         lines = [
-            f"### Staging Browser QA {self._terminal()}",
-            f"- Final status: `{self.final_status}`",
-            f"- Replay status: `{self.replay_status}`",
-            f"- Exploration status: `{self.exploration_status}`",
-            f"- Exploration actions: `{self.exploration_actions}`",
-            f"- Finding count: `{self.finding_count}`",
-            f"- Cleanup status: `{self.cleanup_status}`",
-            f"- Run: [Open GitHub Actions]({self.github_run_url})",
-            f"- Evidence: `{self.gcs_uri}`",
+            f"### {title}",
+            f"> {_summary(self.final_status, self.finding_count)}",
+            f"- 最终状态：{_final_label(self.final_status)}（`{self.final_status}`）",
+            f"- 录制回放：{_phase_label(self.replay_status)}（`{self.replay_status}`）",
+            f"- AI 探索：{_phase_label(self.exploration_status)}（`{self.exploration_status}`）",
+            f"- 探索动作数：`{self.exploration_actions}`",
+            f"- 问题数量：`{self.finding_count}`",
+            f"- 账号清理：{_phase_label(self.cleanup_status)}（`{self.cleanup_status}`）",
+            f"- 运行记录：[打开 GitHub Actions]({self.github_run_url})",
+            f"- 证据文件：`{self.gcs_uri}`",
         ]
         if self.final_status == "findings_detected":
             lines.append("")
-            lines.append("### Findings")
+            lines.append("### 发现的问题")
             for item in self.finding_summaries:
                 title = _markdown_escape(item["title"])
                 page_path = _markdown_escape(item["page_path"])
-                lines.append(f"- [{item['severity']}] {title} ({item['confidence']}) {page_path}")
+                severity = item["severity"]
+                confidence = item["confidence"]
+                lines.append(
+                    f"- [{_severity_label(severity)}（`{severity}`）] {title}"
+                    f"（置信度：{_confidence_label(confidence)}（`{confidence}`）；页面：{page_path}）"
+                )
         return "\n".join(lines)
 
     def payload(self):
         return {
             "msgtype": "markdown",
             "markdown": {
-                "title": f"Staging Browser QA {self._terminal()}",
+                "title": f"Staging 浏览器 QA：{_final_label(self.final_status)}",
                 "text": self.markdown(),
             },
         }
-
-    def _terminal(self):
-        if self.final_status == "passed":
-            return "PASSED"
-        if self.final_status == "findings_detected":
-            return "ALERT"
-        return "FAILED"
 
 
 def send_report(webhook, report, *, opener=None, sleeper=time.sleep, signing_secret=None):
@@ -181,6 +206,34 @@ def main():
 
 class _TransientDeliveryError(Exception):
     pass
+
+
+def _final_label(status):
+    return FINAL_STATUS_LABELS[status]
+
+
+def _summary(final_status, finding_count):
+    if final_status == "passed":
+        return "测试已执行完成，未发现需要关注的问题。"
+    if final_status == "findings_detected":
+        return f"测试已执行完成，AI 发现 {finding_count} 个需要关注的问题；当前策略只告警，不会自动回滚。"
+    if final_status == "replay_failed":
+        return "录制回放没有走完，请检查失败步骤。"
+    if final_status == "infrastructure_failed":
+        return "测试环境、浏览器、任务或证据链异常，本次结果不能用于判断产品是否正常。"
+    return "测试结束，但临时账号或资源未被确认清理，请优先处理。"
+
+
+def _phase_label(status):
+    return PHASE_LABELS[status]
+
+
+def _severity_label(severity):
+    return SEVERITY_LABELS[severity]
+
+
+def _confidence_label(confidence):
+    return CONFIDENCE_LABELS[confidence]
 
 
 def _require_member(name, value, allowed):

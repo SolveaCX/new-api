@@ -78,25 +78,118 @@ class DingTalkTests(unittest.TestCase):
         payload = report.payload()
 
         self.assertEqual(payload["msgtype"], "markdown")
-        self.assertEqual(payload["markdown"]["title"], "Staging Browser QA PASSED")
+        self.assertEqual(payload["markdown"]["title"], "Staging 浏览器 QA：全部通过")
         self.assertEqual(payload["markdown"]["text"], markdown)
         for expected in [
-            "Final status: `passed`",
-            "Replay status: `passed`",
-            "Exploration status: `not_started`",
-            "Exploration actions: `0`",
-            "Finding count: `0`",
-            "Cleanup status: `passed`",
-            "https://github.com/SolveaCX/new-api/actions/runs/12345",
-            "gs://vocai-gemini-prod-flatkey-browser-qa-reports/runs/12345/manifest.json",
+            "### Staging 浏览器 QA：全部通过",
+            "> 测试已执行完成，未发现需要关注的问题。",
+            "最终状态：全部通过（`passed`）",
+            "录制回放：通过（`passed`）",
+            "AI 探索：未开始（`not_started`）",
+            "探索动作数：`0`",
+            "问题数量：`0`",
+            "账号清理：通过（`passed`）",
+            "运行记录：[打开 GitHub Actions](https://github.com/SolveaCX/new-api/actions/runs/12345)",
+            "证据文件：`gs://vocai-gemini-prod-flatkey-browser-qa-reports/runs/12345/manifest.json`",
         ]:
             self.assertIn(expected, markdown)
+        for forbidden in [
+            "Final status:",
+            "Replay status:",
+            "Exploration status:",
+            "Finding count:",
+            "Cleanup status:",
+            "### Findings",
+        ]:
+            self.assertNotIn(forbidden, markdown)
         for forbidden in ["gmail", "password", "verification", "api key", "cookie", "authorization", "super-secret"]:
             self.assertNotIn(forbidden, markdown.lower())
 
+    def test_report_renders_all_terminal_statuses_with_chinese_summary_and_raw_code(self):
+        cases = [
+            (
+                "passed",
+                0,
+                "全部通过",
+                "测试已执行完成，未发现需要关注的问题。",
+            ),
+            (
+                "findings_detected",
+                2,
+                "发现问题",
+                "测试已执行完成，AI 发现 2 个需要关注的问题；当前策略只告警，不会自动回滚。",
+            ),
+            (
+                "replay_failed",
+                0,
+                "回放失败",
+                "录制回放没有走完，请检查失败步骤。",
+            ),
+            (
+                "infrastructure_failed",
+                0,
+                "测试基础设施失败",
+                "测试环境、浏览器、任务或证据链异常，本次结果不能用于判断产品是否正常。",
+            ),
+            (
+                "cleanup_failed",
+                0,
+                "清理失败",
+                "测试结束，但临时账号或资源未被确认清理，请优先处理。",
+            ),
+        ]
+        summaries = (
+            {"severity": "high", "title": "登录入口跳转到错误页面", "confidence": "high", "page_path": "/admin"},
+            {"severity": "medium", "title": "API Key label is visible", "confidence": "medium", "page_path": "/keys"},
+        )
+        for final_status, finding_count, label, summary in cases:
+            with self.subTest(final_status=final_status):
+                report = self.report(
+                    final_status=final_status,
+                    finding_count=finding_count,
+                    finding_summaries=summaries if final_status == "findings_detected" else (),
+                )
+                markdown = report.markdown()
+
+                self.assertEqual(report.payload()["markdown"]["title"], f"Staging 浏览器 QA：{label}")
+                self.assertIn(f"### Staging 浏览器 QA：{label}", markdown)
+                self.assertIn(f"> {summary}", markdown)
+                self.assertIn(f"最终状态：{label}（`{final_status}`）", markdown)
+
+    def test_report_renders_phase_severity_and_confidence_labels_with_raw_codes(self):
+        report = self.report(
+            final_status="findings_detected",
+            replay_status="failed",
+            exploration_status="unknown",
+            cleanup_status="cleanup_failed",
+            finding_count=3,
+            finding_summaries=(
+                {"severity": "critical", "title": "严重页面断流", "confidence": "low", "page_path": "/critical"},
+                {"severity": "low", "title": "低优先级布局偏移", "confidence": "medium", "page_path": "/low"},
+                {"severity": "medium", "title": "中优先级状态异常", "confidence": "high", "page_path": "/medium"},
+            ),
+        )
+        not_started = self.report(exploration_status="not_started").markdown()
+        passed = self.report(replay_status="passed", cleanup_status="passed").markdown()
+
+        markdown = report.markdown()
+
+        for expected in [
+            "录制回放：失败（`failed`）",
+            "AI 探索：未知（`unknown`）",
+            "账号清理：清理失败（`cleanup_failed`）",
+            "AI 探索：未开始（`not_started`）",
+            "录制回放：通过（`passed`）",
+            "账号清理：通过（`passed`）",
+            "- [严重（`critical`）] 严重页面断流（置信度：低（`low`）；页面：/critical）",
+            "- [低（`low`）] 低优先级布局偏移（置信度：中（`medium`）；页面：/low）",
+            "- [中（`medium`）] 中优先级状态异常（置信度：高（`high`）；页面：/medium）",
+        ]:
+            self.assertIn(expected, "\n".join([markdown, not_started, passed]))
+
     def test_report_renders_alert_findings_only_for_findings_detected(self):
         summaries = (
-            {"severity": "high", "title": "Unsafe redirect", "confidence": "high", "page_path": "/admin"},
+            {"severity": "high", "title": "登录入口跳转到错误页面", "confidence": "high", "page_path": "/admin"},
             {"severity": "medium", "title": "API Key label is visible", "confidence": "medium", "page_path": "/keys"},
         )
 
@@ -104,14 +197,14 @@ class DingTalkTests(unittest.TestCase):
         passed = self.report(final_status="passed", finding_count=2, finding_summaries=summaries)
         failed = self.report(final_status="cleanup_failed", finding_count=2, finding_summaries=summaries)
 
-        self.assertEqual(alert.payload()["markdown"]["title"], "Staging Browser QA ALERT")
-        self.assertIn("### Findings", alert.markdown())
-        self.assertIn("[high] Unsafe redirect (high) /admin", alert.markdown())
-        self.assertIn("[medium] API Key label is visible (medium) /keys", alert.markdown())
-        self.assertEqual(passed.payload()["markdown"]["title"], "Staging Browser QA PASSED")
-        self.assertNotIn("### Findings", passed.markdown())
-        self.assertEqual(failed.payload()["markdown"]["title"], "Staging Browser QA FAILED")
-        self.assertNotIn("### Findings", failed.markdown())
+        self.assertEqual(alert.payload()["markdown"]["title"], "Staging 浏览器 QA：发现问题")
+        self.assertIn("### 发现的问题", alert.markdown())
+        self.assertIn("- [高（`high`）] 登录入口跳转到错误页面（置信度：高（`high`）；页面：/admin）", alert.markdown())
+        self.assertIn("- [中（`medium`）] API Key label is visible（置信度：中（`medium`）；页面：/keys）", alert.markdown())
+        self.assertEqual(passed.payload()["markdown"]["title"], "Staging 浏览器 QA：全部通过")
+        self.assertNotIn("### 发现的问题", passed.markdown())
+        self.assertEqual(failed.payload()["markdown"]["title"], "Staging 浏览器 QA：清理失败")
+        self.assertNotIn("### 发现的问题", failed.markdown())
 
     def test_report_escapes_untrusted_markdown_in_finding_text(self):
         report = self.report(
