@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronDown, Languages, Menu } from "lucide-react";
+import { ChevronDown, Globe2, Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { OnlineLanguageSelect } from "@/components/online-language-select";
 import { LOCALES, LOCALE_LABELS, type Locale, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
@@ -182,7 +182,7 @@ export function OnlineNav(props: { active?: ShellProps["active"]; contactAction?
               <details className="mobileLangPage">
                 <summary className="mobileLangOpen">
                   <span>
-                    <Languages aria-hidden="true" />
+                    <Globe2 aria-hidden="true" />
                     <b>{languageLabel}</b>
                     <small>{LOCALE_LABELS[props.locale]}</small>
                   </span>

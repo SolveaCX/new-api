@@ -1,6 +1,6 @@
 "use client";
 
-import { Languages } from "lucide-react";
+import { Globe2 } from "lucide-react";
 import { buildLanguagePreferenceCookie } from "@/lib/language-routing";
 import { LOCALE_LABELS, LOCALES, type Locale, localizePath, stripLocale } from "@/lib/locales";
 
@@ -26,7 +26,7 @@ export function OnlineLanguageSelect(props: Props) {
   return (
     <details className="langIconSelect">
       <summary aria-label="Change language" title={LOCALE_LABELS[props.locale]}>
-        <Languages aria-hidden="true" />
+        <Globe2 aria-hidden="true" />
         <span className="langCurrent">{LOCALE_BADGES[props.locale]}</span>
       </summary>
       <div className="langMenu">

@@ -21,8 +21,44 @@ type HomePriceComparison = {
   vendor: string;
 };
 
+type HomeModelFlowPriceRow = {
+  discount: string;
+  flatkey: string;
+  href: string;
+  model: string;
+  official: string;
+  vendor: string;
+};
+
 type HomeModelKind = HeroMode["kind"];
 type HomeModelTags = Record<HomeModelKind, string[]>;
+type HomeModelFlowKind = Exclude<HomeModelKind, "all">;
+
+type HomeModelFlowType = HomePageCopy["modelFlow"]["types"][HomeModelFlowKind] & {
+  href: string;
+  kind: HomeModelFlowKind;
+  models: string[];
+  rows: HomeModelFlowPriceRow[];
+};
+
+const MODEL_FLOW_TABLE_LABELS: Record<Locale, {
+  discount: string;
+  flatkey: string;
+  model: string;
+  official: string;
+  provider: string;
+  savePrefix: string;
+}> = withIdFallback({
+  en: { discount: "Off", flatkey: "Flatkey price", model: "Model", official: "Official price", provider: "Provider", savePrefix: "Save" },
+  zh: { discount: "优惠", flatkey: "Flatkey 价格", model: "模型名", official: "原价格", provider: "供应商", savePrefix: "省" },
+  es: { discount: "Dto.", flatkey: "Precio Flatkey", model: "Modelo", official: "Precio oficial", provider: "Proveedor", savePrefix: "Ahorra" },
+  fr: { discount: "Remise", flatkey: "Prix Flatkey", model: "Modèle", official: "Prix officiel", provider: "Fournisseur", savePrefix: "Éco." },
+  pt: { discount: "Desc.", flatkey: "Preço Flatkey", model: "Modelo", official: "Preço oficial", provider: "Fornecedor", savePrefix: "Poupe" },
+  ru: { discount: "Скидка", flatkey: "Цена Flatkey", model: "Модель", official: "Офиц. цена", provider: "Провайдер", savePrefix: "Экономия" },
+  ja: { discount: "割引", flatkey: "Flatkey 価格", model: "モデル", official: "公式価格", provider: "プロバイダー", savePrefix: "節約" },
+  vi: { discount: "Giảm", flatkey: "Giá Flatkey", model: "Model", official: "Giá chính thức", provider: "Nhà cung cấp", savePrefix: "Tiết kiệm" },
+  de: { discount: "Rabatt", flatkey: "Flatkey-Preis", model: "Modell", official: "Offizieller Preis", provider: "Anbieter", savePrefix: "Spare" },
+});
 
 type HomePageCopy = {
   carousel: {
@@ -367,7 +403,7 @@ const HOME_PAGE_COPY: Record<Locale, HomePageCopy> = withIdFallback({
     contactSales: "Contact sales",
     fallbackDirectory: "Browse directory",
     hero: {
-      all: { copy: "One key for real supported models, with routing, budgets, billing, and request logs in one place.", cta: "", fallbackCta: "View models", fallbackMetric: "Official endpoints", fallbackModelName: "Model directory", fallbackVendor: "All models", kicker: "All models", mode: "All models", subline: "One gateway", title: "Multimodal models" },
+      all: { copy: "One key for real supported models, with routing, budgets, billing, and request logs in one place.", cta: "", fallbackCta: "View models", fallbackMetric: "Official endpoints", fallbackModelName: "Model directory", fallbackVendor: "All models", kicker: "All models", mode: "All models", subline: "text, image, video, and audio models", title: "One key to access and use" },
       audio: { copy: "Speech recognition, synthesis, audio understanding, and transcription under one budget policy.", cta: "", fallbackCta: "View audio models", fallbackMetric: "Official endpoint", fallbackModelName: "Audio model", fallbackVendor: "Audio", kicker: "Audio models", mode: "Audio", subline: "Speech and understanding", title: "Audio model" },
       image: { copy: "Posters, product visuals, illustrations, and bulk creative generation.", cta: "", fallbackCta: "View image models", fallbackMetric: "Official endpoint", fallbackModelName: "Image model", fallbackVendor: "Image generation", kicker: "Image generation", mode: "Image", subline: "High-quality visuals", title: "Image model" },
       text: { copy: "Chat, reasoning, coding agents, and long-context work routed from the same gateway.", cta: "", fallbackCta: "View text models", fallbackMetric: "Official endpoint", fallbackModelName: "Text model", fallbackVendor: "Text and reasoning", kicker: "Text and reasoning", mode: "Text", subline: "Reliable routing", title: "Text model" },
@@ -441,7 +477,7 @@ const HOME_PAGE_COPY: Record<Locale, HomePageCopy> = withIdFallback({
     contactSales: "联系销售",
     fallbackDirectory: "查看模型目录",
     hero: {
-      all: { copy: "一个 Key 管理真实可用模型，路由、账单、预算和调用记录都在一处。", cta: "", fallbackCta: "进入模型目录", fallbackMetric: "官方端点", fallbackModelName: "模型目录", fallbackVendor: "全部模型", kicker: "全部模型", mode: "全部模型", subline: "一个 Key 接入", title: "多模态模型" },
+      all: { copy: "一个 Key 管理真实可用模型，路由、账单、预算和调用记录都在一处。", cta: "", fallbackCta: "进入模型目录", fallbackMetric: "官方端点", fallbackModelName: "模型目录", fallbackVendor: "全部模型", kicker: "全部模型", mode: "全部模型", subline: "文本、图像、视频、音频模型", title: "用一个 Key 接入并使用" },
       audio: { copy: "语音识别、合成、理解和转写，和其他模型共用余额、权限和日志。", cta: "", fallbackCta: "查看音频模型", fallbackMetric: "官方端点", fallbackModelName: "音频模型", fallbackVendor: "音频能力", kicker: "音频模型", mode: "音频", subline: "语音音频", title: "音频模型" },
       image: { copy: "海报、商品图、插画和批量素材生成，直接进入模型页测试。", cta: "", fallbackCta: "查看图像模型", fallbackMetric: "官方端点", fallbackModelName: "图像模型", fallbackVendor: "图像生成", kicker: "图像生成", mode: "图像", subline: "图片生成", title: "图像模型" },
       text: { copy: "对话、推理、代码 Agent 和长上下文任务，按团队策略稳定路由。", cta: "", fallbackCta: "查看文本模型", fallbackMetric: "官方端点", fallbackModelName: "文本模型", fallbackVendor: "文本与推理", kicker: "文本与推理", mode: "文本", subline: "文本推理", title: "文本模型" },
@@ -564,6 +600,32 @@ function buildRepresentativePriceComparisons(data: PricingData | undefined, copy
     official: formatHomePriceLabel(row.official, copy),
     policy: copy.price.cardPolicy,
     tag: copy.price.test,
+    vendor: row.vendor,
+  }));
+}
+
+function parseHomePriceNumber(price: string) {
+  const match = price.match(/\$?([0-9]+(?:\.[0-9]+)?)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function formatHomeDiscount(flatkey: string, official: string, locale: Locale) {
+  const flatkeyValue = parseHomePriceNumber(flatkey);
+  const officialValue = parseHomePriceNumber(official);
+  if (!flatkeyValue || !officialValue || flatkeyValue >= officialValue) return MODEL_FLOW_TABLE_LABELS[locale].discount;
+  const percent = Math.max(1, Math.round((1 - flatkeyValue / officialValue) * 100));
+  return `${MODEL_FLOW_TABLE_LABELS[locale].savePrefix} ${percent}%`;
+}
+
+function buildModelFlowPriceRows(data: PricingData | undefined, kind: HomeModelFlowKind, copy: HomePageCopy, locale: Locale): HomeModelFlowPriceRow[] {
+  if (!data || data.models.length === 0) return [];
+  const filtered = sortPricingModelsBySeries(data.models).filter((model) => modelMatchesHomeKind(model, kind));
+  return buildRowsForModels(filtered, data.vendors, data.groupRatio).slice(0, 5).map((row) => ({
+    discount: formatHomeDiscount(row.discounted, row.official, locale),
+    flatkey: formatHomePriceLabel(row.discounted, copy),
+    href: modelPublicPath(row.name),
+    model: row.name,
+    official: formatHomePriceLabel(row.official, copy),
     vendor: row.vendor,
   }));
 }
@@ -709,24 +771,25 @@ function getHeroModes(copy: HomePageCopy, heroModels: HomeHeroModels): HeroMode[
   const textModel = heroModels.text;
   const audioModel = heroModels.audio;
   const c = copy.hero;
+  const fixedTitle = c.all.title;
+  const fixedSubline = c.all.subline;
 
   return [
     { ...c.all, cta: heroModelCta(copy, allModel, c.all.fallbackCta), href: heroModelHref(allModel, "/models"), image: HERO_ART.all.wide, kind: "all", metric: heroModelVendor(allModel, c.all.fallbackMetric), modelName: heroModelName(allModel, c.all.fallbackModelName), modelVendor: heroModelVendor(allModel, c.all.fallbackVendor), thumb: HERO_ART.all.wide },
-    { ...c.image, cta: heroModelCta(copy, imageModel, c.image.fallbackCta), href: heroModelHref(imageModel, "/models?type=image"), image: HERO_ART.image.wide, kind: "image", metric: heroModelVendor(imageModel, c.image.fallbackMetric), modelName: heroModelName(imageModel, c.image.fallbackModelName), modelVendor: heroModelVendor(imageModel, c.image.fallbackVendor), thumb: HERO_ART.image.wide, title: heroModelName(imageModel, c.image.title) },
-    { ...c.video, cta: heroModelCta(copy, videoModel, c.video.fallbackCta), href: heroModelHref(videoModel, "/models/seedance-api"), image: HERO_ART.video.wide, kind: "video", metric: heroModelVendor(videoModel, c.video.fallbackMetric), modelName: heroModelName(videoModel, c.video.fallbackModelName), modelVendor: heroModelVendor(videoModel, c.video.fallbackVendor), thumb: HERO_ART.video.wide, title: heroModelName(videoModel, c.video.title) },
-    { ...c.text, cta: heroModelCta(copy, textModel, c.text.fallbackCta), href: heroModelHref(textModel, "/models"), image: HERO_ART.text.wide, kind: "text", metric: heroModelVendor(textModel, c.text.fallbackMetric), modelName: heroModelName(textModel, c.text.fallbackModelName), modelVendor: heroModelVendor(textModel, c.text.fallbackVendor), thumb: HERO_ART.text.wide, title: heroModelName(textModel, c.text.title) },
-    { ...c.audio, cta: heroModelCta(copy, audioModel, c.audio.fallbackCta), href: heroModelHref(audioModel, "/models?type=audio"), image: HERO_ART.audio.wide, kind: "audio", metric: heroModelVendor(audioModel, c.audio.fallbackMetric), modelName: heroModelName(audioModel, c.audio.fallbackModelName), modelVendor: heroModelVendor(audioModel, c.audio.fallbackVendor), thumb: HERO_ART.audio.wide, title: heroModelName(audioModel, c.audio.title) },
+    { ...c.image, cta: heroModelCta(copy, imageModel, c.image.fallbackCta), href: heroModelHref(imageModel, "/models?type=image"), image: HERO_ART.image.wide, kind: "image", metric: heroModelVendor(imageModel, c.image.fallbackMetric), modelName: heroModelName(imageModel, c.image.fallbackModelName), modelVendor: heroModelVendor(imageModel, c.image.fallbackVendor), subline: fixedSubline, thumb: HERO_ART.image.wide, title: fixedTitle },
+    { ...c.video, cta: heroModelCta(copy, videoModel, c.video.fallbackCta), href: heroModelHref(videoModel, "/models/seedance-api"), image: HERO_ART.video.wide, kind: "video", metric: heroModelVendor(videoModel, c.video.fallbackMetric), modelName: heroModelName(videoModel, c.video.fallbackModelName), modelVendor: heroModelVendor(videoModel, c.video.fallbackVendor), subline: fixedSubline, thumb: HERO_ART.video.wide, title: fixedTitle },
+    { ...c.text, cta: heroModelCta(copy, textModel, c.text.fallbackCta), href: heroModelHref(textModel, "/models"), image: HERO_ART.text.wide, kind: "text", metric: heroModelVendor(textModel, c.text.fallbackMetric), modelName: heroModelName(textModel, c.text.fallbackModelName), modelVendor: heroModelVendor(textModel, c.text.fallbackVendor), subline: fixedSubline, thumb: HERO_ART.text.wide, title: fixedTitle },
+    { ...c.audio, cta: heroModelCta(copy, audioModel, c.audio.fallbackCta), href: heroModelHref(audioModel, "/models?type=audio"), image: HERO_ART.audio.wide, kind: "audio", metric: heroModelVendor(audioModel, c.audio.fallbackMetric), modelName: heroModelName(audioModel, c.audio.fallbackModelName), modelVendor: heroModelVendor(audioModel, c.audio.fallbackVendor), subline: fixedSubline, thumb: HERO_ART.audio.wide, title: fixedTitle },
   ];
 }
 
-function getModelTypes(copy: HomePageCopy, modelTags: HomeModelTags) {
+function getModelFlowTypes(copy: HomePageCopy, modelTags: HomeModelTags, data: PricingData | undefined, locale: Locale): HomeModelFlowType[] {
   const typeCopy = copy.modelFlow.types;
   return [
-    { ...typeCopy.all, href: "/models", image: HERO_ART.all.card, models: modelTags.all.slice(0, 4), tone: "all" },
-    { ...typeCopy.video, href: "/models/seedance-api", image: HERO_ART.video.card, models: modelTags.video.slice(0, 3), tone: "video" },
-    { ...typeCopy.image, href: "/models?type=image", image: HERO_ART.image.card, models: modelTags.image.slice(0, 3), tone: "image" },
-    { ...typeCopy.text, href: "/models", image: HERO_ART.text.card, models: modelTags.text.slice(0, 3), tone: "text" },
-    { ...typeCopy.audio, href: "/models?type=audio", image: HERO_ART.audio.card, models: modelTags.audio.slice(0, 3), tone: "audio" },
+    { ...typeCopy.text, href: "/models", kind: "text" as const, models: modelTags.text.slice(0, 3), rows: buildModelFlowPriceRows(data, "text", copy, locale) },
+    { ...typeCopy.image, href: "/models?type=image", kind: "image" as const, models: modelTags.image.slice(0, 3), rows: buildModelFlowPriceRows(data, "image", copy, locale) },
+    { ...typeCopy.video, href: "/models/seedance-api", kind: "video" as const, models: modelTags.video.slice(0, 3), rows: buildModelFlowPriceRows(data, "video", copy, locale) },
+    { ...typeCopy.audio, href: "/models?type=audio", kind: "audio" as const, models: modelTags.audio.slice(0, 3), rows: buildModelFlowPriceRows(data, "audio", copy, locale) },
   ];
 }
 
@@ -735,7 +798,8 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
   const modelTags = buildHomeModelTags(props.pricingData);
   const heroModels = buildHomeHeroModels(props.pricingData);
   const heroModes = getHeroModes(copy, heroModels);
-  const modelTypes = getModelTypes(copy, modelTags);
+  const modelFlowTypes = getModelFlowTypes(copy, modelTags, props.pricingData, props.locale);
+  const modelFlowLabels = MODEL_FLOW_TABLE_LABELS[props.locale];
   const priceComparisons = buildRepresentativePriceComparisons(props.pricingData, copy);
   const prices = priceComparisons;
   const priceRows = prices.length > 4
@@ -743,7 +807,6 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
     : [prices];
   const whyCards = copy.why.cards;
   const faqs = copy.voice.faqs;
-  const cliSteps = copy.cli.steps;
   const voiceItems = copy.voice.items;
 
   return (
@@ -751,7 +814,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
       <style>{`
         body:has(> header.hero.heroUnified){--fk-bg:#f6efe2;--fk-bg-2:#efe3cf;--fk-paper:#fffaf0;--fk-paper-2:#f8eddc;--fk-ink:#172017;--fk-muted:#647064;--fk-line:rgba(58,72,57,.16);--fk-gold:#d59a35;--fk-copper:#bd6b2b;--fk-sage:#647b55;--fk-night:#1a1711;background:var(--fk-bg);color:var(--fk-ink)}
         html.fk-theme-night body:has(> header.hero.heroUnified){--fk-bg:#12110f;--fk-bg-2:#1b1914;--fk-paper:#211f19;--fk-paper-2:#29261f;--fk-ink:#f4ead8;--fk-muted:#b9ad98;--fk-line:rgba(244,234,216,.15);--fk-gold:#f0c36c;--fk-copper:#e08c50;--fk-sage:#9eb58e;--fk-night:#0b0b09}
-        body:has(> header.hero.heroUnified){display:flex;flex-direction:column}.nav{order:0}header.heroUnified{order:1}.modelLogoMarquee{order:2}.modelTypes{order:3}.priceProof{order:4}.cliQuick{order:5}.why{order:6}.voiceFaq{order:7}.ctaWrap{order:8}.megafoot{order:9}.stripe{order:10}
+        body:has(> header.hero.heroUnified){display:flex;flex-direction:column}.nav{order:0}header.heroUnified{order:1}.modelLogoMarquee{order:2}.modelTypes{order:3}.priceProof{order:4}.why{order:5}.ctaWrap{order:6}.voiceFaq{order:7}.megafoot{order:8}.stripe{order:9}
         .heroUnified{position:relative;min-height:min(820px,100svh);overflow:hidden;color:var(--fk-ink);border-bottom:1px solid var(--fk-line);background:radial-gradient(ellipse 70% 52% at 82% 18%,rgba(213,154,53,.24),transparent 62%),radial-gradient(ellipse 58% 48% at 10% 90%,rgba(142,176,138,.28),transparent 62%),linear-gradient(145deg,var(--fk-bg) 0%,#fff8e8 48%,var(--fk-bg-2) 100%)}
         html.fk-theme-night .heroUnified{background:radial-gradient(ellipse 72% 52% at 82% 18%,rgba(240,195,108,.18),transparent 62%),radial-gradient(ellipse 58% 48% at 10% 90%,rgba(158,181,142,.16),transparent 62%),linear-gradient(145deg,#11100d 0%,#1b1812 52%,#0f1712 100%)}
         .heroUnified:before{content:"";position:absolute;inset:0;background-image:linear-gradient(to right,rgba(73,82,58,.06) 1px,transparent 1px),linear-gradient(to bottom,rgba(73,82,58,.045) 1px,transparent 1px);background-size:74px 74px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),transparent 92%);pointer-events:none}
@@ -3489,6 +3552,369 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
             padding-bottom:52px!important;
           }
         }
+        body:has(> header.hero.heroUnified) .heroModePanel{
+          position:relative!important;
+          z-index:8!important;
+          align-self:center!important;
+          min-width:0!important;
+          padding:20px!important;
+          border:1px solid rgba(4,74,113,.18)!important;
+          border-radius:26px!important;
+          background:linear-gradient(180deg,rgba(255,255,255,.84),rgba(238,250,255,.68))!important;
+          color:#061a2c!important;
+          box-shadow:0 28px 78px -58px rgba(5,42,68,.42),inset 0 1px 0 rgba(255,255,255,.86)!important;
+          backdrop-filter:blur(14px) saturate(1.04)!important;
+          animation:heroCopyIn .42s cubic-bezier(.16,1,.3,1) both!important;
+        }
+        body:has(> header.hero.heroUnified) .heroGrid{
+          grid-template-columns:minmax(0,.92fr) minmax(260px,.46fr) minmax(300px,.52fr)!important;
+          align-items:center!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanelTop{
+          display:flex!important;
+          justify-content:space-between!important;
+          gap:10px!important;
+          align-items:center!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanelTop span,
+        body:has(> header.hero.heroUnified) .heroModePanelTop b{
+          min-width:0!important;
+          padding:8px 10px!important;
+          border-radius:999px!important;
+          background:#fff!important;
+          color:#006b9a!important;
+          font:900 10px/1 var(--mono)!important;
+          letter-spacing:.05em!important;
+          white-space:nowrap!important;
+          overflow:hidden!important;
+          text-overflow:ellipsis!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanel strong{
+          display:block!important;
+          margin-top:18px!important;
+          color:#061a2c!important;
+          font:900 clamp(24px,2.6vw,38px)/1.04 var(--disp)!important;
+          letter-spacing:-.035em!important;
+          overflow-wrap:anywhere!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanel p{
+          margin-top:12px!important;
+          color:#36546b!important;
+          font-size:14px!important;
+          line-height:1.62!important;
+          font-weight:640!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanelMeta{
+          display:grid!important;
+          grid-template-columns:1fr 1fr!important;
+          gap:9px!important;
+          margin-top:18px!important;
+        }
+        body:has(> header.hero.heroUnified) .heroModePanelMeta span{
+          min-width:0!important;
+          padding:12px!important;
+          border:1px solid rgba(4,74,113,.14)!important;
+          border-radius:16px!important;
+          background:#fff!important;
+          color:#214a63!important;
+          font:850 11px/1.2 var(--mono)!important;
+          overflow:hidden!important;
+          text-overflow:ellipsis!important;
+          white-space:nowrap!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowWorkbench{
+          margin-top:34px!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTabs{
+          display:grid!important;
+          grid-template-columns:repeat(4,minmax(0,1fr))!important;
+          gap:12px!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab{
+          min-width:0!important;
+          min-height:82px!important;
+          display:flex!important;
+          flex-direction:column!important;
+          justify-content:center!important;
+          gap:9px!important;
+          padding:14px!important;
+          border:1px solid rgba(4,74,113,.16)!important;
+          border-radius:22px!important;
+          background:#fff!important;
+          color:#061a2c!important;
+          text-decoration:none!important;
+          box-shadow:0 18px 48px -40px rgba(5,42,68,.32),inset 0 1px 0 rgba(255,255,255,.88)!important;
+          transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab:hover{
+          transform:translateY(-4px)!important;
+          border-color:rgba(45,184,245,.36)!important;
+          box-shadow:0 26px 62px -44px rgba(5,42,68,.44)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab span{
+          color:#006b9a!important;
+          font:950 10px/1 var(--mono)!important;
+          letter-spacing:.08em!important;
+          text-transform:uppercase!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab b{
+          min-width:0!important;
+          color:#061a2c!important;
+          font:900 18px/1.08 var(--disp)!important;
+          letter-spacing:-.025em!important;
+          overflow-wrap:anywhere!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTables{
+          display:grid!important;
+          grid-template-columns:repeat(2,minmax(0,1fr))!important;
+          gap:16px!important;
+          margin-top:16px!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableCard{
+          min-width:0!important;
+          padding:20px!important;
+          border:1px solid rgba(4,74,113,.16)!important;
+          border-radius:26px!important;
+          background:linear-gradient(180deg,#fff,#eefaff)!important;
+          color:#061a2c!important;
+          box-shadow:0 28px 78px -58px rgba(5,42,68,.38),inset 0 1px 0 rgba(255,255,255,.9)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableCard-image{background:linear-gradient(180deg,#fff,#fff2f7)!important}
+        body:has(> header.hero.heroUnified) .modelFlowTableCard-video{background:linear-gradient(180deg,#fff,#f2f1ff)!important}
+        body:has(> header.hero.heroUnified) .modelFlowTableCard-audio{background:linear-gradient(180deg,#fff,#ecfff9)!important}
+        body:has(> header.hero.heroUnified) .modelFlowTableHead{
+          display:flex!important;
+          justify-content:space-between!important;
+          gap:14px!important;
+          align-items:flex-start!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableHead span{
+          display:inline-flex!important;
+          padding:7px 10px!important;
+          border-radius:999px!important;
+          background:#052a44!important;
+          color:#fff!important;
+          font:900 10px/1 var(--mono)!important;
+          letter-spacing:.07em!important;
+          text-transform:uppercase!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableHead h3{
+          margin-top:12px!important;
+          color:#061a2c!important;
+          font:900 clamp(25px,2.5vw,38px)/1.04 var(--disp)!important;
+          letter-spacing:-.035em!important;
+          overflow-wrap:anywhere!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableHead a,
+        body:has(> header.hero.heroUnified) .modelFlowAllModels{
+          flex:0 0 auto!important;
+          display:inline-flex!important;
+          align-items:center!important;
+          justify-content:center!important;
+          min-height:38px!important;
+          padding:0 14px!important;
+          border-radius:999px!important;
+          background:#052a44!important;
+          color:#fff!important;
+          text-decoration:none!important;
+          font:850 12px/1 var(--sans)!important;
+          box-shadow:0 16px 34px -26px rgba(5,42,68,.48)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableCard>p{
+          max-width:720px!important;
+          margin-top:14px!important;
+          color:#36546b!important;
+          font-size:13.5px!important;
+          line-height:1.6!important;
+          font-weight:640!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowMiniModels{
+          display:flex!important;
+          flex-wrap:wrap!important;
+          gap:7px!important;
+          margin-top:14px!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowMiniModels i{
+          max-width:180px!important;
+          overflow:hidden!important;
+          text-overflow:ellipsis!important;
+          white-space:nowrap!important;
+          padding:7px 9px!important;
+          border:1px solid rgba(4,74,113,.14)!important;
+          border-radius:999px!important;
+          background:#fff!important;
+          color:#214a63!important;
+          font:800 10px/1 var(--mono)!important;
+          font-style:normal!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTable{
+          margin-top:18px!important;
+          overflow:hidden!important;
+          border:1px solid rgba(4,74,113,.12)!important;
+          border-radius:20px!important;
+          background:rgba(255,255,255,.72)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow{
+          display:grid!important;
+          grid-template-columns:minmax(160px,1.35fr) minmax(98px,.7fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(76px,.52fr)!important;
+          gap:10px!important;
+          align-items:center!important;
+          min-width:0!important;
+          padding:12px 14px!important;
+          border-top:1px solid rgba(4,74,113,.1)!important;
+          color:#214a63!important;
+          text-decoration:none!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow:first-child{
+          border-top:0!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableHeader{
+          background:#f4f9fc!important;
+          color:#5a7184!important;
+          font:900 9px/1 var(--mono)!important;
+          letter-spacing:.08em!important;
+          text-transform:uppercase!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow strong{
+          min-width:0!important;
+          color:#061a2c!important;
+          font:850 13px/1.2 var(--sans)!important;
+          overflow:hidden!important;
+          text-overflow:ellipsis!important;
+          white-space:nowrap!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow span,
+        body:has(> header.hero.heroUnified) .modelFlowTableRow s,
+        body:has(> header.hero.heroUnified) .modelFlowTableRow b,
+        body:has(> header.hero.heroUnified) .modelFlowTableRow i{
+          min-width:0!important;
+          overflow:hidden!important;
+          text-overflow:ellipsis!important;
+          white-space:nowrap!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow b{
+          color:#005f89!important;
+          font:950 12px/1.2 var(--mono)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow s{
+          color:#7b8f9f!important;
+          font:800 11px/1.2 var(--mono)!important;
+          text-decoration-thickness:1.4px!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTableRow i{
+          width:max-content!important;
+          max-width:100%!important;
+          padding:7px 9px!important;
+          border-radius:999px!important;
+          background:#052a44!important;
+          color:#fff!important;
+          font:900 10px/1 var(--mono)!important;
+          font-style:normal!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTable a.modelFlowTableRow:hover{
+          background:rgba(45,184,245,.08)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowAllModels{
+          width:max-content!important;
+          margin:20px auto 0!important;
+          min-height:46px!important;
+          padding:0 20px!important;
+        }
+        body:has(> header.hero.heroUnified) .ctaWrap,
+        body:has(> header.hero.heroUnified) .voiceFaq{
+          background:#f2f9ff!important;
+        }
+        body:has(> header.hero.heroUnified) .ctaWrap{
+          padding-top:76px!important;
+          padding-bottom:76px!important;
+          border-bottom:0!important;
+        }
+        body:has(> header.hero.heroUnified) .voiceFaqIn{
+          padding-top:76px!important;
+        }
+        @media(max-width:1180px){
+          body:has(> header.hero.heroUnified) .heroGrid{
+            grid-template-columns:1fr!important;
+          }
+          body:has(> header.hero.heroUnified) .heroModePanel{
+            max-width:760px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTabs{
+            grid-template-columns:repeat(2,minmax(0,1fr))!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTables{
+            grid-template-columns:1fr!important;
+          }
+        }
+        @media(max-width:720px){
+          body:has(> header.hero.heroUnified) .heroUnified,
+          body:has(> header.hero.heroUnified) .heroGrid{
+            min-height:720px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroGrid{
+            padding:100px 18px 28px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroTitle{
+            min-height:114px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroModePanel{
+            margin-top:18px!important;
+            padding:15px!important;
+            border-radius:22px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroModePanel strong{
+            font-size:23px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroModePanel p{
+            display:none!important;
+          }
+          body:has(> header.hero.heroUnified) .heroModePanelMeta{
+            grid-template-columns:1fr!important;
+            gap:7px!important;
+          }
+          body:has(> header.hero.heroUnified) .heroStageList{
+            margin-top:16px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTabs{
+            grid-template-columns:1fr 1fr!important;
+            gap:9px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTab{
+            min-height:72px!important;
+            padding:12px!important;
+            border-radius:18px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTab b{
+            font-size:15px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTableCard{
+            padding:15px!important;
+            border-radius:22px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTableHead{
+            display:block!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTableHead a{
+            margin-top:14px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTable{
+            overflow-x:auto!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowTableRow{
+            grid-template-columns:160px 96px 120px 120px 80px!important;
+            min-width:620px!important;
+          }
+          body:has(> header.hero.heroUnified) .modelFlowAllModels{
+            width:100%!important;
+          }
+          body:has(> header.hero.heroUnified) .ctaWrap{
+            padding-top:52px!important;
+            padding-bottom:52px!important;
+          }
+          body:has(> header.hero.heroUnified) .voiceFaqIn{
+            padding-top:52px!important;
+          }
+        }
         @media(prefers-reduced-motion:reduce){.heroStageSlide,.heroStageCopy,.heroStageNav:before,.heroStageImage,.logoTrack,.voiceTrack,.fk-reveal{animation:none!important;transition:none!important}.heroStageSlide:first-child{opacity:1;pointer-events:auto}.heroStageSlide:first-child .heroStageCopy{opacity:1;transform:none}}
       `}</style>
 
@@ -3525,23 +3951,55 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
               </div>
             </div>
           </div>
-          <div className="typeGrid modelFlowGrid">
-            {modelTypes.map((item) => (
-              <Link className={`typeCard typeCard-${item.tone}`} href={localizePath(item.href, props.locale)} key={item.title}>
-                <div className="typeCardCopy">
+          <div className="modelFlowWorkbench">
+            <div className="modelFlowTabs" aria-label={copy.modelFlow.kicker}>
+              {modelFlowTypes.map((item) => (
+                <a className={`modelFlowTab modelFlowTab-${item.kind}`} href={`#model-flow-${item.kind}`} key={item.kind}>
                   <span>{item.api}</span>
                   <b>{item.title}</b>
+                </a>
+              ))}
+            </div>
+            <div className="modelFlowTables">
+              {modelFlowTypes.map((item) => (
+                <article className={`modelFlowTableCard modelFlowTableCard-${item.kind}`} id={`model-flow-${item.kind}`} key={item.kind}>
+                  <div className="modelFlowTableHead">
+                    <div>
+                      <span>{item.api}</span>
+                      <h3>{item.title}</h3>
+                    </div>
+                    <Link href={localizePath(item.href, props.locale)}>{item.cta}</Link>
+                  </div>
                   <p>{item.copy}</p>
-                  <div className="typeModels">
+                  <div className="modelFlowMiniModels">
                     {(item.models.length > 0 ? item.models : [copy.modelFlow.directoryFallback]).map((model) => (
                       <i key={model}>{model}</i>
                     ))}
                   </div>
-                  <strong>{item.cta}</strong>
-                </div>
-                <div className="typeVisual"><img src={item.image} alt="" /></div>
-              </Link>
-            ))}
+                  <div className="modelFlowTable" role="table" aria-label={`${item.title} ${copy.price.title}`}>
+                    <div className="modelFlowTableRow modelFlowTableHeader" role="row">
+                      <span role="columnheader">{modelFlowLabels.model}</span>
+                      <span role="columnheader">{modelFlowLabels.provider}</span>
+                      <span role="columnheader">{modelFlowLabels.flatkey}</span>
+                      <span role="columnheader">{modelFlowLabels.official}</span>
+                      <span role="columnheader">{modelFlowLabels.discount}</span>
+                    </div>
+                    {(item.rows.length > 0 ? item.rows : []).map((row) => (
+                      <Link className="modelFlowTableRow" href={localizePath(row.href, props.locale)} key={row.model} role="row">
+                        <strong role="cell">{row.model}</strong>
+                        <span role="cell">{row.vendor}</span>
+                        <b role="cell">{row.flatkey}</b>
+                        <s role="cell">{row.official}</s>
+                        <i role="cell">{row.discount}</i>
+                      </Link>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+            <Link className="modelFlowAllModels" href={localizePath("/models", props.locale)}>
+              {copy.modelFlow.types.all.cta}
+            </Link>
           </div>
         </div>
       </section>
@@ -3586,38 +4044,6 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
         </div>
       </section>
 
-      <section className="cliQuick" id="cli-quickstart">
-        <div className="cliQuickIn">
-          <div className="cliQuickCopy">
-            <div className="kick2">{copy.cli.kicker}</div>
-            <h2 className="sectionTitle">{copy.cli.title}</h2>
-            <p className="sectionSub" style={{ marginTop: 18 }}>{copy.cli.sub}</p>
-            <div className="cliQuickActions">
-              <Link className="btn big cliPrimary" href={localizePath("/cli", props.locale)}>{copy.cli.guide}</Link>
-              <a className="btn big cliSecondary" href="https://docs.flatkey.ai/" target="_blank" rel="noopener noreferrer">{copy.cli.docs}</a>
-            </div>
-          </div>
-          <div className="cliQuickPanel cliStepperPanel" aria-label={copy.cli.aria}>
-            <div className="cliQuickTop"><span>{copy.cli.range}</span><i>{copy.cli.stepsDone}</i></div>
-            <div className="cliSteps">
-              {cliSteps.map((step) => (
-                <article className="cliStep" key={step.no}>
-                  <span className="cliStepNo">{step.no}</span>
-                  <div className="cliStepBody">
-                    <b>{step.title}</b>
-                    <p>{step.body}</p>
-                    <code>{step.code}</code>
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="cliQuickChecks">
-              {copy.cli.checks.map((item) => <span key={item}>{item}</span>)}
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="why" id="why">
         <div className="whyIn">
           <div className="whyHead">
@@ -3637,6 +4063,43 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
                 </div>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="ctaWrap" id="brand-trust">
+        <div className="ctaBanner btcPanel">
+          <div className="ctaIn btcCopy">
+            <div className="kick2">{copy.final.kicker}</div>
+            <h2>{copy.final.title}</h2>
+            <p>{copy.final.sub}</p>
+            <div className="btcMetrics">
+              <span><b>SOC 2</b><small>{copy.final.metrics[0]}</small></span>
+              <span><b>ISO 27001</b><small>{copy.final.metrics[1]}</small></span>
+              <span><b>99.5%</b><small>{copy.final.metrics[2]}</small></span>
+            </div>
+            <div className="ctaBtns">
+              <a className="btn white big" href={consoleUrl("/sign-up")}>{copy.ctaConsole}</a>
+              <Link className="btn black big" href={localizePath("/contact", props.locale)}>{copy.contactSales}</Link>
+            </div>
+          </div>
+          <div className="ctaProof btcMedia">
+            <figure className="ctaBillboard">
+              <Image src={publicAssetUrl("/assets/brand/bay-area-billboard-main.jpg")} alt={copy.final.alt} fill sizes="(max-width: 900px) 100vw, 42vw" />
+            </figure>
+            <div className="launchPanel">
+              {copy.final.launch.map(([no, title, body]) => (
+                <div className="launchStep" key={no}>
+                  <span>{no}</span>
+                  <div><b>{title}</b><small>{body}</small></div>
+                </div>
+              ))}
+            </div>
+            <div className="ctaTrust">
+              {["SOC 2 Type II", "ISO 27001", "99.5% SLA", copy.final.trustZeroRetention].map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -3680,43 +4143,6 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
                 <p>{answer}</p>
               </article>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="ctaWrap" id="brand-trust">
-        <div className="ctaBanner btcPanel">
-          <div className="ctaIn btcCopy">
-            <div className="kick2">{copy.final.kicker}</div>
-            <h2>{copy.final.title}</h2>
-            <p>{copy.final.sub}</p>
-            <div className="btcMetrics">
-              <span><b>SOC 2</b><small>{copy.final.metrics[0]}</small></span>
-              <span><b>ISO 27001</b><small>{copy.final.metrics[1]}</small></span>
-              <span><b>99.5%</b><small>{copy.final.metrics[2]}</small></span>
-            </div>
-            <div className="ctaBtns">
-              <a className="btn white big" href={consoleUrl("/sign-up")}>{copy.ctaConsole}</a>
-              <Link className="btn black big" href={localizePath("/contact", props.locale)}>{copy.contactSales}</Link>
-            </div>
-          </div>
-          <div className="ctaProof btcMedia">
-            <figure className="ctaBillboard">
-              <Image src={publicAssetUrl("/assets/brand/bay-area-billboard-main.jpg")} alt={copy.final.alt} fill sizes="(max-width: 900px) 100vw, 42vw" />
-            </figure>
-            <div className="launchPanel">
-              {copy.final.launch.map(([no, title, body]) => (
-                <div className="launchStep" key={no}>
-                  <span>{no}</span>
-                  <div><b>{title}</b><small>{body}</small></div>
-                </div>
-              ))}
-            </div>
-            <div className="ctaTrust">
-              {["SOC 2 Type II", "ISO 27001", "99.5% SLA", copy.final.trustZeroRetention].map((item) => (
-                <span key={item}>{item}</span>
-              ))}
-            </div>
           </div>
         </div>
       </section>

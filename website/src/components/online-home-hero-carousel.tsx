@@ -72,6 +72,19 @@ export function OnlineHomeHeroCarousel(props: Props) {
           </div>
         </div>
 
+        <aside className="heroModePanel" aria-live="polite" key={`${active.mode}-panel`}>
+          <div className="heroModePanelTop">
+            <span>{active.kicker}</span>
+            <b>{active.metric}</b>
+          </div>
+          <strong>{active.modelName}</strong>
+          <p>{active.copy}</p>
+          <div className="heroModePanelMeta">
+            <span>{active.modelVendor}</span>
+            <span>{active.mode}</span>
+          </div>
+        </aside>
+
         <div className="heroStageList" aria-label={props.copy.switchAria}>
           {props.heroModes.map((item, index) => (
             <button
