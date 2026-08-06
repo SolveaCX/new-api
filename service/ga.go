@@ -53,14 +53,14 @@ func IsGAPermanentDeliveryError(err error) bool {
 }
 
 type gaMeasurementPayload struct {
-	ClientID string               `json:"client_id"`
-	Events   []gaMeasurementEvent `json:"events"`
+	ClientID        string               `json:"client_id"`
+	Events          []gaMeasurementEvent `json:"events"`
+	TimestampMicros int64                `json:"timestamp_micros,omitempty"`
 }
 
 type gaMeasurementEvent struct {
-	Name            string         `json:"name"`
-	Params          map[string]any `json:"params,omitempty"`
-	TimestampMicros int64          `json:"timestamp_micros,omitempty"`
+	Name   string         `json:"name"`
+	Params map[string]any `json:"params,omitempty"`
 }
 
 func DefaultGAConfig() GAConfig {
@@ -209,11 +209,11 @@ func SendGAEventWithConfig(cfg GAConfig, event GAEvent) error {
 	}
 
 	payload := gaMeasurementPayload{
-		ClientID: event.ClientID,
+		ClientID:        event.ClientID,
+		TimestampMicros: event.TimestampMicros,
 		Events: []gaMeasurementEvent{{
-			Name:            event.Name,
-			Params:          params,
-			TimestampMicros: event.TimestampMicros,
+			Name:   event.Name,
+			Params: params,
 		}},
 	}
 	body, err := common.Marshal(payload)

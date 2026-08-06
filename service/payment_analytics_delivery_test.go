@@ -33,11 +33,11 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	require.NoError(t, err)
 
 	var payload struct {
-		ClientID string `json:"client_id"`
-		Events   []struct {
-			Name            string         `json:"name"`
-			Params          map[string]any `json:"params"`
-			TimestampMicros int64          `json:"timestamp_micros"`
+		ClientID        string `json:"client_id"`
+		TimestampMicros int64  `json:"timestamp_micros"`
+		Events          []struct {
+			Name   string         `json:"name"`
+			Params map[string]any `json:"params"`
 		} `json:"events"`
 	}
 	require.NoError(t, common.Unmarshal(body, &payload))
@@ -48,7 +48,7 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	require.Equal(t, "USD", payload.Events[0].Params["currency"])
 	require.Equal(t, "stripe", payload.Events[0].Params["payment_provider"])
 	require.Equal(t, "top_up", payload.Events[0].Params["product_type"])
-	require.EqualValues(t, 1_800_000_000_000_000, payload.Events[0].TimestampMicros)
+	require.EqualValues(t, 1_800_000_000_000_000, payload.TimestampMicros)
 	require.NotContains(t, payload.Events[0].Params, "timestamp_micros")
 }
 
