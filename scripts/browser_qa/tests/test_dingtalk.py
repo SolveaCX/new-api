@@ -159,6 +159,16 @@ class DingTalkTests(unittest.TestCase):
                 self.assertIn(f"> {summary}", markdown)
                 self.assertIn(f"最终状态：{label}（`{final_status}`）", markdown)
 
+    def test_passed_report_with_findings_uses_consistency_warning_summary(self):
+        report = self.report(final_status="passed", finding_count=2)
+
+        markdown = report.markdown()
+
+        self.assertIn("> 测试已执行完成，但报告记录了 2 个需要关注的问题，请核对最终状态。", markdown)
+        self.assertNotIn("> 测试已执行完成，未发现需要关注的问题。", markdown)
+        self.assertIn("问题数量：`2`", markdown)
+        self.assertIn("最终状态：全部通过（`passed`）", markdown)
+
     def test_report_renders_phase_severity_and_confidence_labels_with_raw_codes(self):
         report = self.report(
             final_status="findings_detected",

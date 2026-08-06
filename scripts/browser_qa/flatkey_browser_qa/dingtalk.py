@@ -214,6 +214,8 @@ def _final_label(status):
 
 def _summary(final_status, finding_count):
     if final_status == "passed":
+        if finding_count > 0:
+            return f"测试已执行完成，但报告记录了 {finding_count} 个需要关注的问题，请核对最终状态。"
         return "测试已执行完成，未发现需要关注的问题。"
     if final_status == "findings_detected":
         return f"测试已执行完成，AI 发现 {finding_count} 个需要关注的问题；当前策略只告警，不会自动回滚。"
