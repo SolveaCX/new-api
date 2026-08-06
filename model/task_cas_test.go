@@ -222,6 +222,26 @@ func TestTaskPrivateDataVideoResultJSONRoundtrip(t *testing.T) {
 	require.Equal(t, privateData, roundtripped)
 }
 
+func TestTaskPrivateDataVideoResultZeroValueSerializesStableShape(t *testing.T) {
+	privateData := TaskPrivateData{
+		VideoResult: &VideoResult{},
+	}
+
+	value, err := privateData.Value()
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"video_result":{
+			"bucket":"",
+			"object":"",
+			"generation":0,
+			"content_type":"",
+			"size":0,
+			"stored_at":0,
+			"expires_at":0
+		}
+	}`, string(value.([]byte)))
+}
+
 func TestTaskPrivateDataVideoResultSnapshotAndCASPreserveMetadata(t *testing.T) {
 	truncateTables(t)
 
@@ -248,6 +268,7 @@ func TestTaskPrivateDataVideoResultSnapshotAndCASPreserveMetadata(t *testing.T) 
 
 	snap := task.Snapshot()
 	require.Equal(t, metadata, snap.VideoResult)
+	require.NotSame(t, metadata, snap.VideoResult)
 
 	task.Status = TaskStatusSuccess
 	task.Progress = "100%"
@@ -259,6 +280,31 @@ func TestTaskPrivateDataVideoResultSnapshotAndCASPreserveMetadata(t *testing.T) 
 	require.NoError(t, DB.First(&reloaded, task.ID).Error)
 	require.Equal(t, metadata, reloaded.PrivateData.VideoResult)
 	require.True(t, task.Snapshot().Equal(reloaded.Snapshot()))
+}
+
+func TestTaskPrivateDataVideoResultSnapshotDetectsMetadataMutationAfterSnapshot(t *testing.T) {
+	task := &Task{
+		Status:   TaskStatusInProgress,
+		Progress: "50%",
+		PrivateData: TaskPrivateData{
+			VideoResult: &VideoResult{
+				Bucket:      "video-results",
+				Object:      "tasks/task_snapshot_mutation/result.mp4",
+				Generation:  1,
+				ContentType: "video/mp4",
+				Size:        100,
+				StoredAt:    200,
+				ExpiresAt:   300,
+			},
+		},
+		Data: json.RawMessage(`{}`),
+	}
+
+	before := task.Snapshot()
+	task.PrivateData.VideoResult.Generation = 2
+	after := task.Snapshot()
+
+	require.False(t, before.Equal(after))
 }
 
 // ---------------------------------------------------------------------------

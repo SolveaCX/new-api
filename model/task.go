@@ -166,13 +166,13 @@ type TaskPrivateData struct {
 }
 
 type VideoResult struct {
-	Bucket      string `json:"bucket,omitempty"`
-	Object      string `json:"object,omitempty"`
-	Generation  int64  `json:"generation,omitempty"`
-	ContentType string `json:"content_type,omitempty"`
-	Size        int64  `json:"size,omitempty"`
-	StoredAt    int64  `json:"stored_at,omitempty"`
-	ExpiresAt   int64  `json:"expires_at,omitempty"`
+	Bucket      string `json:"bucket"`
+	Object      string `json:"object"`
+	Generation  int64  `json:"generation"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	StoredAt    int64  `json:"stored_at"`
+	ExpiresAt   int64  `json:"expires_at"`
 }
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
@@ -549,6 +549,14 @@ func taskVideoResultEqual(a, b *VideoResult) bool {
 	return *a == *b
 }
 
+func cloneVideoResult(result *VideoResult) *VideoResult {
+	if result == nil {
+		return nil
+	}
+	clone := *result
+	return &clone
+}
+
 func (t *Task) Snapshot() taskSnapshot {
 	return taskSnapshot{
 		Status:           t.Status,
@@ -557,7 +565,7 @@ func (t *Task) Snapshot() taskSnapshot {
 		FinishTime:       t.FinishTime,
 		FailReason:       t.FailReason,
 		ResultURL:        t.PrivateData.ResultURL,
-		VideoResult:      t.PrivateData.VideoResult,
+		VideoResult:      cloneVideoResult(t.PrivateData.VideoResult),
 		CompletionTokens: t.PrivateData.CompletionTokens,
 		TotalTokens:      t.PrivateData.TotalTokens,
 		Data:             t.Data,
