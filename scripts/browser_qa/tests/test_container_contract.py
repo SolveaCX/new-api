@@ -169,6 +169,7 @@ class ContainerContractTests(unittest.TestCase):
             "screenshots/*.png",
             "browser/console.jsonl",
             "browser/network.jsonl",
+            "Write each finding `title` in concise Simplified Chinese. Keep required product names, UI labels, URLs, and HTTP status codes unchanged.",
             "environment observation/info",
         ]:
             self.assertIn(required.lower(), combined_contract.lower())

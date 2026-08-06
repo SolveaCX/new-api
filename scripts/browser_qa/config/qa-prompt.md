@@ -32,3 +32,5 @@ Screenshots must use only `qa_capture_screenshot` with a short logical name. Do 
 Use console and network tools only without `filename` arguments. Browser evidence, screenshot masking, raw MCP output cleanup, redaction, upload, account cleanup, and API key cleanup are owned by the runtime.
 
 Cookie-free docs access must not reuse a staging session. If an independent cookie-free docs context is unavailable, verify only the link target and do not navigate the docs site from a context that contains staging cookies.
+
+Write each finding `title` in concise Simplified Chinese. Keep required product names, UI labels, URLs, and HTTP status codes unchanged. Do not translate or expose credentials, verification data, cookies, authorization values, query strings, or fragments.
