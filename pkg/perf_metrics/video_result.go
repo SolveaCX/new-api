@@ -11,7 +11,7 @@ import (
 var (
 	videoResultChannels                      = []string{"techmobi"}
 	videoResultArchiveOutcomes               = []string{"success", "failure", "reuse"}
-	videoResultRedirectOutcomes              = []string{"success", "expired", "unavailable", "error"}
+	videoResultRedirectOutcomes              = []string{"success", "expired", "unavailable", "signing-or-other"}
 	videoResultArchiveRetryReasons           = []string{"archive_failure"}
 	videoResultArchiveDurationBucketsSeconds = []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 1800}
 )

@@ -16,6 +16,7 @@ func TestVideoResultMetricsExportArchiveRedirectAndRetryCounters(t *testing.T) {
 
 	RecordVideoResultArchive("techmobi", "success", 123, 2*time.Second)
 	RecordVideoResultRedirect("techmobi", "success")
+	RecordVideoResultRedirect("techmobi", "signing-or-other")
 	RecordVideoResultArchiveRetry("techmobi", "archive_failure")
 
 	text, err := BuildPrometheusText(context.Background())
@@ -23,6 +24,8 @@ func TestVideoResultMetricsExportArchiveRedirectAndRetryCounters(t *testing.T) {
 	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="success"} 1`)
 	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 123`)
 	requirePrometheusSampleLine(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="success"} 1`)
+	requirePrometheusSampleLine(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="signing-or-other"} 1`)
+	require.NotContains(t, text, `outcome="error"`)
 	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_retry_total{channel="techmobi",reason="archive_failure"} 1`)
 	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_duration_seconds_count{channel="techmobi"} 1`)
 	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_duration_seconds_sum{channel="techmobi"} 2`)

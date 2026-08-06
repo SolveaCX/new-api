@@ -91,7 +91,8 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 		require.NotContains(t, recorder.Body.String(), "storage.googleapis.com")
 		text, err := perfmetrics.BuildPrometheusText(context.Background())
 		require.NoError(t, err)
-		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="error"} 1`)
+		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="signing-or-other"} 1`)
+		require.NotContains(t, text, `outcome="error"`)
 	})
 
 	t.Run("nil metadata returns false and does not call signer", func(t *testing.T) {

@@ -249,7 +249,7 @@ func tryRedirectArchivedTechMobiVideo(c *gin.Context, task *model.Task, channel 
 		perfmetrics.RecordVideoResultRedirect("techmobi", "unavailable")
 		videoProxyError(c, http.StatusBadGateway, "server_error", "video result is unavailable")
 	default:
-		perfmetrics.RecordVideoResultRedirect("techmobi", "error")
+		perfmetrics.RecordVideoResultRedirect("techmobi", "signing-or-other")
 		videoProxyError(c, http.StatusServiceUnavailable, "server_error", "video result is temporarily unavailable")
 	}
 	return true
