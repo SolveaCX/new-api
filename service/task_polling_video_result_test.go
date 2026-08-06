@@ -1,0 +1,308 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/stretchr/testify/require"
+)
+
+func TestUpdateVideoSingleTaskArchivePersistsMetadataBeforeSuccessSettlement(t *testing.T) {
+	truncate(t)
+	restoreArchiveHookForPollingTest(t)
+	ctx := context.Background()
+
+	seedUser(t, 901, 1000)
+	seedToken(t, 911, 901, "sk-techmobi-archive-success", 500)
+	task := newTechMobiPollingTask(t, 901, 931, 100, 911)
+	ch := newTechMobiPollingChannel("http://proxy.internal:8080")
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: techMobiArchiveResponseBody(),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:      "upstream-techmobi-success",
+			Status:      model.TaskStatusSuccess,
+			Url:         "https://secret.example/video.mp4?token=secret",
+			Progress:    "100%",
+			TotalTokens: 40,
+		},
+		actualQuota: 40,
+	}
+	expected := &model.VideoResult{
+		Bucket:      "archive-bucket",
+		Object:      "video-results/20260806/task_archive_success.mp4",
+		Generation:  12,
+		ContentType: "video/mp4",
+		Size:        2048,
+		StoredAt:    time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC).Unix(),
+		ExpiresAt:   time.Date(2026, 8, 7, 1, 2, 3, 0, time.UTC).Unix(),
+	}
+	var archiveCalls int
+	archiveTechMobiVideoResult = func(_ context.Context, publicTaskID, upstreamURL, proxy string) (*model.VideoResult, error) {
+		archiveCalls++
+		require.Equal(t, "task_archive_success", publicTaskID)
+		require.Equal(t, "https://secret.example/video.mp4?token=secret", upstreamURL)
+		require.Equal(t, "http://proxy.internal:8080", proxy)
+		require.EqualValues(t, model.TaskStatusInProgress, task.Status, "archive must run before final success status mutation")
+		require.Zero(t, task.FinishTime, "archive must run before final finish time mutation")
+		return expected, nil
+	}
+
+	err := updateVideoSingleTask(ctx, adaptor, ch, task.TaskID, map[string]*model.Task{task.TaskID: task})
+	require.NoError(t, err)
+	require.Equal(t, 1, archiveCalls)
+	require.Equal(t, 1, adaptor.adjustCalls)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+	require.Equal(t, "100%", stored.Progress)
+	require.NotZero(t, stored.FinishTime)
+	require.Equal(t, expected, stored.PrivateData.VideoResult)
+	require.Equal(t, 40, stored.PrivateData.TotalTokens)
+	require.NotContains(t, string(stored.Data), "secret.example")
+	require.NotContains(t, string(stored.Data), "video.mp4?token=secret")
+}
+
+func TestUpdateVideoSingleTaskArchiveErrorDoesNotFinalizeOrSettle(t *testing.T) {
+	truncate(t)
+	restoreArchiveHookForPollingTest(t)
+	ctx := context.Background()
+
+	seedUser(t, 902, 1000)
+	seedToken(t, 912, 902, "sk-techmobi-archive-error", 500)
+	task := newTechMobiPollingTask(t, 902, 932, 100, 912)
+	ch := newTechMobiPollingChannel("")
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: techMobiArchiveResponseBody(),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:   "upstream-techmobi-error",
+			Status:   model.TaskStatusSuccess,
+			Url:      "https://secret.example/video.mp4?token=secret",
+			Progress: "100%",
+		},
+		actualQuota: 40,
+	}
+	archiveTechMobiVideoResult = func(context.Context, string, string, string) (*model.VideoResult, error) {
+		return nil, errors.New("download failed from https://secret.example/video.mp4?token=secret")
+	}
+
+	err := updateVideoSingleTask(ctx, adaptor, ch, task.TaskID, map[string]*model.Task{task.TaskID: task})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "archive techmobi video result failed")
+	require.NotContains(t, err.Error(), "secret.example")
+	require.Equal(t, 0, adaptor.adjustCalls)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusInProgress, stored.Status)
+	require.Equal(t, "50%", stored.Progress)
+	require.Zero(t, stored.FinishTime)
+	require.Nil(t, stored.PrivateData.VideoResult)
+	require.Equal(t, 100, stored.Quota)
+}
+
+func TestUpdateVideoSingleTaskArchiveSkipsExistingMetadata(t *testing.T) {
+	truncate(t)
+	restoreArchiveHookForPollingTest(t)
+	ctx := context.Background()
+
+	seedUser(t, 903, 1000)
+	seedToken(t, 913, 903, "sk-techmobi-archive-existing", 500)
+	task := newTechMobiPollingTask(t, 903, 933, 100, 913)
+	existing := &model.VideoResult{
+		Bucket:      "archive-bucket",
+		Object:      "video-results/old.mp4",
+		Generation:  8,
+		ContentType: "video/mp4",
+		Size:        99,
+		StoredAt:    1,
+		ExpiresAt:   2,
+	}
+	task.PrivateData.VideoResult = existing
+	require.NoError(t, model.DB.Save(task).Error)
+	ch := newTechMobiPollingChannel("")
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: techMobiArchiveResponseBody(),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:   "upstream-techmobi-existing",
+			Status:   model.TaskStatusSuccess,
+			Url:      "https://secret.example/video.mp4?token=secret",
+			Progress: "100%",
+		},
+	}
+	archiveTechMobiVideoResult = func(context.Context, string, string, string) (*model.VideoResult, error) {
+		t.Fatal("archive hook must not be called when metadata already exists")
+		return nil, nil
+	}
+
+	require.NoError(t, updateVideoSingleTask(ctx, adaptor, ch, task.TaskID, map[string]*model.Task{task.TaskID: task}))
+	require.Equal(t, 1, adaptor.adjustCalls)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+	require.Equal(t, existing, stored.PrivateData.VideoResult)
+}
+
+func TestUpdateVideoSingleTaskArchiveDoesNotBackfillHistoricalSuccess(t *testing.T) {
+	truncate(t)
+	restoreArchiveHookForPollingTest(t)
+	ctx := context.Background()
+
+	seedUser(t, 904, 1000)
+	seedToken(t, 914, 904, "sk-techmobi-archive-historical", 500)
+	task := newTechMobiPollingTask(t, 904, 934, 100, 914)
+	task.Status = model.TaskStatusSuccess
+	task.Progress = "100%"
+	task.FinishTime = 123
+	require.NoError(t, model.DB.Save(task).Error)
+	ch := newTechMobiPollingChannel("")
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: techMobiArchiveResponseBody(),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:   "upstream-techmobi-existing",
+			Status:   model.TaskStatusSuccess,
+			Url:      "https://secret.example/video.mp4?token=secret",
+			Progress: "100%",
+		},
+	}
+	archiveTechMobiVideoResult = func(context.Context, string, string, string) (*model.VideoResult, error) {
+		t.Fatal("archive hook must not backfill historical success tasks")
+		return nil, nil
+	}
+
+	require.NoError(t, updateVideoSingleTask(ctx, adaptor, ch, task.TaskID, map[string]*model.Task{task.TaskID: task}))
+	require.Equal(t, 0, adaptor.adjustCalls)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+	require.Nil(t, stored.PrivateData.VideoResult)
+	require.EqualValues(t, 123, stored.FinishTime)
+}
+
+func TestRedactTechMobiVideoResponseBodyRemovesUpstreamURLsAndKeepsPublicFields(t *testing.T) {
+	body := []byte(`{
+		"id":"upstream-techmobi-123",
+		"status":"succeeded",
+		"progress":"100%",
+		"url":"https://secret.example/top.mp4?token=secret",
+		"usage":{"total_tokens":40,"completion_tokens":40},
+		"content":[
+			{"type":"video","video_url":"https://secret.example/array-string.mp4?token=secret"},
+			{"type":"video","video_url":{"url":"https://secret.example/array-object.mp4?token=secret","mime_type":"video/mp4"}},
+			{"type":"text","text":"safe"}
+		],
+		"result":{
+			"content":{"video_url":"https://secret.example/object-content.mp4?token=secret"},
+			"nested":{"download_url":"https://secret.example/nested.mp4?token=secret","objectURL":"https://secret.example/object-url.mp4"}
+		}
+	}`)
+
+	redacted := redactTechMobiVideoResponseBody(body)
+	require.True(t, json.Valid(redacted))
+	require.NotContains(t, string(redacted), "secret.example")
+	require.NotContains(t, string(redacted), "token=secret")
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(redacted, &got))
+	require.Equal(t, "upstream-techmobi-123", got["id"])
+	require.Equal(t, "succeeded", got["status"])
+	require.Equal(t, "100%", got["progress"])
+	require.Equal(t, float64(40), got["usage"].(map[string]any)["total_tokens"])
+	require.Equal(t, "[redacted]", got["url"])
+	content := got["content"].([]any)
+	require.Equal(t, "[redacted]", content[0].(map[string]any)["video_url"])
+	videoURLObject := content[1].(map[string]any)["video_url"].(map[string]any)
+	require.Equal(t, "[redacted]", videoURLObject["url"])
+	require.Equal(t, "video/mp4", videoURLObject["mime_type"])
+}
+
+func restoreArchiveHookForPollingTest(t *testing.T) {
+	t.Helper()
+	original := archiveTechMobiVideoResult
+	t.Cleanup(func() { archiveTechMobiVideoResult = original })
+}
+
+func newTechMobiPollingTask(t *testing.T, userID, channelID, quota, tokenID int) *model.Task {
+	t.Helper()
+	task := &model.Task{
+		TaskID:    "task_archive_success",
+		UserId:    userID,
+		ChannelId: channelID,
+		Quota:     quota,
+		Status:    model.TaskStatusInProgress,
+		Group:     "default",
+		Progress:  "50%",
+		Data:      json.RawMessage(`{"status":"processing"}`),
+		CreatedAt: time.Now().Unix(),
+		UpdatedAt: time.Now().Unix(),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-techmobi-success",
+			BillingSource:  BillingSourceWallet,
+			TokenId:        tokenID,
+			BillingContext: &model.TaskBillingContext{OriginModelName: "seedance-2.0"},
+		},
+		Properties: model.Properties{OriginModelName: "seedance-2.0"},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	return task
+}
+
+func newTechMobiPollingChannel(proxy string) *model.Channel {
+	ch := &model.Channel{
+		Id:     931,
+		Type:   constant.ChannelTypeTechMobiVideo,
+		Key:    "sk-techmobi",
+		Status: 1,
+	}
+	if proxy != "" {
+		ch.SetSetting(dto.ChannelSettings{Proxy: proxy})
+	}
+	return ch
+}
+
+func techMobiArchiveResponseBody() []byte {
+	return []byte(`{
+		"id":"upstream-techmobi-success",
+		"status":"succeeded",
+		"progress":"100%",
+		"content":[{"type":"video","video_url":"https://secret.example/video.mp4?token=secret"}],
+		"usage":{"total_tokens":40}
+	}`)
+}
+
+type fakeVideoPollingAdaptor struct {
+	responseBody []byte
+	taskResult   *relaycommon.TaskInfo
+	actualQuota  int
+	adjustCalls  int
+}
+
+func (a *fakeVideoPollingAdaptor) Init(*relaycommon.RelayInfo) {}
+
+func (a *fakeVideoPollingAdaptor) FetchTask(string, string, map[string]any, string) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(a.responseBody)),
+	}, nil
+}
+
+func (a *fakeVideoPollingAdaptor) ParseTaskResult([]byte) (*relaycommon.TaskInfo, error) {
+	return a.taskResult, nil
+}
+
+func (a *fakeVideoPollingAdaptor) AdjustBillingOnComplete(*model.Task, *relaycommon.TaskInfo) int {
+	a.adjustCalls++
+	return a.actualQuota
+}
