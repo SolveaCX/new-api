@@ -28,6 +28,7 @@ env:
   APP_CONSOLE_ORIGIN: ${{ vars.WEBSITE_APP_CONSOLE_ORIGIN }}   # https://console.flatkey.ai
   ROUTER_ORIGIN:      ${{ vars.WEBSITE_ROUTER_ORIGIN }}        # https://router.flatkey.ai
   SITE_ORIGIN:        ${{ vars.WEBSITE_SITE_ORIGIN }}          # https://flatkey.ai
+  WEBSITE_ASSET_ORIGIN: ${{ vars.WEBSITE_ASSET_ORIGIN || '' }}
   COOKIE_SESSION_DOMAIN: ${{ secrets.COOKIE_SESSION_DOMAIN || '.flatkey.ai' }}
   BLOGGER_API_URL:    ${{ vars.BLOGGER_API_URL || 'https://blogger-api-528088078482.us-central1.run.app' }}
   BLOGGER_SITE_SLUG:  ${{ vars.BLOGGER_SITE_SLUG || 'flatkey' }}
@@ -83,6 +84,7 @@ jobs:
             APP_CONSOLE_ORIGIN=${{ env.APP_CONSOLE_ORIGIN }}
             ROUTER_ORIGIN=${{ env.ROUTER_ORIGIN }}
             SITE_ORIGIN=${{ env.SITE_ORIGIN }}
+            WEBSITE_ASSET_ORIGIN=${{ env.WEBSITE_ASSET_ORIGIN }}
             COOKIE_SESSION_DOMAIN=${{ env.COOKIE_SESSION_DOMAIN }}
             BLOGGER_API_URL=${{ env.BLOGGER_API_URL }}
             BLOGGER_SITE_SLUG=${{ env.BLOGGER_SITE_SLUG }}
@@ -122,6 +124,10 @@ jobs:
           fi
           if [[ -n "${SITE_ORIGIN}" ]]; then
             env_kvs+=("SITE_ORIGIN=${SITE_ORIGIN}")
+          fi
+          if [[ -n "${WEBSITE_ASSET_ORIGIN}" ]]; then
+            env_kvs+=("WEBSITE_ASSET_ORIGIN=${WEBSITE_ASSET_ORIGIN}")
+            env_kvs+=("NEXT_PUBLIC_WEBSITE_ASSET_ORIGIN=${WEBSITE_ASSET_ORIGIN}")
           fi
           if [[ -n "${COOKIE_SESSION_DOMAIN}" ]]; then
             env_kvs+=("COOKIE_SESSION_DOMAIN=${COOKIE_SESSION_DOMAIN}")
