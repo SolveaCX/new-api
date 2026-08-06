@@ -12,7 +12,7 @@ import (
 
 func TestVideoResultMetricsExportArchiveRedirectAndRetryCounters(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
-	resetVideoResultMetricsForTest()
+	resetVideoResultMetricsWithCleanup(t)
 
 	RecordVideoResultArchive("techmobi", "success", 123, 2*time.Second)
 	RecordVideoResultRedirect("techmobi", "success")
@@ -32,9 +32,23 @@ func TestVideoResultMetricsExportArchiveRedirectAndRetryCounters(t *testing.T) {
 	requirePrometheusSeriesGaugeMatchesRenderedSamples(t, text)
 }
 
+func TestVideoResultMetricsCountsBytesOnlyForSuccessfulArchives(t *testing.T) {
+	resetPerfMetricsStateForTest(t)
+	resetVideoResultMetricsWithCleanup(t)
+
+	RecordVideoResultArchive("techmobi", "failure", 123, time.Second)
+	RecordVideoResultArchive("techmobi", "reuse", 456, time.Second)
+
+	text, err := BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="failure"} 1`)
+	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="reuse"} 1`)
+	requirePrometheusSampleLine(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 0`)
+}
+
 func TestVideoResultMetricsRejectDynamicLabels(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
-	resetVideoResultMetricsForTest()
+	resetVideoResultMetricsWithCleanup(t)
 	t.Setenv(prometheusMaxSeriesPerScrapeEnv, "1")
 
 	RecordVideoResultArchive("storage-bucket/video-results/task_1.mp4", "success", 123, time.Second)
@@ -52,7 +66,7 @@ func TestVideoResultMetricsRejectDynamicLabels(t *testing.T) {
 
 func TestVideoResultMetricsHistogramBudgetAndResetBehavior(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
-	resetVideoResultMetricsForTest()
+	resetVideoResultMetricsWithCleanup(t)
 	t.Setenv(prometheusMaxSeriesPerScrapeEnv, "1")
 
 	RecordVideoResultArchive("techmobi", "success", 100, 250*time.Millisecond)
@@ -87,7 +101,7 @@ func TestVideoResultMetricsHistogramBudgetAndResetBehavior(t *testing.T) {
 
 func TestVideoResultMetricsUseOnlyClosedLabelValues(t *testing.T) {
 	resetPerfMetricsStateForTest(t)
-	resetVideoResultMetricsForTest()
+	resetVideoResultMetricsWithCleanup(t)
 
 	for _, outcome := range videoResultArchiveOutcomes {
 		RecordVideoResultArchive("techmobi", outcome, 1, time.Millisecond)
@@ -111,4 +125,10 @@ func TestVideoResultMetricsUseOnlyClosedLabelValues(t *testing.T) {
 		require.NotContains(t, line, "http")
 	}
 	requirePrometheusSeriesGaugeMatchesRenderedSamples(t, text)
+}
+
+func resetVideoResultMetricsWithCleanup(t *testing.T) {
+	t.Helper()
+	resetVideoResultMetricsForTest()
+	t.Cleanup(resetVideoResultMetricsForTest)
 }

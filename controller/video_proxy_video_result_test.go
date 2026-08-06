@@ -19,7 +19,7 @@ import (
 
 func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 	t.Run("success returns private redirect without cache", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForControllerTest(t)
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		task := archivedTechMobiTask(time.Now().Add(time.Hour).Unix())
@@ -44,7 +44,7 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 	})
 
 	t.Run("expired returns 410 sanitized error", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForControllerTest(t)
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -62,7 +62,7 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 	})
 
 	t.Run("unavailable returns 502 sanitized error", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForControllerTest(t)
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -78,7 +78,7 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 	})
 
 	t.Run("signing returns 503 sanitized error", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForControllerTest(t)
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -142,6 +142,12 @@ func TestLegacyTechMobiVideoProxyUsesExtractorWhenMetadataNil(t *testing.T) {
 	require.False(t, tryRedirectArchivedTechMobiVideo(c, task, channel))
 	require.False(t, called)
 	require.Equal(t, "https://cdn.example.com/output.mp4", tasktechmobi.ExtractUpstreamVideoURL(task.Data))
+}
+
+func resetVideoResultMetricsForControllerTest(t *testing.T) {
+	t.Helper()
+	perfmetrics.ResetVideoResultMetricsForTest()
+	t.Cleanup(perfmetrics.ResetVideoResultMetricsForTest)
 }
 
 func newArchivedVideoProxyContext(taskID string) (*httptest.ResponseRecorder, *gin.Context) {

@@ -93,7 +93,7 @@ func TestVideoResultBoundedReader(t *testing.T) {
 
 func TestArchiveVideoResult(t *testing.T) {
 	t.Run("archives upstream video into private create-only object", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForServiceTest(t)
 		start := time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)
 		store := newFakeVideoResultStore()
 		restore := installVideoResultArchiveTestHooks(t, store, start)
@@ -167,7 +167,7 @@ func TestArchiveVideoResult(t *testing.T) {
 	})
 
 	t.Run("rejects non video content type", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForServiceTest(t)
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		store := newFakeVideoResultStore()
 		restore := installVideoResultArchiveTestHooks(t, store, start)
@@ -224,7 +224,7 @@ func TestArchiveVideoResult(t *testing.T) {
 	})
 
 	t.Run("reuses valid existing object after create conflict", func(t *testing.T) {
-		perfmetrics.ResetVideoResultMetricsForTest()
+		resetVideoResultMetricsForServiceTest(t)
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		created := start.Add(-time.Minute)
 		store := newFakeVideoResultStore()
@@ -701,6 +701,12 @@ func installGCSVideoResultWriterHook(t *testing.T, hook func(context.Context, st
 	newGCSVideoResultObjectWriter = hook
 	t.Cleanup(func() { newGCSVideoResultObjectWriter = original })
 	return func() { newGCSVideoResultObjectWriter = original }
+}
+
+func resetVideoResultMetricsForServiceTest(t *testing.T) {
+	t.Helper()
+	perfmetrics.ResetVideoResultMetricsForTest()
+	t.Cleanup(perfmetrics.ResetVideoResultMetricsForTest)
 }
 
 func newVideoResultTestServer(t *testing.T, status int, contentType, body string) *httptest.Server {

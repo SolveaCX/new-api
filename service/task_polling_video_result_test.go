@@ -79,7 +79,7 @@ func TestUpdateVideoSingleTaskArchivePersistsMetadataBeforeSuccessSettlement(t *
 func TestUpdateVideoSingleTaskArchiveErrorDoesNotFinalizeOrSettle(t *testing.T) {
 	truncate(t)
 	restoreArchiveHookForPollingTest(t)
-	perfmetrics.ResetVideoResultMetricsForTest()
+	resetVideoResultMetricsForServiceTest(t)
 	ctx := context.Background()
 
 	seedUser(t, 902, 1000)

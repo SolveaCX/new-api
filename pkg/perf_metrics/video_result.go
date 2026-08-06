@@ -52,7 +52,7 @@ func RecordVideoResultArchive(channel, outcome string, bytes int64, duration tim
 	}
 	videoResultMetricsInitialized.Store(true)
 	videoResultArchiveTotal[channelIndex][outcomeIndex].Add(1)
-	if bytes > 0 {
+	if bytes > 0 && videoResultArchiveOutcomes[outcomeIndex] == "success" {
 		videoResultArchiveBytes[channelIndex].Add(bytes)
 	}
 	for i, upperBound := range videoResultArchiveDurationBucketsSeconds {
