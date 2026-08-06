@@ -607,19 +607,19 @@ func redactVideoResponseForChannel(channelType int, body []byte) []byte {
 }
 
 func redactTechMobiVideoResponseBody(body []byte) []byte {
-	var m map[string]any
-	if err := common.Unmarshal(body, &m); err != nil {
+	var value any
+	if err := common.Unmarshal(body, &value); err != nil {
 		return body
 	}
-	redactTechMobiVideoValue(m)
-	b, err := common.Marshal(m)
+	redacted := redactTechMobiVideoValue(value)
+	b, err := common.Marshal(redacted)
 	if err != nil {
 		return body
 	}
 	return b
 }
 
-func redactTechMobiVideoValue(v any) {
+func redactTechMobiVideoValue(v any) any {
 	switch value := v.(type) {
 	case map[string]any:
 		for key, child := range value {
@@ -627,31 +627,23 @@ func redactTechMobiVideoValue(v any) {
 				value[key] = redactTechMobiVideoURLValue(child)
 				continue
 			}
-			redactTechMobiVideoValue(child)
+			value[key] = redactTechMobiVideoValue(child)
 		}
+		return value
 	case []any:
-		for _, child := range value {
-			redactTechMobiVideoValue(child)
+		for i, child := range value {
+			value[i] = redactTechMobiVideoValue(child)
 		}
+		return value
+	case string:
+		return redactTechMobiURLs(value)
+	default:
+		return value
 	}
 }
 
 func redactTechMobiVideoURLValue(v any) any {
-	switch value := v.(type) {
-	case string:
-		if strings.TrimSpace(value) == "" {
-			return value
-		}
-		return "[redacted]"
-	case map[string]any:
-		redactTechMobiVideoValue(value)
-		return value
-	case []any:
-		redactTechMobiVideoValue(value)
-		return value
-	default:
-		return value
-	}
+	return redactTechMobiVideoValue(v)
 }
 
 func isTechMobiVideoURLKey(key string) bool {
@@ -693,7 +685,14 @@ func sanitizeTechMobiLogText(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	return taskcommon.ScrubBrandedText(techMobiLogURLPattern.ReplaceAllString(text, "[redacted]"))
+	return taskcommon.ScrubBrandedText(redactTechMobiURLs(text))
+}
+
+func redactTechMobiURLs(text string) string {
+	return techMobiLogURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		trimmed := strings.TrimRight(match, ",.;:)")
+		return "[redacted]" + match[len(trimmed):]
+	})
 }
 
 func truncateBase64(s string) string {

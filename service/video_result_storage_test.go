@@ -100,12 +100,13 @@ func TestArchiveVideoResult(t *testing.T) {
 		defer restore()
 		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
 		t.Setenv("VIDEO_RESULT_RETENTION_SECONDS", "3600")
+		payload := minimalMP4Fixture()
 		t.Setenv("VIDEO_RESULT_MAX_BYTES", "16")
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodGet, r.Method)
 			w.Header().Set("Content-Type", "video/mp4; charset=binary")
-			_, _ = w.Write([]byte("0123456789"))
+			_, _ = w.Write(payload)
 		}))
 		defer server.Close()
 
@@ -116,12 +117,13 @@ func TestArchiveVideoResult(t *testing.T) {
 			Object:      "video-results/20260806/task_archive-1.mp4",
 			Generation:  1,
 			ContentType: "video/mp4",
-			Size:        10,
+			Size:        int64(len(payload)),
 			StoredAt:    start.Unix(),
 			ExpiresAt:   start.Add(time.Hour).Unix(),
 		}, result)
 
 		created := store.created["video-bucket/video-results/20260806/task_archive-1.mp4"]
+		require.Equal(t, payload, created.body)
 		require.Equal(t, "video/mp4", created.options.ContentType)
 		require.Equal(t, "private, max-age=0, no-store", created.options.CacheControl)
 		require.Equal(t, `attachment; filename="task_archive-1.mp4"`, created.options.ContentDisposition)
@@ -129,7 +131,7 @@ func TestArchiveVideoResult(t *testing.T) {
 		text, err := perfmetrics.BuildPrometheusText(context.Background())
 		require.NoError(t, err)
 		require.Contains(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="success"} 1`)
-		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 10`)
+		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 16`)
 	})
 
 	t.Run("allows exactly max bytes", func(t *testing.T) {
@@ -138,14 +140,15 @@ func TestArchiveVideoResult(t *testing.T) {
 		restore := installVideoResultArchiveTestHooks(t, store, start)
 		defer restore()
 		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
-		t.Setenv("VIDEO_RESULT_MAX_BYTES", "5")
+		payload := minimalMP4Fixture()
+		t.Setenv("VIDEO_RESULT_MAX_BYTES", "16")
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "12345")
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", string(payload))
 		defer server.Close()
 
 		result, err := ArchiveVideoResult(context.Background(), "task_exact", server.URL, "")
 		require.NoError(t, err)
-		require.Equal(t, int64(5), result.Size)
+		require.Equal(t, int64(len(payload)), result.Size)
 		require.False(t, store.closedWithError)
 	})
 
@@ -155,14 +158,42 @@ func TestArchiveVideoResult(t *testing.T) {
 		restore := installVideoResultArchiveTestHooks(t, store, start)
 		defer restore()
 		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
-		t.Setenv("VIDEO_RESULT_MAX_BYTES", "5")
+		t.Setenv("VIDEO_RESULT_MAX_BYTES", "16")
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "123456")
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", string(append(minimalMP4Fixture(), 'x')))
 		defer server.Close()
 
 		_, err := ArchiveVideoResult(context.Background(), "task_too_large", server.URL, "")
 		require.ErrorIs(t, err, ErrVideoResultTooLarge)
 		require.True(t, store.closedWithError)
+		require.Empty(t, store.created)
+	})
+
+	t.Run("rejects spoofed mp4 content type with a non-mp4 payload", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "not-an-mp4-payload")
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_spoofed", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+		require.Empty(t, store.created)
+	})
+
+	t.Run("rejects non-mp4 video subtype", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+
+		server := newVideoResultTestServer(t, http.StatusOK, "video/webm", string(minimalMP4Fixture()))
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_webm", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
 		require.Empty(t, store.created)
 	})
 
@@ -241,7 +272,7 @@ func TestArchiveVideoResult(t *testing.T) {
 			Created:     created,
 		}
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "123")
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", string(minimalMP4Fixture()))
 		defer server.Close()
 
 		result, err := ArchiveVideoResult(context.Background(), "task_conflict", server.URL, "")
@@ -266,7 +297,7 @@ func TestArchiveVideoResult(t *testing.T) {
 		store.createErr = ErrVideoResultAlreadyExists
 		store.attrs[key] = VideoResultObjectAttrs{ContentType: "application/octet-stream", Size: 42, Generation: 7, Created: start}
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "123")
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", string(minimalMP4Fixture()))
 		defer server.Close()
 
 		_, err := ArchiveVideoResult(context.Background(), "task_invalid_existing", server.URL, "")
@@ -280,7 +311,7 @@ func TestArchiveVideoResult(t *testing.T) {
 		installVideoResultArchiveTestHooks(t, store, start)
 		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "")
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", string(minimalMP4Fixture()))
 		defer server.Close()
 
 		_, err := ArchiveVideoResult(context.Background(), "task_zero_fresh", server.URL, "")
@@ -375,6 +406,55 @@ func TestSignVideoResultDownload(t *testing.T) {
 		_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
 		require.ErrorIs(t, err, ErrVideoResultUnavailable)
 		require.Zero(t, store.signCalls)
+	})
+
+	t.Run("rejects an unconfigured or mismatched persisted bucket before object access", func(t *testing.T) {
+		for _, tt := range []struct {
+			name             string
+			configuredBucket string
+			persistedBucket  string
+		}{
+			{name: "unconfigured", configuredBucket: "", persistedBucket: "video-bucket"},
+			{name: "mismatch", configuredBucket: "video-bucket", persistedBucket: "other-bucket"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				store := newFakeVideoResultStore()
+				installVideoResultArchiveTestHooks(t, store, now)
+				t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", tt.configuredBucket)
+				result := validVideoResultForSign(now.Add(time.Hour).Unix())
+				result.Bucket = tt.persistedBucket
+				store.attrs[result.Bucket+"/"+result.Object] = VideoResultObjectAttrs{ContentType: result.ContentType, Size: result.Size, Generation: result.Generation}
+
+				_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+				require.ErrorIs(t, err, ErrVideoResultUnavailable)
+				require.Zero(t, store.attrsCalls)
+				require.Zero(t, store.signCalls)
+			})
+		}
+	})
+
+	t.Run("rejects object paths not bound to the requested task before object access", func(t *testing.T) {
+		for _, objectKey := range []string{
+			"video-results/20260806/task_other.mp4",
+			"video-results/20260806/task_signed.webm",
+			"video-results/2026080/task_signed.mp4",
+			"video-results/20260806/nested/task_signed.mp4",
+			"other/20260806/task_signed.mp4",
+		} {
+			t.Run(objectKey, func(t *testing.T) {
+				store := newFakeVideoResultStore()
+				installVideoResultArchiveTestHooks(t, store, now)
+				t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+				result := validVideoResultForSign(now.Add(time.Hour).Unix())
+				result.Object = objectKey
+				store.attrs[result.Bucket+"/"+result.Object] = VideoResultObjectAttrs{ContentType: result.ContentType, Size: result.Size, Generation: result.Generation}
+
+				_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+				require.ErrorIs(t, err, ErrVideoResultUnavailable)
+				require.Zero(t, store.attrsCalls)
+				require.Zero(t, store.signCalls)
+			})
+		}
 	})
 
 	t.Run("rejects unsafe task ids before signing", func(t *testing.T) {
@@ -487,6 +567,10 @@ func validVideoResultForSign(expiresAt int64) *model.VideoResult {
 		Size:        42,
 		ExpiresAt:   expiresAt,
 	}
+}
+
+func minimalMP4Fixture() []byte {
+	return []byte{0, 0, 0, 16, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0}
 }
 
 func TestVideoResultDirectFetchClientRejectsDialTimePrivateIP(t *testing.T) {

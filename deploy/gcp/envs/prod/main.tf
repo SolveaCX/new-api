@@ -244,6 +244,7 @@ module "cloud_run" {
     module.apis,
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
+    google_storage_bucket_iam_member.runtime_video_results_object_user,
   ]
 }
 
@@ -290,6 +291,7 @@ module "cloud_run_router" {
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
     google_secret_manager_secret_version.prometheus_run_monitoring_config,
+    google_storage_bucket_iam_member.runtime_video_results_object_user,
   ]
 }
 
@@ -330,6 +332,7 @@ module "cloud_run_console" {
     module.apis,
     google_secret_manager_secret_version.sql_dsn,
     google_secret_manager_secret_version.redis_url,
+    google_storage_bucket_iam_member.runtime_video_results_object_user,
   ]
 }
 

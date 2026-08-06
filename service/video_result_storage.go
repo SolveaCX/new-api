@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"io"
 	"mime"
@@ -33,6 +35,8 @@ const (
 	maxVideoResultFetchTimeout     = 30 * time.Minute
 	defaultVideoResultMaxBytes     = int64(500 << 20)
 	videoResultCacheControl        = "private, max-age=0, no-store"
+	videoResultMP4ContentType      = "video/mp4"
+	videoResultMP4ProbeBytes       = 12
 )
 
 type VideoResultStorageConfig struct {
@@ -169,11 +173,18 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		return nil, ErrVideoResultInvalidContent
 	}
 	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || !strings.HasPrefix(strings.ToLower(contentType), "video/") {
+	contentType = strings.ToLower(contentType)
+	if err != nil || contentType != videoResultMP4ContentType {
 		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
-	attrs, err := videoResultObjectStore.Create(fetchCtx, cfg.Bucket, objectKey, newVideoResultBoundedReader(response.Body, cfg.MaxBytes), VideoResultCreateOptions{
+	boundedBody := newVideoResultBoundedReader(response.Body, cfg.MaxBytes)
+	validatedBody, err := validateAndReplayVideoResultMP4(boundedBody)
+	if err != nil {
+		recordArchive("failure", 0)
+		return nil, err
+	}
+	attrs, err := videoResultObjectStore.Create(fetchCtx, cfg.Bucket, objectKey, validatedBody, VideoResultCreateOptions{
 		ContentType:        contentType,
 		CacheControl:       videoResultCacheControl,
 		ContentDisposition: videoResultAttachmentDisposition(publicTaskID),
@@ -206,6 +217,10 @@ func SignVideoResultDownload(ctx context.Context, taskID string, result *model.V
 	if !videoResultTaskIDPattern.MatchString(taskID) {
 		return "", ErrVideoResultInvalidTaskID
 	}
+	cfg := CurrentVideoResultStorageConfig()
+	if cfg.Bucket == "" || result.Bucket != cfg.Bucket || !videoResultObjectBelongsToTask(result.Object, taskID) {
+		return "", ErrVideoResultUnavailable
+	}
 
 	now := videoResultNow().UTC()
 	expiresAt := time.Unix(result.ExpiresAt, 0).UTC()
@@ -228,14 +243,13 @@ func SignVideoResultDownload(ctx context.Context, taskID string, result *model.V
 		return "", ErrVideoResultUnavailable
 	}
 	resultContentType = strings.ToLower(resultContentType)
-	if !strings.HasPrefix(attrsContentType, "video/") || attrsContentType != resultContentType {
+	if attrsContentType != videoResultMP4ContentType || attrsContentType != resultContentType {
 		return "", ErrVideoResultUnavailable
 	}
 	if attrs.Generation != result.Generation || attrs.Size <= 0 || attrs.Size != result.Size {
 		return "", ErrVideoResultUnavailable
 	}
 
-	cfg := CurrentVideoResultStorageConfig()
 	ttl := cfg.SignedURLTTL
 	if ttl > maxVideoResultSignedURLTTL {
 		ttl = maxVideoResultSignedURLTTL
@@ -311,13 +325,30 @@ func buildVideoResultObjectKey(taskID string, archiveStart time.Time) (string, e
 	return "video-results/" + archiveStart.UTC().Format("20060102") + "/" + taskID + ".mp4", nil
 }
 
+func videoResultObjectBelongsToTask(objectKey, taskID string) bool {
+	const prefix = "video-results/"
+	if !strings.HasPrefix(objectKey, prefix) {
+		return false
+	}
+	remainder := strings.TrimPrefix(objectKey, prefix)
+	if len(remainder) <= 9 || remainder[8] != '/' {
+		return false
+	}
+	for _, digit := range remainder[:8] {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return remainder[9:] == taskID+".mp4"
+}
+
 func videoResultAttachmentDisposition(taskID string) string {
 	return `attachment; filename="` + taskID + `.mp4"`
 }
 
 func validReusableVideoResultAttrs(attrs VideoResultObjectAttrs) bool {
 	contentType, _, err := mime.ParseMediaType(attrs.ContentType)
-	return err == nil && strings.HasPrefix(strings.ToLower(contentType), "video/") && attrs.Size > 0 && attrs.Generation > 0
+	return err == nil && strings.ToLower(contentType) == videoResultMP4ContentType && attrs.Size > 0 && attrs.Generation > 0
 }
 
 func videoResultModelFromAttrs(cfg VideoResultStorageConfig, objectKey string, attrs VideoResultObjectAttrs, fallbackCreated time.Time) *model.VideoResult {
@@ -346,6 +377,20 @@ type videoResultBoundedReader struct {
 
 func newVideoResultBoundedReader(reader io.Reader, maxBytes int64) io.Reader {
 	return &videoResultBoundedReader{reader: reader, limit: maxBytes}
+}
+
+func validateAndReplayVideoResultMP4(body io.Reader) (io.Reader, error) {
+	header := make([]byte, videoResultMP4ProbeBytes)
+	if _, err := io.ReadFull(body, header); err != nil {
+		if errors.Is(err, ErrVideoResultTooLarge) {
+			return nil, ErrVideoResultTooLarge
+		}
+		return nil, ErrVideoResultInvalidContent
+	}
+	if binary.BigEndian.Uint32(header[:4]) < videoResultMP4ProbeBytes || !bytes.Equal(header[4:8], []byte("ftyp")) {
+		return nil, ErrVideoResultInvalidContent
+	}
+	return io.MultiReader(bytes.NewReader(header), body), nil
 }
 
 func (r *videoResultBoundedReader) Read(p []byte) (int, error) {

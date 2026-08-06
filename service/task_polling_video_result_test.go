@@ -258,7 +258,8 @@ func TestRedactTechMobiVideoResponseBodyRemovesUpstreamURLsAndKeepsPublicFields(
 			{"type":"text","text":"safe"}
 		],
 		"result":{
-			"content":{"video_url":"https://secret.example/object-content.mp4?token=secret"},
+			"content":{"video_url":["https://secret.example/object-content.mp4?token=secret","safe"]},
+			"message":"download at https://secret.example/message.mp4?token=secret, when ready",
 			"nested":{"download_url":"https://secret.example/nested.mp4?token=secret","objectURL":"https://secret.example/object-url.mp4"}
 		}
 	}`)
@@ -280,6 +281,37 @@ func TestRedactTechMobiVideoResponseBodyRemovesUpstreamURLsAndKeepsPublicFields(
 	videoURLObject := content[1].(map[string]any)["video_url"].(map[string]any)
 	require.Equal(t, "[redacted]", videoURLObject["url"])
 	require.Equal(t, "video/mp4", videoURLObject["mime_type"])
+	result := got["result"].(map[string]any)
+	videoURLs := result["content"].(map[string]any)["video_url"].([]any)
+	require.Equal(t, "[redacted]", videoURLs[0])
+	require.Equal(t, "safe", videoURLs[1])
+	require.Equal(t, "download at [redacted], when ready", result["message"])
+}
+
+func TestRedactTechMobiVideoResponseBodyHandlesTopLevelValues(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "array",
+			body: `["https://secret.example/array.mp4?token=secret","safe"]`,
+			want: `["[redacted]","safe"]`,
+		},
+		{
+			name: "string",
+			body: `"see https://secret.example/string.mp4?token=secret) done"`,
+			want: `"see [redacted]) done"`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			redacted := redactTechMobiVideoResponseBody([]byte(tt.body))
+			require.JSONEq(t, tt.want, string(redacted))
+			require.NotContains(t, string(redacted), "secret.example")
+			require.NotContains(t, string(redacted), "token=secret")
+		})
+	}
 }
 
 func restoreArchiveHookForPollingTest(t *testing.T) {

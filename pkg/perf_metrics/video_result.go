@@ -8,38 +8,46 @@ import (
 	"time"
 )
 
+const (
+	videoResultChannelCount               = 1
+	videoResultArchiveOutcomeCount        = 3
+	videoResultArchiveDurationBucketCount = 13
+	videoResultRedirectOutcomeCount       = 4
+	videoResultArchiveRetryReasonCount    = 1
+)
+
 var (
-	videoResultChannels                      = []string{"techmobi"}
-	videoResultArchiveOutcomes               = []string{"success", "failure", "reuse"}
-	videoResultRedirectOutcomes              = []string{"success", "expired", "unavailable", "signing-or-other"}
-	videoResultArchiveRetryReasons           = []string{"archive_failure"}
-	videoResultArchiveDurationBucketsSeconds = []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 1800}
+	videoResultChannels                      = [videoResultChannelCount]string{"techmobi"}
+	videoResultArchiveOutcomes               = [videoResultArchiveOutcomeCount]string{"success", "failure", "reuse"}
+	videoResultRedirectOutcomes              = [videoResultRedirectOutcomeCount]string{"success", "expired", "unavailable", "signing-or-other"}
+	videoResultArchiveRetryReasons           = [videoResultArchiveRetryReasonCount]string{"archive_failure"}
+	videoResultArchiveDurationBucketsSeconds = [videoResultArchiveDurationBucketCount]float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900, 1800}
 )
 
 type videoResultMetricSnapshot struct {
-	archiveTotal           [1][3]int64
-	archiveBytes           [1]int64
-	archiveDurationBuckets [1][13]int64
-	archiveDurationSum     [1]float64
-	archiveDurationCount   [1]int64
-	redirectTotal          [1][4]int64
-	archiveRetryTotal      [1][1]int64
+	archiveTotal           [videoResultChannelCount][videoResultArchiveOutcomeCount]int64
+	archiveBytes           [videoResultChannelCount]int64
+	archiveDurationBuckets [videoResultChannelCount][videoResultArchiveDurationBucketCount]int64
+	archiveDurationSum     [videoResultChannelCount]float64
+	archiveDurationCount   [videoResultChannelCount]int64
+	redirectTotal          [videoResultChannelCount][videoResultRedirectOutcomeCount]int64
+	archiveRetryTotal      [videoResultChannelCount][videoResultArchiveRetryReasonCount]int64
 }
 
 var (
 	videoResultMetricsInitialized     atomic.Bool
-	videoResultArchiveTotal           [1][3]atomic.Int64
-	videoResultArchiveBytes           [1]atomic.Int64
-	videoResultArchiveDurationBuckets [1][13]atomic.Int64
-	videoResultArchiveDurationSumBits [1]atomic.Uint64
-	videoResultArchiveDurationCount   [1]atomic.Int64
-	videoResultRedirectTotal          [1][4]atomic.Int64
-	videoResultArchiveRetryTotal      [1][1]atomic.Int64
+	videoResultArchiveTotal           [videoResultChannelCount][videoResultArchiveOutcomeCount]atomic.Int64
+	videoResultArchiveBytes           [videoResultChannelCount]atomic.Int64
+	videoResultArchiveDurationBuckets [videoResultChannelCount][videoResultArchiveDurationBucketCount]atomic.Int64
+	videoResultArchiveDurationSumBits [videoResultChannelCount]atomic.Uint64
+	videoResultArchiveDurationCount   [videoResultChannelCount]atomic.Int64
+	videoResultRedirectTotal          [videoResultChannelCount][videoResultRedirectOutcomeCount]atomic.Int64
+	videoResultArchiveRetryTotal      [videoResultChannelCount][videoResultArchiveRetryReasonCount]atomic.Int64
 )
 
 func RecordVideoResultArchive(channel, outcome string, bytes int64, duration time.Duration) {
-	channelIndex := fixedLabelIndex(videoResultChannels, channel)
-	outcomeIndex := fixedLabelIndex(videoResultArchiveOutcomes, outcome)
+	channelIndex := fixedLabelIndex(videoResultChannels[:], channel)
+	outcomeIndex := fixedLabelIndex(videoResultArchiveOutcomes[:], outcome)
 	if channelIndex < 0 || outcomeIndex < 0 {
 		return
 	}
@@ -65,8 +73,8 @@ func RecordVideoResultArchive(channel, outcome string, bytes int64, duration tim
 }
 
 func RecordVideoResultRedirect(channel, outcome string) {
-	channelIndex := fixedLabelIndex(videoResultChannels, channel)
-	outcomeIndex := fixedLabelIndex(videoResultRedirectOutcomes, outcome)
+	channelIndex := fixedLabelIndex(videoResultChannels[:], channel)
+	outcomeIndex := fixedLabelIndex(videoResultRedirectOutcomes[:], outcome)
 	if channelIndex < 0 || outcomeIndex < 0 {
 		return
 	}
@@ -75,8 +83,8 @@ func RecordVideoResultRedirect(channel, outcome string) {
 }
 
 func RecordVideoResultArchiveRetry(channel, reason string) {
-	channelIndex := fixedLabelIndex(videoResultChannels, channel)
-	reasonIndex := fixedLabelIndex(videoResultArchiveRetryReasons, reason)
+	channelIndex := fixedLabelIndex(videoResultChannels[:], channel)
+	reasonIndex := fixedLabelIndex(videoResultArchiveRetryReasons[:], reason)
 	if channelIndex < 0 || reasonIndex < 0 {
 		return
 	}

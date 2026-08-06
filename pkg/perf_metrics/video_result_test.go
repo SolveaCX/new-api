@@ -127,6 +127,14 @@ func TestVideoResultMetricsUseOnlyClosedLabelValues(t *testing.T) {
 	requirePrometheusSeriesGaugeMatchesRenderedSamples(t, text)
 }
 
+func TestVideoResultMetricDimensionsFollowFixedLabelTables(t *testing.T) {
+	require.Len(t, videoResultChannels, videoResultChannelCount)
+	require.Len(t, videoResultArchiveOutcomes, videoResultArchiveOutcomeCount)
+	require.Len(t, videoResultArchiveDurationBucketsSeconds, videoResultArchiveDurationBucketCount)
+	require.Len(t, videoResultRedirectOutcomes, videoResultRedirectOutcomeCount)
+	require.Len(t, videoResultArchiveRetryReasons, videoResultArchiveRetryReasonCount)
+}
+
 func resetVideoResultMetricsWithCleanup(t *testing.T) {
 	t.Helper()
 	resetVideoResultMetricsForTest()

@@ -393,6 +393,7 @@ resource "google_cloud_run_v2_service" "staging" {
     google_secret_manager_secret_version.staging_sql_dsn,
     google_secret_manager_secret_iam_member.staging_runtime_secret_access,
     google_project_iam_member.staging_runtime_cloudsql,
+    google_storage_bucket_iam_member.staging_runtime_video_results_object_user,
   ]
 }
 
