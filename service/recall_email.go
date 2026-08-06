@@ -44,6 +44,7 @@ func (e *RecallEmailQuotaWaitError) Error() string {
 
 type RecallEmailPacingWaitError struct {
 	NextAllowedAtMillis int64
+	IntervalMillis      int64
 }
 
 func (e *RecallEmailPacingWaitError) Error() string {
@@ -202,7 +203,10 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			return 0, err
 		}
 		if !pacingStatus.Allowed {
-			return 0, &RecallEmailPacingWaitError{NextAllowedAtMillis: pacingStatus.NextAllowedAtMillis}
+			return 0, &RecallEmailPacingWaitError{
+				NextAllowedAtMillis: pacingStatus.NextAllowedAtMillis,
+				IntervalMillis:      pacingStatus.IntervalMillis,
+			}
 		}
 	}
 	type leasedEmail struct {
@@ -248,20 +252,23 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			})
 		}
 	}
-	releaseRemaining := func(releaseCtx context.Context, start int, retryAt int64, forceRetry bool) error {
+	releaseRemaining := func(releaseCtx context.Context, start int, retryAt int64, retryStepSeconds int64, forceRetry bool) error {
 		var firstReleaseErr error
 		for index := start; index < len(leased); index++ {
 			entry := leased[index]
 			var released bool
 			var releaseErr error
 			if forceRetry {
+				// Spread deferred messages one pacing slot apart so a single
+				// slot wakes one message instead of the whole remainder.
+				messageRetryAt := retryAt + int64(index-start)*retryStepSeconds
 				released, releaseErr = model.ReleaseRecallMessageLeaseForRetryWithContext(
 					releaseCtx,
 					entry.item.Message.Id,
 					w.owner,
 					entry.item.Message.LeaseExpiresAt,
 					entry.candidate,
-					retryAt,
+					messageRetryAt,
 				)
 			} else {
 				released, releaseErr = model.ReleaseRecallMessageLeaseWithContext(
@@ -285,12 +292,12 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 	releaseRemainingSafely := func(start int) error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		return releaseRemaining(cleanupCtx, start, 0, false)
+		return releaseRemaining(cleanupCtx, start, 0, 0, false)
 	}
-	retryRemainingSafely := func(start int, retryAt int64) error {
+	staggerRemainingSafely := func(start int, retryAt int64, stepSeconds int64) error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		return releaseRemaining(cleanupCtx, start, retryAt, true)
+		return releaseRemaining(cleanupCtx, start, retryAt, stepSeconds, true)
 	}
 	activeMessageIDs, activityErr := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, activityChecks, w.audience.LogBatchSize)
 	if activityErr != nil {
@@ -332,7 +339,10 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			var pacingWaitErr *RecallEmailPacingWaitError
 			if errors.As(processErr, &pacingWaitErr) {
 				retryAt := recallEmailPacingRetryAtSeconds(pacingWaitErr.NextAllowedAtMillis)
-				if releaseErr := retryRemainingSafely(index+1, retryAt); releaseErr != nil {
+				stepSeconds := recallEmailPacingStepSeconds(pacingWaitErr.IntervalMillis)
+				// processLeasedItem already deferred this message to retryAt, so
+				// the remainder starts one slot later to keep one message per slot.
+				if releaseErr := staggerRemainingSafely(index+1, retryAt+stepSeconds, stepSeconds); releaseErr != nil {
 					return processed, fmt.Errorf("%w; release remaining recall email leases: %v", processErr, releaseErr)
 				}
 				return processed, processErr
@@ -580,7 +590,10 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		var waitErr error
 		retryAt := attempt.Quota.ResetsAt
 		if !attempt.Pacing.Allowed && attempt.Pacing.NextAllowedAtMillis > 0 {
-			waitErr = &RecallEmailPacingWaitError{NextAllowedAtMillis: attempt.Pacing.NextAllowedAtMillis}
+			waitErr = &RecallEmailPacingWaitError{
+				NextAllowedAtMillis: attempt.Pacing.NextAllowedAtMillis,
+				IntervalMillis:      attempt.Pacing.IntervalMillis,
+			}
 			retryAt = recallEmailPacingRetryAtSeconds(attempt.Pacing.NextAllowedAtMillis)
 		} else {
 			waitErr = &RecallEmailQuotaWaitError{ResetsAt: attempt.Quota.ResetsAt}
@@ -669,6 +682,20 @@ func recallEmailPacingRetryAtSeconds(nextAllowedAtMillis int64) int64 {
 		return 0
 	}
 	return (nextAllowedAtMillis + 999) / 1000
+}
+
+// recallEmailPacingStepSeconds converts the pacing interval into the per-message
+// retry spacing used when deferring a batch remainder. Sub-second intervals fall
+// back to one second because next_attempt_at has second granularity.
+func recallEmailPacingStepSeconds(intervalMillis int64) int64 {
+	if intervalMillis <= 0 {
+		return 1
+	}
+	stepSeconds := intervalMillis / 1000
+	if stepSeconds < 1 {
+		return 1
+	}
+	return stepSeconds
 }
 
 func (w *RecallEmailWorker) createUnsubscribeToken(item *model.RecallEmailWorkItem) (string, error) {

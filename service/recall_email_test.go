@@ -1332,7 +1332,9 @@ func TestRecallEmailRunBatchSendsAtMostOneMessagePerPacingSlot(t *testing.T) {
 	require.Equal(t, model.RecallMessageRetryWait, secondStored.State)
 	require.Equal(t, nextAllowedAt, secondStored.NextAttemptAt)
 	require.Equal(t, model.RecallMessageRetryWait, thirdStored.State)
-	require.Equal(t, nextAllowedAt, thirdStored.NextAttemptAt)
+	// The remainder is staggered one pacing slot apart so a single slot does not
+	// wake every deferred message at once.
+	require.Equal(t, nextAllowedAt+20, thirdStored.NextAttemptAt)
 }
 
 func TestRecallEmailRunBatchPostLeasePacingRaceUsesPreciseNextTime(t *testing.T) {
@@ -1379,7 +1381,68 @@ func TestRecallEmailRunBatchPostLeasePacingRaceUsesPreciseNextTime(t *testing.T)
 	require.Equal(t, model.RecallMessageRetryWait, firstStored.State)
 	require.Equal(t, nextAllowedAt, firstStored.NextAttemptAt)
 	require.Equal(t, model.RecallMessageRetryWait, secondStored.State)
-	require.Equal(t, nextAllowedAt, secondStored.NextAttemptAt)
+	// The remainder is staggered one pacing slot apart so a single slot does not
+	// wake every deferred message at once.
+	require.Equal(t, nextAllowedAt+20, secondStored.NextAttemptAt)
+}
+
+func TestRecallEmailRunBatchStaggersRemainingRetryAcrossPacingSlots(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	setRecallEmailPacing(t, 180, 3600)
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Updates(map[string]any{
+		"state":            model.RecallMessageScheduled,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+	}).Error)
+	_, _, secondMessage := addRecallEmailBatchMessage(t, fixture, "pacing-stagger-second", recallEmailTestNow)
+	_, _, thirdMessage := addRecallEmailBatchMessage(t, fixture, "pacing-stagger-third", recallEmailTestNow)
+
+	processed, err := fixture.worker.RunBatch(context.Background(), 10)
+
+	var waitErr *RecallEmailPacingWaitError
+	require.ErrorAs(t, err, &waitErr)
+	require.Equal(t, 1, processed)
+	require.Len(t, *fixture.sent, 1)
+	// Deferred messages must not all become due in the same second, or every
+	// replica re-leases the whole remainder at once each slot.
+	secondStored := loadRecallEmailMessageByID(t, secondMessage.Id)
+	thirdStored := loadRecallEmailMessageByID(t, thirdMessage.Id)
+	require.Equal(t, model.RecallMessageRetryWait, secondStored.State)
+	require.Equal(t, model.RecallMessageRetryWait, thirdStored.State)
+	require.NotEqual(t, secondStored.NextAttemptAt, thirdStored.NextAttemptAt)
+	require.Equal(t, int64(20), thirdStored.NextAttemptAt-secondStored.NextAttemptAt)
+}
+
+func TestRecallEmailRunBatchStaggerLimitsReleasesPerFollowUpSlot(t *testing.T) {
+	fixture := newRecallEmailFixture(t, 1, nil)
+	setRecallEmailPacing(t, 180, 3600)
+	require.NoError(t, model.DB.Model(&model.RecallMessage{}).Where("id = ?", fixture.message.Id).Updates(map[string]any{
+		"state":            model.RecallMessageScheduled,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+	}).Error)
+	for i := 2; i <= 6; i++ {
+		addRecallEmailBatchMessage(t, fixture, fmt.Sprintf("pacing-slot-spread-%d", i), recallEmailTestNow)
+	}
+
+	_, err := fixture.worker.RunBatch(context.Background(), 10)
+
+	var waitErr *RecallEmailPacingWaitError
+	require.ErrorAs(t, err, &waitErr)
+	var deferred []model.RecallMessage
+	require.NoError(t, model.DB.Where("state = ?", model.RecallMessageRetryWait).Find(&deferred).Error)
+	require.Len(t, deferred, 5)
+	// Each follow-up slot must wake at most one message; otherwise every
+	// replica re-leases the whole remainder every slot and burns two
+	// recall_events rows per message per round.
+	countByDueAt := make(map[int64]int, len(deferred))
+	for _, message := range deferred {
+		countByDueAt[message.NextAttemptAt]++
+	}
+	require.Len(t, countByDueAt, len(deferred))
+	for dueAt, count := range countByDueAt {
+		require.Equal(t, 1, count, "slot %d must wake exactly one message", dueAt)
+	}
 }
 
 func TestRecallMaintenanceLogsQuotaWaitWithLeaseCleanupFailure(t *testing.T) {
@@ -2524,6 +2587,25 @@ func setRecallEmailHourlyLimit(t *testing.T, limit int) {
 		"recall_campaign_setting.enabled":            boolString(previous.Enabled),
 		"recall_campaign_setting.batch_size":         fmt.Sprintf("%d", previous.BatchSize),
 		"recall_campaign_setting.tick_seconds":       fmt.Sprintf("%d", previous.TickSeconds),
+		"recall_campaign_setting.email_hourly_limit": fmt.Sprintf("%d", limit),
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+			"recall_campaign_setting.enabled":            boolString(previous.Enabled),
+			"recall_campaign_setting.batch_size":         fmt.Sprintf("%d", previous.BatchSize),
+			"recall_campaign_setting.tick_seconds":       fmt.Sprintf("%d", previous.TickSeconds),
+			"recall_campaign_setting.email_hourly_limit": fmt.Sprintf("%d", previous.EmailHourlyLimit),
+		}))
+	})
+}
+
+func setRecallEmailPacing(t *testing.T, limit int, tickSeconds int) {
+	t.Helper()
+	previous := operation_setting.GetRecallCampaignSetting()
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"recall_campaign_setting.enabled":            boolString(previous.Enabled),
+		"recall_campaign_setting.batch_size":         fmt.Sprintf("%d", previous.BatchSize),
+		"recall_campaign_setting.tick_seconds":       fmt.Sprintf("%d", tickSeconds),
 		"recall_campaign_setting.email_hourly_limit": fmt.Sprintf("%d", limit),
 	}))
 	t.Cleanup(func() {
