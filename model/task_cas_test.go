@@ -191,7 +191,7 @@ func TestSnapshot_Roundtrip(t *testing.T) {
 func TestTaskPrivateDataVideoResultJSONRoundtrip(t *testing.T) {
 	privateData := TaskPrivateData{
 		ResultURL: "https://example.com/result.mp4",
-		VideoResult: &TaskVideoResult{
+		VideoResult: &VideoResult{
 			Bucket:      "video-results",
 			Object:      "tasks/task_1/result.mp4",
 			Generation:  123456789,
@@ -225,7 +225,7 @@ func TestTaskPrivateDataVideoResultJSONRoundtrip(t *testing.T) {
 func TestTaskPrivateDataVideoResultSnapshotAndCASPreserveMetadata(t *testing.T) {
 	truncateTables(t)
 
-	metadata := &TaskVideoResult{
+	metadata := &VideoResult{
 		Bucket:      "video-results",
 		Object:      "tasks/task_cas_video_result/result.mp4",
 		Generation:  987654321,
