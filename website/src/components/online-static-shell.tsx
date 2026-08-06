@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronDown, Languages, Menu } from "lucide-react";
+import { ChevronDown, Globe2, Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { OnlineLanguageSelect } from "@/components/online-language-select";
 import { LOCALES, LOCALE_LABELS, type Locale, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
@@ -182,7 +182,7 @@ export function OnlineNav(props: { active?: ShellProps["active"]; contactAction?
               <details className="mobileLangPage">
                 <summary className="mobileLangOpen">
                   <span>
-                    <Languages aria-hidden="true" />
+                    <Globe2 aria-hidden="true" />
                     <b>{languageLabel}</b>
                     <small>{LOCALE_LABELS[props.locale]}</small>
                   </span>
@@ -3216,6 +3216,48 @@ export function OnlineStaticShell(props: ShellProps) {
               height: auto !important;
               overflow: visible !important;
             }
+          }
+          .langIconSelect button,
+          body:has(> header.hero.heroUnified) > .nav .langIconSelect button {
+            width: 100% !important;
+            height: 100% !important;
+            display: grid !important;
+            place-items: center !important;
+            border: 0 !important;
+            border-radius: inherit !important;
+            background: transparent !important;
+            color: inherit !important;
+            cursor: default !important;
+            padding: 0 !important;
+            font: inherit !important;
+          }
+          .langIconSelect .langMenu,
+          body:has(> header.hero.heroUnified) > .nav .langIconSelect .langMenu {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            transform: translateY(-4px) scale(.98) !important;
+            transition: opacity .14s ease, visibility .14s ease, transform .14s ease !important;
+          }
+          .langIconSelect:hover .langMenu,
+          body:has(> header.hero.heroUnified) > .nav .langIconSelect:hover .langMenu {
+            opacity: 1 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+            transform: translateY(0) scale(1) !important;
+          }
+          body:has(> header.hero.heroUnified) > .nav .nav-group:focus-within .nav-group-menu,
+          body:has(> header.hero.heroUnified) > .nav .nav-group.is-open .nav-group-menu {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            transform: translateY(8px) scale(.98) !important;
+          }
+          body:has(> header.hero.heroUnified) > .nav .nav-group:hover .nav-group-menu {
+            opacity: 1 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+            transform: translateY(0) scale(1) !important;
           }
         `}
       </style>
