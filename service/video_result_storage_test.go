@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/googleapi"
 )
 
 func TestVideoResultStorageConfigDefaultsAndOverrides(t *testing.T) {
@@ -253,6 +256,85 @@ func TestArchiveVideoResult(t *testing.T) {
 		_, err := ArchiveVideoResult(context.Background(), "task_invalid_existing", server.URL, "")
 		require.ErrorIs(t, err, ErrVideoResultUnavailable)
 	})
+
+	t.Run("rejects invalid fresh create attrs", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		store.nextAttrs = VideoResultObjectAttrs{ContentType: "video/mp4", Size: 0, Generation: 0, Created: start}
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+
+		server := newVideoResultTestServer(t, http.StatusOK, "video/mp4", "")
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_zero_fresh", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultUnavailable)
+	})
+
+	t.Run("sanitizes redirect validation errors", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		privateURL := "http://127.0.0.1/private"
+
+		originalValidate := videoResultValidateURL
+		videoResultValidateURL = func(rawURL string) error {
+			if rawURL == privateURL {
+				return errors.New("blocked " + rawURL)
+			}
+			return nil
+		}
+		t.Cleanup(func() { videoResultValidateURL = originalValidate })
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, privateURL, http.StatusFound)
+		}))
+		defer server.Close()
+		videoResultDirectFetchResolver = assetFetchResolverFunc(func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("93.184.216.34")}, nil
+		})
+		dialer := &net.Dialer{Timeout: time.Second}
+		videoResultDirectFetchDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+		}
+
+		_, err := ArchiveVideoResult(context.Background(), "task_redirect", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+		require.NotContains(t, err.Error(), privateURL)
+		require.NotContains(t, err.Error(), server.URL)
+	})
+}
+
+func TestVideoResultDirectFetchClientRejectsDialTimePrivateIP(t *testing.T) {
+	original := *system_setting.GetFetchSetting()
+	t.Cleanup(func() { *system_setting.GetFetchSetting() = original })
+	system_setting.GetFetchSetting().EnableSSRFProtection = true
+	system_setting.GetFetchSetting().AllowPrivateIp = false
+	system_setting.GetFetchSetting().DomainFilterMode = false
+	system_setting.GetFetchSetting().IpFilterMode = false
+	system_setting.GetFetchSetting().AllowedPorts = []string{"80", "443"}
+	system_setting.GetFetchSetting().ApplyIPFilterForDomain = true
+
+	dialed := false
+	start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+	store := newFakeVideoResultStore()
+	installVideoResultArchiveTestHooks(t, store, start)
+	t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+	videoResultDirectFetchResolver = assetFetchResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+		require.Equal(t, "video.example", host)
+		return []net.IP{net.ParseIP("127.0.0.1")}, nil
+	})
+	videoResultDirectFetchDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialed = true
+		return nil, errors.New("should not dial")
+	}
+
+	_, err := ArchiveVideoResult(context.Background(), "task_rebind", "http://video.example/video.mp4", "")
+	require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+	require.False(t, dialed)
+	require.NotContains(t, err.Error(), "video.example")
+	require.NotContains(t, err.Error(), "127.0.0.1")
 }
 
 func TestGCSVideoResult(t *testing.T) {
@@ -284,6 +366,17 @@ func TestGCSVideoResult(t *testing.T) {
 		require.Equal(t, "svc@example.iam.gserviceaccount.com", captured.ServiceAccountEmail)
 		require.Equal(t, values, captured.QueryParameters)
 	})
+
+	t.Run("maps write time precondition failure to already exists", func(t *testing.T) {
+		restore := installGCSVideoResultWriterHook(t, func(context.Context, string, string) videoResultObjectWriter {
+			return &fakeVideoResultWriter{writeErr: &googleapi.Error{Code: http.StatusPreconditionFailed, Message: "precondition"}}
+		})
+		defer restore()
+
+		store := gcsVideoResultObjectStore{}
+		_, err := store.Create(context.Background(), "bucket", "video-results/20260806/task_a.mp4", strings.NewReader("video"), VideoResultCreateOptions{ContentType: "video/mp4"})
+		require.ErrorIs(t, err, ErrVideoResultAlreadyExists)
+	})
 }
 
 type fakeVideoResultStore struct {
@@ -291,6 +384,7 @@ type fakeVideoResultStore struct {
 	attrs           map[string]VideoResultObjectAttrs
 	createErr       error
 	attrsErr        error
+	nextAttrs       VideoResultObjectAttrs
 	closedWithError bool
 	validatedURLs   map[string]bool
 }
@@ -326,6 +420,9 @@ func (f *fakeVideoResultStore) Create(_ context.Context, bucket, objectKey strin
 		Generation:  1,
 		Created:     created,
 	}
+	if f.nextAttrs != (VideoResultObjectAttrs{}) {
+		attrs = f.nextAttrs
+	}
 	f.attrs[key] = attrs
 	return attrs, nil
 }
@@ -351,21 +448,46 @@ func installVideoResultArchiveTestHooks(t *testing.T, store *fakeVideoResultStor
 	originalNow := videoResultNow
 	originalValidate := videoResultValidateURL
 	originalClient := httpClient
+	originalResolver := videoResultDirectFetchResolver
+	originalDialContext := videoResultDirectFetchDialContext
+	originalFetchSetting := *system_setting.GetFetchSetting()
 	videoResultObjectStore = store
 	videoResultNow = func() time.Time { return now }
 	videoResultValidateURL = func(rawURL string) error {
 		store.validatedURLs[rawURL] = true
 		return nil
 	}
-	httpClient = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).Client()
-	httpClient.Transport = http.DefaultTransport
+	httpClient = &http.Client{Transport: http.DefaultTransport}
+	videoResultDirectFetchResolver = assetFetchResolverFunc(func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	})
+	videoResultDirectFetchDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		dialer := &net.Dialer{Timeout: time.Second}
+		return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+	}
+	system_setting.GetFetchSetting().AllowedPorts = []string{"1-65535"}
 	t.Cleanup(func() {
 		videoResultObjectStore = originalStore
 		videoResultNow = originalNow
 		videoResultValidateURL = originalValidate
 		httpClient = originalClient
+		videoResultDirectFetchResolver = originalResolver
+		videoResultDirectFetchDialContext = originalDialContext
+		*system_setting.GetFetchSetting() = originalFetchSetting
 	})
-	return func() {}
+	return func() {
+		videoResultObjectStore = originalStore
+		videoResultNow = originalNow
+		videoResultValidateURL = originalValidate
+		httpClient = originalClient
+		videoResultDirectFetchResolver = originalResolver
+		videoResultDirectFetchDialContext = originalDialContext
+		*system_setting.GetFetchSetting() = originalFetchSetting
+	}
 }
 
 func installGCSVideoResultSignURLHook(t *testing.T, hook func(context.Context, string, string, VideoResultSignedURLRequest) (string, error)) func() {
@@ -373,7 +495,15 @@ func installGCSVideoResultSignURLHook(t *testing.T, hook func(context.Context, s
 	original := gcsVideoResultSignURL
 	gcsVideoResultSignURL = hook
 	t.Cleanup(func() { gcsVideoResultSignURL = original })
-	return func() {}
+	return func() { gcsVideoResultSignURL = original }
+}
+
+func installGCSVideoResultWriterHook(t *testing.T, hook func(context.Context, string, string) videoResultObjectWriter) func() {
+	t.Helper()
+	original := newGCSVideoResultObjectWriter
+	newGCSVideoResultObjectWriter = hook
+	t.Cleanup(func() { newGCSVideoResultObjectWriter = original })
+	return func() { newGCSVideoResultObjectWriter = original }
 }
 
 func newVideoResultTestServer(t *testing.T, status int, contentType, body string) *httptest.Server {
@@ -388,3 +518,39 @@ func newVideoResultTestServer(t *testing.T, status int, contentType, body string
 
 var _ VideoResultObjectStore = (*fakeVideoResultStore)(nil)
 var _ = errors.Is
+
+type fakeVideoResultWriter struct {
+	writeErr       error
+	closeErr       error
+	closeWithError bool
+}
+
+func (f *fakeVideoResultWriter) Write([]byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return 0, nil
+}
+
+func (f *fakeVideoResultWriter) Close() error {
+	return f.closeErr
+}
+
+func (f *fakeVideoResultWriter) CloseWithError(error) error {
+	f.closeWithError = true
+	return nil
+}
+
+func (f *fakeVideoResultWriter) CloseClient() error {
+	return nil
+}
+
+func (f *fakeVideoResultWriter) SetContentType(string) {}
+
+func (f *fakeVideoResultWriter) SetCacheControl(string) {}
+
+func (f *fakeVideoResultWriter) SetContentDisposition(string) {}
+
+func (f *fakeVideoResultWriter) Attrs() VideoResultObjectAttrs {
+	return VideoResultObjectAttrs{ContentType: "video/mp4", Size: 1, Generation: 1, Created: videoResultNow()}
+}

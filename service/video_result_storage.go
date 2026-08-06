@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -78,11 +78,14 @@ var (
 	ErrVideoResultAlreadyExists  = errors.New("video result already exists")
 	ErrVideoResultUnavailable    = errors.New("video result is unavailable")
 
-	videoResultObjectStore         VideoResultObjectStore = gcsVideoResultObjectStore{}
-	videoResultNow                                        = time.Now
-	videoResultValidateURL                                = validateVideoResultURLWithFetchSetting
-	videoResultServiceAccountEmail                        = defaultVideoResultServiceAccountEmail
-	gcsVideoResultSignURL                                 = signGCSVideoResultURLWithIAM
+	videoResultObjectStore            VideoResultObjectStore = gcsVideoResultObjectStore{}
+	videoResultNow                                           = time.Now
+	videoResultValidateURL                                   = validateVideoResultURLWithFetchSetting
+	videoResultServiceAccountEmail                           = defaultVideoResultServiceAccountEmail
+	gcsVideoResultSignURL                                    = signGCSVideoResultURLWithIAM
+	videoResultDirectFetchResolver    assetFetchResolver
+	videoResultDirectFetchDialContext func(context.Context, string, string) (net.Conn, error)
+	newGCSVideoResultObjectWriter     = defaultGCSVideoResultObjectWriter
 )
 
 var videoResultTaskIDPattern = regexp.MustCompile(`^task_[A-Za-z0-9_-]+$`)
@@ -131,11 +134,11 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		return nil, err
 	}
 	if err := videoResultValidateURL(upstreamURL); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrVideoResultInvalidContent, err)
+		return nil, ErrVideoResultInvalidContent
 	}
-	client, err := GetHttpClientWithProxy(proxy)
+	client, err := newVideoResultFetchHTTPClient(cfg, proxy, videoResultDirectFetchResolver, videoResultDirectFetchDialContext)
 	if err != nil {
-		return nil, err
+		return nil, ErrVideoResultInvalidContent
 	}
 	fetchCtx, cancel := context.WithTimeout(ctx, cfg.FetchTimeout)
 	defer cancel()
@@ -145,7 +148,7 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, ErrVideoResultInvalidContent
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -155,7 +158,7 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 	if err != nil || !strings.HasPrefix(strings.ToLower(contentType), "video/") {
 		return nil, ErrVideoResultInvalidContent
 	}
-	attrs, err := videoResultObjectStore.Create(ctx, cfg.Bucket, objectKey, newVideoResultBoundedReader(response.Body, cfg.MaxBytes), VideoResultCreateOptions{
+	attrs, err := videoResultObjectStore.Create(fetchCtx, cfg.Bucket, objectKey, newVideoResultBoundedReader(response.Body, cfg.MaxBytes), VideoResultCreateOptions{
 		ContentType:        contentType,
 		CacheControl:       videoResultCacheControl,
 		ContentDisposition: videoResultAttachmentDisposition(publicTaskID),
@@ -170,7 +173,41 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		}
 		return nil, err
 	}
+	if !validReusableVideoResultAttrs(attrs) {
+		return nil, ErrVideoResultUnavailable
+	}
 	return videoResultModelFromAttrs(cfg, objectKey, attrs, archiveStart), nil
+}
+
+func newVideoResultFetchHTTPClient(cfg VideoResultStorageConfig, proxy string, resolver assetFetchResolver, dialContext func(context.Context, string, string) (net.Conn, error)) (*http.Client, error) {
+	var client *http.Client
+	if strings.TrimSpace(proxy) == "" {
+		client = newAssetFetchHTTPClient(assetFetchHTTPClientConfig{
+			Timeout:     cfg.FetchTimeout,
+			Resolver:    resolver,
+			DialContext: dialContext,
+		})
+	} else {
+		baseClient, err := GetHttpClientWithProxy(proxy)
+		if err != nil {
+			return nil, err
+		}
+		cloned := *baseClient
+		cloned.Timeout = cfg.FetchTimeout
+		client = &cloned
+	}
+	client.CheckRedirect = videoResultCheckRedirect
+	return client, nil
+}
+
+func videoResultCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return ErrVideoResultInvalidContent
+	}
+	if err := videoResultValidateURL(req.URL.String()); err != nil {
+		return ErrVideoResultInvalidContent
+	}
+	return nil
 }
 
 func buildVideoResultObjectKey(taskID string, archiveStart time.Time) (string, error) {
@@ -267,17 +304,16 @@ func validateVideoResultURLWithFetchSetting(rawURL string) error {
 type gcsVideoResultObjectStore struct{}
 
 func (gcsVideoResultObjectStore) Create(ctx context.Context, bucket, objectKey string, body io.Reader, options VideoResultCreateOptions) (VideoResultObjectAttrs, error) {
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return VideoResultObjectAttrs{}, err
-	}
-	defer client.Close()
-	writer := client.Bucket(bucket).Object(objectKey).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
-	writer.ContentType = options.ContentType
-	writer.CacheControl = options.CacheControl
-	writer.ContentDisposition = options.ContentDisposition
+	writer := newGCSVideoResultObjectWriter(ctx, bucket, objectKey)
+	defer writer.CloseClient()
+	writer.SetContentType(options.ContentType)
+	writer.SetCacheControl(options.CacheControl)
+	writer.SetContentDisposition(options.ContentDisposition)
 	if _, err := io.Copy(writer, body); err != nil {
 		_ = writer.CloseWithError(err)
+		if isVideoResultPreconditionFailed(err) {
+			return VideoResultObjectAttrs{}, ErrVideoResultAlreadyExists
+		}
 		return VideoResultObjectAttrs{}, err
 	}
 	if err := writer.Close(); err != nil {
@@ -287,10 +323,10 @@ func (gcsVideoResultObjectStore) Create(ctx context.Context, bucket, objectKey s
 		return VideoResultObjectAttrs{}, err
 	}
 	attrs := writer.Attrs()
-	if attrs == nil {
+	if attrs == (VideoResultObjectAttrs{}) {
 		return gcsVideoResultObjectStore{}.Attrs(ctx, bucket, objectKey)
 	}
-	return VideoResultObjectAttrs{ContentType: attrs.ContentType, Size: attrs.Size, Generation: attrs.Generation, Created: attrs.Created}, nil
+	return attrs, nil
 }
 
 func (gcsVideoResultObjectStore) Attrs(ctx context.Context, bucket, objectKey string) (VideoResultObjectAttrs, error) {
@@ -365,4 +401,95 @@ func defaultVideoResultServiceAccountEmail(ctx context.Context) (string, error) 
 func isVideoResultPreconditionFailed(err error) bool {
 	var apiErr *googleapi.Error
 	return errors.As(err, &apiErr) && apiErr.Code == http.StatusPreconditionFailed
+}
+
+type videoResultObjectWriter interface {
+	io.Writer
+	Close() error
+	CloseWithError(error) error
+	CloseClient() error
+	SetContentType(string)
+	SetCacheControl(string)
+	SetContentDisposition(string)
+	Attrs() VideoResultObjectAttrs
+}
+
+func defaultGCSVideoResultObjectWriter(ctx context.Context, bucket, objectKey string) videoResultObjectWriter {
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return errorVideoResultObjectWriter{err: err}
+	}
+	writer := client.Bucket(bucket).Object(objectKey).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
+	return &gcsVideoResultObjectWriterAdapter{client: client, writer: writer}
+}
+
+type gcsVideoResultObjectWriterAdapter struct {
+	client *storage.Client
+	writer *storage.Writer
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) Write(p []byte) (int, error) {
+	return w.writer.Write(p)
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) Close() error {
+	return w.writer.Close()
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) CloseWithError(err error) error {
+	return w.writer.CloseWithError(err)
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) CloseClient() error {
+	return w.client.Close()
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) SetContentType(contentType string) {
+	w.writer.ContentType = contentType
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) SetCacheControl(cacheControl string) {
+	w.writer.CacheControl = cacheControl
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) SetContentDisposition(contentDisposition string) {
+	w.writer.ContentDisposition = contentDisposition
+}
+
+func (w *gcsVideoResultObjectWriterAdapter) Attrs() VideoResultObjectAttrs {
+	attrs := w.writer.Attrs()
+	if attrs == nil {
+		return VideoResultObjectAttrs{}
+	}
+	return VideoResultObjectAttrs{ContentType: attrs.ContentType, Size: attrs.Size, Generation: attrs.Generation, Created: attrs.Created}
+}
+
+type errorVideoResultObjectWriter struct {
+	err error
+}
+
+func (w errorVideoResultObjectWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
+
+func (w errorVideoResultObjectWriter) Close() error {
+	return w.err
+}
+
+func (w errorVideoResultObjectWriter) CloseWithError(error) error {
+	return nil
+}
+
+func (w errorVideoResultObjectWriter) CloseClient() error {
+	return nil
+}
+
+func (w errorVideoResultObjectWriter) SetContentType(string) {}
+
+func (w errorVideoResultObjectWriter) SetCacheControl(string) {}
+
+func (w errorVideoResultObjectWriter) SetContentDisposition(string) {}
+
+func (w errorVideoResultObjectWriter) Attrs() VideoResultObjectAttrs {
+	return VideoResultObjectAttrs{}
 }
