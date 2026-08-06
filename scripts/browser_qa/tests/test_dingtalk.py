@@ -97,8 +97,11 @@ class DingTalkTests(unittest.TestCase):
             "Final status:",
             "Replay status:",
             "Exploration status:",
+            "Exploration actions:",
             "Finding count:",
             "Cleanup status:",
+            "Run:",
+            "Evidence:",
             "### Findings",
         ]:
             self.assertNotIn(forbidden, markdown)
