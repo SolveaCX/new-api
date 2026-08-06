@@ -82,6 +82,9 @@ export function ApiKeysBatchEditDialog<TData>(
   const [updateModelLimits, setUpdateModelLimits] = useState(false)
   const [modelLimitsEnabled, setModelLimitsEnabled] = useState(true)
   const [modelLimits, setModelLimits] = useState<string[]>([])
+  const [updateModelBlacklist, setUpdateModelBlacklist] = useState(false)
+  const [modelBlacklistEnabled, setModelBlacklistEnabled] = useState(true)
+  const [modelBlacklist, setModelBlacklist] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedRows = props.table.getFilteredSelectedRowModel().rows
   const { meta: currencyMeta } = getCurrencyDisplay()
@@ -93,8 +96,12 @@ export function ApiKeysBatchEditDialog<TData>(
   const hasEdit =
     (props.canEditGroup && group !== undefined) ||
     updateQuota ||
-    updateModelLimits
+    updateModelLimits ||
+    updateModelBlacklist
   const modelLimitsPayload = modelLimitsEnabled ? modelLimits.join(',') : ''
+  const modelBlacklistPayload = modelBlacklistEnabled
+    ? modelBlacklist.join(',')
+    : ''
   const modelOptions = useMemo(
     () => getApiKeyModelAllowlistOptions(modelAccessQuery.data?.models ?? []),
     [modelAccessQuery.data?.models]
@@ -107,6 +114,9 @@ export function ApiKeysBatchEditDialog<TData>(
     setUpdateModelLimits(false)
     setModelLimitsEnabled(true)
     setModelLimits([])
+    setUpdateModelBlacklist(false)
+    setModelBlacklistEnabled(true)
+    setModelBlacklist([])
   }
 
   const handleOpenChange = (open: boolean) => {
@@ -133,6 +143,12 @@ export function ApiKeysBatchEditDialog<TData>(
             ? modelLimitsEnabled
             : undefined,
           model_limits: updateModelLimits ? modelLimitsPayload : undefined,
+          model_blacklist_enabled: updateModelBlacklist
+            ? modelBlacklistEnabled
+            : undefined,
+          model_blacklist: updateModelBlacklist
+            ? modelBlacklistPayload
+            : undefined,
         },
         successEffects: {
           resetSelection: () => props.table.resetRowSelection(),
@@ -252,6 +268,71 @@ export function ApiKeysBatchEditDialog<TData>(
                       {t(
                         'Only selected models can be called. An empty allowlist permits zero models.'
                       )}
+                    </FieldDescription>
+                  </Field>
+                )}
+              </div>
+            )}
+          </Field>
+
+          <Field data-disabled={isSubmitting || undefined}>
+            <div className='flex items-start gap-3 rounded-lg border p-3'>
+              <Checkbox
+                id='batch-update-model-blacklist'
+                checked={updateModelBlacklist}
+                onCheckedChange={(checked) =>
+                  setUpdateModelBlacklist(checked === true)
+                }
+                disabled={isSubmitting}
+                className='mt-0.5'
+              />
+              <div className='flex min-w-0 flex-1 flex-col gap-1'>
+                <FieldLabel htmlFor='batch-update-model-blacklist'>
+                  {t('Model Blacklist')}
+                </FieldLabel>
+                <FieldDescription>
+                  {t(
+                    'Selected models are denied for this API key. An empty blacklist blocks nothing.'
+                  )}
+                </FieldDescription>
+              </div>
+            </div>
+
+            {updateModelBlacklist && (
+              <div className='space-y-3'>
+                <div className='flex items-center justify-between gap-3 rounded-md border p-3'>
+                  <div className='flex flex-col gap-0.5'>
+                    <FieldLabel htmlFor='batch-model-blacklist-enabled'>
+                      {t('Enable model blacklist')}
+                    </FieldLabel>
+                    <FieldDescription>
+                      {t(
+                        'Blocked models cannot be called even when they are also in the allowlist.'
+                      )}
+                    </FieldDescription>
+                  </div>
+                  <Switch
+                    id='batch-model-blacklist-enabled'
+                    checked={modelBlacklistEnabled}
+                    onCheckedChange={setModelBlacklistEnabled}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                {modelBlacklistEnabled && (
+                  <Field>
+                    <FieldLabel>{t('Blocked models')}</FieldLabel>
+                    <MultiSelect
+                      options={modelOptions}
+                      selected={modelBlacklist}
+                      onChange={setModelBlacklist}
+                      placeholder={t('Select blocked models')}
+                      emptyText={t('No models found')}
+                      disabled={isSubmitting}
+                      maxVisibleChips={5}
+                    />
+                    <FieldDescription>
+                      {t('Blacklist takes priority over the allowlist.')}
                     </FieldDescription>
                   </Field>
                 )}

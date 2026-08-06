@@ -118,6 +118,16 @@ describe('batch API key edits', () => {
       model_limits_enabled: false,
       model_limits: '',
     })
+    expect(
+      buildBatchEditApiKeysPayload([3, 9], {
+        model_blacklist_enabled: true,
+        model_blacklist: 'gpt-4o,gpt-4.1',
+      })
+    ).toEqual({
+      ids: [3, 9],
+      model_blacklist_enabled: true,
+      model_blacklist: 'gpt-4o,gpt-4.1',
+    })
   })
 
   test('rejects invalid IDs, empty edits, and invalid finite quotas', () => {
@@ -143,6 +153,12 @@ describe('batch API key edits', () => {
     ).toThrow()
     expect(() =>
       buildBatchEditApiKeysPayload([1], { model_limits: 'gpt-4o' })
+    ).toThrow()
+    expect(() =>
+      buildBatchEditApiKeysPayload([1], { model_blacklist_enabled: true })
+    ).toThrow()
+    expect(() =>
+      buildBatchEditApiKeysPayload([1], { model_blacklist: 'gpt-4o' })
     ).toThrow()
   })
 

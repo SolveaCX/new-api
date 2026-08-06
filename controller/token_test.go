@@ -41,13 +41,15 @@ type tokenPageResponse struct {
 }
 
 type tokenResponseItem struct {
-	ID                 int    `json:"id"`
-	Name               string `json:"name"`
-	Key                string `json:"key"`
-	Status             int    `json:"status"`
-	Group              string `json:"group"`
-	ModelLimitsEnabled bool   `json:"model_limits_enabled"`
-	ModelLimits        string `json:"model_limits"`
+	ID                    int    `json:"id"`
+	Name                  string `json:"name"`
+	Key                   string `json:"key"`
+	Status                int    `json:"status"`
+	Group                 string `json:"group"`
+	ModelLimitsEnabled    bool   `json:"model_limits_enabled"`
+	ModelLimits           string `json:"model_limits"`
+	ModelBlacklistEnabled bool   `json:"model_blacklist_enabled"`
+	ModelBlacklist        string `json:"model_blacklist"`
 }
 
 type tokenKeyResponse struct {
@@ -66,23 +68,25 @@ type sqliteColumnInfo struct {
 }
 
 type legacyToken struct {
-	Id                 int    `gorm:"primaryKey"`
-	UserId             int    `gorm:"index"`
-	Key                string `gorm:"column:key;type:char(48);uniqueIndex"`
-	Status             int    `gorm:"default:1"`
-	Name               string `gorm:"index"`
-	CreatedTime        int64  `gorm:"bigint"`
-	AccessedTime       int64  `gorm:"bigint"`
-	ExpiredTime        int64  `gorm:"bigint;default:-1"`
-	RemainQuota        int    `gorm:"default:0"`
-	UnlimitedQuota     bool
-	ModelLimitsEnabled bool
-	ModelLimits        string  `gorm:"type:text"`
-	AllowIps           *string `gorm:"default:''"`
-	UsedQuota          int     `gorm:"default:0"`
-	Group              string  `gorm:"column:group;default:''"`
-	CrossGroupRetry    bool
-	DeletedAt          gorm.DeletedAt `gorm:"index"`
+	Id                    int    `gorm:"primaryKey"`
+	UserId                int    `gorm:"index"`
+	Key                   string `gorm:"column:key;type:char(48);uniqueIndex"`
+	Status                int    `gorm:"default:1"`
+	Name                  string `gorm:"index"`
+	CreatedTime           int64  `gorm:"bigint"`
+	AccessedTime          int64  `gorm:"bigint"`
+	ExpiredTime           int64  `gorm:"bigint;default:-1"`
+	RemainQuota           int    `gorm:"default:0"`
+	UnlimitedQuota        bool
+	ModelLimitsEnabled    bool
+	ModelLimits           string `gorm:"type:text"`
+	ModelBlacklistEnabled bool
+	ModelBlacklist        string  `gorm:"type:text"`
+	AllowIps              *string `gorm:"default:''"`
+	UsedQuota             int     `gorm:"default:0"`
+	Group                 string  `gorm:"column:group;default:''"`
+	CrossGroupRetry       bool
+	DeletedAt             gorm.DeletedAt `gorm:"index"`
 }
 
 func (legacyToken) TableName() string {
@@ -1622,6 +1626,48 @@ func TestUpdateTokenBatchUpdatesModelLimits(t *testing.T) {
 	for _, token := range stored {
 		require.False(t, token.ModelLimitsEnabled)
 		require.Empty(t, token.ModelLimits)
+	}
+}
+
+func TestUpdateTokenBatchUpdatesModelBlacklist(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	user := seedTokenUser(t, db, 48)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	first := seedToken(t, db, user.Id, "first", "batch-blacklist-first")
+	second := seedToken(t, db, user.Id, "second", "batch-blacklist-second")
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", map[string]any{
+		"ids":                     []int{first.Id, second.Id},
+		"model_blacklist_enabled": true,
+		"model_blacklist":         "gpt-4o,gpt-4.1",
+	}, user.Id)
+	UpdateTokenBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+	var stored []model.Token
+	require.NoError(t, db.Order("id").Find(&stored, []int{first.Id, second.Id}).Error)
+	require.Len(t, stored, 2)
+	for _, token := range stored {
+		require.True(t, token.ModelBlacklistEnabled)
+		require.Equal(t, "gpt-4o,gpt-4.1", token.ModelBlacklist)
+	}
+
+	disableCtx, disableRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", map[string]any{
+		"ids":                     []int{first.Id, second.Id},
+		"model_blacklist_enabled": false,
+		"model_blacklist":         "must-be-cleared",
+	}, user.Id)
+	UpdateTokenBatch(disableCtx)
+
+	disableResponse := decodeAPIResponse(t, disableRecorder)
+	require.True(t, disableResponse.Success, disableResponse.Message)
+	require.NoError(t, db.Order("id").Find(&stored, []int{first.Id, second.Id}).Error)
+	for _, token := range stored {
+		require.False(t, token.ModelBlacklistEnabled)
+		require.Empty(t, token.ModelBlacklist)
 	}
 }
 
