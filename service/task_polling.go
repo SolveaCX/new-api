@@ -521,6 +521,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			task.FinishTime = now
 		}
 		task.FailReason = taskResult.Reason
+		if ch.Type == constant.ChannelTypeTechMobiVideo {
+			task.FailReason = sanitizeTechMobiLogText(task.FailReason)
+		}
 		logger.LogInfo(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		taskResult.Progress = taskcommon.ProgressComplete
 		if quota != 0 {
@@ -688,7 +691,7 @@ func sanitizeTechMobiLogText(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	return techMobiLogURLPattern.ReplaceAllString(text, "[redacted]")
+	return taskcommon.ScrubBrandedText(techMobiLogURLPattern.ReplaceAllString(text, "[redacted]"))
 }
 
 func truncateBase64(s string) string {

@@ -208,7 +208,7 @@ func TestUpdateVideoSingleTaskArchiveFailurePayloadRedactsDBAndLogs(t *testing.T
 		taskResult: &relaycommon.TaskInfo{
 			TaskID:   "upstream-techmobi-success",
 			Status:   model.TaskStatusFailure,
-			Reason:   "render failed",
+			Reason:   "render failed: https://secret.example/failure.mp4?token=secret",
 			Progress: "100%",
 		},
 	}
@@ -222,7 +222,9 @@ func TestUpdateVideoSingleTaskArchiveFailurePayloadRedactsDBAndLogs(t *testing.T
 	var stored model.Task
 	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
 	require.EqualValues(t, model.TaskStatusFailure, stored.Status)
-	require.Equal(t, "render failed", stored.FailReason)
+	require.Contains(t, stored.FailReason, "render failed")
+	require.NotContains(t, stored.FailReason, "secret.example")
+	require.NotContains(t, stored.FailReason, "token=secret")
 	require.Equal(t, "100%", stored.Progress)
 	require.NotContains(t, string(stored.Data), "secret.example")
 	require.NotContains(t, string(stored.Data), "token=secret")
