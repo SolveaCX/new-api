@@ -143,6 +143,28 @@ func TestTokenCacheInvalidationDeletesEarlierFill(t *testing.T) {
 	require.False(t, mr.Exists(redisTokenCacheKey(token.Key)))
 }
 
+func TestInvalidateTokenCacheByIdDeletesSoftDeletedTokenCache(t *testing.T) {
+	mr := setupTokenCacheRedis(t)
+	db := setupTokenCacheDB(t)
+	token := testCachedToken("soft-deleted-token")
+	require.NoError(t, db.Create(&token).Error)
+	fence, err := captureTokenCacheFillFence()
+	require.NoError(t, err)
+	require.NoError(t, cacheSetToken(token, fence))
+	require.True(t, mr.Exists(redisTokenCacheKey(token.Key)))
+	require.NoError(t, db.Delete(&token).Error)
+
+	require.NoError(t, InvalidateTokenCacheById(token.Id))
+	require.False(t, mr.Exists(redisTokenCacheKey(token.Key)))
+}
+
+func TestInvalidateTokenCacheByIdIgnoresMissingToken(t *testing.T) {
+	setupTokenCacheRedis(t)
+	setupTokenCacheDB(t)
+
+	require.NoError(t, InvalidateTokenCacheById(999999))
+}
+
 func TestTokenCacheFenceMismatchFillIsNoOp(t *testing.T) {
 	mr := setupTokenCacheRedis(t)
 	token := testCachedToken("wrong-fence")

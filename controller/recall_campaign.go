@@ -16,7 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var recallRuntimeProvider = service.GetRecallRuntime
+var (
+	recallRuntimeProvider              = service.GetRecallRuntime
+	notifyRecallSchedulerConfigChanged = service.NotifyRecallSchedulerConfigChanged
+)
 
 type recallClaimRequest struct {
 	Claim        string `json:"claim"`
@@ -155,12 +158,12 @@ func GenerateRecallEmailTranslations(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	response, err := runtime.Campaigns.GenerateEmailTranslations(c.Request.Context(), c.GetInt("id"), id, request)
+	response, err := runtime.Campaigns.EnqueueEmailTranslations(c.Request.Context(), c.GetInt("id"), id, request)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, response)
+	recallAccepted(c, response)
 }
 
 func GetRecallEmailQuotaStatus(c *gin.Context) {
@@ -187,6 +190,7 @@ func UpdateRecallEmailQuotaLimit(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	notifyRecallSchedulerConfigChanged()
 	status, err := model.GetRecallEmailQuotaStatusWithContext(c.Request.Context(), request.Limit)
 	if err != nil {
 		common.ApiError(c, err)

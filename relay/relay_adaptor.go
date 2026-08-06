@@ -2,6 +2,7 @@ package relay
 
 import (
 	"strconv"
+	"sync"
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -39,11 +40,13 @@ import (
 	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskGemini "github.com/QuantumNous/new-api/relay/channel/task/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
+	hailuov2 "github.com/QuantumNous/new-api/relay/channel/task/hailuo_v2"
 	taskjimeng "github.com/QuantumNous/new-api/relay/channel/task/jimeng"
 	taskjimengproxy "github.com/QuantumNous/new-api/relay/channel/task/jimengproxy"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	"github.com/QuantumNous/new-api/relay/channel/task/kling"
 	taskkuaizi "github.com/QuantumNous/new-api/relay/channel/task/kuaizi"
+	tasksonilo "github.com/QuantumNous/new-api/relay/channel/task/sonilo"
 	tasksora "github.com/QuantumNous/new-api/relay/channel/task/sora"
 	"github.com/QuantumNous/new-api/relay/channel/task/suno"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
@@ -59,6 +62,31 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
 	"github.com/gin-gonic/gin"
 )
+
+var taskAdaptorForTest = struct {
+	sync.RWMutex
+	adaptors map[constant.TaskPlatform]channel.TaskAdaptor
+}{adaptors: map[constant.TaskPlatform]channel.TaskAdaptor{}}
+
+func registerTaskAdaptorForTest(platform constant.TaskPlatform, adaptor channel.TaskAdaptor) func() {
+	taskAdaptorForTest.Lock()
+	old, hadOld := taskAdaptorForTest.adaptors[platform]
+	if adaptor == nil {
+		delete(taskAdaptorForTest.adaptors, platform)
+	} else {
+		taskAdaptorForTest.adaptors[platform] = adaptor
+	}
+	taskAdaptorForTest.Unlock()
+	return func() {
+		taskAdaptorForTest.Lock()
+		defer taskAdaptorForTest.Unlock()
+		if hadOld {
+			taskAdaptorForTest.adaptors[platform] = old
+		} else {
+			delete(taskAdaptorForTest.adaptors, platform)
+		}
+	}
+}
 
 func GetAdaptor(apiType int) channel.Adaptor {
 	switch apiType {
@@ -147,6 +175,12 @@ func GetTaskPlatform(c *gin.Context) constant.TaskPlatform {
 }
 
 func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
+	taskAdaptorForTest.RLock()
+	if adaptor := taskAdaptorForTest.adaptors[platform]; adaptor != nil {
+		taskAdaptorForTest.RUnlock()
+		return adaptor
+	}
+	taskAdaptorForTest.RUnlock()
 	switch platform {
 	//case constant.APITypeAIProxyLibrary:
 	//	return &aiproxy.Adaptor{}
@@ -177,6 +211,8 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskGemini.TaskAdaptor{}
 		case constant.ChannelTypeMiniMax:
 			return &hailuo.TaskAdaptor{}
+		case constant.ChannelTypeMiniMaxH3:
+			return &hailuov2.TaskAdaptor{}
 		case constant.ChannelTypeKuaiziLizhen:
 			return &taskkuaizi.TaskAdaptor{}
 		case constant.ChannelTypeBlockRunVideo:
@@ -189,6 +225,8 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskbyteplus.TaskAdaptor{}
 		case constant.ChannelTypeXaiGrokVideo:
 			return &taskxaigrok.TaskAdaptor{}
+		case constant.ChannelTypeSonilo:
+			return &tasksonilo.TaskAdaptor{}
 		}
 	}
 	return nil

@@ -28,6 +28,7 @@ func TestGetEndpointTypesByChannelType_VideoChannels(t *testing.T) {
 		{"BlockRunSeedance", constant.ChannelTypeBlockRunSeedance},
 		{"TechMobiVideo", constant.ChannelTypeTechMobiVideo},
 		{"BytePlus", constant.ChannelTypeBytePlus},
+		{"MiniMaxH3", constant.ChannelTypeMiniMaxH3},
 	}
 
 	for _, tc := range cases {
@@ -45,5 +46,12 @@ func TestGetEndpointTypesByChannelType_GPTImage2(t *testing.T) {
 	got := GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "gpt-image-2")
 	if !containsEndpointType(got, constant.EndpointTypeImageGeneration) {
 		t.Fatalf("expected endpoints to contain %q, got %v", constant.EndpointTypeImageGeneration, got)
+	}
+}
+
+func TestGetEndpointTypesByChannelType_Sonilo(t *testing.T) {
+	got := GetEndpointTypesByChannelType(constant.ChannelTypeSonilo, "sonilo-video-to-music")
+	if !containsEndpointType(got, constant.EndpointTypeVideoToMusic) {
+		t.Fatalf("expected endpoints to contain %q, got %v", constant.EndpointTypeVideoToMusic, got)
 	}
 }

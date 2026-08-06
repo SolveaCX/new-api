@@ -204,24 +204,24 @@ const en: OnlineCopy = {
   },
   home: {
     balance: "FLATKEY BALANCE",
-    ctaKey: "Get API Key",
-    ctaModels: "Explore Models",
-    eyebrow: "300+ OFFICIAL MODELS · 1,000+ AI TOOLS",
+    ctaKey: "Get up to $40 free credits",
+    ctaModels: "Explore DeepSeek, Kimi, GLM",
+    eyebrow: "DEEPSEEK · KIMI · GLM · CODEX · CLAUDE CODE",
     heroTitle: (
       <>
-        One key.
+        DeepSeek, Kimi, GLM.
         <br />
         <span className="price">
-          More models.
-          <span className="toolLine"> More tools.</span>
-          <span className="costLine">Lower costs.</span>
+          Codex.
+          <span className="toolLine"> Claude Code.</span>
+          <span className="costLine">One balance.</span>
         </span>
       </>
     ),
     invoice: "Every model. Every tool. One invoice.",
     pay: "Pay per successful call.",
     savings: ["Model subscriptions", "Data tool subscriptions", "Automation subscriptions"],
-    sub: "One balance across 300+ official models and 1,000+ pay-per-call tools. No idle seats, duplicate contracts, or scattered provider keys.",
+    sub: "Start with the models and coding agents developers ask for first: DeepSeek, Kimi, GLM, Codex, and Claude Code. One key, prepaid balance, pay per successful call.",
     terminal: {
       billed: "✓ $0.83 billed · failed calls $0.00",
       contacts: "✓ 489 contacts waterfall enriched across 5 providers",
@@ -402,24 +402,24 @@ const zh: OnlineCopy = {
   home: {
     ...en.home,
     balance: "FLATKEY 统一余额",
-    ctaKey: "获取 API Key",
-    ctaModels: "探索模型",
-    eyebrow: "300+ 官方模型 · 1,000+ AI 工具",
+    ctaKey: "最高领取 $40 免费额度",
+    ctaModels: "查看 DeepSeek / Kimi / GLM",
+    eyebrow: "DEEPSEEK · KIMI · GLM · CODEX · CLAUDE CODE",
     heroTitle: (
       <>
-        一个 key。
+        DeepSeek、Kimi、GLM。
         <br />
         <span className="price">
-          更多模型。
-          <span className="toolLine">更多工具。</span>
-          <span className="costLine">更低成本。</span>
+          Codex。
+          <span className="toolLine">Claude Code。</span>
+          <span className="costLine">一份余额。</span>
         </span>
       </>
     ),
     invoice: "每个模型、每个工具，只需一张账单。",
     pay: "仅成功调用才付费。",
     savings: ["模型订阅", "数据工具订阅", "自动化工具订阅"],
-    sub: "一个余额覆盖 300+ 个官方模型和 1,000+ 个按调用付费工具。无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key。",
+    sub: "先抓住开发者最关心的模型和编码 Agent：DeepSeek、Kimi、GLM、Codex、Claude Code。一把 key，一份预付余额，按成功调用付费。",
     terminal: {
       billed: "✓ 计费 $0.83 · 失败调用 $0.00",
       contacts: "✓ 通过 5 个供应商瀑布式补全 489 位联系人",
@@ -621,6 +621,20 @@ export function getOnlineStaticText(locale: Locale, key: string, fallback: strin
   return getStaticDicts()[locale]?.[key] ?? fallback;
 }
 
+function normalizeInlineHtml(value: string) {
+  const signupHref = consoleUrl("/sign-up");
+  return value.replace(
+    /\bhref=(["'])(?:https?:\/\/flatkey\.ai\/)?\/?(?:login|signup)(?:\.html)?\1/gi,
+    `href="${signupHref}"`
+  );
+}
+
+function getOnlineStaticInlineHtml(locale: Locale, key: string, fallback: ReactNode) {
+  const html = getOnlineStaticText(locale, key, "");
+  if (!html) return fallback;
+  return <span dangerouslySetInnerHTML={{ __html: normalizeInlineHtml(html) }} />;
+}
+
 export function getOnlineHomeToolText(locale: Locale, keyPath: string, fallback: string) {
   if (locale === "en") return fallback;
   const root = getHomeToolDicts()[locale] as Record<string, unknown> | undefined;
@@ -629,6 +643,33 @@ export function getOnlineHomeToolText(locale: Locale, keyPath: string, fallback:
     return (current as Record<string, unknown>)[key];
   }, root);
   return typeof value === "string" ? value : fallback;
+}
+
+function getOnlineContactCopy(locale: Locale): OnlineCopy["contact"] {
+  return {
+    ...en.contact,
+    discord: getOnlineStaticText(locale, "ct.dc", en.contact.discord),
+    email: getOnlineStaticText(locale, "ct.mail", en.contact.email),
+    fine: getOnlineStaticInlineHtml(locale, "ct.fine", en.contact.fine),
+    formTitle: getOnlineStaticText(locale, "ct.h2", en.contact.formTitle),
+    heading: getOnlineStaticInlineHtml(locale, "ct.head", en.contact.heading),
+    linkedin: getOnlineStaticText(locale, "ct.li", en.contact.linkedin),
+    placeholders: {
+      company: getOnlineStaticText(locale, "ct.ph3", en.contact.placeholders.company),
+      email: getOnlineStaticText(locale, "ct.ph2", en.contact.placeholders.email),
+      message: getOnlineStaticText(locale, "ct.ph5", en.contact.placeholders.message),
+      name: getOnlineStaticText(locale, "ct.ph1", en.contact.placeholders.name),
+      volume: getOnlineStaticText(locale, "ct.ph4", en.contact.placeholders.volume),
+    },
+    send: getOnlineStaticText(locale, "ct.send", en.contact.send),
+    sub: getOnlineStaticText(locale, "ct.sub", en.contact.sub),
+    why: [
+      { num: "01", title: getOnlineStaticText(locale, "ct.w1t", en.contact.why[0].title), body: getOnlineStaticText(locale, "ct.w1p", en.contact.why[0].body) },
+      { num: "02", title: getOnlineStaticText(locale, "ct.w2t", en.contact.why[1].title), body: getOnlineStaticText(locale, "ct.w2p", en.contact.why[1].body) },
+      { num: "03", title: getOnlineStaticText(locale, "ct.w3t", en.contact.why[2].title), body: getOnlineStaticText(locale, "ct.w3p", en.contact.why[2].body) },
+      { num: "04", title: getOnlineStaticText(locale, "ct.w4t", en.contact.why[3].title), body: getOnlineStaticText(locale, "ct.w4p", en.contact.why[3].body) },
+    ],
+  };
 }
 
 export function getOnlineStaticCopy(locale: Locale): OnlineCopy {
@@ -640,6 +681,7 @@ export function getOnlineStaticCopy(locale: Locale): OnlineCopy {
 
   return {
     ...en,
+    contact: getOnlineContactCopy(locale),
     footer: {
       ...en.footer,
       about: getOnlineStaticText(locale, "ft.about", en.footer.about),

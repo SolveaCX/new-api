@@ -24,11 +24,25 @@ import (
 )
 
 type TaskSubmitResult struct {
-	UpstreamTaskID string
-	TaskData       []byte
-	Platform       constant.TaskPlatform
-	Quota          int
+	UpstreamTaskID      string
+	TaskData            []byte
+	Platform            constant.TaskPlatform
+	Quota               int
+	OutcomeMayBeUnknown bool
 	//PerCallPrice   types.PriceData
+}
+
+type TaskPreflightResult struct {
+	Platform constant.TaskPlatform
+	Quota    int
+}
+
+type taskRequestValidatorAfterModelMapping interface {
+	ValidateRequestAfterModelMapping(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError
+}
+
+type taskPriceDataValidator interface {
+	ValidateTaskPriceData(info *relaycommon.RelayInfo) *dto.TaskError
 }
 
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
@@ -142,7 +156,17 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 // 估算计费(EstimateBilling) → 计算价格 → 预扣费（仅首次）→
 // 构建/发送/解析上游请求 → 提交后计费调整(AdjustBillingOnSubmit)。
 // 控制器负责 defer Refund 和成功后 Settle。
-func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
+func PrepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskPreflightResult, *dto.TaskError) {
+	return prepareTaskSubmit(c, info, true)
+}
+
+// PrepareTaskAttempt refreshes channel-derived task metadata and pricing without
+// reserving billing again. It is used by queued workers after each channel pick.
+func PrepareTaskAttempt(c *gin.Context, info *relaycommon.RelayInfo) (*TaskPreflightResult, *dto.TaskError) {
+	return prepareTaskSubmit(c, info, false)
+}
+
+func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilling bool) (*TaskPreflightResult, *dto.TaskError) {
 	info.InitChannelMeta(c)
 
 	// 1. 确定 platform → 创建适配器 → 验证请求
@@ -155,8 +179,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
 	}
 	adaptor.Init(info)
-	if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
-		return nil, taskErr
+	postMappingValidator, validateAfterMapping := adaptor.(taskRequestValidatorAfterModelMapping)
+	if !validateAfterMapping {
+		if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+			return nil, taskErr
+		}
 	}
 
 	// 2. 确定模型名称
@@ -171,6 +198,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if err := helper.ModelMappedHelper(c, info, nil); err != nil {
 		return nil, service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
 	}
+	if validateAfterMapping {
+		if taskErr := postMappingValidator.ValidateRequestAfterModelMapping(c, info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
 
 	// 3. 预生成公开 task ID（仅首次）
 	if info.PublicTaskID == "" {
@@ -184,6 +216,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}
 	info.PriceData = priceData
+	if validator, ok := adaptor.(taskPriceDataValidator); ok {
+		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
@@ -200,10 +237,33 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
-	if info.Billing == nil && !info.PriceData.FreeModel {
+	if reserveBilling && info.Billing == nil && !info.PriceData.FreeModel {
 		info.ForcePreConsume = true
 		if apiErr := service.PreConsumeBilling(c, info.PriceData.Quota, info); apiErr != nil {
 			return nil, service.TaskErrorFromAPIError(apiErr)
+		}
+	}
+
+	return &TaskPreflightResult{Platform: platform, Quota: info.PriceData.Quota}, nil
+}
+
+func ExecutePreparedTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, preflight *TaskPreflightResult) (*TaskSubmitResult, *dto.TaskError) {
+	if preflight == nil {
+		return nil, service.TaskErrorWrapperLocal(errors.New("task preflight is required"), "task_preflight_required", http.StatusInternalServerError)
+	}
+	platform := preflight.Platform
+	adaptor := GetTaskAdaptor(platform)
+	if adaptor == nil {
+		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
+	}
+	adaptor.Init(info)
+	if postMappingValidator, ok := adaptor.(taskRequestValidatorAfterModelMapping); ok {
+		if taskErr := postMappingValidator.ValidateRequestAfterModelMapping(c, info); taskErr != nil {
+			return nil, taskErr
+		}
+	} else {
+		if taskErr := adaptor.ValidateRequestAndSetAction(c, info); taskErr != nil {
+			return nil, taskErr
 		}
 	}
 
@@ -216,10 +276,23 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 9. 发送请求
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
-		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
+		return &TaskSubmitResult{
+			Platform:            platform,
+			Quota:               preflight.Quota,
+			OutcomeMayBeUnknown: true,
+		}, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		return nil, taskSubmitStatusError(platform, resp)
+		statusCode := resp.StatusCode
+		taskErr := taskSubmitStatusError(platform, resp)
+		if statusCode >= http.StatusInternalServerError {
+			return &TaskSubmitResult{
+				Platform:            platform,
+				Quota:               preflight.Quota,
+				OutcomeMayBeUnknown: true,
+			}, taskErr
+		}
+		return nil, taskErr
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）
@@ -233,7 +306,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	// 11. 解析响应
 	upstreamTaskID, taskData, taskErr := adaptor.DoResponse(c, resp, info)
 	if taskErr != nil {
-		return nil, taskErr
+		return &TaskSubmitResult{
+			UpstreamTaskID:      upstreamTaskID,
+			TaskData:            taskData,
+			Platform:            platform,
+			Quota:               preflight.Quota,
+			OutcomeMayBeUnknown: true,
+		}, taskErr
 	}
 
 	// 11. 提交后计费调整：让适配器根据上游实际返回调整 OtherRatios
@@ -251,6 +330,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
+	preflight, taskErr := PrepareTaskSubmit(c, info)
+	if taskErr != nil {
+		return nil, taskErr
+	}
+	return ExecutePreparedTaskSubmit(c, info, preflight)
 }
 
 func applyTaskOtherRatios(priceData *types.PriceData) {
@@ -271,7 +358,7 @@ func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) 
 		responseBody, _ = io.ReadAll(resp.Body)
 	}
 	message := string(responseBody)
-	if string(platform) == strconv.Itoa(constant.ChannelTypeBytePlus) {
+	if channelType, err := strconv.Atoi(string(platform)); err == nil && taskcommon.ShouldWhitelabelChannelType(channelType) {
 		message = "task failed at upstream provider"
 	}
 	return service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
@@ -397,6 +484,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	}
 
 	isOpenAIVideoAPI := isOpenAIVideoFetchPath(c.Request.URL.Path)
+	isVideoToMusicAPI := isVideoToMusicFetchPath(c.Request.URL.Path)
 	isGenerationTasksAPI := isGenerationTasksFetchPath(c.Request.URL.Path)
 
 	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
@@ -409,6 +497,24 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		respBody, err = generationTaskRespBody(originTask)
 		if err != nil {
 			taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if isVideoToMusicAPI {
+		adaptor := GetTaskAdaptor(originTask.Platform)
+		if adaptor == nil {
+			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
+			return
+		}
+		converter, ok := adaptor.(channel.VideoToMusicConverter)
+		if !ok {
+			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("not_implemented:%s", originTask.Platform), "not_implemented", http.StatusNotImplemented)
+			return
+		}
+		respBody, err = converter.ConvertToVideoToMusic(originTask)
+		if err != nil {
+			taskResp = service.TaskErrorWrapper(err, "convert_to_video_to_music_failed", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -449,6 +555,10 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 
 func isOpenAIVideoFetchPath(path string) bool {
 	return strings.HasPrefix(path, "/v1/videos/")
+}
+
+func isVideoToMusicFetchPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/video-to-music/")
 }
 
 func isGenerationTasksFetchPath(path string) bool {

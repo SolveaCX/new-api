@@ -42,6 +42,15 @@ func (e *RecallEmailQuotaWaitError) Error() string {
 	return fmt.Sprintf("recall email hourly quota is exhausted until %d", e.ResetsAt)
 }
 
+type RecallEmailPacingWaitError struct {
+	NextAllowedAtMillis int64
+	IntervalMillis      int64
+}
+
+func (e *RecallEmailPacingWaitError) Error() string {
+	return fmt.Sprintf("recall email pacing slot is unavailable until %d", e.NextAllowedAtMillis)
+}
+
 type RecallEmailSender func(config common.SMTPConfig, subject, receiver, content, messageID string, options common.EmailOptions) error
 
 type RecallEmailWorker struct {
@@ -176,6 +185,9 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 	if err != nil {
 		return 0, err
 	}
+	if quotaStatus.Exhausted {
+		return 0, &RecallEmailQuotaWaitError{ResetsAt: quotaStatus.ResetsAt}
+	}
 	candidateLimit := limit
 	if quotaStatus.Remaining < candidateLimit {
 		candidateLimit = quotaStatus.Remaining
@@ -185,8 +197,17 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 	if err != nil {
 		return 0, err
 	}
-	if quotaStatus.Exhausted {
-		return 0, &RecallEmailQuotaWaitError{ResetsAt: quotaStatus.ResetsAt}
+	if len(candidates) > 0 {
+		pacingStatus, err := model.GetRecallEmailPacingStatusWithContext(ctx, campaignSetting.EmailHourlyLimit)
+		if err != nil {
+			return 0, err
+		}
+		if !pacingStatus.Allowed {
+			return 0, &RecallEmailPacingWaitError{
+				NextAllowedAtMillis: pacingStatus.NextAllowedAtMillis,
+				IntervalMillis:      pacingStatus.IntervalMillis,
+			}
+		}
 	}
 	type leasedEmail struct {
 		item      *model.RecallEmailWorkItem
@@ -231,17 +252,33 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			})
 		}
 	}
-	releaseRemaining := func(releaseCtx context.Context, start int) error {
+	releaseRemaining := func(releaseCtx context.Context, start int, retryAt int64, retryStepSeconds int64, forceRetry bool) error {
 		var firstReleaseErr error
 		for index := start; index < len(leased); index++ {
 			entry := leased[index]
-			released, releaseErr := model.ReleaseRecallMessageLeaseWithContext(
-				releaseCtx,
-				entry.item.Message.Id,
-				w.owner,
-				entry.item.Message.LeaseExpiresAt,
-				entry.candidate,
-			)
+			var released bool
+			var releaseErr error
+			if forceRetry {
+				// Spread deferred messages one pacing slot apart so a single
+				// slot wakes one message instead of the whole remainder.
+				messageRetryAt := retryAt + int64(index-start)*retryStepSeconds
+				released, releaseErr = model.ReleaseRecallMessageLeaseForRetryWithContext(
+					releaseCtx,
+					entry.item.Message.Id,
+					w.owner,
+					entry.item.Message.LeaseExpiresAt,
+					entry.candidate,
+					messageRetryAt,
+				)
+			} else {
+				released, releaseErr = model.ReleaseRecallMessageLeaseWithContext(
+					releaseCtx,
+					entry.item.Message.Id,
+					w.owner,
+					entry.item.Message.LeaseExpiresAt,
+					entry.candidate,
+				)
+			}
 			if releaseErr != nil && firstReleaseErr == nil {
 				firstReleaseErr = releaseErr
 				continue
@@ -255,7 +292,12 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 	releaseRemainingSafely := func(start int) error {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		return releaseRemaining(cleanupCtx, start)
+		return releaseRemaining(cleanupCtx, start, 0, 0, false)
+	}
+	staggerRemainingSafely := func(start int, retryAt int64, stepSeconds int64) error {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		return releaseRemaining(cleanupCtx, start, retryAt, stepSeconds, true)
 	}
 	activeMessageIDs, activityErr := model.FindRecallMessageIDsWithAPIActivityAfterWithContext(ctx, activityChecks, w.audience.LogBatchSize)
 	if activityErr != nil {
@@ -290,9 +332,20 @@ func (w *RecallEmailWorker) RunBatch(ctx context.Context, limit int) (int, error
 			var waitErr *RecallEmailQuotaWaitError
 			if errors.As(processErr, &waitErr) {
 				if releaseErr := releaseRemainingSafely(index + 1); releaseErr != nil {
-					return processed, fmt.Errorf("%w; release remaining recall email leases: %v", waitErr, releaseErr)
+					return processed, fmt.Errorf("%w; release remaining recall email leases: %v", processErr, releaseErr)
 				}
-				return processed, waitErr
+				return processed, processErr
+			}
+			var pacingWaitErr *RecallEmailPacingWaitError
+			if errors.As(processErr, &pacingWaitErr) {
+				retryAt := recallEmailPacingRetryAtSeconds(pacingWaitErr.NextAllowedAtMillis)
+				stepSeconds := recallEmailPacingStepSeconds(pacingWaitErr.IntervalMillis)
+				// processLeasedItem already deferred this message to retryAt, so
+				// the remainder starts one slot later to keep one message per slot.
+				if releaseErr := staggerRemainingSafely(index+1, retryAt+stepSeconds, stepSeconds); releaseErr != nil {
+					return processed, fmt.Errorf("%w; release remaining recall email leases: %v", processErr, releaseErr)
+				}
+				return processed, processErr
 			}
 			processed++
 			if !errors.Is(processErr, ErrRecallEmailLeaseLost) && firstErr == nil {
@@ -530,7 +583,21 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if !attempt.LeaseOwned {
 		return ErrRecallEmailLeaseLost
 	}
+	if attempt.Suppressed {
+		return nil
+	}
 	if !attempt.Reserved {
+		var waitErr error
+		retryAt := attempt.Quota.ResetsAt
+		if !attempt.Pacing.Allowed && attempt.Pacing.NextAllowedAtMillis > 0 {
+			waitErr = &RecallEmailPacingWaitError{
+				NextAllowedAtMillis: attempt.Pacing.NextAllowedAtMillis,
+				IntervalMillis:      attempt.Pacing.IntervalMillis,
+			}
+			retryAt = recallEmailPacingRetryAtSeconds(attempt.Pacing.NextAllowedAtMillis)
+		} else {
+			waitErr = &RecallEmailQuotaWaitError{ResetsAt: attempt.Quota.ResetsAt}
+		}
 		if candidate != nil {
 			released, releaseErr := model.ReleaseRecallMessageLeaseForRetryWithContext(
 				ctx,
@@ -538,10 +605,10 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 				w.owner,
 				expectedLeaseUntil,
 				*candidate,
-				attempt.Quota.ResetsAt,
+				retryAt,
 			)
 			if releaseErr != nil {
-				return releaseErr
+				return fmt.Errorf("%w; release remaining recall email leases: %v", waitErr, releaseErr)
 			}
 			if !released {
 				return ErrRecallEmailLeaseLost
@@ -552,16 +619,16 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 				item.Message.Id,
 				w.owner,
 				expectedLeaseUntil,
-				attempt.Quota.ResetsAt,
+				retryAt,
 			)
 			if deferErr != nil {
-				return deferErr
+				return fmt.Errorf("%w; release remaining recall email leases: %v", waitErr, deferErr)
 			}
 			if !deferred {
 				return ErrRecallEmailLeaseLost
 			}
 		}
-		return &RecallEmailQuotaWaitError{ResetsAt: attempt.Quota.ResetsAt}
+		return waitErr
 	}
 
 	if token, tokenErr := CreateRecallEmailOpenToken(item.Recipient.Id); tokenErr != nil {
@@ -570,31 +637,22 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 		htmlBody = appendRecallEmailOpenPixel(htmlBody, recallEmailOpenBaseOrigin(), token)
 	}
 	if err := w.sender(smtpConfig, subject, item.Recipient.EmailSnapshot, htmlBody, providerMessageID, emailOptions); err != nil {
-		if common.IsEmailSendUncertain(err) {
-			won, updateErr := model.CompleteRecallMessageLease(
-				item.Message.Id,
-				w.owner,
-				expectedLeaseUntil,
-				model.RecallMessageSending,
-				model.RecallMessageUncertain,
-				map[string]any{
-					"attempt_count":       item.Message.AttemptCount + 1,
-					"next_attempt_at":     int64(0),
-					"provider_message_id": providerMessageID,
-					"last_error_code":     "smtp_uncertain",
-					"last_error_message":  "",
-				},
-			)
-			if updateErr != nil {
-				return updateErr
-			}
-			if !won {
-				return ErrRecallEmailLeaseLost
-			}
-			return nil
-		}
+		attemptResult := classifyRecallSMTPAttempt(err)
 		logger.LogWarn(ctx, fmt.Sprintf("recall activity SMTP delivery failed for message %d: %s", item.Message.Id, sanitizeRecallActivitySMTPTransportError(err, smtpConfig, htmlBody)))
-		return w.finishSendingErrorWithMessage(ctx, item, RecallActivitySMTPSendFailedCode, RecallActivitySMTPSendFailedMessage, true)
+		switch attemptResult.Outcome {
+		case recallSMTPAttemptUncertain:
+			return w.finishUncertainSMTPAttempt(ctx, item, providerMessageID)
+		case recallSMTPAttemptPermanent:
+			if finishErr := w.finishSendingErrorWithMessage(ctx, item, RecallActivitySMTPSendFailedCode, RecallActivitySMTPSendFailedMessage, false); finishErr != nil {
+				return finishErr
+			}
+		default:
+			if finishErr := w.finishSendingErrorWithMessage(ctx, item, RecallActivitySMTPSendFailedCode, RecallActivitySMTPSendFailedMessage, true); finishErr != nil {
+				return finishErr
+			}
+		}
+		observeRecallSMTPAttemptOutcome(attemptResult.Outcome)
+		return nil
 	}
 	acceptedAt := w.now().Unix()
 	if next != nil && item.Recipient.FirstSentAt == 0 {
@@ -615,7 +673,29 @@ func (w *RecallEmailWorker) processLeasedItem(ctx context.Context, item *model.R
 	if !accepted {
 		return ErrRecallEmailLeaseLost
 	}
+	observeRecallSMTPAttemptOutcome(recallSMTPAttemptAccepted)
 	return nil
+}
+
+func recallEmailPacingRetryAtSeconds(nextAllowedAtMillis int64) int64 {
+	if nextAllowedAtMillis <= 0 {
+		return 0
+	}
+	return (nextAllowedAtMillis + 999) / 1000
+}
+
+// recallEmailPacingStepSeconds converts the pacing interval into the per-message
+// retry spacing used when deferring a batch remainder. Sub-second intervals fall
+// back to one second because next_attempt_at has second granularity.
+func recallEmailPacingStepSeconds(intervalMillis int64) int64 {
+	if intervalMillis <= 0 {
+		return 1
+	}
+	stepSeconds := intervalMillis / 1000
+	if stepSeconds < 1 {
+		return 1
+	}
+	return stepSeconds
 }
 
 func (w *RecallEmailWorker) createUnsubscribeToken(item *model.RecallEmailWorkItem) (string, error) {
@@ -687,23 +767,59 @@ func (w *RecallEmailWorker) recallEmailStopReason(ctx context.Context, item *mod
 }
 
 func (w *RecallEmailWorker) finishPreAcceptError(ctx context.Context, item *model.RecallEmailWorkItem, errorCode string, retryable bool) error {
-	return w.finishError(ctx, item, model.RecallMessageLeased, errorCode, retryable)
+	return w.finishError(ctx, item, model.RecallMessageLeased, errorCode, retryable, false)
 }
 
 func (w *RecallEmailWorker) finishSendingError(ctx context.Context, item *model.RecallEmailWorkItem, errorCode string, retryable bool) error {
-	return w.finishError(ctx, item, model.RecallMessageSending, errorCode, retryable)
+	return w.finishError(ctx, item, model.RecallMessageSending, errorCode, retryable, true)
 }
 
 func (w *RecallEmailWorker) finishSendingErrorWithMessage(ctx context.Context, item *model.RecallEmailWorkItem, errorCode string, errorMessage string, retryable bool) error {
-	return w.finishErrorWithMessage(ctx, item, model.RecallMessageSending, errorCode, errorMessage, retryable)
+	return w.finishErrorWithMessage(ctx, item, model.RecallMessageSending, errorCode, errorMessage, retryable, true)
 }
 
-func (w *RecallEmailWorker) finishError(ctx context.Context, item *model.RecallEmailWorkItem, from string, errorCode string, retryable bool) error {
-	return w.finishErrorWithMessage(ctx, item, from, errorCode, "", retryable)
+func (w *RecallEmailWorker) finishUncertainSMTPAttempt(ctx context.Context, item *model.RecallEmailWorkItem, providerMessageID string) error {
+	won, err := model.CompleteRecallMessageLease(
+		item.Message.Id,
+		w.owner,
+		item.Message.LeaseExpiresAt,
+		model.RecallMessageSending,
+		model.RecallMessageUncertain,
+		map[string]any{
+			"attempt_count":       item.Message.AttemptCount + 1,
+			"next_attempt_at":     int64(0),
+			"provider_message_id": providerMessageID,
+			"last_error_code":     "smtp_uncertain",
+			"last_error_message":  "",
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if !won {
+		return ErrRecallEmailLeaseLost
+	}
+	observeRecallSMTPAttemptOutcome(recallSMTPAttemptUncertain)
+	return nil
 }
 
-func (w *RecallEmailWorker) finishErrorWithMessage(ctx context.Context, item *model.RecallEmailWorkItem, from string, errorCode string, errorMessage string, retryable bool) error {
-	attemptCount := item.Message.AttemptCount + 1
+func (w *RecallEmailWorker) finishError(ctx context.Context, item *model.RecallEmailWorkItem, from string, errorCode string, retryable bool, incrementAttempt bool) error {
+	return w.finishErrorWithMessage(ctx, item, from, errorCode, "", retryable, incrementAttempt)
+}
+
+func (w *RecallEmailWorker) finishErrorWithMessage(ctx context.Context, item *model.RecallEmailWorkItem, from string, errorCode string, errorMessage string, retryable bool, incrementAttempt bool) error {
+	attemptCount := item.Message.AttemptCount
+	if incrementAttempt {
+		attemptCount++
+	}
+	preSendAttemptCount := item.Message.PreSendAttemptCount
+	if retryable && !incrementAttempt {
+		preSendAttemptCount++
+	}
+	retryDelayAttempt := attemptCount
+	if !incrementAttempt {
+		retryDelayAttempt = preSendAttemptCount
+	}
 	state := model.RecallMessageFailed
 	fields := map[string]any{
 		"attempt_count":      attemptCount,
@@ -712,9 +828,12 @@ func (w *RecallEmailWorker) finishErrorWithMessage(ctx context.Context, item *mo
 		"last_error_code":    errorCode,
 		"last_error_message": errorMessage,
 	}
-	if retryable && attemptCount < recallEmailMaxAttempts {
+	if retryable && !incrementAttempt {
+		fields["pre_send_attempt_count"] = preSendAttemptCount
+	}
+	if retryable && retryDelayAttempt < recallEmailMaxAttempts {
 		state = model.RecallMessageRetryWait
-		fields["next_attempt_at"] = w.now().Add(recallEmailRetryDelay(attemptCount)).Unix()
+		fields["next_attempt_at"] = w.now().Add(recallEmailRetryDelay(retryDelayAttempt)).Unix()
 		fields["failed_at"] = int64(0)
 	}
 	won, err := model.CompleteRecallMessageLease(
@@ -755,17 +874,10 @@ func sanitizeRecallActivitySMTPTransportError(err error, smtpConfig common.SMTPC
 }
 
 func recallEmailRetryDelay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
+	if attempt < 1 || attempt > len(recallSMTPRetryDelays) {
+		return 0
 	}
-	delay := 30 * time.Second
-	for step := 1; step < attempt && delay < time.Hour; step++ {
-		delay *= 2
-		if delay > time.Hour {
-			delay = time.Hour
-		}
-	}
-	return delay
+	return recallSMTPRetryDelays[attempt-1]
 }
 
 func recallEmailMessageID(recipientID int64, stageNo int, domain string) (string, error) {
