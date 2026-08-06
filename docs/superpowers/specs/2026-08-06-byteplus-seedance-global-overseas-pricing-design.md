@@ -19,7 +19,8 @@ path would turn the task into per-call billing and bypass token reconciliation.
 ## Official Overseas Prices
 
 Source: <https://docs.byteplus.com/en/docs/ModelArk/1544106>, verified
-2026-08-06. Values below are normalized to USD per one million tokens.
+2026-08-06. The official page labels these prices as USD per million tokens;
+the table below uses the equivalent USD per 1M token unit.
 
 | Model | Resolution | No video input | Video input |
 | --- | --- | ---: | ---: |
@@ -45,12 +46,14 @@ The built-in global ratios are therefore:
 ```
 
 `seedance2.0-pro` is the canonical Flatkey public alias for overseas
-Seedance 2.0. `Seedance2.0-pro` remains a billing-compatible legacy spelling,
-but is not advertised as a second canonical model.
+Seedance 2.0. Only this lowercase Pro alias is advertised. `Seedance2.0-pro`
+remains a billing-compatible legacy spelling, but is not exposed as a second
+canonical model.
 
 Persisted `ModelRatio` settings replace the built-in map. Deploying this code
-does not overwrite an existing production option, so rollout must explicitly
-set both active Pro spellings to `3.5` and preserve unrelated entries.
+does not overwrite an existing production option, so rollout must merge all
+five Seedance keys above into the persisted production map and preserve
+unrelated entries.
 
 ## BytePlus Scenario Resolution
 
@@ -77,6 +80,12 @@ At `GroupRatio = 1`, the effective price is the official table above. A customer
 group price is the official price multiplied by that group's ratio. No
 customer-specific model ratio is required.
 
+If production contains Seedance-specific `GroupModelRatio` overrides, delete
+them before rollout. A match overrides that group/model's effective group
+ratio, breaking the contract that only `GroupRatio` controls customer-specific
+pricing. If an override cannot be deleted immediately, set it to the expected
+`GroupRatio` value.
+
 Examples:
 
 - Pro baseline with `GroupRatio = 1.2`: `$7.0 * 1.2 = $8.4 / 1M tokens`.
@@ -87,6 +96,8 @@ Examples:
 
 - Add global Seedance `defaultModelRatio` entries.
 - Advertise canonical `seedance2.0-pro` in the BytePlus model list.
+- Add canonical `seedance2.0-pro` to the default console BytePlus channel
+  configuration and regression-test that the legacy case alias is not listed.
 - Resolve the canonical and legacy Pro aliases to the Seedance 2.0 scenario
   table.
 - Replace BytePlus's approximate legacy tier units with exact overseas units.
@@ -97,14 +108,16 @@ Examples:
 ## Multi-node and Deployment
 
 The runtime change is stateless and reads the same persisted settings on every
-node; it introduces no process-local coordination. Router deployment is
+node; it introduces no process-local coordination. Router/backend deployment is
 required because request pre-consumption and task completion settlement use the
-changed ratios. Deploy the console service when the built-in global map must be
-visible through its pricing administration APIs.
+changed ratios. The default console must also be deployed because its built-in
+BytePlus channel configuration now advertises canonical Pro.
 
 Before deployment, update the persisted production `ModelRatio` map without
-replacing unrelated keys, verify the relevant Seedance names are absent from
-`ModelPrice` and `TASK_PRICE_PATCH`, then complete one real token-settled task.
+replacing unrelated keys, verify all exact Seedance names in that contract are
+absent from `ModelPrice` and `TASK_PRICE_PATCH`, delete any Seedance
+`GroupModelRatio` overrides or set them to the expected `GroupRatio` value,
+then complete one real token-settled task.
 
 ## Rejected Alternatives
 

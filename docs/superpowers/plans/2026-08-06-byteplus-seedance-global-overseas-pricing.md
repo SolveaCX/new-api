@@ -17,6 +17,7 @@
 - Modify: `relay/channel/task/byteplus/adaptor_test.go`
 - Modify: `relay/relay_task_billing_test.go`
 - Modify: `service/task_billing_test.go`
+- Modify: `web/default/src/features/channels/constants.test.ts`
 
 - [ ] **Step 1: Add the global default-ratio test**
 
@@ -59,7 +60,13 @@ and tier price.
 Use `ModelRatio = 3.5`, `video_input = 43.0 / 70.0`, and `actualQuota = 2150`
 for a 1000-token Seedance 2.0 video-input task.
 
-- [ ] **Step 5: Run the tests and verify RED**
+- [ ] **Step 5: Add default console channel-config coverage**
+
+Assert that BytePlus channel type `107` advertises `seedance2.0-pro` in the
+default console supported models and hints, and does not advertise the legacy
+case alias `Seedance2.0-pro`.
+
+- [ ] **Step 6: Run the tests and verify RED**
 
 Run:
 
@@ -68,16 +75,18 @@ go test ./setting/ratio_setting -run '^TestSeedanceGlobalDefaultRatiosMatchByteP
 go test ./relay/channel/task/byteplus -run '^(TestIdentityAndModelList|TestEstimateBillingUsesPublicModelPricingAcrossEndpointMappings)$' -count=1 -v
 go test ./relay -run '^TestBytePlusModelRatiosApplyTierRatios$' -count=1 -v
 go test ./service -run '^TestSettle_NonPerCallSeedance_UsesTotalTokensAndScenarioRatio$' -count=1 -v
+cd web/default; bun test src/features/channels/constants.test.ts
 ```
 
 Expected: the ratio and alias tests fail because the defaults, canonical model,
-and exact official tiers are not implemented yet.
+exact official tiers, and default console model list are not implemented yet.
 
 ### Task 2: Implement the minimal global and BytePlus pricing changes
 
 **Files:**
 - Modify: `setting/ratio_setting/model_ratio.go`
 - Modify: `relay/channel/task/byteplus/constants.go`
+- Modify: `web/default/src/features/channels/lib/channel-type-config.ts`
 
 - [ ] **Step 1: Add global default ratios**
 
@@ -110,27 +119,38 @@ scenario table.
 Use `70/43/77/47/40/24` for Seedance 2.0, `56/33` for Fast, and `35/21` for
 Mini. Keep Doubao's separate table unchanged.
 
-- [ ] **Step 4: Run the targeted tests and verify GREEN**
+- [ ] **Step 4: Update default console BytePlus defaults**
 
-Run the four commands from Task 1. Expected: all pass.
+Add `seedance2.0-pro` to the default console BytePlus supported model list and
+model hint string. Do not add `Seedance2.0-pro`; it remains a compatibility-only
+billing alias.
+
+- [ ] **Step 5: Run the targeted tests and verify GREEN**
+
+Run the commands from Task 1. Expected: all pass.
 
 ### Task 3: Correct the active pricing documentation
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-07-31-byteplus-seedance-tiered-billing-design.md`
+- Modify: `docs/superpowers/specs/2026-08-06-byteplus-seedance-global-overseas-pricing-design.md`
+- Modify: `docs/superpowers/plans/2026-08-06-byteplus-seedance-global-overseas-pricing.md`
 
 - [ ] **Step 1: Replace the obsolete low-price contract**
 
 Document the global raw ratios, official overseas prices, exact scenario units,
 Pro alias mapping, GroupRatio-only customer adjustments, and persisted-setting
-rollout requirement.
+rollout requirement. Record that production rollout must delete any Seedance
+`GroupModelRatio` overrides, or set them to the expected `GroupRatio` value if
+they cannot be deleted immediately, and that both router/backend and the default
+console need deployment.
 
 - [ ] **Step 2: Check for stale active values**
 
 Run:
 
 ```powershell
-rg -n '0\.391|0\.3145|0\.1955|28/46|51/46|31/46|26/46|16/46|22/37|14/23|\$0\.782|\$0\.629' relay/channel/task/byteplus relay/relay_task_billing_test.go service/task_billing_test.go docs/superpowers/specs/2026-07-31-byteplus-seedance-tiered-billing-design.md
+rg -n '0\.391|0\.3145|0\.1955|28/46|51/46|31/46|26/46|16/46|22/37|14/23|\$0\.782|\$0\.629' relay/channel/task/byteplus relay/relay_task_billing_test.go service/task_billing_test.go docs/superpowers/specs/2026-07-31-byteplus-seedance-tiered-billing-design.md docs/superpowers/specs/2026-08-06-byteplus-seedance-global-overseas-pricing-design.md
 ```
 
 Expected: no obsolete BytePlus pricing-contract matches.
@@ -154,6 +174,7 @@ go test ./setting/ratio_setting ./relay/channel/task/byteplus ./relay/channel/ta
 go test ./relay -count=1
 go test ./service -count=1
 go test ./relay/channel/task/... -count=1
+cd web/default; bun test src/features/channels/constants.test.ts
 go build ./...
 ```
 
@@ -166,5 +187,9 @@ independent code-review subagent.
 - [ ] **Step 4: Commit with Lore trailers, push, and create the PR**
 
 The PR body must include problem, official evidence, root cause, design, impact,
-risk, validation, persisted-production-config rollout, and `Router deploy:
-required`.
+risk, validation, persisted-production-config rollout, `Router/backend deploy:
+required`, `web/default console deploy: required`, and the production reminder
+to remove Seedance `ModelPrice` and `TASK_PRICE_PATCH` entries for every exact
+Seedance name in the `ModelRatio` contract, delete Seedance `GroupModelRatio`
+overrides or set them to the expected `GroupRatio` value, and verify one real
+token-settled task.
