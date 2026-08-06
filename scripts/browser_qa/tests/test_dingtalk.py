@@ -240,6 +240,33 @@ class DingTalkTests(unittest.TestCase):
         self.assertNotIn("[x](https://evil.example)", markdown)
         self.assertNotIn("<b>", markdown)
 
+    def test_report_strips_query_and_fragment_from_urls_in_finding_titles(self):
+        report = self.report(
+            final_status="findings_detected",
+            finding_count=2,
+            finding_summaries=(
+                {
+                    "severity": "high",
+                    "title": "Docs: https://staging.example/app?debug=true#panel",
+                    "confidence": "high",
+                    "page_path": "/docs",
+                },
+                {
+                    "severity": "low",
+                    "title": "Docs root: https://staging.example/app",
+                    "confidence": "low",
+                    "page_path": "/docs/root",
+                },
+            ),
+        )
+
+        markdown = report.markdown()
+
+        self.assertIn("Docs: https://staging.example/app", markdown)
+        self.assertIn("Docs root: https://staging.example/app", markdown)
+        self.assertNotIn("debug=true", markdown)
+        self.assertNotIn("#panel", markdown)
+
     def test_report_rejects_untrusted_status_counts_and_urls(self):
         invalid_overrides = [
             {"final_status": "passed\npassword=leak"},

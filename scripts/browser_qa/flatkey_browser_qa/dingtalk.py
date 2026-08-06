@@ -52,6 +52,7 @@ GCS_MANIFEST_URI = re.compile(
     r"gs://[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]/runs/[0-9]+/manifest\.json"
 )
 URLSAFE_B64 = re.compile(r"[A-Za-z0-9_-]+={0,2}")
+HTTP_URL_IN_TEXT = re.compile(r"https?://[^\s<>\[\]()`]+")
 EMAIL_ADDRESS = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 OPENAI_SECRET_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b")
 SECRET_TERMS = re.compile(
@@ -113,7 +114,7 @@ class DingTalkReport:
             lines.append("")
             lines.append("### 发现的问题")
             for item in self.finding_summaries:
-                title = _markdown_escape(item["title"])
+                title = _markdown_escape(_strip_http_url_query_fragment(item["title"]))
                 page_path = _markdown_escape(item["page_path"])
                 severity = item["severity"]
                 confidence = item["confidence"]
@@ -339,6 +340,15 @@ def _markdown_escape(value):
             escaped.append("\\")
         escaped.append(char)
     return "".join(escaped)
+
+
+def _strip_http_url_query_fragment(value):
+    def strip(match):
+        url = match.group(0)
+        parsed = urllib.parse.urlsplit(url)
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+    return HTTP_URL_IN_TEXT.sub(strip, value)
 
 
 def _validate_webhook(webhook):
