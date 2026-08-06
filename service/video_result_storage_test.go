@@ -306,6 +306,143 @@ func TestArchiveVideoResult(t *testing.T) {
 	})
 }
 
+func TestSignVideoResultDownload(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+
+	t.Run("clamps signed url ttl to remaining retention and signs generation get attachment", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		restore := installVideoResultArchiveTestHooks(t, store, now)
+		defer restore()
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		t.Setenv("VIDEO_RESULT_SIGNED_URL_TTL_SECONDS", "900")
+		t.Setenv("VIDEO_RESULT_SERVICE_ACCOUNT_EMAIL", "video-signer@example.iam.gserviceaccount.com")
+		result := &model.VideoResult{
+			Bucket:      "video-bucket",
+			Object:      "video-results/20260806/task_signed.mp4",
+			Generation:  7,
+			ContentType: "video/mp4; charset=binary",
+			Size:        42,
+			ExpiresAt:   now.Add(5 * time.Minute).Unix(),
+		}
+		store.attrs["video-bucket/video-results/20260806/task_signed.mp4"] = VideoResultObjectAttrs{
+			ContentType: "video/mp4; charset=binary",
+			Size:        42,
+			Generation:  7,
+			Created:     now.Add(-time.Minute),
+		}
+		store.signedURL = "https://storage.googleapis.com/video-bucket/video-results/20260806/task_signed.mp4?X-Goog-Signature=secret"
+
+		signed, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+		require.NoError(t, err)
+		require.Equal(t, store.signedURL, signed)
+		require.Equal(t, 1, store.attrsCalls)
+		require.Equal(t, 1, store.signCalls)
+		require.Len(t, store.signRequests, 1)
+		req := store.signRequests[0]
+		require.Equal(t, http.MethodGet, req.Method)
+		require.Equal(t, 5*time.Minute, req.TTL)
+		require.Equal(t, "video/mp4", req.ContentType)
+		require.Equal(t, "video-signer@example.iam.gserviceaccount.com", req.ServiceAccountEmail)
+		require.Equal(t, "7", req.QueryParameters.Get("generation"))
+		require.Equal(t, `attachment; filename="task_signed.mp4"`, req.QueryParameters.Get("response-content-disposition"))
+		require.Equal(t, "video/mp4", req.QueryParameters.Get("response-content-type"))
+	})
+
+	t.Run("clamps configured ttl at one hour", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, now)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		t.Setenv("VIDEO_RESULT_SIGNED_URL_TTL_SECONDS", "7200")
+		result := validVideoResultForSign(now.Add(2 * time.Hour).Unix())
+		store.attrs["video-bucket/"+result.Object] = VideoResultObjectAttrs{ContentType: result.ContentType, Size: result.Size, Generation: result.Generation, Created: now}
+
+		_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+		require.NoError(t, err)
+		require.Equal(t, time.Hour, store.signRequests[0].TTL)
+	})
+
+	t.Run("expired result does not touch object store", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, now)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		result := validVideoResultForSign(now.Unix())
+
+		signed, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+		require.Empty(t, signed)
+		require.ErrorIs(t, err, ErrVideoResultExpired)
+		require.Zero(t, store.attrsCalls)
+		require.Zero(t, store.signCalls)
+	})
+
+	t.Run("nil or incomplete metadata is unavailable", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, now)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+
+		_, err := SignVideoResultDownload(context.Background(), "task_signed", nil)
+		require.ErrorIs(t, err, ErrVideoResultUnavailable)
+
+		_, err = SignVideoResultDownload(context.Background(), "task_signed", &model.VideoResult{Bucket: "video-bucket"})
+		require.ErrorIs(t, err, ErrVideoResultUnavailable)
+		require.Zero(t, store.attrsCalls)
+		require.Zero(t, store.signCalls)
+	})
+
+	t.Run("object attr missing mismatch zero or nonvideo is unavailable", func(t *testing.T) {
+		cases := []struct {
+			name  string
+			attrs VideoResultObjectAttrs
+		}{
+			{name: "missing"},
+			{name: "generation mismatch", attrs: VideoResultObjectAttrs{ContentType: "video/mp4", Size: 42, Generation: 8}},
+			{name: "size zero", attrs: VideoResultObjectAttrs{ContentType: "video/mp4", Size: 0, Generation: 7}},
+			{name: "size mismatch", attrs: VideoResultObjectAttrs{ContentType: "video/mp4", Size: 41, Generation: 7}},
+			{name: "nonvideo", attrs: VideoResultObjectAttrs{ContentType: "application/octet-stream", Size: 42, Generation: 7}},
+		}
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				store := newFakeVideoResultStore()
+				installVideoResultArchiveTestHooks(t, store, now)
+				t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+				result := validVideoResultForSign(now.Add(time.Hour).Unix())
+				if tt.attrs != (VideoResultObjectAttrs{}) {
+					store.attrs["video-bucket/"+result.Object] = tt.attrs
+				}
+
+				_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+				require.ErrorIs(t, err, ErrVideoResultUnavailable)
+				require.Zero(t, store.signCalls)
+			})
+		}
+	})
+
+	t.Run("sign failure is sanitized signing error", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, now)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		result := validVideoResultForSign(now.Add(time.Hour).Unix())
+		store.attrs["video-bucket/"+result.Object] = VideoResultObjectAttrs{ContentType: result.ContentType, Size: result.Size, Generation: result.Generation}
+		store.signErr = errors.New("secret https://storage.googleapis.com/video-bucket/object?X-Goog-Signature=abc")
+
+		signed, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+		require.Empty(t, signed)
+		require.ErrorIs(t, err, ErrVideoResultSigning)
+		require.NotContains(t, err.Error(), "storage.googleapis.com")
+		require.NotContains(t, err.Error(), "secret")
+	})
+}
+
+func validVideoResultForSign(expiresAt int64) *model.VideoResult {
+	return &model.VideoResult{
+		Bucket:      "video-bucket",
+		Object:      "video-results/20260806/task_signed.mp4",
+		Generation:  7,
+		ContentType: "video/mp4",
+		Size:        42,
+		ExpiresAt:   expiresAt,
+	}
+}
+
 func TestVideoResultDirectFetchClientRejectsDialTimePrivateIP(t *testing.T) {
 	original := *system_setting.GetFetchSetting()
 	t.Cleanup(func() { *system_setting.GetFetchSetting() = original })
@@ -384,6 +521,11 @@ type fakeVideoResultStore struct {
 	attrs           map[string]VideoResultObjectAttrs
 	createErr       error
 	attrsErr        error
+	signErr         error
+	signedURL       string
+	attrsCalls      int
+	signCalls       int
+	signRequests    []VideoResultSignedURLRequest
 	nextAttrs       VideoResultObjectAttrs
 	closedWithError bool
 	validatedURLs   map[string]bool
@@ -428,6 +570,7 @@ func (f *fakeVideoResultStore) Create(_ context.Context, bucket, objectKey strin
 }
 
 func (f *fakeVideoResultStore) Attrs(_ context.Context, bucket, objectKey string) (VideoResultObjectAttrs, error) {
+	f.attrsCalls++
 	if f.attrsErr != nil {
 		return VideoResultObjectAttrs{}, f.attrsErr
 	}
@@ -438,7 +581,15 @@ func (f *fakeVideoResultStore) Attrs(_ context.Context, bucket, objectKey string
 	return attrs, nil
 }
 
-func (f *fakeVideoResultStore) SignURL(_ context.Context, _ string, _ string, _ VideoResultSignedURLRequest) (string, error) {
+func (f *fakeVideoResultStore) SignURL(_ context.Context, _ string, _ string, request VideoResultSignedURLRequest) (string, error) {
+	f.signCalls++
+	f.signRequests = append(f.signRequests, request)
+	if f.signErr != nil {
+		return "", f.signErr
+	}
+	if f.signedURL != "" {
+		return f.signedURL, nil
+	}
 	return "https://signed.example/video", nil
 }
 

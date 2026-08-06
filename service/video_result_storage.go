@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,6 +78,8 @@ var (
 	ErrVideoResultTooLarge       = errors.New("video result is too large")
 	ErrVideoResultAlreadyExists  = errors.New("video result already exists")
 	ErrVideoResultUnavailable    = errors.New("video result is unavailable")
+	ErrVideoResultExpired        = errors.New("video result has expired")
+	ErrVideoResultSigning        = errors.New("video result signing failed")
 
 	videoResultObjectStore            VideoResultObjectStore = gcsVideoResultObjectStore{}
 	videoResultNow                                           = time.Now
@@ -177,6 +180,69 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		return nil, ErrVideoResultUnavailable
 	}
 	return videoResultModelFromAttrs(cfg, objectKey, attrs, archiveStart), nil
+}
+
+func SignVideoResultDownload(ctx context.Context, taskID string, result *model.VideoResult) (string, error) {
+	if !completeVideoResultMetadata(result) {
+		return "", ErrVideoResultUnavailable
+	}
+
+	now := videoResultNow().UTC()
+	expiresAt := time.Unix(result.ExpiresAt, 0).UTC()
+	remaining := expiresAt.Sub(now)
+	if remaining <= 0 {
+		return "", ErrVideoResultExpired
+	}
+
+	attrs, err := videoResultObjectStore.Attrs(ctx, result.Bucket, result.Object)
+	if err != nil {
+		return "", ErrVideoResultUnavailable
+	}
+	contentType, _, err := mime.ParseMediaType(attrs.ContentType)
+	if err != nil || !strings.HasPrefix(strings.ToLower(contentType), "video/") {
+		return "", ErrVideoResultUnavailable
+	}
+	if attrs.Generation != result.Generation || attrs.Size <= 0 || attrs.Size != result.Size {
+		return "", ErrVideoResultUnavailable
+	}
+
+	cfg := CurrentVideoResultStorageConfig()
+	ttl := cfg.SignedURLTTL
+	if ttl > maxVideoResultSignedURLTTL {
+		ttl = maxVideoResultSignedURLTTL
+	}
+	if ttl > remaining {
+		ttl = remaining
+	}
+	if ttl <= 0 {
+		return "", ErrVideoResultExpired
+	}
+
+	query := url.Values{}
+	query.Set("generation", strconv.FormatInt(result.Generation, 10))
+	query.Set("response-content-disposition", videoResultAttachmentDisposition(taskID))
+	query.Set("response-content-type", contentType)
+	signedURL, err := videoResultObjectStore.SignURL(ctx, result.Bucket, result.Object, VideoResultSignedURLRequest{
+		Method:              http.MethodGet,
+		TTL:                 ttl,
+		ContentType:         contentType,
+		ServiceAccountEmail: cfg.ServiceAccountEmail,
+		QueryParameters:     query,
+	})
+	if err != nil {
+		return "", ErrVideoResultSigning
+	}
+	return signedURL, nil
+}
+
+func completeVideoResultMetadata(result *model.VideoResult) bool {
+	return result != nil &&
+		strings.TrimSpace(result.Bucket) != "" &&
+		strings.TrimSpace(result.Object) != "" &&
+		result.Generation > 0 &&
+		strings.TrimSpace(result.ContentType) != "" &&
+		result.Size > 0 &&
+		result.ExpiresAt > 0
 }
 
 func newVideoResultFetchHTTPClient(cfg VideoResultStorageConfig, proxy string, resolver assetFetchResolver, dialContext func(context.Context, string, string) (net.Conn, error)) (*http.Client, error) {

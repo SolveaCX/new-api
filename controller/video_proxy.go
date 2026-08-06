@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+var signArchivedVideoResultDownload = service.SignVideoResultDownload
 
 // videoProxyError returns a standardized OpenAI-style error response.
 func videoProxyError(c *gin.Context, status int, errType, message string) {
@@ -82,6 +85,10 @@ func VideoProxy(c *gin.Context) {
 	baseURL := channel.GetBaseURL()
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
+	}
+
+	if tryRedirectArchivedTechMobiVideo(c, task, channel) {
+		return
 	}
 
 	var videoURL string
@@ -215,6 +222,32 @@ func VideoProxy(c *gin.Context) {
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
 	}
+}
+
+func tryRedirectArchivedTechMobiVideo(c *gin.Context, task *model.Task, channel *model.Channel) bool {
+	if c == nil || task == nil || channel == nil || channel.Type != constant.ChannelTypeTechMobiVideo || task.PrivateData.VideoResult == nil {
+		return false
+	}
+
+	signedURL, err := signArchivedVideoResultDownload(c.Request.Context(), c.Param("task_id"), task.PrivateData.VideoResult)
+	if err == nil {
+		c.Writer.Header().Set("Location", signedURL)
+		c.Writer.Header().Set("Cache-Control", "no-store")
+		c.Writer.Header().Set("Pragma", "no-cache")
+		c.Writer.WriteHeader(http.StatusFound)
+		c.Writer.WriteHeaderNow()
+		return true
+	}
+
+	switch {
+	case errors.Is(err, service.ErrVideoResultExpired):
+		videoProxyError(c, http.StatusGone, "invalid_request_error", "video result has expired")
+	case errors.Is(err, service.ErrVideoResultUnavailable):
+		videoProxyError(c, http.StatusBadGateway, "server_error", "video result is unavailable")
+	default:
+		videoProxyError(c, http.StatusServiceUnavailable, "server_error", "video result is temporarily unavailable")
+	}
+	return true
 }
 
 func shouldProxyVideoHeader(key string) bool {
