@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -51,6 +52,8 @@ type perCallTaskBillingAdjuster interface {
 var GetTaskAdaptorFunc func(platform constant.TaskPlatform) TaskPollingAdaptor
 
 var archiveTechMobiVideoResult = ArchiveVideoResult
+
+var techMobiLogURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 // sweepTimedOutTasks 在主轮询之前独立清理超时任务。
 // 每次最多处理 100 条，剩余的下个周期继续处理。
@@ -420,7 +423,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	}
 
-	task.Data = redactVideoResponseBody(responseBody)
+	task.Data = redactVideoResponseForChannel(ch.Type, responseBody)
 
 	if ch.Type == constant.ChannelTypeTechMobiVideo {
 		logger.LogDebug(ctx, "updateVideoSingleTask task result parsed: task_id=%s upstream_task_id=%s phase=parsed status=%s progress=%s", task.TaskID, task.GetUpstreamTaskID(), taskResult.Status, taskResult.Progress)
@@ -463,7 +466,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			}
 			task.PrivateData.VideoResult = videoResult
 		}
-		task.Data = redactTechMobiVideoResponseBody(responseBody)
 	}
 
 	// Persist upstream token usage so both query formats can surface it.
@@ -508,7 +510,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		}
 		shouldSettle = true
 	case model.TaskStatusFailure:
-		logger.LogJson(ctx, fmt.Sprintf("Task %s failed", taskId), task)
+		if ch.Type == constant.ChannelTypeTechMobiVideo {
+			logger.LogInfo(ctx, fmt.Sprintf("TechMobi task failed: task_id=%s channel_id=%d status=%s reason=%s", task.TaskID, ch.Id, taskResult.Status, sanitizeTechMobiLogText(taskResult.Reason)))
+		} else {
+			logger.LogJson(ctx, fmt.Sprintf("Task %s failed", taskId), task)
+		}
 		task.Status = model.TaskStatusFailure
 		task.Progress = taskcommon.ProgressComplete
 		if task.FinishTime == 0 {
@@ -585,6 +591,14 @@ func redactVideoResponseBody(body []byte) []byte {
 		return body
 	}
 	return b
+}
+
+func redactVideoResponseForChannel(channelType int, body []byte) []byte {
+	redacted := redactVideoResponseBody(body)
+	if channelType == constant.ChannelTypeTechMobiVideo {
+		return redactTechMobiVideoResponseBody(redacted)
+	}
+	return redacted
 }
 
 func redactTechMobiVideoResponseBody(body []byte) []byte {
@@ -668,6 +682,13 @@ func sanitizeVideoResultArchiveError(err error) string {
 		return ErrVideoResultUnavailable.Error()
 	}
 	return "archive unavailable"
+}
+
+func sanitizeTechMobiLogText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	return techMobiLogURLPattern.ReplaceAllString(text, "[redacted]")
 }
 
 func truncateBase64(s string) string {
