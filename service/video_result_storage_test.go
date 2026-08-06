@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
@@ -92,6 +93,7 @@ func TestVideoResultBoundedReader(t *testing.T) {
 
 func TestArchiveVideoResult(t *testing.T) {
 	t.Run("archives upstream video into private create-only object", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		start := time.Date(2026, 8, 6, 1, 2, 3, 0, time.UTC)
 		store := newFakeVideoResultStore()
 		restore := installVideoResultArchiveTestHooks(t, store, start)
@@ -124,6 +126,10 @@ func TestArchiveVideoResult(t *testing.T) {
 		require.Equal(t, "private, max-age=0, no-store", created.options.CacheControl)
 		require.Equal(t, `attachment; filename="task_archive-1.mp4"`, created.options.ContentDisposition)
 		require.True(t, store.validatedURLs[server.URL])
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="success"} 1`)
+		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 10`)
 	})
 
 	t.Run("allows exactly max bytes", func(t *testing.T) {
@@ -161,6 +167,7 @@ func TestArchiveVideoResult(t *testing.T) {
 	})
 
 	t.Run("rejects non video content type", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		store := newFakeVideoResultStore()
 		restore := installVideoResultArchiveTestHooks(t, store, start)
@@ -173,6 +180,10 @@ func TestArchiveVideoResult(t *testing.T) {
 		_, err := ArchiveVideoResult(context.Background(), "task_text", server.URL, "")
 		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
 		require.Empty(t, store.created)
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="failure"} 1`)
+		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 0`)
 	})
 
 	t.Run("rejects non 2xx upstream status", func(t *testing.T) {
@@ -213,6 +224,7 @@ func TestArchiveVideoResult(t *testing.T) {
 	})
 
 	t.Run("reuses valid existing object after create conflict", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		created := start.Add(-time.Minute)
 		store := newFakeVideoResultStore()
@@ -238,6 +250,10 @@ func TestArchiveVideoResult(t *testing.T) {
 		require.Equal(t, int64(42), result.Size)
 		require.Equal(t, created.Unix(), result.StoredAt)
 		require.Equal(t, created.Add(2*time.Hour).Unix(), result.ExpiresAt)
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_archive_total{channel="techmobi",outcome="reuse"} 1`)
+		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 0`)
 	})
 
 	t.Run("rejects invalid existing object after create conflict", func(t *testing.T) {

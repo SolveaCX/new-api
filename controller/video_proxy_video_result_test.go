@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ import (
 
 func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 	t.Run("success returns private redirect without cache", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		task := archivedTechMobiTask(time.Now().Add(time.Hour).Unix())
@@ -36,9 +38,13 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 		require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 		require.Equal(t, "no-cache", recorder.Header().Get("Pragma"))
 		require.Empty(t, recorder.Body.String())
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="success"} 1`)
 	})
 
 	t.Run("expired returns 410 sanitized error", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -50,9 +56,13 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 		require.Contains(t, recorder.Body.String(), "video result has expired")
 		require.NotContains(t, recorder.Body.String(), "video-bucket")
 		require.NotContains(t, recorder.Body.String(), "video-results/")
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="expired"} 1`)
 	})
 
 	t.Run("unavailable returns 502 sanitized error", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -62,9 +72,13 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 		require.True(t, tryRedirectArchivedTechMobiVideo(c, archivedTechMobiTask(time.Now().Add(time.Hour).Unix()), channel))
 		require.Equal(t, http.StatusBadGateway, recorder.Code)
 		require.NotContains(t, recorder.Body.String(), "video-bucket")
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="unavailable"} 1`)
 	})
 
 	t.Run("signing returns 503 sanitized error", func(t *testing.T) {
+		perfmetrics.ResetVideoResultMetricsForTest()
 		recorder, c := newArchivedVideoProxyContext("task_signed")
 		channel := &model.Channel{Type: constant.ChannelTypeTechMobiVideo}
 		installArchivedVideoResultSigner(t, func(context.Context, string, *model.VideoResult) (string, error) {
@@ -75,6 +89,9 @@ func TestArchivedTechMobiVideoRedirect(t *testing.T) {
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 		require.NotContains(t, recorder.Body.String(), "secret")
 		require.NotContains(t, recorder.Body.String(), "storage.googleapis.com")
+		text, err := perfmetrics.BuildPrometheusText(context.Background())
+		require.NoError(t, err)
+		require.Contains(t, text, `newapi_video_result_redirect_total{channel="techmobi",outcome="error"} 1`)
 	})
 
 	t.Run("nil metadata returns false and does not call signer", func(t *testing.T) {

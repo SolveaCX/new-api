@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	taskblockrunseedance "github.com/QuantumNous/new-api/relay/channel/task/blockrunseedance"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	tasksonilo "github.com/QuantumNous/new-api/relay/channel/task/sonilo"
@@ -231,6 +232,7 @@ func tryRedirectArchivedTechMobiVideo(c *gin.Context, task *model.Task, channel 
 
 	signedURL, err := signArchivedVideoResultDownload(c.Request.Context(), c.Param("task_id"), task.PrivateData.VideoResult)
 	if err == nil {
+		perfmetrics.RecordVideoResultRedirect("techmobi", "success")
 		c.Writer.Header().Set("Location", signedURL)
 		c.Writer.Header().Set("Cache-Control", "no-store")
 		c.Writer.Header().Set("Pragma", "no-cache")
@@ -241,10 +243,13 @@ func tryRedirectArchivedTechMobiVideo(c *gin.Context, task *model.Task, channel 
 
 	switch {
 	case errors.Is(err, service.ErrVideoResultExpired):
+		perfmetrics.RecordVideoResultRedirect("techmobi", "expired")
 		videoProxyError(c, http.StatusGone, "invalid_request_error", "video result has expired")
 	case errors.Is(err, service.ErrVideoResultUnavailable):
+		perfmetrics.RecordVideoResultRedirect("techmobi", "unavailable")
 		videoProxyError(c, http.StatusBadGateway, "server_error", "video result is unavailable")
 	default:
+		perfmetrics.RecordVideoResultRedirect("techmobi", "error")
 		videoProxyError(c, http.StatusServiceUnavailable, "server_error", "video result is temporarily unavailable")
 	}
 	return true

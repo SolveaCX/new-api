@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -78,6 +79,7 @@ func TestUpdateVideoSingleTaskArchivePersistsMetadataBeforeSuccessSettlement(t *
 func TestUpdateVideoSingleTaskArchiveErrorDoesNotFinalizeOrSettle(t *testing.T) {
 	truncate(t)
 	restoreArchiveHookForPollingTest(t)
+	perfmetrics.ResetVideoResultMetricsForTest()
 	ctx := context.Background()
 
 	seedUser(t, 902, 1000)
@@ -111,6 +113,9 @@ func TestUpdateVideoSingleTaskArchiveErrorDoesNotFinalizeOrSettle(t *testing.T) 
 	require.Zero(t, stored.FinishTime)
 	require.Nil(t, stored.PrivateData.VideoResult)
 	require.Equal(t, 100, stored.Quota)
+	text, err := perfmetrics.BuildPrometheusText(context.Background())
+	require.NoError(t, err)
+	require.Contains(t, text, `newapi_video_result_archive_retry_total{channel="techmobi",reason="archive_failure"} 1`)
 }
 
 func TestUpdateVideoSingleTaskArchiveSkipsExistingMetadata(t *testing.T) {

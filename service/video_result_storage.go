@@ -19,6 +19,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iamcredentials/v1"
@@ -127,38 +128,49 @@ func CurrentVideoResultStorageConfig() VideoResultStorageConfig {
 }
 
 func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy string) (*model.VideoResult, error) {
+	archiveStart := videoResultNow().UTC()
+	recordArchive := func(outcome string, bytes int64) {
+		perfmetrics.RecordVideoResultArchive("techmobi", outcome, bytes, videoResultNow().UTC().Sub(archiveStart))
+	}
 	cfg := CurrentVideoResultStorageConfig()
 	if strings.TrimSpace(cfg.Bucket) == "" {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultConfig
 	}
-	archiveStart := videoResultNow().UTC()
 	objectKey, err := buildVideoResultObjectKey(publicTaskID, archiveStart)
 	if err != nil {
+		recordArchive("failure", 0)
 		return nil, err
 	}
 	if err := videoResultValidateURL(upstreamURL); err != nil {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	client, err := newVideoResultFetchHTTPClient(cfg, proxy, videoResultDirectFetchResolver, videoResultDirectFetchDialContext)
 	if err != nil {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	fetchCtx, cancel := context.WithTimeout(ctx, cfg.FetchTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	response, err := client.Do(request)
 	if err != nil {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || !strings.HasPrefix(strings.ToLower(contentType), "video/") {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
 	attrs, err := videoResultObjectStore.Create(fetchCtx, cfg.Bucket, objectKey, newVideoResultBoundedReader(response.Body, cfg.MaxBytes), VideoResultCreateOptions{
@@ -170,15 +182,20 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		if errors.Is(err, ErrVideoResultAlreadyExists) {
 			attrs, err = videoResultObjectStore.Attrs(ctx, cfg.Bucket, objectKey)
 			if err != nil || !validReusableVideoResultAttrs(attrs) {
+				recordArchive("failure", 0)
 				return nil, ErrVideoResultUnavailable
 			}
+			recordArchive("reuse", 0)
 			return videoResultModelFromAttrs(cfg, objectKey, attrs, archiveStart), nil
 		}
+		recordArchive("failure", 0)
 		return nil, err
 	}
 	if !validReusableVideoResultAttrs(attrs) {
+		recordArchive("failure", 0)
 		return nil, ErrVideoResultUnavailable
 	}
+	recordArchive("success", attrs.Size)
 	return videoResultModelFromAttrs(cfg, objectKey, attrs, archiveStart), nil
 }
 
