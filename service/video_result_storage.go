@@ -186,6 +186,9 @@ func SignVideoResultDownload(ctx context.Context, taskID string, result *model.V
 	if !completeVideoResultMetadata(result) {
 		return "", ErrVideoResultUnavailable
 	}
+	if !videoResultTaskIDPattern.MatchString(taskID) {
+		return "", ErrVideoResultInvalidTaskID
+	}
 
 	now := videoResultNow().UTC()
 	expiresAt := time.Unix(result.ExpiresAt, 0).UTC()
@@ -198,8 +201,17 @@ func SignVideoResultDownload(ctx context.Context, taskID string, result *model.V
 	if err != nil {
 		return "", ErrVideoResultUnavailable
 	}
-	contentType, _, err := mime.ParseMediaType(attrs.ContentType)
-	if err != nil || !strings.HasPrefix(strings.ToLower(contentType), "video/") {
+	attrsContentType, _, err := mime.ParseMediaType(attrs.ContentType)
+	if err != nil {
+		return "", ErrVideoResultUnavailable
+	}
+	attrsContentType = strings.ToLower(attrsContentType)
+	resultContentType, _, err := mime.ParseMediaType(result.ContentType)
+	if err != nil {
+		return "", ErrVideoResultUnavailable
+	}
+	resultContentType = strings.ToLower(resultContentType)
+	if !strings.HasPrefix(attrsContentType, "video/") || attrsContentType != resultContentType {
 		return "", ErrVideoResultUnavailable
 	}
 	if attrs.Generation != result.Generation || attrs.Size <= 0 || attrs.Size != result.Size {
@@ -221,11 +233,10 @@ func SignVideoResultDownload(ctx context.Context, taskID string, result *model.V
 	query := url.Values{}
 	query.Set("generation", strconv.FormatInt(result.Generation, 10))
 	query.Set("response-content-disposition", videoResultAttachmentDisposition(taskID))
-	query.Set("response-content-type", contentType)
+	query.Set("response-content-type", attrsContentType)
 	signedURL, err := videoResultObjectStore.SignURL(ctx, result.Bucket, result.Object, VideoResultSignedURLRequest{
 		Method:              http.MethodGet,
 		TTL:                 ttl,
-		ContentType:         contentType,
 		ServiceAccountEmail: cfg.ServiceAccountEmail,
 		QueryParameters:     query,
 	})

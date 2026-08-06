@@ -341,11 +341,41 @@ func TestSignVideoResultDownload(t *testing.T) {
 		req := store.signRequests[0]
 		require.Equal(t, http.MethodGet, req.Method)
 		require.Equal(t, 5*time.Minute, req.TTL)
-		require.Equal(t, "video/mp4", req.ContentType)
+		require.Empty(t, req.ContentType)
 		require.Equal(t, "video-signer@example.iam.gserviceaccount.com", req.ServiceAccountEmail)
 		require.Equal(t, "7", req.QueryParameters.Get("generation"))
 		require.Equal(t, `attachment; filename="task_signed.mp4"`, req.QueryParameters.Get("response-content-disposition"))
 		require.Equal(t, "video/mp4", req.QueryParameters.Get("response-content-type"))
+	})
+
+	t.Run("requires attrs content type to match persisted media type", func(t *testing.T) {
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, now)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		result := validVideoResultForSign(now.Add(time.Hour).Unix())
+		result.ContentType = "video/mp4; charset=binary"
+		store.attrs["video-bucket/"+result.Object] = VideoResultObjectAttrs{ContentType: "video/webm", Size: result.Size, Generation: result.Generation}
+
+		_, err := SignVideoResultDownload(context.Background(), "task_signed", result)
+		require.ErrorIs(t, err, ErrVideoResultUnavailable)
+		require.Zero(t, store.signCalls)
+	})
+
+	t.Run("rejects unsafe task ids before signing", func(t *testing.T) {
+		for _, taskID := range []string{"", "task_", "task_bad/id", "task_bad\"quote", "task_bad\r\nheader", "legacy-task"} {
+			t.Run(taskID, func(t *testing.T) {
+				store := newFakeVideoResultStore()
+				installVideoResultArchiveTestHooks(t, store, now)
+				t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+				result := validVideoResultForSign(now.Add(time.Hour).Unix())
+				store.attrs["video-bucket/"+result.Object] = VideoResultObjectAttrs{ContentType: result.ContentType, Size: result.Size, Generation: result.Generation}
+
+				_, err := SignVideoResultDownload(context.Background(), taskID, result)
+				require.Error(t, err)
+				require.True(t, errors.Is(err, ErrVideoResultUnavailable) || errors.Is(err, ErrVideoResultInvalidTaskID))
+				require.Zero(t, store.signCalls)
+			})
+		}
 	})
 
 	t.Run("clamps configured ttl at one hour", func(t *testing.T) {
