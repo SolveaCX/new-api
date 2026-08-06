@@ -8,6 +8,7 @@ import { publicAssetUrl } from "@/lib/public-assets";
 import { consoleUrl } from "@/lib/origins";
 import { sortPricingModelsBySeries, type PricingData, type PricingModel } from "@/lib/pricing";
 import { OnlineHomeHeroCarousel, type HeroMode } from "./online-home-hero-carousel";
+import { OnlineModelFlowCarousel, type ModelFlowCarouselItem } from "./online-model-flow-carousel";
 import { OnlineStaticShell } from "./online-static-shell";
 
 type HomePriceComparison = {
@@ -33,13 +34,6 @@ type HomeModelFlowPriceRow = {
 type HomeModelKind = HeroMode["kind"];
 type HomeModelTags = Record<HomeModelKind, string[]>;
 type HomeModelFlowKind = Exclude<HomeModelKind, "all">;
-
-type HomeModelFlowType = HomePageCopy["modelFlow"]["types"][HomeModelFlowKind] & {
-  href: string;
-  kind: HomeModelFlowKind;
-  models: string[];
-  rows: HomeModelFlowPriceRow[];
-};
 
 const MODEL_FLOW_TABLE_LABELS: Record<Locale, {
   discount: string;
@@ -783,13 +777,13 @@ function getHeroModes(copy: HomePageCopy, heroModels: HomeHeroModels): HeroMode[
   ];
 }
 
-function getModelFlowTypes(copy: HomePageCopy, modelTags: HomeModelTags, data: PricingData | undefined, locale: Locale): HomeModelFlowType[] {
+function getModelFlowTypes(copy: HomePageCopy, modelTags: HomeModelTags, data: PricingData | undefined, locale: Locale): ModelFlowCarouselItem[] {
   const typeCopy = copy.modelFlow.types;
   return [
-    { ...typeCopy.text, href: "/models", kind: "text" as const, models: modelTags.text.slice(0, 3), rows: buildModelFlowPriceRows(data, "text", copy, locale) },
-    { ...typeCopy.image, href: "/models?type=image", kind: "image" as const, models: modelTags.image.slice(0, 3), rows: buildModelFlowPriceRows(data, "image", copy, locale) },
-    { ...typeCopy.video, href: "/models/seedance-api", kind: "video" as const, models: modelTags.video.slice(0, 3), rows: buildModelFlowPriceRows(data, "video", copy, locale) },
-    { ...typeCopy.audio, href: "/models?type=audio", kind: "audio" as const, models: modelTags.audio.slice(0, 3), rows: buildModelFlowPriceRows(data, "audio", copy, locale) },
+    { ...typeCopy.text, href: localizePath("/models", locale), kind: "text" as const, models: modelTags.text.slice(0, 3), rows: buildModelFlowPriceRows(data, "text", copy, locale).map((row) => ({ ...row, href: localizePath(row.href, locale) })) },
+    { ...typeCopy.image, href: localizePath("/models?type=image", locale), kind: "image" as const, models: modelTags.image.slice(0, 3), rows: buildModelFlowPriceRows(data, "image", copy, locale).map((row) => ({ ...row, href: localizePath(row.href, locale) })) },
+    { ...typeCopy.video, href: localizePath("/models/seedance-api", locale), kind: "video" as const, models: modelTags.video.slice(0, 3), rows: buildModelFlowPriceRows(data, "video", copy, locale).map((row) => ({ ...row, href: localizePath(row.href, locale) })) },
+    { ...typeCopy.audio, href: localizePath("/models?type=audio", locale), kind: "audio" as const, models: modelTags.audio.slice(0, 3), rows: buildModelFlowPriceRows(data, "audio", copy, locale).map((row) => ({ ...row, href: localizePath(row.href, locale) })) },
   ];
 }
 
@@ -814,7 +808,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
       <style>{`
         body:has(> header.hero.heroUnified){--fk-bg:#f6efe2;--fk-bg-2:#efe3cf;--fk-paper:#fffaf0;--fk-paper-2:#f8eddc;--fk-ink:#172017;--fk-muted:#647064;--fk-line:rgba(58,72,57,.16);--fk-gold:#d59a35;--fk-copper:#bd6b2b;--fk-sage:#647b55;--fk-night:#1a1711;background:var(--fk-bg);color:var(--fk-ink)}
         html.fk-theme-night body:has(> header.hero.heroUnified){--fk-bg:#12110f;--fk-bg-2:#1b1914;--fk-paper:#211f19;--fk-paper-2:#29261f;--fk-ink:#f4ead8;--fk-muted:#b9ad98;--fk-line:rgba(244,234,216,.15);--fk-gold:#f0c36c;--fk-copper:#e08c50;--fk-sage:#9eb58e;--fk-night:#0b0b09}
-        body:has(> header.hero.heroUnified){display:flex;flex-direction:column}.nav{order:0}header.heroUnified{order:1}.modelLogoMarquee{order:2}.modelTypes{order:3}.priceProof{order:4}.why{order:5}.ctaWrap{order:6}.voiceFaq{order:7}.megafoot{order:8}.stripe{order:9}
+        body:has(> header.hero.heroUnified){display:flex;flex-direction:column}.nav{order:0}header.heroUnified{order:1}.modelLogoMarquee{order:2}.modelTypes{order:3}.priceProof{order:4}.ctaWrap{order:5}.why{order:6}.voiceFaq{order:7}.megafoot{order:8}.stripe{order:9}
         .heroUnified{position:relative;min-height:min(820px,100svh);overflow:hidden;color:var(--fk-ink);border-bottom:1px solid var(--fk-line);background:radial-gradient(ellipse 70% 52% at 82% 18%,rgba(213,154,53,.24),transparent 62%),radial-gradient(ellipse 58% 48% at 10% 90%,rgba(142,176,138,.28),transparent 62%),linear-gradient(145deg,var(--fk-bg) 0%,#fff8e8 48%,var(--fk-bg-2) 100%)}
         html.fk-theme-night .heroUnified{background:radial-gradient(ellipse 72% 52% at 82% 18%,rgba(240,195,108,.18),transparent 62%),radial-gradient(ellipse 58% 48% at 10% 90%,rgba(158,181,142,.16),transparent 62%),linear-gradient(145deg,#11100d 0%,#1b1812 52%,#0f1712 100%)}
         .heroUnified:before{content:"";position:absolute;inset:0;background-image:linear-gradient(to right,rgba(73,82,58,.06) 1px,transparent 1px),linear-gradient(to bottom,rgba(73,82,58,.045) 1px,transparent 1px);background-size:74px 74px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),transparent 92%);pointer-events:none}
@@ -3645,11 +3639,32 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           text-decoration:none!important;
           box-shadow:0 18px 48px -40px rgba(5,42,68,.32),inset 0 1px 0 rgba(255,255,255,.88)!important;
           transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease!important;
+          cursor:pointer!important;
+          text-align:left!important;
         }
         body:has(> header.hero.heroUnified) .modelFlowTab:hover{
           transform:translateY(-4px)!important;
           border-color:rgba(45,184,245,.36)!important;
           box-shadow:0 26px 62px -44px rgba(5,42,68,.44)!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab.is-active{
+          position:relative!important;
+          border-color:rgba(45,184,245,.48)!important;
+          background:linear-gradient(135deg,#ffffff 0%,#e9f8ff 52%,#fff1f7 100%)!important;
+          box-shadow:0 26px 70px -46px rgba(5,42,68,.5),inset 0 1px 0 rgba(255,255,255,.94)!important;
+          overflow:hidden!important;
+        }
+        body:has(> header.hero.heroUnified) .modelFlowTab.is-active:after{
+          content:""!important;
+          position:absolute!important;
+          left:14px!important;
+          right:14px!important;
+          bottom:10px!important;
+          height:3px!important;
+          border-radius:999px!important;
+          background:linear-gradient(90deg,#2db8f5,#0a9c86,#7568e8,#d73679)!important;
+          transform-origin:left!important;
+          animation:modelFlowTabProgress 5.2s linear both!important;
         }
         body:has(> header.hero.heroUnified) .modelFlowTab span{
           color:#006b9a!important;
@@ -3666,7 +3681,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
         }
         body:has(> header.hero.heroUnified) .modelFlowTables{
           display:grid!important;
-          grid-template-columns:repeat(2,minmax(0,1fr))!important;
+          grid-template-columns:minmax(0,1fr)!important;
           gap:16px!important;
           margin-top:16px!important;
         }
@@ -3678,6 +3693,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           background:linear-gradient(180deg,#fff,#eefaff)!important;
           color:#061a2c!important;
           box-shadow:0 28px 78px -58px rgba(5,42,68,.38),inset 0 1px 0 rgba(255,255,255,.9)!important;
+          animation:modelFlowCardIn .34s cubic-bezier(.16,1,.3,1) both!important;
         }
         body:has(> header.hero.heroUnified) .modelFlowTableCard-image{background:linear-gradient(180deg,#fff,#fff2f7)!important}
         body:has(> header.hero.heroUnified) .modelFlowTableCard-video{background:linear-gradient(180deg,#fff,#f2f1ff)!important}
@@ -3821,6 +3837,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           padding:0 20px!important;
         }
         body:has(> header.hero.heroUnified) .ctaWrap,
+        body:has(> header.hero.heroUnified) .why,
         body:has(> header.hero.heroUnified) .voiceFaq{
           background:#f2f9ff!important;
         }
@@ -3829,8 +3846,19 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           padding-bottom:76px!important;
           border-bottom:0!important;
         }
+        body:has(> header.hero.heroUnified) .whyIn{
+          padding-top:76px!important;
+        }
         body:has(> header.hero.heroUnified) .voiceFaqIn{
           padding-top:76px!important;
+        }
+        @keyframes modelFlowTabProgress{
+          from{transform:scaleX(0)}
+          to{transform:scaleX(1)}
+        }
+        @keyframes modelFlowCardIn{
+          from{opacity:0;transform:translateY(10px)}
+          to{opacity:1;transform:translateY(0)}
         }
         @media(max-width:1180px){
           body:has(> header.hero.heroUnified) .heroGrid{
@@ -3911,11 +3939,14 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
             padding-top:52px!important;
             padding-bottom:52px!important;
           }
+          body:has(> header.hero.heroUnified) .whyIn{
+            padding-top:52px!important;
+          }
           body:has(> header.hero.heroUnified) .voiceFaqIn{
             padding-top:52px!important;
           }
         }
-        @media(prefers-reduced-motion:reduce){.heroStageSlide,.heroStageCopy,.heroStageNav:before,.heroStageImage,.logoTrack,.voiceTrack,.fk-reveal{animation:none!important;transition:none!important}.heroStageSlide:first-child{opacity:1;pointer-events:auto}.heroStageSlide:first-child .heroStageCopy{opacity:1;transform:none}}
+        @media(prefers-reduced-motion:reduce){.heroStageSlide,.heroStageCopy,.heroStageNav:before,.heroStageImage,.logoTrack,.voiceTrack,.fk-reveal,.modelFlowTab.is-active:after,.modelFlowTableCard{animation:none!important;transition:none!important}.heroStageSlide:first-child{opacity:1;pointer-events:auto}.heroStageSlide:first-child .heroStageCopy{opacity:1;transform:none}}
       `}</style>
 
       <OnlineHomeHeroCarousel copy={copy.carousel} heroModes={heroModes} locale={props.locale} />
@@ -3951,56 +3982,15 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
               </div>
             </div>
           </div>
-          <div className="modelFlowWorkbench">
-            <div className="modelFlowTabs" aria-label={copy.modelFlow.kicker}>
-              {modelFlowTypes.map((item) => (
-                <a className={`modelFlowTab modelFlowTab-${item.kind}`} href={`#model-flow-${item.kind}`} key={item.kind}>
-                  <span>{item.api}</span>
-                  <b>{item.title}</b>
-                </a>
-              ))}
-            </div>
-            <div className="modelFlowTables">
-              {modelFlowTypes.map((item) => (
-                <article className={`modelFlowTableCard modelFlowTableCard-${item.kind}`} id={`model-flow-${item.kind}`} key={item.kind}>
-                  <div className="modelFlowTableHead">
-                    <div>
-                      <span>{item.api}</span>
-                      <h3>{item.title}</h3>
-                    </div>
-                    <Link href={localizePath(item.href, props.locale)}>{item.cta}</Link>
-                  </div>
-                  <p>{item.copy}</p>
-                  <div className="modelFlowMiniModels">
-                    {(item.models.length > 0 ? item.models : [copy.modelFlow.directoryFallback]).map((model) => (
-                      <i key={model}>{model}</i>
-                    ))}
-                  </div>
-                  <div className="modelFlowTable" role="table" aria-label={`${item.title} ${copy.price.title}`}>
-                    <div className="modelFlowTableRow modelFlowTableHeader" role="row">
-                      <span role="columnheader">{modelFlowLabels.model}</span>
-                      <span role="columnheader">{modelFlowLabels.provider}</span>
-                      <span role="columnheader">{modelFlowLabels.flatkey}</span>
-                      <span role="columnheader">{modelFlowLabels.official}</span>
-                      <span role="columnheader">{modelFlowLabels.discount}</span>
-                    </div>
-                    {(item.rows.length > 0 ? item.rows : []).map((row) => (
-                      <Link className="modelFlowTableRow" href={localizePath(row.href, props.locale)} key={row.model} role="row">
-                        <strong role="cell">{row.model}</strong>
-                        <span role="cell">{row.vendor}</span>
-                        <b role="cell">{row.flatkey}</b>
-                        <s role="cell">{row.official}</s>
-                        <i role="cell">{row.discount}</i>
-                      </Link>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-            <Link className="modelFlowAllModels" href={localizePath("/models", props.locale)}>
-              {copy.modelFlow.types.all.cta}
-            </Link>
-          </div>
+          <OnlineModelFlowCarousel
+            allModelsHref={localizePath("/models", props.locale)}
+            allModelsLabel={copy.modelFlow.types.all.cta}
+            ariaLabel={copy.modelFlow.kicker}
+            directoryFallback={copy.modelFlow.directoryFallback}
+            items={modelFlowTypes}
+            labels={modelFlowLabels}
+            priceTitle={copy.price.title}
+          />
         </div>
       </section>
 
@@ -4044,29 +4034,6 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
         </div>
       </section>
 
-      <section className="why" id="why">
-        <div className="whyIn">
-          <div className="whyHead">
-            <div className="kick2">{copy.why.kicker}</div>
-            <h2 className="sectionTitle">{copy.why.title}</h2>
-          </div>
-          <div className="whyGrid">
-            {whyCards.map((item, index) => (
-              <article className="whyCard" key={item.title} style={{ "--why-index": index } as CSSProperties}>
-                <span className="whyMetric">{item.metric}</span>
-                <h3>{item.title}</h3>
-                <p>{item.body}</p>
-                <div className="whyMini">
-                  {item.chips.map((chip) => (
-                    <span key={chip}>{chip}</span>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section className="ctaWrap" id="brand-trust">
         <div className="ctaBanner btcPanel">
           <div className="ctaIn btcCopy">
@@ -4100,6 +4067,29 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
                 <span key={item}>{item}</span>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="why" id="why">
+        <div className="whyIn">
+          <div className="whyHead">
+            <div className="kick2">{copy.why.kicker}</div>
+            <h2 className="sectionTitle">{copy.why.title}</h2>
+          </div>
+          <div className="whyGrid">
+            {whyCards.map((item, index) => (
+              <article className="whyCard" key={item.title} style={{ "--why-index": index } as CSSProperties}>
+                <span className="whyMetric">{item.metric}</span>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+                <div className="whyMini">
+                  {item.chips.map((chip) => (
+                    <span key={chip}>{chip}</span>
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
         </div>
       </section>

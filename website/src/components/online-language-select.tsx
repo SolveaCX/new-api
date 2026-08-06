@@ -24,11 +24,11 @@ const LOCALE_BADGES: Record<Locale, string> = {
 
 export function OnlineLanguageSelect(props: Props) {
   return (
-    <details className="langIconSelect">
-      <summary aria-label="Change language" title={LOCALE_LABELS[props.locale]}>
+    <div className="langIconSelect">
+      <button aria-label="Change language" title={LOCALE_LABELS[props.locale]} type="button">
         <Globe2 aria-hidden="true" />
         <span className="langCurrent">{LOCALE_BADGES[props.locale]}</span>
-      </summary>
+      </button>
       <div className="langMenu">
         {LOCALES.map((locale) => (
           <a
@@ -43,6 +43,6 @@ export function OnlineLanguageSelect(props: Props) {
           </a>
         ))}
       </div>
-    </details>
+    </div>
   );
 }
