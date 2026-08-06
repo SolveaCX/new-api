@@ -738,7 +738,9 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
   const modelTypes = getModelTypes(copy, modelTags);
   const priceComparisons = buildRepresentativePriceComparisons(props.pricingData, copy);
   const prices = priceComparisons;
-  const priceRows = [prices.slice(0, 6), prices.slice(6, 12)].filter((row) => row.length > 0);
+  const priceRows = prices.length > 4
+    ? [prices.filter((_, index) => index % 2 === 0), prices.filter((_, index) => index % 2 === 1)].filter((row) => row.length > 0)
+    : [prices];
   const whyCards = copy.why.cards;
   const faqs = copy.voice.faqs;
   const cliSteps = copy.cli.steps;
