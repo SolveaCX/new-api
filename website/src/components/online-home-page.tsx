@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { buildRowsForModels } from "@/lib/home-models";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { modelPublicPath } from "@/lib/model-public";
+import { publicAssetUrl } from "@/lib/public-assets";
 import { consoleUrl } from "@/lib/origins";
 import { sortPricingModelsBySeries, type PricingData, type PricingModel } from "@/lib/pricing";
 import { OnlineHomeHeroCarousel, type HeroMode } from "./online-home-hero-carousel";
@@ -111,40 +112,40 @@ type HomePageCopy = {
 
 const HERO_ART: Record<HomeModelKind, { card: string; wide: string }> = {
   all: {
-    card: "/assets/generated/flatkey-art-card-all-01.png",
-    wide: "/assets/generated/flatkey-story-all-models.png",
+    card: publicAssetUrl("/assets/generated/flatkey-art-card-all-01.jpg"),
+    wide: publicAssetUrl("/assets/generated/flatkey-story-all-models.jpg"),
   },
   audio: {
-    card: "/assets/generated/flatkey-art-card-audio-01.png",
-    wide: "/assets/generated/flatkey-story-audio-models.png",
+    card: publicAssetUrl("/assets/generated/flatkey-art-card-audio-01.jpg"),
+    wide: publicAssetUrl("/assets/generated/flatkey-story-audio-models.jpg"),
   },
   image: {
-    card: "/assets/generated/flatkey-art-card-image-01.png",
-    wide: "/assets/generated/flatkey-story-image-models.png",
+    card: publicAssetUrl("/assets/generated/flatkey-art-card-image-01.jpg"),
+    wide: publicAssetUrl("/assets/generated/flatkey-story-image-models.jpg"),
   },
   text: {
-    card: "/assets/generated/flatkey-art-card-text-01.png",
-    wide: "/assets/generated/flatkey-story-text-models.png",
+    card: publicAssetUrl("/assets/generated/flatkey-art-card-text-01.jpg"),
+    wide: publicAssetUrl("/assets/generated/flatkey-story-text-models.jpg"),
   },
   video: {
-    card: "/assets/generated/flatkey-art-card-video-01.png",
-    wide: "/assets/generated/flatkey-story-video-models.png",
+    card: publicAssetUrl("/assets/generated/flatkey-art-card-video-01.jpg"),
+    wide: publicAssetUrl("/assets/generated/flatkey-story-video-models.jpg"),
   },
 };
 
 const PRICE_POSTERS = [
-  "/assets/generated/flatkey-price-poster-01.png",
-  "/assets/generated/flatkey-price-poster-02.png",
-  "/assets/generated/flatkey-price-poster-03.png",
-  "/assets/generated/flatkey-price-poster-04.png",
-  "/assets/generated/flatkey-price-poster-05.png",
-  "/assets/generated/flatkey-price-poster-06.png",
-  "/assets/generated/flatkey-price-poster-07.png",
-  "/assets/generated/flatkey-price-poster-08.png",
-  "/assets/generated/flatkey-price-poster-09.png",
-  "/assets/generated/flatkey-price-poster-10.png",
-  "/assets/generated/flatkey-price-poster-11.png",
-  "/assets/generated/flatkey-price-poster-12.png",
+  publicAssetUrl("/assets/generated/flatkey-price-poster-01.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-02.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-03.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-04.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-05.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-06.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-07.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-08.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-09.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-10.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-11.jpg"),
+  publicAssetUrl("/assets/generated/flatkey-price-poster-12.jpg"),
 ] as const;
 
 const logoMarquee = [
@@ -737,7 +738,9 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
   const modelTypes = getModelTypes(copy, modelTags);
   const priceComparisons = buildRepresentativePriceComparisons(props.pricingData, copy);
   const prices = priceComparisons;
-  const priceRows = [prices.slice(0, 6), prices.slice(6, 12)].filter((row) => row.length > 0);
+  const priceRows = prices.length > 4
+    ? [prices.filter((_, index) => index % 2 === 0), prices.filter((_, index) => index % 2 === 1)].filter((row) => row.length > 0)
+    : [prices];
   const whyCards = copy.why.cards;
   const faqs = copy.voice.faqs;
   const cliSteps = copy.cli.steps;
@@ -2583,7 +2586,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
         }
         body:has(> header.hero.heroUnified) .priceTicker-1 .priceTickerTrack{
           animation-name:priceTickerMoveReverse!important;
-          animation-duration:40s!important;
+          animation-duration:34s!important;
         }
         body:has(> header.hero.heroUnified) .priceTickerViewport:hover .priceTickerTrack{
           animation-play-state:paused!important;
@@ -3006,6 +3009,15 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
             0 16px 40px -34px rgba(5,42,68,.36),
             inset 0 1px 0 rgba(255,255,255,.9)!important;
         }
+        body:has(> header.hero.heroUnified) .btcPanel .ctaBtns{
+          justify-content:flex-start!important;
+          align-items:center!important;
+          margin-top:28px!important;
+          max-width:560px!important;
+        }
+        body:has(> header.hero.heroUnified) .btcPanel .ctaBtns .btn{
+          flex:0 0 auto!important;
+        }
         body:has(> header.hero.heroUnified) .btcMedia{
           display:grid!important;
           gap:12px!important;
@@ -3406,6 +3418,8 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           body:has(> header.hero.heroUnified) .ctaBtns{
             flex-direction:column!important;
             align-items:stretch!important;
+            justify-content:flex-start!important;
+            max-width:none!important;
           }
           body:has(> header.hero.heroUnified) .ctaBtns .btn{
             width:100%!important;
@@ -3688,7 +3702,7 @@ export function OnlineHomePage(props: { locale: Locale; pricingData?: PricingDat
           </div>
           <div className="ctaProof btcMedia">
             <figure className="ctaBillboard">
-              <Image src="/assets/brand/bay-area-billboard-main.jpg" alt={copy.final.alt} fill sizes="(max-width: 900px) 100vw, 42vw" />
+              <Image src={publicAssetUrl("/assets/brand/bay-area-billboard-main.jpg")} alt={copy.final.alt} fill sizes="(max-width: 900px) 100vw, 42vw" />
             </figure>
             <div className="launchPanel">
               {copy.final.launch.map(([no, title, body]) => (

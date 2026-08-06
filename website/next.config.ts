@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const appConsoleOrigin = process.env.APP_CONSOLE_ORIGIN ?? "https://console.flatkey.ai";
 const routerOrigin = process.env.ROUTER_ORIGIN ?? "https://router.flatkey.ai";
 const siteOrigin = process.env.SITE_ORIGIN ?? "https://flatkey.ai";
+const websiteAssetOrigin = process.env.WEBSITE_ASSET_ORIGIN ?? process.env.NEXT_PUBLIC_WEBSITE_ASSET_ORIGIN ?? "";
 const allowedDevOrigins = process.env.NEXT_ALLOWED_DEV_ORIGINS
   ?.split(",")
   .map((origin) => origin.trim())
@@ -37,6 +38,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_CONSOLE_ORIGIN: appConsoleOrigin,
     NEXT_PUBLIC_ROUTER_ORIGIN: routerOrigin,
     NEXT_PUBLIC_SITE_ORIGIN: siteOrigin,
+    NEXT_PUBLIC_WEBSITE_ASSET_ORIGIN: websiteAssetOrigin,
   },
   images: {
     remotePatterns: [
