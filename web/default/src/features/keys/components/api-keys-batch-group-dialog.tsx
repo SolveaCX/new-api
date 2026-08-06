@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { parseQuotaFromDollars } from '@/lib/format'
+import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -45,6 +46,7 @@ import { Switch } from '@/components/ui/switch'
 import { MultiSelect } from '@/components/multi-select'
 import { batchEditApiKeys } from '../api'
 import {
+  canSubmitBatchModelAccessEdits,
   coordinateBatchEditApiKeys,
   isBatchQuotaInputValid,
 } from '../lib/api-key-batch-group'
@@ -102,6 +104,14 @@ export function ApiKeysBatchEditDialog<TData>(
   const modelBlacklistPayload = modelBlacklistEnabled
     ? modelBlacklist.join(',')
     : ''
+  const modelAccessReady =
+    modelAccessQuery.isSuccess && modelAccessQuery.data !== undefined
+  const modelAccessEditDisabled = isSubmitting || !modelAccessReady
+  const canSubmitModelAccessEdits = canSubmitBatchModelAccessEdits(
+    modelAccessReady,
+    updateModelLimits,
+    updateModelBlacklist
+  )
   const modelOptions = useMemo(
     () => getApiKeyModelAllowlistOptions(modelAccessQuery.data?.models ?? []),
     [modelAccessQuery.data?.models]
@@ -126,7 +136,7 @@ export function ApiKeysBatchEditDialog<TData>(
   }
 
   const handleConfirm = async () => {
-    if (!hasEdit || !quotaIsValid) return
+    if (!hasEdit || !quotaIsValid || !canSubmitModelAccessEdits) return
 
     setIsSubmitting(true)
     try {
@@ -210,7 +220,32 @@ export function ApiKeysBatchEditDialog<TData>(
             </Field>
           )}
 
-          <Field data-disabled={isSubmitting || undefined}>
+          {!modelAccessReady &&
+            (modelAccessQuery.isError ? (
+              <Alert variant='destructive'>
+                <AlertTitle>{t('Unable to load available models')}</AlertTitle>
+                <AlertAction>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    disabled={modelAccessQuery.isFetching || isSubmitting}
+                    onClick={() => void modelAccessQuery.refetch()}
+                  >
+                    {modelAccessQuery.isFetching && (
+                      <Spinner data-icon='inline-start' />
+                    )}
+                    {t('Retry')}
+                  </Button>
+                </AlertAction>
+              </Alert>
+            ) : (
+              <Alert>
+                <AlertTitle>{t('Loading available models...')}</AlertTitle>
+              </Alert>
+            ))}
+
+          <Field data-disabled={modelAccessEditDisabled || undefined}>
             <div className='flex items-start gap-3 rounded-lg border p-3'>
               <Checkbox
                 id='batch-update-model-limits'
@@ -218,7 +253,7 @@ export function ApiKeysBatchEditDialog<TData>(
                 onCheckedChange={(checked) =>
                   setUpdateModelLimits(checked === true)
                 }
-                disabled={isSubmitting}
+                disabled={modelAccessEditDisabled}
                 className='mt-0.5'
               />
               <div className='flex min-w-0 flex-1 flex-col gap-1'>
@@ -248,7 +283,7 @@ export function ApiKeysBatchEditDialog<TData>(
                     id='batch-model-limits-enabled'
                     checked={modelLimitsEnabled}
                     onCheckedChange={setModelLimitsEnabled}
-                    disabled={isSubmitting}
+                    disabled={modelAccessEditDisabled}
                   />
                 </div>
 
@@ -261,7 +296,7 @@ export function ApiKeysBatchEditDialog<TData>(
                       onChange={setModelLimits}
                       placeholder={t('Select allowed models')}
                       emptyText={t('No models found')}
-                      disabled={isSubmitting}
+                      disabled={modelAccessEditDisabled}
                       maxVisibleChips={5}
                     />
                     <FieldDescription>
@@ -275,7 +310,7 @@ export function ApiKeysBatchEditDialog<TData>(
             )}
           </Field>
 
-          <Field data-disabled={isSubmitting || undefined}>
+          <Field data-disabled={modelAccessEditDisabled || undefined}>
             <div className='flex items-start gap-3 rounded-lg border p-3'>
               <Checkbox
                 id='batch-update-model-blacklist'
@@ -283,7 +318,7 @@ export function ApiKeysBatchEditDialog<TData>(
                 onCheckedChange={(checked) =>
                   setUpdateModelBlacklist(checked === true)
                 }
-                disabled={isSubmitting}
+                disabled={modelAccessEditDisabled}
                 className='mt-0.5'
               />
               <div className='flex min-w-0 flex-1 flex-col gap-1'>
@@ -315,7 +350,7 @@ export function ApiKeysBatchEditDialog<TData>(
                     id='batch-model-blacklist-enabled'
                     checked={modelBlacklistEnabled}
                     onCheckedChange={setModelBlacklistEnabled}
-                    disabled={isSubmitting}
+                    disabled={modelAccessEditDisabled}
                   />
                 </div>
 
@@ -328,7 +363,7 @@ export function ApiKeysBatchEditDialog<TData>(
                       onChange={setModelBlacklist}
                       placeholder={t('Select blocked models')}
                       emptyText={t('No models found')}
-                      disabled={isSubmitting}
+                      disabled={modelAccessEditDisabled}
                       maxVisibleChips={5}
                     />
                     <FieldDescription>
@@ -413,7 +448,12 @@ export function ApiKeysBatchEditDialog<TData>(
           <Button
             type='button'
             onClick={() => void handleConfirm()}
-            disabled={!hasEdit || !quotaIsValid || isSubmitting}
+            disabled={
+              !hasEdit ||
+              !quotaIsValid ||
+              !canSubmitModelAccessEdits ||
+              isSubmitting
+            }
           >
             {isSubmitting && <Spinner data-icon='inline-start' />}
             {t('Apply changes')}

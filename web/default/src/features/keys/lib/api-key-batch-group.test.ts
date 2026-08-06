@@ -20,6 +20,7 @@ import { describe, expect, test } from 'bun:test'
 import type { UserModelAccess } from '@/features/available-models'
 import {
   buildBatchEditApiKeysPayload,
+  canSubmitBatchModelAccessEdits,
   canBatchEditApiKeyGroup,
   coordinateBatchEditApiKeys,
   getBatchGroupOptions,
@@ -180,6 +181,14 @@ describe('batch API key edits', () => {
     expect(isBatchEditApiKeysAvailable(true)).toBe(true)
     expect(isBatchEditApiKeysAvailable(false)).toBe(false)
     expect(canBatchEditApiKeyGroup(false, buildModelAccess())).toBe(false)
+  })
+
+  test('requires loaded model access only when model rules are selected', () => {
+    expect(canSubmitBatchModelAccessEdits(false, false, false)).toBe(true)
+    expect(canSubmitBatchModelAccessEdits(true, true, false)).toBe(true)
+    expect(canSubmitBatchModelAccessEdits(true, false, true)).toBe(true)
+    expect(canSubmitBatchModelAccessEdits(false, true, false)).toBe(false)
+    expect(canSubmitBatchModelAccessEdits(false, false, true)).toBe(false)
   })
 
   test('requires whole-number quota input in token display mode', () => {

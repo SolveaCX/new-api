@@ -156,6 +156,7 @@ func setupTokenControllerRedisTest(t *testing.T) *miniredis.Miniredis {
 type failingTokenCacheInvalidationHook struct {
 	mu                   sync.Mutex
 	failInvalidation     bool
+	failOnAttempt        int
 	invalidationAttempts int
 	err                  error
 }
@@ -165,7 +166,7 @@ func (hook *failingTokenCacheInvalidationHook) BeforeProcess(ctx context.Context
 		hook.mu.Lock()
 		defer hook.mu.Unlock()
 		hook.invalidationAttempts++
-		if hook.failInvalidation {
+		if hook.failInvalidation && (hook.failOnAttempt == 0 || hook.invalidationAttempts == hook.failOnAttempt) {
 			return ctx, hook.err
 		}
 	}
@@ -1593,7 +1594,7 @@ func TestUpdateTokenBatchUpdatesModelLimits(t *testing.T) {
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", map[string]any{
 		"ids":                  []int{first.Id, second.Id},
 		"model_limits_enabled": true,
-		"model_limits":         "gpt-4o,gpt-4.1",
+		"model_limits":         " gpt-4o, ,gpt-4.1,gpt-4o ",
 	}, user.Id)
 	UpdateTokenBatch(ctx)
 
@@ -1641,7 +1642,7 @@ func TestUpdateTokenBatchUpdatesModelBlacklist(t *testing.T) {
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", map[string]any{
 		"ids":                     []int{first.Id, second.Id},
 		"model_blacklist_enabled": true,
-		"model_blacklist":         "gpt-4o,gpt-4.1",
+		"model_blacklist":         " gpt-4o, ,gpt-4.1,gpt-4o ",
 	}, user.Id)
 	UpdateTokenBatch(ctx)
 
@@ -1860,6 +1861,7 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 	internalFailure := "redis://user:secret@10.0.0.5:6379 unavailable"
 	invalidationHook := &failingTokenCacheInvalidationHook{
 		failInvalidation: true,
+		failOnAttempt:    3,
 		err:              errors.New(internalFailure),
 	}
 	common.RDB.AddHook(invalidationHook)
@@ -1874,10 +1876,12 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 	require.Contains(t, systemLog.String(), "failed to invalidate 2 token caches after batch token update")
 	require.NotContains(t, systemLog.String(), "10.0.0.5")
 	require.NotContains(t, systemLog.String(), "user:secret")
-	require.Equal(t, 1, invalidationHook.attempts())
+	require.Equal(t, 3, invalidationHook.attempts())
 	for _, cacheKey := range cacheKeys {
-		require.True(t, mr.Exists(cacheKey))
+		require.False(t, mr.Exists(cacheKey))
 	}
+	_, err := model.GetTokenByKey(first.Key, false)
+	require.ErrorIs(t, err, model.ErrTokenPermissionUpdatePending)
 
 	var committedFirst, committedSecond model.Token
 	require.NoError(t, db.First(&committedFirst, first.Id).Error)
@@ -1888,7 +1892,6 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 	require.Equal(t, 789, committedFirst.RemainQuota)
 	require.Equal(t, 789, committedSecond.RemainQuota)
 
-	invalidationHook.setFailInvalidation(false)
 	retryCtx, retryRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", requestBody, user.Id)
 	UpdateTokenBatch(retryCtx)
 	retryResponse := decodeAPIResponse(t, retryRecorder)
@@ -1896,6 +1899,40 @@ func TestUpdateTokenGroupBatchCacheFailureReturnsStableErrorAndRetrySucceeds(t *
 	for _, cacheKey := range cacheKeys {
 		require.False(t, mr.Exists(cacheKey))
 	}
+	require.NoError(t, db.First(&committedFirst, first.Id).Error)
+	require.Equal(t, 789, committedFirst.RemainQuota)
+}
+
+func TestUpdateTokenBatchCachePreparationFailureDoesNotCommit(t *testing.T) {
+	t.Setenv("TOKEN_BATCH_GROUP_ENABLED", "true")
+	db := setupInitialTokenControllerTestDB(t)
+	setupTokenControllerRedisTest(t)
+	user := seedTokenUser(t, db, 52)
+	user.Group = "Enterprise"
+	require.NoError(t, db.Save(user).Error)
+	token := seedToken(t, db, user.Id, "prepare-failure", "cache-prepare-failure")
+	token.ModelLimitsEnabled = false
+	token.ModelLimits = ""
+	require.NoError(t, db.Save(token).Error)
+
+	common.RDB.AddHook(&failingTokenCacheInvalidationHook{
+		failInvalidation: true,
+		failOnAttempt:    1,
+		err:              errors.New("prepare unavailable"),
+	})
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/batch", map[string]any{
+		"ids":                  []int{token.Id},
+		"model_limits_enabled": true,
+		"model_limits":         "gpt-4o",
+	}, user.Id)
+	UpdateTokenBatch(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.False(t, response.Success)
+	var stored model.Token
+	require.NoError(t, db.First(&stored, token.Id).Error)
+	require.False(t, stored.ModelLimitsEnabled)
+	require.Empty(t, stored.ModelLimits)
 }
 
 func TestUpdateTokenGroupBatchRollsBackForMissingOrForeignToken(t *testing.T) {

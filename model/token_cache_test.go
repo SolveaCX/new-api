@@ -570,3 +570,46 @@ func TestGetTokenByKeyFallsBackToDatabaseWhenRedisFails(t *testing.T) {
 	require.Equal(t, token.Id, got.Id)
 	require.Equal(t, token.Group, got.Group)
 }
+
+func TestGetTokenByKeyRejectsPendingPermissionUpdateWithoutDatabaseFallback(t *testing.T) {
+	mr := setupTokenCacheRedis(t)
+	db := setupTokenCacheDB(t)
+	token := testCachedToken("permission-update-pending")
+	require.NoError(t, db.Create(&token).Error)
+	fence, err := captureTokenCacheFillFence()
+	require.NoError(t, err)
+	require.NoError(t, cacheSetToken(token, fence))
+
+	guard, err := beginTokenPermissionUpdate([]string{token.Key})
+	require.NoError(t, err)
+	require.NotEmpty(t, guard)
+	require.False(t, mr.Exists(redisTokenCacheKey(token.Key)))
+	require.True(t, mr.Exists(tokenPermissionUpdateMarkerKey(token.Key)))
+	require.Greater(t, mr.TTL(tokenPermissionUpdateMarkerKey(token.Key)), 60*time.Second)
+
+	got, err := GetTokenByKey(token.Key, false)
+	require.Nil(t, got)
+	require.ErrorIs(t, err, ErrTokenPermissionUpdatePending)
+	require.False(t, mr.Exists(redisTokenCacheKey(token.Key)))
+}
+
+func TestTokenCachePermissionUpdateBlocksStaleFillUntilFinished(t *testing.T) {
+	mr := setupTokenCacheRedis(t)
+	token := testCachedToken("permission-update-stale-fill")
+	staleFence, err := captureTokenCacheFillFence()
+	require.NoError(t, err)
+
+	guard, err := beginTokenPermissionUpdate([]string{token.Key})
+	require.NoError(t, err)
+	require.NoError(t, cacheSetToken(token, staleFence))
+	require.False(t, mr.Exists(redisTokenCacheKey(token.Key)))
+	_, err = cacheGetTokenByKey(token.Key)
+	require.ErrorIs(t, err, ErrTokenPermissionUpdatePending)
+
+	require.NoError(t, finishTokenPermissionUpdate([]string{token.Key}, guard))
+	require.False(t, mr.Exists(tokenPermissionUpdateMarkerKey(token.Key)))
+	freshFence, err := captureTokenCacheFillFence()
+	require.NoError(t, err)
+	require.NoError(t, cacheSetToken(token, freshFence))
+	require.True(t, mr.Exists(redisTokenCacheKey(token.Key)))
+}

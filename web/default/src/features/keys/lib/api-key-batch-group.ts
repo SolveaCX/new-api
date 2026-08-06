@@ -145,6 +145,14 @@ export function isBatchEditApiKeysAvailable(featureEnabled: boolean): boolean {
   return featureEnabled
 }
 
+export function canSubmitBatchModelAccessEdits(
+  modelAccessReady: boolean,
+  updateModelLimits: boolean,
+  updateModelBlacklist: boolean
+): boolean {
+  return modelAccessReady || (!updateModelLimits && !updateModelBlacklist)
+}
+
 export function isBatchQuotaInputValid(
   rawValue: string,
   tokensOnly: boolean

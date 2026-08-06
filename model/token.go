@@ -15,6 +15,12 @@ import (
 var ErrUserTokenLimitReached = errors.New("user token limit reached")
 var ErrTokenBatchInvalid = errors.New("token batch contains missing or unauthorized token")
 var ErrTokenBatchCacheInvalidation = errors.New("token cache invalidation failed")
+var ErrTokenPermissionUpdatePending = errors.New("token permission update pending")
+
+const (
+	maxBatchTokenModelRuleItems   = 512
+	maxBatchTokenModelRulesLength = 32 * 1024
+)
 
 type Token struct {
 	Id                    int            `json:"id"`
@@ -316,6 +322,9 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 		token, err := cacheGetTokenByKey(key)
 		if err == nil {
 			return token, nil
+		}
+		if errors.Is(err, ErrTokenPermissionUpdatePending) {
+			return nil, err
 		}
 		// Don't return error - fall through to DB
 	}
@@ -685,6 +694,35 @@ type BatchUpdateTokensParams struct {
 	ModelBlacklist        *string
 }
 
+func normalizeBatchTokenModelRules(raw string) (string, error) {
+	parts := strings.Split(raw, ",")
+	normalized := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	serializedLength := 0
+	for _, part := range parts {
+		modelName := strings.TrimSpace(part)
+		if modelName == "" {
+			continue
+		}
+		if _, exists := seen[modelName]; exists {
+			continue
+		}
+		if len(normalized) >= maxBatchTokenModelRuleItems {
+			return "", ErrTokenBatchInvalid
+		}
+		if len(normalized) > 0 {
+			serializedLength++
+		}
+		serializedLength += len(modelName)
+		if serializedLength > maxBatchTokenModelRulesLength {
+			return "", ErrTokenBatchInvalid
+		}
+		seen[modelName] = struct{}{}
+		normalized = append(normalized, modelName)
+	}
+	return strings.Join(normalized, ","), nil
+}
+
 func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 	if len(params.Ids) == 0 || len(params.Ids) > 100 || params.UserId <= 0 {
 		return 0, ErrTokenBatchInvalid
@@ -719,8 +757,32 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 			return 0, ErrTokenBatchInvalid
 		}
 	}
+	if params.ModelLimitsEnabled != nil {
+		if !*params.ModelLimitsEnabled {
+			*params.ModelLimits = ""
+		} else {
+			normalized, err := normalizeBatchTokenModelRules(*params.ModelLimits)
+			if err != nil {
+				return 0, err
+			}
+			*params.ModelLimits = normalized
+		}
+	}
+	if params.ModelBlacklistEnabled != nil {
+		if !*params.ModelBlacklistEnabled {
+			*params.ModelBlacklist = ""
+		} else {
+			normalized, err := normalizeBatchTokenModelRules(*params.ModelBlacklist)
+			if err != nil {
+				return 0, err
+			}
+			*params.ModelBlacklist = normalized
+		}
+	}
 
 	var tokenKeys []string
+	permissionUpdateGuard := ""
+	requiresPermissionCacheInvalidation := params.RemainQuota != nil || params.ModelLimitsEnabled != nil || params.ModelBlacklistEnabled != nil
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var tokens []Token
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -736,6 +798,14 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 		tokenKeys = make([]string, 0, len(tokens))
 		for _, token := range tokens {
 			tokenKeys = append(tokenKeys, token.Key)
+		}
+		if common.RedisEnabled && requiresPermissionCacheInvalidation {
+			guard, err := beginTokenPermissionUpdate(tokenKeys)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("failed to prepare %d token caches before batch token update", len(tokenKeys)))
+				return ErrTokenBatchCacheInvalidation
+			}
+			permissionUpdateGuard = guard
 		}
 		updates := make(map[string]interface{}, 4)
 		if params.Group != nil {
@@ -771,13 +841,18 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 		return nil
 	})
 	if err != nil {
+		if permissionUpdateGuard != "" {
+			if cleanupErr := finishTokenPermissionUpdate(tokenKeys, permissionUpdateGuard); cleanupErr != nil {
+				common.SysLog(fmt.Sprintf("failed to release %d pending token permission updates after batch rollback", len(tokenKeys)))
+			}
+		}
 		return 0, err
 	}
 
 	if common.RedisEnabled {
 		var err error
-		if params.RemainQuota != nil || params.ModelLimitsEnabled != nil || params.ModelBlacklistEnabled != nil {
-			err = cacheDeleteTokens(tokenKeys)
+		if requiresPermissionCacheInvalidation {
+			err = finishTokenPermissionUpdate(tokenKeys, permissionUpdateGuard)
 		} else {
 			err = cachePatchTokenGroups(tokenKeys, *params.Group)
 		}
