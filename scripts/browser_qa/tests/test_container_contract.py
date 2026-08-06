@@ -150,7 +150,13 @@ class ContainerContractTests(unittest.TestCase):
             dockerfile,
         )
 
-        combined_contract = "\n".join(read(path) for path in [QA_PROMPT, STAGING_POLICY, STAGING_SCENARIOS])
+        qa_prompt = read(QA_PROMPT)
+        self.assertIn(
+            "Write each finding `title` in concise Simplified Chinese. Keep required product names, UI labels, URLs, and HTTP status codes unchanged. Do not translate or expose credentials, verification data, cookies, authorization values, query strings, or fragments.",
+            qa_prompt,
+        )
+
+        combined_contract = "\n".join([qa_prompt, read(STAGING_POLICY), read(STAGING_SCENARIOS)])
         for required in [
             "core = complete recorded replay -> qa_replay_checkpoint -> no exploration -> runtime cleanup -> report",
             "normal = complete recorded replay -> qa_replay_checkpoint -> qa_start_exploration -> bounded exploration -> runtime cleanup -> report",
@@ -169,7 +175,6 @@ class ContainerContractTests(unittest.TestCase):
             "screenshots/*.png",
             "browser/console.jsonl",
             "browser/network.jsonl",
-            "Write each finding `title` in concise Simplified Chinese. Keep required product names, UI labels, URLs, and HTTP status codes unchanged.",
             "environment observation/info",
         ]:
             self.assertIn(required.lower(), combined_contract.lower())
