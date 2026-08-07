@@ -39,6 +39,7 @@ const (
 	videoResultMP4ProbeBytes       = 64 << 10
 	videoResultMP4BoxHeaderBytes   = 8
 	videoResultMP4BrandBytes       = 4
+	videoResultMP4FileTypeMinBytes = 2 * videoResultMP4BrandBytes
 )
 
 type VideoResultStorageConfig struct {
@@ -404,13 +405,21 @@ func validateAndReplayVideoResultMP4(body io.Reader) (io.Reader, error) {
 		if boxSize != 0 && boxSize < headerSize {
 			return nil, ErrVideoResultInvalidContent
 		}
+		remainingProbeBytes := uint64(videoResultMP4ProbeBytes - prefix.Len())
 		if boxType == "ftyp" {
-			if boxSize < headerSize+videoResultMP4BrandBytes {
+			if boxSize < headerSize+videoResultMP4FileTypeMinBytes {
 				return nil, ErrVideoResultInvalidContent
 			}
-			var majorBrand [videoResultMP4BrandBytes]byte
-			if err := readVideoResultMP4Probe(body, &prefix, majorBrand[:]); err != nil {
+			fileTypeSize := boxSize - headerSize
+			if fileTypeSize%videoResultMP4BrandBytes != 0 || fileTypeSize > remainingProbeBytes {
+				return nil, ErrVideoResultInvalidContent
+			}
+			fileType := make([]byte, int(fileTypeSize))
+			if err := readVideoResultMP4Probe(body, &prefix, fileType); err != nil {
 				return nil, err
+			}
+			if !validVideoResultMP4Brands(fileType) {
+				return nil, ErrVideoResultInvalidContent
 			}
 			return io.MultiReader(bytes.NewReader(prefix.Bytes()), body), nil
 		}
@@ -419,7 +428,6 @@ func validateAndReplayVideoResultMP4(body io.Reader) (io.Reader, error) {
 		}
 
 		payloadSize := boxSize - headerSize
-		remainingProbeBytes := uint64(videoResultMP4ProbeBytes - prefix.Len())
 		if payloadSize > remainingProbeBytes {
 			return nil, ErrVideoResultInvalidContent
 		}
@@ -431,6 +439,27 @@ func validateAndReplayVideoResultMP4(body io.Reader) (io.Reader, error) {
 		}
 	}
 	return nil, ErrVideoResultInvalidContent
+}
+
+func validVideoResultMP4Brands(fileType []byte) bool {
+	if len(fileType) < videoResultMP4FileTypeMinBytes || len(fileType)%videoResultMP4BrandBytes != 0 {
+		return false
+	}
+	hasMP4Brand := false
+	for offset := 0; offset < len(fileType); offset += videoResultMP4BrandBytes {
+		if offset == videoResultMP4BrandBytes {
+			continue
+		}
+		brand := string(fileType[offset : offset+videoResultMP4BrandBytes])
+		if brand == "qt  " {
+			return false
+		}
+		switch brand {
+		case "isom", "iso2", "mp41", "mp42", "avc1", "M4V ":
+			hasMP4Brand = true
+		}
+	}
+	return hasMP4Brand
 }
 
 func normalizeVideoResultUpstreamContentType(rawContentType string) (string, error) {

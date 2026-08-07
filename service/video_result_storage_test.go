@@ -206,6 +206,75 @@ func TestArchiveVideoResult(t *testing.T) {
 		})
 	}
 
+	for _, testCase := range []struct {
+		name        string
+		taskID      string
+		contentType string
+		payload     []byte
+	}{
+		{
+			name:        "quicktime brand",
+			taskID:      "task_quicktime_brand",
+			contentType: "video/quicktime",
+			payload:     mp4FixtureWithBrands("qt  "),
+		},
+		{
+			name:        "unknown brand",
+			taskID:      "task_unknown_brand",
+			contentType: "application/octet-stream",
+			payload:     mp4FixtureWithBrands("xxxx"),
+		},
+		{
+			name:        "quicktime compatible brand",
+			taskID:      "task_quicktime_compatible_brand",
+			contentType: videoResultMP4ContentType,
+			payload:     mp4FixtureWithBrands("isom", "qt  "),
+		},
+		{
+			name:        "truncated ftyp payload",
+			taskID:      "task_truncated_ftyp",
+			contentType: videoResultMP4ContentType,
+			payload:     mp4FixtureBox("ftyp", []byte{'i', 's', 'o', 'm'}, false),
+		},
+		{
+			name:        "misaligned compatible brands",
+			taskID:      "task_misaligned_brands",
+			contentType: videoResultMP4ContentType,
+			payload:     mp4FixtureBox("ftyp", []byte{'i', 's', 'o', 'm', 0, 0, 0, 0, 'x'}, false),
+		},
+	} {
+		t.Run("rejects "+testCase.name, func(t *testing.T) {
+			start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+			store := newFakeVideoResultStore()
+			installVideoResultArchiveTestHooks(t, store, start)
+			t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+
+			server := newVideoResultTestServer(t, http.StatusOK, testCase.contentType, string(testCase.payload))
+			defer server.Close()
+
+			_, err := ArchiveVideoResult(context.Background(), testCase.taskID, server.URL, "")
+			require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+			require.Empty(t, store.created)
+		})
+	}
+
+	t.Run("accepts an mp4 compatible brand when the major brand is unknown", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		payload := mp4FixtureWithBrands("xxxx", "mp42")
+
+		server := newVideoResultTestServer(t, http.StatusOK, "application/octet-stream", string(payload))
+		defer server.Close()
+
+		result, err := ArchiveVideoResult(context.Background(), "task_compatible_mp42", server.URL, "")
+		require.NoError(t, err)
+		require.Equal(t, videoResultMP4ContentType, result.ContentType)
+		created := store.created["video-bucket/"+result.Object]
+		require.Equal(t, payload, created.body)
+	})
+
 	t.Run("allows exactly max bytes", func(t *testing.T) {
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		store := newFakeVideoResultStore()
@@ -688,6 +757,15 @@ func validVideoResultForSign(expiresAt int64) *model.VideoResult {
 
 func minimalMP4Fixture() []byte {
 	return []byte{0, 0, 0, 16, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0}
+}
+
+func mp4FixtureWithBrands(majorBrand string, compatibleBrands ...string) []byte {
+	payload := make([]byte, 8+len(compatibleBrands)*4)
+	copy(payload[:4], majorBrand)
+	for index, brand := range compatibleBrands {
+		copy(payload[8+index*4:], brand)
+	}
+	return mp4FixtureBox("ftyp", payload, false)
 }
 
 func mp4FixtureBox(boxType string, payload []byte, extendedSize bool) []byte {
