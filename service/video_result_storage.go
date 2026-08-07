@@ -36,7 +36,9 @@ const (
 	defaultVideoResultMaxBytes     = int64(500 << 20)
 	videoResultCacheControl        = "private, max-age=0, no-store"
 	videoResultMP4ContentType      = "video/mp4"
-	videoResultMP4ProbeBytes       = 12
+	videoResultMP4ProbeBytes       = 64 << 10
+	videoResultMP4BoxHeaderBytes   = 8
+	videoResultMP4BrandBytes       = 4
 )
 
 type VideoResultStorageConfig struct {
@@ -172,12 +174,12 @@ func ArchiveVideoResult(ctx context.Context, publicTaskID, upstreamURL, proxy st
 		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
-	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	contentType = strings.ToLower(contentType)
-	if err != nil || contentType != videoResultMP4ContentType {
+	contentType, err := normalizeVideoResultUpstreamContentType(response.Header.Get("Content-Type"))
+	if err != nil {
 		recordArchive("failure", 0)
 		return nil, ErrVideoResultInvalidContent
 	}
+	contentType = videoResultMP4ContentType
 	boundedBody := newVideoResultBoundedReader(response.Body, cfg.MaxBytes)
 	validatedBody, err := validateAndReplayVideoResultMP4(boundedBody)
 	if err != nil {
@@ -380,17 +382,88 @@ func newVideoResultBoundedReader(reader io.Reader, maxBytes int64) io.Reader {
 }
 
 func validateAndReplayVideoResultMP4(body io.Reader) (io.Reader, error) {
-	header := make([]byte, videoResultMP4ProbeBytes)
-	if _, err := io.ReadFull(body, header); err != nil {
-		if errors.Is(err, ErrVideoResultTooLarge) {
-			return nil, ErrVideoResultTooLarge
+	var prefix bytes.Buffer
+	for prefix.Len() < videoResultMP4ProbeBytes {
+		var header [videoResultMP4BoxHeaderBytes]byte
+		if err := readVideoResultMP4Probe(body, &prefix, header[:]); err != nil {
+			return nil, err
 		}
-		return nil, ErrVideoResultInvalidContent
+
+		boxType := string(header[4:8])
+		headerSize := uint64(videoResultMP4BoxHeaderBytes)
+		boxSize := uint64(binary.BigEndian.Uint32(header[:4]))
+		if boxSize == 1 {
+			var extendedSize [8]byte
+			if err := readVideoResultMP4Probe(body, &prefix, extendedSize[:]); err != nil {
+				return nil, err
+			}
+			headerSize += uint64(len(extendedSize))
+			boxSize = binary.BigEndian.Uint64(extendedSize[:])
+		}
+
+		if boxSize != 0 && boxSize < headerSize {
+			return nil, ErrVideoResultInvalidContent
+		}
+		if boxType == "ftyp" {
+			if boxSize < headerSize+videoResultMP4BrandBytes {
+				return nil, ErrVideoResultInvalidContent
+			}
+			var majorBrand [videoResultMP4BrandBytes]byte
+			if err := readVideoResultMP4Probe(body, &prefix, majorBrand[:]); err != nil {
+				return nil, err
+			}
+			return io.MultiReader(bytes.NewReader(prefix.Bytes()), body), nil
+		}
+		if boxSize == 0 || (boxType != "free" && boxType != "skip") {
+			return nil, ErrVideoResultInvalidContent
+		}
+
+		payloadSize := boxSize - headerSize
+		remainingProbeBytes := uint64(videoResultMP4ProbeBytes - prefix.Len())
+		if payloadSize > remainingProbeBytes {
+			return nil, ErrVideoResultInvalidContent
+		}
+		if _, err := io.CopyN(&prefix, body, int64(payloadSize)); err != nil {
+			if errors.Is(err, ErrVideoResultTooLarge) {
+				return nil, ErrVideoResultTooLarge
+			}
+			return nil, ErrVideoResultInvalidContent
+		}
 	}
-	if binary.BigEndian.Uint32(header[:4]) < videoResultMP4ProbeBytes || !bytes.Equal(header[4:8], []byte("ftyp")) {
-		return nil, ErrVideoResultInvalidContent
+	return nil, ErrVideoResultInvalidContent
+}
+
+func normalizeVideoResultUpstreamContentType(rawContentType string) (string, error) {
+	rawContentType = strings.TrimSpace(rawContentType)
+	if rawContentType == "" {
+		return "", nil
 	}
-	return io.MultiReader(bytes.NewReader(header), body), nil
+	contentType, _, err := mime.ParseMediaType(rawContentType)
+	if err != nil {
+		return "", err
+	}
+	contentType = strings.ToLower(contentType)
+	if contentType == videoResultMP4ContentType || contentType == "application/octet-stream" || strings.HasPrefix(contentType, "video/") {
+		return contentType, nil
+	}
+	return "", ErrVideoResultInvalidContent
+}
+
+func readVideoResultMP4Probe(body io.Reader, prefix *bytes.Buffer, destination []byte) error {
+	if len(destination) > videoResultMP4ProbeBytes-prefix.Len() {
+		return ErrVideoResultInvalidContent
+	}
+	readBytes, err := io.ReadFull(body, destination)
+	if readBytes > 0 {
+		_, _ = prefix.Write(destination[:readBytes])
+	}
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrVideoResultTooLarge) {
+		return ErrVideoResultTooLarge
+	}
+	return ErrVideoResultInvalidContent
 }
 
 func (r *videoResultBoundedReader) Read(p []byte) (int, error) {

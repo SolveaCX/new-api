@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -134,6 +135,77 @@ func TestArchiveVideoResult(t *testing.T) {
 		require.Contains(t, text, `newapi_video_result_archive_bytes_total{channel="techmobi"} 16`)
 	})
 
+	for _, testCase := range []struct {
+		name        string
+		taskID      string
+		contentType string
+	}{
+		{name: "missing content type", taskID: "task_missing_type", contentType: ""},
+		{name: "generic binary content type", taskID: "task_octet_stream", contentType: "application/octet-stream"},
+		{name: "other video content type", taskID: "task_video_subtype", contentType: "video/webm; codecs=vp9"},
+	} {
+		t.Run("accepts "+testCase.name+" when content is mp4", func(t *testing.T) {
+			start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+			store := newFakeVideoResultStore()
+			installVideoResultArchiveTestHooks(t, store, start)
+			t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+			payload := minimalMP4Fixture()
+
+			server := newVideoResultTestServer(t, http.StatusOK, testCase.contentType, string(payload))
+			defer server.Close()
+
+			result, err := ArchiveVideoResult(context.Background(), testCase.taskID, server.URL, "")
+			require.NoError(t, err)
+			require.Equal(t, videoResultMP4ContentType, result.ContentType)
+			created := store.created["video-bucket/"+result.Object]
+			require.Equal(t, payload, created.body)
+			require.Equal(t, videoResultMP4ContentType, created.options.ContentType)
+		})
+	}
+
+	for _, testCase := range []struct {
+		name    string
+		taskID  string
+		payload []byte
+	}{
+		{
+			name:    "leading free box",
+			taskID:  "task_leading_free",
+			payload: append(mp4FixtureBox("free", nil, false), minimalMP4Fixture()...),
+		},
+		{
+			name:    "leading skip box",
+			taskID:  "task_leading_skip",
+			payload: append(mp4FixtureBox("skip", nil, false), minimalMP4Fixture()...),
+		},
+		{
+			name:    "leading extended-size free box",
+			taskID:  "task_extended_free",
+			payload: append(mp4FixtureBox("free", nil, true), minimalMP4Fixture()...),
+		},
+		{
+			name:    "extended-size ftyp box",
+			taskID:  "task_extended_ftyp",
+			payload: mp4FixtureBox("ftyp", []byte{'i', 's', 'o', 'm', 0, 0, 0, 0}, true),
+		},
+	} {
+		t.Run("accepts "+testCase.name+" and replays the complete payload", func(t *testing.T) {
+			start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+			store := newFakeVideoResultStore()
+			installVideoResultArchiveTestHooks(t, store, start)
+			t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+			t.Setenv("VIDEO_RESULT_MAX_BYTES", "131072")
+
+			server := newVideoResultTestServer(t, http.StatusOK, videoResultMP4ContentType, string(testCase.payload))
+			defer server.Close()
+
+			result, err := ArchiveVideoResult(context.Background(), testCase.taskID, server.URL, "")
+			require.NoError(t, err)
+			created := store.created["video-bucket/"+result.Object]
+			require.Equal(t, testCase.payload, created.body)
+		})
+	}
+
 	t.Run("allows exactly max bytes", func(t *testing.T) {
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		store := newFakeVideoResultStore()
@@ -183,16 +255,61 @@ func TestArchiveVideoResult(t *testing.T) {
 		require.Empty(t, store.created)
 	})
 
-	t.Run("rejects non-mp4 video subtype", func(t *testing.T) {
+	t.Run("rejects an incompatible content type even when payload looks like mp4", func(t *testing.T) {
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
 		store := newFakeVideoResultStore()
 		installVideoResultArchiveTestHooks(t, store, start)
 		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
 
-		server := newVideoResultTestServer(t, http.StatusOK, "video/webm", string(minimalMP4Fixture()))
+		server := newVideoResultTestServer(t, http.StatusOK, "text/plain", string(minimalMP4Fixture()))
 		defer server.Close()
 
-		_, err := ArchiveVideoResult(context.Background(), "task_webm", server.URL, "")
+		_, err := ArchiveVideoResult(context.Background(), "task_incompatible_type", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+		require.Empty(t, store.created)
+	})
+
+	t.Run("rejects malformed leading box size", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		payload := append([]byte{0, 0, 0, 4, 'f', 'r', 'e', 'e'}, minimalMP4Fixture()...)
+
+		server := newVideoResultTestServer(t, http.StatusOK, videoResultMP4ContentType, string(payload))
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_malformed_box", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+		require.Empty(t, store.created)
+	})
+
+	t.Run("rejects zero-size ftyp box", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		payload := []byte{0, 0, 0, 0, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+
+		server := newVideoResultTestServer(t, http.StatusOK, videoResultMP4ContentType, string(payload))
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_zero_size_ftyp", server.URL, "")
+		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
+		require.Empty(t, store.created)
+	})
+
+	t.Run("rejects ftyp beyond the bounded probe window", func(t *testing.T) {
+		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+		store := newFakeVideoResultStore()
+		installVideoResultArchiveTestHooks(t, store, start)
+		t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+		payload := append(mp4FixtureBox("free", make([]byte, 64<<10), false), minimalMP4Fixture()...)
+
+		server := newVideoResultTestServer(t, http.StatusOK, videoResultMP4ContentType, string(payload))
+		defer server.Close()
+
+		_, err := ArchiveVideoResult(context.Background(), "task_ftyp_beyond_probe", server.URL, "")
 		require.ErrorIs(t, err, ErrVideoResultInvalidContent)
 		require.Empty(t, store.created)
 	})
@@ -571,6 +688,23 @@ func validVideoResultForSign(expiresAt int64) *model.VideoResult {
 
 func minimalMP4Fixture() []byte {
 	return []byte{0, 0, 0, 16, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0}
+}
+
+func mp4FixtureBox(boxType string, payload []byte, extendedSize bool) []byte {
+	headerSize := 8
+	if extendedSize {
+		headerSize = 16
+	}
+	box := make([]byte, headerSize+len(payload))
+	if extendedSize {
+		binary.BigEndian.PutUint32(box[:4], 1)
+		binary.BigEndian.PutUint64(box[8:16], uint64(len(box)))
+	} else {
+		binary.BigEndian.PutUint32(box[:4], uint32(len(box)))
+	}
+	copy(box[4:8], boxType)
+	copy(box[headerSize:], payload)
+	return box
 }
 
 func TestVideoResultDirectFetchClientRejectsDialTimePrivateIP(t *testing.T) {
