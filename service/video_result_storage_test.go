@@ -225,6 +225,12 @@ func TestArchiveVideoResult(t *testing.T) {
 			payload:     mp4FixtureWithBrands("xxxx"),
 		},
 		{
+			name:        "heif-only brands",
+			taskID:      "task_heif_only_brands",
+			contentType: videoResultMP4ContentType,
+			payload:     mp4FixtureWithBrands("heic", "mif1"),
+		},
+		{
 			name:        "quicktime compatible brand",
 			taskID:      "task_quicktime_compatible_brand",
 			contentType: videoResultMP4ContentType,
@@ -274,6 +280,26 @@ func TestArchiveVideoResult(t *testing.T) {
 		created := store.created["video-bucket/"+result.Object]
 		require.Equal(t, payload, created.body)
 	})
+
+	for _, brand := range []string{"iso5", "iso6", "dash", "msdh", "msix", "hvc1", "hev1", "cmfc", "cmfs"} {
+		t.Run("accepts common mp4 brand "+brand, func(t *testing.T) {
+			start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)
+			store := newFakeVideoResultStore()
+			installVideoResultArchiveTestHooks(t, store, start)
+			t.Setenv("VIDEO_RESULT_STORAGE_BUCKET", "video-bucket")
+			payload := mp4FixtureWithBrands(brand)
+
+			server := newVideoResultTestServer(t, http.StatusOK, "application/octet-stream", string(payload))
+			defer server.Close()
+
+			result, err := ArchiveVideoResult(context.Background(), "task_common_"+brand, server.URL, "")
+			require.NoError(t, err)
+			require.Equal(t, videoResultMP4ContentType, result.ContentType)
+			created := store.created["video-bucket/"+result.Object]
+			require.Equal(t, payload, created.body)
+			require.Equal(t, videoResultMP4ContentType, created.options.ContentType)
+		})
+	}
 
 	t.Run("allows exactly max bytes", func(t *testing.T) {
 		start := time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC)

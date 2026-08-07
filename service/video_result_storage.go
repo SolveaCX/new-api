@@ -455,7 +455,8 @@ func validVideoResultMP4Brands(fileType []byte) bool {
 			return false
 		}
 		switch brand {
-		case "isom", "iso2", "mp41", "mp42", "avc1", "M4V ":
+		case "isom", "iso2", "iso5", "iso6", "mp41", "mp42", "avc1", "hvc1", "hev1", "M4V ",
+			"dash", "msdh", "msix", "cmfc", "cmfs":
 			hasMP4Brand = true
 		}
 	}
