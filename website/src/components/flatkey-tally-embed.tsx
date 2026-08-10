@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Locale } from "@/lib/locales";
 
@@ -18,11 +18,36 @@ declare global {
 
 let tallyEmbedScriptPromise: Promise<void> | null = null;
 
-export function FlatkeyTallyEmbed(props: { locale: Locale; className?: string; iframeClassName?: string; loading?: "lazy" | "eager" }) {
+export function FlatkeyTallyEmbed(props: { locale: Locale; className?: string; iframeClassName?: string; loading?: "lazy" | "eager"; loadMargin?: string }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(props.loading === "eager");
   const tallyEmbedSrc = useMemo(() => TALLY_EMBED_SRC, []);
 
   useEffect(() => {
+    if (shouldLoad) return;
+    const node = rootRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const fallbackTimer = window.setTimeout(() => setShouldLoad(true), 1200);
+      return () => window.clearTimeout(fallbackTimer);
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: props.loadMargin ?? "900px 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [props.loadMargin, shouldLoad]);
+
+  useEffect(() => {
+    if (!shouldLoad) return;
     let mounted = true;
     void loadTallyEmbedScript()
       .then(() => {
@@ -41,14 +66,14 @@ export function FlatkeyTallyEmbed(props: { locale: Locale; className?: string; i
     return () => {
       mounted = false;
     };
-  }, [tallyEmbedSrc]);
+  }, [shouldLoad, tallyEmbedSrc]);
 
   return (
-    <div className={cn("w-full overflow-hidden", props.className)}>
+    <div ref={rootRef} className={cn("w-full overflow-hidden", props.className)}>
       <iframe
         key={tallyEmbedSrc}
         className={props.iframeClassName ?? "block h-[760px] w-full border-0 bg-transparent sm:h-[560px] lg:h-[520px]"}
-        data-tally-src={tallyEmbedSrc}
+        data-tally-src={shouldLoad ? tallyEmbedSrc : undefined}
         loading={props.loading ?? "lazy"}
         width="100%"
         height="520"

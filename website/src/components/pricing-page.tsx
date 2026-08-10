@@ -894,17 +894,17 @@ export async function PricingPage(props: PricingPageProps) {
 
   return (
     <SiteShell locale={props.locale} pathname="/pricing">
-      <main className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f7f5ff_0%,#ffffff_48%,#f4f1ff_100%)] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_46%,#040511_100%)]">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-60 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.05)_1px,transparent_1px)] dark:opacity-55" />
-        <div className="relative mx-auto max-w-7xl px-4 pt-24 pb-16 sm:px-6 lg:px-8">
-          <header className="mx-auto max-w-3xl text-center">
-            <p className="mx-auto mb-4 inline-flex rounded-full border border-violet-400/25 bg-violet-500/10 px-4 py-1.5 text-xs font-bold tracking-[0.18em] text-violet-700 uppercase dark:border-violet-300/25 dark:bg-violet-300/10 dark:text-violet-200">
+      <main className="fk-pricing-page fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] px-4 pt-[var(--fk-header-safe-area)] pb-20 text-[#101014] antialiased sm:px-6 dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45" />
+        <div className="relative z-10 mx-auto w-full max-w-[2160px]">
+          <header className="mx-auto border-b-2 border-[#101014] py-10 text-center md:py-14 dark:border-white/20">
+            <p className="mx-auto mb-4 inline-flex rounded-full border-2 border-[#101014] bg-[#F9F871] px-4 py-1.5 font-mono text-[11px] font-black tracking-normal uppercase shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
               {copy.plansEyebrow}
             </p>
-            <h1 className="text-[clamp(2.5rem,6vw,4.75rem)] leading-[0.98] font-black tracking-tight text-slate-950 dark:text-white">
+            <h1 className="mx-auto max-w-5xl text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance text-[#101014] dark:text-white">
               {copy.pricingHeroTitle}
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
+            <p className="mx-auto mt-6 max-w-3xl text-base leading-7 text-[#5C5861] md:text-lg dark:text-white/62">
               {copy.pricingHeroDescription}
             </p>
           </header>
@@ -922,14 +922,14 @@ export async function PricingPage(props: PricingPageProps) {
 
           <section className="mt-10">
             <div className="mb-5 flex items-end justify-between gap-4">
-              <h2 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{PRICING_FAQ_TITLE[props.locale] ?? PRICING_FAQ_TITLE.en}</h2>
-              <div className="hidden h-px flex-1 bg-gradient-to-r from-violet-500/18 to-transparent sm:block" />
+              <h2 className="text-2xl font-black tracking-normal text-[#101014] dark:text-white">{PRICING_FAQ_TITLE[props.locale] ?? PRICING_FAQ_TITLE.en}</h2>
+              <div className="hidden h-0.5 flex-1 bg-[#101014]/14 sm:block dark:bg-white/14" />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {faqs.map((faq) => (
-                <article key={faq.question} className="rounded-2xl border border-violet-500/14 bg-white/72 p-5 shadow-[0_20px_70px_-58px_rgba(91,33,182,0.6)] dark:border-white/10 dark:bg-white/[0.055]">
-                  <h3 className="text-base font-black text-slate-950 dark:text-white">{faq.question}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{faq.answer}</p>
+                <article key={faq.question} className="rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-5 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
+                  <h3 className="text-base font-black text-[#101014] dark:text-white">{faq.question}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#5C5861] dark:text-white/62">{faq.answer}</p>
                 </article>
               ))}
             </div>
@@ -948,34 +948,19 @@ export async function ModelsPage(props: PricingPageProps) {
 
   return (
     <SiteShell locale={props.locale} pathname="/models">
-      <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-[640px] opacity-75"
-          style={{
-            background: [
-              "radial-gradient(ellipse 56% 46% at 22% 8%, rgba(168,85,247,0.30) 0%, transparent 68%)",
-              "radial-gradient(ellipse 46% 36% at 78% 6%, rgba(99,102,241,0.28) 0%, transparent 70%)",
-              "radial-gradient(ellipse 48% 34% at 50% 46%, rgba(217,70,239,0.18) 0%, transparent 72%)",
-            ].join(", "),
-            maskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
-          }}
-        />
-        <div className="relative mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8">
-          <header className="mx-auto mb-6 max-w-3xl pt-5 text-center sm:mb-10 sm:pt-10">
-            <p className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-violet-400/35 bg-violet-500/10 px-4 py-1.5 text-xs font-semibold tracking-[0.18em] text-violet-700 uppercase shadow-[0_0_28px_rgba(168,85,247,0.14)] dark:border-violet-300/25 dark:bg-violet-300/10 dark:text-violet-200">
-              <span className="size-1.5 rounded-full bg-violet-500 shadow-[0_0_12px_rgba(168,85,247,0.9)] dark:bg-violet-300" />
+      <main className="fk-model-directory-page fk-model-surface model-square-page relative min-h-screen overflow-x-hidden bg-[#F7F4EC] text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className="fk-hero-grid pointer-events-none absolute inset-0" />
+        <div aria-hidden className="fk-hero-wash pointer-events-none absolute inset-x-0 top-0 h-[640px]" />
+        <div className="relative mx-auto w-full max-w-[1800px] px-3 pt-[var(--fk-subpage-hero-safe-area)] pb-8 sm:px-6 sm:pb-10 xl:px-8">
+          <header className="mx-auto mb-6 max-w-4xl pt-5 text-center sm:mb-10 sm:pt-10">
+            <p className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-white/92 px-4 py-2 text-xs font-extrabold tracking-normal text-[#101014] uppercase shadow-[3px_3px_0_#101014] dark:border-white/25 dark:bg-[#111116]/82 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
+              <span className="size-2 rounded-full bg-[#7C3AED] shadow-[0_0_0_3px_rgba(124,58,237,0.16)]" />
               {copy.modelsEyebrow}
             </p>
-            <h1 className="bg-[linear-gradient(90deg,#171321_0%,#7c3aed_46%,#2563eb_100%)] bg-clip-text text-[clamp(2.6rem,7vw,5rem)] leading-[0.98] font-black tracking-tight text-transparent dark:bg-[linear-gradient(90deg,#ffffff_0%,#c4b5fd_48%,#93c5fd_100%)] dark:bg-clip-text">
+            <h1 className="mx-auto max-w-4xl text-[clamp(2.45rem,7vw,5rem)] leading-[0.98] font-black tracking-normal text-[#101014] dark:text-[#F6F3EA]">
               {copy.modelsDirectory}
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base">
+            <p className="mx-auto mt-5 max-w-2xl rounded-[1.15rem] bg-[#FFFDF6]/76 px-4 py-3 text-sm leading-relaxed text-[#4D4D56] backdrop-blur sm:text-base dark:bg-[#050507]/62 dark:text-white/70">
               {copy.modelsDescription}
             </p>
           </header>
@@ -1145,10 +1130,10 @@ function QuickStartSteps(props: { steps: string[] }) {
 function PricingSeoContent(props: { locale: Locale; modelCount: number; vendorCount: number }) {
   const copy = pricingCopy(props.locale);
   return (
-    <section className="mt-10 rounded-3xl border border-violet-500/12 bg-white/70 p-6 shadow-[0_20px_70px_-58px_rgba(91,33,182,0.6)] backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_20px_70px_-58px_rgba(124,58,237,0.95)]">
-      <p className="text-muted-foreground mb-2 text-xs font-medium tracking-widest uppercase">{copy.seoEyebrow}</p>
-      <h2 className="text-xl font-bold tracking-tight">{copy.seoTitle}</h2>
-      <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-3">
+    <section className="mt-10 rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-6 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
+      <p className="mb-2 font-mono text-xs font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">{copy.seoEyebrow}</p>
+      <h2 className="text-xl font-black tracking-normal">{copy.seoTitle}</h2>
+      <div className="mt-4 grid gap-4 text-sm leading-7 text-[#5C5861] md:grid-cols-3 dark:text-white/62">
         <p>
           {copy.seoParagraph1.replace("{{modelCount}}", props.modelCount.toLocaleString()).replace("{{vendorCount}}", props.vendorCount.toLocaleString())}
         </p>
@@ -1156,7 +1141,7 @@ function PricingSeoContent(props: { locale: Locale; modelCount: number; vendorCo
           {copy.seoParagraph2}
         </p>
         <p>
-          {copy.seoParagraph3Prefix} <code className="rounded bg-muted px-1.5 py-0.5 dark:bg-white/10 dark:text-slate-200">/models?vendor=OpenAI</code> {copy.seoParagraph3Middle} <code className="rounded bg-muted px-1.5 py-0.5 dark:bg-white/10 dark:text-slate-200">/models?vendor=Anthropic</code> {copy.seoParagraph3Suffix}
+          {copy.seoParagraph3Prefix} <code className="rounded bg-white px-1.5 py-0.5 text-[#101014] dark:bg-white/10 dark:text-white">/models?vendor=OpenAI</code> {copy.seoParagraph3Middle} <code className="rounded bg-white px-1.5 py-0.5 text-[#101014] dark:bg-white/10 dark:text-white">/models?vendor=Anthropic</code> {copy.seoParagraph3Suffix}
         </p>
       </div>
     </section>

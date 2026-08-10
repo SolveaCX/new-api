@@ -25,7 +25,7 @@ type RankingsUiCopy = {
   updatedDaily: string;
 };
 
-const RANKINGS_UI: Record<Locale, RankingsUiCopy> =withIdFallback({
+const RANKINGS_UI: Record<Locale, RankingsUiCopy> = withIdFallback({
   en: {
     llmTitle: "LLM leaderboard",
     llmSubtitle: "The most used models on the platform over the past month",
@@ -123,42 +123,42 @@ export async function RankingsPage(props: Props) {
       {rankingsSchema ? (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(rankingsSchema) }} />
       ) : null}
-      <main className="home-landing relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] px-6 pt-28 pb-24 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
+      <main className="fk-rankings-page relative min-h-screen overflow-hidden bg-[#F7F4EC] px-4 pt-[var(--fk-header-safe-area)] pb-24 text-[#101014] antialiased sm:px-6 dark:bg-[#050507] dark:text-[#F6F3EA]">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45"
         />
-        <section className="relative z-10 mx-auto max-w-6xl py-10 md:py-14">
-          <p className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
+        <section className="relative z-10 mx-auto max-w-[2160px] border-b-2 border-[#101014] py-10 md:py-14 dark:border-white/20">
+          <p className="mb-4 inline-flex items-center rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 py-1.5 font-mono text-[11px] font-black uppercase shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
             {content.eyebrow}
           </p>
-          <h1 className="max-w-4xl text-[clamp(2.25rem,4.5vw,3.25rem)] leading-[1.15] font-bold tracking-tight">
+          <h1 className="max-w-5xl text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black text-balance">
             {content.title}
           </h1>
-          <p className="text-muted-foreground/80 mt-5 max-w-2xl text-base leading-relaxed md:text-[15px]">
+          <p className="mt-6 max-w-2xl text-base leading-7 text-[#4B4B54] md:text-lg dark:text-white/62">
             {content.description}
           </p>
           {data ? (
-            <p className="text-muted-foreground/70 mt-4 text-xs font-medium tracking-wide uppercase">
+            <p className="mt-5 inline-flex max-w-full items-center rounded-full border-2 border-[#101014] bg-white/88 px-3 py-1.5 font-mono text-[11px] font-black uppercase shadow-[3px_3px_0_#101014] dark:border-white/22 dark:bg-[#111116]/88 dark:text-white/72 dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
               {ui.updatedDaily}
             </p>
           ) : null}
         </section>
 
         {usage ? (
-          <section className="relative z-10 mx-auto mb-6 max-w-6xl">
-            <div className="rounded-2xl border border-violet-500/16 bg-white/72 p-6 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:border-violet-300/14 dark:bg-white/[0.04]">
+          <section className="relative z-10 mx-auto mt-8 mb-6 max-w-[2160px]">
+            <div className="fk-card-motion rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-5 shadow-[5px_5px_0_#101014] backdrop-blur-sm sm:p-6 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight">
-                    <BarChart3 className="size-4 text-violet-600 dark:text-violet-300" />
+                    <BarChart3 className="size-4 text-[#7C3AED] dark:text-[#C8A8FF]" />
                     {usageCopy.title}
                   </h2>
-                  <p className="text-muted-foreground mt-1 text-xs leading-5">{usageCopy.subtitle}</p>
+                  <p className="mt-1 text-xs leading-5 text-[#5C5861] dark:text-white/62">{usageCopy.subtitle}</p>
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold tracking-tight">{formatCallCount(usage.total)}</div>
-                  <div className="text-muted-foreground/70 text-[10px] font-bold tracking-[0.14em] uppercase">{usageCopy.tokensLabel}</div>
+                  <div className="font-mono text-[10px] font-bold tracking-[0.14em] text-[#5C5861] uppercase dark:text-white/62">{usageCopy.tokensLabel}</div>
                 </div>
               </div>
 
@@ -183,7 +183,7 @@ export async function RankingsPage(props: Props) {
                   </div>
                 ))}
               </div>
-              <div className="text-muted-foreground/60 mt-2 flex justify-between text-[10px]">
+              <div className="mt-2 flex justify-between font-mono text-[10px] text-[#5C5861] dark:text-white/50">
                 {usage.days.map((day, index) => (
                   <span key={day.label} className="flex-1 truncate text-center">
                     {index % labelEvery === 0 ? day.label : ""}
@@ -191,9 +191,9 @@ export async function RankingsPage(props: Props) {
                 ))}
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-violet-500/10 pt-3">
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#101014]/10 pt-3 dark:border-white/10">
                 {usage.series.map((name, index) => (
-                  <span key={name} className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+                  <span key={name} className="inline-flex items-center gap-1.5 font-mono text-xs text-[#5C5861] dark:text-white/62">
                     <span className="size-2.5 rounded-[3px]" style={{ backgroundColor: seriesColor(index, usage.series.length) }} />
                     <span className="font-mono">{name}</span>
                   </span>
@@ -204,13 +204,13 @@ export async function RankingsPage(props: Props) {
         ) : null}
 
         {data && data.models.length > 0 ? (
-          <section className="relative z-10 mx-auto mb-6 max-w-6xl">
-            <div className="rounded-2xl border border-violet-500/16 bg-white/72 p-6 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:border-violet-300/14 dark:bg-white/[0.04]">
+          <section className="relative z-10 mx-auto mb-6 max-w-[2160px]">
+            <div className="fk-card-motion rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-5 shadow-[5px_5px_0_#101014] backdrop-blur-sm sm:p-6 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
               <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight">
                 <Trophy className="size-4 text-amber-500" />
                 {ui.llmTitle}
               </h2>
-              <p className="text-muted-foreground mt-1 text-xs leading-5">{ui.llmSubtitle}</p>
+              <p className="mt-1 text-xs leading-5 text-[#5C5861] dark:text-white/62">{ui.llmSubtitle}</p>
               {/* Same two-column ranked-list layout as the console rankings
                   page: rank, vendor icon, model name, tokens + share. */}
               <div className="mt-4 grid grid-cols-1 gap-x-8 md:grid-cols-2">
@@ -219,8 +219,8 @@ export async function RankingsPage(props: Props) {
                   .map((column, columnIndex) => (
                     <ul key={columnIndex}>
                       {column.map((row, index) => (
-                        <li key={row.model_name} className="flex items-center gap-3 py-2.5">
-                          <span className="text-muted-foreground/80 w-6 shrink-0 text-right font-mono text-xs tabular-nums">
+                        <li key={row.model_name} className="flex items-center gap-3 border-b border-[#101014]/10 py-2.5 last:border-b-0 dark:border-white/10">
+                          <span className="w-6 shrink-0 text-right font-mono text-xs text-[#5C5861] tabular-nums dark:text-white/62">
                             {row.rank ?? columnIndex * Math.ceil(data.models.length / 2) + index + 1}.
                           </span>
                           <span className="shrink-0">
@@ -234,20 +234,20 @@ export async function RankingsPage(props: Props) {
                             {modelHref(row.model_name) ? (
                               <Link
                                 href={modelHref(row.model_name) as string}
-                                className="text-foreground hover:text-violet-600 dark:hover:text-violet-400 block truncate font-mono text-sm font-medium hover:underline"
+                                className="block truncate rounded-full px-2 py-1 font-mono text-sm font-bold text-[#101014] hover:bg-[#F9F871] dark:text-white dark:hover:bg-white/10"
                               >
                                 {row.model_name}
                               </Link>
                             ) : (
-                              <span className="text-foreground block truncate font-mono text-sm font-medium">{row.model_name}</span>
+                              <span className="block truncate px-2 py-1 font-mono text-sm font-bold text-[#101014] dark:text-white">{row.model_name}</span>
                             )}
                           </div>
                           <div className="shrink-0 text-right">
-                            <div className="text-foreground font-mono text-sm font-semibold tabular-nums">
+                            <div className="font-mono text-sm font-bold text-[#101014] tabular-nums dark:text-white">
                               {formatCallCount(displayTokens(row.total_tokens))}{" "}
-                              <span className="text-muted-foreground/80 font-normal">{usageCopy.tokensLabel}</span>
+                              <span className="font-normal text-[#5C5861] dark:text-white/62">{usageCopy.tokensLabel}</span>
                             </div>
-                            <div className="text-muted-foreground font-mono text-xs tabular-nums">{formatShare(row.share)}</div>
+                            <div className="font-mono text-xs text-[#5C5861] tabular-nums dark:text-white/62">{formatShare(row.share)}</div>
                           </div>
                         </li>
                       ))}

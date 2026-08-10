@@ -13,7 +13,7 @@ export function ContactPage(props: Props) {
   const home = getHomeCopy(props.locale);
   return (
     <SiteShell locale={props.locale} pathname="/contact">
-      <main className="relative overflow-x-hidden pt-16">
+      <main className="relative overflow-x-hidden pt-[var(--fk-header-safe-area)]">
         <HomeSupport copy={home.support} />
       </main>
     </SiteShell>

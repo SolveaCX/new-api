@@ -27,7 +27,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { ModelLogo } from "@/components/pricing-model-browser";
 import { SiteShell } from "@/components/site-shell";
+import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   modelLandingCopy,
@@ -183,44 +185,48 @@ function MediaModelLanding(props: {
     fields: props.fieldValues,
   });
   const Icon = generator.kind === "video" ? Video : generator.kind === "audio" ? Music2 : ImageIcon;
+  const iconKey = modelIconKey(props.config.modelId, props.config.officialName);
   const pricingRows = buildMediaPricingRows(props.config);
 
   return (
     <SiteShell locale={props.locale} pathname={`/models/${props.config.slug}`}>
-      <div className="model-square-page bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] text-[#0B0B0F] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
-        <div className="px-6 pt-10 pb-8 sm:px-8 lg:px-10 lg:pt-14">
+      <div className="fk-model-landing-page fk-model-media-page fk-model-surface model-square-page relative overflow-x-hidden bg-[#F7F4EC] px-4 text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className="fk-hero-grid pointer-events-none absolute inset-0" />
+        <div aria-hidden className="fk-hero-wash pointer-events-none absolute inset-x-0 top-0 h-[38rem]" />
+        <div className="relative mx-auto w-full max-w-[2160px] pt-[var(--fk-subpage-hero-safe-area)] pb-8">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <Link
               href={localizePath("/models", props.locale)}
-              className="inline-flex h-10 items-center gap-2 rounded-full border border-[#0B0B0F14] bg-white px-5 text-sm font-bold shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
+              className="fk-model-back-link fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#101014] bg-white px-5 text-sm font-black text-[#101014] shadow-[3px_3px_0_#101014] hover:bg-[#F9F871] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]"
             >
               <ArrowRight className="size-3 rotate-180" />
               {props.t("Back to Market")}
             </Link>
           </div>
 
-          <section className="grid gap-6 pb-5">
+          <section className="fk-model-hero-card grid gap-6 rounded-[1.35rem] border-2 border-[#101014] bg-[#FFFDF6]/92 p-5 shadow-[6px_6px_0_#101014] backdrop-blur-sm sm:p-7 lg:p-8 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[6px_6px_0_rgba(255,255,255,0.16)]">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-center gap-3">
-                <span className="grid size-8 place-items-center rounded-full bg-[#f4f0ff] text-[#7c3aed]">
-                  <Icon className="size-4" />
+                <span className="fk-model-logo-frame flex size-14 shrink-0 items-center justify-center rounded-2xl border-2 border-[#101014] bg-white shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
+                  <ModelLogo iconKey={iconKey} fallback={props.config.displayName.charAt(0).toUpperCase()} size={32} />
                 </span>
-                <h1 className="text-[clamp(2.25rem,5vw,3.7rem)] leading-none font-extrabold tracking-tight">
+                <h1 className="min-w-0 break-words text-[clamp(2.25rem,5vw,3.7rem)] leading-none font-black tracking-normal text-[#101014] dark:text-white">
                   {props.config.displayName}
                 </h1>
                 <button
                   type="button"
                   onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
-                  className="rounded-full border border-[#0B0B0F14] bg-white p-1.5 text-[#706a74] hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
+                  className="fk-icon-motion rounded-full border-2 border-[#101014]/18 bg-white p-1.5 text-[#5C5861] hover:border-[#101014] hover:bg-[#F9F871] hover:text-[#101014] dark:border-white/14 dark:bg-white/8 dark:text-white/70"
                   aria-label={props.t("Copy model id")}
                 >
                   <Copy className="size-3.5" />
                 </button>
               </div>
-              <div className="mb-4 inline-flex rounded-full border border-[#ded6f4] bg-[#f4f0ff] px-3.5 py-1.5 text-[13px] font-extrabold text-[#4c1d95]">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#7C3AED]/25 bg-[#EEE4FF] px-3.5 py-1.5 text-[13px] font-black text-[#4C1D95] dark:bg-[#7C3AED]/20 dark:text-[#C8A8FF]">
+                <Icon className="size-3.5" />
                 {props.t("Flatkey Router")}
               </div>
-              <p className="max-w-3xl text-[17px] leading-8 text-[#43434c]">
+              <p className="max-w-3xl text-[17px] leading-8 font-semibold text-[#4D4D56] dark:text-white/70">
                 {props.t("Configure a {{model}} request on the public page. Flatkey saves the draft locally, then opens the console so you can run it with your account and API key.", {
                   model: props.config.displayName,
                 })}
@@ -236,7 +242,7 @@ function MediaModelLanding(props: {
         </div>
 
         <section id="playground" className="border-y border-[#0B0B0F14] bg-[#f8f6fc] py-8">
-          <div className="px-6 sm:px-8 lg:px-10">
+          <div className="mx-auto w-full max-w-[2160px]">
             <div className="grid overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.26)] lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)] xl:grid-cols-[minmax(0,0.86fr)_minmax(430px,1.14fr)]">
               <div className="min-w-0 border-b border-[#0B0B0F14] p-4 sm:p-5 lg:border-r lg:border-b-0 xl:p-6">
                 <PanelHeader title={props.t("Input")} right={props.t("Form")} />
@@ -254,8 +260,7 @@ function MediaModelLanding(props: {
                 <a
                   href={runHref}
                   onClick={props.onRunClick}
-                  className="mt-5 flex h-12 items-center justify-center gap-2 rounded-full bg-[#070707] text-base font-extrabold !text-white shadow-[0_18px_42px_-24px_rgba(11,11,15,.46)] hover:bg-[#1a1a1d]"
-                  style={{ color: "#fff" }}
+                  className="fk-button-motion mt-5 flex h-12 items-center justify-center gap-2 rounded-full border-2 border-[#101014] !bg-[#101014] text-base font-black !text-white shadow-[4px_4px_0_#7C3AED] dark:border-white dark:!bg-white dark:!text-[#101014]"
                 >
                   <WandSparkles className="size-4" />
                   {props.t("Start generating")}
@@ -300,7 +305,7 @@ function MediaModelLanding(props: {
           </div>
         </section>
 
-        <section id="examples" className="px-6 py-12 sm:px-8 lg:px-10">
+        <section id="examples" className="mx-auto w-full max-w-[2160px] py-12">
           <div className="grid gap-4 md:grid-cols-4">
             <StatCard value="2M+" label={props.t(generator.kind === "video" ? "Videos generated" : "Images generated")} />
             <StatCard value="8s" label={props.t("Avg. response time")} />
@@ -337,7 +342,7 @@ function MediaModelLanding(props: {
         </section>
 
         <section className="border-y border-[#0B0B0F0D] bg-[#f8f6fc] py-12">
-          <div className="px-6 sm:px-8 lg:px-10">
+          <div className="mx-auto w-full max-w-[2160px]">
             <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <div className="text-xs font-extrabold tracking-[0.16em] text-[#7c3aed] uppercase">
@@ -353,8 +358,7 @@ function MediaModelLanding(props: {
               <a
                 href={runHref}
                 onClick={props.onRunClick}
-                className="inline-flex h-11 items-center rounded-full bg-[#070707] px-5 text-sm font-extrabold !text-white hover:bg-[#1a1a1d]"
-                style={{ color: "#fff" }}
+                className="fk-button-motion inline-flex h-11 items-center rounded-full border-2 border-[#101014] !bg-[#101014] px-5 text-sm font-black !text-white shadow-[4px_4px_0_#7C3AED] dark:border-white dark:!bg-white dark:!text-[#101014]"
               >
                 {props.t("Open wallet")}
               </a>
@@ -384,7 +388,7 @@ function MediaModelLanding(props: {
           </div>
         </section>
 
-        <section className="px-6 py-12 sm:px-8 lg:px-10">
+        <section className="mx-auto w-full max-w-[2160px] py-12">
           <div className="text-xs font-extrabold tracking-[0.16em] text-[#7c3aed] uppercase">
             {props.t("Why Flatkey")}
           </div>
@@ -398,7 +402,7 @@ function MediaModelLanding(props: {
           </div>
         </section>
 
-        <section className="grid gap-5 px-6 pb-12 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:px-10">
+        <section className="mx-auto grid w-full max-w-[2160px] gap-5 pb-12 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-7 shadow-sm xl:p-8">
             <div className="mb-5 grid size-10 place-items-center rounded-full bg-[#f4f0ff] text-[#7c3aed]">
               <Code2 className="size-5" />
@@ -440,7 +444,7 @@ function MediaModelLanding(props: {
           </div>
         </section>
 
-        <section className="grid gap-5 px-6 pb-12 sm:px-8 lg:grid-cols-[1.3fr_0.8fr] lg:px-10">
+        <section className="mx-auto grid w-full max-w-[2160px] gap-5 pb-12 lg:grid-cols-[1.3fr_0.8fr]">
           <div>
             <div className="text-xs font-extrabold tracking-[0.16em] text-[#7c3aed] uppercase">FAQ</div>
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight">
@@ -466,8 +470,7 @@ function MediaModelLanding(props: {
             <a
               href={runHref}
               onClick={props.onRunClick}
-              className="mt-5 flex h-11 items-center justify-center rounded-xl bg-white text-sm font-extrabold !text-[#4c1d95] hover:bg-[#f4f0ff]"
-              style={{ color: "#4c1d95" }}
+              className="fk-button-motion mt-5 flex h-11 items-center justify-center rounded-full border-2 border-white bg-white text-sm font-black !text-[#101014] shadow-[4px_4px_0_#7C3AED] hover:bg-[#F9F871]"
             >
               {props.t("Start generating")}
             </a>
@@ -499,33 +502,40 @@ function TextModelGuide(props: {
 
   return (
     <SiteShell locale={props.locale} pathname={`/models/${props.config.slug}`}>
-      <div className="model-square-page bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] text-[#161821] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
-        <div className="mx-auto max-w-[1030px] px-5 pt-10 pb-16 sm:px-6 lg:pt-14">
+      <div className="fk-model-landing-page fk-model-text-page fk-model-surface model-square-page relative overflow-x-hidden bg-[#F7F4EC] px-4 text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className="fk-hero-grid pointer-events-none absolute inset-0" />
+        <div aria-hidden className="fk-hero-wash pointer-events-none absolute inset-x-0 top-0 h-[34rem]" />
+        <div className="relative mx-auto w-full max-w-[2160px] pt-[var(--fk-subpage-hero-safe-area)] pb-16">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <Link
               href={localizePath("/models", props.locale)}
-              className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold shadow-sm"
+              className="fk-model-back-link fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#101014] bg-white px-4 text-xs font-black text-[#101014] shadow-[3px_3px_0_#101014] hover:bg-[#F9F871] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]"
             >
               <ArrowRight className="size-3 rotate-180" />
               {props.t("Back to Market")}
             </Link>
             <div className="flex gap-2">
-              <a href="#overview" className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold shadow-sm">
+              <a href="#overview" className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border-2 border-[#101014]/18 bg-white px-4 text-xs font-black text-[#101014] shadow-[3px_3px_0_rgba(16,16,20,0.18)] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white">
                 <BookOpen className="size-3.5" />
                 Markdown
               </a>
             </div>
           </div>
 
-          <section className="grid overflow-hidden rounded-3xl border border-black/10 bg-white shadow-[0_24px_80px_-62px_rgba(15,15,18,.75)] lg:grid-cols-[1.3fr_0.9fr]">
+          <section className="fk-model-hero-card grid overflow-hidden rounded-[1.35rem] border-2 border-[#101014] bg-[#FFFDF6]/92 shadow-[6px_6px_0_#101014] backdrop-blur-sm lg:grid-cols-[1.3fr_0.9fr] dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[6px_6px_0_rgba(255,255,255,0.16)]">
             <div className="p-7 md:p-9">
-              <div className="text-[11px] font-extrabold tracking-[0.18em] text-[#8b8891] uppercase">
+              <div className="text-[11px] font-black tracking-normal text-[#7C3AED] uppercase dark:text-[#C8A8FF]">
                 {props.t("Model Guide")}
               </div>
-              <h1 className="mt-3 text-[clamp(2rem,5vw,3.5rem)] leading-none font-extrabold tracking-tight">
-                {props.config.modelId}
-              </h1>
-              <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#5f5d67]">
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
+                <span className="fk-model-logo-frame flex size-14 shrink-0 items-center justify-center rounded-2xl border-2 border-[#101014] bg-white shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
+                  <ModelLogo iconKey={modelIconKey(props.config.modelId, props.config.officialName)} fallback={props.config.modelId.charAt(0).toUpperCase()} size={32} />
+                </span>
+                <h1 className="min-w-0 break-words text-[clamp(2rem,5vw,3.5rem)] leading-none font-black tracking-normal">
+                  {props.config.modelId}
+                </h1>
+              </div>
+              <p className="mt-4 max-w-2xl text-[15px] leading-7 font-semibold text-[#4D4D56] dark:text-white/70">
                 {props.t("{{model}} is a production text model for chat, coding, long-context reasoning, and tool-enabled workflows through Flatkey-compatible API access.", {
                   model: props.config.modelId,
                 })}
@@ -540,37 +550,36 @@ function TextModelGuide(props: {
                 <a
                   href={runHref}
                   onClick={props.onRunClick}
-                  className="inline-flex h-11 items-center gap-2 rounded-full bg-[#070707] px-5 text-sm font-extrabold !text-white"
-                  style={{ color: "#fff" }}
+                  className="fk-button-motion inline-flex h-11 items-center gap-2 rounded-full border-2 border-[#101014] !bg-[#101014] px-5 text-sm font-black !text-white shadow-[4px_4px_0_#7C3AED] dark:border-white dark:!bg-white dark:!text-[#101014]"
                 >
                   <Play className="size-4 fill-current" />
                   {props.t("Open in Playground")}
                 </a>
                 <Link
                   href={localizePath("/docs", props.locale)}
-                  className="inline-flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white px-5 text-sm font-bold"
+                  className="fk-button-motion inline-flex h-11 items-center gap-2 rounded-full border-2 border-[#101014] bg-white px-5 text-sm font-black text-[#101014] shadow-[4px_4px_0_#101014] hover:bg-[#F9F871] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]"
                 >
                   {props.t("Docs")}
                   <ExternalLink className="size-3.5" />
                 </Link>
               </div>
             </div>
-            <div className="border-t border-black/10 p-7 md:p-9 lg:border-t-0 lg:border-l">
-              <div className="text-[11px] font-extrabold tracking-[0.18em] text-[#8b8891] uppercase">
+            <div className="border-t-2 border-[#101014]/12 p-7 md:p-9 lg:border-t-0 lg:border-l-2 dark:border-white/12">
+              <div className="text-[11px] font-black tracking-normal text-[#7C3AED] uppercase dark:text-[#C8A8FF]">
                 {props.t("Model ID")}
               </div>
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#f2f0ed] p-3 font-mono text-xs font-bold">
+              <div className="mt-3 flex items-center gap-2 rounded-xl border-2 border-[#101014]/14 bg-white/72 p-3 font-mono text-xs font-black dark:border-white/12 dark:bg-white/[0.06]">
                 <span className="min-w-0 flex-1 truncate">{props.config.modelId}</span>
-                <Copy className="size-4 text-[#8b8891]" />
+                <Copy className="size-4 text-[#6D6A72] dark:text-white/48" />
               </div>
             </div>
           </section>
 
-          <section id="overview" className="mt-6 rounded-3xl border border-black/10 bg-white p-6 shadow-[0_24px_80px_-62px_rgba(15,15,18,.75)] md:p-8">
-            <h2 className="text-xl font-extrabold tracking-tight">{props.t("Model Overview")}</h2>
+          <section id="overview" className="mt-6 rounded-[1.35rem] border-2 border-[#101014] bg-[#FFFDF6]/92 p-6 shadow-[6px_6px_0_#101014] backdrop-blur-sm md:p-8 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[6px_6px_0_rgba(255,255,255,0.16)]">
+            <h2 className="text-xl font-black tracking-normal">{props.t("Model Overview")}</h2>
             <div className="mt-5">
-              <h3 className="text-sm font-extrabold">{props.t("Quick Answer")}</h3>
-              <ul className="mt-2 grid gap-2 text-sm leading-6 text-[#65636b]">
+              <h3 className="text-sm font-black">{props.t("Quick Answer")}</h3>
+              <ul className="mt-2 grid gap-2 text-sm leading-6 font-semibold text-[#5C5861] dark:text-white/64">
                 <li>• {props.t("Best for chat, code generation, agent workflows, and production assistants.")}</li>
                 <li>• {props.t("Use Flatkey when you want OpenAI-compatible routing, unified billing, and reusable API keys.")}</li>
                 <li>• {props.t("Start with the default parameters, then tune max tokens and temperature for your workload.")}</li>
@@ -609,9 +618,9 @@ function TextModelGuide(props: {
                   ["429 rate_limit_error", props.t("Request rate, concurrency, or quota is above current account limits.")],
                   ["500 internal_error", props.t("Transient upstream instability, tool execution failure, or processing issue.")],
                 ].map(([title, body]) => (
-                  <div key={title} className="rounded-xl border border-black/10 bg-[#fbfaf7] p-4 text-sm">
+                  <div key={title} className="rounded-xl border-2 border-[#101014]/14 bg-white/68 p-4 text-sm dark:border-white/12 dark:bg-white/[0.06]">
                     <b>{title}</b>
-                    <p className="mt-1 leading-6 text-[#65636b]">{body}</p>
+                    <p className="mt-1 leading-6 text-[#5C5861] dark:text-white/64">{body}</p>
                   </div>
                 ))}
               </div>
@@ -621,9 +630,9 @@ function TextModelGuide(props: {
               <h3 className="text-sm font-extrabold">FAQ</h3>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {props.config.faq.map((item) => (
-                  <details key={item.question} className="rounded-xl border border-black/10 bg-[#fbfaf7] p-4 text-sm">
+                  <details key={item.question} className="rounded-xl border-2 border-[#101014]/14 bg-white/68 p-4 text-sm dark:border-white/12 dark:bg-white/[0.06]">
                     <summary className="cursor-pointer font-extrabold">{props.t(item.question)}</summary>
-                    <p className="mt-2 leading-6 text-[#65636b]">{props.t(item.answer)}</p>
+                    <p className="mt-2 leading-6 text-[#5C5861] dark:text-white/64">{props.t(item.answer)}</p>
                   </details>
                 ))}
               </div>
@@ -639,13 +648,12 @@ function TextModelGuide(props: {
               <a
                 href={runHref}
                 onClick={props.onRunClick}
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[#070707] px-7 text-sm font-extrabold !text-white"
-                style={{ color: "#fff" }}
+                className="fk-button-motion inline-flex h-12 items-center gap-2 rounded-full border-2 border-[#101014] !bg-[#101014] px-7 text-sm font-black !text-white shadow-[4px_4px_0_#7C3AED] dark:border-white dark:!bg-white dark:!text-[#101014]"
               >
                 {props.t("Start generating")}
                 <ArrowRight className="size-4" />
               </a>
-              <Link href={localizePath("/pricing", props.locale)} className="inline-flex h-12 items-center rounded-full border border-black/10 bg-white px-7 text-sm font-bold">
+              <Link href={localizePath("/pricing", props.locale)} className="fk-button-motion inline-flex h-12 items-center rounded-full border-2 border-[#101014] bg-white px-7 text-sm font-black text-[#101014] shadow-[4px_4px_0_#101014] hover:bg-[#F9F871] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
                 {props.t("View Pricing")}
               </Link>
             </div>
@@ -1057,10 +1065,10 @@ function RequestPreview(props: {
 }) {
   const request = buildGeneratorRequest(props.config, props.prompt, props.fieldValues, props.referenceImages);
   return (
-    <div className="mt-5 rounded-2xl border border-black/10 bg-white p-5">
-      <div className="mb-3 flex items-center justify-between text-sm font-extrabold text-[#2c2d33]">
+    <div className="mt-5 rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/90 p-5 shadow-[4px_4px_0_#101014] dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
+      <div className="mb-3 flex items-center justify-between text-sm font-black text-[#101014] dark:text-white">
         {props.t("Request preview")}
-        <button type="button" className="inline-flex items-center gap-1 rounded-full border border-black/10 px-3 py-1.5 text-xs">
+        <button type="button" className="fk-button-motion inline-flex items-center gap-1 rounded-full border-2 border-[#101014]/18 bg-white px-3 py-1.5 text-xs font-black text-[#101014] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white">
           <Copy className="size-3" />
           {props.t("Copy request")}
         </button>
@@ -1075,8 +1083,8 @@ function RequestPreview(props: {
 function PanelHeader(props: { title: string; right: string }) {
   return (
     <div className="mb-5 flex items-center justify-between">
-      <h2 className="text-base font-extrabold">{props.title}</h2>
-      <span className="rounded-full bg-[#f2f0ed] px-3.5 py-1.5 text-xs font-bold text-[#77747d]">
+      <h2 className="text-base font-black">{props.title}</h2>
+      <span className="rounded-full border border-[#7C3AED]/25 bg-[#EEE4FF] px-3.5 py-1.5 text-xs font-black text-[#4C1D95] dark:bg-[#7C3AED]/20 dark:text-[#C8A8FF]">
         {props.right}
       </span>
     </div>
@@ -1085,58 +1093,58 @@ function PanelHeader(props: { title: string; right: string }) {
 
 function Pill(props: { label: string; value: string }) {
   return (
-    <span className="rounded-xl border border-black/10 bg-white p-4 shadow-sm">
-      <span className="block text-xs font-extrabold tracking-[0.12em] text-[#8b8891] uppercase">{props.label}</span>
-      <b className="mt-1.5 block text-sm">{props.value}</b>
+    <span className="rounded-xl border-2 border-[#101014]/14 bg-white/72 p-4 shadow-[3px_3px_0_rgba(16,16,20,0.12)] dark:border-white/12 dark:bg-white/[0.06]">
+      <span className="block text-xs font-black tracking-normal text-[#5C5861] uppercase dark:text-white/56">{props.label}</span>
+      <b className="mt-1.5 block break-words text-sm">{props.value}</b>
     </span>
   );
 }
 
 function StatCard(props: { value: string; label: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-      <b className="text-3xl font-extrabold">{props.value}</b>
-      <div className="mt-2 text-sm font-medium text-[#77747d]">{props.label}</div>
+    <div className="rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/90 p-6 shadow-[4px_4px_0_#101014] dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
+      <b className="text-3xl font-black">{props.value}</b>
+      <div className="mt-2 text-sm font-semibold text-[#5C5861] dark:text-white/62">{props.label}</div>
     </div>
   );
 }
 
 function PriceBox(props: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className={`rounded-2xl border p-5 ${props.muted ? "border-dashed border-[#cbd5e1] bg-[#f8fafc]" : "border-[#d8c9ff] bg-[#fbfaff]"}`}>
-      <div className={`text-xs font-extrabold tracking-[0.12em] uppercase ${props.muted ? "text-[#64748b]" : "text-[#7c3aed]"}`}>
+    <div className={`rounded-[1rem] border-2 p-5 ${props.muted ? "border-dashed border-[#101014]/22 bg-white/55 dark:border-white/16 dark:bg-white/[0.045]" : "border-[#101014]/18 bg-[#F9F871]/22 dark:border-white/16 dark:bg-white/[0.06]"}`}>
+      <div className={`text-xs font-black tracking-normal uppercase ${props.muted ? "text-[#5C5861] dark:text-white/56" : "text-[#7C3AED] dark:text-[#C8A8FF]"}`}>
         {props.label}
       </div>
-      <div className={`mt-2 text-xl font-extrabold ${props.muted ? "text-[#475569]" : "text-[#0B0B0F]"}`}>{props.value}</div>
+      <div className={`mt-2 break-words text-xl font-black ${props.muted ? "text-[#5C5861] dark:text-white/62" : "text-[#101014] dark:text-white"}`}>{props.value}</div>
     </div>
   );
 }
 
 function ReasonCard(props: { icon: ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
-      <div className="mb-5 grid size-10 place-items-center rounded-full bg-[#f4f0ff] text-[#7c3aed]">{props.icon}</div>
-      <h3 className="text-base font-extrabold">{props.title}</h3>
-      <p className="mt-2 text-base leading-7 text-[#6b6872]">{props.body}</p>
+    <div className="rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/90 p-6 shadow-[4px_4px_0_#101014] dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
+      <div className="mb-5 grid size-10 place-items-center rounded-full border-2 border-[#101014] bg-[#F9F871] text-[#101014] shadow-[2px_2px_0_#101014] dark:border-white/24 dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]">{props.icon}</div>
+      <h3 className="text-base font-black">{props.title}</h3>
+      <p className="mt-2 text-base leading-7 font-semibold text-[#5C5861] dark:text-white/62">{props.body}</p>
     </div>
   );
 }
 
 function GuideFact(props: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-[#fbfaf7] p-4">
-      <div className="text-[10px] font-extrabold tracking-[0.12em] text-[#8b8891] uppercase">{props.label}</div>
-      <div className="mt-2 break-words text-sm font-extrabold">{props.value}</div>
+    <div className="rounded-[1rem] border-2 border-[#101014]/14 bg-white/68 p-4 dark:border-white/12 dark:bg-white/[0.06]">
+      <div className="text-[10px] font-black tracking-normal text-[#5C5861] uppercase dark:text-white/56">{props.label}</div>
+      <div className="mt-2 break-words text-sm font-black">{props.value}</div>
     </div>
   );
 }
 
 function FeatureCard(props: { icon: ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="mb-5 grid size-9 place-items-center rounded-full bg-[#141824] text-white">{props.icon}</div>
-      <h3 className="text-base font-extrabold">{props.title}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#6b6872]">{props.body}</p>
+    <div className="rounded-[1.1rem] border-2 border-[#101014]/18 bg-white/72 p-5 shadow-[3px_3px_0_rgba(16,16,20,0.12)] dark:border-white/12 dark:bg-white/[0.06]">
+      <div className="mb-5 grid size-9 place-items-center rounded-full border-2 border-[#101014] bg-[#101014] text-white shadow-[2px_2px_0_#7C3AED] dark:border-white/24 dark:bg-white dark:text-[#101014]">{props.icon}</div>
+      <h3 className="text-base font-black">{props.title}</h3>
+      <p className="mt-2 text-sm leading-6 font-semibold text-[#5C5861] dark:text-white/62">{props.body}</p>
     </div>
   );
 }
