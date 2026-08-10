@@ -55,6 +55,21 @@ type channelTestOptions struct {
 	Context      context.Context
 }
 
+// isVideoOnlyChannelType reports whether a channel serves video generation
+// exclusively through the async task pipeline (relay.GetTaskAdaptor) and has
+// no /v1/chat/completions surface. Probing such a channel with the synchronous
+// chat test request makes the upstream reject it, which in turn auto-disables
+// a perfectly healthy channel.
+func isVideoOnlyChannelType(channelType int) bool {
+	for _, endpointType := range common.GetEndpointTypesByChannelType(channelType, "") {
+		switch endpointType {
+		case constant.EndpointTypeOpenAIVideo, constant.EndpointTypeVideo, constant.EndpointTypeVideoToMusic:
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	// Codex upstream only accepts the Responses protocol. An Anthropic channel
@@ -109,7 +124,7 @@ func testChannelWithOptions(channel *model.Channel, testUserID int, testModel st
 		constant.ChannelTypeDoubaoVideo,
 		constant.ChannelTypeVidu,
 	}
-	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
+	if lo.Contains(unsupportedTestChannelTypes, channel.Type) || isVideoOnlyChannelType(channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
 		return testResult{
 			localErr: fmt.Errorf("%s channel test is not supported", channelTypeName),

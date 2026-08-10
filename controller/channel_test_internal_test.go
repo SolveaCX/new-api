@@ -221,6 +221,58 @@ func TestNormalizeChannelTestEndpointCodexKeepsNonAnthropicProtocols(t *testing.
 	}
 }
 
+func TestIsVideoOnlyChannelTypeCoversAsyncVideoChannels(t *testing.T) {
+	videoOnlyChannelTypes := []int{
+		constant.ChannelTypeBytePlus,
+		constant.ChannelTypeTechMobiVideo,
+		constant.ChannelTypeXaiGrokVideo,
+		constant.ChannelTypeMiniMaxH3,
+		constant.ChannelTypeSonilo,
+		constant.ChannelTypeSora,
+		constant.ChannelTypeBlockRunVideo,
+		constant.ChannelTypeBlockRunSeedance,
+	}
+
+	for _, channelType := range videoOnlyChannelTypes {
+		t.Run(constant.GetChannelTypeName(channelType), func(t *testing.T) {
+			require.True(t, isVideoOnlyChannelType(channelType),
+				"video-only channels must not be probed with a text chat request")
+		})
+	}
+}
+
+func TestIsVideoOnlyChannelTypeExcludesChatChannels(t *testing.T) {
+	chatChannelTypes := []int{
+		constant.ChannelTypeOpenAI,
+		constant.ChannelTypeAnthropic,
+		constant.ChannelTypeGemini,
+		constant.ChannelTypeCodex,
+		constant.ChannelTypeVertexAi,
+		constant.ChannelTypeJina,
+	}
+
+	for _, channelType := range chatChannelTypes {
+		t.Run(constant.GetChannelTypeName(channelType), func(t *testing.T) {
+			require.False(t, isVideoOnlyChannelType(channelType))
+		})
+	}
+}
+
+func TestTestChannelSkipsVideoOnlyChannelsInsteadOfSendingChatRequest(t *testing.T) {
+	channel := &model.Channel{
+		Id:   120,
+		Name: "BytePlus Seedance 2.0",
+		Type: constant.ChannelTypeBytePlus,
+	}
+
+	result := testChannel(channel, 1, "", "", false)
+
+	require.Error(t, result.localErr)
+	require.Contains(t, result.localErr.Error(), "channel test is not supported")
+	require.Nil(t, result.newAPIError,
+		"an unsupported channel test must not surface as a channel error that trips auto-disable")
+}
+
 func TestBuildScheduledChannelTestAlertMarksAutoDisabled(t *testing.T) {
 	autoBan := 1
 	now := time.Date(2026, 6, 2, 13, 14, 15, 0, time.UTC)
