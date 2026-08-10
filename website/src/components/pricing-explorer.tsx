@@ -63,11 +63,11 @@ export function PricingExplorer(props: PricingExplorerProps) {
 
   return (
     <>
-      <section className="mb-4 rounded-3xl border border-violet-500/14 bg-white/72 p-5 shadow-[0_18px_64px_-56px_rgba(91,33,182,0.62)] backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_18px_64px_-56px_rgba(124,58,237,0.95)] sm:p-6">
+      <section className="fk-model-toolbar mb-4 rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/92 p-4 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)] sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <h2 className="text-foreground inline-flex items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-              <span className="bg-muted/70 border-border text-foreground/80 inline-flex size-9 shrink-0 items-center justify-center rounded-full border">
+            <h2 className="inline-flex items-center gap-3 text-lg font-black tracking-normal text-[#101014] sm:text-2xl dark:text-white">
+              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-[#101014] bg-[#F9F871] text-[#101014] shadow-[2px_2px_0_#101014] dark:border-white/24 dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]">
                 <Boxes className="size-5" aria-hidden="true" />
               </span>
               {copy(props.locale, "enabledModels", { count: props.models.length.toLocaleString() })}
@@ -75,12 +75,12 @@ export function PricingExplorer(props: PricingExplorerProps) {
           </div>
 
           <div className="relative w-full lg:max-w-xl">
-            <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#4D4D56] dark:text-white/68" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={copy(props.locale, "searchPlaceholder")}
-              className="border-input bg-background h-11 w-full rounded-full border px-4 pl-10 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/15"
+              className="h-11 w-full rounded-full border-2 border-[#101014] bg-white px-4 pl-10 text-sm font-semibold text-[#101014] outline-none transition-colors placeholder:text-[#6D6A72] focus:bg-[#F9F871]/24 focus:ring-3 focus:ring-[#7C3AED]/18 dark:border-white/24 dark:bg-white/8 dark:text-white dark:placeholder:text-white/52"
               type="search"
             />
           </div>
@@ -88,24 +88,24 @@ export function PricingExplorer(props: PricingExplorerProps) {
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)]">
-        <aside className="sticky top-4 hidden max-h-[calc(100dvh-2rem)] self-start overflow-y-auto rounded-3xl border border-violet-300/35 bg-white/60 p-4 shadow-[0_24px_80px_rgba(91,33,182,0.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_24px_80px_-56px_rgba(124,58,237,0.95)] xl:block">
+        <aside className="fk-model-filter-panel sticky top-[calc(var(--fk-header-safe-area)+1rem)] hidden max-h-[calc(100dvh-var(--fk-header-safe-area)-2rem)] self-start overflow-y-auto rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/90 p-4 shadow-[5px_5px_0_#101014] backdrop-blur-xl dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)] xl:block">
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-black text-slate-950 dark:text-white">{copy(props.locale, "filter")}</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{copy(props.locale, "filterHint")}</p>
+              <h2 className="text-sm font-black text-[#101014] dark:text-white">{copy(props.locale, "filter")}</h2>
+              <p className="mt-1 text-xs leading-relaxed text-[#5C5861] dark:text-white/62">{copy(props.locale, "filterHint")}</p>
             </div>
             <button
               type="button"
               onClick={resetFilters}
               disabled={!hasActiveFilters}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-500/10 disabled:pointer-events-none disabled:opacity-40 dark:text-violet-200 dark:hover:bg-violet-300/10"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#101014]/15 bg-white px-2.5 text-xs font-bold text-[#101014] transition-colors hover:bg-[#F9F871] disabled:pointer-events-none disabled:opacity-40 dark:border-white/14 dark:bg-white/8 dark:text-white"
             >
               <RotateCcw className="size-3.5" />
               {copy(props.locale, "reset")}
             </button>
           </div>
 
-          {hasActiveFilters ? <span className="mb-3 inline-flex rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{copy(props.locale, "filtersActive")}</span> : null}
+          {hasActiveFilters ? <span className="mb-3 inline-flex rounded-full border border-[#7C3AED]/30 bg-[#EEE4FF] px-2.5 py-1 text-xs font-bold text-[#4C1D95] dark:bg-[#7C3AED]/20 dark:text-[#C8A8FF]">{copy(props.locale, "filtersActive")}</span> : null}
 
           <div className="space-y-1">
             <FilterSection title={copy(props.locale, "allVendors")}>
@@ -155,12 +155,12 @@ export function PricingExplorer(props: PricingExplorerProps) {
         </aside>
 
         <section className="min-w-0 space-y-4">
-          <div className="rounded-3xl border border-violet-300/35 bg-white/60 p-3 shadow-[0_20px_70px_rgba(91,33,182,0.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_20px_70px_-56px_rgba(124,58,237,0.95)]">
+          <div className="rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/90 p-3 shadow-[4px_4px_0_#101014] backdrop-blur-xl dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-baseline gap-1 text-sm text-slate-500 dark:text-slate-400">
-                <span className="font-black tabular-nums text-slate-950 dark:text-white">{filteredModels.length.toLocaleString()}</span>
+              <div className="flex items-baseline gap-1 text-sm font-semibold text-[#5C5861] dark:text-white/62">
+                <span className="font-black tabular-nums text-[#101014] dark:text-white">{filteredModels.length.toLocaleString()}</span>
                 <span>{filteredModels.length === 1 ? copy(props.locale, "model") : copy(props.locale, "models")}</span>
-                {filteredModels.length !== props.models.length ? <span className="text-xs text-slate-400 dark:text-slate-500">/ {props.models.length.toLocaleString()}</span> : null}
+                {filteredModels.length !== props.models.length ? <span className="text-xs text-[#6D6A72] dark:text-white/48">/ {props.models.length.toLocaleString()}</span> : null}
               </div>
               <button
                 type="button"
@@ -168,7 +168,7 @@ export function PricingExplorer(props: PricingExplorerProps) {
                   const sidebar = document.querySelector<HTMLElement>("[data-pricing-mobile-filters]");
                   sidebar?.classList.toggle("hidden");
                 }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-violet-300/30 bg-white/65 px-3 text-xs font-bold text-slate-700 dark:border-violet-300/20 dark:bg-white/[0.06] dark:text-slate-200 xl:hidden"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 text-xs font-black text-[#101014] shadow-[2px_2px_0_#101014] dark:border-white/24 dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)] xl:hidden"
               >
                 <Filter className="size-4" />
                 {copy(props.locale, "filter")}
@@ -176,10 +176,10 @@ export function PricingExplorer(props: PricingExplorerProps) {
             </div>
           </div>
 
-          <div data-pricing-mobile-filters className="hidden rounded-3xl border border-violet-300/35 bg-white/60 p-4 shadow-[0_20px_70px_rgba(91,33,182,0.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.055] xl:hidden">
+          <div data-pricing-mobile-filters className="hidden rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-4 shadow-[4px_4px_0_#101014] backdrop-blur-xl dark:border-white/24 dark:bg-[#111116]/90 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)] xl:hidden">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-black text-slate-950 dark:text-white">{copy(props.locale, "filter")}</span>
-              <button type="button" onClick={resetFilters} className="text-xs font-medium text-violet-700 dark:text-violet-200">{copy(props.locale, "reset")}</button>
+              <span className="text-sm font-black text-[#101014] dark:text-white">{copy(props.locale, "filter")}</span>
+              <button type="button" onClick={resetFilters} className="text-xs font-bold text-[#7C3AED] dark:text-[#C8A8FF]">{copy(props.locale, "reset")}</button>
             </div>
             <div className="space-y-3">
               <MobileFilterRow title={copy(props.locale, "pricingType")}>
@@ -203,10 +203,10 @@ export function PricingExplorer(props: PricingExplorerProps) {
               locale={props.locale}
             />
           ) : (
-            <div className="border-border bg-card flex min-h-64 flex-col items-center justify-center rounded-3xl border px-6 py-14 text-center">
-              <Boxes className="text-muted-foreground size-10" />
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6] px-6 py-14 text-center shadow-[5px_5px_0_#101014] dark:border-white/24 dark:bg-[#111116] dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
+              <Boxes className="size-10 text-[#6D6A72]" />
               <h2 className="mt-4 text-lg font-semibold">{copy(props.locale, "noModels")}</h2>
-              <p className="text-muted-foreground mt-2 max-w-md text-sm">{copy(props.locale, "noModelsHint")}</p>
+              <p className="mt-2 max-w-md text-sm text-[#5C5861] dark:text-white/62">{copy(props.locale, "noModelsHint")}</p>
             </div>
           )}
         </section>
@@ -217,8 +217,8 @@ export function PricingExplorer(props: PricingExplorerProps) {
 
 function FilterSection(props: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border-violet-300/25 border-b pb-3 last:border-b-0 dark:border-white/10">
-      <h3 className="py-2.5 text-sm font-bold text-slate-950 dark:text-white">{props.title}</h3>
+    <section className="border-b border-[#101014]/12 pb-3 last:border-b-0 dark:border-white/12">
+      <h3 className="py-2.5 text-sm font-black text-[#101014] dark:text-white">{props.title}</h3>
       <div className="flex flex-wrap gap-1.5">{props.children}</div>
     </section>
   );
@@ -227,7 +227,7 @@ function FilterSection(props: { title: string; children: React.ReactNode }) {
 function MobileFilterRow(props: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase dark:text-slate-400">{props.title}</h3>
+      <h3 className="mb-2 text-xs font-black tracking-normal text-[#5C5861] uppercase dark:text-white/62">{props.title}</h3>
       <div className="flex flex-wrap gap-1.5">{props.children}</div>
     </section>
   );
@@ -242,16 +242,16 @@ function FilterChip(props: {
   icon?: React.ReactNode;
 }) {
   const className = cn(
-    "group inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-all",
+    "group fk-chip-motion inline-flex max-w-full items-center gap-1.5 rounded-full border-2 px-2.5 py-1.5 text-xs font-black transition-all",
     props.active
-      ? "border-violet-400/50 bg-violet-500/15 text-violet-900 shadow-[0_0_24px_rgba(168,85,247,0.14)] dark:border-violet-300/40 dark:bg-violet-300/15 dark:text-violet-100"
-      : "border-violet-300/25 bg-white/55 text-slate-600 hover:border-violet-400/45 hover:bg-violet-500/10 hover:text-slate-950 dark:border-white/10 dark:bg-white/[0.045] dark:text-slate-300 dark:hover:border-violet-300/30 dark:hover:bg-violet-300/10 dark:hover:text-white"
+      ? "border-[#101014] bg-[#EEE4FF] text-[#101014] shadow-[2px_2px_0_#101014] dark:border-white/24 dark:bg-[#7C3AED]/24 dark:text-white dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]"
+      : "border-[#101014]/18 bg-white/65 text-[#4D4D56] hover:border-[#101014] hover:bg-[#F9F871] hover:text-[#101014] dark:border-white/14 dark:bg-white/[0.055] dark:text-white/72 dark:hover:border-white/28 dark:hover:bg-white/12 dark:hover:text-white"
   );
   const content = (
     <>
       {props.icon ? <span className="shrink-0">{props.icon}</span> : null}
       <span className="truncate">{props.label}</span>
-      {props.count != null ? <span className={cn("rounded-md px-1.5 py-0.5 text-[10px]", props.active ? "bg-white/80 text-violet-900 dark:bg-white/15 dark:text-violet-100" : "bg-violet-500/10 text-violet-700 dark:bg-violet-300/10 dark:text-violet-200")}>{props.count}</span> : null}
+      {props.count != null ? <span className={cn("rounded-md px-1.5 py-0.5 text-[10px]", props.active ? "bg-white/80 text-[#101014] dark:bg-white/15 dark:text-white" : "bg-[#EEE4FF] text-[#4C1D95] dark:bg-white/10 dark:text-[#C8A8FF]")}>{props.count}</span> : null}
     </>
   );
 
@@ -283,7 +283,7 @@ function pricingHref(locale: Locale, params?: { vendor?: string }) {
   const search = new URLSearchParams();
   if (params?.vendor) search.set("vendor", params.vendor);
   const query = search.toString();
-  return `${localizePath("/pricing", locale)}${query ? `?${query}` : ""}`;
+  return `${localizePath("/models", locale)}${query ? `?${query}` : ""}`;
 }
 
 const COPY: Record<string, Record<string, string>> = {

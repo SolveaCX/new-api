@@ -76,6 +76,11 @@ type Props = {
 
 const signUpUrl = consoleUrl("/sign-up");
 const IMAGE_BUDDY_GITHUB_URL = "https://github.com/flatkey-ai/awesome-images";
+const useCaseGridClass =
+  "pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45";
+const useCaseCardClass =
+  "rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
+const useCaseMutedClass = "text-[#5C5861] dark:text-white/62";
 
 export const CLAUDE_CODE_USE_CASE: UseCaseConfig = {
   pathname: "/use-case/claude-code",
@@ -1530,22 +1535,22 @@ function ImageBuddyDemoGallery({ locale }: { locale: Locale }) {
   return (
     <div className="lg:pl-4">
       <div className="mb-4">
-        <div className="text-[11px] font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-200">{demoCopy.eyebrow}</div>
-        <h2 className="mt-1 text-xl font-extrabold tracking-tight">{demoCopy.title}</h2>
-        <p className="text-muted-foreground mt-1 text-sm leading-6">{demoCopy.subtitle}</p>
+        <div className="font-mono text-[11px] font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">{demoCopy.eyebrow}</div>
+        <h2 className="mt-1 text-xl font-black tracking-normal">{demoCopy.title}</h2>
+        <p className={`mt-1 text-sm leading-6 ${useCaseMutedClass}`}>{demoCopy.subtitle}</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         {demoCopy.images.map((item) => (
           <figure
             key={item.src}
-            className={item.wide ? "col-span-2 overflow-hidden rounded-2xl border border-violet-500/14 bg-white dark:bg-white/[0.04]" : "overflow-hidden rounded-2xl border border-violet-500/14 bg-white dark:bg-white/[0.04]"}
+            className={item.wide ? `${useCaseCardClass} col-span-2 overflow-hidden` : `${useCaseCardClass} overflow-hidden`}
           >
             <div className={item.wide ? "relative aspect-[16/9]" : "relative aspect-square"}>
               <Image src={item.src} alt={item.alt} fill sizes={item.wide ? "(min-width: 1024px) 520px, 100vw" : "(min-width: 1024px) 250px, 50vw"} className="object-cover" priority={item.wide} />
             </div>
-            <figcaption className="p-3">
-              <div className="text-sm font-bold">{item.title}</div>
-              <div className="text-muted-foreground mt-1 line-clamp-2 font-mono text-[11px] leading-4">{item.prompt}</div>
+            <figcaption className="border-t-2 border-[#101014] bg-[#FFFDF6] p-3 dark:border-white/20 dark:bg-[#111116]">
+              <div className="text-sm font-black">{item.title}</div>
+              <div className={`mt-1 line-clamp-2 font-mono text-[11px] leading-4 ${useCaseMutedClass}`}>{item.prompt}</div>
             </figcaption>
           </figure>
         ))}
@@ -1559,18 +1564,18 @@ function ImageBuddyInstallPanel({ locale }: { locale: Locale }) {
   const stepCopy = imageBuddyQuickstartStepCopy[locale] ?? imageBuddyQuickstartStepCopy.en;
   return (
     <div className="w-full">
-      <div className="rounded-2xl border border-violet-500/16 bg-white/78 p-4 shadow-[0_24px_80px_-58px_rgba(91,33,182,0.72)] dark:border-violet-300/14 dark:bg-white/[0.04]">
-        <div className="mb-3 text-sm font-bold">{panelCopy.cliTitle}</div>
+      <div className={`${useCaseCardClass} p-4`}>
+        <div className="mb-3 text-sm font-black">{panelCopy.cliTitle}</div>
         <div className="grid gap-3 lg:grid-cols-3">
           {IMAGE_BUDDY_QUICKSTART_STEPS.map((step, index) => {
             const localizedStep = stepCopy[index] ?? step;
             return (
-              <div key={step.command} className="rounded-xl border border-violet-500/14 bg-white/86 p-3 shadow-inner shadow-violet-500/5 dark:border-violet-300/14 dark:bg-white/[0.06]">
+              <div key={step.command} className="rounded-[1rem] border-2 border-[#101014]/14 bg-white/72 p-3 dark:border-white/12 dark:bg-white/[0.06]">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-bold text-violet-700 dark:text-violet-200">{localizedStep.label}</span>
-                  <span className="text-sm font-bold">{localizedStep.title}</span>
+                  <span className="rounded-full border border-[#101014]/16 bg-[#F9F871] px-2 py-0.5 text-[11px] font-black text-[#101014] dark:border-white/16 dark:bg-white/10 dark:text-white">{localizedStep.label}</span>
+                  <span className="text-sm font-black">{localizedStep.title}</span>
                 </div>
-                <code className="block overflow-x-auto rounded-lg border border-violet-500/10 bg-violet-500/[0.045] px-3 py-2 font-mono text-[12px] leading-5 text-zinc-800 dark:border-violet-300/12 dark:bg-white/[0.06] dark:text-zinc-100">
+                <code className="block overflow-x-auto rounded-[0.85rem] border-2 border-[#101014] bg-[#101014] px-3 py-2 font-mono text-[12px] leading-5 text-[#EEE4FF] dark:border-white/18">
                   {step.command}
                 </code>
               </div>
@@ -1591,31 +1596,28 @@ export function CodingAgentUseCasePage(props: Props) {
 
   return (
     <SiteShell locale={locale} pathname={config.pathname}>
-      <div className="relative overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_62%,#f4f1ff_100%)] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_40%,#070712_72%,#03040b_100%)]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.1)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_64%_52%_at_50%_20%,black_18%,transparent_100%)] opacity-50 dark:opacity-35"
-        />
-        <div className="relative z-10 mx-auto max-w-6xl px-6 pt-20 pb-20 md:pt-28">
+      <main className="fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className={useCaseGridClass} />
+        <div className="relative z-10 mx-auto max-w-[2160px] px-4 pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-20 sm:px-6">
           <section className="grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-center">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/22 bg-violet-500/10 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-violet-700 uppercase dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-200">
+              <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 py-1.5 font-mono text-[11px] font-black uppercase text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
                 <Sparkles className="size-3.5" />
                 {config.badge}
               </div>
-              <h1 className="mt-5 text-[clamp(2rem,5vw,4.4rem)] leading-[1.02] font-bold tracking-tight">
+              <h1 className="mt-5 text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance">
                 {config.headlineLead}{" "}
-                <span className="bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent dark:from-violet-200 dark:via-fuchsia-300 dark:to-indigo-300">
+                <span className="text-[#5852FF] dark:text-[#C8A8FF]">
                   {config.headlineAccent}
                 </span>
               </h1>
-              <p className="text-muted-foreground mt-5 max-w-2xl text-base leading-7 md:text-lg">
+              <p className={`mt-5 max-w-2xl text-base leading-7 md:text-lg ${useCaseMutedClass}`}>
                 {config.intro}{" "}
-                <a className="font-semibold text-violet-700 underline underline-offset-4 dark:text-violet-200" href={CLAUDE_CODE_KEY_URL}>
+                <a className="font-black text-[#7C3AED] underline underline-offset-4 dark:text-[#C8A8FF]" href={CLAUDE_CODE_KEY_URL}>
                   console.flatkey.ai/keys
                 </a>
                 <span> → {config.toolName} </span>
-                <code className="rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[0.85em]">{config.endpointText}</code>.
+                <code className="rounded border border-[#101014]/12 bg-white/72 px-1.5 py-0.5 font-mono text-[0.85em] text-[#101014] dark:border-white/12 dark:bg-white/10 dark:text-white">{config.endpointText}</code>.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <a className="flatkey-cta-primary" href={ctaUrl}>
@@ -1631,37 +1633,37 @@ export function CodingAgentUseCasePage(props: Props) {
                   [copy.metricSetup, copy.metricSetupLabel],
                   [copy.metricKey, copy.metricKeyLabel],
                 ].map(([metric, label]) => (
-                  <div key={metric} className="rounded-2xl border border-violet-500/12 bg-white/62 p-3 dark:bg-white/[0.04]">
-                    <div className="text-xl font-extrabold text-violet-700 dark:text-violet-200">{metric}</div>
-                    <div className="text-muted-foreground mt-1 text-[11px] font-medium">{label}</div>
+                  <div key={metric} className={`${useCaseCardClass} p-3`}>
+                    <div className="text-xl font-black text-[#5852FF] dark:text-[#C8A8FF]">{metric}</div>
+                    <div className={`mt-1 text-[11px] font-bold ${useCaseMutedClass}`}>{label}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {config.installMode === "image-buddy" ? <ImageBuddyDemoGallery locale={locale} /> : <div className="rounded-3xl border border-violet-500/16 bg-white/78 p-5 shadow-[0_30px_100px_-62px_rgba(91,33,182,0.9)] backdrop-blur-sm dark:border-violet-300/14 dark:bg-white/[0.04]">
+            {config.installMode === "image-buddy" ? <ImageBuddyDemoGallery locale={locale} /> : <div className={`${useCaseCardClass} p-5`}>
               <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-bold">
-                  <BadgeDollarSign className="size-4 text-violet-600 dark:text-violet-300" />
+                <div className="flex items-center gap-2 text-sm font-black">
+                  <BadgeDollarSign className="size-4 text-[#7C3AED] dark:text-[#C8A8FF]" />
                   {config.toolName}, {copy.metricCheap} {copy.metricCheapLabel}
                 </div>
-                <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <span className="rounded-full border border-emerald-600/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-black text-emerald-700 dark:text-emerald-300">
                   {copy.usagePill}
                 </span>
               </div>
               <div className="grid gap-3">
-                <div className="rounded-2xl border border-red-500/12 bg-red-500/[0.045] p-4">
-                  <div className="text-muted-foreground mb-2 text-xs font-semibold uppercase">{config.directLabel}</div>
+                <div className="rounded-[1rem] border-2 border-red-500/16 bg-red-500/[0.045] p-4">
+                  <div className={`mb-2 text-xs font-black uppercase ${useCaseMutedClass}`}>{config.directLabel}</div>
                   <div className="text-2xl font-extrabold text-red-500/70 line-through">{copy.officialPrice}</div>
-                  <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.officialSpend}</p>
+                  <p className={`mt-2 text-sm leading-6 ${useCaseMutedClass}`}>{copy.officialSpend}</p>
                 </div>
-                <div className="rounded-2xl border border-emerald-500/18 bg-emerald-500/[0.07] p-4">
-                  <div className="text-muted-foreground mb-2 text-xs font-semibold uppercase">{config.flatkeyLabel}</div>
+                <div className="rounded-[1rem] border-2 border-emerald-500/20 bg-emerald-500/[0.07] p-4">
+                  <div className={`mb-2 text-xs font-black uppercase ${useCaseMutedClass}`}>{config.flatkeyLabel}</div>
                   <div className="text-2xl font-extrabold text-emerald-600">{copy.flatkeyCheap}</div>
-                  <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.oneKeyBalance(config.toolName)}</p>
+                  <p className={`mt-2 text-sm leading-6 ${useCaseMutedClass}`}>{copy.oneKeyBalance(config.toolName)}</p>
                 </div>
               </div>
-              <div className="mt-4 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-3 text-sm font-extrabold text-white">
+              <div className="mt-4 rounded-full border-2 border-[#101014] bg-[#101014] px-4 py-3 text-sm font-black text-white shadow-[3px_3px_0_#7C3AED] dark:border-white/20">
                 {config.moreUsageLine}
               </div>
             </div>}
@@ -1671,10 +1673,10 @@ export function CodingAgentUseCasePage(props: Props) {
             {copy.valueProps.map((item, index) => {
               const Icon = valueIcons[index] ?? KeyRound;
               return (
-              <div key={item.title} className="rounded-2xl border border-violet-500/16 bg-white/74 p-5 dark:border-violet-300/14 dark:bg-white/[0.04]">
-                <Icon className="mb-4 size-5 text-violet-600 dark:text-violet-300" />
-                <h2 className="font-bold">{item.title}</h2>
-                <p className="text-muted-foreground mt-2 text-sm leading-6">{item.body}</p>
+              <div key={item.title} className={`${useCaseCardClass} p-5`}>
+                <Icon className="mb-4 size-5 text-[#7C3AED] dark:text-[#C8A8FF]" />
+                <h2 className="font-black">{item.title}</h2>
+                <p className={`mt-2 text-sm leading-6 ${useCaseMutedClass}`}>{item.body}</p>
               </div>
               );
             })}
@@ -1683,16 +1685,16 @@ export function CodingAgentUseCasePage(props: Props) {
           <section id="install" className="mt-12">
             <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-end">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{copy.quickStartTitle}</h2>
-                <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6">
+                <h2 className="text-2xl font-black tracking-normal md:text-3xl">{copy.quickStartTitle}</h2>
+                <p className={`mt-2 max-w-2xl text-sm leading-6 ${useCaseMutedClass}`}>
                   {config.selectInstruction} {copy.quickStartSuffix}
                 </p>
                 {(copy.quickStartModelNote || copy.quickStartGithubLabel) && (
-                  <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium">
+                  <div className={`mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold ${useCaseMutedClass}`}>
                     {copy.quickStartModelNote && <span>{copy.quickStartModelNote}</span>}
                     {copy.quickStartGithubLabel && (
                       <a
-                        className="inline-flex items-center gap-1.5 font-bold text-violet-700 hover:text-violet-500 dark:text-violet-200"
+                        className="inline-flex items-center gap-1.5 font-black text-[#7C3AED] hover:text-[#5852FF] dark:text-[#C8A8FF]"
                         href={IMAGE_BUDDY_GITHUB_URL}
                         rel="nofollow noopener noreferrer"
                         target="_blank"
@@ -1714,36 +1716,36 @@ export function CodingAgentUseCasePage(props: Props) {
           </section>
 
           <section className="mt-12 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-2xl border border-violet-500/16 bg-white/76 p-6 dark:border-violet-300/14 dark:bg-white/[0.04]">
-              <div className="flex items-center gap-2 text-sm font-bold">
-                <BadgeDollarSign className="size-4 text-violet-600 dark:text-violet-300" />
+            <div className={`${useCaseCardClass} p-6`}>
+              <div className="flex items-center gap-2 text-sm font-black">
+                <BadgeDollarSign className="size-4 text-[#7C3AED] dark:text-[#C8A8FF]" />
                 {copy.whyUsage(config.toolName)}
               </div>
-              <p className="text-muted-foreground mt-3 text-sm leading-6">
+              <p className={`mt-3 text-sm leading-6 ${useCaseMutedClass}`}>
                 {copy.whyUsageBody(config.toolName)}
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {config.useCases.map((item) => (
-                <div key={item.title} className="flex items-start gap-3 rounded-2xl border border-violet-500/16 bg-white/76 p-4 dark:border-violet-300/14 dark:bg-white/[0.04]">
+                <div key={item.title} className={`${useCaseCardClass} flex items-start gap-3 p-4`}>
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
                   <span>
                     <b className="block text-sm">{item.title}</b>
-                    <span className="text-muted-foreground mt-1 block text-sm leading-6">{item.body}</span>
+                    <span className={`mt-1 block text-sm leading-6 ${useCaseMutedClass}`}>{item.body}</span>
                   </span>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="mt-12 rounded-2xl border border-violet-500/16 bg-white/76 p-6 dark:border-violet-300/14 dark:bg-white/[0.04]">
+          <section className={`${useCaseCardClass} mt-12 p-6`}>
             <div className="mb-5 flex items-center gap-2">
-              <Route className="size-5 text-violet-600 dark:text-violet-300" />
-              <h2 className="text-2xl font-bold tracking-tight">{copy.comparisonTitle}</h2>
+              <Route className="size-5 text-[#7C3AED] dark:text-[#C8A8FF]" />
+              <h2 className="text-2xl font-black tracking-normal">{copy.comparisonTitle}</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="text-muted-foreground border-b border-violet-500/12 text-xs uppercase">
+                <thead className={`border-b-2 border-[#101014]/12 text-xs uppercase dark:border-white/12 ${useCaseMutedClass}`}>
                   <tr>
                     <th className="py-3 pr-4">{copy.comparisonHeaders[0]}</th>
                     <th className="py-3 pr-4">{copy.comparisonHeaders[1]}</th>
@@ -1752,9 +1754,9 @@ export function CodingAgentUseCasePage(props: Props) {
                 </thead>
                 <tbody>
                   {copy.comparisonRows.map(([need, direct, flatkey]) => (
-                    <tr key={need} className="border-b border-violet-500/10 last:border-0">
+                    <tr key={need} className="border-b border-[#101014]/10 last:border-0 dark:border-white/10">
                       <td className="py-4 pr-4 font-semibold">{need}</td>
-                      <td className="text-muted-foreground py-4 pr-4">{direct}</td>
+                      <td className={`py-4 pr-4 ${useCaseMutedClass}`}>{direct}</td>
                       <td className="py-4 font-medium text-emerald-700 dark:text-emerald-300">{flatkey}</td>
                     </tr>
                   ))}
@@ -1767,31 +1769,31 @@ export function CodingAgentUseCasePage(props: Props) {
             {copy.actionCards(config.toolName).map((item, index) => {
               const Icon = actionIcons[index] ?? ClipboardCheck;
               return (
-              <div key={item.title} className="rounded-2xl border border-violet-500/16 bg-white/76 p-5 dark:border-violet-300/14 dark:bg-white/[0.04]">
-                <Icon className="mb-4 size-5 text-violet-600 dark:text-violet-300" />
-                <h2 className="font-bold">{item.title}</h2>
-                <p className="text-muted-foreground mt-2 text-sm leading-6">{item.body}</p>
+              <div key={item.title} className={`${useCaseCardClass} p-5`}>
+                <Icon className="mb-4 size-5 text-[#7C3AED] dark:text-[#C8A8FF]" />
+                <h2 className="font-black">{item.title}</h2>
+                <p className={`mt-2 text-sm leading-6 ${useCaseMutedClass}`}>{item.body}</p>
               </div>
               );
             })}
           </section>
 
           <section className="mt-12">
-            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{copy.faqTitle}</h2>
+            <h2 className="text-2xl font-black tracking-normal md:text-3xl">{copy.faqTitle}</h2>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               {config.faqs.map((faq) => (
-                <div key={faq.question} className="rounded-2xl border border-violet-500/16 bg-white/76 p-5 dark:border-violet-300/14 dark:bg-white/[0.04]">
-                  <h3 className="font-bold">{faq.question}</h3>
-                  <p className="text-muted-foreground mt-2 text-sm leading-6">{faq.answer}</p>
+                <div key={faq.question} className={`${useCaseCardClass} p-5`}>
+                  <h3 className="font-black">{faq.question}</h3>
+                  <p className={`mt-2 text-sm leading-6 ${useCaseMutedClass}`}>{faq.answer}</p>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="mt-12 rounded-3xl border border-violet-500/20 bg-gradient-to-br from-violet-600 to-fuchsia-600 p-6 text-white shadow-[0_28px_90px_-58px_rgba(91,33,182,0.9)] md:p-8">
+          <section className="mt-12 rounded-[1.25rem] border-2 border-[#101014] bg-[#101014] p-6 text-white shadow-[5px_5px_0_#7C3AED] md:p-8 dark:border-white/24 dark:shadow-[5px_5px_0_rgba(124,58,237,0.72)]">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
               <div>
-                <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">{copy.finalTitle(config.toolName)}</h2>
+                <h2 className="text-2xl font-black tracking-normal md:text-3xl">{copy.finalTitle(config.toolName)}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/82">
                   {copy.finalBody(config.toolName)}
                 </p>
@@ -1802,7 +1804,7 @@ export function CodingAgentUseCasePage(props: Props) {
             </div>
           </section>
         </div>
-      </div>
+      </main>
     </SiteShell>
   );
 }

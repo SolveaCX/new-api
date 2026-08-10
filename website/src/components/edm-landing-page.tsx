@@ -1,15 +1,13 @@
 import { ArrowRight, CheckCircle2, ExternalLink, ShieldCheck, Sparkles } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
-import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import { PersonalAiQuickStartTabs } from "@/components/personal-ai-quickstart-tabs";
 import { QuickStartJumpButton } from "@/components/quickstart-jump-button";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { LpLimitedOfferModal } from "@/components/lp-limited-offer-modal";
 import type { EdmCampaignCopy } from "@/lib/edm-landing";
 import { getEdmCtaUrl } from "@/lib/edm-landing";
-import { type Locale, localizePath } from "@/lib/locales";
+import type { Locale } from "@/lib/locales";
 
 type Props = {
   campaign: EdmCampaignCopy;
@@ -30,15 +28,13 @@ export function shouldRenderLandingOfferModal(locale: Locale) {
 export function EdmLandingPage(props: Props) {
   const ctaUrl = getEdmCtaUrl();
   const languageCookieDomain = process.env.COOKIE_SESSION_DOMAIN?.trim() || undefined;
-  const mainClassName = ["min-h-screen bg-background pt-20 pb-20 text-foreground sm:pb-0", props.locale === "ja" ? "ja-gothic-landing" : ""]
+  const mainClassName = ["fk-site-main fk-new-home min-h-screen bg-background pt-[var(--fk-header-safe-area)] pb-20 text-foreground sm:pb-0", props.locale === "ja" ? "ja-gothic-landing" : ""]
     .filter(Boolean)
     .join(" ");
 
   return (
     <>
-      <LandingHeader
-        campaign={props.campaign}
-        ctaUrl={ctaUrl}
+      <SiteHeader
         locale={props.locale}
         pathname={props.pathname}
         languageCookieDomain={languageCookieDomain}
@@ -75,7 +71,7 @@ export function EdmLandingPage(props: Props) {
                 href={props.campaign.secondaryCta.href}
                 target="_blank"
                 rel="noopener noreferrer nofollow"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-card px-6 text-sm font-semibold text-foreground transition hover:bg-muted"
+                className="flatkey-cta-secondary inline-flex h-12 items-center justify-center gap-2 px-6 text-sm"
               >
                 {props.campaign.secondaryCta.label}
                 <ExternalLink className="size-4" />
@@ -111,13 +107,13 @@ export function EdmLandingPage(props: Props) {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <QuickStartJumpButton
                       mode="agent"
-                      className="inline-flex h-10 items-center justify-center rounded-lg border border-border px-3 text-sm font-bold text-foreground transition hover:bg-muted"
+                      className="flatkey-cta-secondary inline-flex h-10 items-center justify-center px-3 text-sm"
                     >
                       {props.campaign.quickStart.agentAction}
                     </QuickStartJumpButton>
                     <QuickStartJumpButton
                       mode="sdk"
-                      className="inline-flex h-10 items-center justify-center rounded-lg border border-border px-3 text-sm font-bold text-foreground transition hover:bg-muted"
+                      className="flatkey-cta-secondary inline-flex h-10 items-center justify-center px-3 text-sm"
                     >
                       {props.campaign.quickStart.sdkAction}
                     </QuickStartJumpButton>
@@ -322,35 +318,5 @@ export function EdmLandingPage(props: Props) {
         <p className="mt-1 text-center text-[11px] leading-4 text-muted-foreground">{props.campaign.ctaNote}</p>
       </div>
     </>
-  );
-}
-
-function LandingHeader(props: {
-  campaign: EdmCampaignCopy;
-  ctaUrl: string;
-  locale: Locale;
-  pathname: string;
-  languageCookieDomain?: string;
-}) {
-  return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/90 backdrop-blur-xl">
-      <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
-        <Link className="group flex shrink-0 items-center gap-2.5" href={localizePath("/", props.locale)}>
-          <span className="flex h-11 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-[1.02]">
-            <FlatkeyBrandLogo className="h-11" />
-          </span>
-          <span className="sr-only">flatkey.ai</span>
-        </Link>
-        <div className="flex min-w-0 items-center gap-2">
-          <LanguageSwitcher locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} />
-          <a
-            href={props.ctaUrl}
-            className="flatkey-primary-cta hidden h-9 items-center justify-center rounded-lg px-4 text-xs font-bold transition-opacity hover:opacity-90 sm:inline-flex"
-          >
-            {props.campaign.primaryCta}
-          </a>
-        </div>
-      </nav>
-    </header>
   );
 }

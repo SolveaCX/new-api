@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { OnlinePricingPage } from "@/components/online-pricing-page";
+import { PricingPage } from "@/components/pricing-page";
 import { DEFAULT_LOCALE, isLocale, LOCALES } from "@/lib/locales";
 import { buildMetadata } from "@/lib/seo";
 
@@ -26,5 +26,5 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === DEFAULT_LOCALE) notFound();
-  return <OnlinePricingPage locale={params.locale} />;
+  return <PricingPage locale={params.locale} />;
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { WebsiteLoadingTransition } from "@/components/website-loading-transition";
 import type { Locale } from "@/lib/locales";
 
 type Props = {
@@ -22,7 +23,10 @@ export function SiteShell(props: Props) {
         languageCookieDomain={languageCookieDomain}
         hideLanguageSwitcher={props.hideLanguageSwitcher}
       />
-      <main>{props.children}</main>
+      <WebsiteLoadingTransition />
+      <div className="fk-site-main fk-new-home" data-route={props.pathname}>
+        {props.children}
+      </div>
       <SiteFooter locale={props.locale} />
     </>
   );

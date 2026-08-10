@@ -54,18 +54,18 @@ export function ModelsDirectoryTable(props: Props) {
   if (props.rows.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-violet-500/16 bg-white/72 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
+    <div className="fk-model-table overflow-x-auto rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
       <table className="w-full min-w-[760px] border-collapse text-sm">
         <thead>
-          <tr className="text-muted-foreground/80 border-b border-violet-500/12 text-left text-[11px] font-bold tracking-[0.1em] uppercase">
+          <tr className="border-b-2 border-[#101014] bg-[#F7F4EC]/72 text-left text-[11px] font-black tracking-normal text-[#5C5861] uppercase dark:border-white/20 dark:bg-white/[0.045] dark:text-white/62">
             <th className="px-5 py-3.5 font-bold">{props.copy.colModel}</th>
             <th className="px-3 py-3.5 text-right font-bold">
               {props.copy.colOfficial}
-              <span className="text-muted-foreground/50 block text-[9px] font-medium normal-case">{props.copy.perMillion}</span>
+              <span className="block text-[9px] font-semibold text-[#6D6A72] normal-case dark:text-white/42">{props.copy.perMillion}</span>
             </th>
-            <th className="px-3 py-3.5 text-right font-bold text-violet-700 dark:text-violet-300">
+            <th className="px-3 py-3.5 text-right font-black text-[#7C3AED] dark:text-[#C8A8FF]">
               {props.copy.colFlatkey}
-              <span className="text-muted-foreground/50 block text-[9px] font-medium normal-case">{props.copy.perMillion}</span>
+              <span className="block text-[9px] font-semibold text-[#6D6A72] normal-case dark:text-white/42">{props.copy.perMillion}</span>
             </th>
             <th className="px-3 py-3.5 text-right font-bold">{props.copy.colLatency}</th>
             <th className="w-[220px] px-5 py-3.5 text-left font-bold">{props.copy.colHealth}</th>
@@ -121,44 +121,44 @@ function DirectoryRow(props: {
 
   const { row, perf, trend } = props;
   return (
-    <tr ref={ref} className="border-b border-violet-500/8 transition-colors last:border-b-0 hover:bg-violet-500/4">
+    <tr ref={ref} className="fk-price-row border-b border-[#101014]/10 transition-colors last:border-b-0 hover:bg-[#F9F871]/18 dark:border-white/10 dark:hover:bg-white/[0.06]">
       <td className="max-w-[280px] px-5 py-3">
         {props.locale ? (
           <Link
             href={localizePath(modelPublicPath(row.name), props.locale)}
-            className="flex items-center gap-2.5 hover:opacity-80"
+            className="flex min-w-0 items-center gap-2.5 hover:opacity-90"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-violet-500/15 bg-violet-500/6">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#101014] bg-white shadow-[2px_2px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]">
               <ModelLogo iconKey={row.iconKey} fallback={row.name.charAt(0).toUpperCase()} size={18} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline">
+              <span className="fk-price-row-text block truncate font-mono text-[13px] font-black tracking-normal text-[#101014] underline-offset-2 hover:underline dark:text-white">
                 {row.name}
               </span>
-              <span className="text-muted-foreground/70 block text-[11px]">{row.vendor}</span>
+              <span className="block text-[11px] font-semibold text-[#6D6A72] dark:text-white/50">{row.vendor}</span>
             </span>
           </Link>
         ) : (
           <div className="flex items-center gap-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-violet-500/15 bg-violet-500/6">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-2 border-[#101014] bg-white shadow-[2px_2px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]">
               <ModelLogo iconKey={row.iconKey} fallback={row.name.charAt(0).toUpperCase()} size={18} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate font-mono text-[13px] font-semibold tracking-tight">{row.name}</span>
-              <span className="text-muted-foreground/70 block text-[11px]">{row.vendor}</span>
+              <span className="fk-price-row-text block truncate font-mono text-[13px] font-black tracking-normal text-[#101014] dark:text-white">{row.name}</span>
+              <span className="block text-[11px] font-semibold text-[#6D6A72] dark:text-white/50">{row.vendor}</span>
             </span>
           </div>
         )}
       </td>
-      <td className="text-muted-foreground px-3 py-3 text-right font-mono text-[13px] line-through">{row.official}</td>
-      <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-emerald-600 dark:text-emerald-400">{row.discounted}</td>
-      <td className="px-3 py-3 text-right font-mono text-[13px]">{formatLatencyMs(perf?.avg_ttft_ms || trendAvgTtftMs(trend))}</td>
+      <td className="px-3 py-3 text-right font-mono text-[13px] text-[#6D6A72] line-through dark:text-white/48">{row.official}</td>
+      <td className="fk-price-row-strong px-3 py-3 text-right font-mono text-[13px] font-black text-emerald-600 dark:text-emerald-400">{row.discounted}</td>
+      <td className="px-3 py-3 text-right font-mono text-[13px] font-semibold text-[#101014] dark:text-white/82">{formatLatencyMs(perf?.avg_ttft_ms || trendAvgTtftMs(trend))}</td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-3">
           <div className="h-7 w-[140px]">
             {trend.length > 1 ? <DailyHealthBars points={trend} label={props.healthLabel} heightPx={28} /> : null}
           </div>
-          <span className="font-mono text-[13px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <span className="font-mono text-[13px] font-black text-emerald-600 dark:text-emerald-400">
             {formatSuccessRate(perf?.success_rate)}
           </span>
         </div>

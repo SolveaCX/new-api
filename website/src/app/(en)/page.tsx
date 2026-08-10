@@ -1,13 +1,15 @@
-import { OnlineHomePage } from "@/components/online-home-page";
+import { HomePage } from "@/components/home-page";
+import { getCopy } from "@/lib/copy";
 import { buildMetadata } from "@/lib/seo";
 
+const copy = getCopy("en").home;
+
 export const metadata = buildMetadata({
-  title: "flatkey - One key. More models. More tools. Lower costs.",
-  description:
-    "flatkey routes your requests to official GPT, Claude, Gemini, DeepSeek, Qwen and GLM APIs, with 300+ frontier models and 1,000+ AI tools behind one key.",
+  title: copy.title,
+  description: copy.description,
   pathname: "/",
 });
 
 export default function Page() {
-  return <OnlineHomePage locale="en" />;
+  return <HomePage locale="en" />;
 }

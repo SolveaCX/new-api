@@ -236,12 +236,14 @@ const videoModelOptions = ["veo-3.1-fast-generate-preview", "veo-3.1-generate-pr
 const imageSizeOptions = ["1024x1024", "1536x1024", "1024x1536"];
 const videoAspectOptions = ["16:9", "9:16", "1:1"];
 const qualityOptions = ["auto", "high", "medium", "low"];
+const promptPanelCardClass =
+  "rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
+const promptPanelMutedClass = "text-[#5C5861] dark:text-white/62";
 
 export function CliPromptActionPanel(props: Props) {
   const copy = copyByLocale[props.locale];
   const [prompt, setPrompt] = useState(props.defaultPrompt);
   const [copied, setCopied] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const modelOptions = props.kind === "image" ? imageModelOptions : videoModelOptions;
   const [selectedModel, setSelectedModel] = useState(modelOptions.includes(props.model) ? props.model : modelOptions[0]);
@@ -279,10 +281,6 @@ export function CliPromptActionPanel(props: Props) {
   };
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!showCreateDialog) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -292,57 +290,57 @@ export function CliPromptActionPanel(props: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateDialog]);
 
-  const createDialog = showCreateDialog && mounted
+  const createDialog = showCreateDialog && typeof document !== "undefined"
     ? createPortal(
         <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#0B0B0F]/42 px-4 py-6 backdrop-blur-sm"
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#101014]/72 px-4 py-6 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           onMouseDown={() => setShowCreateDialog(false)}
         >
           <div
-            className="max-h-[92vh] w-full max-w-4xl overflow-visible rounded-lg border border-violet-500/16 bg-[#fbfaff] shadow-[0_32px_90px_-38px_rgba(91,33,182,0.72)]"
+            className="max-h-[92vh] w-full max-w-4xl overflow-visible rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6] shadow-[6px_6px_0_#101014] dark:border-white/24 dark:bg-[#111116] dark:shadow-[6px_6px_0_rgba(255,255,255,0.16)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-violet-500/10 bg-white/72 px-5 py-5 md:px-7">
+            <div className="flex items-start justify-between gap-4 border-b-2 border-[#101014] bg-[#FFFDF6] px-5 py-5 md:px-7 dark:border-white/20 dark:bg-[#111116]">
               <div className="flex min-w-0 gap-4">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10 text-violet-700 shadow-[0_18px_44px_-30px_rgba(124,58,237,0.8)]">
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-[#101014] bg-[#EEE4FF] text-[#7C3AED] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-[#C8A8FF] dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
                   <WandSparkles className="size-5" />
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-3xl font-black tracking-tight text-[#0B0B0F]">{copy.createTitle}</h3>
-                  <p className="mt-1 text-sm leading-6 text-[#62626D]">{props.kind === "image" ? copy.imageHint : copy.videoHint}</p>
+                  <h3 className="text-3xl font-black tracking-normal text-[#101014] dark:text-white">{copy.createTitle}</h3>
+                  <p className={`mt-1 text-sm leading-6 ${promptPanelMutedClass}`}>{props.kind === "image" ? copy.imageHint : copy.videoHint}</p>
                 </div>
               </div>
-              <button type="button" className="rounded-md p-2 text-[#62626D] hover:bg-[#0B0B0F0A] hover:text-[#0B0B0F]" aria-label={copy.cancel} onClick={() => setShowCreateDialog(false)}>
+              <button type="button" className="rounded-full border-2 border-[#101014] bg-white p-2 text-[#101014] shadow-[3px_3px_0_#101014] hover:bg-[#F9F871] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]" aria-label={copy.cancel} onClick={() => setShowCreateDialog(false)}>
                 <X className="size-5" />
               </button>
             </div>
             <div className="max-h-[calc(92vh-88px)] overflow-visible p-5 md:p-7">
-              <div className="overflow-visible rounded-lg border border-violet-500/16 bg-white/80 shadow-[0_24px_70px_-56px_rgba(91,33,182,0.58)] backdrop-blur-sm">
-                <div className="flex items-center gap-2 border-b border-violet-500/10 px-4 py-3 text-sm font-black text-[#17131f]">
-                  {props.kind === "image" ? <ImageIcon className="size-4 text-violet-700" /> : <Video className="size-4 text-violet-700" />}
+              <div className="overflow-visible rounded-[1rem] border-2 border-[#101014] bg-white/80 backdrop-blur-sm dark:border-white/18 dark:bg-white/[0.06]">
+                <div className="flex items-center gap-2 border-b border-[#101014]/12 px-4 py-3 text-sm font-black text-[#17131f] dark:border-white/12 dark:text-white">
+                  {props.kind === "image" ? <ImageIcon className="size-4 text-[#7C3AED] dark:text-[#C8A8FF]" /> : <Video className="size-4 text-[#7C3AED] dark:text-[#C8A8FF]" />}
                   {copy.promptLabel}
                 </div>
                 <textarea
                   aria-label={copy.promptLabel}
-                  className="min-h-[300px] w-full resize-y border-0 bg-white px-5 py-5 font-mono text-sm leading-7 text-[#17131f] outline-none"
+                  className="min-h-[300px] w-full resize-y border-0 bg-white px-5 py-5 font-mono text-sm leading-7 text-[#17131f] outline-none dark:bg-[#101014] dark:text-white"
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                 />
-                <div className="grid gap-3 border-t border-violet-500/10 bg-white/55 p-4 md:grid-cols-[1.25fr_0.8fr_0.8fr]">
+                <div className="grid gap-3 border-t border-[#101014]/12 bg-[#FFFDF6]/72 p-4 md:grid-cols-[1.25fr_0.8fr_0.8fr] dark:border-white/12 dark:bg-white/[0.04]">
                   <SelectControl icon={<Sparkles className="size-4" />} label={copy.model} value={selectedModel} values={modelOptions} onChange={setSelectedModel} />
                   <SelectControl icon={<Maximize2 className="size-4" />} label={props.kind === "image" ? copy.size : copy.aspectRatio} value={selectedSize} values={props.kind === "image" ? imageSizeOptions : videoAspectOptions} onChange={setSelectedSize} />
                   <SelectControl icon={<Settings2 className="size-4" />} label={copy.quality} value={selectedQuality} values={qualityOptions} valueLabel={(value) => (value === "auto" ? copy.auto : value)} onChange={setSelectedQuality} />
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap justify-end gap-3">
-                <button type="button" className="h-11 rounded-lg border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#43434C] hover:text-[#0B0B0F]" onClick={() => setShowCreateDialog(false)}>
+                <button type="button" className="flatkey-cta-secondary h-11 px-4 text-sm" onClick={() => setShowCreateDialog(false)}>
                   {copy.cancel}
                 </button>
                 <button
                   type="button"
-                  className="flatkey-hero-cta inline-flex h-11 items-center gap-2 rounded-lg px-5 text-sm font-black text-white shadow-[0_16px_34px_-18px_rgba(124,58,237,0.85)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flatkey-hero-cta inline-flex h-11 items-center gap-2 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-70"
                   disabled={!prompt.trim()}
                   onClick={handleGenerate}
                 >
@@ -358,24 +356,24 @@ export function CliPromptActionPanel(props: Props) {
     : null;
 
   return (
-    <article className="rounded-lg border border-violet-500/16 bg-white/72 p-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.58)] backdrop-blur-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-500/10 pb-4">
+    <article className={`${promptPanelCardClass} p-5`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#101014]/10 pb-4 dark:border-white/10">
         <div>
-          <h2 className="text-2xl font-black tracking-tight">{props.title}</h2>
-          <p className="mt-1 text-xs font-bold text-[#62626D]">{copy.promptLabel}</p>
+          <h2 className="text-2xl font-black tracking-normal">{props.title}</h2>
+          <p className={`mt-1 text-xs font-bold ${promptPanelMutedClass}`}>{copy.promptLabel}</p>
         </div>
-        <span className="rounded border border-violet-500/16 bg-violet-500/8 px-2.5 py-1 text-[11px] font-black text-violet-700">{props.ratio}</span>
+        <span className="rounded-full border border-[#101014]/16 bg-white/72 px-2.5 py-1 text-[11px] font-black text-[#7C3AED] dark:border-white/14 dark:bg-white/8 dark:text-[#C8A8FF]">{props.ratio}</span>
       </div>
       <textarea
         aria-label={copy.promptLabel}
-        className="mt-4 min-h-[360px] w-full resize-y rounded-lg border border-[#0B0B0F18] bg-white/75 p-5 font-mono text-sm leading-7 text-[#17131f] outline-none transition focus:border-violet-500/45 focus:bg-white focus:ring-4 focus:ring-violet-500/10"
+        className="mt-4 min-h-[360px] w-full resize-y rounded-[1rem] border-2 border-[#101014]/14 bg-white/75 p-5 font-mono text-sm leading-7 text-[#17131f] outline-none transition focus:border-[#101014] focus:bg-white focus:ring-4 focus:ring-[#7C3AED]/12 dark:border-white/14 dark:bg-white/[0.06] dark:text-white dark:focus:border-white/28"
         value={prompt}
         onChange={(event) => setPrompt(event.target.value)}
       />
       <div className="mt-4 flex flex-wrap justify-end gap-3">
         <button
           type="button"
-          className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-4 text-sm font-black text-[#17131f] hover:border-violet-500/35 hover:text-violet-700"
+          className="flatkey-cta-secondary inline-flex h-11 items-center gap-2 px-4 text-sm"
           onClick={handleCopy}
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
@@ -383,7 +381,7 @@ export function CliPromptActionPanel(props: Props) {
         </button>
         <button
           type="button"
-          className="inline-flex h-11 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-black text-white shadow-[0_18px_38px_-26px_rgba(91,33,182,0.9)] hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70"
+          className="flatkey-primary-cta inline-flex h-11 items-center gap-2 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-70"
           disabled={!prompt.trim()}
           onClick={() => setShowCreateDialog(true)}
         >
@@ -409,7 +407,7 @@ function SelectControl(props: {
 
   return (
     <div className="grid gap-1.5">
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-black tracking-[0.12em] text-[#62626D] uppercase">
+      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-black tracking-normal text-[#5C5861] uppercase dark:text-white/62">
         {props.icon}
         {props.label}
       </span>
@@ -422,9 +420,9 @@ function SelectControl(props: {
           }
         }}
       >
-        <Select.Trigger className="group flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-[#0B0B0F18] bg-white px-3 text-left text-sm font-black text-[#17131f] shadow-[0_14px_34px_-30px_rgba(91,33,182,0.6)] outline-none transition hover:border-violet-500/35 focus-visible:border-violet-500/45 focus-visible:ring-4 focus-visible:ring-violet-500/10 data-popup-open:border-violet-500/45 data-popup-open:ring-4 data-popup-open:ring-violet-500/10">
+        <Select.Trigger className="group flex h-11 w-full items-center justify-between gap-3 rounded-full border-2 border-[#101014] bg-white px-3 text-left text-sm font-black text-[#17131f] shadow-[3px_3px_0_#101014] outline-none transition hover:bg-[#F9F871] focus-visible:ring-4 focus-visible:ring-[#7C3AED]/12 data-popup-open:ring-4 data-popup-open:ring-[#7C3AED]/12 dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
           <Select.Value className="min-w-0 truncate">{selectedLabel}</Select.Value>
-          <Select.Icon className="shrink-0 text-[#62626D] transition-transform group-data-popup-open:rotate-180">
+          <Select.Icon className="shrink-0 text-[#5C5861] transition-transform group-data-popup-open:rotate-180 dark:text-white/62">
             <ChevronDown className="size-4" />
           </Select.Icon>
         </Select.Trigger>
@@ -437,19 +435,19 @@ function SelectControl(props: {
             side="bottom"
             sideOffset={8}
           >
-            <Select.Popup className="min-w-[var(--anchor-width)] max-w-[var(--available-width)] overflow-hidden rounded-lg border border-violet-500/18 bg-white p-1.5 text-[#17131f] shadow-[0_24px_70px_-38px_rgba(91,33,182,0.55)] outline-none">
+            <Select.Popup className="min-w-[var(--anchor-width)] max-w-[var(--available-width)] overflow-hidden rounded-[1rem] border-2 border-[#101014] bg-[#FFFDF6] p-1.5 text-[#17131f] shadow-[5px_5px_0_#101014] outline-none dark:border-white/24 dark:bg-[#111116] dark:text-white dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
               <Select.List className="max-h-[min(var(--available-height),15rem)] overflow-y-auto outline-none">
                 {props.values.map((value) => {
                   const label = props.valueLabel ? props.valueLabel(value) : value;
                   return (
                     <Select.Item
                       key={value}
-                      className="grid min-h-9 cursor-pointer grid-cols-[1fr_auto] items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-black text-[#17131f] outline-none transition hover:bg-violet-500/8 data-[highlighted]:bg-violet-500/8 data-[selected]:bg-violet-500/10 data-[selected]:text-violet-800"
+                      className="grid min-h-9 cursor-pointer grid-cols-[1fr_auto] items-center gap-2 rounded-[0.8rem] px-2.5 py-2 text-left text-xs font-black text-[#17131f] outline-none transition hover:bg-[#EEE4FF] data-[highlighted]:bg-[#EEE4FF] data-[selected]:bg-[#101014] data-[selected]:text-white dark:text-white dark:hover:bg-white/12 dark:data-[highlighted]:bg-white/12 dark:data-[selected]:bg-white dark:data-[selected]:text-[#101014]"
                       label={label}
                       value={value}
                     >
                       <Select.ItemText className="min-w-0 break-words leading-4">{label}</Select.ItemText>
-                      <Select.ItemIndicator className="text-violet-700">
+                      <Select.ItemIndicator className="text-[#7C3AED] dark:text-current">
                         <Check className="size-3.5" />
                       </Select.ItemIndicator>
                     </Select.Item>

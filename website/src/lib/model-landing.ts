@@ -534,7 +534,23 @@ export type ModelLandingKey =
   | "50% off";
 
 export function getModelLandingConfig(slug: string): ModelConfig | null {
-  return MODEL_CONFIGS[slug] ?? null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(slug);
+  } catch {
+    return null;
+  }
+  const direct = MODEL_CONFIGS[decoded] ?? MODEL_CONFIGS[slug];
+  if (direct) return direct;
+
+  const normalized = normalizeModelId(decoded);
+  if (!normalized) return null;
+  return getModelLandingConfigs().find((config) =>
+    normalizeModelId(config.slug) === normalized ||
+    normalizeModelId(config.displayName) === normalized ||
+    normalizeModelId(config.modelId) === normalized ||
+    config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
+  ) ?? null;
 }
 
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {

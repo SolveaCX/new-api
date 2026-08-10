@@ -36,7 +36,7 @@ export function ToolsCommandBox(props: Props) {
       className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-[#101014] px-4 py-4 text-left text-white shadow-[0_22px_60px_-32px_rgba(30,20,50,0.85)] transition-transform hover:-translate-y-0.5 sm:px-5"
       aria-label={copied ? props.copiedLabel : props.copyLabel}
     >
-      <span className="font-mono text-violet-300" aria-hidden="true">$</span>
+      <span className="font-mono text-[#C8A8FF]" aria-hidden="true">$</span>
       <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[11px] whitespace-nowrap text-white/88 sm:text-sm">
         {props.command}
       </code>

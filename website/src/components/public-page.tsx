@@ -18,6 +18,12 @@ const aboutPhotos = [
   { src: "/team/seattle-community.jpg", className: "md:col-span-4" },
 ] as const;
 
+const subpageGridClass =
+  "pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45";
+const subpageCardClass =
+  "rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
+const subpageMutedClass = "text-[#5C5861] dark:text-white/62";
+
 export function PublicPage(props: Props) {
   const content = getPageContent(props.pageKey, props.locale);
   const headings = content.document ? getLegalHeadings(content.document) : [];
@@ -26,41 +32,38 @@ export function PublicPage(props: Props) {
   if (content.document) {
     return (
       <SiteShell locale={props.locale} pathname={props.pathname}>
-        <main className="public-page relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] px-6 pt-28 pb-24 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
-          />
-          <section className="relative z-10 mx-auto max-w-6xl py-12 md:py-16">
-            <p className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
+        <main className="public-page fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] px-4 pt-[var(--fk-header-safe-area)] pb-24 text-[#101014] antialiased sm:px-6 dark:bg-[#050507] dark:text-[#F6F3EA]">
+          <div aria-hidden className={subpageGridClass} />
+          <section className="relative z-10 mx-auto max-w-[2160px] border-b-2 border-[#101014] py-10 md:py-14 dark:border-white/20">
+            <p className="mb-4 inline-flex rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 py-1.5 font-mono text-[11px] font-black uppercase shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
               {content.eyebrow}
             </p>
-            <h1 className="text-foreground max-w-4xl text-3xl leading-tight font-semibold tracking-tight text-balance md:text-5xl">
+            <h1 className="max-w-5xl text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance">
               {content.title}
             </h1>
-            <p className="text-muted-foreground mt-5 max-w-3xl text-base leading-7 text-balance md:text-lg">
+            <p className={`mt-6 max-w-3xl text-base leading-7 text-balance md:text-lg ${subpageMutedClass}`}>
               {content.description}
             </p>
             {content.updated ? (
-              <p className="text-muted-foreground/70 mt-4 text-xs font-medium tracking-wide uppercase">
+              <p className={`mt-4 font-mono text-xs font-bold uppercase ${subpageMutedClass}`}>
                 {copy.lastUpdated}: {content.updated}
               </p>
             ) : null}
           </section>
-          <section className="relative z-10 mx-auto grid max-w-6xl items-start gap-12 lg:grid-cols-[minmax(0,1fr)_240px]">
-            <article className="rounded-xl border border-violet-500/12 bg-white/72 p-6 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.6)] backdrop-blur-sm dark:border-violet-300/14 dark:bg-white/[0.035] md:p-9">
+          <section className="relative z-10 mx-auto mt-8 grid max-w-[2160px] items-start gap-12 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <article className={`${subpageCardClass} p-6 md:p-9`}>
               <LegalMarkdown markdown={content.document} />
             </article>
             {headings.length > 0 ? (
               <aside className="sticky top-24 hidden text-sm lg:block">
-                <h2 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
+                <h2 className="mb-3 font-mono text-xs font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">
                   {copy.tableOfContents}
                 </h2>
                 <ul className="space-y-1.5">
                   {headings.map((heading) => (
                     <li key={heading.id}>
                       <a
-                        className="text-muted-foreground hover:text-foreground block leading-snug transition-colors"
+                        className={`block rounded-full px-3 py-2 leading-snug font-bold transition-colors hover:bg-[#F9F871] hover:text-[#101014] dark:hover:bg-white/10 dark:hover:text-white ${subpageMutedClass}`}
                         href={`#${heading.id}`}
                       >
                         {heading.text}
@@ -78,29 +81,26 @@ export function PublicPage(props: Props) {
 
   return (
     <SiteShell locale={props.locale} pathname={props.pathname}>
-      <main className="home-landing relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] px-6 pt-28 pb-24 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
-        />
-        <section className="relative z-10 mx-auto max-w-6xl py-14 md:py-20">
-          <p className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
+      <main className="public-page fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] px-4 pt-[var(--fk-header-safe-area)] pb-24 text-[#101014] antialiased sm:px-6 dark:bg-[#050507] dark:text-[#F6F3EA]">
+        <div aria-hidden className={subpageGridClass} />
+        <section className="relative z-10 mx-auto max-w-[2160px] border-b-2 border-[#101014] py-10 md:py-14 dark:border-white/20">
+          <p className="mb-4 inline-flex rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 py-1.5 font-mono text-[11px] font-black uppercase shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
             {content.eyebrow}
           </p>
-          <h1 className="max-w-4xl text-[clamp(2.25rem,4.5vw,3.25rem)] leading-[1.15] font-bold tracking-tight">
+          <h1 className="max-w-5xl text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance">
             {content.title}
           </h1>
-          <p className="text-muted-foreground/80 mt-5 max-w-2xl text-base leading-relaxed md:text-[15px]">
+          <p className={`mt-6 max-w-3xl text-base leading-7 md:text-lg ${subpageMutedClass}`}>
             {content.description}
           </p>
         </section>
         {props.pageKey === "about" ? (
           <section
             aria-hidden
-            className="relative z-10 mx-auto mb-12 grid max-w-6xl auto-rows-[170px] grid-cols-2 gap-3 overflow-hidden rounded-2xl border border-violet-500/15 bg-white/60 p-3 shadow-[0_30px_90px_-58px_rgba(91,33,182,0.85)] md:auto-rows-[220px] md:grid-cols-12 dark:border-violet-300/14 dark:bg-white/[0.035]"
+            className={`${subpageCardClass} relative z-10 mx-auto mt-8 mb-12 grid max-w-[2160px] auto-rows-[170px] grid-cols-2 gap-3 overflow-hidden p-3 md:auto-rows-[220px] md:grid-cols-12`}
           >
             {aboutPhotos.map((photo) => (
-              <div key={photo.src} className={`relative overflow-hidden rounded-xl ${photo.className}`}>
+              <div key={photo.src} className={`relative overflow-hidden rounded-[1rem] border border-[#101014]/12 dark:border-white/12 ${photo.className}`}>
                 <Image
                   src={photo.src}
                   alt=""
@@ -113,14 +113,14 @@ export function PublicPage(props: Props) {
             ))}
           </section>
         ) : null}
-        <section className="relative z-10 mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
+        <section className="relative z-10 mx-auto mt-8 grid max-w-[2160px] gap-5 md:grid-cols-3">
           {(content.sections ?? []).map((section) => (
             <article
               key={section.title}
-              className="min-h-[210px] rounded-xl border border-violet-500/15 bg-white/80 p-7 shadow-[0_24px_70px_-48px_rgba(91,33,182,0.72)] backdrop-blur-sm dark:border-violet-300/14 dark:bg-white/[0.035] md:p-8"
+              className={`${subpageCardClass} min-h-[210px] p-7 md:p-8`}
             >
-              <h2 className="mb-4 text-xl font-semibold tracking-tight">{section.title}</h2>
-              <p className="text-muted-foreground text-sm leading-7 md:text-[15px]">{section.body}</p>
+              <h2 className="mb-4 text-xl font-black tracking-normal">{section.title}</h2>
+              <p className={`text-sm leading-7 md:text-[15px] ${subpageMutedClass}`}>{section.body}</p>
             </article>
           ))}
         </section>
