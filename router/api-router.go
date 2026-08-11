@@ -87,6 +87,8 @@ func SetApiRouter(router *gin.Engine) {
 			cliAuthRoute.POST("/:user_code/deny", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.DenyCliDeviceAuthorization)
 		}
 		// OAuth routes - specific routes must come before :provider wildcard
+		apiRouter.GET("/oauth/authorization-details", middleware.UserAuth(), controller.McpOAuthAuthorizationDetails)
+		apiRouter.POST("/oauth/authorize", middleware.UserAuth(), controller.McpOAuthAuthorize)
 		apiRouter.GET("/oauth/state", middleware.CriticalRateLimit(), controller.GenerateOAuthCode)
 		apiRouter.POST("/oauth/email/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.EmailBind)
 		// Non-standard OAuth (WeChat, Telegram) - keep original routes
@@ -189,6 +191,8 @@ func SetApiRouter(router *gin.Engine) {
 				// Custom OAuth bindings
 				selfRoute.GET("/oauth/bindings", controller.GetUserOAuthBindings)
 				selfRoute.DELETE("/oauth/bindings/:provider_id", controller.UnbindCustomOAuth)
+				selfRoute.GET("/connected-apps", controller.McpOAuthConnectedApps)
+				selfRoute.POST("/connected-apps/:grant_id/revoke", controller.McpOAuthRevokeConnectedApp)
 			}
 
 			adminRoute := userRoute.Group("/")
