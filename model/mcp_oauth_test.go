@@ -9,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func setupMcpOAuthTestDB(t *testing.T) {
@@ -40,6 +41,9 @@ func createMcpOAuthGrantFixture(t *testing.T, publicID string, userID int) McpOA
 		PublicID:    publicID,
 		ClientID:    "mcp_client_" + publicID,
 		UserID:      userID,
+		AccountID:   userID,
+		Resource:    "https://mcp.example",
+		DisplayName: "Example MCP",
 		Status:      McpOAuthGrantStatusActive,
 		Scope:       "tools:read",
 		CreatedTime: 100,
@@ -47,6 +51,26 @@ func createMcpOAuthGrantFixture(t *testing.T, publicID string, userID int) McpOA
 	}
 	require.NoError(t, DB.Create(&grant).Error)
 	return grant
+}
+
+func createMcpOAuthDedicatedTokenFixture(t *testing.T, userID int, grantID string, key string) Token {
+	t.Helper()
+	token := Token{
+		UserId:         userID,
+		Name:           "MCP hidden token",
+		Key:            key,
+		Status:         common.TokenStatusEnabled,
+		CreatedTime:    100,
+		AccessedTime:   100,
+		ExpiredTime:    -1,
+		RemainQuota:    100,
+		UnlimitedQuota: true,
+		Group:          "default",
+		Source:         TokenSourceMcpOAuth,
+		OAuthGrantId:   &grantID,
+	}
+	require.NoError(t, DB.Create(&token).Error)
+	return token
 }
 
 func mcpOAuthTokenTemplate(key string) Token {
@@ -110,6 +134,173 @@ func TestMcpOAuthProvisionDedicatedTokenRetryReturnsExistingToken(t *testing.T) 
 	require.Equal(t, int64(1), count)
 }
 
+func TestMcpOAuthTokenManagementScopeHidesDedicatedTokens(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	normal := Token{
+		UserId:         7,
+		Name:           "public-token",
+		Key:            "public-secret",
+		Status:         common.TokenStatusEnabled,
+		ExpiredTime:    -1,
+		RemainQuota:    100,
+		UnlimitedQuota: true,
+		Group:          "default",
+	}
+	require.NoError(t, DB.Create(&normal).Error)
+	mcp := createMcpOAuthDedicatedTokenFixture(t, 7, "grant_hidden_management", "mcp-hidden-secret")
+
+	allTokens, err := GetAllUserTokens(7, 0, 10, "")
+	require.NoError(t, err)
+	require.Len(t, allTokens, 1)
+	require.Equal(t, normal.Id, allTokens[0].Id)
+
+	searchByName, total, err := SearchUserTokens(7, "MCP hidden token", "", "", 0, 0, 10)
+	require.NoError(t, err)
+	require.Zero(t, total)
+	require.Empty(t, searchByName)
+
+	searchBySecret, total, err := SearchUserTokens(7, "", "mcp-hidden-secret", "", 0, 0, 10)
+	require.NoError(t, err)
+	require.Zero(t, total)
+	require.Empty(t, searchBySecret)
+
+	_, err = GetTokenByIds(mcp.Id, 7)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	_, err = GetTokenByKey(mcp.Key, false)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	count, err := CountUserTokens(7)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, count)
+	groupCount, err := CountUserTokensByGroup(7, "default")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, groupCount)
+	stats, err := GetUserTokenStats(7)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, stats.Total)
+
+	keys, err := GetTokenKeysByIds([]int{normal.Id, mcp.Id}, 7)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.Equal(t, normal.Key, keys[0].Key)
+
+	newQuota := 1
+	updated, err := BatchUpdateTokens(BatchUpdateTokensParams{
+		Ids:         []int{mcp.Id},
+		UserId:      7,
+		RemainQuota: &newQuota,
+	})
+	require.ErrorIs(t, err, ErrTokenBatchInvalid)
+	require.Zero(t, updated)
+
+	deleted, err := BatchDeleteTokens([]int{mcp.Id}, 7)
+	require.NoError(t, err)
+	require.Zero(t, deleted)
+	var stillStored Token
+	require.NoError(t, DB.First(&stillStored, mcp.Id).Error)
+	require.Equal(t, TokenSourceMcpOAuth, stillStored.Source)
+}
+
+func TestMcpOAuthGrantSchemaSupportsStatusesAndUniqueRefreshFamily(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	familyID := "family_unique_grant"
+	pending := McpOAuthGrant{
+		PublicID:             "grant_schema_pending",
+		ClientID:             "client_schema",
+		UserID:               11,
+		AccountID:            11,
+		Resource:             "https://mcp.example/a",
+		DisplayName:          "Schema Pending",
+		Status:               McpOAuthGrantStatusPending,
+		RefreshTokenFamilyId: nil,
+		CreatedTime:          100,
+		UpdatedTime:          100,
+		LastUsedAt:           0,
+	}
+	secondPending := pending
+	secondPending.PublicID = "grant_schema_pending_2"
+	secondPending.Resource = "https://mcp.example/b"
+	require.NoError(t, DB.Create(&pending).Error)
+	require.NoError(t, DB.Create(&secondPending).Error, "nil refresh family must not collide")
+
+	active := pending
+	active.Id = 0
+	active.PublicID = "grant_schema_active"
+	active.Status = McpOAuthGrantStatusActive
+	active.RefreshTokenFamilyId = &familyID
+	require.NoError(t, DB.Create(&active).Error)
+
+	duplicateFamily := pending
+	duplicateFamily.Id = 0
+	duplicateFamily.PublicID = "grant_schema_duplicate_family"
+	duplicateFamily.RefreshTokenFamilyId = &familyID
+	require.Error(t, DB.Create(&duplicateFamily).Error)
+
+	require.Equal(t, McpOAuthGrantStatusFailed, "failed")
+	require.Equal(t, McpOAuthGrantStatusRevoked, "revoked")
+}
+
+func TestMcpOAuthClientIDColumnsAllowCIMDURL(t *testing.T) {
+	grantSchema, err := schema.Parse(&McpOAuthGrant{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+	clientSchema, err := schema.Parse(&McpOAuthClient{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+
+	require.Equal(t, "varchar(512)", grantSchema.LookUpField("ClientID").TagSettings["TYPE"])
+	require.Equal(t, "varchar(512)", clientSchema.LookUpField("PublicID").TagSettings["TYPE"])
+}
+
+func TestMcpOAuthProvisionPendingGrantActivatesAtomically(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-pending-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := McpOAuthGrant{
+		PublicID:    "grant_pending_activate",
+		ClientID:    "client_pending",
+		UserID:      user.Id,
+		AccountID:   user.Id,
+		Resource:    "https://mcp.example",
+		DisplayName: "Pending App",
+		Status:      McpOAuthGrantStatusPending,
+		CreatedTime: 100,
+		UpdatedTime: 100,
+	}
+	require.NoError(t, DB.Create(&grant).Error)
+
+	token, created, err := ProvisionMcpOAuthGrantDedicatedToken(grant.PublicID, mcpOAuthTokenTemplate("mcp-secret-pending"), 200)
+
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotZero(t, token.Id)
+	var storedGrant McpOAuthGrant
+	require.NoError(t, DB.First(&storedGrant, "public_id = ?", grant.PublicID).Error)
+	require.Equal(t, McpOAuthGrantStatusActive, storedGrant.Status)
+	require.Equal(t, int64(200), storedGrant.UpdatedTime)
+	require.NotNil(t, storedGrant.DedicatedTokenId)
+}
+
+func TestMcpOAuthFailedGrantFailsClosed(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	grant := McpOAuthGrant{
+		PublicID:    "grant_failed",
+		ClientID:    "client_failed",
+		UserID:      12,
+		AccountID:   12,
+		Resource:    "https://mcp.example",
+		DisplayName: "Failed App",
+		Status:      McpOAuthGrantStatusFailed,
+		CreatedTime: 100,
+		UpdatedTime: 100,
+	}
+	require.NoError(t, DB.Create(&grant).Error)
+
+	token, created, err := ProvisionMcpOAuthGrantDedicatedToken(grant.PublicID, mcpOAuthTokenTemplate("mcp-secret-failed"), 200)
+
+	require.ErrorIs(t, err, ErrMcpOAuthGrantUnavailable)
+	require.False(t, created)
+	require.Nil(t, token)
+}
+
 func TestMcpOAuthRevokedGrantNeverReactivatesOrReceivesReplacementToken(t *testing.T) {
 	setupMcpOAuthTestDB(t)
 	user := User{Username: "mcp-revoked-user", Password: "password"}
@@ -130,6 +321,36 @@ func TestMcpOAuthRevokedGrantNeverReactivatesOrReceivesReplacementToken(t *testi
 	require.NoError(t, DB.First(&stored, "public_id = ?", grant.PublicID).Error)
 	require.Equal(t, McpOAuthGrantStatusRevoked, stored.Status)
 	require.Nil(t, stored.DedicatedTokenId)
+}
+
+func TestMcpOAuthDedicatedTokenPointerCorruptionFailsClosed(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-corrupt-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	normal := Token{
+		UserId:         user.Id,
+		Name:           "normal-token",
+		Key:            "normal-secret",
+		Status:         common.TokenStatusEnabled,
+		ExpiredTime:    -1,
+		RemainQuota:    100,
+		UnlimitedQuota: true,
+	}
+	require.NoError(t, DB.Create(&normal).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_corrupt_pointer", user.Id)
+	require.NoError(t, DB.Model(&grant).Update("dedicated_token_id", normal.Id).Error)
+
+	token, created, err := ProvisionMcpOAuthGrantDedicatedToken(grant.PublicID, mcpOAuthTokenTemplate("mcp-secret-corrupt"), 200)
+	require.ErrorIs(t, err, ErrMcpOAuthGrantTokenLinkCorrupt)
+	require.False(t, created)
+	require.Nil(t, token)
+
+	revoked, err := RevokeMcpOAuthGrant(grant.PublicID, 201)
+	require.ErrorIs(t, err, ErrMcpOAuthGrantTokenLinkCorrupt)
+	require.False(t, revoked)
+	var storedNormal Token
+	require.NoError(t, DB.First(&storedNormal, normal.Id).Error)
+	require.Equal(t, common.TokenStatusEnabled, storedNormal.Status)
 }
 
 func TestMcpOAuthAuthorizationCodeConsumesAtomicallyOnce(t *testing.T) {
@@ -230,6 +451,10 @@ func TestMcpOAuthConcurrentRefreshRotationHasOneWinnerAndReplayRevokesFamily(t *
 		require.NotZero(t, token.RevokedAt)
 	}
 	require.NotZero(t, winnerNextID, "winner must have created a next-generation token before replay revoked it")
+	var storedGrant McpOAuthGrant
+	require.NoError(t, DB.First(&storedGrant, "public_id = ?", grant.PublicID).Error)
+	require.NotNil(t, storedGrant.RefreshTokenFamilyId)
+	require.Equal(t, current.FamilyID, *storedGrant.RefreshTokenFamilyId)
 }
 
 func TestMcpOAuthRevokeGrantDisablesLinkedTokenInSameTransactionOnlyOnce(t *testing.T) {

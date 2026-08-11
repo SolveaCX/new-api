@@ -97,9 +97,23 @@ func (token *Token) GetIpLimits() []string {
 	return ipLimits
 }
 
+func userVisibleTokenScope(db *gorm.DB) *gorm.DB {
+	return db.Where("source IS NULL OR source <> ?", TokenSourceMcpOAuth)
+}
+
+func tokenKeyColumn() string {
+	if commonKeyCol != "" {
+		return commonKeyCol
+	}
+	if common.UsingPostgreSQL {
+		return `"key"`
+	}
+	return "`key`"
+}
+
 func GetAllUserTokens(userId int, startIdx int, num int, group string) ([]*Token, error) {
 	var tokens []*Token
-	query := DB.Where("user_id = ?", userId)
+	query := userVisibleTokenScope(DB).Where("user_id = ?", userId)
 	if group != "" {
 		query = query.Where(&Token{Group: group})
 	}
@@ -173,7 +187,7 @@ func SearchUserTokens(userId int, keyword string, token string, group string, st
 		}
 	}
 
-	baseQuery := DB.Model(&Token{}).Where("user_id = ?", userId)
+	baseQuery := userVisibleTokenScope(DB.Model(&Token{})).Where("user_id = ?", userId)
 	if group != "" {
 		baseQuery = baseQuery.Where(&Token{Group: group})
 	}
@@ -191,7 +205,7 @@ func SearchUserTokens(userId int, keyword string, token string, group string, st
 		if err != nil {
 			return nil, 0, err
 		}
-		baseQuery = baseQuery.Where(commonKeyCol+" LIKE ? ESCAPE '!'", tokenPattern)
+		baseQuery = baseQuery.Where(tokenKeyColumn()+" LIKE ? ESCAPE '!'", tokenPattern)
 	}
 	if status != 0 {
 		condition, args := effectiveTokenStatusCondition(status, common.GetTimestamp())
@@ -267,7 +281,7 @@ func GetTokenByIds(id int, userId int) (*Token, error) {
 	}
 	token := Token{Id: id, UserId: userId}
 	var err error = nil
-	err = DB.First(&token, "id = ? and user_id = ?", id, userId).Error
+	err = userVisibleTokenScope(DB).First(&token, "id = ? and user_id = ?", id, userId).Error
 	return &token, err
 }
 
@@ -325,6 +339,9 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 		// Try Redis first
 		token, err := cacheGetTokenByKey(key)
 		if err == nil {
+			if token.Source == TokenSourceMcpOAuth {
+				return nil, gorm.ErrRecordNotFound
+			}
 			return token, nil
 		}
 		if errors.Is(err, ErrTokenPermissionUpdatePending) {
@@ -340,7 +357,7 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 		}
 	}
 	fromDB = true
-	err = DB.Where(commonKeyCol+" = ?", key).First(&token).Error
+	err = userVisibleTokenScope(DB).Where(tokenKeyColumn()+" = ?", key).First(&token).Error
 	return token, err
 }
 
@@ -395,7 +412,7 @@ func createUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) e
 	}
 
 	var total int64
-	if err := tx.Model(&Token{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
+	if err := userVisibleTokenScope(tx.Model(&Token{})).Where("user_id = ?", userId).Count(&total).Error; err != nil {
 		return err
 	}
 	if int(total) >= maxTokens {
@@ -459,7 +476,7 @@ func ensureInitialUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens
 	}
 
 	var total int64
-	if err := tx.Model(&Token{}).Where("user_id = ?", userId).Count(&total).Error; err != nil {
+	if err := userVisibleTokenScope(tx.Model(&Token{})).Where("user_id = ?", userId).Count(&total).Error; err != nil {
 		return false, err
 	}
 	if total > 0 {
@@ -674,7 +691,7 @@ func decreaseTokenQuota(id int, quota int) (err error) {
 // CountUserTokens returns total number of tokens for the given user, used for pagination
 func CountUserTokens(userId int) (int64, error) {
 	var total int64
-	err := DB.Model(&Token{}).Where("user_id = ?", userId).Count(&total).Error
+	err := userVisibleTokenScope(DB.Model(&Token{})).Where("user_id = ?", userId).Count(&total).Error
 	return total, err
 }
 
@@ -683,7 +700,7 @@ func CountUserTokensByGroup(userId int, group string) (int64, error) {
 		return CountUserTokens(userId)
 	}
 	var total int64
-	err := DB.Model(&Token{}).
+	err := userVisibleTokenScope(DB.Model(&Token{})).
 		Where("user_id = ?", userId).
 		Where(&Token{Group: group}).
 		Count(&total).Error
@@ -792,7 +809,7 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 	requiresPermissionCacheInvalidation := params.RemainQuota != nil || params.ModelLimitsEnabled != nil || params.ModelBlacklistEnabled != nil
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var tokens []Token
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		if err := userVisibleTokenScope(tx.Clauses(clause.Locking{Strength: "UPDATE"})).
 			Select("id", "key").
 			Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
 			Find(&tokens).Error; err != nil {
@@ -830,7 +847,7 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 			updates["model_blacklist"] = *params.ModelBlacklist
 		}
 		if len(updates) > 0 {
-			result := tx.Model(&Token{}).
+			result := userVisibleTokenScope(tx.Model(&Token{})).
 				Where("user_id = ? AND id IN ?", params.UserId, params.Ids).
 				Updates(updates)
 			if result.Error != nil {
@@ -838,7 +855,7 @@ func BatchUpdateTokens(params BatchUpdateTokensParams) (int, error) {
 			}
 		}
 		if params.RemainQuota != nil {
-			result := tx.Model(&Token{}).
+			result := userVisibleTokenScope(tx.Model(&Token{})).
 				Where("user_id = ? AND id IN ? AND unlimited_quota = ?", params.UserId, params.Ids, false).
 				Update("remain_quota", *params.RemainQuota)
 			if result.Error != nil {
@@ -970,7 +987,7 @@ func GetUserTokenStats(userId int) (UserTokenStats, error) {
 	queryArgs = append(queryArgs, exhaustedArgs...)
 
 	var stats UserTokenStats
-	err := DB.Model(&Token{}).
+	err := userVisibleTokenScope(DB.Model(&Token{})).
 		Select(fmt.Sprintf(`
 			COUNT(*) AS total,
 			COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS enabled,
@@ -999,12 +1016,12 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	tx := DB.Begin()
 
 	var tokens []Token
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+	if err := userVisibleTokenScope(tx).Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}
 
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Delete(&Token{}).Error; err != nil {
+	if err := userVisibleTokenScope(tx).Where("user_id = ? AND id IN (?)", userId, ids).Delete(&Token{}).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}
@@ -1030,7 +1047,7 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 
 func GetTokenKeysByIds(ids []int, userId int) ([]Token, error) {
 	var tokens []Token
-	err := DB.Select("id", commonKeyCol).
+	err := userVisibleTokenScope(DB).Select("id", tokenKeyColumn()).
 		Where("user_id = ? AND id IN (?)", userId, ids).
 		Find(&tokens).Error
 	return tokens, err

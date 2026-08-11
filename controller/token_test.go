@@ -953,6 +953,49 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	}
 }
 
+func TestMcpOAuthDedicatedTokenHiddenFromTokenControllerResponses(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	normal := seedToken(t, db, 1, "normal-token", "normal-token-secret")
+	grantID := "grant_controller_hidden"
+	mcpToken := &model.Token{
+		UserId:         1,
+		Name:           "hidden-mcp-token",
+		Key:            "mcp-controller-secret",
+		Status:         common.TokenStatusEnabled,
+		CreatedTime:    1,
+		AccessedTime:   1,
+		ExpiredTime:    -1,
+		RemainQuota:    100,
+		UnlimitedQuota: true,
+		Group:          "default",
+		Source:         model.TokenSourceMcpOAuth,
+		OAuthGrantId:   &grantID,
+	}
+	require.NoError(t, db.Create(mcpToken).Error)
+
+	listCtx, listRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/?p=1&size=10", nil, 1)
+	GetAllTokens(listCtx)
+	require.NotContains(t, listRecorder.Body.String(), mcpToken.Key)
+	require.NotContains(t, listRecorder.Body.String(), mcpToken.Name)
+	require.Contains(t, listRecorder.Body.String(), normal.Name)
+
+	searchCtx, searchRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/search?token="+mcpToken.Key+"&p=1&size=10", nil, 1)
+	SearchTokens(searchCtx)
+	require.NotContains(t, searchRecorder.Body.String(), mcpToken.Key)
+	require.NotContains(t, searchRecorder.Body.String(), mcpToken.Name)
+
+	keyCtx, keyRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/"+strconv.Itoa(mcpToken.Id)+"/key", nil, 1)
+	keyCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(mcpToken.Id)}}
+	GetTokenKey(keyCtx)
+	require.NotContains(t, keyRecorder.Body.String(), mcpToken.Key)
+	require.False(t, decodeAPIResponse(t, keyRecorder).Success)
+
+	batchCtx, batchRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/batch/keys", TokenBatch{Ids: []int{normal.Id, mcpToken.Id}}, 1)
+	GetTokenKeysBatch(batchCtx)
+	require.NotContains(t, batchRecorder.Body.String(), mcpToken.Key)
+	require.Contains(t, batchRecorder.Body.String(), normal.Key)
+}
+
 func TestEnsureInitialTokenCreatesAndRevealsOnlyWhenUserHasNoTokens(t *testing.T) {
 	db := setupInitialTokenControllerTestDB(t)
 	seedTokenUser(t, db, 11)
