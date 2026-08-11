@@ -62,9 +62,9 @@ func SetApiRouter(router *gin.Engine) {
 			// Catalog browsing is available to an authenticated dashboard
 			// session or an API client. Execution is deliberately token-only:
 			// every billable call must be attributable to one Flatkey API key.
-			dataToolRoute.GET("", middleware.TokenOrUserAuth(), controller.ListDataTools)
-			dataToolRoute.GET("/inspect", middleware.TokenOrUserAuth(), controller.InspectDataTool)
-			dataToolRoute.POST("/run", middleware.TokenAuth(), controller.RunDataTool)
+			dataToolRoute.GET("", middleware.DataToolsAuth("tools:search", true), controller.ListDataTools)
+			dataToolRoute.GET("/inspect", middleware.DataToolsAuth("tools:read", true), controller.InspectDataTool)
+			dataToolRoute.POST("/run", middleware.DataToolsAuth("tools:execute", false), controller.RunDataTool)
 		}
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
