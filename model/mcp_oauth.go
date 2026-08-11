@@ -259,16 +259,22 @@ func RotateMcpOAuthRefreshToken(tokenHash string, next McpOAuthRefreshToken, now
 	var nextStored McpOAuthRefreshToken
 	var replayDetected bool
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var current McpOAuthRefreshToken
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		var lookup McpOAuthRefreshToken
+		if err := tx.Select("id", "grant_public_id").
 			Where("token_hash = ?", tokenHash).
-			First(&current).Error; err != nil {
+			First(&lookup).Error; err != nil {
 			return err
 		}
+		var current McpOAuthRefreshToken
 		var grant McpOAuthGrant
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("public_id = ?", current.GrantPublicID).
+			Where("public_id = ?", lookup.GrantPublicID).
 			First(&grant).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND token_hash = ? AND grant_public_id = ?", lookup.Id, tokenHash, grant.PublicID).
+			First(&current).Error; err != nil {
 			return err
 		}
 		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
