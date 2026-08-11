@@ -300,8 +300,8 @@ jobs:
             --data-urlencode "resource=${STAGING_FLATKEY_MCP_RESOURCE}" \
             "${url}/oauth/token" || true)"
           token_error="$(jq -r '.error // empty' "${token_probe}" 2>/dev/null || true)"
-          if [[ "${token_code}" != "400" || "${token_error}" != "invalid_client" ]]; then
-            echo "Expected candidate OAuth token probe to pass resource validation and fail pre-auth as invalid_client; got HTTP ${token_code}, error ${token_error:-<empty>}" >&2
+          if [[ "${token_code}" != "400" || "${token_error}" != "invalid_grant" ]]; then
+            echo "Expected candidate OAuth token probe to pass resource validation and fail locally as invalid_grant; got HTTP ${token_code}, error ${token_error:-<empty>}" >&2
             cat "${token_probe}" >&2
             exit 1
           fi
