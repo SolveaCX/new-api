@@ -11,7 +11,9 @@ import (
 )
 
 const (
+	McpOAuthGrantStatusPending = "pending"
 	McpOAuthGrantStatusActive  = "active"
+	McpOAuthGrantStatusFailed  = "failed"
 	McpOAuthGrantStatusRevoked = "revoked"
 
 	McpOAuthRefreshTokenStatusActive  = "active"
@@ -20,15 +22,18 @@ const (
 )
 
 var (
-	ErrMcpOAuthGrantRevoked       = errors.New("mcp oauth grant revoked")
-	ErrMcpOAuthCredentialConsumed = errors.New("mcp oauth credential consumed")
-	ErrMcpOAuthCredentialExpired  = errors.New("mcp oauth credential expired")
-	ErrMcpOAuthRefreshReplay      = errors.New("mcp oauth refresh token replay")
+	ErrMcpOAuthGrantRevoked          = errors.New("mcp oauth grant revoked")
+	ErrMcpOAuthCredentialConsumed    = errors.New("mcp oauth credential consumed")
+	ErrMcpOAuthCredentialExpired     = errors.New("mcp oauth credential expired")
+	ErrMcpOAuthRefreshReplay         = errors.New("mcp oauth refresh token replay")
+	ErrMcpOAuthGrantUnavailable      = errors.New("mcp oauth grant unavailable")
+	ErrMcpOAuthGrantTokenLinkCorrupt = errors.New("mcp oauth grant token link corrupt")
+	ErrMcpOAuthRefreshFamilyConflict = errors.New("mcp oauth refresh family conflict")
 )
 
 type McpOAuthClient struct {
 	Id           int    `json:"id"`
-	PublicID     string `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
+	PublicID     string `json:"public_id" gorm:"type:varchar(512);uniqueIndex"`
 	Name         string `json:"name" gorm:"type:varchar(128);not null"`
 	RedirectURIs string `json:"redirect_uris" gorm:"type:text"`
 	CreatedTime  int64  `json:"created_time" gorm:"bigint"`
@@ -41,16 +46,21 @@ func (McpOAuthClient) TableName() string {
 }
 
 type McpOAuthGrant struct {
-	Id               int    `json:"id"`
-	PublicID         string `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
-	ClientID         string `json:"client_id" gorm:"type:varchar(64);index"`
-	UserID           int    `json:"user_id" gorm:"index"`
-	DedicatedTokenId *int   `json:"dedicated_token_id" gorm:"uniqueIndex"`
-	Status           string `json:"status" gorm:"type:varchar(16);index;default:'active'"`
-	Scope            string `json:"scope" gorm:"type:varchar(1024);default:''"`
-	CreatedTime      int64  `json:"created_time" gorm:"bigint"`
-	UpdatedTime      int64  `json:"updated_time" gorm:"bigint"`
-	RevokedAt        int64  `json:"revoked_at" gorm:"bigint;default:0;index"`
+	Id                   int     `json:"id"`
+	PublicID             string  `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
+	ClientID             string  `json:"client_id" gorm:"type:varchar(512);index"`
+	UserID               int     `json:"user_id" gorm:"index"`
+	AccountID            int     `json:"account_id" gorm:"index"`
+	Resource             string  `json:"resource" gorm:"type:varchar(255);index;default:''"`
+	DisplayName          string  `json:"display_name" gorm:"type:varchar(128);default:''"`
+	DedicatedTokenId     *int    `json:"dedicated_token_id" gorm:"uniqueIndex"`
+	RefreshTokenFamilyId *string `json:"refresh_token_family_id" gorm:"type:varchar(64);uniqueIndex"`
+	Status               string  `json:"status" gorm:"type:varchar(16);index;default:'pending'"`
+	Scope                string  `json:"scope" gorm:"type:varchar(1024);default:''"`
+	CreatedTime          int64   `json:"created_time" gorm:"bigint"`
+	UpdatedTime          int64   `json:"updated_time" gorm:"bigint"`
+	LastUsedAt           int64   `json:"last_used_at" gorm:"bigint;default:0;index"`
+	RevokedAt            int64   `json:"revoked_at" gorm:"bigint;default:0;index"`
 }
 
 func (McpOAuthGrant) TableName() string {
@@ -117,19 +127,28 @@ func ProvisionMcpOAuthGrantDedicatedToken(grantPublicID string, token Token, now
 		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
 			return ErrMcpOAuthGrantRevoked
 		}
+		if grant.Status != McpOAuthGrantStatusPending && grant.Status != McpOAuthGrantStatusActive {
+			return ErrMcpOAuthGrantUnavailable
+		}
 		if grant.DedicatedTokenId != nil && *grant.DedicatedTokenId > 0 {
-			if err := tx.First(&result, *grant.DedicatedTokenId).Error; err != nil {
+			err := tx.Where("id = ? AND source = ? AND oauth_grant_id = ?", *grant.DedicatedTokenId, TokenSourceMcpOAuth, grant.PublicID).
+				First(&result).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMcpOAuthGrantTokenLinkCorrupt
+			}
+			if err != nil {
 				return err
 			}
 			return nil
 		}
 
 		var existing Token
-		err := tx.Where("oauth_grant_id = ?", grant.PublicID).First(&existing).Error
+		err := tx.Where("source = ? AND oauth_grant_id = ?", TokenSourceMcpOAuth, grant.PublicID).First(&existing).Error
 		if err == nil {
 			tokenID := existing.Id
 			if err := tx.Model(&grant).Updates(map[string]any{
 				"dedicated_token_id": &tokenID,
+				"status":             McpOAuthGrantStatusActive,
 				"updated_time":       now,
 			}).Error; err != nil {
 				return err
@@ -156,6 +175,7 @@ func ProvisionMcpOAuthGrantDedicatedToken(grantPublicID string, token Token, now
 		tokenID := token.Id
 		if err := tx.Model(&grant).Updates(map[string]any{
 			"dedicated_token_id": &tokenID,
+			"status":             McpOAuthGrantStatusActive,
 			"updated_time":       now,
 		}).Error; err != nil {
 			return err
@@ -217,6 +237,35 @@ func RotateMcpOAuthRefreshToken(tokenHash string, next McpOAuthRefreshToken, now
 			Where("token_hash = ?", tokenHash).
 			First(&current).Error; err != nil {
 			return err
+		}
+		var grant McpOAuthGrant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("public_id = ?", current.GrantPublicID).
+			First(&grant).Error; err != nil {
+			return err
+		}
+		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
+			return ErrMcpOAuthGrantRevoked
+		}
+		if grant.Status != McpOAuthGrantStatusActive {
+			return ErrMcpOAuthGrantUnavailable
+		}
+		if grant.RefreshTokenFamilyId != nil && *grant.RefreshTokenFamilyId != current.FamilyID {
+			return ErrMcpOAuthRefreshFamilyConflict
+		}
+		if grant.RefreshTokenFamilyId == nil {
+			familyID := current.FamilyID
+			if familyID == "" {
+				familyID = current.PublicID
+			}
+			if err := tx.Model(&grant).Updates(map[string]any{
+				"refresh_token_family_id": &familyID,
+				"last_used_at":            now,
+				"updated_time":            now,
+			}).Error; err != nil {
+				return err
+			}
+			grant.RefreshTokenFamilyId = &familyID
 		}
 		if current.Status != McpOAuthRefreshTokenStatusActive || current.RevokedAt != 0 {
 			if err := revokeMcpOAuthRefreshFamilyInTx(tx, current.FamilyID, now, true); err != nil {
@@ -295,6 +344,17 @@ func RevokeMcpOAuthGrant(grantPublicID string, now int64) (bool, error) {
 		}
 		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
 			return nil
+		}
+		if grant.DedicatedTokenId != nil && *grant.DedicatedTokenId > 0 {
+			var linked Token
+			err := tx.Where("id = ? AND source = ? AND oauth_grant_id = ?", *grant.DedicatedTokenId, TokenSourceMcpOAuth, grant.PublicID).
+				First(&linked).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMcpOAuthGrantTokenLinkCorrupt
+			}
+			if err != nil {
+				return err
+			}
 		}
 		update := tx.Model(&McpOAuthGrant{}).
 			Where("id = ? AND status <> ? AND revoked_at = 0", grant.Id, McpOAuthGrantStatusRevoked).
