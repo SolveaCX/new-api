@@ -3,9 +3,15 @@
 ## Source of truth
 
 - Status: Active
-- Last refreshed: 2026-08-08
-- Primary product surfaces: Administrator Activity Configuration offer validity, minimum purchase amount, module-wide email throughput, email authoring, localization review, generation, activation preflight, Continuous Activity lifecycle automation, lifecycle operations/metrics, and customer Wallet Recall-offer pricing.
+- Last refreshed: 2026-08-11
+- Primary product surfaces: Authenticated Console application header and official CLI discovery entry; Administrator Activity Configuration offer validity, minimum purchase amount, module-wide email throughput, email authoring, localization review, generation, activation preflight, Continuous Activity lifecycle automation, lifecycle operations/metrics, and customer Wallet Recall-offer pricing.
 - Evidence reviewed:
+  - `web/default/src/components/layout/components/app-header.tsx`
+  - `web/default/src/components/layout/components/header.tsx`
+  - `web/default/src/components/layout/components/top-nav.tsx`
+  - `web/default/src/components/ui/button.tsx`
+  - `web/default/src/lib/origins.ts`
+  - `website/src/lib/cli-landing.ts`
   - `web/default/src/features/recall-campaigns/components/campaign-editor.tsx`
   - `web/default/src/features/recall-campaigns/components/campaign-email-html-editor.tsx`
   - `web/default/src/features/recall-campaigns/index.tsx`
@@ -180,3 +186,13 @@
 ## Open questions
 
 - None. The source language, trigger, activation gate, optional review rule, regeneration overwrite behavior, both promotion-validity modes, optional operator-entered USD/INR/BRL/JPY minimums, and one Activity-module-wide hourly email limit are approved.
+
+## Authenticated Console header / CLI CTA addendum
+
+- Goal: Make Flatkey CLI immediately discoverable from every authenticated Console screen without restoring Home, Rankings, or other removed navigation items.
+- Placement: The CTA lives in the default `AppHeader` action group after desktop website navigation and before notifications. It is intentionally separate from `TopNav` so it remains visible below the `lg` breakpoint and does not appear in public navigation consumers.
+- Destination: Open the official website `/cli` landing page through the Console origin helper. Do not point ordinary navigation at `/cli/authorize`, which requires a device authorization code.
+- Visual treatment: Reuse the existing compact button shape and brand-violet palette. Use a terminal icon plus a visible `CLI` label, a restrained violet-to-fuchsia treatment, and a modest shadow. Do not pulse, flash, or animate continuously.
+- Responsive behavior: Show `Flatkey CLI` from `sm` upward and the shorter `CLI` label on narrower screens. The control remains visible at 360px and does not depend on hover.
+- Accessibility: Render a real link with a visible keyboard focus ring, sufficient text contrast, and decorative icons hidden from assistive technology. External navigation opens in a new tab with `noopener noreferrer`.
+- Verification: Cover destination, external-link safety, visible desktop/mobile labels, and icon semantics with a component test; run targeted tests, lint, formatting, typecheck, production build, and 1440px/390px browser checks.
