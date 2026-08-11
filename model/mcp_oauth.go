@@ -197,18 +197,45 @@ func ConsumeMcpOAuthAuthorizationCode(codeHash string, now int64) (*McpOAuthAuth
 	}
 	var consumedCode McpOAuthAuthorizationCode
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		var stored McpOAuthAuthorizationCode
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("code_hash = ?", codeHash).
+			First(&stored).Error; err != nil {
+			return err
+		}
+		if stored.ConsumedAt != 0 {
+			return ErrMcpOAuthCredentialConsumed
+		}
+		if stored.ExpiresAt <= now {
+			return ErrMcpOAuthCredentialExpired
+		}
+
+		var grant McpOAuthGrant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("public_id = ?", stored.GrantPublicID).
+			First(&grant).Error; err != nil {
+			return err
+		}
+		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
+			return ErrMcpOAuthGrantRevoked
+		}
+		if grant.Status != McpOAuthGrantStatusActive {
+			return ErrMcpOAuthGrantUnavailable
+		}
+
 		update := tx.Model(&McpOAuthAuthorizationCode{}).
-			Where("code_hash = ? AND consumed_at = 0 AND expires_at > ?", codeHash, now).
+			Where("id = ? AND consumed_at = 0 AND expires_at > ?", stored.Id, now).
 			Update("consumed_at", now)
 		if update.Error != nil {
 			return update.Error
 		}
 		if update.RowsAffected == 1 {
-			return tx.Where("code_hash = ?", codeHash).First(&consumedCode).Error
+			stored.ConsumedAt = now
+			consumedCode = stored
+			return nil
 		}
 
-		var stored McpOAuthAuthorizationCode
-		if err := tx.Where("code_hash = ?", codeHash).First(&stored).Error; err != nil {
+		if err := tx.Where("id = ?", stored.Id).First(&stored).Error; err != nil {
 			return err
 		}
 		if stored.ConsumedAt != 0 {
@@ -250,22 +277,28 @@ func RotateMcpOAuthRefreshToken(tokenHash string, next McpOAuthRefreshToken, now
 		if grant.Status != McpOAuthGrantStatusActive {
 			return ErrMcpOAuthGrantUnavailable
 		}
-		if grant.RefreshTokenFamilyId != nil && *grant.RefreshTokenFamilyId != current.FamilyID {
+		effectiveFamilyID := current.FamilyID
+		if effectiveFamilyID == "" {
+			effectiveFamilyID = current.PublicID
+		}
+		if grant.RefreshTokenFamilyId != nil && *grant.RefreshTokenFamilyId != effectiveFamilyID {
 			return ErrMcpOAuthRefreshFamilyConflict
 		}
-		if grant.RefreshTokenFamilyId == nil {
-			familyID := current.FamilyID
-			if familyID == "" {
-				familyID = current.PublicID
+		if current.FamilyID == "" {
+			if err := tx.Model(&current).Update("family_id", effectiveFamilyID).Error; err != nil {
+				return err
 			}
+			current.FamilyID = effectiveFamilyID
+		}
+		if grant.RefreshTokenFamilyId == nil {
 			if err := tx.Model(&grant).Updates(map[string]any{
-				"refresh_token_family_id": &familyID,
+				"refresh_token_family_id": &effectiveFamilyID,
 				"last_used_at":            now,
 				"updated_time":            now,
 			}).Error; err != nil {
 				return err
 			}
-			grant.RefreshTokenFamilyId = &familyID
+			grant.RefreshTokenFamilyId = &effectiveFamilyID
 		}
 		if current.Status != McpOAuthRefreshTokenStatusActive || current.RevokedAt != 0 {
 			if err := revokeMcpOAuthRefreshFamilyInTx(tx, current.FamilyID, now, true); err != nil {

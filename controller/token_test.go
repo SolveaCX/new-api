@@ -994,6 +994,14 @@ func TestMcpOAuthDedicatedTokenHiddenFromTokenControllerResponses(t *testing.T) 
 	GetTokenKeysBatch(batchCtx)
 	require.NotContains(t, batchRecorder.Body.String(), mcpToken.Key)
 	require.Contains(t, batchRecorder.Body.String(), normal.Key)
+
+	deleteCtx, deleteRecorder := newAuthenticatedContext(t, http.MethodDelete, "/api/token/"+strconv.Itoa(mcpToken.Id), nil, 1)
+	deleteCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(mcpToken.Id)}}
+	DeleteToken(deleteCtx)
+	require.False(t, decodeAPIResponse(t, deleteRecorder).Success)
+	var stillStored model.Token
+	require.NoError(t, db.First(&stillStored, mcpToken.Id).Error)
+	require.Equal(t, model.TokenSourceMcpOAuth, stillStored.Source)
 }
 
 func TestEnsureInitialTokenCreatesAndRevealsOnlyWhenUserHasNoTokens(t *testing.T) {
