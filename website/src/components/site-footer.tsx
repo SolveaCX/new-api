@@ -249,13 +249,6 @@ export function SiteFooter(props: SiteFooterProps) {
               <span className="sr-only">flatkey.ai</span>
             </Link>
             <p className="mt-4 max-w-[330px] text-[15px] leading-7 font-semibold text-[#575762] dark:text-white/62">{copy.tagline}</p>
-            <a
-              href="mailto:support@flatkey.ai"
-              className="mt-5 inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-[#FFFDF6] px-4 py-2 text-sm font-extrabold shadow-[3px_3px_0_#101014] hover:bg-[#F9F871] dark:border-white/18 dark:bg-white/8 dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]"
-            >
-              <Mail className="size-4" />
-              support@flatkey.ai
-            </a>
           </div>
           <FooterColumn title={labels.product} links={productLinks} locale={props.locale} />
           <FooterColumn title={labels.developers} links={developerLinks} locale={props.locale} />

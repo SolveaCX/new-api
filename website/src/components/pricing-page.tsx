@@ -909,16 +909,7 @@ export async function PricingPage(props: PricingPageProps) {
             </p>
           </header>
 
-          <PricingPlansGrid
-            plans={plans}
-            locale={props.locale}
-            contactCopy={{
-              closeLabel: copy.enterpriseContactCloseLabel,
-              eyebrow: copy.enterpriseContactEyebrow,
-              title: copy.enterpriseContactTitle,
-              description: copy.enterpriseContactDescription,
-            }}
-          />
+          <PricingPlansGrid plans={plans} locale={props.locale} />
 
           <section className="mt-10">
             <div className="mb-5 flex items-end justify-between gap-4">

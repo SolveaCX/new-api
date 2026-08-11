@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
+import { LoadingTransitionPreloads } from "@/components/loading-transition-preloads";
 import { SiteConfigProvider } from "@/components/site-config-provider";
 import { MIXPANEL_BROWSER_SCRIPT } from "@/lib/mixpanel";
 import { localeLanguageTag, type Locale } from "@/lib/locales";
@@ -127,6 +128,7 @@ export function RootDocument({ bodyStart, children, docsUrl, lang }: RootDocumen
   return (
     <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
       <body>
+        <LoadingTransitionPreloads />
         {bodyStart}
         <Script id="google-tag-manager" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.gtmStrategy}>
           {`
