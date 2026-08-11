@@ -166,7 +166,12 @@ func GitHubOAuth(c *gin.Context) {
 		GitHubId: githubUser.Login,
 	}
 	// IsGitHubIdAlreadyTaken is unscoped
-	if model.IsGitHubIdAlreadyTaken(user.GitHubId) {
+	isTaken, err := model.IsGitHubIdAlreadyTaken(user.GitHubId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		// FillUserByGitHubId is scoped
 		err := user.FillUserByGitHubId()
 		if err != nil {
@@ -244,7 +249,12 @@ func GitHubBind(c *gin.Context) {
 	user := model.User{
 		GitHubId: githubUser.Login,
 	}
-	if model.IsGitHubIdAlreadyTaken(user.GitHubId) {
+	isTaken, err := model.IsGitHubIdAlreadyTaken(user.GitHubId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "该 GitHub 账户已被绑定",

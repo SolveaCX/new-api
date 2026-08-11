@@ -916,8 +916,11 @@ func (user *User) FillUserByGitHubId() error {
 	if user.GitHubId == "" {
 		return errors.New("GitHub id 为空！")
 	}
-	DB.Where(User{GitHubId: user.GitHubId}).First(user)
-	return nil
+	err := DB.Where(User{GitHubId: user.GitHubId}).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
 }
 
 // UpdateGitHubId updates the user's GitHub ID (used for migration from login to numeric ID)
@@ -932,24 +935,33 @@ func (user *User) FillUserByDiscordId() error {
 	if user.DiscordId == "" {
 		return errors.New("discord id 为空！")
 	}
-	DB.Where(User{DiscordId: user.DiscordId}).First(user)
-	return nil
+	err := DB.Where(User{DiscordId: user.DiscordId}).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (user *User) FillUserByOidcId() error {
 	if user.OidcId == "" {
 		return errors.New("oidc id 为空！")
 	}
-	DB.Where(User{OidcId: user.OidcId}).First(user)
-	return nil
+	err := DB.Where(User{OidcId: user.OidcId}).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (user *User) FillUserByGoogleId() error {
 	if user.GoogleId == "" {
 		return errors.New("google id 为空！")
 	}
-	DB.Where(User{GoogleId: user.GoogleId}).First(user)
-	return nil
+	err := DB.Where(User{GoogleId: user.GoogleId}).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (user *User) FillUserByWeChatId() error {
@@ -979,22 +991,26 @@ func IsWeChatIdAlreadyTaken(wechatId string) bool {
 	return DB.Unscoped().Where("wechat_id = ?", wechatId).Find(&User{}).RowsAffected == 1
 }
 
-func IsGitHubIdAlreadyTaken(githubId string) bool {
-	return DB.Unscoped().Where("github_id = ?", githubId).Find(&User{}).RowsAffected == 1
+func IsGitHubIdAlreadyTaken(githubId string) (bool, error) {
+	result := DB.Unscoped().Where("github_id = ?", githubId).Find(&User{})
+	return result.RowsAffected > 0, result.Error
 }
 
-func IsDiscordIdAlreadyTaken(discordId string) bool {
-	return DB.Unscoped().Where("discord_id = ?", discordId).Find(&User{}).RowsAffected == 1
+func IsDiscordIdAlreadyTaken(discordId string) (bool, error) {
+	result := DB.Unscoped().Where("discord_id = ?", discordId).Find(&User{})
+	return result.RowsAffected > 0, result.Error
 }
 
-func IsOidcIdAlreadyTaken(oidcId string) bool {
-	return DB.Where("oidc_id = ?", oidcId).Find(&User{}).RowsAffected == 1
+func IsOidcIdAlreadyTaken(oidcId string) (bool, error) {
+	result := DB.Unscoped().Where("oidc_id = ?", oidcId).Find(&User{})
+	return result.RowsAffected > 0, result.Error
 }
 
-func IsGoogleIdAlreadyTaken(googleId string) bool {
+func IsGoogleIdAlreadyTaken(googleId string) (bool, error) {
 	// Use Unscoped so a soft-deleted/banned user's google_id stays reserved and
 	// cannot be re-registered (matches GitHub/Discord/Telegram behavior).
-	return DB.Unscoped().Where("google_id = ?", googleId).Find(&User{}).RowsAffected == 1
+	result := DB.Unscoped().Where("google_id = ?", googleId).Find(&User{})
+	return result.RowsAffected > 0, result.Error
 }
 
 func IsTelegramIdAlreadyTaken(telegramId string) bool {
@@ -1451,10 +1467,9 @@ func GetUsernameById(id int, fromDB bool) (username string, err error) {
 	return username, nil
 }
 
-func IsLinuxDOIdAlreadyTaken(linuxDOId string) bool {
-	var user User
-	err := DB.Unscoped().Where("linux_do_id = ?", linuxDOId).First(&user).Error
-	return !errors.Is(err, gorm.ErrRecordNotFound)
+func IsLinuxDOIdAlreadyTaken(linuxDOId string) (bool, error) {
+	result := DB.Unscoped().Where("linux_do_id = ?", linuxDOId).Find(&User{})
+	return result.RowsAffected > 0, result.Error
 }
 
 func (user *User) FillUserByLinuxDOId() error {
@@ -1462,6 +1477,9 @@ func (user *User) FillUserByLinuxDOId() error {
 		return errors.New("linux do id is empty")
 	}
 	err := DB.Where("linux_do_id = ?", user.LinuxDOId).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
 	return err
 }
 

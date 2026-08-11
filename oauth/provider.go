@@ -22,8 +22,9 @@ type Provider interface {
 	// GetUserInfo retrieves user information using the access token
 	GetUserInfo(ctx context.Context, token *OAuthToken) (*OAuthUser, error)
 
-	// IsUserIDTaken checks if the provider user ID is already associated with an account
-	IsUserIDTaken(providerUserID string) bool
+	// IsUserIDTaken checks if the provider user ID is already associated with an account.
+	// Database errors must be returned so callers never treat a failed lookup as absence.
+	IsUserIDTaken(providerUserID string) (bool, error)
 
 	// FillUserByProviderID fills the user model by provider user ID
 	FillUserByProviderID(user *model.User, providerUserID string) error

@@ -204,13 +204,23 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 	}
 
 	// Check if this OAuth account is already bound (check both new ID and legacy ID)
-	if provider.IsUserIDTaken(oauthUser.ProviderUserID) {
+	isTaken, err := provider.IsUserIDTaken(oauthUser.ProviderUserID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if isTaken {
 		common.ApiErrorI18n(c, i18n.MsgOAuthAlreadyBound, providerParams(provider.GetName()))
 		return
 	}
 	// Also check legacy ID to prevent duplicate bindings during migration period
 	if legacyID, ok := oauthUser.Extra["legacy_id"].(string); ok && legacyID != "" {
-		if provider.IsUserIDTaken(legacyID) {
+		isTaken, err = provider.IsUserIDTaken(legacyID)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if isTaken {
 			common.ApiErrorI18n(c, i18n.MsgOAuthAlreadyBound, providerParams(provider.GetName()))
 			return
 		}
@@ -256,7 +266,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	adsAttribution := getOAuthAdsAttribution(c, session)
 
 	// Check if user already exists with new ID
-	if provider.IsUserIDTaken(oauthUser.ProviderUserID) {
+	isTaken, err := provider.IsUserIDTaken(oauthUser.ProviderUserID)
+	if err != nil {
+		return nil, false, err
+	}
+	if isTaken {
 		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID)
 		if err != nil {
 			return nil, false, err
@@ -271,22 +285,27 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 	// Try to find user with legacy ID (for GitHub migration from login to numeric ID)
 	if legacyID, ok := oauthUser.Extra["legacy_id"].(string); ok && legacyID != "" {
-		if provider.IsUserIDTaken(legacyID) {
+		isTaken, err = provider.IsUserIDTaken(legacyID)
+		if err != nil {
+			return nil, false, err
+		}
+		if isTaken {
 			err := provider.FillUserByProviderID(user, legacyID)
 			if err != nil {
 				return nil, false, err
 			}
-			if user.Id != 0 {
-				// Found user with legacy ID, migrate to new ID
-				common.SysLog(fmt.Sprintf("[OAuth] Migrating user %d from legacy_id=%s to new_id=%s",
-					user.Id, legacyID, oauthUser.ProviderUserID))
-				if err := user.UpdateGitHubId(oauthUser.ProviderUserID); err != nil {
-					common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
-					// Continue with login even if migration fails
-				}
-				updateUserAdsAttributionIfEmpty(user, adsAttribution)
-				return user, false, nil
+			if user.Id == 0 {
+				return nil, false, &OAuthUserDeletedError{}
 			}
+			// Found user with legacy ID, migrate to new ID
+			common.SysLog(fmt.Sprintf("[OAuth] Migrating user %d from legacy_id=%s to new_id=%s",
+				user.Id, legacyID, oauthUser.ProviderUserID))
+			if err := user.UpdateGitHubId(oauthUser.ProviderUserID); err != nil {
+				common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
+				// Continue with login even if migration fails
+			}
+			updateUserAdsAttributionIfEmpty(user, adsAttribution)
+			return user, false, nil
 		}
 	}
 
