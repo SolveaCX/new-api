@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 )
 
 const (
@@ -33,16 +34,19 @@ type McpOAuthError struct {
 }
 
 type McpOAuthAuthorizationServerMetadataDTO struct {
-	Issuer                            string   `json:"issuer"`
-	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
-	TokenEndpoint                     string   `json:"token_endpoint"`
-	RevocationEndpoint                string   `json:"revocation_endpoint"`
-	JwksURI                           string   `json:"jwks_uri"`
-	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
-	GrantTypesSupported               []string `json:"grant_types_supported"`
-	ResponseTypesSupported            []string `json:"response_types_supported"`
-	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
-	ScopesSupported                   []string `json:"scopes_supported"`
+	Issuer                                 string   `json:"issuer"`
+	AuthorizationEndpoint                  string   `json:"authorization_endpoint"`
+	TokenEndpoint                          string   `json:"token_endpoint"`
+	RevocationEndpoint                     string   `json:"revocation_endpoint"`
+	JwksURI                                string   `json:"jwks_uri"`
+	RegistrationEndpoint                   string   `json:"registration_endpoint"`
+	ClientIDMetadataDocumentSupported      bool     `json:"client_id_metadata_document_supported"`
+	CodeChallengeMethodsSupported          []string `json:"code_challenge_methods_supported"`
+	GrantTypesSupported                    []string `json:"grant_types_supported"`
+	ResponseTypesSupported                 []string `json:"response_types_supported"`
+	TokenEndpointAuthMethodsSupported      []string `json:"token_endpoint_auth_methods_supported"`
+	RevocationEndpointAuthMethodsSupported []string `json:"revocation_endpoint_auth_methods_supported"`
+	ScopesSupported                        []string `json:"scopes_supported"`
 }
 
 type McpOAuthClientMetadata struct {
@@ -65,6 +69,16 @@ type McpOAuthValidatedDCRClient struct {
 	GrantTypes              []string `json:"grant_types"`
 	ResponseTypes           []string `json:"response_types"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+}
+
+type McpOAuthAuthorizationRequest struct {
+	ClientID            string
+	Resource            string
+	RedirectURI         string
+	Scope               string
+	ResponseType        string
+	CodeChallenge       string
+	CodeChallengeMethod string
 }
 
 type McpOAuthResolver interface {
@@ -103,16 +117,19 @@ func NewMcpOAuthError(code, description string) *McpOAuthError {
 
 func McpOAuthAuthorizationServerMetadata() McpOAuthAuthorizationServerMetadataDTO {
 	return McpOAuthAuthorizationServerMetadataDTO{
-		Issuer:                            McpOAuthIssuer,
-		AuthorizationEndpoint:             McpOAuthIssuer + "/oauth/authorize",
-		TokenEndpoint:                     McpOAuthIssuer + "/oauth/token",
-		RevocationEndpoint:                McpOAuthIssuer + "/oauth/revoke",
-		JwksURI:                           McpOAuthIssuer + "/oauth/jwks",
-		CodeChallengeMethodsSupported:     []string{"S256"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
-		ResponseTypesSupported:            []string{"code"},
-		TokenEndpointAuthMethodsSupported: []string{"none"},
-		ScopesSupported:                   append([]string(nil), mcpOAuthAllowedScopes...),
+		Issuer:                                 McpOAuthIssuer,
+		AuthorizationEndpoint:                  McpOAuthIssuer + "/oauth/authorize",
+		TokenEndpoint:                          McpOAuthIssuer + "/oauth/token",
+		RevocationEndpoint:                     McpOAuthIssuer + "/oauth/revoke",
+		JwksURI:                                McpOAuthIssuer + "/oauth/jwks",
+		RegistrationEndpoint:                   McpOAuthIssuer + "/oauth/register",
+		ClientIDMetadataDocumentSupported:      true,
+		CodeChallengeMethodsSupported:          []string{"S256"},
+		GrantTypesSupported:                    []string{"authorization_code", "refresh_token"},
+		ResponseTypesSupported:                 []string{"code"},
+		TokenEndpointAuthMethodsSupported:      []string{"none"},
+		RevocationEndpointAuthMethodsSupported: []string{"none"},
+		ScopesSupported:                        append([]string(nil), mcpOAuthAllowedScopes...),
 	}
 }
 
@@ -268,6 +285,74 @@ func ValidateMcpOAuthDCRRequest(req McpOAuthDCRRequest) (McpOAuthValidatedDCRCli
 		ResponseTypes:           defaultIfEmpty(req.ResponseTypes, []string{"code"}),
 		TokenEndpointAuthMethod: authMethod,
 	}, nil
+}
+
+func RegisterMcpOAuthDCRClient(req McpOAuthDCRRequest, randomString func(int) (string, error), now int64) (McpOAuthClientMetadata, McpOAuthValidatedDCRClient, error) {
+	validated, err := ValidateMcpOAuthDCRRequest(req)
+	if err != nil {
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+	}
+	if randomString == nil {
+		randomString = common.GenerateRandomCharsKey
+	}
+	suffix, err := randomString(32)
+	if err != nil {
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+	}
+	clientID := "mcp_client_" + suffix
+	created, err := model.CreateMcpOAuthClient(model.McpOAuthClientCreateParams{
+		PublicID:     clientID,
+		Name:         validated.ClientName,
+		RedirectURIs: validated.RedirectURIs,
+		Now:          now,
+	})
+	if err != nil {
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+	}
+	return McpOAuthClientMetadata{
+		ClientID:     created.PublicID,
+		ClientName:   created.Name,
+		RedirectURIs: append([]string(nil), validated.RedirectURIs...),
+	}, validated, nil
+}
+
+func ResolveMcpOAuthClient(ctx context.Context, clientID string) (McpOAuthClientMetadata, error) {
+	stored, err := model.GetMcpOAuthClientByPublicID(clientID)
+	if err == nil {
+		publicID, name, redirectURIs, metadataErr := stored.Metadata()
+		if metadataErr != nil {
+			return McpOAuthClientMetadata{}, metadataErr
+		}
+		return McpOAuthClientMetadata{ClientID: publicID, ClientName: name, RedirectURIs: redirectURIs}, nil
+	}
+	if err := ValidateMcpOAuthCIMDClientID(clientID); err != nil {
+		return McpOAuthClientMetadata{}, errors.New("client_id is not registered")
+	}
+	return NewMcpOAuthDefaultCIMDFetcher(nil, nil).Fetch(ctx, clientID)
+}
+
+func ValidateMcpOAuthAuthorizationRequest(req McpOAuthAuthorizationRequest) (McpOAuthClientMetadata, []string, error) {
+	if req.ResponseType != "code" {
+		return McpOAuthClientMetadata{}, nil, errors.New("response_type must be code")
+	}
+	if err := ValidateMcpOAuthResource(req.Resource); err != nil {
+		return McpOAuthClientMetadata{}, nil, err
+	}
+	if req.CodeChallengeMethod != "S256" || strings.TrimSpace(req.CodeChallenge) == "" {
+		return McpOAuthClientMetadata{}, nil, errors.New("PKCE code_challenge_method must be S256")
+	}
+	client, err := ResolveMcpOAuthClient(context.Background(), req.ClientID)
+	if err != nil {
+		return McpOAuthClientMetadata{}, nil, err
+	}
+	if err := ValidateMcpOAuthRedirectURI(client, req.RedirectURI); err != nil {
+		return McpOAuthClientMetadata{}, nil, err
+	}
+	scopes, err := NormalizeMcpOAuthScopes(req.Scope)
+	if err != nil {
+		return McpOAuthClientMetadata{}, nil, err
+	}
+	return client, scopes, nil
 }
 
 // NewMcpOAuthDefaultCIMDFetcher is only for Client ID Metadata Documents where

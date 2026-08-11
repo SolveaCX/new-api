@@ -52,6 +52,49 @@ func (McpOAuthClient) TableName() string {
 	return "mcp_oauth_clients"
 }
 
+type McpOAuthClientCreateParams struct {
+	PublicID     string
+	Name         string
+	RedirectURIs []string
+	Now          int64
+}
+
+func CreateMcpOAuthClient(params McpOAuthClientCreateParams) (*McpOAuthClient, error) {
+	rawRedirectURIs, err := common.Marshal(params.RedirectURIs)
+	if err != nil {
+		return nil, err
+	}
+	client := McpOAuthClient{
+		PublicID:     strings.TrimSpace(params.PublicID),
+		Name:         strings.TrimSpace(params.Name),
+		RedirectURIs: string(rawRedirectURIs),
+		CreatedTime:  params.Now,
+		UpdatedTime:  params.Now,
+	}
+	if err := DB.Create(&client).Error; err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
+func GetMcpOAuthClientByPublicID(publicID string) (*McpOAuthClient, error) {
+	if strings.TrimSpace(publicID) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var client McpOAuthClient
+	if err := DB.Where("public_id = ? AND disabled_at = 0", strings.TrimSpace(publicID)).First(&client).Error; err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
+func (client McpOAuthClient) Metadata() (clientID string, clientName string, redirectURIs []string, err error) {
+	if err := common.Unmarshal([]byte(client.RedirectURIs), &redirectURIs); err != nil {
+		return "", "", nil, err
+	}
+	return client.PublicID, client.Name, redirectURIs, nil
+}
+
 type McpOAuthGrant struct {
 	Id                   int     `json:"id"`
 	PublicID             string  `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`

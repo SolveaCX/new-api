@@ -262,6 +262,10 @@ func (l *McpOAuthLifecycle) RevokeMcpOAuthCredential(req McpOAuthRevokeRequest) 
 	return err
 }
 
+func (l *McpOAuthLifecycle) JWKS() McpOAuthJWKS {
+	return l.signer.JWKS()
+}
+
 func (l *McpOAuthLifecycle) ListMcpOAuthConnectedApps(userID int) ([]model.McpOAuthConnectedApp, error) {
 	return model.ListMcpOAuthConnectedApps(userID)
 }
