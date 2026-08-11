@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -887,4 +888,288 @@ func TestMcpOAuthProvisionUnknownGrantFailsClosed(t *testing.T) {
 	require.True(t, errors.Is(err, gorm.ErrRecordNotFound))
 	require.False(t, created)
 	require.Nil(t, token)
+}
+
+func TestMcpOAuthAtomicApprovalCreatesGrantDedicatedTokenAndCode(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-approval-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+
+	grant, code, err := CreateMcpOAuthApproval(McpOAuthApprovalCreateParams{
+		GrantPublicID:       "grant_atomic_approval",
+		CodePublicID:        "code_atomic_approval",
+		CodeSecretHash:      HashMcpOAuthCredential("approval-code-secret"),
+		ApprovalFingerprint: FingerprintMcpOAuthApproval(1, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a"),
+		ClientID:            "client-a",
+		UserID:              user.Id,
+		AccountID:           user.Id,
+		Resource:            "https://mcp.example",
+		DisplayName:         "Atomic App",
+		Scope:               "tools:read",
+		RedirectURI:         "https://client.example/cb",
+		CodeChallenge:       "challenge-a",
+		ChallengeMethod:     "S256",
+		TokenKey:            "dedicated-secret-must-not-return",
+		TokenRemainQuota:    500000,
+		TokenUnlimitedQuota: true,
+		Now:                 100,
+		CodeExpiresAt:       700,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, McpOAuthGrantStatusActive, grant.Status)
+	require.NotNil(t, grant.DedicatedTokenId)
+	require.Equal(t, "code_atomic_approval", code.PublicID)
+	require.Equal(t, grant.PublicID, code.GrantPublicID)
+	require.Equal(t, code.ApprovalFingerprint, FingerprintMcpOAuthApproval(1, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a"))
+
+	var token Token
+	require.NoError(t, DB.First(&token, *grant.DedicatedTokenId).Error)
+	require.Equal(t, TokenSourceMcpOAuth, token.Source)
+	require.Equal(t, grant.PublicID, *token.OAuthGrantId)
+	require.Equal(t, 500000, token.RemainQuota)
+	require.True(t, token.UnlimitedQuota)
+	require.Equal(t, "dedicated-secret-must-not-return", token.Key)
+
+	rawGrant := testMcpOAuthMustMarshalModel(t, grant)
+	rawCode := testMcpOAuthMustMarshalModel(t, code)
+	require.NotContains(t, string(rawGrant), token.Key)
+	require.NotContains(t, string(rawCode), token.Key)
+}
+
+func TestMcpOAuthApprovalDuplicateFingerprintRollsBackAndReportsAlreadyProcessed(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-duplicate-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	fingerprint := FingerprintMcpOAuthApproval(user.Id, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a")
+	params := McpOAuthApprovalCreateParams{
+		GrantPublicID:       "grant_duplicate_first",
+		CodePublicID:        "code_duplicate_first",
+		CodeSecretHash:      HashMcpOAuthCredential("first-code"),
+		ApprovalFingerprint: fingerprint,
+		ClientID:            "client-a",
+		UserID:              user.Id,
+		AccountID:           user.Id,
+		Resource:            "https://mcp.example",
+		DisplayName:         "Duplicate App",
+		Scope:               "tools:read",
+		RedirectURI:         "https://client.example/cb",
+		CodeChallenge:       "challenge-a",
+		ChallengeMethod:     "S256",
+		TokenKey:            "first-token",
+		TokenRemainQuota:    500000,
+		TokenUnlimitedQuota: true,
+		Now:                 100,
+		CodeExpiresAt:       700,
+	}
+	_, _, err := CreateMcpOAuthApproval(params)
+	require.NoError(t, err)
+
+	params.GrantPublicID = "grant_duplicate_second"
+	params.CodePublicID = "code_duplicate_second"
+	params.CodeSecretHash = HashMcpOAuthCredential("second-code")
+	params.TokenKey = "second-token"
+	_, _, err = CreateMcpOAuthApproval(params)
+
+	require.ErrorIs(t, err, ErrMcpOAuthApprovalAlreadyProcessed)
+	var grantCount int64
+	require.NoError(t, DB.Model(&McpOAuthGrant{}).Count(&grantCount).Error)
+	require.EqualValues(t, 1, grantCount)
+	var tokenCount int64
+	require.NoError(t, DB.Model(&Token{}).Count(&tokenCount).Error)
+	require.EqualValues(t, 1, tokenCount)
+
+	params.GrantPublicID = "grant_duplicate_new_pkce"
+	params.CodePublicID = "code_duplicate_new_pkce"
+	params.CodeSecretHash = HashMcpOAuthCredential("third-code")
+	params.ApprovalFingerprint = FingerprintMcpOAuthApproval(user.Id, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-b")
+	params.CodeChallenge = "challenge-b"
+	params.TokenKey = "third-token"
+	_, _, err = CreateMcpOAuthApproval(params)
+	require.NoError(t, err)
+}
+
+func TestMcpOAuthExchangeConsumesCodeAndCreatesInitialRefreshFamilyAtomically(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-exchange-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_exchange", user.Id)
+	token := createMcpOAuthDedicatedTokenFixture(t, user.Id, grant.PublicID, "exchange-dedicated-key")
+	require.NoError(t, DB.Model(&grant).Update("dedicated_token_id", token.Id).Error)
+	code := McpOAuthAuthorizationCode{
+		PublicID:        "code_exchange",
+		GrantPublicID:   grant.PublicID,
+		CodeHash:        HashMcpOAuthCredential("exchange-code"),
+		RedirectURI:     "https://client.example/cb",
+		Scope:           "tools:read",
+		CodeChallenge:   "challenge",
+		ChallengeMethod: "S256",
+		CreatedTime:     100,
+		ExpiresAt:       500,
+	}
+	require.NoError(t, DB.Create(&code).Error)
+
+	exchanged, refresh, err := ExchangeMcpOAuthAuthorizationCode(ExchangeMcpOAuthAuthorizationCodeParams{
+		CodeHash:           code.CodeHash,
+		ClientID:           grant.ClientID,
+		Resource:           grant.Resource,
+		RedirectURI:        code.RedirectURI,
+		RefreshPublicID:    "refresh_exchange_initial",
+		RefreshTokenHash:   HashMcpOAuthCredential("refresh-secret"),
+		RefreshTokenFamily: "family_exchange",
+		Now:                200,
+		RefreshExpiresAt:   200 + int64((30 * 24 * time.Hour).Seconds()),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, code.PublicID, exchanged.Code.PublicID)
+	require.Equal(t, int64(200), exchanged.Code.ConsumedAt)
+	require.Equal(t, grant.PublicID, exchanged.Grant.PublicID)
+	require.Equal(t, "refresh_exchange_initial", refresh.PublicID)
+	require.Equal(t, "family_exchange", refresh.FamilyID)
+	require.Equal(t, McpOAuthRefreshTokenStatusActive, refresh.Status)
+	require.NotNil(t, exchanged.Grant.RefreshTokenFamilyId)
+	require.Equal(t, "family_exchange", *exchanged.Grant.RefreshTokenFamilyId)
+
+	_, _, err = ExchangeMcpOAuthAuthorizationCode(ExchangeMcpOAuthAuthorizationCodeParams{
+		CodeHash:           code.CodeHash,
+		ClientID:           grant.ClientID,
+		Resource:           grant.Resource,
+		RedirectURI:        code.RedirectURI,
+		RefreshPublicID:    "refresh_exchange_replay",
+		RefreshTokenHash:   HashMcpOAuthCredential("refresh-replay"),
+		RefreshTokenFamily: "family_exchange_replay",
+		Now:                201,
+		RefreshExpiresAt:   1000,
+	})
+	require.ErrorIs(t, err, ErrMcpOAuthCredentialConsumed)
+}
+
+func TestMcpOAuthExchangePreValidationMismatchDoesNotConsumeCode(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	grant := createMcpOAuthGrantFixture(t, "grant_exchange_mismatch", 41)
+	code := McpOAuthAuthorizationCode{
+		PublicID:      "code_exchange_mismatch",
+		GrantPublicID: grant.PublicID,
+		CodeHash:      HashMcpOAuthCredential("mismatch-code"),
+		RedirectURI:   "https://client.example/cb",
+		CreatedTime:   100,
+		ExpiresAt:     500,
+	}
+	require.NoError(t, DB.Create(&code).Error)
+
+	_, _, err := ExchangeMcpOAuthAuthorizationCode(ExchangeMcpOAuthAuthorizationCodeParams{
+		CodeHash:           code.CodeHash,
+		ClientID:           "wrong-client",
+		Resource:           grant.Resource,
+		RedirectURI:        code.RedirectURI,
+		RefreshPublicID:    "refresh_mismatch",
+		RefreshTokenHash:   HashMcpOAuthCredential("refresh-mismatch"),
+		RefreshTokenFamily: "family_mismatch",
+		Now:                200,
+		RefreshExpiresAt:   1000,
+	})
+
+	require.ErrorIs(t, err, ErrMcpOAuthCredentialMismatch)
+	var stored McpOAuthAuthorizationCode
+	require.NoError(t, DB.First(&stored, code.Id).Error)
+	require.Zero(t, stored.ConsumedAt)
+}
+
+func TestMcpOAuthListResolveAndOwnerRevokeConnectedApps(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-list-user", Password: "password", AffCode: "mcp-list-user-aff"}
+	require.NoError(t, DB.Create(&user).Error)
+	other := User{Username: "mcp-other-user", Password: "password", AffCode: "mcp-other-user-aff"}
+	require.NoError(t, DB.Create(&other).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_connected", user.Id)
+	token := createMcpOAuthDedicatedTokenFixture(t, user.Id, grant.PublicID, "connected-dedicated-key")
+	require.NoError(t, DB.Model(&grant).Updates(map[string]any{
+		"dedicated_token_id": token.Id,
+		"last_used_at":       int64(150),
+	}).Error)
+
+	apps, err := ListMcpOAuthConnectedApps(user.Id)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+	require.Equal(t, grant.PublicID, apps[0].GrantPublicID)
+	require.Equal(t, grant.ClientID, apps[0].ClientID)
+	require.Equal(t, McpOAuthGrantStatusActive, apps[0].Status)
+	rawApps := testMcpOAuthMustMarshalModel(t, apps)
+	require.NotContains(t, string(rawApps), token.Key)
+
+	identity, err := ResolveMcpOAuthDataToolIdentity(McpOAuthDataToolClaims{
+		Subject:  "user-" + strconv.Itoa(user.Id),
+		GrantID:  grant.PublicID,
+		ClientID: grant.ClientID,
+		Resource: grant.Resource,
+	}, 200)
+	require.NoError(t, err)
+	require.Equal(t, user.Id, identity.UserID)
+	require.Equal(t, token.Id, identity.Token.Id)
+	require.Equal(t, token.Key, identity.Token.Key)
+	rawIdentity := testMcpOAuthMustMarshalModel(t, identity)
+	require.NotContains(t, string(rawIdentity), token.Key)
+
+	revoked, err := RevokeMcpOAuthConnectedApp(other.Id, grant.PublicID, 210)
+	require.NoError(t, err)
+	require.False(t, revoked)
+	revoked, err = RevokeMcpOAuthConnectedApp(user.Id, grant.PublicID, 211)
+	require.NoError(t, err)
+	require.True(t, revoked)
+	_, err = ResolveMcpOAuthDataToolIdentity(McpOAuthDataToolClaims{
+		Subject:  "user-" + strconv.Itoa(user.Id),
+		GrantID:  grant.PublicID,
+		ClientID: grant.ClientID,
+		Resource: grant.Resource,
+	}, 212)
+	require.ErrorIs(t, err, ErrMcpOAuthGrantRevoked)
+}
+
+func TestMcpOAuthRevokeByCredentialIsIdempotentAndClientBound(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	grant := createMcpOAuthGrantFixture(t, "grant_revoke_credential", 51)
+	refresh := McpOAuthRefreshToken{
+		PublicID:      "refresh_revoke_credential",
+		GrantPublicID: grant.PublicID,
+		FamilyID:      "family_revoke_credential",
+		TokenHash:     HashMcpOAuthCredential("refresh-to-revoke"),
+		Status:        McpOAuthRefreshTokenStatusActive,
+		CreatedTime:   100,
+		ExpiresAt:     1000,
+	}
+	require.NoError(t, DB.Create(&refresh).Error)
+
+	revoked, err := RevokeMcpOAuthGrantByCredential(McpOAuthCredentialRevokeParams{
+		CredentialHash: HashMcpOAuthCredential("refresh-to-revoke"),
+		ClientID:       "wrong-client",
+		Now:            200,
+	})
+	require.NoError(t, err)
+	require.False(t, revoked)
+
+	revoked, err = RevokeMcpOAuthGrantByCredential(McpOAuthCredentialRevokeParams{
+		CredentialHash: HashMcpOAuthCredential("unknown"),
+		Now:            201,
+	})
+	require.NoError(t, err)
+	require.False(t, revoked)
+
+	revoked, err = RevokeMcpOAuthGrantByCredential(McpOAuthCredentialRevokeParams{
+		CredentialHash: HashMcpOAuthCredential("refresh-to-revoke"),
+		ClientID:       grant.ClientID,
+		Now:            202,
+	})
+	require.NoError(t, err)
+	require.True(t, revoked)
+	var stored McpOAuthGrant
+	require.NoError(t, DB.First(&stored, "public_id = ?", grant.PublicID).Error)
+	require.Equal(t, McpOAuthGrantStatusRevoked, stored.Status)
+}
+
+func testMcpOAuthMustMarshalModel(t *testing.T, v any) []byte {
+	t.Helper()
+	raw, err := common.Marshal(v)
+	require.NoError(t, err)
+	return raw
 }
