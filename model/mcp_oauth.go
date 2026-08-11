@@ -172,6 +172,7 @@ type McpOAuthApprovalCreateParams struct {
 func CreateMcpOAuthApproval(params McpOAuthApprovalCreateParams) (*McpOAuthGrant, *McpOAuthAuthorizationCode, error) {
 	var grant McpOAuthGrant
 	var code McpOAuthAuthorizationCode
+	var codeCreateConstraintErr error
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		grant = McpOAuthGrant{
 			PublicID:    params.GrantPublicID,
@@ -232,17 +233,38 @@ func CreateMcpOAuthApproval(params McpOAuthApprovalCreateParams) (*McpOAuthGrant
 			ExpiresAt:           params.CodeExpiresAt,
 		}
 		if err := tx.Create(&code).Error; err != nil {
-			if isMcpOAuthUniqueConstraintError(err) {
-				return ErrMcpOAuthApprovalAlreadyProcessed
-			}
+			codeCreateConstraintErr = err
 			return err
 		}
 		return nil
 	})
 	if err != nil {
+		if codeCreateConstraintErr != nil && isMcpOAuthUniqueConstraintError(codeCreateConstraintErr) && strings.TrimSpace(params.ApprovalFingerprint) != "" {
+			exists, lookupErr := mcpOAuthApprovalFingerprintExists(params.ApprovalFingerprint)
+			if lookupErr != nil {
+				return nil, nil, lookupErr
+			}
+			if exists {
+				return nil, nil, ErrMcpOAuthApprovalAlreadyProcessed
+			}
+		}
 		return nil, nil, err
 	}
 	return &grant, &code, nil
+}
+
+func mcpOAuthApprovalFingerprintExists(fingerprint string) (bool, error) {
+	var existing McpOAuthAuthorizationCode
+	err := DB.Select("id").
+		Where("approval_fingerprint = ?", fingerprint).
+		First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func isMcpOAuthUniqueConstraintError(err error) bool {
@@ -736,6 +758,14 @@ func RevokeMcpOAuthGrant(grantPublicID string, now int64) (bool, error) {
 		}
 		return revokeMcpOAuthGrantRefreshTokensInTx(tx, grant.PublicID, now)
 	})
+	return revoked, err
+}
+
+func RevokeMcpOAuthGrantIfExists(grantPublicID string, now int64) (bool, error) {
+	revoked, err := RevokeMcpOAuthGrant(grantPublicID, now)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
 	return revoked, err
 }
 

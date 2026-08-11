@@ -8,7 +8,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"gorm.io/gorm"
 )
 
 var ErrMcpOAuthAuthorizationAlreadyProcessed = errors.New("mcp oauth authorization already processed")
@@ -250,10 +249,7 @@ func (l *McpOAuthLifecycle) RevokeMcpOAuthCredential(req McpOAuthRevokeRequest) 
 	now := l.clock().UTC().Unix()
 	if claims, err := l.signer.VerifyAccessToken(req.Token, ""); err == nil {
 		if req.ClientID == "" || req.ClientID == claims.ClientID {
-			_, err := model.RevokeMcpOAuthGrant(claims.GrantID, now)
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
+			_, err := model.RevokeMcpOAuthGrantIfExists(claims.GrantID, now)
 			return err
 		}
 		return nil
