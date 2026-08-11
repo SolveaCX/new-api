@@ -94,6 +94,18 @@ func TestMcpOAuthSigningUsesConfiguredIssuerAndResource(t *testing.T) {
 	require.Equal(t, "https://flatkey-mcp-staging.example", claims.Audience)
 	require.Equal(t, "https://flatkey-mcp-staging.example", claims.Resource)
 
+	_, err = signer.SignAccessToken(McpOAuthAccessTokenRequest{
+		Subject:  "user-123",
+		GrantID:  "grant-456",
+		ClientID: "https://client.example/app",
+		Scopes:   []string{"tools:read"},
+		Resource: McpOAuthResource,
+	})
+	var oauthErr *McpOAuthError
+	require.ErrorAs(t, err, &oauthErr)
+	require.Equal(t, "invalid_target", oauthErr.Code)
+	require.Contains(t, oauthErr.Description, "https://flatkey-mcp-staging.example")
+
 	productionToken := testMcpOAuthSignClaims(t, signer, McpOAuthVerifiedAccessClaims{
 		Issuer:    McpOAuthIssuer,
 		Audience:  McpOAuthResource,
