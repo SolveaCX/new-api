@@ -1,6 +1,8 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"strconv"
 	"strings"
@@ -921,7 +923,8 @@ func TestMcpOAuthAtomicApprovalCreatesGrantDedicatedTokenAndCode(t *testing.T) {
 	require.NotNil(t, grant.DedicatedTokenId)
 	require.Equal(t, "code_atomic_approval", code.PublicID)
 	require.Equal(t, grant.PublicID, code.GrantPublicID)
-	require.Equal(t, code.ApprovalFingerprint, FingerprintMcpOAuthApproval(1, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a"))
+	require.NotNil(t, code.ApprovalFingerprint)
+	require.Equal(t, *code.ApprovalFingerprint, FingerprintMcpOAuthApproval(1, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a"))
 
 	var token Token
 	require.NoError(t, DB.First(&token, *grant.DedicatedTokenId).Error)
@@ -989,6 +992,30 @@ func TestMcpOAuthApprovalDuplicateFingerprintRollsBackAndReportsAlreadyProcessed
 	require.NoError(t, err)
 }
 
+func TestMcpOAuthAuthorizationCodesWithoutApprovalFingerprintCanCoexist(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	grant := createMcpOAuthGrantFixture(t, "grant_legacy_code_no_fingerprint", 31)
+	first := McpOAuthAuthorizationCode{
+		PublicID:      "code_legacy_no_fingerprint_first",
+		GrantPublicID: grant.PublicID,
+		CodeHash:      HashMcpOAuthCredential("legacy-code-first"),
+		RedirectURI:   "https://client.example/cb",
+		CreatedTime:   100,
+		ExpiresAt:     400,
+	}
+	second := McpOAuthAuthorizationCode{
+		PublicID:      "code_legacy_no_fingerprint_second",
+		GrantPublicID: grant.PublicID,
+		CodeHash:      HashMcpOAuthCredential("legacy-code-second"),
+		RedirectURI:   "https://client.example/cb",
+		CreatedTime:   101,
+		ExpiresAt:     401,
+	}
+
+	require.NoError(t, DB.Create(&first).Error)
+	require.NoError(t, DB.Create(&second).Error)
+}
+
 func TestMcpOAuthExchangeConsumesCodeAndCreatesInitialRefreshFamilyAtomically(t *testing.T) {
 	setupMcpOAuthTestDB(t)
 	user := User{Username: "mcp-exchange-user", Password: "password"}
@@ -996,13 +1023,14 @@ func TestMcpOAuthExchangeConsumesCodeAndCreatesInitialRefreshFamilyAtomically(t 
 	grant := createMcpOAuthGrantFixture(t, "grant_exchange", user.Id)
 	token := createMcpOAuthDedicatedTokenFixture(t, user.Id, grant.PublicID, "exchange-dedicated-key")
 	require.NoError(t, DB.Model(&grant).Update("dedicated_token_id", token.Id).Error)
+	verifier := strings.Repeat("e", 50)
 	code := McpOAuthAuthorizationCode{
 		PublicID:        "code_exchange",
 		GrantPublicID:   grant.PublicID,
 		CodeHash:        HashMcpOAuthCredential("exchange-code"),
 		RedirectURI:     "https://client.example/cb",
 		Scope:           "tools:read",
-		CodeChallenge:   "challenge",
+		CodeChallenge:   testMcpOAuthS256ChallengeModel(verifier),
 		ChallengeMethod: "S256",
 		CreatedTime:     100,
 		ExpiresAt:       500,
@@ -1014,6 +1042,7 @@ func TestMcpOAuthExchangeConsumesCodeAndCreatesInitialRefreshFamilyAtomically(t 
 		ClientID:           grant.ClientID,
 		Resource:           grant.Resource,
 		RedirectURI:        code.RedirectURI,
+		CodeVerifier:       verifier,
 		RefreshPublicID:    "refresh_exchange_initial",
 		RefreshTokenHash:   HashMcpOAuthCredential("refresh-secret"),
 		RefreshTokenFamily: "family_exchange",
@@ -1036,6 +1065,7 @@ func TestMcpOAuthExchangeConsumesCodeAndCreatesInitialRefreshFamilyAtomically(t 
 		ClientID:           grant.ClientID,
 		Resource:           grant.Resource,
 		RedirectURI:        code.RedirectURI,
+		CodeVerifier:       verifier,
 		RefreshPublicID:    "refresh_exchange_replay",
 		RefreshTokenHash:   HashMcpOAuthCredential("refresh-replay"),
 		RefreshTokenFamily: "family_exchange_replay",
@@ -1074,6 +1104,46 @@ func TestMcpOAuthExchangePreValidationMismatchDoesNotConsumeCode(t *testing.T) {
 	var stored McpOAuthAuthorizationCode
 	require.NoError(t, DB.First(&stored, code.Id).Error)
 	require.Zero(t, stored.ConsumedAt)
+}
+
+func TestMcpOAuthExchangeRevalidatesPKCEInsideConsumeTransaction(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-exchange-pkce-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_exchange_pkce", user.Id)
+	code := McpOAuthAuthorizationCode{
+		PublicID:        "code_exchange_pkce",
+		GrantPublicID:   grant.PublicID,
+		CodeHash:        HashMcpOAuthCredential("pkce-code"),
+		RedirectURI:     "https://client.example/cb",
+		Scope:           "tools:read",
+		CodeChallenge:   testMcpOAuthS256ChallengeModel(strings.Repeat("v", 50)),
+		ChallengeMethod: "S256",
+		CreatedTime:     100,
+		ExpiresAt:       500,
+	}
+	require.NoError(t, DB.Create(&code).Error)
+
+	_, _, err := ExchangeMcpOAuthAuthorizationCode(ExchangeMcpOAuthAuthorizationCodeParams{
+		CodeHash:           code.CodeHash,
+		ClientID:           grant.ClientID,
+		Resource:           grant.Resource,
+		RedirectURI:        code.RedirectURI,
+		CodeVerifier:       strings.Repeat("w", 50),
+		RefreshPublicID:    "refresh_exchange_pkce_wrong",
+		RefreshTokenHash:   HashMcpOAuthCredential("refresh-pkce-wrong"),
+		RefreshTokenFamily: "family_exchange_pkce_wrong",
+		Now:                200,
+		RefreshExpiresAt:   1000,
+	})
+
+	require.ErrorIs(t, err, ErrMcpOAuthPKCEMismatch)
+	var stored McpOAuthAuthorizationCode
+	require.NoError(t, DB.First(&stored, code.Id).Error)
+	require.Zero(t, stored.ConsumedAt)
+	var refreshCount int64
+	require.NoError(t, DB.Model(&McpOAuthRefreshToken{}).Count(&refreshCount).Error)
+	require.Zero(t, refreshCount)
 }
 
 func TestMcpOAuthListResolveAndOwnerRevokeConnectedApps(t *testing.T) {
@@ -1172,4 +1242,9 @@ func testMcpOAuthMustMarshalModel(t *testing.T, v any) []byte {
 	raw, err := common.Marshal(v)
 	require.NoError(t, err)
 	return raw
+}
+
+func testMcpOAuthS256ChallengeModel(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

@@ -66,6 +66,10 @@ func TestMcpOAuthLifecycleApprovalCreatesHiddenDedicatedTokenAndDeduplicatesDoub
 	require.Equal(t, "tools:search tools:read", approved.Scope)
 	require.NotContains(t, testMcpOAuthJSONString(t, approved), "mcp-token")
 
+	var storedCode model.McpOAuthAuthorizationCode
+	require.NoError(t, model.DB.First(&storedCode, "public_id = ?", approved.CodeID).Error)
+	require.Equal(t, int64(300), storedCode.ExpiresAt-storedCode.CreatedTime)
+
 	var tokens []model.Token
 	require.NoError(t, model.DB.Find(&tokens).Error)
 	require.Len(t, tokens, 1)
