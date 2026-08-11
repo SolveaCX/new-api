@@ -73,7 +73,7 @@ Profile 左栏新增 Connected Apps。列表只显示客户端名、scopes、创
 - `inspect` 要求 `tools:read`
 - `run` 要求 `tools:execute`
 
-API Key bearer 保留现有行为。JWT bearer 必须校验算法、签名、issuer、audience、resource、过期时间、grant 状态与 scope，并在 context 中写入 `oauth_grant_id`。context key 只在 `constant/context_key.go` 定义。data-tools service 根据 grant 在服务端取得专用 Token；不得把 secret 放进 response、Node MCP、Codex、UI 或日志。每次成功调用更新 grant 的 `last_used_at`，写入必须适合多节点并发。
+API Key bearer 保留现有行为。JWT bearer 必须校验算法、签名、issuer、audience、resource、过期时间、grant 状态与 scope，并在 context 中写入 `oauth_grant_id`。context key 只在 `constant/context_key.go` 定义。data-tools service 根据 grant 在服务端取得专用 Token；不得把 secret 放进 response、Node MCP、Codex、UI 或日志。每次 OAuth 鉴权、scope 与用户上下文校验全部成功后更新 grant 的 `last_used_at`；后续工具业务是否成功不影响该凭证使用审计，写入必须适合多节点并发。
 
 ## 安全与错误处理
 
