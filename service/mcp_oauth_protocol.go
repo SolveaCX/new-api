@@ -269,6 +269,10 @@ func ValidateMcpOAuthDCRRequest(req McpOAuthDCRRequest) (McpOAuthValidatedDCRCli
 	}, nil
 }
 
+// NewMcpOAuthDefaultCIMDFetcher is only for Client ID Metadata Documents where
+// client_id is the HTTPS metadata URL. DCR uses ValidateMcpOAuthDCRRequest plus
+// registration storage to mint an opaque client_id; CIMD fetch failures must be
+// returned to callers and never silently retried as DCR for the same URL.
 func NewMcpOAuthDefaultCIMDFetcher(resolver McpOAuthResolver, dialContext func(context.Context, string, string) (net.Conn, error)) McpOAuthCIMDFetcher {
 	if resolver == nil {
 		resolver = mcpOAuthNetResolver{}
