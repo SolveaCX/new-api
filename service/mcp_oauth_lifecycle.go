@@ -16,15 +16,17 @@ var ErrMcpOAuthAuthorizationAlreadyProcessed = errors.New("mcp oauth authorizati
 const mcpOAuthRefreshTokenLifetime = 30 * 24 * time.Hour
 
 type McpOAuthLifecycleConfig struct {
-	Signer       *McpOAuthSigner
-	Clock        func() time.Time
-	RandomString func(length int) (string, error)
+	Signer        *McpOAuthSigner
+	Clock         func() time.Time
+	RandomString  func(length int) (string, error)
+	ResolveClient func(context.Context, string) (McpOAuthClientMetadata, error)
 }
 
 type McpOAuthLifecycle struct {
-	signer       *McpOAuthSigner
-	clock        func() time.Time
-	randomString func(length int) (string, error)
+	signer        *McpOAuthSigner
+	clock         func() time.Time
+	randomString  func(length int) (string, error)
+	resolveClient func(context.Context, string) (McpOAuthClientMetadata, error)
 }
 
 type McpOAuthAuthorizationApprovalRequest struct {
@@ -44,6 +46,7 @@ type McpOAuthAuthorizationApprovalResponse struct {
 }
 
 type McpOAuthAuthorizationCodeExchangeRequest struct {
+	Context      context.Context
 	Code         string
 	ClientID     string
 	Resource     string
@@ -52,6 +55,7 @@ type McpOAuthAuthorizationCodeExchangeRequest struct {
 }
 
 type McpOAuthRefreshRequest struct {
+	Context      context.Context
 	RefreshToken string
 	ClientID     string
 	Resource     string
@@ -92,7 +96,11 @@ func NewMcpOAuthLifecycle(cfg McpOAuthLifecycleConfig) (*McpOAuthLifecycle, erro
 	if randomString == nil {
 		randomString = common.GenerateRandomCharsKey
 	}
-	return &McpOAuthLifecycle{signer: cfg.Signer, clock: clock, randomString: randomString}, nil
+	resolveClient := cfg.ResolveClient
+	if resolveClient == nil {
+		resolveClient = ResolveMcpOAuthClient
+	}
+	return &McpOAuthLifecycle{signer: cfg.Signer, clock: clock, randomString: randomString, resolveClient: resolveClient}, nil
 }
 
 func (l *McpOAuthLifecycle) ApproveMcpOAuthAuthorization(req McpOAuthAuthorizationApprovalRequest) (McpOAuthAuthorizationApprovalResponse, error) {
@@ -163,13 +171,6 @@ func (l *McpOAuthLifecycle) ExchangeMcpOAuthAuthorizationCode(req McpOAuthAuthor
 	if err := ValidateMcpOAuthResource(req.Resource); err != nil {
 		return McpOAuthTokenResponse{}, err
 	}
-	client, err := ResolveMcpOAuthClient(context.Background(), req.ClientID)
-	if err != nil {
-		return McpOAuthTokenResponse{}, err
-	}
-	if err := ValidateMcpOAuthRedirectURI(client, req.RedirectURI); err != nil {
-		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "redirect_uri is invalid for the current client")
-	}
 	codeHash := model.HashMcpOAuthCredential(req.Code)
 	snapshot, err := model.GetMcpOAuthAuthorizationCodeExchangeSnapshot(codeHash)
 	if err != nil {
@@ -180,6 +181,13 @@ func (l *McpOAuthLifecycle) ExchangeMcpOAuthAuthorizationCode(req McpOAuthAuthor
 	}
 	if err := ValidateMcpOAuthPKCE(req.CodeVerifier, snapshot.Code.CodeChallenge, snapshot.Code.ChallengeMethod); err != nil {
 		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "authorization code is invalid")
+	}
+	client, err := l.resolveClient(requestContext(req.Context), req.ClientID)
+	if err != nil {
+		return McpOAuthTokenResponse{}, err
+	}
+	if err := ValidateMcpOAuthRedirectURI(client, req.RedirectURI); err != nil {
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "redirect_uri is invalid for the current client")
 	}
 	scopes, err := NormalizeMcpOAuthScopes(snapshot.Code.Scope)
 	if err != nil {
@@ -216,9 +224,6 @@ func (l *McpOAuthLifecycle) RefreshMcpOAuthAccessToken(req McpOAuthRefreshReques
 	if err := ValidateMcpOAuthResource(req.Resource); err != nil {
 		return McpOAuthTokenResponse{}, err
 	}
-	if _, err := ResolveMcpOAuthClient(context.Background(), req.ClientID); err != nil {
-		return McpOAuthTokenResponse{}, err
-	}
 	refreshHash := model.HashMcpOAuthCredential(req.RefreshToken)
 	snapshot, err := model.GetMcpOAuthRefreshSnapshotByHash(refreshHash)
 	if err != nil {
@@ -226,6 +231,9 @@ func (l *McpOAuthLifecycle) RefreshMcpOAuthAccessToken(req McpOAuthRefreshReques
 	}
 	if snapshot.Grant.ClientID != req.ClientID || snapshot.Grant.Resource != req.Resource {
 		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "refresh token is invalid")
+	}
+	if _, err := l.resolveClient(requestContext(req.Context), req.ClientID); err != nil {
+		return McpOAuthTokenResponse{}, err
 	}
 	scopes, err := refreshScopes(snapshot.Grant.Scope, req.Scope)
 	if err != nil {
@@ -347,6 +355,13 @@ func tokenResponse(accessToken, refreshToken, scope string) McpOAuthTokenRespons
 		ExpiresIn:    int(mcpOAuthAccessTokenLifetime.Seconds()),
 		Scope:        scope,
 	}
+}
+
+func requestContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }
 
 func refreshScopes(originalScope, requestedScope string) ([]string, error) {
