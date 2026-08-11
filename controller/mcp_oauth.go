@@ -51,7 +51,7 @@ func McpOAuthRegisterClient(c *gin.Context) {
 	}
 	client, validated, err := service.RegisterMcpOAuthDCRClient(req, nil, time.Now().UTC().Unix())
 	if err != nil {
-		mcpOAuthError(c, http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		mcpOAuthServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -261,7 +261,11 @@ func mcpOAuthLifecycle() (*service.McpOAuthLifecycle, error) {
 func mcpOAuthServiceError(c *gin.Context, err error) {
 	var oauthErr *service.McpOAuthError
 	if errors.As(err, &oauthErr) {
-		mcpOAuthError(c, http.StatusBadRequest, oauthErr.Code, oauthErr.Description)
+		status := http.StatusBadRequest
+		if oauthErr.Code == "server_error" {
+			status = http.StatusInternalServerError
+		}
+		mcpOAuthError(c, status, oauthErr.Code, oauthErr.Description)
 		return
 	}
 	switch {
@@ -274,7 +278,7 @@ func mcpOAuthServiceError(c *gin.Context, err error) {
 		errors.Is(err, model.ErrMcpOAuthRefreshReplay):
 		mcpOAuthError(c, http.StatusBadRequest, "invalid_grant", "grant is invalid")
 	default:
-		mcpOAuthError(c, http.StatusBadRequest, "invalid_request", "request is invalid")
+		mcpOAuthError(c, http.StatusInternalServerError, "server_error", "request could not be completed")
 	}
 }
 

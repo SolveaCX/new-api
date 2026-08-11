@@ -31,6 +31,7 @@ var mcpOAuthAllowedScopes = []string{"tools:search", "tools:read", "tools:execut
 type McpOAuthError struct {
 	Code        string
 	Description string
+	Cause       error
 }
 
 type McpOAuthAuthorizationServerMetadataDTO struct {
@@ -111,8 +112,16 @@ func (e *McpOAuthError) Error() string {
 	return e.Code + ": " + e.Description
 }
 
+func (e *McpOAuthError) Unwrap() error {
+	return e.Cause
+}
+
 func NewMcpOAuthError(code, description string) *McpOAuthError {
 	return &McpOAuthError{Code: code, Description: description}
+}
+
+func newMcpOAuthErrorWithCause(code, description string, cause error) *McpOAuthError {
+	return &McpOAuthError{Code: code, Description: description, Cause: cause}
 }
 
 func McpOAuthAuthorizationServerMetadata() McpOAuthAuthorizationServerMetadataDTO {
@@ -290,14 +299,14 @@ func ValidateMcpOAuthDCRRequest(req McpOAuthDCRRequest) (McpOAuthValidatedDCRCli
 func RegisterMcpOAuthDCRClient(req McpOAuthDCRRequest, randomString func(int) (string, error), now int64) (McpOAuthClientMetadata, McpOAuthValidatedDCRClient, error) {
 	validated, err := ValidateMcpOAuthDCRRequest(req)
 	if err != nil {
-		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, NewMcpOAuthError("invalid_client_metadata", err.Error())
 	}
 	if randomString == nil {
 		randomString = common.GenerateRandomCharsKey
 	}
 	suffix, err := randomString(32)
 	if err != nil {
-		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, NewMcpOAuthError("server_error", "client registration failed")
 	}
 	clientID := "mcp_client_" + suffix
 	created, err := model.CreateMcpOAuthClient(model.McpOAuthClientCreateParams{
@@ -307,7 +316,7 @@ func RegisterMcpOAuthDCRClient(req McpOAuthDCRRequest, randomString func(int) (s
 		Now:          now,
 	})
 	if err != nil {
-		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, err
+		return McpOAuthClientMetadata{}, McpOAuthValidatedDCRClient{}, NewMcpOAuthError("server_error", "client registration failed")
 	}
 	return McpOAuthClientMetadata{
 		ClientID:     created.PublicID,
@@ -325,10 +334,17 @@ func ResolveMcpOAuthClient(ctx context.Context, clientID string) (McpOAuthClient
 		}
 		return McpOAuthClientMetadata{ClientID: publicID, ClientName: name, RedirectURIs: redirectURIs}, nil
 	}
-	if err := ValidateMcpOAuthCIMDClientID(clientID); err != nil {
-		return McpOAuthClientMetadata{}, errors.New("client_id is not registered")
+	if !model.IsMcpOAuthRecordNotFound(err) {
+		return McpOAuthClientMetadata{}, err
 	}
-	return NewMcpOAuthDefaultCIMDFetcher(nil, nil).Fetch(ctx, clientID)
+	if err := ValidateMcpOAuthCIMDClientID(clientID); err != nil {
+		return McpOAuthClientMetadata{}, NewMcpOAuthError("invalid_client", "client is not registered")
+	}
+	client, err := NewMcpOAuthDefaultCIMDFetcher(nil, nil).Fetch(ctx, clientID)
+	if err != nil {
+		return McpOAuthClientMetadata{}, NewMcpOAuthError("invalid_client", "client metadata is unavailable")
+	}
+	return client, nil
 }
 
 func ValidateMcpOAuthAuthorizationRequest(req McpOAuthAuthorizationRequest) (McpOAuthClientMetadata, []string, error) {

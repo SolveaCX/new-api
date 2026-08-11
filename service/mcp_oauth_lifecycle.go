@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -162,20 +163,27 @@ func (l *McpOAuthLifecycle) ExchangeMcpOAuthAuthorizationCode(req McpOAuthAuthor
 	if err := ValidateMcpOAuthResource(req.Resource); err != nil {
 		return McpOAuthTokenResponse{}, err
 	}
+	client, err := ResolveMcpOAuthClient(context.Background(), req.ClientID)
+	if err != nil {
+		return McpOAuthTokenResponse{}, err
+	}
+	if err := ValidateMcpOAuthRedirectURI(client, req.RedirectURI); err != nil {
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "redirect_uri is invalid for the current client")
+	}
 	codeHash := model.HashMcpOAuthCredential(req.Code)
 	snapshot, err := model.GetMcpOAuthAuthorizationCodeExchangeSnapshot(codeHash)
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, mcpOAuthAuthorizationCodeExchangeError(err)
 	}
 	if snapshot.Grant.ClientID != req.ClientID || snapshot.Grant.Resource != req.Resource || snapshot.Code.RedirectURI != req.RedirectURI {
-		return McpOAuthTokenResponse{}, model.ErrMcpOAuthCredentialMismatch
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "authorization code is invalid")
 	}
 	if err := ValidateMcpOAuthPKCE(req.CodeVerifier, snapshot.Code.CodeChallenge, snapshot.Code.ChallengeMethod); err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "authorization code is invalid")
 	}
 	scopes, err := NormalizeMcpOAuthScopes(snapshot.Code.Scope)
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_scope", "scope is invalid")
 	}
 	accessToken, err := l.signAccess(snapshot.Grant, scopes)
 	if err != nil {
@@ -199,7 +207,7 @@ func (l *McpOAuthLifecycle) ExchangeMcpOAuthAuthorizationCode(req McpOAuthAuthor
 		RefreshExpiresAt:   now.Add(mcpOAuthRefreshTokenLifetime).Unix(),
 	})
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, mcpOAuthAuthorizationCodeExchangeError(err)
 	}
 	return tokenResponse(accessToken, refreshSecret, strings.Join(scopes, " ")), nil
 }
@@ -208,17 +216,20 @@ func (l *McpOAuthLifecycle) RefreshMcpOAuthAccessToken(req McpOAuthRefreshReques
 	if err := ValidateMcpOAuthResource(req.Resource); err != nil {
 		return McpOAuthTokenResponse{}, err
 	}
+	if _, err := ResolveMcpOAuthClient(context.Background(), req.ClientID); err != nil {
+		return McpOAuthTokenResponse{}, err
+	}
 	refreshHash := model.HashMcpOAuthCredential(req.RefreshToken)
 	snapshot, err := model.GetMcpOAuthRefreshSnapshotByHash(refreshHash)
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, mcpOAuthRefreshError(err)
 	}
 	if snapshot.Grant.ClientID != req.ClientID || snapshot.Grant.Resource != req.Resource {
-		return McpOAuthTokenResponse{}, model.ErrMcpOAuthCredentialMismatch
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_grant", "refresh token is invalid")
 	}
 	scopes, err := refreshScopes(snapshot.Grant.Scope, req.Scope)
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, NewMcpOAuthError("invalid_scope", "requested scope exceeds original grant")
 	}
 	accessToken, err := l.signAccess(snapshot.Grant, scopes)
 	if err != nil {
@@ -237,7 +248,7 @@ func (l *McpOAuthLifecycle) RefreshMcpOAuthAccessToken(req McpOAuthRefreshReques
 		ExpiresAt:   now.Add(mcpOAuthRefreshTokenLifetime).Unix(),
 	}, now.Unix())
 	if err != nil {
-		return McpOAuthTokenResponse{}, err
+		return McpOAuthTokenResponse{}, mcpOAuthRefreshError(err)
 	}
 	return tokenResponse(accessToken, nextSecret, strings.Join(scopes, " ")), nil
 }
@@ -360,4 +371,34 @@ func refreshScopes(originalScope, requestedScope string) ([]string, error) {
 		}
 	}
 	return requested, nil
+}
+
+func mcpOAuthAuthorizationCodeExchangeError(err error) error {
+	switch {
+	case model.IsMcpOAuthRecordNotFound(err),
+		errors.Is(err, model.ErrMcpOAuthCredentialConsumed),
+		errors.Is(err, model.ErrMcpOAuthCredentialExpired),
+		errors.Is(err, model.ErrMcpOAuthCredentialMismatch),
+		errors.Is(err, model.ErrMcpOAuthPKCEMismatch),
+		errors.Is(err, model.ErrMcpOAuthGrantRevoked),
+		errors.Is(err, model.ErrMcpOAuthGrantUnavailable):
+		return newMcpOAuthErrorWithCause("invalid_grant", "authorization code is invalid", err)
+	default:
+		return err
+	}
+}
+
+func mcpOAuthRefreshError(err error) error {
+	switch {
+	case model.IsMcpOAuthRecordNotFound(err),
+		errors.Is(err, model.ErrMcpOAuthCredentialConsumed),
+		errors.Is(err, model.ErrMcpOAuthCredentialExpired),
+		errors.Is(err, model.ErrMcpOAuthCredentialMismatch),
+		errors.Is(err, model.ErrMcpOAuthRefreshReplay),
+		errors.Is(err, model.ErrMcpOAuthGrantRevoked),
+		errors.Is(err, model.ErrMcpOAuthGrantUnavailable):
+		return newMcpOAuthErrorWithCause("invalid_grant", "refresh token is invalid", err)
+	default:
+		return err
+	}
 }

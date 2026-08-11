@@ -108,10 +108,11 @@ func TestMcpOAuthLifecycleExchangeValidatesPKCEAndReturnsNarrowTokenShape(t *tes
 	user := model.User{Username: "exchange-user", Password: "password", AffCode: "exchange-user-aff"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	lifecycle := testMcpOAuthLifecycle(t)
+	client := seedMcpOAuthLifecycleClient(t, "mcp_client_lifecycle_exchange", []string{"https://client.example/callback"})
 	verifier := strings.Repeat("a", 50)
 	approved, err := lifecycle.ApproveMcpOAuthAuthorization(McpOAuthAuthorizationApprovalRequest{
 		UserID:              user.Id,
-		Client:              testMcpOAuthLifecycleClient(),
+		Client:              client,
 		Resource:            McpOAuthResource,
 		RedirectURI:         "https://client.example/callback",
 		Scope:               "tools:read tools:execute",
@@ -122,7 +123,7 @@ func TestMcpOAuthLifecycleExchangeValidatesPKCEAndReturnsNarrowTokenShape(t *tes
 
 	_, err = lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
 		Code:         approved.Code,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 		RedirectURI:  "https://client.example/callback",
 		CodeVerifier: strings.Repeat("b", 50),
@@ -134,7 +135,7 @@ func TestMcpOAuthLifecycleExchangeValidatesPKCEAndReturnsNarrowTokenShape(t *tes
 
 	tokenResponse, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
 		Code:         approved.Code,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 		RedirectURI:  "https://client.example/callback",
 		CodeVerifier: verifier,
@@ -157,10 +158,11 @@ func TestMcpOAuthLifecycleRefreshAllowsScopeSubsetAndReplayRevokesRefreshFamily(
 	user := model.User{Username: "refresh-user", Password: "password", AffCode: "refresh-user-aff"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	lifecycle := testMcpOAuthLifecycle(t)
+	client := seedMcpOAuthLifecycleClient(t, "mcp_client_lifecycle_refresh", []string{"https://client.example/callback"})
 	verifier := strings.Repeat("c", 50)
 	approved, err := lifecycle.ApproveMcpOAuthAuthorization(McpOAuthAuthorizationApprovalRequest{
 		UserID:              user.Id,
-		Client:              testMcpOAuthLifecycleClient(),
+		Client:              client,
 		Resource:            McpOAuthResource,
 		RedirectURI:         "https://client.example/callback",
 		Scope:               "tools:read tools:execute",
@@ -170,7 +172,7 @@ func TestMcpOAuthLifecycleRefreshAllowsScopeSubsetAndReplayRevokesRefreshFamily(
 	require.NoError(t, err)
 	initial, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
 		Code:         approved.Code,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 		RedirectURI:  "https://client.example/callback",
 		CodeVerifier: verifier,
@@ -179,7 +181,7 @@ func TestMcpOAuthLifecycleRefreshAllowsScopeSubsetAndReplayRevokesRefreshFamily(
 
 	refreshed, err := lifecycle.RefreshMcpOAuthAccessToken(McpOAuthRefreshRequest{
 		RefreshToken: initial.RefreshToken,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 		Scope:        "tools:read",
 	})
@@ -189,7 +191,7 @@ func TestMcpOAuthLifecycleRefreshAllowsScopeSubsetAndReplayRevokesRefreshFamily(
 
 	_, err = lifecycle.RefreshMcpOAuthAccessToken(McpOAuthRefreshRequest{
 		RefreshToken: initial.RefreshToken,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 	})
 	require.ErrorIs(t, err, model.ErrMcpOAuthRefreshReplay)
@@ -203,10 +205,11 @@ func TestMcpOAuthLifecycleRevokeConnectedAppsAndIdentityFailClosed(t *testing.T)
 	user := model.User{Username: "identity-user", Password: "password", AffCode: "identity-user-aff"}
 	require.NoError(t, model.DB.Create(&user).Error)
 	lifecycle := testMcpOAuthLifecycle(t)
+	client := seedMcpOAuthLifecycleClient(t, "mcp_client_lifecycle_identity", []string{"https://client.example/callback"})
 	verifier := strings.Repeat("d", 50)
 	approved, err := lifecycle.ApproveMcpOAuthAuthorization(McpOAuthAuthorizationApprovalRequest{
 		UserID:              user.Id,
-		Client:              testMcpOAuthLifecycleClient(),
+		Client:              client,
 		Resource:            McpOAuthResource,
 		RedirectURI:         "https://client.example/callback",
 		Scope:               "tools:read",
@@ -216,7 +219,7 @@ func TestMcpOAuthLifecycleRevokeConnectedAppsAndIdentityFailClosed(t *testing.T)
 	require.NoError(t, err)
 	tokenResponse, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
 		Code:         approved.Code,
-		ClientID:     testMcpOAuthLifecycleClient().ClientID,
+		ClientID:     client.ClientID,
 		Resource:     McpOAuthResource,
 		RedirectURI:  "https://client.example/callback",
 		CodeVerifier: verifier,
@@ -244,7 +247,7 @@ func TestMcpOAuthLifecycleRevokeConnectedAppsAndIdentityFailClosed(t *testing.T)
 
 	require.NoError(t, lifecycle.RevokeMcpOAuthCredential(McpOAuthRevokeRequest{
 		Token:    tokenResponse.AccessToken,
-		ClientID: testMcpOAuthLifecycleClient().ClientID,
+		ClientID: client.ClientID,
 	}))
 	_, err = lifecycle.ResolveMcpOAuthDataToolIdentity(claims)
 	require.ErrorIs(t, err, model.ErrMcpOAuthGrantRevoked)
@@ -254,11 +257,12 @@ func TestMcpOAuthLifecycleRevokeConnectedAppsAndIdentityFailClosed(t *testing.T)
 
 func TestMcpOAuthLifecycleRevokeUnknownAccessGrantIsIdempotentWithoutGORMDependency(t *testing.T) {
 	setupMcpOAuthLifecycleTestDB(t)
+	client := seedMcpOAuthLifecycleClient(t, "mcp_client_lifecycle_revoke", []string{"https://client.example/callback"})
 	lifecycle := testMcpOAuthLifecycle(t)
 	accessToken, err := lifecycle.signer.SignAccessToken(McpOAuthAccessTokenRequest{
 		Subject:  "user-404",
 		GrantID:  "missing-grant-for-revoke",
-		ClientID: testMcpOAuthLifecycleClient().ClientID,
+		ClientID: client.ClientID,
 		Scopes:   []string{"tools:read"},
 		Resource: McpOAuthResource,
 	})
@@ -266,13 +270,78 @@ func TestMcpOAuthLifecycleRevokeUnknownAccessGrantIsIdempotentWithoutGORMDepende
 
 	require.NoError(t, lifecycle.RevokeMcpOAuthCredential(McpOAuthRevokeRequest{
 		Token:    accessToken,
-		ClientID: testMcpOAuthLifecycleClient().ClientID,
+		ClientID: client.ClientID,
 	}))
 
 	source, err := os.ReadFile("mcp_oauth_lifecycle.go")
 	require.NoError(t, err)
 	require.NotContains(t, string(source), "gorm.io/gorm")
 	require.NotContains(t, string(source), "gorm.ErrRecordNotFound")
+}
+
+func TestMcpOAuthLifecycleExchangeAndRefreshRequireCurrentActiveClient(t *testing.T) {
+	setupMcpOAuthLifecycleTestDB(t)
+	user := model.User{Username: "current-client-user", Password: "password", AffCode: "current-client-aff"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	lifecycle := testMcpOAuthLifecycle(t)
+	client := seedMcpOAuthLifecycleClient(t, "mcp_client_lifecycle_current", []string{"https://client.example/callback"})
+	verifier := strings.Repeat("e", 50)
+	approved, err := lifecycle.ApproveMcpOAuthAuthorization(McpOAuthAuthorizationApprovalRequest{
+		UserID:              user.Id,
+		Client:              client,
+		Resource:            McpOAuthResource,
+		RedirectURI:         "https://client.example/callback",
+		Scope:               "tools:read tools:execute",
+		CodeChallenge:       McpOAuthS256Challenge(verifier),
+		CodeChallengeMethod: "S256",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, model.DB.Model(&model.McpOAuthClient{}).Where("public_id = ?", client.ClientID).Update("disabled_at", int64(1)).Error)
+	_, err = lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
+		Code:         approved.Code,
+		ClientID:     client.ClientID,
+		Resource:     McpOAuthResource,
+		RedirectURI:  "https://client.example/callback",
+		CodeVerifier: verifier,
+	})
+	requireMcpOAuthErrorCode(t, err, "invalid_client")
+
+	rawRedirects, err := common.Marshal([]string{"https://client.example/other-callback"})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.McpOAuthClient{}).Where("public_id = ?", client.ClientID).Updates(map[string]any{
+		"disabled_at":   int64(0),
+		"redirect_uris": string(rawRedirects),
+	}).Error)
+	_, err = lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
+		Code:         approved.Code,
+		ClientID:     client.ClientID,
+		Resource:     McpOAuthResource,
+		RedirectURI:  "https://client.example/callback",
+		CodeVerifier: verifier,
+	})
+	requireMcpOAuthErrorCode(t, err, "invalid_grant")
+
+	rawRedirects, err = common.Marshal([]string{"https://client.example/callback"})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.McpOAuthClient{}).Where("public_id = ?", client.ClientID).Update("redirect_uris", string(rawRedirects)).Error)
+	tokenResponse, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
+		Code:         approved.Code,
+		ClientID:     client.ClientID,
+		Resource:     McpOAuthResource,
+		RedirectURI:  "https://client.example/callback",
+		CodeVerifier: verifier,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, model.DB.Model(&model.McpOAuthClient{}).Where("public_id = ?", client.ClientID).Update("disabled_at", int64(2)).Error)
+	_, err = lifecycle.RefreshMcpOAuthAccessToken(McpOAuthRefreshRequest{
+		RefreshToken: tokenResponse.RefreshToken,
+		ClientID:     client.ClientID,
+		Resource:     McpOAuthResource,
+		Scope:        "tools:read",
+	})
+	requireMcpOAuthErrorCode(t, err, "invalid_client")
 }
 
 func testMcpOAuthLifecycle(t *testing.T) *McpOAuthLifecycle {
@@ -310,6 +379,29 @@ func testMcpOAuthLifecycleClient() McpOAuthClientMetadata {
 		ClientName:   "Lifecycle Client",
 		RedirectURIs: []string{"https://client.example/callback"},
 	}
+}
+
+func seedMcpOAuthLifecycleClient(t *testing.T, publicID string, redirectURIs []string) McpOAuthClientMetadata {
+	t.Helper()
+	client, err := model.CreateMcpOAuthClient(model.McpOAuthClientCreateParams{
+		PublicID:     publicID,
+		Name:         "Lifecycle Client",
+		RedirectURIs: redirectURIs,
+		Now:          100,
+	})
+	require.NoError(t, err)
+	return McpOAuthClientMetadata{
+		ClientID:     client.PublicID,
+		ClientName:   client.Name,
+		RedirectURIs: append([]string(nil), redirectURIs...),
+	}
+}
+
+func requireMcpOAuthErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+	var oauthErr *McpOAuthError
+	require.ErrorAs(t, err, &oauthErr)
+	require.Equal(t, code, oauthErr.Code)
 }
 
 func testMcpOAuthJSONString(t *testing.T, v any) string {

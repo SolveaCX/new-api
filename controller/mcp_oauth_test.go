@@ -100,6 +100,28 @@ func TestMcpOAuthDynamicClientRegistrationContract(t *testing.T) {
 	assertMcpOAuthError(t, invalidRecorder.Body.Bytes(), "invalid_client_metadata")
 }
 
+func TestMcpOAuthRegisterRuntimeFailureUsesSafeServerError(t *testing.T) {
+	setupMcpOAuthControllerTestDB(t)
+	require.NoError(t, model.DB.Migrator().DropTable(&model.McpOAuthClient{}))
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/oauth/register", McpOAuthRegisterClient)
+
+	req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(`{"client_name":"Test MCP Client","redirect_uris":["https://client.example/callback"],"grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusInternalServerError, recorder.Code)
+	payload := assertMcpOAuthError(t, recorder.Body.Bytes(), "server_error")
+	description := strings.ToLower(payload["error_description"].(string))
+	require.NotContains(t, description, "database")
+	require.NotContains(t, description, "table")
+	require.NotContains(t, description, "constraint")
+	require.NotContains(t, description, "no such")
+	require.NotContains(t, description, "mcp_oauth_clients")
+}
+
 func TestMcpOAuthTokenAndRevokeRequireFormContentTypeAndStandardErrors(t *testing.T) {
 	setupMcpOAuthControllerTestDB(t)
 	setupMcpOAuthControllerSignerEnv(t)
@@ -131,6 +153,89 @@ func TestMcpOAuthTokenAndRevokeRequireFormContentTypeAndStandardErrors(t *testin
 
 	require.Equal(t, http.StatusOK, unknownRecorder.Code)
 	require.Empty(t, strings.TrimSpace(unknownRecorder.Body.String()))
+}
+
+func TestMcpOAuthTokenMapsOAuthFailuresToSpecificErrorCodes(t *testing.T) {
+	setupMcpOAuthControllerTestDB(t)
+	setupMcpOAuthControllerSignerEnv(t)
+	user := model.User{Username: "mcp-token-user", Password: "password", AffCode: "mcp-token-user-aff"}
+	require.NoError(t, model.DB.Create(&user).Error)
+	client := seedMcpOAuthControllerClient(t)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/oauth/token", McpOAuthToken)
+
+	unknownClient := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {"unknown-code"},
+		"client_id":     {"mcp_client_missing"},
+		"resource":      {service.McpOAuthResource},
+		"redirect_uri":  {"https://client.example/callback"},
+		"code_verifier": {strings.Repeat("u", 50)},
+	})
+	require.Equal(t, http.StatusBadRequest, unknownClient.Code)
+	assertMcpOAuthError(t, unknownClient.Body.Bytes(), "invalid_client")
+
+	unknownCode := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {"unknown-code"},
+		"client_id":     {client.PublicID},
+		"resource":      {service.McpOAuthResource},
+		"redirect_uri":  {"https://client.example/callback"},
+		"code_verifier": {strings.Repeat("u", 50)},
+	})
+	require.Equal(t, http.StatusBadRequest, unknownCode.Code)
+	assertMcpOAuthError(t, unknownCode.Body.Bytes(), "invalid_grant")
+
+	pkceVerifier := strings.Repeat("v", 50)
+	codeForPKCE := approveMcpOAuthControllerCode(t, user.Id, client, "tools:read", service.McpOAuthS256Challenge(pkceVerifier))
+	pkceMismatch := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {codeForPKCE},
+		"client_id":     {client.PublicID},
+		"resource":      {service.McpOAuthResource},
+		"redirect_uri":  {"https://client.example/callback"},
+		"code_verifier": {strings.Repeat("w", 50)},
+	})
+	require.Equal(t, http.StatusBadRequest, pkceMismatch.Code)
+	assertMcpOAuthError(t, pkceMismatch.Body.Bytes(), "invalid_grant")
+
+	expiryVerifier := strings.Repeat("x", 50)
+	codeForExpiry := approveMcpOAuthControllerCode(t, user.Id, client, "tools:read", service.McpOAuthS256Challenge(expiryVerifier))
+	require.NoError(t, model.DB.Model(&model.McpOAuthAuthorizationCode{}).Where("code_hash = ?", model.HashMcpOAuthCredential(codeForExpiry)).Update("expires_at", int64(1)).Error)
+	expiredCode := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {codeForExpiry},
+		"client_id":     {client.PublicID},
+		"resource":      {service.McpOAuthResource},
+		"redirect_uri":  {"https://client.example/callback"},
+		"code_verifier": {expiryVerifier},
+	})
+	require.Equal(t, http.StatusBadRequest, expiredCode.Code)
+	assertMcpOAuthError(t, expiredCode.Body.Bytes(), "invalid_grant")
+
+	refreshVerifier := strings.Repeat("y", 50)
+	codeForRefresh := approveMcpOAuthControllerCode(t, user.Id, client, "tools:read", service.McpOAuthS256Challenge(refreshVerifier))
+	initial := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {codeForRefresh},
+		"client_id":     {client.PublicID},
+		"resource":      {service.McpOAuthResource},
+		"redirect_uri":  {"https://client.example/callback"},
+		"code_verifier": {refreshVerifier},
+	})
+	require.Equal(t, http.StatusOK, initial.Code)
+	var tokenPayload map[string]any
+	require.NoError(t, common.Unmarshal(initial.Body.Bytes(), &tokenPayload))
+	refreshScope := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {tokenPayload["refresh_token"].(string)},
+		"client_id":     {client.PublicID},
+		"resource":      {service.McpOAuthResource},
+		"scope":         {"tools:execute"},
+	})
+	require.Equal(t, http.StatusBadRequest, refreshScope.Code)
+	assertMcpOAuthError(t, refreshScope.Body.Bytes(), "invalid_scope")
 }
 
 func TestMcpOAuthAuthorizationDetailsAndAuthorizeGenerateRedirectsForCurrentUser(t *testing.T) {
@@ -264,7 +369,7 @@ type apiResponse struct {
 	Data    any  `json:"data"`
 }
 
-func assertMcpOAuthError(t *testing.T, body []byte, code string) {
+func assertMcpOAuthError(t *testing.T, body []byte, code string) map[string]any {
 	t.Helper()
 	var payload map[string]any
 	require.NoError(t, common.Unmarshal(bytes.TrimSpace(body), &payload))
@@ -272,6 +377,7 @@ func assertMcpOAuthError(t *testing.T, body []byte, code string) {
 	require.NotEmpty(t, payload["error_description"])
 	require.NotContains(t, payload, "success")
 	require.NotContains(t, payload, "message")
+	return payload
 }
 
 func seedMcpOAuthControllerClient(t *testing.T) model.McpOAuthClient {
@@ -294,4 +400,36 @@ func setupMcpOAuthControllerSignerEnv(t *testing.T) {
 	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	require.NoError(t, err)
 	t.Setenv("FLATKEY_MCP_OAUTH_ED25519_PRIVATE_KEY", base64.StdEncoding.EncodeToString(der))
+}
+
+func approveMcpOAuthControllerCode(t *testing.T, userID int, client model.McpOAuthClient, scope string, challenge string) string {
+	t.Helper()
+	signer, err := service.NewMcpOAuthSignerFromEnv(service.McpOAuthSigningConfig{})
+	require.NoError(t, err)
+	lifecycle, err := service.NewMcpOAuthLifecycle(service.McpOAuthLifecycleConfig{Signer: signer})
+	require.NoError(t, err)
+	approved, err := lifecycle.ApproveMcpOAuthAuthorization(service.McpOAuthAuthorizationApprovalRequest{
+		UserID: userID,
+		Client: service.McpOAuthClientMetadata{
+			ClientID:     client.PublicID,
+			ClientName:   client.Name,
+			RedirectURIs: []string{"https://client.example/callback"},
+		},
+		Resource:            service.McpOAuthResource,
+		RedirectURI:         "https://client.example/callback",
+		Scope:               scope,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+	})
+	require.NoError(t, err)
+	return approved.Code
+}
+
+func postMcpOAuthTokenForm(t *testing.T, router http.Handler, values url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(recorder, req)
+	return recorder
 }
