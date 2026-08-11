@@ -310,6 +310,10 @@ func orderedMigrationModels() []migrationModel {
 	return []migrationModel{
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
+		{&McpOAuthClient{}, "McpOAuthClient"},
+		{&McpOAuthGrant{}, "McpOAuthGrant"},
+		{&McpOAuthAuthorizationCode{}, "McpOAuthAuthorizationCode"},
+		{&McpOAuthRefreshToken{}, "McpOAuthRefreshToken"},
 		{&CliDeviceAuthorization{}, "CliDeviceAuthorization"},
 		{&User{}, "User"},
 		{&RecallCampaign{}, "RecallCampaign"},
