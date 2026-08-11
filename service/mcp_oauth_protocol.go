@@ -41,7 +41,36 @@ func mcpOAuthEnvURL(name, fallback string) string {
 	if value == "" {
 		return fallback
 	}
+	if err := validateMcpOAuthConfiguredHTTPSURL(value); err != nil {
+		panic(fmt.Sprintf("%s must be a normalized absolute HTTPS URL with host: %v", name, err))
+	}
 	return value
+}
+
+func validateMcpOAuthConfiguredHTTPSURL(value string) error {
+	u, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" {
+		return errors.New("scheme must be https")
+	}
+	if u.Host == "" {
+		return errors.New("host is required")
+	}
+	if u.User != nil {
+		return errors.New("userinfo is not allowed")
+	}
+	if u.RawQuery != "" {
+		return errors.New("query is not allowed")
+	}
+	if u.Fragment != "" {
+		return errors.New("fragment is not allowed")
+	}
+	if u.String() != value {
+		return errors.New("URL must already be normalized")
+	}
+	return nil
 }
 
 type McpOAuthError struct {

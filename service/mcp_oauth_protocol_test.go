@@ -51,6 +51,45 @@ func TestMcpOAuthProtocolUsesConfiguredIssuerAndResource(t *testing.T) {
 	require.Contains(t, oauthErr.Description, "https://flatkey-mcp-staging.example")
 }
 
+func TestMcpOAuthProtocolKeepsProductionFallbackForBlankConfiguredIssuerAndResource(t *testing.T) {
+	t.Setenv("FLATKEY_MCP_OAUTH_ISSUER", " \t ")
+	t.Setenv("FLATKEY_MCP_OAUTH_RESOURCE", " \t ")
+
+	metadata := McpOAuthAuthorizationServerMetadata()
+
+	require.Equal(t, McpOAuthIssuer, metadata.Issuer)
+	require.NoError(t, ValidateMcpOAuthResource(McpOAuthResource))
+}
+
+func TestMcpOAuthProtocolRejectsUnsafeConfiguredIssuerAndResource(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   string
+		value string
+		call  func()
+	}{
+		{name: "issuer malformed", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "https://", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "issuer invalid port", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "https://staging-console.flatkey.ai:bad", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "issuer http", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "http://staging-console.flatkey.ai", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "issuer userinfo", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "https://user@staging-console.flatkey.ai", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "issuer query", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "https://staging-console.flatkey.ai?x=1", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "issuer fragment", env: "FLATKEY_MCP_OAUTH_ISSUER", value: "https://staging-console.flatkey.ai#frag", call: func() { _ = mcpOAuthIssuer() }},
+		{name: "resource malformed", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "https://", call: func() { _ = mcpOAuthResource() }},
+		{name: "resource invalid port", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "https://flatkey-mcp-staging.example:bad", call: func() { _ = mcpOAuthResource() }},
+		{name: "resource http", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "http://flatkey-mcp-staging.example", call: func() { _ = mcpOAuthResource() }},
+		{name: "resource userinfo", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "https://user@flatkey-mcp-staging.example", call: func() { _ = mcpOAuthResource() }},
+		{name: "resource query", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "https://flatkey-mcp-staging.example?x=1", call: func() { _ = mcpOAuthResource() }},
+		{name: "resource fragment", env: "FLATKEY_MCP_OAUTH_RESOURCE", value: "https://flatkey-mcp-staging.example#frag", call: func() { _ = mcpOAuthResource() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(tt.env, tt.value)
+			require.Panics(t, tt.call)
+		})
+	}
+}
+
 func TestMcpOAuthPKCEVerifierRequiresRFC7636S256Challenge(t *testing.T) {
 	verifier := strings.Repeat("a", 43) + "-._~"
 	challenge := McpOAuthS256Challenge(verifier)
