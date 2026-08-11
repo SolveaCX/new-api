@@ -39,6 +39,41 @@ import {
   saveUserId,
 } from '../lib/storage'
 
+type RouterPostLoginNavigation = {
+  kind: 'router'
+  to: string
+  search?: Record<string, string>
+  hash?: string
+}
+
+type DocumentPostLoginNavigation = {
+  kind: 'document'
+  href: string
+}
+
+export type PostLoginNavigation =
+  | RouterPostLoginNavigation
+  | DocumentPostLoginNavigation
+
+export function resolvePostLoginNavigation(
+  targetPath: string,
+  origin: string
+): PostLoginNavigation {
+  const parsed = new URL(targetPath, origin)
+  if (parsed.pathname === '/oauth/authorize') {
+    return { kind: 'document', href: targetPath }
+  }
+
+  return {
+    kind: 'router',
+    to: parsed.pathname,
+    search: parsed.search
+      ? Object.fromEntries(parsed.searchParams)
+      : undefined,
+    hash: parsed.hash ? parsed.hash.slice(1) : undefined,
+  }
+}
+
 /**
  * Hook for handling authentication redirects and user data management
  */
@@ -129,20 +164,24 @@ export function useAuthRedirect() {
     // a query/hash out of `to`, so parse with the URL API: it splits on the FIRST
     // '?' only — preserving any nested '?' inside a value — and isolates a trailing
     // '#hash'. Without a query/hash, behavior is identical to before.
-    const parsed = new URL(targetPath, window.location.origin)
-    const toSearch = parsed.search
-      ? Object.fromEntries(parsed.searchParams)
-      : undefined
-    const toHash = parsed.hash ? parsed.hash.slice(1) : undefined
-    if (toSearch || toHash) {
+    const postLoginNavigation = resolvePostLoginNavigation(
+      targetPath,
+      window.location.origin
+    )
+    if (postLoginNavigation.kind === 'document') {
+      window.location.replace(postLoginNavigation.href)
+      return
+    }
+
+    if (postLoginNavigation.search || postLoginNavigation.hash) {
       navigate({
-        to: parsed.pathname,
-        search: toSearch,
-        hash: toHash,
+        to: postLoginNavigation.to,
+        search: postLoginNavigation.search,
+        hash: postLoginNavigation.hash,
         replace: true,
       })
     } else {
-      navigate({ to: parsed.pathname, replace: true })
+      navigate({ to: postLoginNavigation.to, replace: true })
     }
   }
 

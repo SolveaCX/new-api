@@ -42,7 +42,12 @@ const AUTHORIZE_PAYLOAD_FIELDS = [
 export function buildOAuthAuthorizeRedirectTarget(
   location: OAuthAuthorizeLocation
 ): string {
-  return `${location.pathname}${location.search ?? ''}${location.hash ?? ''}`
+  const hash = location.hash
+    ? location.hash.startsWith('#')
+      ? location.hash
+      : `#${location.hash}`
+    : ''
+  return `${location.pathname}${location.search ?? ''}${hash}`
 }
 
 export function buildAuthorizationDetailsParams(search: string): URLSearchParams {
