@@ -25,6 +25,7 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
 import { Route as LocaleIndexRouteImport } from './routes/$locale/index'
+import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
 import { Route as OauthProviderRouteImport } from './routes/oauth/$provider'
 import { Route as ModelsGptApiRouteImport } from './routes/models/gpt-api'
 import { Route as ModelsClaudeApiRouteImport } from './routes/models/claude-api'
@@ -69,6 +70,7 @@ import { Route as AuthenticatedModelHealthIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedInviteIndexRouteImport } from './routes/_authenticated/invite/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
+import { Route as AuthenticatedConnectedAppsIndexRouteImport } from './routes/_authenticated/connected-apps/index'
 import { Route as AuthenticatedComputeIndexRouteImport } from './routes/_authenticated/compute/index'
 import { Route as AuthenticatedCodexModelGovernanceIndexRouteImport } from './routes/_authenticated/codex-model-governance/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
@@ -184,6 +186,11 @@ const AboutIndexRoute = AboutIndexRouteImport.update({
 const LocaleIndexRoute = LocaleIndexRouteImport.update({
   id: '/$locale/',
   path: '/$locale/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
+  id: '/oauth/authorize',
+  path: '/oauth/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OauthProviderRoute = OauthProviderRouteImport.update({
@@ -418,6 +425,12 @@ const AuthenticatedDashboardIndexRoute =
   AuthenticatedDashboardIndexRouteImport.update({
     id: '/dashboard/',
     path: '/dashboard/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedConnectedAppsIndexRoute =
+  AuthenticatedConnectedAppsIndexRouteImport.update({
+    id: '/connected-apps/',
+    path: '/connected-apps/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedComputeIndexRoute =
@@ -674,6 +687,7 @@ export interface FileRoutesByFullPath {
   '/models/claude-api': typeof ModelsClaudeApiRoute
   '/models/gpt-api': typeof ModelsGptApiRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/$locale/': typeof LocaleIndexRoute
   '/about/': typeof AboutIndexRoute
   '/blog/': typeof BlogIndexRoute
@@ -701,6 +715,7 @@ export interface FileRoutesByFullPath {
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/compute/': typeof AuthenticatedComputeIndexRoute
+  '/connected-apps/': typeof AuthenticatedConnectedAppsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/invite/': typeof AuthenticatedInviteIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -771,6 +786,7 @@ export interface FileRoutesByTo {
   '/models/claude-api': typeof ModelsClaudeApiRoute
   '/models/gpt-api': typeof ModelsGptApiRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/$locale': typeof LocaleIndexRoute
   '/about': typeof AboutIndexRoute
   '/blog': typeof BlogIndexRoute
@@ -798,6 +814,7 @@ export interface FileRoutesByTo {
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/codex-model-governance': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/compute': typeof AuthenticatedComputeIndexRoute
+  '/connected-apps': typeof AuthenticatedConnectedAppsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/invite': typeof AuthenticatedInviteIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -872,6 +889,7 @@ export interface FileRoutesById {
   '/models/claude-api': typeof ModelsClaudeApiRoute
   '/models/gpt-api': typeof ModelsGptApiRoute
   '/oauth/$provider': typeof OauthProviderRoute
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/$locale/': typeof LocaleIndexRoute
   '/about/': typeof AboutIndexRoute
   '/blog/': typeof BlogIndexRoute
@@ -899,6 +917,7 @@ export interface FileRoutesById {
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/codex-model-governance/': typeof AuthenticatedCodexModelGovernanceIndexRoute
   '/_authenticated/compute/': typeof AuthenticatedComputeIndexRoute
+  '/_authenticated/connected-apps/': typeof AuthenticatedConnectedAppsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/invite/': typeof AuthenticatedInviteIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -972,6 +991,7 @@ export interface FileRouteTypes {
     | '/models/claude-api'
     | '/models/gpt-api'
     | '/oauth/$provider'
+    | '/oauth/authorize'
     | '/$locale/'
     | '/about/'
     | '/blog/'
@@ -999,6 +1019,7 @@ export interface FileRouteTypes {
     | '/channels/'
     | '/codex-model-governance/'
     | '/compute/'
+    | '/connected-apps/'
     | '/dashboard/'
     | '/invite/'
     | '/keys/'
@@ -1069,6 +1090,7 @@ export interface FileRouteTypes {
     | '/models/claude-api'
     | '/models/gpt-api'
     | '/oauth/$provider'
+    | '/oauth/authorize'
     | '/$locale'
     | '/about'
     | '/blog'
@@ -1096,6 +1118,7 @@ export interface FileRouteTypes {
     | '/channels'
     | '/codex-model-governance'
     | '/compute'
+    | '/connected-apps'
     | '/dashboard'
     | '/invite'
     | '/keys'
@@ -1169,6 +1192,7 @@ export interface FileRouteTypes {
     | '/models/claude-api'
     | '/models/gpt-api'
     | '/oauth/$provider'
+    | '/oauth/authorize'
     | '/$locale/'
     | '/about/'
     | '/blog/'
@@ -1196,6 +1220,7 @@ export interface FileRouteTypes {
     | '/_authenticated/channels/'
     | '/_authenticated/codex-model-governance/'
     | '/_authenticated/compute/'
+    | '/_authenticated/connected-apps/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/invite/'
     | '/_authenticated/keys/'
@@ -1260,6 +1285,7 @@ export interface RootRouteChildren {
   ModelsClaudeApiRoute: typeof ModelsClaudeApiRoute
   ModelsGptApiRoute: typeof ModelsGptApiRoute
   OauthProviderRoute: typeof OauthProviderRoute
+  OauthAuthorizeRoute: typeof OauthAuthorizeRoute
   LocaleIndexRoute: typeof LocaleIndexRoute
   AboutIndexRoute: typeof AboutIndexRoute
   BlogIndexRoute: typeof BlogIndexRoute
@@ -1391,6 +1417,13 @@ declare module '@tanstack/react-router' {
       path: '/$locale'
       fullPath: '/$locale/'
       preLoaderRoute: typeof LocaleIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/authorize': {
+      id: '/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof OauthAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/oauth/$provider': {
@@ -1699,6 +1732,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard/'
       preLoaderRoute: typeof AuthenticatedDashboardIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/connected-apps/': {
+      id: '/_authenticated/connected-apps/'
+      path: '/connected-apps'
+      fullPath: '/connected-apps/'
+      preLoaderRoute: typeof AuthenticatedConnectedAppsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/compute/': {
@@ -2070,6 +2110,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedCodexModelGovernanceIndexRoute: typeof AuthenticatedCodexModelGovernanceIndexRoute
   AuthenticatedComputeIndexRoute: typeof AuthenticatedComputeIndexRoute
+  AuthenticatedConnectedAppsIndexRoute: typeof AuthenticatedConnectedAppsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInviteIndexRoute: typeof AuthenticatedInviteIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -2106,6 +2147,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCodexModelGovernanceIndexRoute:
     AuthenticatedCodexModelGovernanceIndexRoute,
   AuthenticatedComputeIndexRoute: AuthenticatedComputeIndexRoute,
+  AuthenticatedConnectedAppsIndexRoute: AuthenticatedConnectedAppsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInviteIndexRoute: AuthenticatedInviteIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
@@ -2157,6 +2199,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsClaudeApiRoute: ModelsClaudeApiRoute,
   ModelsGptApiRoute: ModelsGptApiRoute,
   OauthProviderRoute: OauthProviderRoute,
+  OauthAuthorizeRoute: OauthAuthorizeRoute,
   LocaleIndexRoute: LocaleIndexRoute,
   AboutIndexRoute: AboutIndexRoute,
   BlogIndexRoute: BlogIndexRoute,

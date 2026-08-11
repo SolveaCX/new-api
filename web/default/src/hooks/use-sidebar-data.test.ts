@@ -83,6 +83,50 @@ describe('buildSidebarData', () => {
     expect(inviteItem?.badge).toBe('Earn More Credits!')
   })
 
+  test('shows Connected Apps by default in the personal group', () => {
+    const personalGroup = buildSidebarData(t).navGroups.find(
+      (group) => group.id === 'personal'
+    )
+    const item = personalGroup?.items.find(
+      (item) => 'url' in item && item.url === '/connected-apps'
+    )
+
+    expect(item).toMatchObject({
+      title: 'Connected Apps',
+      url: '/connected-apps',
+    })
+  })
+
+  test('hides Connected Apps when the admin config disables it', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      JSON.stringify({ personal: { enabled: true, connected_apps: false } }),
+      null
+    )
+    const personal = groups.find((group) => group.id === 'personal')
+
+    expect(
+      personal?.items.some(
+        (item) => 'url' in item && item.url === '/connected-apps'
+      )
+    ).toBe(false)
+  })
+
+  test('allows the user config to narrow Connected Apps visibility', () => {
+    const groups = filterSidebarGroups(
+      buildSidebarData(t).navGroups,
+      null,
+      JSON.stringify({ personal: { enabled: true, connected_apps: false } })
+    )
+    const personal = groups.find((group) => group.id === 'personal')
+
+    expect(
+      personal?.items.some(
+        (item) => 'url' in item && item.url === '/connected-apps'
+      )
+    ).toBe(false)
+  })
+
   test('keeps the badge language independent of the title translation', () => {
     const translateToChinese = ((key: string) =>
       key === 'Invite' ? '邀请' : key) as TFunction

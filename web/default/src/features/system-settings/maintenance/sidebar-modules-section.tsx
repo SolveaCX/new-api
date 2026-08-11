@@ -85,7 +85,7 @@ export function SidebarModulesSection({
     },
     personal: {
       title: t('Personal area'),
-      description: t('Wallet management and personal preferences.'),
+      description: t('Wallet, connected apps, and personal preferences.'),
     },
     admin: {
       title: t('Admin area'),
@@ -137,6 +137,10 @@ export function SidebarModulesSection({
       personal: {
         title: t('Profile'),
         description: t('Personal settings and profile management.'),
+      },
+      connected_apps: {
+        title: t('Connected Apps'),
+        description: t('Review and revoke apps connected to your account.'),
       },
     },
     admin: {

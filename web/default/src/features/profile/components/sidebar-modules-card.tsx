@@ -118,6 +118,11 @@ export function SidebarModulesCard() {
           title: t('Personal Settings'),
           description: t('Personal info settings'),
         },
+        {
+          key: 'connected_apps',
+          title: t('Connected Apps'),
+          description: t('Connected app authorizations'),
+        },
       ],
     },
   ]
