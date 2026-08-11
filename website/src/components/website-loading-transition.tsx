@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { FlatkeyMascotWordmark } from "@/components/flatkey-mascot-wordmark";
+import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 
 const LOADING_DELAY_MS = 80;
 
@@ -49,8 +49,9 @@ export function WebsiteLoadingTransition() {
 
   return (
     <div className="fk-page-loading fixed inset-0 z-[1000] flex items-center justify-center overflow-hidden bg-[#F7F4EC]/98 px-4 dark:bg-[#050507]/98" role="status" aria-live="polite" aria-label="Loading">
-      <div className="fk-page-loading-stage">
-        <FlatkeyMascotWordmark className="fk-page-loading-wordmark" size="display" priority withDots />
+      <div className="fk-page-loading-card">
+        <FlatkeyBrandLogo className="fk-page-loading-logo" />
+        <span className="fk-page-loading-track" aria-hidden="true" />
       </div>
     </div>
   );

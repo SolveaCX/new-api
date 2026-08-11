@@ -24,12 +24,14 @@ function primaryHref(pageKey: StaticFeaturePageKey) {
 function secondaryHref(pageKey: StaticFeaturePageKey, locale: Locale) {
   if (pageKey === "compute" || pageKey === "status" || pageKey === "topup") return localizePath("/contact", locale);
   if (pageKey === "docs" || pageKey === "model") return localizePath("/models", locale);
-  if (pageKey === "usecases") return localizePath("/tools", locale);
+  if (pageKey === "usecases") return consoleUrl("/api-marketplace");
   return localizePath("/pricing", locale);
 }
 
 export function StaticFeaturePage(props: Props) {
   const content = getStaticFeaturePage(props.pageKey, props.locale);
+  const secondaryUrl = secondaryHref(props.pageKey, props.locale);
+  const secondaryIsExternal = secondaryUrl.startsWith("http");
 
   return (
     <SiteShell locale={props.locale} pathname={content.pathname}>
@@ -51,12 +53,15 @@ export function StaticFeaturePage(props: Props) {
                 {content.primary}
                 <ArrowRight className="size-4" />
               </a>
-              <Link
-                href={secondaryHref(props.pageKey, props.locale)}
-                className="flatkey-cta-secondary inline-flex h-12 min-w-40 items-center justify-center px-5 text-sm"
-              >
-                {content.secondary}
-              </Link>
+              {secondaryIsExternal ? (
+                <a href={secondaryUrl} className="flatkey-cta-secondary inline-flex h-12 min-w-40 items-center justify-center px-5 text-sm">
+                  {content.secondary}
+                </a>
+              ) : (
+                <Link href={secondaryUrl} className="flatkey-cta-secondary inline-flex h-12 min-w-40 items-center justify-center px-5 text-sm">
+                  {content.secondary}
+                </Link>
+              )}
             </div>
           </div>
         </section>

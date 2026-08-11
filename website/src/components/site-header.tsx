@@ -10,7 +10,6 @@ import { CLI_LANDING_PATH, cliLandingCopy } from "@/lib/cli-landing";
 import { getCopy } from "@/lib/copy";
 import { LOCALE_LABELS, LOCALES, type Locale, localeLanguageTag, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
-import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -174,7 +173,6 @@ export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const { docsUrl } = useSiteConfig();
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
-  const toolsCopy = toolsLandingCopy[props.locale] ?? toolsLandingCopy.en;
   const legacyLabels = legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels = navGroupLabelByLocale[props.locale] ?? navGroupLabelByLocale.en;
   const startFreeLabel = startFreeLabelByLocale[props.locale] ?? startFreeLabelByLocale.en;
@@ -195,13 +193,12 @@ export function SiteHeader(props: Props) {
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
-      { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
       { href: "/rankings", label: copy.nav.rankings, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },
       { href: "/usecases", label: legacyLabels.usecases, publicPath: true },
     ],
-    [copy.nav.modelPricing, copy.nav.rankings, legacyLabels.compute, legacyLabels.playground, legacyLabels.usecases, toolsCopy.navLabel]
+    [copy.nav.modelPricing, copy.nav.rankings, legacyLabels.compute, legacyLabels.playground, legacyLabels.usecases]
   );
   const developerItems = useMemo<NavItem[]>(
     () => [

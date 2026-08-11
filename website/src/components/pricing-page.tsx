@@ -942,7 +942,7 @@ export async function ModelsPage(props: PricingPageProps) {
       <main className="fk-model-directory-page fk-model-surface model-square-page relative min-h-screen overflow-x-hidden bg-[#F7F4EC] text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
         <div aria-hidden className="fk-hero-grid pointer-events-none absolute inset-0" />
         <div aria-hidden className="fk-hero-wash pointer-events-none absolute inset-x-0 top-0 h-[640px]" />
-        <div className="relative mx-auto w-full max-w-[1800px] px-3 pt-[var(--fk-subpage-hero-safe-area)] pb-8 sm:px-6 sm:pb-10 xl:px-8">
+        <div className="relative mx-auto w-full max-w-[var(--fk-site-container)] px-[var(--fk-site-gutter)] pt-[var(--fk-subpage-hero-safe-area)] pb-8 sm:pb-10">
           <header className="mx-auto mb-6 max-w-4xl pt-5 text-center sm:mb-10 sm:pt-10">
             <p className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-white/92 px-4 py-2 text-xs font-extrabold tracking-normal text-[#101014] uppercase shadow-[3px_3px_0_#101014] dark:border-white/25 dark:bg-[#111116]/82 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
               <span className="size-2 rounded-full bg-[#7C3AED] shadow-[0_0_0_3px_rgba(124,58,237,0.16)]" />

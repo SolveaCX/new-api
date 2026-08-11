@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   ArrowRight,
   Bot,
@@ -183,7 +182,7 @@ export function ApifyAlternativePage() {
               {copy.finalCta}<ArrowRight className="ml-1.5 size-4 transition-transform group-hover:translate-x-0.5" />
             </a>
             <p className={`mt-5 text-xs ${apifyMutedClass}`}>Flatkey is not affiliated with Apify.</p>
-            <Link href="/tools" className="mt-4 inline-block text-xs font-black text-[#7C3AED] hover:underline dark:text-[#C8A8FF]">Explore all Flatkey Tools</Link>
+            <a href={marketplaceUrl} className="mt-4 inline-block text-xs font-black text-[#7C3AED] hover:underline dark:text-[#C8A8FF]">Explore all Flatkey Tools</a>
           </div>
         </section>
       </main>

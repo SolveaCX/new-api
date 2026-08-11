@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ArrowRight, Check, CircleDollarSign, Compass, KeyRound, Scale, Workflow } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import {
@@ -182,7 +181,7 @@ export function ToolsAdLandingPage({ config }: { config: ToolsAdLandingConfig })
             <h2 className="mt-6 text-3xl leading-tight font-black tracking-normal md:text-5xl">{config.finalTitle}</h2>
             <p className={`mx-auto mt-5 max-w-2xl text-sm leading-7 md:text-base ${mutedClass}`}>{config.finalBody}</p>
             <a href={marketplaceUrl} className="flatkey-hero-cta group mt-8 inline-flex h-13 items-center px-7 text-sm">{config.primaryCta}<ArrowRight className="ml-2 size-4 transition-transform group-hover:translate-x-0.5" /></a>
-            <Link href="/tools" className="mt-5 block text-xs font-semibold text-[#1e67ff] hover:underline dark:text-[#8fb4ff]">Explore all Flatkey Tools</Link>
+            <a href={marketplaceUrl} className="mt-5 block text-xs font-semibold text-[#1e67ff] hover:underline dark:text-[#8fb4ff]">Explore all Flatkey Tools</a>
           </div>
         </section>
       </main>

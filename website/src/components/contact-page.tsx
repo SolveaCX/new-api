@@ -108,7 +108,7 @@ export function ContactPage(props: Props) {
 
   return (
     <SiteShell locale={props.locale} pathname="/contact">
-      <main className="relative overflow-x-hidden bg-[#F7F4EC] pt-[var(--fk-header-safe-area)] text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
+      <main className="fk-subpage-surface relative overflow-x-hidden bg-[#F7F4EC] pt-[var(--fk-header-safe-area)] text-[#101014] dark:bg-[#050507] dark:text-[#F6F3EA]">
         <section id="enterprise" className="relative z-10 border-b-2 border-[#101014] px-4 py-12 sm:px-6 md:py-16 dark:border-white/20">
           <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-55" />
           <div className="relative mx-auto grid max-w-[2160px] gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">

@@ -8,7 +8,7 @@ import { ModelLogo } from "@/components/pricing-model-browser";
 import { SiteShell } from "@/components/site-shell";
 import { getCopy } from "@/lib/copy";
 import { getHomeCopy } from "@/lib/home-copy";
-import { buildRowsForModels, modelIconKey, pickFlagshipModels, type HomePricedModel } from "@/lib/home-models";
+import { buildRowsForModels, pickFlagshipModels, type HomePricedModel } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
 import { localizePath, withIdFallback } from "@/lib/locales";
 import { modelPublicPath } from "@/lib/model-public";
@@ -444,78 +444,65 @@ const HOME_PRICE_COMPARISON_ROWS: HomePriceComparisonRow[] = [
 
 const HOME_PRICE_TABLE_COPY = withIdFallback({
   en: {
-    model: "model",
     type: "type",
-    flatkeyPrice: "flatkey price",
-    officialPrice: "official price",
     discount: "discount",
     discounts: { none: "No discount", nine: "10% off", six: "40% off", three: "70% off" },
   },
   zh: {
-    model: "model",
     type: "type",
-    flatkeyPrice: "flatkey价格",
-    officialPrice: "官方价格",
     discount: "折扣",
     discounts: { none: "无折扣", nine: "9折", six: "6折", three: "3折" },
   },
   es: {
-    model: "modelo",
     type: "tipo",
-    flatkeyPrice: "precio flatkey",
-    officialPrice: "precio oficial",
     discount: "descuento",
     discounts: { none: "Sin descuento", nine: "10% desc.", six: "40% desc.", three: "70% desc." },
   },
   fr: {
-    model: "modèle",
     type: "type",
-    flatkeyPrice: "prix flatkey",
-    officialPrice: "prix officiel",
     discount: "remise",
     discounts: { none: "Sans remise", nine: "-10 %", six: "-40 %", three: "-70 %" },
   },
   pt: {
-    model: "modelo",
     type: "tipo",
-    flatkeyPrice: "preço flatkey",
-    officialPrice: "preço oficial",
     discount: "desconto",
     discounts: { none: "Sem desconto", nine: "10% off", six: "40% off", three: "70% off" },
   },
   ru: {
-    model: "модель",
     type: "тип",
-    flatkeyPrice: "цена flatkey",
-    officialPrice: "официальная цена",
     discount: "скидка",
     discounts: { none: "Без скидки", nine: "-10%", six: "-40%", three: "-70%" },
   },
   ja: {
-    model: "model",
     type: "type",
-    flatkeyPrice: "flatkey価格",
-    officialPrice: "公式価格",
     discount: "割引",
     discounts: { none: "割引なし", nine: "1割引", six: "4割引", three: "7割引" },
   },
   vi: {
-    model: "model",
     type: "type",
-    flatkeyPrice: "giá flatkey",
-    officialPrice: "giá chính thức",
     discount: "ưu đãi",
     discounts: { none: "Không giảm", nine: "Giảm 10%", six: "Giảm 40%", three: "Giảm 70%" },
   },
   de: {
-    model: "Modell",
     type: "Typ",
-    flatkeyPrice: "Flatkey-Preis",
-    officialPrice: "Offizieller Preis",
     discount: "Rabatt",
     discounts: { none: "Kein Rabatt", nine: "10% Rabatt", six: "40% Rabatt", three: "70% Rabatt" },
   },
 });
+
+const HOT_MODEL_PATTERNS = [
+  /gpt-5\.6|gpt-5\.5|gpt-5\.1|gpt-5/i,
+  /claude-(sonnet|opus).*4\.5|claude.*4/i,
+  /gemini-3|gemini-2\.5|gemini/i,
+  /grok-4|grok/i,
+  /seedance.*2|seedance/i,
+  /elevenlabs|eleven/i,
+  /deepseek-(v3|r1)|deepseek/i,
+  /kimi-k2|kimi/i,
+  /qwen3|qwen/i,
+  /glm-5|glm-4\.6|glm/i,
+  /veo|imagen|sora/i,
+];
 
 const FLOATING_LOGO_ENTRY_OFFSETS = [
   { x: "54vw", y: "24vh" },
@@ -538,7 +525,7 @@ export async function HomePage(props: Props) {
 
   return (
     <SiteShell locale={props.locale} pathname="/">
-      <main data-fk-home-reveal-root className="fk-new-home relative overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
+      <main data-fk-home-reveal-root className="fk-new-home relative overflow-hidden bg-white text-[#0B0B0F] antialiased dark:bg-[#0A0A10] dark:text-[#F5F5F2]">
         <HeroSection experience={experience} locale={props.locale} signUpUrl={signUpUrl} focusRows={focusRows} />
         <HeroModelBannerSection rows={focusRows} locale={props.locale} />
         <PriceComparisonSection experience={experience} home={home} locale={props.locale} />
@@ -565,7 +552,7 @@ function HeroSection(props: {
   ].filter((line): line is string => Boolean(line));
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden border-b-2 border-[#101014] px-4 py-4 sm:px-6 lg:py-5 dark:border-white/20">
+    <section className="relative min-h-[100svh] overflow-hidden border-b border-[#0B0B0F14] bg-[linear-gradient(180deg,#FFFFFF_0%,#F7F5FD_100%)] px-4 py-4 sm:px-6 lg:py-5 dark:border-white/12">
       <div aria-hidden className="fk-hero-grid absolute inset-0" />
       <div aria-hidden className="fk-hero-wash absolute inset-x-0 top-0 h-full" />
 
@@ -576,7 +563,7 @@ function HeroSection(props: {
         })}
 
         <div className="fk-hero-content-reveal relative z-10 flex min-h-[calc(100svh-2rem)] w-full min-w-0 flex-col items-center justify-center text-center">
-          <h1 className="relative w-full max-w-[calc(100vw-2rem)] min-w-0 text-[clamp(2.1rem,7.65vw,5.85rem)] leading-[1.01] font-extrabold tracking-normal sm:max-w-[900px] sm:text-[clamp(2.7rem,5vw,5.85rem)] 2xl:max-w-[1000px]">
+          <h1 className="relative w-full max-w-[calc(100vw-2rem)] min-w-0 text-[clamp(2.1rem,7.65vw,5.85rem)] leading-[1.01] font-semibold tracking-normal sm:max-w-[900px] sm:text-[clamp(2.7rem,5vw,5.85rem)] 2xl:max-w-[1000px]">
             {heroTitleLines.map((line, index) => (
               <span
                 key={`${index}-${line}`}
@@ -587,21 +574,21 @@ function HeroSection(props: {
             ))}
           </h1>
 
-          <p className="fk-enter fk-hero-secondary-entry mt-4 w-full max-w-[calc(100vw-2rem)] min-w-0 rounded-[1.15rem] bg-[#F7F4EC]/72 px-4 py-2 text-[14.5px] leading-6 font-medium text-[#4D4D56] backdrop-blur sm:max-w-2xl sm:text-base dark:bg-[#050507]/62 dark:text-white/70">
+          <p className="fk-enter fk-hero-secondary-entry mt-5 w-full max-w-[calc(100vw-2rem)] min-w-0 text-[15px] leading-7 font-medium text-[#43434C] sm:max-w-2xl sm:text-[17px] dark:text-white/70">
             {props.experience.heroDescription}
           </p>
 
           <div className="fk-enter fk-hero-secondary-entry fk-hero-actions-entry mt-5 flex w-full max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-3 sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap">
             <a
               href={props.signUpUrl}
-              className="fk-button-motion group inline-flex h-11 w-full max-w-[18rem] items-center justify-center rounded-full border-2 border-[#101014] !bg-[#101014] px-6 text-sm font-bold !text-white shadow-[4px_4px_0_#7C3AED] sm:w-auto sm:min-w-40 dark:border-white dark:!bg-white dark:!text-[#101014]"
+              className="fk-button-motion group inline-flex h-11 w-full max-w-[18rem] items-center justify-center rounded-[10px] border border-transparent !bg-[#0B0B0F] px-6 text-sm font-semibold !text-white shadow-none sm:w-auto sm:min-w-40 dark:border-white dark:!bg-white dark:!text-[#101014]"
             >
               {props.experience.primaryCta}
               <ArrowRight className="ml-2 size-4 transition-transform group-hover:translate-x-0.5" />
             </a>
             <Link
               href={localizePath("/pricing", props.locale)}
-              className="fk-button-motion inline-flex h-11 w-full max-w-[18rem] items-center justify-center rounded-full border-2 border-[#101014] bg-[#F9F871] px-6 text-sm font-bold !text-[#101014] shadow-[4px_4px_0_#101014] sm:w-auto sm:min-w-40 dark:border-white/30"
+              className="fk-button-motion inline-flex h-11 w-full max-w-[18rem] items-center justify-center rounded-[10px] border border-[#0B0B0F14] bg-white px-6 text-sm font-semibold !text-[#0B0B0F] shadow-[inset_0_0_0_1px_rgba(11,11,15,0.02),0_1px_2px_rgba(11,11,15,0.06)] sm:w-auto sm:min-w-40 dark:border-white/20 dark:bg-white/8 dark:!text-white"
             >
               {props.experience.secondaryCta}
             </Link>
@@ -644,7 +631,7 @@ function FloatingLogo(props: { model: FocusModel; row: HomePricedModel; index: n
       aria-label={`Open ${props.row.name} model page`}
     >
       <div className="fk-float-logo" style={{ animationDelay: `${props.index * 0.28}s` }}>
-        <div className="fk-hot-model-badge flex items-center gap-2.5 rounded-full border-2 border-[#101014] bg-[#FFFDF6]/94 px-3 py-2 shadow-[4px_4px_0_#101014] backdrop-blur dark:border-white/22 dark:bg-[#111116]/94 dark:shadow-[4px_4px_0_rgba(255,255,255,0.16)]">
+        <div className="fk-hot-model-badge flex items-center gap-2.5 rounded-full border border-[#0B0B0F14] bg-white/94 px-3 py-2 shadow-[0_14px_34px_-28px_rgba(46,16,101,0.24)] backdrop-blur dark:border-white/16 dark:bg-white/8">
           <ModelLogoSurface iconKey={props.model.iconKey} fallback={props.model.name.charAt(0)} size={30} className="size-10 rounded-full" />
           <span className="pr-1 font-mono text-[12px] font-extrabold tracking-normal text-[#101014] dark:text-white">{props.model.name}</span>
         </div>
@@ -661,7 +648,7 @@ function splitFirstGrapheme(value: string): { initial: string; rest: string } {
 
 function HeroModelBannerSection(props: { rows: HomePricedModel[]; locale: Locale }) {
   return (
-    <section className="fk-section-reveal fk-section-reveal-compact fk-section-model-strip relative overflow-hidden border-b-2 border-[#101014] bg-[#FFFDF6] py-6 dark:border-white/20 dark:bg-[#0B0B10]">
+    <section className="fk-section-reveal fk-section-reveal-compact fk-section-model-strip relative overflow-hidden border-b border-[#0B0B0F14] bg-[#F7F6FB] py-6 dark:border-white/12 dark:bg-[#12121A]">
       <HeroModelBanner rows={props.rows} locale={props.locale} />
     </section>
   );
@@ -672,8 +659,8 @@ function HeroModelBanner(props: { rows: HomePricedModel[]; locale: Locale }) {
   const items = [...bannerRows, ...bannerRows, ...bannerRows];
   return (
     <div className="home-model-marquee relative z-10 w-full overflow-hidden">
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#FFFDF6] to-transparent dark:from-[#0B0B10]" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#FFFDF6] to-transparent dark:from-[#0B0B10]" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#F7F6FB] to-transparent dark:from-[#12121A]" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#F7F6FB] to-transparent dark:from-[#12121A]" />
       <div className="home-model-marquee-track flex w-max items-center gap-14 px-10">
         {items.map((row, index) => (
           <HeroModelMark key={`${row.name}-${index}`} row={row} locale={props.locale} />
@@ -732,24 +719,24 @@ function PriceComparisonSection(props: {
   home: ReturnType<typeof getHomeCopy>;
   locale: Locale;
 }) {
-  const copy = HOME_PRICE_TABLE_COPY[props.locale];
+  const tableCopy = HOME_PRICE_TABLE_COPY[props.locale] ?? HOME_PRICE_TABLE_COPY.en;
 
   return (
-    <section className="fk-section-scroll-right relative overflow-hidden border-b-2 border-[#101014] bg-[#FFFDF6] px-5 py-16 text-[#101014] sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/20 dark:bg-[#0B0B10] dark:text-[#F6F3EA]">
+    <section className="fk-section-scroll-right relative overflow-hidden border-b border-[#0B0B0F14] bg-white px-5 py-16 text-[#0B0B0F] sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/12 dark:bg-[#0A0A10] dark:text-[#F6F3EA]">
       <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-55" />
-      <div className="relative mx-auto max-w-[1920px]">
+      <div className="relative mx-auto max-w-[2160px]">
         <div className="grid gap-5 lg:grid-cols-[0.88fr_1.12fr] lg:items-end">
           <div>
             <p className="font-mono text-xs font-bold uppercase text-[#7C3AED]">{props.experience.priceEyebrow}</p>
-            <h2 className="mt-3 text-[2.35rem] leading-[1.1] font-extrabold tracking-normal sm:text-5xl">{props.experience.priceTitle}</h2>
+            <h2 className="mt-3 text-[2.35rem] leading-[1.1] font-semibold tracking-normal sm:text-5xl">{props.experience.priceTitle}</h2>
           </div>
           <p className="max-w-2xl text-base leading-7 font-medium text-[#575762] sm:text-[17px] dark:text-white/68">{props.experience.priceDescription}</p>
         </div>
 
         <div className="mt-10 max-w-xl">
-          <div className="fk-card-motion rounded-[1.35rem] border-2 border-[#101014] bg-[#5852FF] p-6 text-white shadow-[6px_6px_0_#101014] dark:border-white/20 dark:shadow-[6px_6px_0_rgba(255,255,255,0.14)]">
+          <div className="fk-card-motion rounded-[18px] border border-[#0B0B0F14] bg-[#5B21B6] p-6 text-white shadow-[0_24px_60px_-18px_rgba(46,16,101,0.18)] dark:border-white/12">
             <p className="font-mono text-xs font-bold uppercase text-white/64">{props.home.compare.spotlightBadge}</p>
-            <div className="mt-4 text-5xl leading-none font-extrabold text-[#F9F871] sm:text-6xl">{props.home.compare.spotlightValue}</div>
+            <div className="mt-4 text-5xl leading-none font-semibold text-white sm:text-6xl">{props.home.compare.spotlightValue}</div>
             <p className="mt-4 text-sm leading-6 font-medium text-white/78">{props.home.compare.save}</p>
           </div>
         </div>
@@ -762,17 +749,17 @@ function PriceComparisonSection(props: {
           ))}
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-[1.5rem] border-2 border-[#101014] bg-white/86 shadow-[8px_8px_0_#C8A8FF] backdrop-blur dark:border-white/20 dark:bg-white/8 dark:shadow-[8px_8px_0_rgba(124,58,237,0.45)]">
-          <div className="grid grid-cols-[minmax(12rem,1.55fr)_minmax(4.8rem,0.55fr)_minmax(12rem,1.25fr)_minmax(12rem,1.25fr)_minmax(6rem,0.65fr)_1.4rem] items-center gap-4 border-b-2 border-[#101014] bg-[#F7F4EC] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#777782] max-md:hidden dark:border-white/20 dark:bg-white/6 dark:text-white/46">
-            <span>{copy.model}</span>
-            <span>{copy.type}</span>
-            <span>{copy.flatkeyPrice}</span>
-            <span>{copy.officialPrice}</span>
-            <span>{copy.discount}</span>
+        <div className="mt-6 overflow-hidden rounded-[18px] border border-[#0B0B0F14] bg-white/92 shadow-[0_24px_60px_-32px_rgba(46,16,101,0.28)] backdrop-blur dark:border-white/12 dark:bg-white/8">
+          <div className="grid grid-cols-[minmax(12rem,1.55fr)_minmax(4.8rem,0.55fr)_minmax(12rem,1.25fr)_minmax(12rem,1.25fr)_minmax(6rem,0.65fr)_1.4rem] items-center gap-4 border-b border-[#0B0B0F14] bg-[#F7F6FB] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#83838E] max-md:hidden dark:border-white/12 dark:bg-white/6 dark:text-white/46">
+            <span>{props.experience.priceTitle}</span>
+            <span>{tableCopy.type}</span>
+            <span>{props.experience.flatkeyPriceLabel}</span>
+            <span>{props.experience.officialPriceLabel}</span>
+            <span>{tableCopy.discount}</span>
             <span />
           </div>
           {HOME_PRICE_COMPARISON_ROWS.map((row) => (
-            <FeaturedModelRow key={row.model} row={row} locale={props.locale} copy={copy} />
+            <FeaturedModelRow key={row.model} row={row} locale={props.locale} tableCopy={tableCopy} />
           ))}
         </div>
 
@@ -780,7 +767,7 @@ function PriceComparisonSection(props: {
           <p className="max-w-xl text-sm leading-6 font-medium text-[#6A6A75] dark:text-white/54">{props.experience.priceTableNote}</p>
           <Link
             href={localizePath("/models", props.locale)}
-            className="fk-button-motion inline-flex h-11 items-center rounded-full border-2 border-[#101014] bg-[#5852FF] px-6 text-sm font-bold !text-white shadow-[4px_4px_0_#101014] dark:border-white/24 dark:shadow-[4px_4px_0_rgba(255,255,255,0.15)]"
+            className="fk-button-motion inline-flex h-11 items-center rounded-[10px] border border-transparent bg-[#5B21B6] px-6 text-sm font-semibold !text-white shadow-none dark:border-white/12"
           >
             {props.experience.featuredModelsCta}
           </Link>
@@ -791,12 +778,11 @@ function PriceComparisonSection(props: {
 }
 
 function FeaturedModelRow(props: {
-  copy: (typeof HOME_PRICE_TABLE_COPY)[Locale];
   row: HomePriceComparisonRow;
   locale: Locale;
+  tableCopy: (typeof HOME_PRICE_TABLE_COPY)[Locale];
 }) {
   const href = localizePath(modelPublicPath(props.row.model), props.locale);
-  const iconKey = modelIconKey(props.row.model, props.row.type);
   return (
     <Link
       href={href}
@@ -804,7 +790,7 @@ function FeaturedModelRow(props: {
       aria-label={`Open ${props.row.model} model page`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <ModelLogoSurface iconKey={iconKey} fallback={props.row.model.charAt(0).toUpperCase()} size={34} className="size-11 shrink-0 rounded-md" />
+        <ModelLogoSurface iconKey={priceComparisonIconKey(props.row)} fallback={props.row.model.charAt(0).toUpperCase()} size={34} className="size-11 shrink-0 rounded-md" />
         <div className="min-w-0">
           <div className="fk-price-row-text truncate text-[16px] leading-5 font-bold text-[#101014] dark:text-[#F6F3EA]">{props.row.model}</div>
           <div className="mt-1 font-mono text-[11px] font-bold uppercase text-[#7A7A85] md:hidden dark:text-white/46">{props.row.type}</div>
@@ -813,26 +799,39 @@ function FeaturedModelRow(props: {
       <div className="fk-price-row-text truncate text-[13px] font-semibold text-[#7A7A85] max-md:hidden dark:text-white/46">{props.row.type}</div>
       <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] leading-6 font-bold text-[#5852FF] max-md:text-right max-md:text-sm">{props.row.flatkeyPrice}</div>
       <div className="fk-price-row-text font-mono text-[13px] leading-6 font-semibold text-[#8C8C97] line-through max-md:hidden">{props.row.officialPrice}</div>
-      <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{props.copy.discounts[props.row.discount]}</div>
+      <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{props.tableCopy.discounts[props.row.discount]}</div>
       <div className="font-mono text-[11px] font-extrabold text-[#15803D] max-md:hidden">{props.row.discount === "none" ? "" : "SAVE"}</div>
     </Link>
   );
 }
 
+function priceComparisonIconKey(row: HomePriceComparisonRow): string {
+  const model = row.model;
+  if (/^(gpt|o\d|dall-e|sora|codex)/i.test(model)) return "openai";
+  if (/^claude/i.test(model)) return "claude-color";
+  if (/^(gemini|imagen|veo)/i.test(model)) return "gemini-color";
+  if (/^deepseek/i.test(model)) return "deepseek-color";
+  if (/^kimi|^moonshot/i.test(model)) return "kimi-color";
+  if (/^glm|^chatglm/i.test(model)) return "chatglm-color";
+  if (/^seedance/i.test(model)) return "bytedance-color";
+  if (/^minimax/i.test(model)) return "minimax-color";
+  return row.type;
+}
+
 function FaqSection(props: { experience: ExperienceCopy }) {
   return (
-    <section className="fk-section-scroll-right relative border-b-2 border-[#101014] px-5 py-16 sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/20">
+    <section className="fk-section-scroll-right relative border-b border-[#0B0B0F14] bg-white px-5 py-16 sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/12 dark:bg-[#0A0A10]">
       <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-65" />
-      <div className="relative mx-auto max-w-[1920px]">
+      <div className="relative mx-auto max-w-[2160px]">
         <SectionHeader eyebrow={props.experience.faqEyebrow} title={props.experience.faqTitle} description={props.experience.faqDescription} />
         <div className="mt-10">
           <div className="grid gap-3 lg:grid-cols-2">
             {props.experience.faqs.map((faq, index) => (
               <article
                 key={faq.question}
-                className="fk-card-motion grid gap-4 rounded-[1.25rem] border-2 border-[#101014] bg-white/86 p-5 shadow-[4px_4px_0_#101014] backdrop-blur md:grid-cols-[3.5rem_1fr] dark:border-white/20 dark:bg-white/8 dark:shadow-[4px_4px_0_rgba(255,255,255,0.14)]"
+                className="fk-card-motion grid gap-4 rounded-[16px] border border-[#0B0B0F14] bg-white/92 p-5 shadow-[0_14px_34px_-28px_rgba(46,16,101,0.24)] backdrop-blur md:grid-cols-[3.5rem_1fr] dark:border-white/12 dark:bg-white/8"
               >
-                <span className="flex size-12 items-center justify-center rounded-xl border-2 border-[#101014] bg-[#C8A8FF] font-mono text-sm font-bold text-[#101014] dark:border-white/20">
+                <span className="flex size-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-[#F0EBFA] font-mono text-sm font-bold text-[#5B21B6] dark:border-white/12">
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <div>
@@ -850,16 +849,16 @@ function FaqSection(props: { experience: ExperienceCopy }) {
 
 function VoicesSection(props: { experience: ExperienceCopy }) {
   return (
-    <section className="fk-section-scroll-right relative overflow-hidden border-b-2 border-[#101014] bg-[#F7F4EC] px-5 py-16 sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/20 dark:bg-[#050507]">
+    <section className="fk-section-scroll-right relative overflow-hidden border-b border-[#0B0B0F14] bg-[#F7F6FB] px-5 py-16 sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/12 dark:bg-[#12121A]">
       <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-80" />
       <div aria-hidden className="fk-hero-wash absolute inset-x-0 top-0 h-full opacity-70" />
-      <div className="relative mx-auto max-w-[1920px]">
+      <div className="relative mx-auto max-w-[2160px]">
         <SectionHeader eyebrow={props.experience.voicesEyebrow} title={props.experience.voicesTitle} />
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
           {props.experience.voices.map((voice, index) => {
             const initial = voice.role.trim().charAt(0).toUpperCase();
             return (
-              <article key={voice.role} className="fk-card-motion rounded-[1.35rem] border-2 border-[#101014] bg-white/86 p-6 text-[#101014] shadow-[6px_6px_0_#101014] backdrop-blur dark:border-white/20 dark:bg-white/8 dark:text-[#F6F3EA] dark:shadow-[6px_6px_0_rgba(255,255,255,0.14)]">
+              <article key={voice.role} className="fk-card-motion rounded-[18px] border border-[#0B0B0F14] bg-white/92 p-6 text-[#0B0B0F] shadow-[0_24px_60px_-32px_rgba(46,16,101,0.28)] backdrop-blur dark:border-white/12 dark:bg-white/8 dark:text-[#F6F3EA]">
                 <div className="mb-8 flex items-center gap-1 text-[#7C3AED]">
                   {Array.from({ length: 5 }).map((_, starIndex) => (
                     <Star key={starIndex} className="size-4 fill-current" strokeWidth={2.2} />
@@ -867,7 +866,7 @@ function VoicesSection(props: { experience: ExperienceCopy }) {
                 </div>
                 <p className="text-xl leading-8 font-bold tracking-normal">&ldquo;{voice.quote}&rdquo;</p>
                 <div className="mt-8 flex items-center gap-3">
-                  <span className={`flex size-11 items-center justify-center rounded-full border-2 border-[#101014] font-mono text-base font-bold text-[#101014] ${index === 0 ? "bg-[#92F2A2]" : index === 1 ? "bg-[#F9F871]" : "bg-[#C8A8FF]"}`}>
+                  <span className={`flex size-11 items-center justify-center rounded-full border border-[#0B0B0F14] font-mono text-base font-bold text-[#5B21B6] ${index === 0 ? "bg-[#E7F4EC]" : index === 1 ? "bg-[#F0EBFA]" : "bg-[#F0EBFA]"}`}>
                     {initial}
                   </span>
                   <span className="font-mono text-xs leading-5 font-bold uppercase">{voice.role}</span>
@@ -891,7 +890,7 @@ function BottomCtaSection(props: {
   return (
     <section className="fk-section-scroll-right fk-section-reveal-deep px-5 py-14 sm:px-6 lg:px-8 lg:py-20 2xl:px-10">
       <div className="mx-auto grid max-w-[2160px] gap-5 lg:grid-cols-[0.98fr_1.02fr] lg:items-stretch">
-        <div className="fk-card-motion relative min-h-[360px] overflow-hidden rounded-[2rem] border-2 border-[#101014] bg-white/92 px-5 py-8 shadow-[7px_7px_0_#101014] sm:px-8 dark:border-white/18 dark:bg-white/8 dark:shadow-[7px_7px_0_rgba(255,255,255,0.14)]">
+        <div className="fk-card-motion relative min-h-[360px] overflow-hidden rounded-[18px] border border-[#0B0B0F14] bg-white/92 px-5 py-8 shadow-[0_24px_60px_-32px_rgba(46,16,101,0.28)] sm:px-8 dark:border-white/12 dark:bg-white/8">
           <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-45" />
           <div className="relative z-10">
             <p className="font-mono text-xs font-bold uppercase text-[#7C3AED]">Contact sales</p>
@@ -902,7 +901,7 @@ function BottomCtaSection(props: {
             <p className="mt-5 max-w-xl text-base leading-7 font-semibold text-[#575762] dark:text-white/62">{props.home.support.description}</p>
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
               {props.home.stats.slice(0, 4).map((stat) => (
-                <div key={stat.value} className="rounded-[1.05rem] border border-[#101014]/12 bg-[#FFFDF6]/82 p-4 dark:border-white/12 dark:bg-white/8">
+                <div key={stat.value} className="rounded-[12px] border border-[#0B0B0F14] bg-white/82 p-4 dark:border-white/12 dark:bg-white/8">
                   <div className="font-mono text-2xl font-extrabold text-[#5852FF]">{stat.value}</div>
                   <div className="mt-2 text-sm leading-5 font-semibold text-[#777782] dark:text-white/54">{stat.label}</div>
                 </div>
@@ -911,7 +910,7 @@ function BottomCtaSection(props: {
           </div>
         </div>
 
-        <div className="fk-card-motion relative min-h-[360px] overflow-hidden rounded-[2rem] border-2 border-[#101014] bg-[#FFFDF6] p-5 shadow-[7px_7px_0_#C8A8FF] dark:border-white/18 dark:bg-white/8 dark:shadow-[7px_7px_0_rgba(124,58,237,0.42)]">
+        <div className="fk-card-motion relative min-h-[360px] overflow-hidden rounded-[18px] border border-[#0B0B0F14] bg-white p-5 shadow-[0_24px_60px_-32px_rgba(46,16,101,0.28)] dark:border-white/12 dark:bg-white/8">
           <div className="mb-4">
             <p className="font-mono text-xs font-bold uppercase text-[#7C3AED]">Enterprise</p>
             <h2 className="mt-3 text-3xl leading-tight font-extrabold tracking-normal text-[#20242D] dark:text-[#F6F3EA]">
@@ -935,7 +934,7 @@ function SectionHeader(props: { eyebrow: string; title: string; description?: st
   return (
     <div className="max-w-3xl">
       <p className={`font-mono text-xs font-bold uppercase ${props.inverse ? "text-[#92F2A2]" : "text-[#7C3AED]"}`}>{props.eyebrow}</p>
-      <h2 className="mt-3 text-4xl leading-[1.12] font-extrabold tracking-normal sm:text-5xl">{props.title}</h2>
+      <h2 className="mt-3 text-4xl leading-[1.12] font-semibold tracking-normal sm:text-5xl">{props.title}</h2>
       {props.description ? (
         <p className={`mt-5 text-base leading-7 font-medium ${props.inverse ? "text-white/68" : "text-[#575762] dark:text-white/68"}`}>
           {props.description}

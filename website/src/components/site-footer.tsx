@@ -213,7 +213,6 @@ export function SiteFooter(props: SiteFooterProps) {
   const currentYear = new Date().getFullYear();
   const productLinks: FooterLink[] = [
     { href: "/models", label: siteCopy.nav.modelPricing },
-    { href: "/tools", label: labels.tools },
     { href: "/playground", label: labels.playground },
     { href: "/rankings", label: siteCopy.nav.rankings },
     { href: "/pricing", label: siteCopy.nav.pricing },
