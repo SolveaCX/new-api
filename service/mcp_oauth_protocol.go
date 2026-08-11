@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/netip"
@@ -75,8 +76,8 @@ type McpOAuthDoer interface {
 }
 
 type McpOAuthCIMDFetcher struct {
-	Resolver McpOAuthResolver
-	Doer     McpOAuthDoer
+	resolver McpOAuthResolver
+	doer     McpOAuthDoer
 	client   *http.Client
 }
 
@@ -281,7 +282,7 @@ func NewMcpOAuthDefaultCIMDFetcher(resolver McpOAuthResolver, dialContext func(c
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
 		dialContext = dialer.DialContext
 	}
-	fetcher := McpOAuthCIMDFetcher{Resolver: resolver}
+	fetcher := McpOAuthCIMDFetcher{resolver: resolver}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
@@ -306,7 +307,7 @@ func NewMcpOAuthDefaultCIMDFetcher(resolver McpOAuthResolver, dialContext func(c
 			return http.ErrUseLastResponse
 		},
 	}
-	fetcher.Doer = fetcher.client
+	fetcher.doer = fetcher.client
 	return fetcher
 }
 
@@ -318,7 +319,7 @@ func (f McpOAuthCIMDFetcher) Fetch(ctx context.Context, clientID string) (McpOAu
 	if err := ValidateMcpOAuthCIMDClientID(clientID); err != nil {
 		return McpOAuthClientMetadata{}, err
 	}
-	resolver := f.Resolver
+	resolver := f.resolver
 	if resolver == nil {
 		resolver = mcpOAuthNetResolver{}
 	}
@@ -334,10 +335,10 @@ func (f McpOAuthCIMDFetcher) Fetch(ctx context.Context, clientID string) (McpOAu
 	if err != nil {
 		return McpOAuthClientMetadata{}, err
 	}
-	doer := f.Doer
+	doer := f.doer
 	if doer == nil {
 		defaultFetcher := NewMcpOAuthDefaultCIMDFetcher(resolver, nil)
-		doer = defaultFetcher.Doer
+		doer = defaultFetcher.doer
 	}
 	req, err := http.NewRequestWithContext(context.WithValue(ctx, mcpOAuthVerifiedIPContextKey{}, verifiedIP.String()), http.MethodGet, clientID, nil)
 	if err != nil {
@@ -354,7 +355,7 @@ func (f McpOAuthCIMDFetcher) Fetch(ctx context.Context, clientID string) (McpOAu
 	if resp.StatusCode != http.StatusOK {
 		return McpOAuthClientMetadata{}, fmt.Errorf("metadata status must be 200, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "application/json") {
+	if !isMcpOAuthJSONContentType(resp.Header.Get("Content-Type")) {
 		return McpOAuthClientMetadata{}, errors.New("metadata content-type must be JSON")
 	}
 	limited := io.LimitReader(resp.Body, 64*1024+1)
@@ -373,6 +374,15 @@ func (f McpOAuthCIMDFetcher) Fetch(ctx context.Context, clientID string) (McpOAu
 		return McpOAuthClientMetadata{}, err
 	}
 	return metadata, nil
+}
+
+func isMcpOAuthJSONContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	mediaType = strings.ToLower(mediaType)
+	return mediaType == "application/json" || strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json")
 }
 
 func firstSafeMcpOAuthIP(ips []net.IP) (net.IP, error) {

@@ -48,7 +48,8 @@ type McpOAuthVerifiedAccessClaims struct {
 	ID        string           `json:"jti"`
 	GrantID   string           `json:"grant_id"`
 	ClientID  string           `json:"client_id"`
-	Scopes    []string         `json:"scope"`
+	Scope     string           `json:"scope"`
+	Scopes    []string         `json:"-"`
 	Resource  string           `json:"resource"`
 }
 
@@ -122,12 +123,21 @@ func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string
 	if err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(req.Subject) == "" {
+		return "", errors.New("sub is required")
+	}
+	if strings.TrimSpace(req.GrantID) == "" {
+		return "", errors.New("grant_id is required")
+	}
+	if strings.TrimSpace(req.ClientID) == "" {
+		return "", errors.New("client_id is required")
+	}
 	jtiBytes := make([]byte, 16)
 	if _, err := io.ReadFull(s.randomness, jtiBytes); err != nil {
 		return "", fmt.Errorf("generate token id: %w", err)
 	}
 	now := s.clock().UTC()
-	return s.signClaims(McpOAuthVerifiedAccessClaims{
+	claims := McpOAuthVerifiedAccessClaims{
 		Issuer:    McpOAuthIssuer,
 		Audience:  McpOAuthResource,
 		Subject:   req.Subject,
@@ -138,7 +148,11 @@ func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string
 		ClientID:  req.ClientID,
 		Scopes:    scopes,
 		Resource:  McpOAuthResource,
-	})
+	}
+	if err := claims.validate(now, ""); err != nil {
+		return "", err
+	}
+	return s.signClaims(claims)
 }
 
 func (s *McpOAuthSigner) VerifyAccessToken(rawToken string, requiredScope string) (McpOAuthVerifiedAccessClaims, error) {
@@ -155,6 +169,9 @@ func (s *McpOAuthSigner) VerifyAccessToken(rawToken string, requiredScope string
 		}
 		if kid, _ := token.Header["kid"].(string); kid != s.kid {
 			return nil, errors.New("unexpected jwt kid")
+		}
+		if typ, _ := token.Header["typ"].(string); typ != "at+jwt" {
+			return nil, errors.New("unexpected jwt typ")
 		}
 		return s.publicKey, nil
 	})
@@ -189,8 +206,10 @@ func (s *McpOAuthSigner) JWKS() McpOAuthJWKS {
 }
 
 func (s *McpOAuthSigner) signClaims(claims McpOAuthVerifiedAccessClaims) (string, error) {
+	claims.prepareForWire()
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	token.Header["kid"] = s.kid
+	token.Header["typ"] = "at+jwt"
 	return token.SignedString(s.privateKey)
 }
 
@@ -221,7 +240,7 @@ func (c McpOAuthVerifiedAccessClaims) GetAudience() (jwt.ClaimStrings, error) {
 	return jwt.ClaimStrings{c.Audience}, nil
 }
 
-func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope string) error {
+func (c *McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope string) error {
 	if c.Issuer != McpOAuthIssuer {
 		return errors.New("invalid issuer")
 	}
@@ -258,7 +277,11 @@ func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope stri
 	if strings.TrimSpace(c.ID) == "" {
 		return errors.New("jti is required")
 	}
-	normalized, err := normalizeMcpOAuthScopeList(c.Scopes)
+	scopeText := c.Scope
+	if strings.TrimSpace(scopeText) == "" && len(c.Scopes) > 0 {
+		scopeText = strings.Join(c.Scopes, " ")
+	}
+	normalized, err := NormalizeMcpOAuthScopes(scopeText)
 	if err != nil {
 		return err
 	}
@@ -278,7 +301,14 @@ func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope stri
 		}
 	}
 	c.Scopes = normalized
+	c.Scope = strings.Join(normalized, " ")
 	return nil
+}
+
+func (c *McpOAuthVerifiedAccessClaims) prepareForWire() {
+	if strings.TrimSpace(c.Scope) == "" && len(c.Scopes) > 0 {
+		c.Scope = strings.Join(c.Scopes, " ")
+	}
 }
 
 func deriveMcpOAuthKeyID(publicKey ed25519.PublicKey) string {
