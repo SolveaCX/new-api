@@ -3305,6 +3305,7 @@ html:lang(ja) .fk-new-home :is(button, .fk-button-motion, .fk-hot-model-badge, .
   min-width: 0;
   align-items: baseline;
   justify-content: center;
+  white-space: nowrap;
   vertical-align: baseline;
 }
 
@@ -3381,6 +3382,7 @@ html:lang(ja) .fk-new-home :is(button, .fk-button-motion, .fk-hot-model-badge, .
   display: inline-block;
   min-width: 0;
   margin-left: 0.005em;
+  white-space: nowrap;
 }
 
 @keyframes fk-hero-initial-pop {

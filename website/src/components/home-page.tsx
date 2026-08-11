@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Sparkles, Star } from "lucide-react";
+import { ArrowRight, Star } from "lucide-react";
 import type { CSSProperties } from "react";
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
 import { HomeSectionReveals } from "@/components/home-section-reveals";
@@ -22,10 +22,10 @@ type Props = {
 };
 
 type ExperienceCopy = {
-  heroBadge: string;
   heroLine1: string;
   heroLine2: string;
-  heroLine3: string;
+  heroLine3?: string;
+  heroLine4?: string;
   heroDescription: string;
   primaryCta: string;
   secondaryCta: string;
@@ -48,12 +48,12 @@ type ExperienceCopy = {
 
 const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
   en: {
-    heroBadge: "Omnimodal routing for real product teams",
-    heroLine1: "All-modal AI.",
-    heroLine2: "One key",
-    heroLine3: "is enough.",
+    heroLine1: "One key.",
+    heroLine2: "More models.",
+    heroLine3: "More tools.",
+    heroLine4: "Lower cost.",
     heroDescription:
-      "Seamlessly call frontier models like GPT-5, Claude, Seedance, and ElevenLabs. Unified routing, one prepaid balance, and one dashboard to control billing and budget.",
+      "One balance covers 300+ official models and 1,000+ pay-per-call tools. No idle seats, duplicate subscriptions, or API keys scattered across providers.",
     primaryCta: "Get API key",
     secondaryCta: "Compare pricing",
     modelTags: ["GPT-5 text & code", "Claude agents", "Seedance video", "ElevenLabs voice", "DeepSeek reasoning", "Kimi long context", "GLM stack"],
@@ -84,12 +84,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   zh: {
-    heroBadge: "面向真实产品团队的全模态路由",
-    heroLine1: "全模态 AI，",
-    heroLine2: "一个 Key",
-    heroLine3: "就够了。",
+    heroLine1: "一个 key。",
+    heroLine2: "更多模型。",
+    heroLine3: "更多工具。",
+    heroLine4: "更低成本。",
     heroDescription:
-      "无缝调用 GPT-5、Claude、Seedance、ElevenLabs 等前沿模型。统一路由，一个预付余额，一站式控制账单与预算。",
+      "一个余额覆盖 300+ 个官方模型和 1,000+ 个按调用付费工具。无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key。",
     primaryCta: "获取 API Key",
     secondaryCta: "对比价格",
     modelTags: ["GPT-5 文本与代码", "Claude Agent", "Seedance 视频", "ElevenLabs 语音", "DeepSeek 推理", "Kimi 长上下文", "GLM 模型栈"],
@@ -120,12 +120,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   es: {
-    heroBadge: "Ruteo omnimodal para equipos de producto reales",
-    heroLine1: "IA multimodal.",
-    heroLine2: "Una key",
-    heroLine3: "basta.",
+    heroLine1: "Una key.",
+    heroLine2: "Más modelos.",
+    heroLine3: "Más herramientas.",
+    heroLine4: "Menor coste.",
     heroDescription:
-      "Llama sin fricción a modelos frontier como GPT-5, Claude, Seedance y ElevenLabs. Ruteo unificado, saldo prepago y un panel para controlar facturación y presupuesto.",
+      "Un saldo cubre 300+ modelos oficiales y 1.000+ herramientas de pago por llamada. Sin asientos inactivos, suscripciones duplicadas ni API keys dispersas entre proveedores.",
     primaryCta: "Obtener API key",
     secondaryCta: "Comparar precios",
     modelTags: ["GPT-5 texto y código", "agentes Claude", "video Seedance", "voz ElevenLabs", "razonamiento DeepSeek", "contexto largo Kimi", "stack GLM"],
@@ -155,12 +155,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   fr: {
-    heroBadge: "Routage omnimodal pour vraies équipes produit",
-    heroLine1: "IA multimodale.",
-    heroLine2: "Une clé",
-    heroLine3: "suffit.",
+    heroLine1: "Une clé.",
+    heroLine2: "Plus de modèles.",
+    heroLine3: "Plus d'outils.",
+    heroLine4: "Moins de coûts.",
     heroDescription:
-      "Appelez sans friction des modèles frontier comme GPT-5, Claude, Seedance et ElevenLabs. Routage unifié, solde prépayé et tableau de bord unique pour budget et facturation.",
+      "Un solde couvre plus de 300 modèles officiels et plus de 1 000 outils facturés à l'appel. Pas de sièges inutilisés, d'abonnements en double ni de clés API éparpillées chez les fournisseurs.",
     primaryCta: "Obtenir une clé API",
     secondaryCta: "Comparer les prix",
     modelTags: ["GPT-5 texte et code", "agents Claude", "vidéo Seedance", "voix ElevenLabs", "raisonnement DeepSeek", "long contexte Kimi", "stack GLM"],
@@ -190,12 +190,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   pt: {
-    heroBadge: "Roteamento omnimodal para times de produto reais",
-    heroLine1: "IA multimodal.",
-    heroLine2: "Uma key",
-    heroLine3: "é suficiente.",
+    heroLine1: "Uma key.",
+    heroLine2: "Mais modelos.",
+    heroLine3: "Mais ferramentas.",
+    heroLine4: "Menor custo.",
     heroDescription:
-      "Chame sem atrito modelos frontier como GPT-5, Claude, Seedance e ElevenLabs. Roteamento unificado, saldo pré-pago e um painel para controlar cobrança e orçamento.",
+      "Um saldo cobre mais de 300 modelos oficiais e mais de 1.000 ferramentas pagas por chamada. Sem assentos ociosos, assinaturas duplicadas ou API keys espalhadas entre fornecedores.",
     primaryCta: "Obter API key",
     secondaryCta: "Comparar preços",
     modelTags: ["GPT-5 texto e código", "agentes Claude", "vídeo Seedance", "voz ElevenLabs", "raciocínio DeepSeek", "contexto longo Kimi", "stack GLM"],
@@ -225,12 +225,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   ru: {
-    heroBadge: "Омнимодальная маршрутизация для продуктовых команд",
-    heroLine1: "Мультимодальный ИИ.",
-    heroLine2: "Один ключ",
-    heroLine3: "достаточно.",
+    heroLine1: "Один ключ.",
+    heroLine2: "Больше моделей.",
+    heroLine3: "Больше инструментов.",
+    heroLine4: "Ниже стоимость.",
     heroDescription:
-      "Без лишней интеграции вызывайте GPT-5, Claude, Seedance, ElevenLabs и другие frontier models. Единый routing, prepaid balance и один dashboard для billing и budget.",
+      "Один баланс покрывает 300+ официальных моделей и 1 000+ инструментов с оплатой за вызов. Без простаивающих мест, дублирующих подписок и API-ключей, разбросанных по провайдерам.",
     primaryCta: "Получить API key",
     secondaryCta: "Сравнить цены",
     modelTags: ["GPT-5 text & code", "Claude agents", "Seedance video", "ElevenLabs voice", "DeepSeek reasoning", "Kimi long context", "GLM stack"],
@@ -260,12 +260,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   ja: {
-    heroBadge: "プロダクトチーム向けの全モダリティルーティング",
-    heroLine1: "全モーダルAI。",
-    heroLine2: "1つのKey",
-    heroLine3: "で十分。",
+    heroLine1: "1 つの key。",
+    heroLine2: "より多くのモデル。",
+    heroLine3: "より多くのツール。",
+    heroLine4: "より低いコスト。",
     heroDescription:
-      "GPT-5、Claude、Seedance、ElevenLabs などの frontier model をシームレスに呼び出せます。統合ルーティング、プリペイド残高、請求と予算を管理する 1 つの dashboard。",
+      "1 つの残高で 300+ の公式モデルと 1,000+ の従量課金ツールを利用できます。使われないシート、重複サブスクリプション、各プロバイダーに散らばる API key は不要です。",
     primaryCta: "API key を取得",
     secondaryCta: "価格を比較",
     modelTags: ["GPT-5 テキストとコード", "Claude エージェント", "Seedance 動画", "ElevenLabs 音声", "DeepSeek 推論", "Kimi 長文脈", "GLM スタック"],
@@ -295,12 +295,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   vi: {
-    heroBadge: "Routing toàn modality cho team sản phẩm thật",
-    heroLine1: "AI đa phương thức.",
-    heroLine2: "Một key",
-    heroLine3: "là đủ.",
+    heroLine1: "Một key.",
+    heroLine2: "Nhiều model hơn.",
+    heroLine3: "Nhiều công cụ hơn.",
+    heroLine4: "Chi phí thấp hơn.",
     heroDescription:
-      "Gọi liền mạch GPT-5, Claude, Seedance, ElevenLabs và các frontier model khác. Routing thống nhất, một số dư trả trước, một dashboard để kiểm soát billing và budget.",
+      "Một số dư dùng cho hơn 300 model chính thức và hơn 1.000 công cụ tính phí theo lượt gọi. Không cần ghế nhàn rỗi, gói đăng ký trùng lặp hay API key rải rác ở nhiều nhà cung cấp.",
     primaryCta: "Lấy API key",
     secondaryCta: "So sánh giá",
     modelTags: ["GPT-5 text & code", "Claude agents", "Seedance video", "ElevenLabs voice", "DeepSeek reasoning", "Kimi long context", "GLM stack"],
@@ -330,12 +330,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   de: {
-    heroBadge: "Omnimodales Routing für echte Produktteams",
-    heroLine1: "Multimodale KI.",
-    heroLine2: "Ein Key",
-    heroLine3: "reicht.",
+    heroLine1: "Ein Key.",
+    heroLine2: "Mehr Modelle.",
+    heroLine3: "Mehr Tools.",
+    heroLine4: "Geringere Kosten.",
     heroDescription:
-      "Rufe GPT-5, Claude, Seedance, ElevenLabs und weitere Frontier-Modelle nahtlos auf. Einheitliches Routing, Prepaid-Guthaben und ein Dashboard für Abrechnung und Budget.",
+      "Ein Guthaben deckt 300+ offizielle Modelle und 1.000+ Pay-per-Call-Tools ab. Keine ungenutzten Seats, doppelten Abos oder über Anbieter verstreuten API Keys.",
     primaryCta: "API Key holen",
     secondaryCta: "Preise vergleichen",
     modelTags: ["GPT-5 Text & Code", "Claude Agents", "Seedance Video", "ElevenLabs Voice", "DeepSeek Reasoning", "Kimi Long Context", "GLM Stack"],
@@ -365,12 +365,12 @@ const EXPERIENCE_COPY: Record<Locale, ExperienceCopy> = withIdFallback({
     ],
   },
   id: {
-    heroBadge: "Routing omnimodal untuk tim produk nyata",
-    heroLine1: "AI multimodal.",
-    heroLine2: "Satu key",
-    heroLine3: "sudah cukup.",
+    heroLine1: "Satu key.",
+    heroLine2: "Lebih banyak model.",
+    heroLine3: "Lebih banyak tool.",
+    heroLine4: "Biaya lebih rendah.",
     heroDescription:
-      "Panggil model frontier seperti GPT-5, Claude, Seedance, dan ElevenLabs dengan mulus. Routing terpadu, satu saldo prabayar, dan satu dashboard untuk mengontrol tagihan serta anggaran.",
+      "Satu saldo mencakup 300+ model resmi dan 1.000+ tool bayar per panggilan. Tanpa seat menganggur, langganan ganda, atau API key tersebar di banyak provider.",
     primaryCta: "Dapatkan API key",
     secondaryCta: "Bandingkan harga",
     modelTags: ["GPT-5 teks & kode", "Agen Claude", "Video Seedance", "Voice ElevenLabs", "Reasoning DeepSeek", "Kimi konteks panjang", "Stack GLM"],
@@ -409,10 +409,10 @@ type FocusModel = {
 };
 
 const FOCUS_MODELS: FocusModel[] = [
-  { name: "GPT-5", match: /gpt-5|^gpt|openai/i, iconKey: "openai", positionClass: "left-3 top-[27%] xl:left-[7%]" },
-  { name: "Claude", match: /claude|anthropic/i, iconKey: "claude-color", positionClass: "right-3 top-[27%] xl:right-[8%]" },
-  { name: "Gemini", match: /gemini|google/i, iconKey: "gemini-color", positionClass: "left-3 bottom-[36%] xl:left-[4%]" },
-  { name: "Grok", match: /grok|xai/i, iconKey: "grok", positionClass: "right-3 bottom-[36%] xl:right-[4%]" },
+  { name: "GPT-5", match: /gpt-5|^gpt|openai/i, iconKey: "openai", positionClass: "left-3 top-[26%] xl:left-[5%] 2xl:left-[7%]" },
+  { name: "Claude", match: /claude|anthropic/i, iconKey: "claude-color", positionClass: "right-3 top-[26%] xl:right-[5%] 2xl:right-[8%]" },
+  { name: "Gemini", match: /gemini|google/i, iconKey: "gemini-color", positionClass: "left-3 bottom-[35%] xl:left-[3%] 2xl:left-[4%]" },
+  { name: "Grok", match: /grok|xai/i, iconKey: "grok", positionClass: "right-3 bottom-[35%] xl:right-[3%] 2xl:right-[4%]" },
   { name: "Kimi", match: /kimi|moonshot/i, iconKey: "kimi-color", positionClass: "left-[11%] bottom-[16%] xl:left-[17%]" },
   { name: "Seedance", match: /seedance|bytedance|doubao/i, iconKey: "bytedance-color", positionClass: "right-[11%] bottom-[16%] xl:right-[17%]" },
 ];
@@ -557,6 +557,13 @@ function HeroSection(props: {
   signUpUrl: string;
   focusRows: HomePricedModel[];
 }) {
+  const heroTitleLines = [
+    props.experience.heroLine1,
+    props.experience.heroLine2,
+    props.experience.heroLine3,
+    props.experience.heroLine4,
+  ].filter((line): line is string => Boolean(line));
+
   return (
     <section className="relative min-h-[100svh] overflow-hidden border-b-2 border-[#101014] px-4 py-4 sm:px-6 lg:py-5 dark:border-white/20">
       <div aria-hidden className="fk-hero-grid absolute inset-0" />
@@ -569,21 +576,15 @@ function HeroSection(props: {
         })}
 
         <div className="fk-hero-content-reveal relative z-10 flex min-h-[calc(100svh-2rem)] w-full min-w-0 flex-col items-center justify-center text-center">
-          <div className="fk-enter inline-flex w-full max-w-[calc(100vw-2rem)] min-w-0 items-center justify-center gap-2 rounded-full border-2 border-[#101014] bg-white/92 px-3 py-2 text-center text-[10px] leading-4 font-bold uppercase whitespace-normal shadow-[3px_3px_0_#101014] backdrop-blur sm:w-auto sm:px-4 sm:text-xs dark:border-white/25 dark:bg-[#111116]/82 dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
-            <Sparkles className="size-3.5 text-[#7C3AED]" strokeWidth={2.6} />
-            <span className="min-w-0">{props.experience.heroBadge}</span>
-          </div>
-
-          <h1 className="relative mt-4 w-full max-w-[calc(100vw-2rem)] min-w-0 text-[clamp(2.05rem,8.25vw,6.45rem)] leading-[1.01] font-extrabold tracking-normal text-balance sm:max-w-[1080px] sm:text-[clamp(2.6rem,5.6vw,6.45rem)]">
-            <span className="fk-hero-title-line block">
-              <BrandedTitleLine text={props.experience.heroLine1} />
-            </span>
-            <span className="fk-hero-title-line fk-enter-delay-1 block">
-              <BrandedTitleLine text={props.experience.heroLine2} />
-            </span>
-            <span className="fk-hero-title-line fk-enter-delay-2 fk-hero-purple block">
-              <BrandedTitleLine text={props.experience.heroLine3} />
-            </span>
+          <h1 className="relative w-full max-w-[calc(100vw-2rem)] min-w-0 text-[clamp(2.1rem,7.65vw,5.85rem)] leading-[1.01] font-extrabold tracking-normal sm:max-w-[900px] sm:text-[clamp(2.7rem,5vw,5.85rem)] 2xl:max-w-[1000px]">
+            {heroTitleLines.map((line, index) => (
+              <span
+                key={`${index}-${line}`}
+                className={`fk-hero-title-line block whitespace-normal sm:whitespace-nowrap ${index === 1 ? "fk-enter-delay-1" : ""} ${index === 2 ? "fk-enter-delay-2" : ""} ${index === heroTitleLines.length - 1 ? "fk-hero-purple" : ""}`}
+              >
+                <BrandedTitleLine text={line} />
+              </span>
+            ))}
           </h1>
 
           <p className="fk-enter fk-hero-secondary-entry mt-4 w-full max-w-[calc(100vw-2rem)] min-w-0 rounded-[1.15rem] bg-[#F7F4EC]/72 px-4 py-2 text-[14.5px] leading-6 font-medium text-[#4D4D56] backdrop-blur sm:max-w-2xl sm:text-base dark:bg-[#050507]/62 dark:text-white/70">
@@ -762,13 +763,13 @@ function PriceComparisonSection(props: {
         </div>
 
         <div className="mt-6 overflow-hidden rounded-[1.5rem] border-2 border-[#101014] bg-white/86 shadow-[8px_8px_0_#C8A8FF] backdrop-blur dark:border-white/20 dark:bg-white/8 dark:shadow-[8px_8px_0_rgba(124,58,237,0.45)]">
-          <div className="grid grid-cols-[4.5rem_minmax(10rem,1.4fr)_minmax(4.4rem,0.55fr)_minmax(12rem,1.18fr)_minmax(12rem,1.18fr)_minmax(6.2rem,0.65fr)] items-center gap-4 border-b-2 border-[#101014] bg-[#F7F4EC] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#777782] max-md:hidden dark:border-white/20 dark:bg-white/6 dark:text-white/46">
-            <span />
+          <div className="grid grid-cols-[minmax(12rem,1.55fr)_minmax(4.8rem,0.55fr)_minmax(12rem,1.25fr)_minmax(12rem,1.25fr)_minmax(6rem,0.65fr)_1.4rem] items-center gap-4 border-b-2 border-[#101014] bg-[#F7F4EC] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#777782] max-md:hidden dark:border-white/20 dark:bg-white/6 dark:text-white/46">
             <span>{copy.model}</span>
             <span>{copy.type}</span>
             <span>{copy.flatkeyPrice}</span>
             <span>{copy.officialPrice}</span>
             <span>{copy.discount}</span>
+            <span />
           </div>
           {HOME_PRICE_COMPARISON_ROWS.map((row) => (
             <FeaturedModelRow key={row.model} row={row} locale={props.locale} copy={copy} />
@@ -797,17 +798,23 @@ function FeaturedModelRow(props: {
   const href = localizePath(modelPublicPath(props.row.model), props.locale);
   const iconKey = modelIconKey(props.row.model, props.row.type);
   return (
-    <Link href={href} className="fk-price-row grid min-h-16 grid-cols-[4.5rem_minmax(10rem,1.4fr)_minmax(4.4rem,0.55fr)_minmax(12rem,1.18fr)_minmax(12rem,1.18fr)_minmax(6.2rem,0.65fr)] items-center gap-4 border-b border-[#101014]/10 px-4 py-3.5 last:border-b-0 max-md:grid-cols-[4rem_minmax(0,1fr)_7rem] max-md:gap-3 dark:border-white/10" aria-label={`Open ${props.row.model} model page`}>
-      <div className="flex h-12 w-16 items-center justify-center overflow-hidden rounded-xl">
-        <ModelLogoSurface iconKey={iconKey} fallback={props.row.model.charAt(0).toUpperCase()} size={34} className="size-11 rounded-md" />
-      </div>
-      <div className="min-w-0">
-        <div className="fk-price-row-text truncate text-[16px] leading-5 font-bold text-[#101014] dark:text-[#F6F3EA]">{props.row.model}</div>
+    <Link
+      href={href}
+      className="fk-price-row grid min-h-16 grid-cols-[minmax(12rem,1.55fr)_minmax(4.8rem,0.55fr)_minmax(12rem,1.25fr)_minmax(12rem,1.25fr)_minmax(6rem,0.65fr)_4.3rem] items-center gap-4 border-b border-[#101014]/10 px-4 py-3.5 last:border-b-0 max-md:grid-cols-[minmax(0,1fr)_5.5rem] max-md:gap-3 dark:border-white/10"
+      aria-label={`Open ${props.row.model} model page`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <ModelLogoSurface iconKey={iconKey} fallback={props.row.model.charAt(0).toUpperCase()} size={34} className="size-11 shrink-0 rounded-md" />
+        <div className="min-w-0">
+          <div className="fk-price-row-text truncate text-[16px] leading-5 font-bold text-[#101014] dark:text-[#F6F3EA]">{props.row.model}</div>
+          <div className="mt-1 font-mono text-[11px] font-bold uppercase text-[#7A7A85] md:hidden dark:text-white/46">{props.row.type}</div>
+        </div>
       </div>
       <div className="fk-price-row-text truncate text-[13px] font-semibold text-[#7A7A85] max-md:hidden dark:text-white/46">{props.row.type}</div>
-      <div className="fk-price-row-text fk-price-row-strong fk-price-row-price text-[15px] leading-snug font-bold text-[#5852FF] max-md:text-right max-md:text-sm">{props.row.flatkeyPrice}</div>
-      <div className="fk-price-row-text text-[13px] leading-snug font-semibold text-[#8C8C97] line-through max-md:hidden">{props.row.officialPrice}</div>
-      <div className="fk-price-row-text fk-price-row-strong text-[14px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{props.copy.discounts[props.row.discount]}</div>
+      <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] leading-6 font-bold text-[#5852FF] max-md:text-right max-md:text-sm">{props.row.flatkeyPrice}</div>
+      <div className="fk-price-row-text font-mono text-[13px] leading-6 font-semibold text-[#8C8C97] line-through max-md:hidden">{props.row.officialPrice}</div>
+      <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{props.copy.discounts[props.row.discount]}</div>
+      <div className="font-mono text-[11px] font-extrabold text-[#15803D] max-md:hidden">{props.row.discount === "none" ? "" : "SAVE"}</div>
     </Link>
   );
 }
