@@ -992,6 +992,44 @@ func TestMcpOAuthApprovalDuplicateFingerprintRollsBackAndReportsAlreadyProcessed
 	require.NoError(t, err)
 }
 
+func TestMcpOAuthApprovalNonFingerprintConstraintKeepsDatabaseError(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-non-fingerprint-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	params := McpOAuthApprovalCreateParams{
+		GrantPublicID:       "grant_non_fingerprint_conflict",
+		CodePublicID:        "code_non_fingerprint_first",
+		CodeSecretHash:      HashMcpOAuthCredential("non-fingerprint-first"),
+		ApprovalFingerprint: FingerprintMcpOAuthApproval(user.Id, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-a"),
+		ClientID:            "client-a",
+		UserID:              user.Id,
+		AccountID:           user.Id,
+		Resource:            "https://mcp.example",
+		DisplayName:         "Non Fingerprint App",
+		Scope:               "tools:read",
+		RedirectURI:         "https://client.example/cb",
+		CodeChallenge:       "challenge-a",
+		ChallengeMethod:     "S256",
+		TokenKey:            "non-fingerprint-token-first",
+		TokenRemainQuota:    500000,
+		TokenUnlimitedQuota: true,
+		Now:                 100,
+		CodeExpiresAt:       700,
+	}
+	_, _, err := CreateMcpOAuthApproval(params)
+	require.NoError(t, err)
+
+	params.GrantPublicID = "grant_non_fingerprint_conflict_second"
+	params.CodeSecretHash = HashMcpOAuthCredential("non-fingerprint-second")
+	params.ApprovalFingerprint = FingerprintMcpOAuthApproval(user.Id, "client-a", "https://mcp.example", "https://client.example/cb", "tools:read", "challenge-b")
+	params.CodeChallenge = "challenge-b"
+	params.TokenKey = "non-fingerprint-token-second"
+	_, _, err = CreateMcpOAuthApproval(params)
+
+	require.Error(t, err)
+	require.False(t, errors.Is(err, ErrMcpOAuthApprovalAlreadyProcessed))
+}
+
 func TestMcpOAuthAuthorizationCodesWithoutApprovalFingerprintCanCoexist(t *testing.T) {
 	setupMcpOAuthTestDB(t)
 	grant := createMcpOAuthGrantFixture(t, "grant_legacy_code_no_fingerprint", 31)

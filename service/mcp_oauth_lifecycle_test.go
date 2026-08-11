@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,29 @@ func TestMcpOAuthLifecycleRevokeConnectedAppsAndIdentityFailClosed(t *testing.T)
 	require.ErrorIs(t, err, model.ErrMcpOAuthGrantRevoked)
 
 	require.NoError(t, lifecycle.RevokeMcpOAuthCredential(McpOAuthRevokeRequest{Token: "unknown"}))
+}
+
+func TestMcpOAuthLifecycleRevokeUnknownAccessGrantIsIdempotentWithoutGORMDependency(t *testing.T) {
+	setupMcpOAuthLifecycleTestDB(t)
+	lifecycle := testMcpOAuthLifecycle(t)
+	accessToken, err := lifecycle.signer.SignAccessToken(McpOAuthAccessTokenRequest{
+		Subject:  "user-404",
+		GrantID:  "missing-grant-for-revoke",
+		ClientID: testMcpOAuthLifecycleClient().ClientID,
+		Scopes:   []string{"tools:read"},
+		Resource: McpOAuthResource,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, lifecycle.RevokeMcpOAuthCredential(McpOAuthRevokeRequest{
+		Token:    accessToken,
+		ClientID: testMcpOAuthLifecycleClient().ClientID,
+	}))
+
+	source, err := os.ReadFile("mcp_oauth_lifecycle.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(source), "gorm.io/gorm")
+	require.NotContains(t, string(source), "gorm.ErrRecordNotFound")
 }
 
 func testMcpOAuthLifecycle(t *testing.T) *McpOAuthLifecycle {
