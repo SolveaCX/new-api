@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -47,11 +48,40 @@ func appendWalletTopUpHint(c *gin.Context, msg string) string {
 	return msg
 }
 
+// walletTopUpHintPreserveOption keeps the top-up URL readable after error
+// sanitization (common.MaskSensitiveInfo masks every URL it sees). The URL is
+// built from our own configured console origin (APP_CONSOLE_ORIGIN /
+// ServerAddress) — an origin the operator deliberately surfaces to users — so
+// masking it only breaks the payment hint: the message renders as
+// "Add credits at https://***.***.ai/***/*** to keep going." and the customer
+// has no path to pay. Domain-name origins are therefore preserved by default;
+// IP-literal hosts stay masked (they read as internal infrastructure) unless
+// force-allowed via the topup_hint.allowed_hosts allowlist.
 func walletTopUpHintPreserveOption() types.NewAPIErrorOptions {
-	if topUp := topUpURL(); topUp != "" && system_setting.TopupHintHostAllowed(topUp) {
+	topUp := topUpURL()
+	if topUp == "" {
+		return func(*types.NewAPIError) {}
+	}
+	if system_setting.TopupHintHostAllowed(topUp) || topUpHintHostIsDomainName(topUp) {
 		return types.ErrOptionWithPreservedMessageFragments(topUp)
 	}
 	return func(*types.NewAPIError) {}
+}
+
+// topUpHintHostIsDomainName reports whether the URL's host is a plain domain
+// name (not empty, not an IP literal). topUpURL already refuses loopback
+// hosts, so anything left with a domain name is the operator's public origin.
+func topUpHintHostIsDomainName(rawURL string) bool {
+	candidate := rawURL
+	if !strings.Contains(candidate, "://") {
+		candidate = "http://" + candidate
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	return host != "" && net.ParseIP(host) == nil
 }
 
 func buildUserQuotaInsufficientMessage(c *gin.Context, quota int) string {
