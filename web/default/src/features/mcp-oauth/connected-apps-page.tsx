@@ -118,6 +118,7 @@ export function ConnectedAppsPage() {
         <div className='grid gap-3'>
           {apps.map((app) => {
             const isActive = app.status === 'active'
+            const appName = app.display_name || app.client_id
             return (
               <Card key={app.grant_public_id}>
                 <CardHeader className='gap-3 sm:flex-row sm:items-start sm:justify-between'>
@@ -127,11 +128,8 @@ export function ConnectedAppsPage() {
                     </div>
                     <div className='min-w-0'>
                       <CardTitle className='truncate text-base'>
-                        {app.display_name || app.client_id}
+                        {appName}
                       </CardTitle>
-                      <CardDescription className='truncate'>
-                        {app.client_id}
-                      </CardDescription>
                     </div>
                   </div>
                   <div className='flex items-center gap-2'>
@@ -143,6 +141,7 @@ export function ConnectedAppsPage() {
                         type='button'
                         variant='destructive'
                         size='sm'
+                        aria-label={t('Revoke {{name}}', { name: appName })}
                         onClick={() => setRevokeTarget(app)}
                       >
                         {t('Revoke')}

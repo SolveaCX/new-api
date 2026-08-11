@@ -29,12 +29,22 @@ describe('MCP OAuth authorize helpers', () => {
       pathname: '/oauth/authorize',
       search:
         '?client_id=flatkey-tools&scope=read&scope=write&state=s-1&resource=https%3A%2F%2Fmcp.flatkey.ai&code_challenge=abc&code_challenge_method=S256',
-      hash: '#review',
+      hash: 'review',
     })
 
     expect(target).toBe(
       '/oauth/authorize?client_id=flatkey-tools&scope=read&scope=write&state=s-1&resource=https%3A%2F%2Fmcp.flatkey.ai&code_challenge=abc&code_challenge_method=S256#review'
     )
+  })
+
+  test('keeps already-prefixed hash fragments compatible', () => {
+    const target = buildOAuthAuthorizeRedirectTarget({
+      pathname: '/oauth/authorize',
+      search: '?client_id=flatkey-tools',
+      hash: '#review',
+    })
+
+    expect(target).toBe('/oauth/authorize?client_id=flatkey-tools#review')
   })
 
   test('forwards the exact authorize query string to authorization details', () => {
