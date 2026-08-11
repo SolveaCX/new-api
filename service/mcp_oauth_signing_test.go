@@ -100,17 +100,22 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 		name          string
 		claims        McpOAuthVerifiedAccessClaims
 		signWith      *McpOAuthSigner
+		kid           string
 		requiredScope string
 		want          string
 	}{
 		{name: "wrong key", claims: valid, signWith: otherSigner, requiredScope: "tools:read", want: "signature"},
+		{name: "wrong kid", claims: valid, kid: "wrong-kid", requiredScope: "tools:read", want: "kid"},
+		{name: "missing kid", claims: valid, kid: "-", requiredScope: "tools:read", want: "kid"},
 		{name: "wrong issuer", claims: withMcpOAuthIssuer(valid, "https://evil.example"), requiredScope: "tools:read", want: "issuer"},
 		{name: "wrong audience", claims: withMcpOAuthAudience(valid, "https://other.example"), requiredScope: "tools:read", want: "audience"},
+		{name: "empty subject", claims: withMcpOAuthSubject(valid, ""), requiredScope: "tools:read", want: "sub"},
 		{name: "wrong resource", claims: withMcpOAuthResource(valid, "https://other.example"), requiredScope: "tools:read", want: "resource"},
 		{name: "expired", claims: withMcpOAuthExpiry(valid, now.Add(-time.Minute)), requiredScope: "tools:read", want: "expired"},
 		{name: "missing exp", claims: withMcpOAuthExpiry(valid, time.Time{}), requiredScope: "tools:read", want: "exp"},
 		{name: "future iat", claims: withMcpOAuthIssuedAt(valid, now.Add(time.Minute)), requiredScope: "tools:read", want: "iat"},
 		{name: "missing iat", claims: withMcpOAuthIssuedAt(valid, time.Time{}), requiredScope: "tools:read", want: "iat"},
+		{name: "lifetime too long", claims: withMcpOAuthExpiry(valid, now.Add(15*time.Minute+2*time.Second)), requiredScope: "tools:read", want: "lifetime"},
 		{name: "empty grant", claims: withMcpOAuthGrant(valid, ""), requiredScope: "tools:read", want: "grant_id"},
 		{name: "empty client", claims: withMcpOAuthClient(valid, ""), requiredScope: "tools:read", want: "client_id"},
 		{name: "empty jti", claims: withMcpOAuthJTI(valid, ""), requiredScope: "tools:read", want: "jti"},
@@ -125,6 +130,15 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 				signWith = signer
 			}
 			token := testMcpOAuthSignClaims(t, signWith, tt.claims)
+			if tt.name == "wrong key" {
+				token = testMcpOAuthSignClaimsWithKid(t, signWith, tt.claims, signer.KeyID())
+			}
+			if tt.kid == "wrong-kid" {
+				token = testMcpOAuthSignClaimsWithKid(t, signer, tt.claims, "wrong-kid")
+			}
+			if tt.kid == "-" {
+				token = testMcpOAuthSignClaimsWithKid(t, signer, tt.claims, "")
+			}
 			_, err := signer.VerifyAccessToken(token, tt.requiredScope)
 			require.ErrorContains(t, err, tt.want)
 		})
@@ -168,8 +182,26 @@ func testMcpOAuthSignClaims(t *testing.T, signer *McpOAuthSigner, claims McpOAut
 	return token
 }
 
+func testMcpOAuthSignClaimsWithKid(t *testing.T, signer *McpOAuthSigner, claims McpOAuthVerifiedAccessClaims, kid string) string {
+	t.Helper()
+	tokenWithClaims := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	if kid != "" {
+		tokenWithClaims.Header["kid"] = kid
+	} else {
+		delete(tokenWithClaims.Header, "kid")
+	}
+	token, err := tokenWithClaims.SignedString(signer.privateKey)
+	require.NoError(t, err)
+	return token
+}
+
 func withMcpOAuthIssuer(c McpOAuthVerifiedAccessClaims, v string) McpOAuthVerifiedAccessClaims {
 	c.Issuer = v
+	return c
+}
+
+func withMcpOAuthSubject(c McpOAuthVerifiedAccessClaims, v string) McpOAuthVerifiedAccessClaims {
+	c.Subject = v
 	return c
 }
 

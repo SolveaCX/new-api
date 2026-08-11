@@ -153,6 +153,9 @@ func (s *McpOAuthSigner) VerifyAccessToken(rawToken string, requiredScope string
 		if token.Method != jwt.SigningMethodEdDSA {
 			return nil, errors.New("unexpected jwt alg")
 		}
+		if kid, _ := token.Header["kid"].(string); kid != s.kid {
+			return nil, errors.New("unexpected jwt kid")
+		}
 		return s.publicKey, nil
 	})
 	if err != nil {
@@ -222,6 +225,9 @@ func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope stri
 	if c.Issuer != McpOAuthIssuer {
 		return errors.New("invalid issuer")
 	}
+	if strings.TrimSpace(c.Subject) == "" {
+		return errors.New("sub is required")
+	}
 	if c.Audience != McpOAuthResource {
 		return errors.New("invalid audience")
 	}
@@ -239,6 +245,9 @@ func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope stri
 	}
 	if c.IssuedAt.Time.After(now) {
 		return errors.New("iat is in the future")
+	}
+	if c.ExpiresAt.Time.Sub(c.IssuedAt.Time) > mcpOAuthAccessTokenLifetime+time.Second {
+		return errors.New("token lifetime exceeds 15 minutes")
 	}
 	if strings.TrimSpace(c.GrantID) == "" {
 		return errors.New("grant_id is required")
