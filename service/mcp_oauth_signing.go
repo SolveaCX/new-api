@@ -246,7 +246,7 @@ func (c McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope stri
 	if c.IssuedAt.Time.After(now) {
 		return errors.New("iat is in the future")
 	}
-	if c.ExpiresAt.Time.Sub(c.IssuedAt.Time) > mcpOAuthAccessTokenLifetime+time.Second {
+	if c.ExpiresAt.Time.Sub(c.IssuedAt.Time) > mcpOAuthAccessTokenLifetime {
 		return errors.New("token lifetime exceeds 15 minutes")
 	}
 	if strings.TrimSpace(c.GrantID) == "" {

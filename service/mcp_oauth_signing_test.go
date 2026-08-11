@@ -115,6 +115,7 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 		{name: "missing exp", claims: withMcpOAuthExpiry(valid, time.Time{}), requiredScope: "tools:read", want: "exp"},
 		{name: "future iat", claims: withMcpOAuthIssuedAt(valid, now.Add(time.Minute)), requiredScope: "tools:read", want: "iat"},
 		{name: "missing iat", claims: withMcpOAuthIssuedAt(valid, time.Time{}), requiredScope: "tools:read", want: "iat"},
+		{name: "lifetime one second too long", claims: withMcpOAuthExpiry(valid, now.Add(15*time.Minute+time.Second)), requiredScope: "tools:read", want: "lifetime"},
 		{name: "lifetime too long", claims: withMcpOAuthExpiry(valid, now.Add(15*time.Minute+2*time.Second)), requiredScope: "tools:read", want: "lifetime"},
 		{name: "empty grant", claims: withMcpOAuthGrant(valid, ""), requiredScope: "tools:read", want: "grant_id"},
 		{name: "empty client", claims: withMcpOAuthClient(valid, ""), requiredScope: "tools:read", want: "client_id"},
