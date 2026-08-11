@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -138,6 +139,12 @@ func TestMcpOAuthDCRRequestAcceptsOnlyPublicAuthorizationCodeClients(t *testing.
 }
 
 func TestMcpOAuthCIMDFetcherRejectsUnsafeNetworkAndResponseShapes(t *testing.T) {
+	fetcherType := reflect.TypeOf(McpOAuthCIMDFetcher{})
+	_, hasResolver := fetcherType.FieldByName("Resolver")
+	_, hasDoer := fetcherType.FieldByName("Doer")
+	require.False(t, hasResolver)
+	require.False(t, hasDoer)
+
 	tests := []struct {
 		name       string
 		resolverIP string
@@ -153,21 +160,23 @@ func TestMcpOAuthCIMDFetcherRejectsUnsafeNetworkAndResponseShapes(t *testing.T) 
 		{name: "mixed unsafe dns", resolverIP: "93.184.216.34", extraIP: "172.16.0.10", want: "unsafe"},
 		{name: "http status", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(500, "application/json", `{}`), want: "status"},
 		{name: "content type", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(200, "text/plain", `{}`), want: "content-type"},
+		{name: "json substring content type", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(200, "text/application-json", `{}`), want: "content-type"},
+		{name: "invalid json media type parameter", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(200, "application/json; charset", `{}`), want: "content-type"},
 		{name: "body limit", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(200, "application/json", strings.Repeat(" ", 64*1024+1)), want: "64KiB"},
 		{name: "invalid json", resolverIP: "93.184.216.34", response: testMcpOAuthHTTPResponse(200, "application/json", `{`), want: "json"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fetcher := McpOAuthCIMDFetcher{
-				Resolver: mcpOAuthResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+			fetcher := newTestMcpOAuthCIMDFetcher(
+				mcpOAuthResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
 					ips := []net.IP{net.ParseIP(tt.resolverIP)}
 					if tt.extraIP != "" {
 						ips = append(ips, net.ParseIP(tt.extraIP))
 					}
 					return ips, nil
 				}),
-				Doer: mcpOAuthDoerFunc(func(req *http.Request) (*http.Response, error) {
+				mcpOAuthDoerFunc(func(req *http.Request) (*http.Response, error) {
 					if tt.err != nil {
 						return nil, tt.err
 					}
@@ -175,7 +184,7 @@ func TestMcpOAuthCIMDFetcherRejectsUnsafeNetworkAndResponseShapes(t *testing.T) 
 					require.Equal(t, tt.resolverIP, req.Context().Value(mcpOAuthVerifiedIPContextKey{}))
 					return tt.response, nil
 				}),
-			}
+			)
 
 			_, err := fetcher.Fetch(context.Background(), "https://client.example/oauth/client")
 			require.ErrorContains(t, err, tt.want)
@@ -184,19 +193,19 @@ func TestMcpOAuthCIMDFetcherRejectsUnsafeNetworkAndResponseShapes(t *testing.T) 
 }
 
 func TestMcpOAuthCIMDFetcherDecodesValidJSONAndDoesNotExposeSecrets(t *testing.T) {
-	fetcher := McpOAuthCIMDFetcher{
-		Resolver: mcpOAuthResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
+	fetcher := newTestMcpOAuthCIMDFetcher(
+		mcpOAuthResolverFunc(func(ctx context.Context, host string) ([]net.IP, error) {
 			return []net.IP{net.ParseIP("93.184.216.34")}, nil
 		}),
-		Doer: mcpOAuthDoerFunc(func(req *http.Request) (*http.Response, error) {
-			return testMcpOAuthHTTPResponse(200, "application/json", `{
+		mcpOAuthDoerFunc(func(req *http.Request) (*http.Response, error) {
+			return testMcpOAuthHTTPResponse(200, "application/client-metadata+json", `{
 				"client_id":"https://client.example/oauth/client",
 				"client_name":"Client",
 				"redirect_uris":["https://client.example/callback"],
 				"client_secret":"must-not-survive"
 			}`), nil
 		}),
-	}
+	)
 
 	metadata, err := fetcher.Fetch(context.Background(), "https://client.example/oauth/client")
 	require.NoError(t, err)
@@ -234,6 +243,10 @@ type mcpOAuthDoerFunc func(*http.Request) (*http.Response, error)
 
 func (f mcpOAuthDoerFunc) Do(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func newTestMcpOAuthCIMDFetcher(resolver McpOAuthResolver, doer McpOAuthDoer) McpOAuthCIMDFetcher {
+	return McpOAuthCIMDFetcher{resolver: resolver, doer: doer}
 }
 
 func testMcpOAuthHTTPResponse(status int, contentType string, body string) *http.Response {

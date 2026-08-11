@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -40,6 +41,8 @@ func TestMcpOAuthSigningLoadsPKCS8EnvSignsVerifiesAccessJWTAndPublishesPublicJWK
 	require.NoError(t, err)
 	require.Equal(t, "EdDSA", parsed.Header["alg"])
 	require.Equal(t, signer.KeyID(), parsed.Header["kid"])
+	require.Equal(t, "at+jwt", parsed.Header["typ"])
+	require.Equal(t, "tools:search tools:read", testMcpOAuthRawTokenPayload(t, token)["scope"])
 
 	claims, err := signer.VerifyAccessToken(token, "tools:read")
 	require.NoError(t, err)
@@ -65,6 +68,34 @@ func TestMcpOAuthSigningLoadsPKCS8EnvSignsVerifiesAccessJWTAndPublishesPublicJWK
 	rawJwks := testMcpOAuthMustMarshal(t, jwks)
 	require.NotContains(t, string(rawJwks), `"d":`)
 	require.NotContains(t, string(rawJwks), base64.StdEncoding.EncodeToString(privateKey))
+}
+
+func TestMcpOAuthSigningRejectsInvalidAccessTokenInputsBeforeSigning(t *testing.T) {
+	signer := testMcpOAuthSigner(t, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	valid := McpOAuthAccessTokenRequest{
+		Subject:  "user-123",
+		GrantID:  "grant-456",
+		ClientID: "https://client.example/app",
+		Scopes:   []string{"tools:read"},
+		Resource: McpOAuthResource,
+	}
+
+	tests := []struct {
+		name string
+		req  McpOAuthAccessTokenRequest
+		want string
+	}{
+		{name: "empty subject", req: withMcpOAuthSignSubject(valid, ""), want: "sub"},
+		{name: "empty grant", req: withMcpOAuthSignGrant(valid, ""), want: "grant_id"},
+		{name: "empty client", req: withMcpOAuthSignClient(valid, ""), want: "client_id"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := signer.SignAccessToken(tt.req)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
 }
 
 func TestMcpOAuthSigningRejectsNonEd25519PKCS8Env(t *testing.T) {
@@ -101,12 +132,15 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 		claims        McpOAuthVerifiedAccessClaims
 		signWith      *McpOAuthSigner
 		kid           string
+		typ           string
 		requiredScope string
 		want          string
 	}{
 		{name: "wrong key", claims: valid, signWith: otherSigner, requiredScope: "tools:read", want: "signature"},
 		{name: "wrong kid", claims: valid, kid: "wrong-kid", requiredScope: "tools:read", want: "kid"},
 		{name: "missing kid", claims: valid, kid: "-", requiredScope: "tools:read", want: "kid"},
+		{name: "wrong typ", claims: valid, typ: "JWT", requiredScope: "tools:read", want: "typ"},
+		{name: "missing typ", claims: valid, typ: "-", requiredScope: "tools:read", want: "typ"},
 		{name: "wrong issuer", claims: withMcpOAuthIssuer(valid, "https://evil.example"), requiredScope: "tools:read", want: "issuer"},
 		{name: "wrong audience", claims: withMcpOAuthAudience(valid, "https://other.example"), requiredScope: "tools:read", want: "audience"},
 		{name: "empty subject", claims: withMcpOAuthSubject(valid, ""), requiredScope: "tools:read", want: "sub"},
@@ -140,6 +174,12 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 			if tt.kid == "-" {
 				token = testMcpOAuthSignClaimsWithKid(t, signer, tt.claims, "")
 			}
+			if tt.typ == "JWT" {
+				token = testMcpOAuthSignClaimsWithTyp(t, signer, tt.claims, "JWT")
+			}
+			if tt.typ == "-" {
+				token = testMcpOAuthSignClaimsWithTyp(t, signer, tt.claims, "")
+			}
 			_, err := signer.VerifyAccessToken(token, tt.requiredScope)
 			require.ErrorContains(t, err, tt.want)
 		})
@@ -149,6 +189,28 @@ func TestMcpOAuthSigningVerifyRejectsInvalidTokensAndScopes(t *testing.T) {
 	require.NoError(t, err)
 	_, err = signer.VerifyAccessToken(hsToken, "tools:read")
 	require.ErrorContains(t, err, "alg")
+}
+
+func TestMcpOAuthSigningVerifyReturnsNormalizedScopesFromStringWireClaim(t *testing.T) {
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	signer := testMcpOAuthSigner(t, now)
+	token := testMcpOAuthSignClaims(t, signer, McpOAuthVerifiedAccessClaims{
+		Issuer:    McpOAuthIssuer,
+		Audience:  McpOAuthResource,
+		Subject:   "user-123",
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+		ID:        "jti-123",
+		GrantID:   "grant-456",
+		ClientID:  "https://client.example/app",
+		Scope:     "tools:execute tools:read tools:read",
+		Resource:  McpOAuthResource,
+	})
+
+	require.Equal(t, "tools:execute tools:read tools:read", testMcpOAuthRawTokenPayload(t, token)["scope"])
+	claims, err := signer.VerifyAccessToken(token, "tools:read")
+	require.NoError(t, err)
+	require.Equal(t, []string{"tools:read", "tools:execute"}, claims.Scopes)
 }
 
 func testMcpOAuthPrivateKey(t *testing.T) ed25519.PrivateKey {
@@ -186,6 +248,7 @@ func testMcpOAuthSignClaims(t *testing.T, signer *McpOAuthSigner, claims McpOAut
 func testMcpOAuthSignClaimsWithKid(t *testing.T, signer *McpOAuthSigner, claims McpOAuthVerifiedAccessClaims, kid string) string {
 	t.Helper()
 	tokenWithClaims := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenWithClaims.Header["typ"] = "at+jwt"
 	if kid != "" {
 		tokenWithClaims.Header["kid"] = kid
 	} else {
@@ -194,6 +257,31 @@ func testMcpOAuthSignClaimsWithKid(t *testing.T, signer *McpOAuthSigner, claims 
 	token, err := tokenWithClaims.SignedString(signer.privateKey)
 	require.NoError(t, err)
 	return token
+}
+
+func testMcpOAuthSignClaimsWithTyp(t *testing.T, signer *McpOAuthSigner, claims McpOAuthVerifiedAccessClaims, typ string) string {
+	t.Helper()
+	tokenWithClaims := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenWithClaims.Header["kid"] = signer.KeyID()
+	if typ != "" {
+		tokenWithClaims.Header["typ"] = typ
+	} else {
+		delete(tokenWithClaims.Header, "typ")
+	}
+	token, err := tokenWithClaims.SignedString(signer.privateKey)
+	require.NoError(t, err)
+	return token
+}
+
+func testMcpOAuthRawTokenPayload(t *testing.T, token string) map[string]any {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+	payload := map[string]any{}
+	require.NoError(t, common.Unmarshal(raw, &payload))
+	return payload
 }
 
 func withMcpOAuthIssuer(c McpOAuthVerifiedAccessClaims, v string) McpOAuthVerifiedAccessClaims {
@@ -252,4 +340,19 @@ func withMcpOAuthJTI(c McpOAuthVerifiedAccessClaims, v string) McpOAuthVerifiedA
 func withMcpOAuthScopes(c McpOAuthVerifiedAccessClaims, v []string) McpOAuthVerifiedAccessClaims {
 	c.Scopes = v
 	return c
+}
+
+func withMcpOAuthSignSubject(r McpOAuthAccessTokenRequest, v string) McpOAuthAccessTokenRequest {
+	r.Subject = v
+	return r
+}
+
+func withMcpOAuthSignGrant(r McpOAuthAccessTokenRequest, v string) McpOAuthAccessTokenRequest {
+	r.GrantID = v
+	return r
+}
+
+func withMcpOAuthSignClient(r McpOAuthAccessTokenRequest, v string) McpOAuthAccessTokenRequest {
+	r.ClientID = v
+	return r
 }
