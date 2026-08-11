@@ -148,7 +148,7 @@ func (l *McpOAuthLifecycle) ApproveMcpOAuthAuthorization(req McpOAuthAuthorizati
 		TokenRemainQuota:    common.GetEnvOrDefault("FLATKEY_MCP_OAUTH_TOKEN_REMAIN_QUOTA", 500000),
 		TokenUnlimitedQuota: common.GetEnvOrDefaultBool("FLATKEY_MCP_OAUTH_TOKEN_UNLIMITED_QUOTA", true),
 		Now:                 now.Unix(),
-		CodeExpiresAt:       now.Add(10 * time.Minute).Unix(),
+		CodeExpiresAt:       now.Add(5 * time.Minute).Unix(),
 	})
 	if errors.Is(err, model.ErrMcpOAuthApprovalAlreadyProcessed) {
 		return McpOAuthAuthorizationApprovalResponse{}, ErrMcpOAuthAuthorizationAlreadyProcessed
@@ -192,6 +192,7 @@ func (l *McpOAuthLifecycle) ExchangeMcpOAuthAuthorizationCode(req McpOAuthAuthor
 		ClientID:           req.ClientID,
 		Resource:           req.Resource,
 		RedirectURI:        req.RedirectURI,
+		CodeVerifier:       req.CodeVerifier,
 		RefreshPublicID:    refreshID,
 		RefreshTokenHash:   model.HashMcpOAuthCredential(refreshSecret),
 		RefreshTokenFamily: familyID,

@@ -2,6 +2,7 @@ package model
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ var (
 	ErrMcpOAuthRefreshFamilyConflict    = errors.New("mcp oauth refresh family conflict")
 	ErrMcpOAuthApprovalAlreadyProcessed = errors.New("mcp oauth approval already processed")
 	ErrMcpOAuthCredentialMismatch       = errors.New("mcp oauth credential mismatch")
+	ErrMcpOAuthPKCEMismatch             = errors.New("mcp oauth pkce mismatch")
 )
 
 type McpOAuthClient struct {
@@ -73,18 +75,18 @@ func (McpOAuthGrant) TableName() string {
 }
 
 type McpOAuthAuthorizationCode struct {
-	Id                  int    `json:"id"`
-	PublicID            string `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
-	GrantPublicID       string `json:"grant_public_id" gorm:"type:varchar(64);index"`
-	CodeHash            string `json:"-" gorm:"type:char(64);uniqueIndex"`
-	ApprovalFingerprint string `json:"approval_fingerprint" gorm:"type:char(64);uniqueIndex"`
-	RedirectURI         string `json:"redirect_uri" gorm:"type:varchar(2048);not null"`
-	Scope               string `json:"scope" gorm:"type:varchar(1024);default:''"`
-	CodeChallenge       string `json:"code_challenge" gorm:"type:varchar(128);default:''"`
-	ChallengeMethod     string `json:"challenge_method" gorm:"type:varchar(16);default:''"`
-	CreatedTime         int64  `json:"created_time" gorm:"bigint"`
-	ExpiresAt           int64  `json:"expires_at" gorm:"bigint;index"`
-	ConsumedAt          int64  `json:"consumed_at" gorm:"bigint;default:0;index"`
+	Id                  int     `json:"id"`
+	PublicID            string  `json:"public_id" gorm:"type:varchar(64);uniqueIndex"`
+	GrantPublicID       string  `json:"grant_public_id" gorm:"type:varchar(64);index"`
+	CodeHash            string  `json:"-" gorm:"type:char(64);uniqueIndex"`
+	ApprovalFingerprint *string `json:"approval_fingerprint,omitempty" gorm:"type:char(64);uniqueIndex"`
+	RedirectURI         string  `json:"redirect_uri" gorm:"type:varchar(2048);not null"`
+	Scope               string  `json:"scope" gorm:"type:varchar(1024);default:''"`
+	CodeChallenge       string  `json:"code_challenge" gorm:"type:varchar(128);default:''"`
+	ChallengeMethod     string  `json:"challenge_method" gorm:"type:varchar(16);default:''"`
+	CreatedTime         int64   `json:"created_time" gorm:"bigint"`
+	ExpiresAt           int64   `json:"expires_at" gorm:"bigint;index"`
+	ConsumedAt          int64   `json:"consumed_at" gorm:"bigint;default:0;index"`
 }
 
 func (McpOAuthAuthorizationCode) TableName() string {
@@ -213,11 +215,15 @@ func CreateMcpOAuthApproval(params McpOAuthApprovalCreateParams) (*McpOAuthGrant
 		}
 		grant.DedicatedTokenId = &tokenID
 		grant.Status = McpOAuthGrantStatusActive
+		var approvalFingerprint *string
+		if strings.TrimSpace(params.ApprovalFingerprint) != "" {
+			approvalFingerprint = &params.ApprovalFingerprint
+		}
 		code = McpOAuthAuthorizationCode{
 			PublicID:            params.CodePublicID,
 			GrantPublicID:       grant.PublicID,
 			CodeHash:            params.CodeSecretHash,
-			ApprovalFingerprint: params.ApprovalFingerprint,
+			ApprovalFingerprint: approvalFingerprint,
 			RedirectURI:         params.RedirectURI,
 			Scope:               params.Scope,
 			CodeChallenge:       params.CodeChallenge,
@@ -245,6 +251,25 @@ func isMcpOAuthUniqueConstraintError(err error) bool {
 	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "unique") || strings.Contains(text, "duplicate") || strings.Contains(text, "constraint")
+}
+
+func validateMcpOAuthPKCEInModel(verifier, challenge, method string) error {
+	if method != "S256" {
+		return ErrMcpOAuthPKCEMismatch
+	}
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return ErrMcpOAuthPKCEMismatch
+	}
+	for _, r := range verifier {
+		if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.' || r == '_' || r == '~') {
+			return ErrMcpOAuthPKCEMismatch
+		}
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	if challenge == "" || base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
+		return ErrMcpOAuthPKCEMismatch
+	}
+	return nil
 }
 
 func ProvisionMcpOAuthGrantDedicatedToken(grantPublicID string, token Token, now int64) (*Token, bool, error) {
@@ -405,6 +430,7 @@ type ExchangeMcpOAuthAuthorizationCodeParams struct {
 	ClientID           string
 	Resource           string
 	RedirectURI        string
+	CodeVerifier       string
 	RefreshPublicID    string
 	RefreshTokenHash   string
 	RefreshTokenFamily string
@@ -468,6 +494,9 @@ func ExchangeMcpOAuthAuthorizationCode(params ExchangeMcpOAuthAuthorizationCodeP
 		}
 		if grant.ClientID != params.ClientID || grant.Resource != params.Resource || code.RedirectURI != params.RedirectURI {
 			return ErrMcpOAuthCredentialMismatch
+		}
+		if err := validateMcpOAuthPKCEInModel(params.CodeVerifier, code.CodeChallenge, code.ChallengeMethod); err != nil {
+			return err
 		}
 		refresh = McpOAuthRefreshToken{
 			PublicID:      params.RefreshPublicID,
