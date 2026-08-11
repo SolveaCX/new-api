@@ -118,7 +118,7 @@ func (s *McpOAuthSigner) KeyID() string {
 func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string, error) {
 	resource := mcpOAuthResource()
 	if req.Resource != resource {
-		return "", NewMcpOAuthError("invalid_target", "resource must match the MCP resource")
+		return "", NewMcpOAuthError("invalid_target", "resource must exactly match "+resource)
 	}
 	scopes, err := NormalizeMcpOAuthScopes(strings.Join(req.Scopes, " "))
 	if err != nil {
