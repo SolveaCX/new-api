@@ -431,6 +431,11 @@ func migrateDBFast() error {
 	// when related models share a table dependency.
 	for _, m := range migrations {
 		var err error
+		if common.UsingSQLite {
+			if err = ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(m.model); err != nil {
+				return fmt.Errorf("failed to prepare %s SQLite migration: %v", m.name, err)
+			}
+		}
 		if common.UsingSQLite && sqliteModelNeedsColumnOnlyMigration(m.model) {
 			err = ensureSQLiteModelColumnsAndIndexes(m.model)
 		} else {
@@ -510,6 +515,50 @@ func ensureSQLiteModelColumnsAndIndexes(model interface{}) error {
 		}
 	}
 	return nil
+}
+
+const tokenOAuthGrantIDColumn = "oauth_grant_id"
+
+func ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(model interface{}) error {
+	if _, ok := model.(*Token); !ok {
+		return nil
+	}
+	if !common.UsingSQLite || DB == nil || !DB.Migrator().HasTable(&Token{}) {
+		return nil
+	}
+	indexName, err := tokenOAuthGrantIDUniqueIndexName()
+	if err != nil {
+		return err
+	}
+	if !DB.Migrator().HasColumn(&Token{}, tokenOAuthGrantIDColumn) {
+		if err := DB.Exec("ALTER TABLE `tokens` ADD COLUMN `" + tokenOAuthGrantIDColumn + "` varchar(64)").Error; err != nil {
+			return err
+		}
+	}
+	if !DB.Migrator().HasIndex(&Token{}, indexName) {
+		if err := DB.Migrator().CreateIndex(&Token{}, indexName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tokenOAuthGrantIDUniqueIndexName() (string, error) {
+	stmt := &gorm.Statement{DB: DB}
+	if err := stmt.Parse(&Token{}); err != nil {
+		return "", err
+	}
+	for _, idx := range stmt.Schema.ParseIndexes() {
+		if idx.Class != "UNIQUE" {
+			continue
+		}
+		for _, field := range idx.Fields {
+			if field.Field != nil && field.Field.DBName == tokenOAuthGrantIDColumn {
+				return idx.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("missing unique index metadata for tokens.%s", tokenOAuthGrantIDColumn)
 }
 
 func backfillTaskIDsBeforeUniqueIndex() error {
