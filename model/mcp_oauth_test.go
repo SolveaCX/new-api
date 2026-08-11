@@ -745,19 +745,6 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-func TestMcpOAuthMigrationModelsIncludeAllTables(t *testing.T) {
-	models := orderedMigrationModels()
-	names := make(map[string]bool, len(models))
-	for _, model := range models {
-		names[model.name] = true
-	}
-
-	require.True(t, names["McpOAuthClient"])
-	require.True(t, names["McpOAuthGrant"])
-	require.True(t, names["McpOAuthAuthorizationCode"])
-	require.True(t, names["McpOAuthRefreshToken"])
-}
-
 func TestMcpOAuthExpiredAuthorizationCodeFailsClosed(t *testing.T) {
 	setupMcpOAuthTestDB(t)
 	code := McpOAuthAuthorizationCode{

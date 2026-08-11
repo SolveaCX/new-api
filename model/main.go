@@ -262,10 +262,19 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if common.UsingSQLite {
+		if err := ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(&Token{}); err != nil {
+			return fmt.Errorf("failed to prepare Token SQLite migration: %v", err)
+		}
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
+		&McpOAuthClient{},
+		&McpOAuthGrant{},
+		&McpOAuthAuthorizationCode{},
+		&McpOAuthRefreshToken{},
 		&CliDeviceAuthorization{},
 		&User{},
 		&RecallCampaign{},
@@ -480,6 +489,11 @@ func migrateDBFast() error {
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.
 	for _, m := range migrations {
+		if common.UsingSQLite {
+			if err := ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(m.model); err != nil {
+				return fmt.Errorf("failed to prepare %s SQLite migration: %v", m.name, err)
+			}
+		}
 		if err := DB.AutoMigrate(m.model); err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
@@ -510,6 +524,50 @@ func migrateDBFast() error {
 	}
 	common.SysLog("database migrated")
 	return nil
+}
+
+const tokenOAuthGrantIDColumn = "oauth_grant_id"
+
+func ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(model interface{}) error {
+	if _, ok := model.(*Token); !ok {
+		return nil
+	}
+	if !common.UsingSQLite || DB == nil || !DB.Migrator().HasTable(&Token{}) {
+		return nil
+	}
+	indexName, err := tokenOAuthGrantIDUniqueIndexName()
+	if err != nil {
+		return err
+	}
+	if !DB.Migrator().HasColumn(&Token{}, tokenOAuthGrantIDColumn) {
+		if err := DB.Exec("ALTER TABLE `tokens` ADD COLUMN `" + tokenOAuthGrantIDColumn + "` varchar(64)").Error; err != nil {
+			return err
+		}
+	}
+	if !DB.Migrator().HasIndex(&Token{}, indexName) {
+		if err := DB.Migrator().CreateIndex(&Token{}, indexName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func tokenOAuthGrantIDUniqueIndexName() (string, error) {
+	stmt := &gorm.Statement{DB: DB}
+	if err := stmt.Parse(&Token{}); err != nil {
+		return "", err
+	}
+	for _, idx := range stmt.Schema.ParseIndexes() {
+		if idx.Class != "UNIQUE" {
+			continue
+		}
+		for _, field := range idx.Fields {
+			if field.Field != nil && field.Field.DBName == tokenOAuthGrantIDColumn {
+				return idx.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("missing unique index metadata for tokens.%s", tokenOAuthGrantIDColumn)
 }
 
 func backfillTaskIDsBeforeUniqueIndex() error {

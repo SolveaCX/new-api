@@ -123,6 +123,14 @@ func openTokenControllerTestDB(t *testing.T) *gorm.DB {
 func migrateTokenControllerTestDB(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
+	if common.UsingSQLite && db.Migrator().HasTable(&model.Token{}) && !db.Migrator().HasColumn(&model.Token{}, "oauth_grant_id") {
+		if err := db.Exec("ALTER TABLE `tokens` ADD COLUMN `oauth_grant_id` varchar(64)").Error; err != nil {
+			t.Fatalf("failed to add token oauth_grant_id compatibility column: %v", err)
+		}
+		if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS `idx_tokens_o_auth_grant_id` ON `tokens`(`oauth_grant_id`)").Error; err != nil {
+			t.Fatalf("failed to add token oauth_grant_id compatibility index: %v", err)
+		}
+	}
 	if err := db.AutoMigrate(&model.Token{}); err != nil {
 		t.Fatalf("failed to migrate token table: %v", err)
 	}
