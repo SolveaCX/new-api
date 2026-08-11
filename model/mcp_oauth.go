@@ -88,6 +88,10 @@ func GetMcpOAuthClientByPublicID(publicID string) (*McpOAuthClient, error) {
 	return &client, nil
 }
 
+func IsMcpOAuthRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
 func (client McpOAuthClient) Metadata() (clientID string, clientName string, redirectURIs []string, err error) {
 	if err := common.Unmarshal([]byte(client.RedirectURIs), &redirectURIs); err != nil {
 		return "", "", nil, err
