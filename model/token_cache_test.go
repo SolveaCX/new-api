@@ -75,6 +75,9 @@ func testCachedToken(key string) Token {
 func TestTokenCacheGuardedFillWritesCompleteHashWithTTL(t *testing.T) {
 	mr := setupTokenCacheRedis(t)
 	token := testCachedToken("complete-fill")
+	grantID := "grant_cache_roundtrip"
+	token.Source = TokenSourceMcpOAuth
+	token.OAuthGrantId = &grantID
 	fence, err := captureTokenCacheFillFence()
 	require.NoError(t, err)
 
@@ -88,6 +91,8 @@ func TestTokenCacheGuardedFillWritesCompleteHashWithTTL(t *testing.T) {
 	require.Equal(t, "900", hash["RemainQuota"])
 	require.Equal(t, "true", hash["CrossGroupRetry"])
 	require.Equal(t, "127.0.0.1\n10.0.0.1", hash["AllowIps"])
+	require.Equal(t, TokenSourceMcpOAuth, hash["Source"])
+	require.Equal(t, grantID, hash["OAuthGrantId"])
 	require.NotContains(t, hash, "Key")
 	require.NotContains(t, hash, "DeletedAt")
 	require.Equal(t, 60*time.Second, mr.TTL(redisKey))
@@ -97,6 +102,8 @@ func TestTokenCacheGuardedFillWritesCompleteHashWithTTL(t *testing.T) {
 	require.Equal(t, token.Key, cached.Key)
 	require.Equal(t, token.RemainQuota, cached.RemainQuota)
 	require.Equal(t, token.Group, cached.Group)
+	require.NotNil(t, cached.OAuthGrantId)
+	require.Equal(t, grantID, *cached.OAuthGrantId)
 }
 
 func TestTokenCacheGuardedFillRefusesExistingHash(t *testing.T) {

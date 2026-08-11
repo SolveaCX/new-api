@@ -258,6 +258,7 @@ func tokenCacheFields(token Token) []interface{} {
 		"Group", token.Group,
 		"CrossGroupRetry", strconv.FormatBool(token.CrossGroupRetry),
 		"Source", token.Source,
+		"OAuthGrantId", tokenCacheOAuthGrantId(token),
 		"DeviceIdHash", token.DeviceIdHash,
 		"ClientName", token.ClientName,
 		"ClientVersion", token.ClientVersion,
@@ -271,6 +272,13 @@ func tokenCacheAllowIps(token Token) string {
 		return ""
 	}
 	return *token.AllowIps
+}
+
+func tokenCacheOAuthGrantId(token Token) string {
+	if token.OAuthGrantId == nil {
+		return ""
+	}
+	return *token.OAuthGrantId
 }
 
 func tokenUpdateCacheFields(token Token) []interface{} {

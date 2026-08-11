@@ -2,8 +2,10 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -504,6 +506,141 @@ func TestMcpOAuthConcurrentRefreshRotationHasOneWinnerAndReplayRevokesFamily(t *
 	require.NoError(t, DB.First(&storedGrant, "public_id = ?", grant.PublicID).Error)
 	require.NotNil(t, storedGrant.RefreshTokenFamilyId)
 	require.Equal(t, current.FamilyID, *storedGrant.RefreshTokenFamilyId)
+}
+
+func TestMcpOAuthRefreshRotationLocksGrantBeforeRefreshRow(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-lock-order-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_lock_order", user.Id)
+	currentHash := HashMcpOAuthCredential("lock-order-current")
+	current := McpOAuthRefreshToken{
+		PublicID:      "refresh_lock_order_current",
+		GrantPublicID: grant.PublicID,
+		FamilyID:      "family_lock_order",
+		TokenHash:     currentHash,
+		Status:        McpOAuthRefreshTokenStatusActive,
+		CreatedTime:   100,
+		ExpiresAt:     1000,
+	}
+	require.NoError(t, DB.Create(&current).Error)
+
+	var mu sync.Mutex
+	lockedTables := make([]string, 0, 2)
+	require.NoError(t, DB.Callback().Query().Before("gorm:query").Register("mcp_oauth_lock_order_trace", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Clauses["FOR"]; !ok {
+			return
+		}
+		if strings.Contains(tx.Statement.Table, "mcp_oauth_grants") || strings.Contains(tx.Statement.Table, "mcp_oauth_refresh_tokens") {
+			mu.Lock()
+			lockedTables = append(lockedTables, tx.Statement.Table)
+			mu.Unlock()
+		}
+	}))
+
+	_, rotated, err := RotateMcpOAuthRefreshToken(currentHash, McpOAuthRefreshToken{
+		PublicID:    "refresh_lock_order_next",
+		FamilyID:    current.FamilyID,
+		TokenHash:   HashMcpOAuthCredential("lock-order-next"),
+		CreatedTime: 200,
+		ExpiresAt:   1000,
+	}, 200)
+
+	require.NoError(t, err)
+	require.True(t, rotated)
+	require.GreaterOrEqual(t, len(lockedTables), 2)
+	require.Contains(t, lockedTables[0], "mcp_oauth_grants")
+	require.Contains(t, lockedTables[1], "mcp_oauth_refresh_tokens")
+}
+
+func TestMcpOAuthConcurrentRotateVsRevokeFailsClosed(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-rotate-revoke-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_rotate_revoke", user.Id)
+	currentSecret := "rotate-revoke-current"
+	currentHash := HashMcpOAuthCredential(currentSecret)
+	current := McpOAuthRefreshToken{
+		PublicID:      "refresh_rotate_revoke_current",
+		GrantPublicID: grant.PublicID,
+		FamilyID:      "family_rotate_revoke",
+		TokenHash:     currentHash,
+		Status:        McpOAuthRefreshTokenStatusActive,
+		CreatedTime:   100,
+		ExpiresAt:     1000,
+	}
+	require.NoError(t, DB.Create(&current).Error)
+
+	type result struct {
+		name    string
+		changed bool
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, rotated, err := RotateMcpOAuthRefreshToken(currentHash, McpOAuthRefreshToken{
+			PublicID:    "refresh_rotate_revoke_next",
+			FamilyID:    current.FamilyID,
+			TokenHash:   HashMcpOAuthCredential("rotate-revoke-next"),
+			CreatedTime: 200,
+			ExpiresAt:   1000,
+		}, 200)
+		results <- result{name: "rotate", changed: rotated, err: err}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		revoked, err := RevokeMcpOAuthGrant(grant.PublicID, 201)
+		results <- result{name: "revoke", changed: revoked, err: err}
+	}()
+	close(start)
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(results)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent rotate and revoke did not complete before timeout")
+	}
+
+	seen := make(map[string]result, 2)
+	for res := range results {
+		seen[res.name] = res
+		if res.name == "rotate" && errors.Is(res.err, ErrMcpOAuthGrantRevoked) {
+			continue
+		}
+		require.NoError(t, res.err)
+	}
+	require.Contains(t, seen, "rotate")
+	require.Contains(t, seen, "revoke")
+
+	var storedGrant McpOAuthGrant
+	require.NoError(t, DB.First(&storedGrant, "public_id = ?", grant.PublicID).Error)
+	require.Equal(t, McpOAuthGrantStatusRevoked, storedGrant.Status)
+	require.NotZero(t, storedGrant.RevokedAt)
+
+	var activeCount int64
+	require.NoError(t, DB.Model(&McpOAuthRefreshToken{}).
+		Where("grant_public_id = ? AND status = ?", grant.PublicID, McpOAuthRefreshTokenStatusActive).
+		Count(&activeCount).Error)
+	require.Zero(t, activeCount, "revoked grants must not retain active refresh tokens")
+
+	var family []McpOAuthRefreshToken
+	require.NoError(t, DB.Where("grant_public_id = ?", grant.PublicID).Find(&family).Error)
+	require.NotEmpty(t, family)
+	for _, token := range family {
+		require.Equal(t, McpOAuthRefreshTokenStatusRevoked, token.Status)
+		require.NotZero(t, token.RevokedAt)
+	}
 }
 
 func TestMcpOAuthRevokeGrantDisablesLinkedTokenInSameTransactionOnlyOnce(t *testing.T) {
