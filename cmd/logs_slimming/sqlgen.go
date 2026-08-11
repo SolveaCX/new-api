@@ -69,6 +69,19 @@ func buildCopySQL(c config) (string, error) {
 	return fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE id > ? AND id <= ? AND id <= ? AND %s ON DUPLICATE KEY UPDATE id = %s.id", target, columns, columns, source, retainedPredicate("", c.channelIDs), target), nil
 }
 
+func buildMirrorCopySQL(c config, from, to string) (string, error) {
+	source, err := qualified(c.schema, from)
+	if err != nil {
+		return "", err
+	}
+	target, err := qualified(c.schema, to)
+	if err != nil {
+		return "", err
+	}
+	columns := strings.Join(logColumns, ", ")
+	return "INSERT INTO " + target + " (" + columns + ") SELECT " + columns + " FROM " + source + " WHERE id>? AND id<=? ON DUPLICATE KEY UPDATE id=" + target + ".id", nil
+}
+
 func rowEqualitySQL(left, right string) string {
 	text := make(map[string]struct{}, len(textColumns))
 	for _, column := range textColumns {
@@ -152,11 +165,15 @@ func buildStrictMirrorTriggerSQL(c config, from, to string) (string, error) {
 }
 
 func buildGuardTriggerSQL(c config, event, table string) (string, error) {
+	return buildNamedGuardTriggerSQL(c, "guard_"+strings.ToLower(event), event, table)
+}
+
+func buildNamedGuardTriggerSQL(c config, triggerKind, event, table string) (string, error) {
 	kind := strings.ToLower(event)
 	if kind != "update" && kind != "delete" {
 		return "", fmt.Errorf("unsupported guard event %q", event)
 	}
-	name, err := triggerName("guard_"+kind, c.batch)
+	name, err := triggerName(triggerKind, c.batch)
 	if err != nil {
 		return "", err
 	}
@@ -169,7 +186,13 @@ func buildGuardTriggerSQL(c config, event, table string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("CREATE DEFINER=%s TRIGGER %s BEFORE %s ON %s FOR EACH ROW SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=1644, MESSAGE_TEXT='logs slimming append-only guard'", definer, qn, strings.ToUpper(kind), source), nil
+	signal := "SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=1644, MESSAGE_TEXT='logs slimming append-only guard'"
+	if kind == "update" {
+		// INSERT ... ON DUPLICATE KEY UPDATE id=<same id> executes BEFORE UPDATE.
+		// Permit only a complete OLD/NEW no-op; every real mutation is rejected.
+		return fmt.Sprintf("CREATE DEFINER=%s TRIGGER %s BEFORE UPDATE ON %s FOR EACH ROW BEGIN IF NOT (%s) THEN %s; END IF; END", definer, qn, source, rowEqualitySQL("OLD", "NEW"), signal), nil
+	}
+	return fmt.Sprintf("CREATE DEFINER=%s TRIGGER %s BEFORE DELETE ON %s FOR EACH ROW %s", definer, qn, source, signal), nil
 }
 
 func checkpointCASSQL(c config) (string, error) {

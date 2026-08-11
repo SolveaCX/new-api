@@ -17,12 +17,16 @@ type objectTopology struct {
 }
 
 type triggerTopology struct {
-	forward          bool
-	reverse          bool
-	updateGuard      bool
-	deleteGuard      bool
-	updateGuardTable string
-	deleteGuardTable string
+	forward                bool
+	reverse                bool
+	updateGuard            bool
+	deleteGuard            bool
+	updateGuardTable       string
+	deleteGuardTable       string
+	futureUpdateGuard      bool
+	futureDeleteGuard      bool
+	futureUpdateGuardTable string
+	futureDeleteGuardTable string
 }
 
 func classifyTopology(t objectTopology) topologyStatus {
@@ -80,12 +84,15 @@ const (
 	cleanupDropCheckpoint cleanupStep = "drop-checkpoint"
 )
 
-func cleanupPlan(status topologyStatus, ownershipConfirmed bool) ([]cleanupStep, error) {
+func cleanupPlan(status topologyStatus, triggers triggerTopology, ownershipConfirmed bool) ([]cleanupStep, error) {
 	if status != topologyPreCutover {
 		return nil, fmt.Errorf("cleanup only supports stable pre-cutover topology, got %s", status)
 	}
 	if !ownershipConfirmed {
 		return nil, fmt.Errorf("cleanup ownership is not confirmed")
+	}
+	if triggers.reverse {
+		return nil, fmt.Errorf("cleanup refuses a reverse trigger in pre-cutover topology")
 	}
 	return []cleanupStep{cleanupDropForward, cleanupDropGuards, cleanupDropTarget, cleanupDropCheckpoint}, nil
 }

@@ -12,6 +12,10 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+type secretString string
+
+func (s secretString) String() string { return string(s) }
+
 func validTestConfig() config {
 	return config{
 		command:              "backfill",
@@ -263,6 +267,46 @@ func TestTriggerSQLUsesStrictInsertAndFrozenPredicate(t *testing.T) {
 	}
 }
 
+func TestUpdateGuardAllowsOnlyCompleteNoopDuplicateUpdate(t *testing.T) {
+	cfg := validTestConfig()
+	query, err := buildNamedGuardTriggerSQL(cfg, "future_guard_update", "update", cfg.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "BEGIN IF NOT (") || !strings.Contains(query, "THEN SIGNAL SQLSTATE '45000'") {
+		t.Fatalf("update guard is not conditional: %s", query)
+	}
+	if got := strings.Count(query, "<=>"); got != len(logColumns) {
+		t.Fatalf("update guard compares %d fields, want %d: %s", got, len(logColumns), query)
+	}
+	for _, column := range logColumns {
+		if !strings.Contains(query, "OLD."+column+" <=>") && !strings.Contains(query, "BINARY OLD."+column+" <=>") {
+			t.Fatalf("update guard omits OLD/NEW equality for %s", column)
+		}
+	}
+	copySQL, err := buildCopySQL(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(copySQL, "ON DUPLICATE KEY UPDATE id = `newapi_staging`.`logs_compact_20260811`.id") {
+		t.Fatalf("backfill duplicate path is not a qualified no-op: %s", copySQL)
+	}
+	mirrorSQL, err := buildMirrorCopySQL(cfg, cfg.source, cfg.old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(mirrorSQL, "ON DUPLICATE KEY UPDATE id=`newapi_staging`.`logs_old_20260811`.id") {
+		t.Fatalf("rollback mirror duplicate path is not a qualified no-op: %s", mirrorSQL)
+	}
+	deleteGuard, err := buildNamedGuardTriggerSQL(cfg, "future_guard_delete", "delete", cfg.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(deleteGuard, "IF NOT") || !strings.Contains(deleteGuard, "FOR EACH ROW SIGNAL") {
+		t.Fatalf("delete guard must remain unconditional: %s", deleteGuard)
+	}
+}
+
 func TestCheckpointCASIsGenerationGuarded(t *testing.T) {
 	query, err := checkpointCASSQL(validTestConfig())
 	if err != nil {
@@ -339,16 +383,19 @@ func TestPostCutoverRecoveryNeverAllowsTriggerCycle(t *testing.T) {
 
 func TestCleanupRefusesUnknownOrPostCutoverTopology(t *testing.T) {
 	for _, status := range []topologyStatus{topologyUnknown, topologyPostCutover} {
-		if _, err := cleanupPlan(status, true); err == nil {
+		if _, err := cleanupPlan(status, triggerTopology{}, true); err == nil {
 			t.Fatalf("cleanup accepted topology %s", status)
 		}
 	}
-	plan, err := cleanupPlan(topologyPreCutover, true)
+	plan, err := cleanupPlan(topologyPreCutover, triggerTopology{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(plan) == 0 || plan[len(plan)-1] != cleanupDropCheckpoint {
 		t.Fatalf("unexpected cleanup plan %v", plan)
+	}
+	if _, err := cleanupPlan(topologyPreCutover, triggerTopology{reverse: true}, true); err == nil {
+		t.Fatal("cleanup accepted a reverse trigger")
 	}
 }
 
@@ -384,10 +431,21 @@ func TestCutoverAndRollbackRenameStatementsAreSymmetric(t *testing.T) {
 
 func TestEvidenceRedactsSecrets(t *testing.T) {
 	sink := &memoryEvidence{}
-	e := newEvidence(sink, []string{"user:secret@tcp(host)/db", "secret"})
-	e.emit("failed", map[string]any{"error": errors.New("dial user:secret@tcp(host)/db failed"), "dsn": "secret"})
+	quotedSecret := `s"e\cret`
+	e := newEvidence(sink, []string{"user:secret@tcp(host)/db", "secret", quotedSecret})
+	e.emit("failed", map[string]any{
+		"error":  errors.New("dial user:secret@tcp(host)/db failed"),
+		"nested": map[string]any{"slice": []any{"secret", []byte("secret")}},
+		"struct": struct {
+			Token string `json:"token"`
+		}{Token: "secret"},
+		"stringer": secretString("secret"),
+		"escaped": struct {
+			Token string `json:"token"`
+		}{Token: quotedSecret},
+	})
 	output := sink.String()
-	if strings.Contains(output, "secret") || strings.Contains(output, "user:") {
+	if strings.Contains(output, "secret") || strings.Contains(output, "user:") || strings.Contains(output, quotedSecret) || strings.Contains(output, `s\"e\\cret`) {
 		t.Fatalf("evidence leaked secret: %s", output)
 	}
 	if !strings.Contains(output, "<redacted>") {
@@ -401,6 +459,30 @@ func TestReserveRejectsOverflowAndUsesMinimum(t *testing.T) {
 	}
 	if _, err := targetAutoIncrement(^uint64(0)-5, 10); err == nil {
 		t.Fatal("overflow accepted")
+	}
+}
+
+func TestStableDDLPostconditionUsesObservedStateAfterResolvedExecution(t *testing.T) {
+	if got := stableDDLPostcondition(true, []ddlState{ddlPost, ddlPost}); got != ddlPost {
+		t.Fatalf("stable POST classified as %s", got)
+	}
+	for _, states := range [][]ddlState{{ddlPost}, {ddlPost, ddlPre}, {ddlUnknown, ddlUnknown}} {
+		if got := stableDDLPostcondition(true, states); got != ddlUnknown {
+			t.Fatalf("unstable states %v classified as %s", states, got)
+		}
+	}
+	if got := stableDDLPostcondition(false, []ddlState{ddlPost, ddlPost}); got != ddlUnknown {
+		t.Fatalf("unresolved execution classified as %s", got)
+	}
+}
+
+func TestDDLObservationContextNeverExtendsWatchdogDeadline(t *testing.T) {
+	deadline := time.Now().Add(100 * time.Millisecond)
+	ctx, cancel := boundedBackground(deadline, 250*time.Millisecond)
+	defer cancel()
+	got, ok := ctx.Deadline()
+	if !ok || got.After(deadline) {
+		t.Fatalf("observation deadline %v exceeds watchdog %v", got, deadline)
 	}
 }
 
@@ -483,38 +565,27 @@ func TestPostTriggerPlanIsIdempotentAndNeverCycles(t *testing.T) {
 	}
 }
 
-func TestPostGuardPlanMovesOldGuardAndIsIdempotentOnLive(t *testing.T) {
-	plan, err := postGuardPlan(true, "logs_old_20260811", "logs", "logs_old_20260811")
-	if err != nil || len(plan) != 2 || plan[0] != postGuardDropOld || plan[1] != postGuardCreateLive {
-		t.Fatalf("old guard plan=%v err=%v", plan, err)
-	}
-	plan, err = postGuardPlan(false, "", "logs", "logs_old_20260811")
-	if err != nil || len(plan) != 1 || plan[0] != postGuardCreateLive {
-		t.Fatalf("missing guard plan=%v err=%v", plan, err)
-	}
-	plan, err = postGuardPlan(true, "logs", "logs", "logs_old_20260811")
-	if err != nil || len(plan) != 0 {
-		t.Fatalf("live guard plan=%v err=%v", plan, err)
-	}
-	if _, err := postGuardPlan(true, "foreign", "logs", "logs_old_20260811"); err == nil {
-		t.Fatal("foreign guard table accepted")
-	}
-}
-
-func TestGuardSQLCanTargetPostCutoverLiveTable(t *testing.T) {
+func TestFutureGuardsMoveAtomicallyWithCompactTable(t *testing.T) {
 	cfg := validTestConfig()
-	query, err := buildGuardTriggerSQL(cfg, "update", cfg.source)
+	query, err := buildNamedGuardTriggerSQL(cfg, "future_guard_update", "update", cfg.target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(query, "BEFORE UPDATE ON `newapi_staging`.`logs`") {
-		t.Fatalf("guard is not attached to active logs: %s", query)
+	if !strings.Contains(query, "logs_slim_future_guard_update_") || !strings.Contains(query, "BEFORE UPDATE ON `newapi_staging`.`logs_compact_20260811`") {
+		t.Fatalf("future guard is not preinstalled on compact target: %s", query)
 	}
-	if guardsOnLive(triggerTopology{updateGuard: true, deleteGuard: true, updateGuardTable: cfg.old, deleteGuardTable: cfg.source}, cfg.source) {
-		t.Fatal("rollback-ready accepted a guard still attached to old")
+	pre := triggerTopology{
+		updateGuard: true, deleteGuard: true, updateGuardTable: cfg.source, deleteGuardTable: cfg.source,
+		futureUpdateGuard: true, futureDeleteGuard: true, futureUpdateGuardTable: cfg.target, futureDeleteGuardTable: cfg.target,
 	}
-	if !guardsOnLive(triggerTopology{updateGuard: true, deleteGuard: true, updateGuardTable: cfg.source, deleteGuardTable: cfg.source}, cfg.source) {
-		t.Fatal("live guard topology rejected")
+	if !preGuardsReady(pre, cfg) {
+		t.Fatal("complete pre-cutover guard topology rejected")
+	}
+	post := pre
+	post.updateGuardTable, post.deleteGuardTable = cfg.old, cfg.old
+	post.futureUpdateGuardTable, post.futureDeleteGuardTable = cfg.source, cfg.source
+	if !postGuardsReady(post, cfg) {
+		t.Fatal("future guards were not recognized on post-cutover live table")
 	}
 }
 

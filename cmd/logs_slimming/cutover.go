@@ -194,7 +194,7 @@ func assertCutoverPreconditions(ctx context.Context, db *sql.DB, c config) (chec
 	if err != nil {
 		return state, err
 	}
-	if classifyTopology(o) != topologyPreCutover || !triggers.forward || !triggers.updateGuard || !triggers.deleteGuard || triggers.reverse {
+	if classifyTopology(o) != topologyPreCutover || !triggers.forward || triggers.reverse || !preGuardsReady(triggers, c) {
 		return state, fmt.Errorf("cutover trigger/topology precondition failed objects=%+v triggers=%+v", o, triggers)
 	}
 	if err := assertRuntimeSafe(ctx, db, c, state, true); err != nil {
@@ -280,10 +280,21 @@ func showCreateAutoIncrement(ctx context.Context, q showCreateQueryer, schema, t
 		return 0, err
 	}
 	match := autoIncrementPattern.FindStringSubmatch(create)
-	if len(match) != 2 {
-		return 0, fmt.Errorf("SHOW CREATE TABLE %s lacks AUTO_INCREMENT", table)
+	if len(match) == 2 {
+		return strconv.ParseUint(match[1], 10, 64)
 	}
-	return strconv.ParseUint(match[1], 10, 64)
+	var next sql.NullInt64
+	if err := q.QueryRowContext(ctx, "SELECT AUTO_INCREMENT FROM information_schema.tables WHERE table_schema=? AND table_name=?", schema, table).Scan(&next); err != nil {
+		return 0, err
+	}
+	if next.Valid && next.Int64 > 0 {
+		return uint64(next.Int64), nil
+	}
+	var maxID uint64
+	if err := q.QueryRowContext(ctx, "SELECT COALESCE(MAX(id),0) FROM "+qualifiedTable).Scan(&maxID); err != nil {
+		return 0, err
+	}
+	return safeNext(maxID)
 }
 
 func renameStatement(c config) string {
@@ -327,6 +338,12 @@ func renameWithMDLBarrier(ctx context.Context, db *sql.DB, c config, ev *evidenc
 	if err != nil {
 		return topologyUnknown, true, err
 	}
+	ddlStarted := false
+	defer func() {
+		if !ddlStarted {
+			_ = ddlConn.Close()
+		}
+	}()
 	control, _, err := openVerifiedConn(opCtx, db, c, "cutover-control")
 	if err != nil {
 		_ = ddlConn.Close()
@@ -338,10 +355,19 @@ func renameWithMDLBarrier(ctx context.Context, db *sql.DB, c config, ev *evidenc
 		return topologyUnknown, true, err
 	}
 	tagged := fmt.Sprintf("/*logs_slim batch=%s operation=%s nonce=%s*/ %s", c.batch, operation, nonce, statement)
-	if err := ev.emit("rename_barrier_intent", map[string]any{"nonce": nonce, "connection_id": ddlFacts.connectionID, "statement_sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(statement)))}); err != nil {
+	statementHash := fmt.Sprintf("%x", sha256.Sum256([]byte(statement)))
+	emitPostcondition := func(result string, status topologyStatus, resolved bool, execErr, observeErr error) error {
+		return ev.emit("rename_postcondition", map[string]any{
+			"operation": operation, "nonce": nonce, "statement_sha256": statementHash,
+			"result": result, "topology": status, "exec_resolved": resolved,
+			"exec_error": execErr, "observe_error": observeErr,
+		})
+	}
+	if err := ev.emit("rename_barrier_intent", map[string]any{"nonce": nonce, "connection_id": ddlFacts.connectionID, "statement_sha256": statementHash}); err != nil {
 		return topologyUnknown, true, err
 	}
 	done := make(chan error, 1)
+	ddlStarted = true
 	go func() {
 		_, execErr := ddlConn.ExecContext(opCtx, tagged)
 		done <- execErr
@@ -357,15 +383,21 @@ func renameWithMDLBarrier(ctx context.Context, db *sql.DB, c config, ev *evidenc
 		select {
 		case <-done:
 			resolved = true
-		case <-time.After(ddlSettleGrace):
+		case <-time.After(minDuration(ddlSettleGrace, positiveRemaining(deadline))):
 		}
 		if resolved {
 			_ = ddlConn.Close()
 		} else {
 			go reapDDLConn(done, ddlConn)
 		}
-		observeDeadline := maxTime(deadline, time.Now().Add(ddlObservationGrace))
-		status, topologyErr := observeStableObjectTopology(db, c, observeDeadline)
+		status, topologyErr := observeStableObjectTopology(db, c, deadline)
+		result := "known"
+		if topologyErr != nil || status == topologyUnknown || !resolved {
+			result = "unknown"
+		}
+		if evidenceErr := emitPostcondition(result, status, resolved, cause, topologyErr); evidenceErr != nil {
+			return topologyUnknown, resolved, fmt.Errorf("%w; rename postcondition evidence: %v", cause, evidenceErr)
+		}
 		return status, resolved, fmt.Errorf("%w; exact_kill=%v barrier_rollback=%v topology=%v", cause, killErr, rollbackErr, topologyErr)
 	}
 	pendingDeadline := deadline.Add(-600 * time.Millisecond)
@@ -419,14 +451,19 @@ func renameWithMDLBarrier(ctx context.Context, db *sql.DB, c config, ev *evidenc
 				execErr = lateErr
 			}
 			_ = ddlConn.Close()
-		case <-time.After(ddlSettleGrace):
+		case <-time.After(minDuration(ddlSettleGrace, positiveRemaining(deadline))):
 			go reapDDLConn(done, ddlConn)
 		}
 	}
-	observeDeadline := maxTime(deadline, time.Now().Add(ddlObservationGrace))
-	status, topologyErr := observeStableObjectTopology(db, c, observeDeadline)
+	status, topologyErr := observeStableObjectTopology(db, c, deadline)
 	if topologyErr != nil {
+		if evidenceErr := emitPostcondition("unknown", topologyUnknown, resolved, execErr, topologyErr); evidenceErr != nil {
+			return topologyUnknown, resolved, fmt.Errorf("rename=%v topology=%v evidence=%w", execErr, topologyErr, evidenceErr)
+		}
 		return topologyUnknown, resolved, fmt.Errorf("rename=%v topology=%w", execErr, topologyErr)
+	}
+	if evidenceErr := emitPostcondition("known", status, resolved, execErr, nil); evidenceErr != nil {
+		return topologyUnknown, resolved, fmt.Errorf("write rename postcondition evidence: %w", evidenceErr)
 	}
 	return status, resolved, execErr
 }
@@ -740,44 +777,8 @@ func ensurePreTriggersAfterRollback(ctx context.Context, db *sql.DB, c config, s
 			return err
 		}
 	}
-	for _, event := range []string{"update", "delete"} {
-		_, current, err := observeTopology(ctx, db, c)
-		if err != nil {
-			return err
-		}
-		exists, table := current.updateGuard, current.updateGuardTable
-		if event == "delete" {
-			exists, table = current.deleteGuard, current.deleteGuardTable
-		}
-		if exists && table == c.target {
-			kind := "guard_" + event
-			spec, err := expectedTriggerSpec(c, kind, c.target, state.triggerSQLMode)
-			if err != nil {
-				return err
-			}
-			name, _ := triggerName(kind, c.batch)
-			quoted, _ := quoteIdentifier(name)
-			if err := runDDL(ctx, db, c, "DROP TRIGGER "+quoted, exactTriggerObserver(spec, false)); err != nil {
-				return err
-			}
-			exists = false
-		}
-		if !exists {
-			query, err := buildGuardTriggerSQL(c, event, c.source)
-			if err != nil {
-				return err
-			}
-			spec, err := expectedTriggerSpec(c, "guard_"+event, c.source, state.triggerSQLMode)
-			if err != nil {
-				return err
-			}
-			if err := runDDL(ctx, db, c, query, exactTriggerObserver(spec, true)); err != nil {
-				return err
-			}
-		}
-	}
 	_, final, err := observeTopology(ctx, db, c)
-	if err != nil || !final.forward || final.reverse || !guardsOnLive(final, c.source) {
+	if err != nil || !final.forward || final.reverse || !preGuardsReady(final, c) {
 		return fmt.Errorf("rollback PRE trigger stabilization incomplete: triggers=%+v err=%v", final, err)
 	}
 	return nil
@@ -873,7 +874,7 @@ func assertPreCutoverTriggerTopology(ctx context.Context, db *sql.DB, c config) 
 	if err != nil {
 		return err
 	}
-	if classifyTopology(o) != topologyPreCutover || !t.forward || !t.updateGuard || !t.deleteGuard || t.reverse {
+	if classifyTopology(o) != topologyPreCutover || !t.forward || t.reverse || !preGuardsReady(t, c) {
 		return fmt.Errorf("unsafe PRE trigger topology objects=%+v triggers=%+v", o, t)
 	}
 	return assertOwned(ctx, db, c, c.target)
@@ -984,83 +985,25 @@ func ensurePostTriggers(ctx context.Context, db *sql.DB, c config, state checkpo
 			return err
 		}
 	}
-	for _, event := range []string{"update", "delete"} {
-		if err := ensurePostGuard(ctx, db, c, state, event); err != nil {
-			return err
-		}
-	}
 	_, final, err := observeTopology(ctx, db, c)
-	if err != nil || final.forward || !final.reverse || !guardsOnLive(final, c.source) {
+	if err != nil || final.forward || !final.reverse || !postGuardsReady(final, c) {
 		return fmt.Errorf("POST trigger stabilization incomplete: triggers=%+v err=%v", final, err)
 	}
 	return nil
 }
 
-type postGuardAction string
-
-const (
-	postGuardDropOld    postGuardAction = "drop-old"
-	postGuardCreateLive postGuardAction = "create-live"
-)
-
-func postGuardPlan(exists bool, table, live, old string) ([]postGuardAction, error) {
-	switch {
-	case !exists:
-		return []postGuardAction{postGuardCreateLive}, nil
-	case table == live:
-		return nil, nil
-	case table == old:
-		return []postGuardAction{postGuardDropOld, postGuardCreateLive}, nil
-	default:
-		return nil, fmt.Errorf("guard is attached to unexpected table %q", table)
-	}
+func preGuardsReady(t triggerTopology, c config) bool {
+	return t.updateGuard && t.deleteGuard &&
+		t.updateGuardTable == c.source && t.deleteGuardTable == c.source &&
+		t.futureUpdateGuard && t.futureDeleteGuard &&
+		t.futureUpdateGuardTable == c.target && t.futureDeleteGuardTable == c.target
 }
 
-func ensurePostGuard(ctx context.Context, db *sql.DB, c config, state checkpoint, event string) error {
-	_, t, err := observeTopology(ctx, db, c)
-	if err != nil {
-		return err
-	}
-	exists, table := t.updateGuard, t.updateGuardTable
-	if event == "delete" {
-		exists, table = t.deleteGuard, t.deleteGuardTable
-	}
-	actions, err := postGuardPlan(exists, table, c.source, c.old)
-	if err != nil {
-		return err
-	}
-	kind := "guard_" + event
-	for _, action := range actions {
-		switch action {
-		case postGuardDropOld:
-			spec, err := expectedTriggerSpec(c, kind, c.old, state.triggerSQLMode)
-			if err != nil {
-				return err
-			}
-			name, _ := triggerName(kind, c.batch)
-			quoted, _ := quoteIdentifier(name)
-			if err := runDDL(ctx, db, c, "DROP TRIGGER "+quoted, exactTriggerObserver(spec, false)); err != nil {
-				return err
-			}
-		case postGuardCreateLive:
-			query, err := buildGuardTriggerSQL(c, event, c.source)
-			if err != nil {
-				return err
-			}
-			spec, err := expectedTriggerSpec(c, kind, c.source, state.triggerSQLMode)
-			if err != nil {
-				return err
-			}
-			if err := runDDL(ctx, db, c, query, exactTriggerObserver(spec, true)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func guardsOnLive(t triggerTopology, live string) bool {
-	return t.updateGuard && t.deleteGuard && t.updateGuardTable == live && t.deleteGuardTable == live
+func postGuardsReady(t triggerTopology, c config) bool {
+	return t.updateGuard && t.deleteGuard &&
+		t.updateGuardTable == c.old && t.deleteGuardTable == c.old &&
+		t.futureUpdateGuard && t.futureDeleteGuard &&
+		t.futureUpdateGuardTable == c.source && t.futureDeleteGuardTable == c.source
 }
 
 type postTriggerAction string
@@ -1087,8 +1030,10 @@ func reconcileRollbackGap(ctx context.Context, db *sql.DB, c config, ev *evidenc
 	source, _ := qualified(c.schema, c.source)
 	old, _ := qualified(c.schema, c.old)
 	cp, _ := qualified(c.schema, c.checkpoint)
-	columns := strings.Join(logColumns, ", ")
-	copySQL := "INSERT INTO " + old + " (" + columns + ") SELECT " + columns + " FROM " + source + " WHERE id>? AND id<=? ON DUPLICATE KEY UPDATE id=" + old + ".id"
+	copySQL, err := buildMirrorCopySQL(c, c.source, c.old)
+	if err != nil {
+		return err
+	}
 	var upper sql.NullInt64
 	if err := db.QueryRowContext(ctx, "SELECT MAX(id) FROM "+source).Scan(&upper); err != nil {
 		return err
@@ -1246,7 +1191,7 @@ func assertRollbackReady(ctx context.Context, db *sql.DB, c config, state checkp
 	if err != nil {
 		return err
 	}
-	if classifyTopology(o) != topologyPostCutover || t.forward || !t.reverse || !guardsOnLive(t, c.source) {
+	if classifyTopology(o) != topologyPostCutover || t.forward || !t.reverse || !postGuardsReady(t, c) {
 		return fmt.Errorf("ROLLBACK_READY topology mismatch objects=%+v triggers=%+v", o, t)
 	}
 	return nil

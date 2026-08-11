@@ -76,6 +76,10 @@ func preflight(ctx context.Context, db *sql.DB, c config, ev *evidence) error {
 		}
 		currentChannelIDs = append(currentChannelIDs, id)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate Codex channel snapshot: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close Codex channel snapshot: %w", err)
 	}
@@ -264,6 +268,21 @@ func prepare(ctx context.Context, db *sql.DB, c config) error {
 			return err
 		}
 		if err := runDDL(ctx, db, c, query, exactTriggerObserver(spec, true)); err != nil {
+			return err
+		}
+		// A separately named guard is preinstalled on the compact table. RENAME
+		// moves it with that table, so the new live logs table is protected
+		// atomically instead of waiting for post-cutover trigger DDL.
+		futureKind := "future_guard_" + event
+		futureQuery, err := buildNamedGuardTriggerSQL(c, futureKind, event, c.target)
+		if err != nil {
+			return err
+		}
+		futureSpec, err := expectedTriggerSpec(c, futureKind, c.target, sqlMode)
+		if err != nil {
+			return err
+		}
+		if err := runDDL(ctx, db, c, futureQuery, exactTriggerObserver(futureSpec, true)); err != nil {
 			return err
 		}
 	}
@@ -465,6 +484,10 @@ func schemaFingerprint(ctx context.Context, db *sql.DB, schema, table string) (s
 		}
 		fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", a, b, c, d, e, f, g, i, j, k)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return "", err
+	}
 	if err := rows.Close(); err != nil {
 		return "", err
 	}
@@ -480,6 +503,10 @@ func schemaFingerprint(ctx context.Context, db *sql.DB, schema, table string) (s
 		}
 		fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", a, b, c, d, e, f, g, i, j, k, l)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return "", err
+	}
 	if err := rows.Close(); err != nil {
 		return "", err
 	}
@@ -494,6 +521,10 @@ func schemaFingerprint(ctx context.Context, db *sql.DB, schema, table string) (s
 			return "", err
 		}
 		fmt.Fprintf(h, "partition|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", a, b, c, d, e, f, g, i, j)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return "", err
 	}
 	if err := rows.Close(); err != nil {
 		return "", err
@@ -800,6 +831,18 @@ func installForward(ctx context.Context, db *sql.DB, c config) error {
 		if err := runDDL(ctx, db, c, query, exactTriggerObserver(spec, true)); err != nil {
 			return err
 		}
+		futureKind := "future_guard_" + event
+		futureQuery, err := buildNamedGuardTriggerSQL(c, futureKind, event, c.target)
+		if err != nil {
+			return err
+		}
+		futureSpec, err := expectedTriggerSpec(c, futureKind, c.target, state.triggerSQLMode)
+		if err != nil {
+			return err
+		}
+		if err := runDDL(ctx, db, c, futureQuery, exactTriggerObserver(futureSpec, true)); err != nil {
+			return err
+		}
 	}
 	query, err := buildForwardTriggerSQL(c)
 	if err != nil {
@@ -834,6 +877,12 @@ func expectedTriggerSpec(c config, kind, table, sqlMode string) (triggerSpec, er
 		timing, event = "BEFORE", "UPDATE"
 	case "guard_delete":
 		statement, err = buildGuardTriggerSQL(c, "delete", table)
+		timing, event = "BEFORE", "DELETE"
+	case "future_guard_update":
+		statement, err = buildNamedGuardTriggerSQL(c, kind, "update", table)
+		timing, event = "BEFORE", "UPDATE"
+	case "future_guard_delete":
+		statement, err = buildNamedGuardTriggerSQL(c, kind, "delete", table)
 		timing, event = "BEFORE", "DELETE"
 	default:
 		return triggerSpec{}, fmt.Errorf("unsupported owned trigger kind %q", kind)
@@ -899,7 +948,11 @@ func observeTopology(ctx context.Context, db *sql.DB, c config) (objectTopology,
 		return o, t, err
 	}
 	status := classifyTopology(o)
-	for kind, dst := range map[string]*bool{"forward": &t.forward, "reverse": &t.reverse, "guard_update": &t.updateGuard, "guard_delete": &t.deleteGuard} {
+	for kind, dst := range map[string]*bool{
+		"forward": &t.forward, "reverse": &t.reverse,
+		"guard_update": &t.updateGuard, "guard_delete": &t.deleteGuard,
+		"future_guard_update": &t.futureUpdateGuard, "future_guard_delete": &t.futureDeleteGuard,
+	} {
 		name, _ := triggerName(kind, c.batch)
 		var n int
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema=? AND trigger_name=?", c.schema, name).Scan(&n); err != nil {
@@ -915,6 +968,10 @@ func observeTopology(ctx context.Context, db *sql.DB, c config) (objectTopology,
 			switch {
 			case status == topologyPostCutover && kind == "forward":
 				table = c.old
+			case status == topologyPostCutover && (kind == "future_guard_update" || kind == "future_guard_delete"):
+				table = c.source
+			case status == topologyPreCutover && (kind == "future_guard_update" || kind == "future_guard_delete"):
+				table = c.target
 			case status == topologyPostCutover && (kind == "guard_update" || kind == "guard_delete"):
 				if got.table != c.source && got.table != c.old {
 					return o, t, fmt.Errorf("POST guard %s is attached to unexpected table %s", name, got.table)
@@ -944,6 +1001,10 @@ func observeTopology(ctx context.Context, db *sql.DB, c config) (objectTopology,
 				t.updateGuardTable = table
 			case "guard_delete":
 				t.deleteGuardTable = table
+			case "future_guard_update":
+				t.futureUpdateGuardTable = table
+			case "future_guard_delete":
+				t.futureDeleteGuardTable = table
 			}
 		}
 	}
@@ -1028,7 +1089,7 @@ func recover(ctx context.Context, db *sql.DB, c config, ev *evidence) error {
 }
 
 func cleanup(ctx context.Context, db *sql.DB, c config) error {
-	o, _, err := observeTopology(ctx, db, c)
+	o, triggers, err := observeTopology(ctx, db, c)
 	if err != nil {
 		return err
 	}
@@ -1039,18 +1100,22 @@ func cleanup(ctx context.Context, db *sql.DB, c config) error {
 	if err := assertOwned(ctx, db, c, c.target); err != nil {
 		return err
 	}
-	plan, err := cleanupPlan(classifyTopology(o), true)
+	plan, err := cleanupPlan(classifyTopology(o), triggers, true)
 	if err != nil {
 		return err
 	}
 	_ = plan
-	for _, kind := range []string{"forward", "guard_update", "guard_delete"} {
+	for _, kind := range []string{"forward", "guard_update", "guard_delete", "future_guard_update", "future_guard_delete"} {
 		name, _ := triggerName(kind, c.batch)
 		state, err := loadCheckpoint(ctx, db, c)
 		if err != nil {
 			return err
 		}
-		spec, err := expectedTriggerSpec(c, kind, c.source, state.triggerSQLMode)
+		table := c.source
+		if kind == "future_guard_update" || kind == "future_guard_delete" {
+			table = c.target
+		}
+		spec, err := expectedTriggerSpec(c, kind, table, state.triggerSQLMode)
 		if err != nil {
 			return err
 		}

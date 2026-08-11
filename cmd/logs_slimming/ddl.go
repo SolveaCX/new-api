@@ -127,19 +127,43 @@ func runDDL(ctx context.Context, db *sql.DB, c config, statement string, observe
 		go reapDDLConn(done, ddlConn)
 	}
 
-	observeDeadline := maxTime(deadline, time.Now().Add(ddlObservationGrace))
+	emitUnknown := func(states []ddlState, observeErr error) error {
+		fields := map[string]any{
+			"operation": operation, "nonce": nonce, "statement_sha256": statementHash,
+			"state": fmt.Sprint(states), "result": "unknown", "exec_resolved": resolved,
+			"exec_error": execErr, "kill_error": killErr, "observe_error": observeErr,
+		}
+		if err := ev.emit("ddl_postcondition", fields); err != nil {
+			return fmt.Errorf("write unknown DDL postcondition evidence: %w", err)
+		}
+		return nil
+	}
+	observeDeadline := deadline
 	states := make([]ddlState, 0, 2)
 	for i := 0; i < 2; i++ {
+		if positiveRemaining(observeDeadline) <= time.Nanosecond {
+			err := fmt.Errorf("DDL total watchdog expired before postcondition")
+			if emitErr := emitUnknown(states, err); emitErr != nil {
+				return emitErr
+			}
+			return err
+		}
 		observeCtx, cancel := boundedBackground(observeDeadline, 250*time.Millisecond)
 		observer, _, openErr := openVerifiedConn(observeCtx, db, c, "observer")
 		if openErr != nil {
 			cancel()
+			if emitErr := emitUnknown(states, openErr); emitErr != nil {
+				return emitErr
+			}
 			return openErr
 		}
 		state, observeErr := observe(observeCtx, observer, ddlFacts.sqlMode)
 		_ = observer.Close()
 		cancel()
 		if observeErr != nil {
+			if emitErr := emitUnknown(states, observeErr); emitErr != nil {
+				return emitErr
+			}
 			return observeErr
 		}
 		states = append(states, state)
@@ -147,23 +171,27 @@ func runDDL(ctx context.Context, db *sql.DB, c config, statement string, observe
 			time.Sleep(minDuration(25*time.Millisecond, positiveRemaining(deadline)))
 		}
 	}
-	if !resolved || killErr != nil {
-		if err := ev.emit("ddl_postcondition", map[string]any{"operation": operation, "nonce": nonce, "statement_sha256": statementHash, "state": fmt.Sprint(states), "result": "unknown", "exec_resolved": resolved, "kill_error": killErr}); err != nil {
-			return fmt.Errorf("write unresolved DDL postcondition evidence: %w", err)
+	outcome := stableDDLPostcondition(resolved, states)
+	if !resolved {
+		if err := emitUnknown(states, nil); err != nil {
+			return err
 		}
 		return fmt.Errorf("DDL outcome UNKNOWN: exec_resolved=%t kill=%v states=%v", resolved, killErr, states)
 	}
-	if states[0] != states[1] || states[0] == ddlUnknown {
-		if err := ev.emit("ddl_postcondition", map[string]any{"operation": operation, "nonce": nonce, "statement_sha256": statementHash, "state": fmt.Sprint(states), "result": "unknown"}); err != nil {
-			return fmt.Errorf("write unknown DDL postcondition evidence: %w", err)
+	if outcome == ddlUnknown {
+		if err := emitUnknown(states, nil); err != nil {
+			return err
 		}
 		return fmt.Errorf("DDL postcondition is unstable or unknown: %v", states)
 	}
-	if states[0] == ddlPost {
-		if err := ev.emit("ddl_postcondition", map[string]any{"operation": operation, "nonce": nonce, "statement_sha256": statementHash, "state": string(ddlPost), "elapsed_ms": time.Since(started).Milliseconds()}); err != nil {
+	if outcome == ddlPost {
+		if err := ev.emit("ddl_postcondition", map[string]any{"operation": operation, "nonce": nonce, "statement_sha256": statementHash, "state": string(ddlPost), "elapsed_ms": time.Since(started).Milliseconds(), "exec_error": execErr, "kill_warning": killErr}); err != nil {
 			return fmt.Errorf("write DDL postcondition evidence: %w", err)
 		}
 		return nil
+	}
+	if err := ev.emit("ddl_postcondition", map[string]any{"operation": operation, "nonce": nonce, "statement_sha256": statementHash, "state": string(ddlPre), "elapsed_ms": time.Since(started).Milliseconds(), "exec_error": execErr, "kill_warning": killErr}); err != nil {
+		return fmt.Errorf("write DDL PRE postcondition evidence: %w", err)
 	}
 	if execErr != nil {
 		return execErr
@@ -171,17 +199,14 @@ func runDDL(ctx context.Context, db *sql.DB, c config, statement string, observe
 	return fmt.Errorf("DDL returned but postcondition remained PRE")
 }
 
-const (
-	ddlSettleGrace      = 500 * time.Millisecond
-	ddlObservationGrace = 750 * time.Millisecond
-)
-
-func maxTime(a, b time.Time) time.Time {
-	if a.After(b) {
-		return a
+func stableDDLPostcondition(resolved bool, states []ddlState) ddlState {
+	if !resolved || len(states) != 2 || states[0] != states[1] || states[0] == ddlUnknown {
+		return ddlUnknown
 	}
-	return b
+	return states[0]
 }
+
+const ddlSettleGrace = 200 * time.Millisecond
 
 func killExactDDL(ctx context.Context, control *sql.Conn, c config, lockCtx context.Context, ddlFacts sessionFacts, tagged string) error {
 	if _, err := verifyPhysicalConn(ctx, control, c, "control-watchdog"); err != nil {
@@ -213,11 +238,10 @@ func reapDDLConn(done <-chan error, conn *sql.Conn) {
 }
 
 func boundedBackground(deadline time.Time, maximum time.Duration) (context.Context, context.CancelFunc) {
-	remaining := positiveRemaining(deadline)
-	if remaining > maximum {
-		remaining = maximum
+	if time.Until(deadline) <= maximum {
+		return context.WithDeadline(context.Background(), deadline)
 	}
-	return context.WithTimeout(context.Background(), remaining)
+	return context.WithTimeout(context.Background(), maximum)
 }
 
 func positiveRemaining(deadline time.Time) time.Duration {
