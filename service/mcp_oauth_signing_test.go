@@ -70,6 +70,46 @@ func TestMcpOAuthSigningLoadsPKCS8EnvSignsVerifiesAccessJWTAndPublishesPublicJWK
 	require.NotContains(t, string(rawJwks), base64.StdEncoding.EncodeToString(privateKey))
 }
 
+func TestMcpOAuthSigningUsesConfiguredIssuerAndResource(t *testing.T) {
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	t.Setenv("FLATKEY_MCP_OAUTH_ISSUER", " https://staging-console.flatkey.ai/ ")
+	t.Setenv("FLATKEY_MCP_OAUTH_RESOURCE", " https://flatkey-mcp-staging.example/ ")
+	signer := testMcpOAuthSigner(t, now)
+
+	token, err := signer.SignAccessToken(McpOAuthAccessTokenRequest{
+		Subject:  "user-123",
+		GrantID:  "grant-456",
+		ClientID: "https://client.example/app",
+		Scopes:   []string{"tools:read"},
+		Resource: "https://flatkey-mcp-staging.example",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://staging-console.flatkey.ai", testMcpOAuthRawTokenPayload(t, token)["iss"])
+	require.Equal(t, "https://flatkey-mcp-staging.example", testMcpOAuthRawTokenPayload(t, token)["aud"])
+	require.Equal(t, "https://flatkey-mcp-staging.example", testMcpOAuthRawTokenPayload(t, token)["resource"])
+
+	claims, err := signer.VerifyAccessToken(token, "tools:read")
+	require.NoError(t, err)
+	require.Equal(t, "https://staging-console.flatkey.ai", claims.Issuer)
+	require.Equal(t, "https://flatkey-mcp-staging.example", claims.Audience)
+	require.Equal(t, "https://flatkey-mcp-staging.example", claims.Resource)
+
+	productionToken := testMcpOAuthSignClaims(t, signer, McpOAuthVerifiedAccessClaims{
+		Issuer:    McpOAuthIssuer,
+		Audience:  McpOAuthResource,
+		Subject:   "user-123",
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+		ID:        "jti-123",
+		GrantID:   "grant-456",
+		ClientID:  "https://client.example/app",
+		Scopes:    []string{"tools:read"},
+		Resource:  McpOAuthResource,
+	})
+	_, err = signer.VerifyAccessToken(productionToken, "tools:read")
+	require.ErrorContains(t, err, "issuer")
+}
+
 func TestMcpOAuthSigningRejectsInvalidAccessTokenInputsBeforeSigning(t *testing.T) {
 	signer := testMcpOAuthSigner(t, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
 	valid := McpOAuthAccessTokenRequest{

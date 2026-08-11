@@ -116,7 +116,8 @@ func (s *McpOAuthSigner) KeyID() string {
 }
 
 func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string, error) {
-	if req.Resource != McpOAuthResource {
+	resource := mcpOAuthResource()
+	if req.Resource != resource {
 		return "", NewMcpOAuthError("invalid_target", "resource must match the MCP resource")
 	}
 	scopes, err := NormalizeMcpOAuthScopes(strings.Join(req.Scopes, " "))
@@ -137,9 +138,10 @@ func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string
 		return "", fmt.Errorf("generate token id: %w", err)
 	}
 	now := s.clock().UTC()
+	issuer := mcpOAuthIssuer()
 	claims := McpOAuthVerifiedAccessClaims{
-		Issuer:    McpOAuthIssuer,
-		Audience:  McpOAuthResource,
+		Issuer:    issuer,
+		Audience:  resource,
 		Subject:   req.Subject,
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(mcpOAuthAccessTokenLifetime)),
@@ -147,7 +149,7 @@ func (s *McpOAuthSigner) SignAccessToken(req McpOAuthAccessTokenRequest) (string
 		GrantID:   req.GrantID,
 		ClientID:  req.ClientID,
 		Scopes:    scopes,
-		Resource:  McpOAuthResource,
+		Resource:  resource,
 	}
 	if err := claims.validate(now, ""); err != nil {
 		return "", err
@@ -241,16 +243,17 @@ func (c McpOAuthVerifiedAccessClaims) GetAudience() (jwt.ClaimStrings, error) {
 }
 
 func (c *McpOAuthVerifiedAccessClaims) validate(now time.Time, requiredScope string) error {
-	if c.Issuer != McpOAuthIssuer {
+	if c.Issuer != mcpOAuthIssuer() {
 		return errors.New("invalid issuer")
 	}
 	if strings.TrimSpace(c.Subject) == "" {
 		return errors.New("sub is required")
 	}
-	if c.Audience != McpOAuthResource {
+	resource := mcpOAuthResource()
+	if c.Audience != resource {
 		return errors.New("invalid audience")
 	}
-	if c.Resource != McpOAuthResource {
+	if c.Resource != resource {
 		return NewMcpOAuthError("invalid_target", "invalid resource")
 	}
 	if c.ExpiresAt == nil {
