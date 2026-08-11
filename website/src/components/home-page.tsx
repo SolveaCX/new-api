@@ -8,7 +8,7 @@ import { ModelLogo } from "@/components/pricing-model-browser";
 import { SiteShell } from "@/components/site-shell";
 import { getCopy } from "@/lib/copy";
 import { getHomeCopy } from "@/lib/home-copy";
-import { buildRowsForModels, pickFlagshipModels, type HomePricedModel } from "@/lib/home-models";
+import { buildRowsForModels, modelIconKey, pickFlagshipModels, type HomePricedModel } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
 import { localizePath, withIdFallback } from "@/lib/locales";
 import { modelPublicPath } from "@/lib/model-public";
@@ -417,19 +417,105 @@ const FOCUS_MODELS: FocusModel[] = [
   { name: "Seedance", match: /seedance|bytedance|doubao/i, iconKey: "bytedance-color", positionClass: "right-[11%] bottom-[16%] xl:right-[17%]" },
 ];
 
-const HOT_MODEL_PATTERNS = [
-  /gpt-5\.6|gpt-5\.5|gpt-5\.1|gpt-5/i,
-  /claude-(sonnet|opus).*4\.5|claude.*4/i,
-  /gemini-3|gemini-2\.5|gemini/i,
-  /grok-4|grok/i,
-  /seedance.*2|seedance/i,
-  /elevenlabs|eleven/i,
-  /deepseek-(v3|r1)|deepseek/i,
-  /kimi-k2|kimi/i,
-  /qwen3|qwen/i,
-  /glm-5|glm-4\.6|glm/i,
-  /veo|imagen|sora/i,
+type HomePriceComparisonRow = {
+  discount: "none" | "nine" | "six" | "three";
+  flatkeyPrice: string;
+  model: string;
+  officialPrice: string;
+  type: "text" | "video";
+};
+
+const HOME_PRICE_COMPARISON_ROWS: HomePriceComparisonRow[] = [
+  { model: "MiniMax-H3", type: "video", flatkeyPrice: "$0.08 / req", officialPrice: "$0.08 / req", discount: "none" },
+  { model: "Seedance2.0", type: "video", flatkeyPrice: "$6.3 / billing unit", officialPrice: "$7 / billing unit", discount: "nine" },
+  { model: "kimi-k3", type: "text", flatkeyPrice: "in $1.8 / out $9 / 1M tokens", officialPrice: "in $3 / out $15 / 1M tokens", discount: "six" },
+  { model: "gpt-5.6-sol", type: "text", flatkeyPrice: "in $1.5 / out $9 / 1M tokens", officialPrice: "in $5 / out $30 / 1M tokens", discount: "three" },
+  { model: "gpt-4o-mini", type: "text", flatkeyPrice: "in $0.135 / out $0.54 / 1M tokens", officialPrice: "in $0.15 / out $0.6 / 1M tokens", discount: "nine" },
+  { model: "claude-opus-5", type: "text", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discount: "nine" },
+  { model: "deepseek-v4-flash", type: "text", flatkeyPrice: "in $0.084 / out $0.168 / 1M tokens", officialPrice: "in $0.14 / out $0.28 / 1M tokens", discount: "six" },
+  { model: "claude-opus-4-6", type: "text", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discount: "nine" },
+  { model: "gpt-5.6-luna", type: "text", flatkeyPrice: "in $0.06 / out $0.36 / 1M tokens", officialPrice: "in $0.2 / out $1.2 / 1M tokens", discount: "three" },
+  { model: "claude-sonnet-5", type: "text", flatkeyPrice: "in $1.8 / out $9 / 1M tokens", officialPrice: "in $2 / out $10 / 1M tokens", discount: "nine" },
+  { model: "claude-opus-4-8", type: "text", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discount: "nine" },
+  { model: "gemini-3.6-flash", type: "text", flatkeyPrice: "in $1.35 / out $6.75 / 1M tokens", officialPrice: "in $1.5 / out $7.5 / 1M tokens", discount: "nine" },
+  { model: "gpt-5.4", type: "text", flatkeyPrice: "in $0.75 / out $4.5 / 1M tokens", officialPrice: "in $2.5 / out $15 / 1M tokens", discount: "three" },
+  { model: "glm-5.2", type: "text", flatkeyPrice: "in $0.84 / out $2.64 / 1M tokens", officialPrice: "in $1.4 / out $4.4 / 1M tokens", discount: "six" },
 ];
+
+const HOME_PRICE_TABLE_COPY = withIdFallback({
+  en: {
+    model: "model",
+    type: "type",
+    flatkeyPrice: "flatkey price",
+    officialPrice: "official price",
+    discount: "discount",
+    discounts: { none: "No discount", nine: "10% off", six: "40% off", three: "70% off" },
+  },
+  zh: {
+    model: "model",
+    type: "type",
+    flatkeyPrice: "flatkey价格",
+    officialPrice: "官方价格",
+    discount: "折扣",
+    discounts: { none: "无折扣", nine: "9折", six: "6折", three: "3折" },
+  },
+  es: {
+    model: "modelo",
+    type: "tipo",
+    flatkeyPrice: "precio flatkey",
+    officialPrice: "precio oficial",
+    discount: "descuento",
+    discounts: { none: "Sin descuento", nine: "10% desc.", six: "40% desc.", three: "70% desc." },
+  },
+  fr: {
+    model: "modèle",
+    type: "type",
+    flatkeyPrice: "prix flatkey",
+    officialPrice: "prix officiel",
+    discount: "remise",
+    discounts: { none: "Sans remise", nine: "-10 %", six: "-40 %", three: "-70 %" },
+  },
+  pt: {
+    model: "modelo",
+    type: "tipo",
+    flatkeyPrice: "preço flatkey",
+    officialPrice: "preço oficial",
+    discount: "desconto",
+    discounts: { none: "Sem desconto", nine: "10% off", six: "40% off", three: "70% off" },
+  },
+  ru: {
+    model: "модель",
+    type: "тип",
+    flatkeyPrice: "цена flatkey",
+    officialPrice: "официальная цена",
+    discount: "скидка",
+    discounts: { none: "Без скидки", nine: "-10%", six: "-40%", three: "-70%" },
+  },
+  ja: {
+    model: "model",
+    type: "type",
+    flatkeyPrice: "flatkey価格",
+    officialPrice: "公式価格",
+    discount: "割引",
+    discounts: { none: "割引なし", nine: "1割引", six: "4割引", three: "7割引" },
+  },
+  vi: {
+    model: "model",
+    type: "type",
+    flatkeyPrice: "giá flatkey",
+    officialPrice: "giá chính thức",
+    discount: "ưu đãi",
+    discounts: { none: "Không giảm", nine: "Giảm 10%", six: "Giảm 40%", three: "Giảm 70%" },
+  },
+  de: {
+    model: "Modell",
+    type: "Typ",
+    flatkeyPrice: "Flatkey-Preis",
+    officialPrice: "Offizieller Preis",
+    discount: "Rabatt",
+    discounts: { none: "Kein Rabatt", nine: "10% Rabatt", six: "40% Rabatt", three: "70% Rabatt" },
+  },
+});
 
 const FLOATING_LOGO_ENTRY_OFFSETS = [
   { x: "54vw", y: "24vh" },
@@ -447,7 +533,6 @@ export async function HomePage(props: Props) {
   const pricing = await getPricingData();
   const allRows = buildRowsForModels(pricing.models, pricing.vendors, pricing.groupRatio);
   const focusRows = pickFocusRows(allRows, pickFlagshipModels(pricing, FOCUS_MODELS.length), home.compare.official, home.compare.flatkey);
-  const featuredRows = pickFeaturedRows(allRows, focusRows);
   const signUpUrl = consoleUrl("/sign-up", `redirect=/keys&lng=${props.locale}`);
   const ctaDescription = baseCopy.home.cta.description.replace("{{host}}", ROUTER_ORIGIN.replace(/^https?:\/\//, ""));
 
@@ -456,7 +541,7 @@ export async function HomePage(props: Props) {
       <main data-fk-home-reveal-root className="fk-new-home relative overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
         <HeroSection experience={experience} locale={props.locale} signUpUrl={signUpUrl} focusRows={focusRows} />
         <HeroModelBannerSection rows={focusRows} locale={props.locale} />
-        <PriceComparisonSection experience={experience} home={home} locale={props.locale} rows={featuredRows} />
+        <PriceComparisonSection experience={experience} home={home} locale={props.locale} />
         <VoicesSection experience={experience} />
         <FaqSection experience={experience} />
         <BottomCtaSection cta={baseCopy.home.cta} ctaDescription={ctaDescription} home={home} signUpUrl={signUpUrl} locale={props.locale} />
@@ -645,8 +730,9 @@ function PriceComparisonSection(props: {
   experience: ExperienceCopy;
   home: ReturnType<typeof getHomeCopy>;
   locale: Locale;
-  rows: HomePricedModel[];
 }) {
+  const copy = HOME_PRICE_TABLE_COPY[props.locale];
+
   return (
     <section className="fk-section-scroll-right relative overflow-hidden border-b-2 border-[#101014] bg-[#FFFDF6] px-5 py-16 text-[#101014] sm:px-6 lg:px-8 lg:py-24 2xl:px-10 dark:border-white/20 dark:bg-[#0B0B10] dark:text-[#F6F3EA]">
       <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-55" />
@@ -676,17 +762,16 @@ function PriceComparisonSection(props: {
         </div>
 
         <div className="mt-6 overflow-hidden rounded-[1.5rem] border-2 border-[#101014] bg-white/86 shadow-[8px_8px_0_#C8A8FF] backdrop-blur dark:border-white/20 dark:bg-white/8 dark:shadow-[8px_8px_0_rgba(124,58,237,0.45)]">
-          <div className="grid grid-cols-[4.5rem_minmax(10rem,1.8fr)_minmax(6rem,0.9fr)_minmax(5.2rem,0.8fr)_minmax(4.4rem,0.75fr)_minmax(5.4rem,0.75fr)_1.4rem] items-center gap-4 border-b-2 border-[#101014] bg-[#F7F4EC] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#777782] max-md:hidden dark:border-white/20 dark:bg-white/6 dark:text-white/46">
+          <div className="grid grid-cols-[4.5rem_minmax(10rem,1.4fr)_minmax(4.4rem,0.55fr)_minmax(12rem,1.18fr)_minmax(12rem,1.18fr)_minmax(6.2rem,0.65fr)] items-center gap-4 border-b-2 border-[#101014] bg-[#F7F4EC] px-4 py-3 font-mono text-[11px] font-bold uppercase text-[#777782] max-md:hidden dark:border-white/20 dark:bg-white/6 dark:text-white/46">
             <span />
-            <span>{props.experience.priceTitle}</span>
-            <span>{props.experience.officialPriceLabel}</span>
-            <span>{props.experience.flatkeyPriceLabel}</span>
-            <span>{props.experience.officialPriceLabel}</span>
-            <span>OFF</span>
-            <span />
+            <span>{copy.model}</span>
+            <span>{copy.type}</span>
+            <span>{copy.flatkeyPrice}</span>
+            <span>{copy.officialPrice}</span>
+            <span>{copy.discount}</span>
           </div>
-          {props.rows.slice(0, 18).map((row, index) => (
-            <FeaturedModelRow key={`${row.name}-${index}`} row={row} index={index} locale={props.locale} />
+          {HOME_PRICE_COMPARISON_ROWS.map((row) => (
+            <FeaturedModelRow key={row.model} row={row} locale={props.locale} copy={copy} />
           ))}
         </div>
 
@@ -704,27 +789,25 @@ function PriceComparisonSection(props: {
   );
 }
 
-function FeaturedModelRow(props: { row: HomePricedModel; index: number; locale: Locale }) {
-  const discount = formatDiscount(props.row.official, props.row.discounted, props.index);
-  const href = localizePath(modelPublicPath(props.row.name), props.locale);
+function FeaturedModelRow(props: {
+  copy: (typeof HOME_PRICE_TABLE_COPY)[Locale];
+  row: HomePriceComparisonRow;
+  locale: Locale;
+}) {
+  const href = localizePath(modelPublicPath(props.row.model), props.locale);
+  const iconKey = modelIconKey(props.row.model, props.row.type);
   return (
-    <Link href={href} className="fk-price-row grid min-h-16 grid-cols-[4.5rem_minmax(10rem,1.8fr)_minmax(6rem,0.9fr)_minmax(5.2rem,0.8fr)_minmax(4.4rem,0.75fr)_minmax(5.4rem,0.75fr)_4.3rem] items-center gap-4 border-b border-[#101014]/10 px-4 py-3.5 last:border-b-0 max-md:grid-cols-[4rem_minmax(0,1fr)_5.25rem] max-md:gap-3 dark:border-white/10" aria-label={`Open ${props.row.name} model page`}>
+    <Link href={href} className="fk-price-row grid min-h-16 grid-cols-[4.5rem_minmax(10rem,1.4fr)_minmax(4.4rem,0.55fr)_minmax(12rem,1.18fr)_minmax(12rem,1.18fr)_minmax(6.2rem,0.65fr)] items-center gap-4 border-b border-[#101014]/10 px-4 py-3.5 last:border-b-0 max-md:grid-cols-[4rem_minmax(0,1fr)_7rem] max-md:gap-3 dark:border-white/10" aria-label={`Open ${props.row.model} model page`}>
       <div className="flex h-12 w-16 items-center justify-center overflow-hidden rounded-xl">
-        <ModelLogoSurface iconKey={props.row.iconKey} fallback={props.row.name.charAt(0).toUpperCase()} size={34} className="size-11 rounded-md" />
+        <ModelLogoSurface iconKey={iconKey} fallback={props.row.model.charAt(0).toUpperCase()} size={34} className="size-11 rounded-md" />
       </div>
       <div className="min-w-0">
-        <div className="fk-price-row-text truncate text-[16px] leading-5 font-bold text-[#101014] dark:text-[#F6F3EA]">{props.row.name}</div>
+        <div className="fk-price-row-text truncate text-[16px] leading-5 font-bold text-[#101014] dark:text-[#F6F3EA]">{props.row.model}</div>
       </div>
-      <div className="fk-price-row-text truncate text-[13px] font-semibold text-[#7A7A85] max-md:hidden dark:text-white/46">{props.row.vendor}</div>
-      <div className="fk-price-row-text fk-price-row-strong fk-price-row-price font-mono text-[24px] leading-none font-bold text-[#5852FF] max-md:text-right max-md:text-lg">{props.row.discounted}</div>
-      <div className="fk-price-row-text font-mono text-[13px] font-semibold text-[#8C8C97] line-through max-md:hidden">{props.row.official}</div>
-      <div className="fk-price-row-text fk-price-row-strong font-mono text-[15px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{discount}% OFF</div>
-      <div className="flex items-center justify-end gap-2 max-md:hidden">
-        {[0.35, 0.5, 0.68, 0.85].map((height, barIndex) => (
-          <span key={barIndex} className="w-[3px] rounded-full bg-[#22C55E]" style={{ height: `${22 * height}px` }} />
-        ))}
-        <span className="font-mono text-[11px] font-extrabold text-[#15803D]">99.9</span>
-      </div>
+      <div className="fk-price-row-text truncate text-[13px] font-semibold text-[#7A7A85] max-md:hidden dark:text-white/46">{props.row.type}</div>
+      <div className="fk-price-row-text fk-price-row-strong fk-price-row-price text-[15px] leading-snug font-bold text-[#5852FF] max-md:text-right max-md:text-sm">{props.row.flatkeyPrice}</div>
+      <div className="fk-price-row-text text-[13px] leading-snug font-semibold text-[#8C8C97] line-through max-md:hidden">{props.row.officialPrice}</div>
+      <div className="fk-price-row-text fk-price-row-strong text-[14px] font-bold whitespace-nowrap text-[#15803D] max-md:hidden">{props.copy.discounts[props.row.discount]}</div>
     </Link>
   );
 }
@@ -866,45 +949,6 @@ function pickFocusRows(
     const row = source.find((candidate) => focus.match.test(candidate.name) || focus.match.test(candidate.vendor));
     return row ?? fallbackRow(focus, officialLabel, discountedLabel);
   });
-}
-
-function pickFeaturedRows(allRows: HomePricedModel[], focusRows: HomePricedModel[]): HomePricedModel[] {
-  const seen = new Set<string>();
-  const hotRows = allRows
-    .map((row) => ({ row, score: hotModelScore(row) }))
-    .filter((entry) => entry.score >= 0)
-    .sort((a, b) => a.score - b.score)
-    .map((entry) => entry.row);
-  const source = [...focusRows, ...hotRows, ...allRows];
-  const selected: HomePricedModel[] = [];
-  for (const row of source) {
-    if (seen.has(row.name)) continue;
-    seen.add(row.name);
-    selected.push(row);
-    if (selected.length >= 16) break;
-  }
-  return selected;
-}
-
-function hotModelScore(row: HomePricedModel): number {
-  const haystack = `${row.name} ${row.vendor}`;
-  const score = HOT_MODEL_PATTERNS.findIndex((pattern) => pattern.test(haystack));
-  return score;
-}
-
-function formatDiscount(official: string, discounted: string, index: number): number {
-  const officialValue = parsePrice(official);
-  const discountedValue = parsePrice(discounted);
-  if (officialValue > 0 && discountedValue > 0 && discountedValue < officialValue) {
-    return Math.max(1, Math.round((1 - discountedValue / officialValue) * 100));
-  }
-  const fallback = [36, 20, 73, 38, 75, 20, 40, 24, 20, 57, 64, 20, 20, 40, 20, 40];
-  return fallback[index % fallback.length];
-}
-
-function parsePrice(value: string): number {
-  const match = value.match(/\$([0-9]+(?:\.[0-9]+)?)/);
-  return match ? Number(match[1]) : 0;
 }
 
 function fallbackRow(model: FocusModel, officialLabel: string, discountedLabel: string): HomePricedModel {
