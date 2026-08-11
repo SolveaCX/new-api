@@ -27,7 +27,7 @@
 - Authorization code：5 分钟、单次使用、PKCE S256
 - Access token：Ed25519 JWT，15 分钟
 - Refresh family：30 天，每次使用后 rotation；旧 refresh token 重放时撤销整个 family
-- 私钥环境变量：`FLATKEY_MCP_OAUTH_ED25519_PRIVATE_KEY`，内容为 PKCS#8 PEM
+- 私钥环境变量：`FLATKEY_MCP_OAUTH_ED25519_PRIVATE_KEY`，内容为 Base64 编码的 PKCS#8 DER
 
 协议按 MCP Authorization 2026-07-28 实现：客户端元数据优先使用 CIMD，兼容 DCR；authorization 与 token 请求都要求精确 `resource`；公共客户端只允许 `token_endpoint_auth_method=none`；撤销未知 token 仍按 RFC 7009 返回成功。
 
