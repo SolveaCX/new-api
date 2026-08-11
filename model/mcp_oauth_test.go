@@ -184,6 +184,12 @@ func TestMcpOAuthTokenManagementScopeHidesDedicatedTokens(t *testing.T) {
 	require.Len(t, keys, 1)
 	require.Equal(t, normal.Key, keys[0].Key)
 
+	err = DeleteTokenById(mcp.Id, 7)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	var stillStored Token
+	require.NoError(t, DB.First(&stillStored, mcp.Id).Error)
+	require.Equal(t, TokenSourceMcpOAuth, stillStored.Source)
+
 	newQuota := 1
 	updated, err := BatchUpdateTokens(BatchUpdateTokensParams{
 		Ids:         []int{mcp.Id},
@@ -196,7 +202,6 @@ func TestMcpOAuthTokenManagementScopeHidesDedicatedTokens(t *testing.T) {
 	deleted, err := BatchDeleteTokens([]int{mcp.Id}, 7)
 	require.NoError(t, err)
 	require.Zero(t, deleted)
-	var stillStored Token
 	require.NoError(t, DB.First(&stillStored, mcp.Id).Error)
 	require.Equal(t, TokenSourceMcpOAuth, stillStored.Source)
 }
@@ -382,6 +387,50 @@ func TestMcpOAuthAuthorizationCodeConsumesAtomicallyOnce(t *testing.T) {
 	require.ErrorIs(t, err, ErrMcpOAuthCredentialConsumed)
 	require.False(t, consumed)
 	require.Nil(t, second)
+}
+
+func TestMcpOAuthAuthorizationCodeRequiresActiveUnrevokedGrant(t *testing.T) {
+	tests := []struct {
+		name        string
+		grantStatus string
+		revokedAt   int64
+		expectedErr error
+	}{
+		{name: "pending", grantStatus: McpOAuthGrantStatusPending, expectedErr: ErrMcpOAuthGrantUnavailable},
+		{name: "failed", grantStatus: McpOAuthGrantStatusFailed, expectedErr: ErrMcpOAuthGrantUnavailable},
+		{name: "revoked status", grantStatus: McpOAuthGrantStatusRevoked, expectedErr: ErrMcpOAuthGrantRevoked},
+		{name: "revoked timestamp", grantStatus: McpOAuthGrantStatusActive, revokedAt: 150, expectedErr: ErrMcpOAuthGrantRevoked},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupMcpOAuthTestDB(t)
+			user := User{Username: "mcp-code-" + tt.name, Password: "password"}
+			require.NoError(t, DB.Create(&user).Error)
+			grant := createMcpOAuthGrantFixture(t, "grant_code_"+tt.name, user.Id)
+			require.NoError(t, DB.Model(&grant).Updates(map[string]any{
+				"status":     tt.grantStatus,
+				"revoked_at": tt.revokedAt,
+			}).Error)
+			code := McpOAuthAuthorizationCode{
+				PublicID:      "code_" + tt.name,
+				GrantPublicID: grant.PublicID,
+				CodeHash:      HashMcpOAuthCredential("secret-" + tt.name),
+				RedirectURI:   "https://client.example/callback",
+				CreatedTime:   100,
+				ExpiresAt:     300,
+			}
+			require.NoError(t, DB.Create(&code).Error)
+
+			consumed, ok, err := ConsumeMcpOAuthAuthorizationCode(code.CodeHash, 200)
+
+			require.ErrorIs(t, err, tt.expectedErr)
+			require.False(t, ok)
+			require.Nil(t, consumed)
+			var stored McpOAuthAuthorizationCode
+			require.NoError(t, DB.First(&stored, code.Id).Error)
+			require.Zero(t, stored.ConsumedAt)
+		})
+	}
 }
 
 func TestMcpOAuthConcurrentRefreshRotationHasOneWinnerAndReplayRevokesFamily(t *testing.T) {
@@ -628,6 +677,59 @@ func TestMcpOAuthRefreshReplayForAlreadyRotatedTokenRevokesEntireFamily(t *testi
 	var activeCount int64
 	require.NoError(t, DB.Model(&McpOAuthRefreshToken{}).Where("family_id = ? AND status = ?", current.FamilyID, McpOAuthRefreshTokenStatusActive).Count(&activeCount).Error)
 	require.Zero(t, activeCount)
+}
+
+func TestMcpOAuthRefreshRotationBackfillsEmptyFamilyBeforeReplay(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-empty-family-user", Password: "password"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_empty_family", user.Id)
+	currentHash := HashMcpOAuthCredential("empty-family-current")
+	current := McpOAuthRefreshToken{
+		PublicID:      "refresh_empty_family_current",
+		GrantPublicID: grant.PublicID,
+		TokenHash:     currentHash,
+		Status:        McpOAuthRefreshTokenStatusActive,
+		CreatedTime:   100,
+		ExpiresAt:     1000,
+	}
+	require.NoError(t, DB.Create(&current).Error)
+
+	successor, rotated, err := RotateMcpOAuthRefreshToken(currentHash, McpOAuthRefreshToken{
+		PublicID:    "refresh_empty_family_next",
+		TokenHash:   HashMcpOAuthCredential("empty-family-next"),
+		CreatedTime: 200,
+		ExpiresAt:   1000,
+	}, 200)
+	require.NoError(t, err)
+	require.True(t, rotated)
+	require.Equal(t, current.PublicID, successor.FamilyID)
+
+	var storedCurrent McpOAuthRefreshToken
+	require.NoError(t, DB.First(&storedCurrent, current.Id).Error)
+	require.Equal(t, current.PublicID, storedCurrent.FamilyID)
+	var storedGrant McpOAuthGrant
+	require.NoError(t, DB.First(&storedGrant, grant.Id).Error)
+	require.NotNil(t, storedGrant.RefreshTokenFamilyId)
+	require.Equal(t, current.PublicID, *storedGrant.RefreshTokenFamilyId)
+
+	_, rotated, err = RotateMcpOAuthRefreshToken(currentHash, McpOAuthRefreshToken{
+		PublicID:    "refresh_empty_family_replay",
+		TokenHash:   HashMcpOAuthCredential("empty-family-replay"),
+		CreatedTime: 201,
+		ExpiresAt:   1000,
+	}, 201)
+	require.ErrorIs(t, err, ErrMcpOAuthRefreshReplay)
+	require.False(t, rotated)
+
+	var family []McpOAuthRefreshToken
+	require.NoError(t, DB.Where("family_id = ?", current.PublicID).Order("id asc").Find(&family).Error)
+	require.Len(t, family, 2)
+	for _, token := range family {
+		require.Equal(t, McpOAuthRefreshTokenStatusRevoked, token.Status)
+		require.Equal(t, int64(201), token.RevokedAt)
+		require.Equal(t, int64(201), token.ReplayDetectedAt)
+	}
 }
 
 func TestMcpOAuthConsumeUnknownAuthorizationCodeFailsClosed(t *testing.T) {

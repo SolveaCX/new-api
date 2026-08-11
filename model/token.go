@@ -621,7 +621,7 @@ func DeleteTokenById(id int, userId int) (err error) {
 		return errors.New("id 或 userId 为空！")
 	}
 	token := Token{Id: id, UserId: userId}
-	err = DB.Where(token).First(&token).Error
+	err = userVisibleTokenScope(DB).Where(token).First(&token).Error
 	if err != nil {
 		return err
 	}
