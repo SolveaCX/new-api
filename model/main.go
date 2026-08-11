@@ -266,6 +266,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(&Token{}); err != nil {
+		return fmt.Errorf("failed to prepare Token SQLite migration: %v", err)
+	}
 
 	err := DB.AutoMigrate(migrationModelValues(orderedMigrationModels())...)
 	if err != nil {
@@ -430,12 +433,10 @@ func migrateDBFast() error {
 	// GORM also migrates associations, so parallel AutoMigrate calls can race
 	// when related models share a table dependency.
 	for _, m := range migrations {
-		var err error
-		if common.UsingSQLite {
-			if err = ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(m.model); err != nil {
-				return fmt.Errorf("failed to prepare %s SQLite migration: %v", m.name, err)
-			}
+		if err := ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(m.model); err != nil {
+			return fmt.Errorf("failed to prepare %s SQLite migration: %v", m.name, err)
 		}
+		var err error
 		if common.UsingSQLite && sqliteModelNeedsColumnOnlyMigration(m.model) {
 			err = ensureSQLiteModelColumnsAndIndexes(m.model)
 		} else {
@@ -523,7 +524,7 @@ func ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(model interface{}) error {
 	if _, ok := model.(*Token); !ok {
 		return nil
 	}
-	if !common.UsingSQLite || DB == nil || !DB.Migrator().HasTable(&Token{}) {
+	if !usingSQLiteDB(DB) || !DB.Migrator().HasTable(&Token{}) {
 		return nil
 	}
 	indexName, err := tokenOAuthGrantIDUniqueIndexName()
@@ -535,12 +536,42 @@ func ensureSQLiteTokenOAuthGrantIDBeforeAutoMigrate(model interface{}) error {
 			return err
 		}
 	}
-	if !DB.Migrator().HasIndex(&Token{}, indexName) {
-		if err := DB.Migrator().CreateIndex(&Token{}, indexName); err != nil {
+	exists, unique, err := sqliteIndexUnique("tokens", indexName)
+	if err != nil {
+		return err
+	}
+	if exists && !unique {
+		if err := DB.Exec("DROP INDEX `" + indexName + "`").Error; err != nil {
+			return err
+		}
+		exists = false
+	}
+	if !exists {
+		if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS `" + indexName + "` ON `tokens`(`" + tokenOAuthGrantIDColumn + "`)").Error; err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func usingSQLiteDB(db *gorm.DB) bool {
+	return db != nil && db.Dialector != nil && db.Dialector.Name() == "sqlite"
+}
+
+func sqliteIndexUnique(tableName, indexName string) (bool, bool, error) {
+	var indexes []struct {
+		Name   string `gorm:"column:name"`
+		Unique int    `gorm:"column:unique"`
+	}
+	if err := DB.Raw("PRAGMA index_list(`" + tableName + "`)").Scan(&indexes).Error; err != nil {
+		return false, false, err
+	}
+	for _, idx := range indexes {
+		if idx.Name == indexName {
+			return true, idx.Unique != 0, nil
+		}
+	}
+	return false, false, nil
 }
 
 func tokenOAuthGrantIDUniqueIndexName() (string, error) {

@@ -159,6 +159,108 @@ func TestSQLiteMigrateDBAddsTokenOAuthGrantIDWithoutUniqueAddColumn(t *testing.T
 	require.NoError(t, db.Create(&Token{UserId: 14, Key: "null-grant-two", Status: common.TokenStatusEnabled, Name: "null two", ExpiredTime: -1, Group: "default"}).Error)
 }
 
+func TestSQLiteMigrateDBReplacesNonUniqueTokenOAuthGrantIDIndex(t *testing.T) {
+	originalDB := DB
+	originalLogDB := LOG_DB
+	originalUsingSQLite := common.UsingSQLite
+	originalUsingMySQL := common.UsingMySQL
+	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalRedisEnabled := common.RedisEnabled
+	t.Cleanup(func() {
+		DB = originalDB
+		LOG_DB = originalLogDB
+		common.UsingSQLite = originalUsingSQLite
+		common.UsingMySQL = originalUsingMySQL
+		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.RedisEnabled = originalRedisEnabled
+	})
+
+	dbPath := filepath.Join(t.TempDir(), "legacy-token-oauth-nonunique.db") + "?_pragma=busy_timeout(5000)"
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	sqlDB.SetMaxOpenConns(1)
+
+	DB = db
+	LOG_DB = db
+	common.UsingSQLite = true
+	common.UsingMySQL = false
+	common.UsingPostgreSQL = false
+	common.RedisEnabled = false
+
+	require.NoError(t, db.AutoMigrate(&legacySQLiteTokenWithoutOAuthGrantID{}))
+	require.NoError(t, db.Exec("ALTER TABLE `tokens` ADD COLUMN `oauth_grant_id` varchar(64)").Error)
+	require.NoError(t, db.Exec("CREATE INDEX `idx_tokens_o_auth_grant_id` ON `tokens`(`oauth_grant_id`)").Error)
+
+	require.NoError(t, migrateDB())
+
+	require.True(t, db.Migrator().HasColumn(&Token{}, "oauth_grant_id"))
+	require.True(t, db.Migrator().HasIndex(&Token{}, "idx_tokens_o_auth_grant_id"))
+
+	grantID := "grant_sqlite_repaired_unique"
+	require.NoError(t, db.Create(&Token{
+		UserId:       21,
+		Key:          "oauth-token-repair-one",
+		Status:       common.TokenStatusEnabled,
+		Name:         "oauth repair one",
+		ExpiredTime:  -1,
+		Group:        "default",
+		OAuthGrantId: &grantID,
+	}).Error)
+	duplicateGrantID := grantID
+	err = db.Create(&Token{
+		UserId:       22,
+		Key:          "oauth-token-repair-two",
+		Status:       common.TokenStatusEnabled,
+		Name:         "oauth repair two",
+		ExpiredTime:  -1,
+		Group:        "default",
+		OAuthGrantId: &duplicateGrantID,
+	}).Error
+	require.Error(t, err)
+}
+
+func TestSQLiteMigrateDBAddsTokenOAuthGrantIDWhenGlobalSQLiteFlagIsStale(t *testing.T) {
+	originalDB := DB
+	originalLogDB := LOG_DB
+	originalUsingSQLite := common.UsingSQLite
+	originalUsingMySQL := common.UsingMySQL
+	originalUsingPostgreSQL := common.UsingPostgreSQL
+	originalRedisEnabled := common.RedisEnabled
+	t.Cleanup(func() {
+		DB = originalDB
+		LOG_DB = originalLogDB
+		common.UsingSQLite = originalUsingSQLite
+		common.UsingMySQL = originalUsingMySQL
+		common.UsingPostgreSQL = originalUsingPostgreSQL
+		common.RedisEnabled = originalRedisEnabled
+	})
+
+	dbPath := filepath.Join(t.TempDir(), "legacy-token-oauth-stale-flag.db") + "?_pragma=busy_timeout(5000)"
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	sqlDB.SetMaxOpenConns(1)
+
+	DB = db
+	LOG_DB = db
+	common.UsingSQLite = false
+	common.UsingMySQL = false
+	common.UsingPostgreSQL = false
+	common.RedisEnabled = false
+
+	require.NoError(t, db.AutoMigrate(&legacySQLiteTokenWithoutOAuthGrantID{}))
+
+	require.NoError(t, migrateDB())
+
+	require.True(t, db.Migrator().HasColumn(&Token{}, "oauth_grant_id"))
+	require.True(t, db.Migrator().HasIndex(&Token{}, "idx_tokens_o_auth_grant_id"))
+}
+
 func TestMigrationModelDescriptorsIncludeCriticalSQLiteModels(t *testing.T) {
 	models := orderedMigrationModels()
 	require.NotEmpty(t, models)
