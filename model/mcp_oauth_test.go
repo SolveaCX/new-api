@@ -1234,6 +1234,38 @@ func TestMcpOAuthListResolveAndOwnerRevokeConnectedApps(t *testing.T) {
 	require.ErrorIs(t, err, ErrMcpOAuthGrantRevoked)
 }
 
+func TestMcpOAuthMarkDataToolGrantUsedFailsWhenGrantRevokedBeforeMark(t *testing.T) {
+	setupMcpOAuthTestDB(t)
+	user := User{Username: "mcp-mark-revoked-user", Password: "password", AffCode: "mcp-mark-revoked-aff"}
+	require.NoError(t, DB.Create(&user).Error)
+	grant := createMcpOAuthGrantFixture(t, "grant_mark_revoked", user.Id)
+	token := createMcpOAuthDedicatedTokenFixture(t, user.Id, grant.PublicID, "mark-revoked-dedicated-key")
+	require.NoError(t, DB.Model(&grant).Updates(map[string]any{
+		"dedicated_token_id": token.Id,
+		"last_used_at":       int64(150),
+	}).Error)
+
+	identity, err := ResolveMcpOAuthDataToolIdentity(McpOAuthDataToolClaims{
+		Subject:  "user-" + strconv.Itoa(user.Id),
+		GrantID:  grant.PublicID,
+		ClientID: grant.ClientID,
+		Resource: grant.Resource,
+	}, 200)
+	require.NoError(t, err)
+	require.Equal(t, token.Id, identity.Token.Id)
+	require.NoError(t, DB.Model(&McpOAuthGrant{}).Where("public_id = ?", grant.PublicID).Updates(map[string]any{
+		"status":     McpOAuthGrantStatusRevoked,
+		"revoked_at": int64(175),
+	}).Error)
+
+	err = MarkMcpOAuthDataToolGrantUsed(grant.PublicID, token.Id, 200)
+
+	require.ErrorIs(t, err, ErrMcpOAuthGrantRevoked)
+	var refreshed McpOAuthGrant
+	require.NoError(t, DB.First(&refreshed, "public_id = ?", grant.PublicID).Error)
+	require.Equal(t, int64(150), refreshed.LastUsedAt)
+}
+
 func TestMcpOAuthRevokeByCredentialIsIdempotentAndClientBound(t *testing.T) {
 	setupMcpOAuthTestDB(t)
 	grant := createMcpOAuthGrantFixture(t, "grant_revoke_credential", 51)

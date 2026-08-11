@@ -4,12 +4,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -51,6 +53,29 @@ func DataToolsAuth(requiredScope string, allowSession bool) gin.HandlerFunc {
 		}
 		abortDataToolsAuth(c, common.TranslateMessage(c, i18n.MsgTokenNotProvided))
 	}
+}
+
+func enforceDataToolsTokenIPAllowlist(c *gin.Context, token *model.Token, invalidMessage string, notAllowedMessage string) bool {
+	if token == nil {
+		return true
+	}
+	allowIps := token.GetIpLimits()
+	if len(allowIps) == 0 {
+		return true
+	}
+	clientIp := c.ClientIP()
+	logger.LogDebug(c, "Token has IP restrictions, checking client IP %s", clientIp)
+	ip := net.ParseIP(clientIp)
+	if ip == nil {
+		abortWithOpenAiMessage(c, http.StatusForbidden, invalidMessage)
+		return false
+	}
+	if !common.IsIpInCIDRList(ip, allowIps) {
+		abortWithOpenAiMessage(c, http.StatusForbidden, notAllowedMessage, types.ErrorCodeAccessDenied)
+		return false
+	}
+	logger.LogDebug(c, "Client IP %s passed the token IP restrictions check", clientIp)
+	return true
 }
 
 func authenticateDataToolsSession(c *gin.Context) bool {
@@ -119,7 +144,12 @@ func authenticateDataToolsOAuth(c *gin.Context, rawJWT string, requiredScope str
 		abortDataToolsAuth(c, common.TranslateMessage(c, i18n.MsgTokenInvalid))
 		return false
 	}
-	if err := SetupContextForToken(c, &identity.Token); err != nil {
+	if !setupDataToolsTokenContext(c, &identity.Token, nil) {
+		return false
+	}
+	if err := model.MarkMcpOAuthDataToolGrantUsed(identity.GrantPublicID, identity.Token.Id, common.GetTimestamp()); err != nil {
+		common.SysLog("DataToolsAuth OAuth mark used failed: " + err.Error())
+		abortDataToolsAuth(c, common.TranslateMessage(c, i18n.MsgTokenInvalid))
 		return false
 	}
 	common.SetContextKey(c, constant.ContextKeyOAuthGrantId, identity.GrantPublicID)
@@ -140,6 +170,14 @@ func dataToolsOAuthGrantAllowsScope(grantScopes string, requiredScope string) bo
 }
 
 func setupDataToolsTokenContext(c *gin.Context, token *model.Token, parts []string) bool {
+	if !enforceDataToolsTokenIPAllowlist(
+		c,
+		token,
+		common.TranslateMessage(c, i18n.MsgTokenClientIPInvalid),
+		common.TranslateMessage(c, i18n.MsgTokenIPNotAllowed),
+	) {
+		return false
+	}
 	userCache, err := model.GetUserCache(token.UserId)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("DataToolsAuth GetUserCache error for user %d: %v", token.UserId, err))
