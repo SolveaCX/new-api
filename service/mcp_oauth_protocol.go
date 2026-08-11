@@ -28,6 +28,22 @@ const (
 
 var mcpOAuthAllowedScopes = []string{"tools:search", "tools:read", "tools:execute"}
 
+func mcpOAuthIssuer() string {
+	return mcpOAuthEnvURL("FLATKEY_MCP_OAUTH_ISSUER", McpOAuthIssuer)
+}
+
+func mcpOAuthResource() string {
+	return mcpOAuthEnvURL("FLATKEY_MCP_OAUTH_RESOURCE", McpOAuthResource)
+}
+
+func mcpOAuthEnvURL(name, fallback string) string {
+	value := strings.TrimRight(strings.TrimSpace(common.GetEnvOrDefaultString(name, "")), "/")
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
 type McpOAuthError struct {
 	Code        string
 	Description string
@@ -125,13 +141,14 @@ func newMcpOAuthErrorWithCause(code, description string, cause error) *McpOAuthE
 }
 
 func McpOAuthAuthorizationServerMetadata() McpOAuthAuthorizationServerMetadataDTO {
+	issuer := mcpOAuthIssuer()
 	return McpOAuthAuthorizationServerMetadataDTO{
-		Issuer:                                 McpOAuthIssuer,
-		AuthorizationEndpoint:                  McpOAuthIssuer + "/oauth/authorize",
-		TokenEndpoint:                          McpOAuthIssuer + "/oauth/token",
-		RevocationEndpoint:                     McpOAuthIssuer + "/oauth/revoke",
-		JwksURI:                                McpOAuthIssuer + "/oauth/jwks",
-		RegistrationEndpoint:                   McpOAuthIssuer + "/oauth/register",
+		Issuer:                                 issuer,
+		AuthorizationEndpoint:                  issuer + "/oauth/authorize",
+		TokenEndpoint:                          issuer + "/oauth/token",
+		RevocationEndpoint:                     issuer + "/oauth/revoke",
+		JwksURI:                                issuer + "/oauth/jwks",
+		RegistrationEndpoint:                   issuer + "/oauth/register",
 		ClientIDMetadataDocumentSupported:      true,
 		CodeChallengeMethodsSupported:          []string{"S256"},
 		GrantTypesSupported:                    []string{"authorization_code", "refresh_token"},
@@ -166,8 +183,9 @@ func ValidateMcpOAuthPKCE(verifier, challenge, method string) error {
 }
 
 func ValidateMcpOAuthResource(resource string) error {
-	if resource != McpOAuthResource {
-		return NewMcpOAuthError("invalid_target", "resource must exactly match https://mcp.flatkey.ai")
+	expected := mcpOAuthResource()
+	if resource != expected {
+		return NewMcpOAuthError("invalid_target", "resource must exactly match "+expected)
 	}
 	return nil
 }

@@ -30,6 +30,27 @@ func TestMcpOAuthProtocolMetadataIsCanonicalMCP20260728(t *testing.T) {
 	require.Equal(t, []string{"tools:search", "tools:read", "tools:execute"}, metadata.ScopesSupported)
 }
 
+func TestMcpOAuthProtocolUsesConfiguredIssuerAndResource(t *testing.T) {
+	t.Setenv("FLATKEY_MCP_OAUTH_ISSUER", " https://staging-console.flatkey.ai/ ")
+	t.Setenv("FLATKEY_MCP_OAUTH_RESOURCE", " https://flatkey-mcp-staging.example/ ")
+
+	metadata := McpOAuthAuthorizationServerMetadata()
+
+	require.Equal(t, "https://staging-console.flatkey.ai", metadata.Issuer)
+	require.Equal(t, "https://staging-console.flatkey.ai/oauth/authorize", metadata.AuthorizationEndpoint)
+	require.Equal(t, "https://staging-console.flatkey.ai/oauth/token", metadata.TokenEndpoint)
+	require.Equal(t, "https://staging-console.flatkey.ai/oauth/revoke", metadata.RevocationEndpoint)
+	require.Equal(t, "https://staging-console.flatkey.ai/oauth/jwks", metadata.JwksURI)
+	require.Equal(t, "https://staging-console.flatkey.ai/oauth/register", metadata.RegistrationEndpoint)
+
+	require.NoError(t, ValidateMcpOAuthResource("https://flatkey-mcp-staging.example"))
+	err := ValidateMcpOAuthResource(McpOAuthResource)
+	var oauthErr *McpOAuthError
+	require.ErrorAs(t, err, &oauthErr)
+	require.Equal(t, "invalid_target", oauthErr.Code)
+	require.Contains(t, oauthErr.Description, "https://flatkey-mcp-staging.example")
+}
+
 func TestMcpOAuthPKCEVerifierRequiresRFC7636S256Challenge(t *testing.T) {
 	verifier := strings.Repeat("a", 43) + "-._~"
 	challenge := McpOAuthS256Challenge(verifier)
