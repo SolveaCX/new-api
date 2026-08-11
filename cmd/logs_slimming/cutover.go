@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -686,7 +687,54 @@ func stabilizePreRollback(ctx context.Context, db *sql.DB, c config, ev *evidenc
 	return assertPreCutoverTriggerTopology(ctx, db, c)
 }
 
-func removeFilteredRollbackRows(ctx context.Context, db *sql.DB, c config, ev *evidence, verifiedFloor int64) error {
+func removeFilteredRollbackRows(ctx context.Context, db *sql.DB, c config, ev *evidence, verifiedFloor int64) (retErr error) {
+	state, err := loadCheckpoint(ctx, db, c)
+	if err != nil {
+		return err
+	}
+	objects, topology, err := observeTopology(ctx, db, c)
+	if err != nil {
+		return err
+	}
+	if classifyTopology(objects) != topologyPreCutover || !topology.forward || topology.reverse {
+		return fmt.Errorf("rollback filtered cleanup requires stable PRE topology: objects=%+v triggers=%+v", objects, topology)
+	}
+	dropGuard, err := filteredCleanupGuardPlan(state.phase, topology, c)
+	if err != nil {
+		return err
+	}
+	guardSpec, err := expectedTriggerSpec(c, "future_guard_delete", c.target, state.triggerSQLMode)
+	if err != nil {
+		return err
+	}
+	if dropGuard {
+		name, _ := triggerName("future_guard_delete", c.batch)
+		quoted, _ := quoteIdentifier(name)
+		if err := runDDL(ctx, db, c, "DROP TRIGGER "+quoted, exactTriggerObserver(guardSpec, false)); err != nil {
+			return err
+		}
+	}
+	// The compact target is inactive throughout rollback-reconcile. Its DELETE
+	// guard may be absent only during this cleanup, and is always rebuilt before
+	// the checkpoint can leave rollback-reconcile. A crash after DROP is handled
+	// by the same idempotent path on the next recover.
+	defer func() {
+		query, err := buildNamedGuardTriggerSQL(c, "future_guard_delete", "delete", c.target)
+		if err == nil {
+			err = runDDL(ctx, db, c, query, exactTriggerObserver(guardSpec, true))
+		}
+		if err == nil {
+			_, topology, observeErr := observeTopology(ctx, db, c)
+			if observeErr != nil {
+				err = observeErr
+			} else if !preGuardsReady(topology, c) {
+				err = fmt.Errorf("future DELETE guard restore did not recover exact pre-cutover guards: %+v", topology)
+			}
+		}
+		if err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("restore future DELETE guard: %w", err))
+		}
+	}()
 	target, _ := qualified(c.schema, c.target)
 	var upper sql.NullInt64
 	if err := db.QueryRowContext(ctx, "SELECT MAX(id) FROM "+target).Scan(&upper); err != nil {
@@ -744,6 +792,24 @@ func removeFilteredRollbackRows(ctx context.Context, db *sql.DB, c config, ev *e
 	return nil
 }
 
+func filteredCleanupGuardPlan(phase string, topology triggerTopology, c config) (bool, error) {
+	if phase != "rollback-reconcile" {
+		return false, fmt.Errorf("future DELETE guard may be suspended only during rollback-reconcile")
+	}
+	if !rollbackCleanupGuardsReady(topology, c) {
+		return false, fmt.Errorf("rollback filtered cleanup guard topology is unsafe: %+v", topology)
+	}
+	return topology.futureDeleteGuard, nil
+}
+
+func rollbackCleanupGuardsReady(t triggerTopology, c config) bool {
+	return t.updateGuard && t.deleteGuard &&
+		t.updateGuardTable == c.source && t.deleteGuardTable == c.source &&
+		t.futureUpdateGuard && t.futureUpdateGuardTable == c.target &&
+		(t.futureDeleteGuard && t.futureDeleteGuardTable == c.target ||
+			!t.futureDeleteGuard && t.futureDeleteGuardTable == "")
+}
+
 func ensurePreTriggersAfterRollback(ctx context.Context, db *sql.DB, c config, state checkpoint) error {
 	o, t, err := observeTopology(ctx, db, c)
 	if err != nil {
@@ -778,7 +844,11 @@ func ensurePreTriggersAfterRollback(ctx context.Context, db *sql.DB, c config, s
 		}
 	}
 	_, final, err := observeTopology(ctx, db, c)
-	if err != nil || !final.forward || final.reverse || !preGuardsReady(final, c) {
+	guardsReady := preGuardsReady(final, c)
+	if state.phase == "rollback-reconcile" {
+		guardsReady = rollbackCleanupGuardsReady(final, c)
+	}
+	if err != nil || !final.forward || final.reverse || !guardsReady {
 		return fmt.Errorf("rollback PRE trigger stabilization incomplete: triggers=%+v err=%v", final, err)
 	}
 	return nil

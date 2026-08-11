@@ -589,6 +589,96 @@ func TestFutureGuardsMoveAtomicallyWithCompactTable(t *testing.T) {
 	}
 }
 
+func TestFilteredCleanupGuardPlanAllowsOnlyRollbackReconcile(t *testing.T) {
+	cfg := validTestConfig()
+	complete := triggerTopology{
+		updateGuard: true, deleteGuard: true, updateGuardTable: cfg.source, deleteGuardTable: cfg.source,
+		futureUpdateGuard: true, futureDeleteGuard: true, futureUpdateGuardTable: cfg.target, futureDeleteGuardTable: cfg.target,
+	}
+
+	drop, err := filteredCleanupGuardPlan("rollback-reconcile", complete, cfg)
+	if err != nil || !drop {
+		t.Fatalf("complete rollback cleanup topology rejected: drop=%t err=%v", drop, err)
+	}
+
+	missingDelete := complete
+	missingDelete.futureDeleteGuard = false
+	missingDelete.futureDeleteGuardTable = ""
+	drop, err = filteredCleanupGuardPlan("rollback-reconcile", missingDelete, cfg)
+	if err != nil || drop {
+		t.Fatalf("recoverable missing future DELETE guard rejected: drop=%t err=%v", drop, err)
+	}
+
+	for _, phase := range []string{"fresh", "rollback-intent"} {
+		if _, err := filteredCleanupGuardPlan(phase, missingDelete, cfg); err == nil {
+			t.Fatalf("phase %s accepted a missing future DELETE guard", phase)
+		}
+	}
+}
+
+func TestFilteredCleanupGuardPlanRejectsUnsafeGuardTopology(t *testing.T) {
+	cfg := validTestConfig()
+	complete := triggerTopology{
+		updateGuard: true, deleteGuard: true, updateGuardTable: cfg.source, deleteGuardTable: cfg.source,
+		futureUpdateGuard: true, futureDeleteGuard: true, futureUpdateGuardTable: cfg.target, futureDeleteGuardTable: cfg.target,
+	}
+
+	tests := map[string]func(*triggerTopology){
+		"future delete on source": func(topology *triggerTopology) { topology.futureDeleteGuardTable = cfg.source },
+		"future delete elsewhere": func(topology *triggerTopology) { topology.futureDeleteGuardTable = "other_logs" },
+		"missing future delete with stale table": func(topology *triggerTopology) {
+			topology.futureDeleteGuard = false
+			topology.futureDeleteGuardTable = cfg.target
+		},
+		"missing source update": func(topology *triggerTopology) { topology.updateGuard = false },
+		"missing source delete": func(topology *triggerTopology) { topology.deleteGuard = false },
+		"missing future update": func(topology *triggerTopology) { topology.futureUpdateGuard = false },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			topology := complete
+			mutate(&topology)
+			if _, err := filteredCleanupGuardPlan("rollback-reconcile", topology, cfg); err == nil {
+				t.Fatalf("unsafe topology accepted: %+v", topology)
+			}
+		})
+	}
+}
+
+func TestFilteredCleanupGuardRestoreUsesPersistedTriggerIdentity(t *testing.T) {
+	cfg := validTestConfig()
+	const persistedSQLMode = "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
+	spec, err := expectedTriggerSpec(cfg, "future_guard_delete", cfg.target, persistedSQLMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := triggerName("future_guard_delete", cfg.batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.name != name || spec.table != cfg.target || spec.sqlMode != persistedSQLMode || spec.definer != cfg.triggerDefiner {
+		t.Fatalf("restore spec does not preserve trigger identity: %+v", spec)
+	}
+	query, err := buildNamedGuardTriggerSQL(cfg, "future_guard_delete", "delete", cfg.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "TRIGGER `"+name+"`") || !strings.Contains(query, "BEFORE DELETE ON `"+cfg.schema+"`.`"+cfg.target+"`") {
+		t.Fatalf("restore SQL targets the wrong trigger/table: %s", query)
+	}
+}
+
+func TestFilteredCleanupGuardRestoreReturnsToStrictPreGuards(t *testing.T) {
+	cfg := validTestConfig()
+	topology := triggerTopology{
+		updateGuard: true, deleteGuard: true, updateGuardTable: cfg.source, deleteGuardTable: cfg.source,
+		futureUpdateGuard: true, futureDeleteGuard: true, futureUpdateGuardTable: cfg.target, futureDeleteGuardTable: cfg.target,
+	}
+	if !preGuardsReady(topology, cfg) {
+		t.Fatal("restored cleanup guard topology is not strict pre-cutover topology")
+	}
+}
+
 func TestNextPostVerifyEndUsesSmallestValidBoundedEndpoint(t *testing.T) {
 	tests := []struct {
 		name        string
