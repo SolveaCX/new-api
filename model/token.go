@@ -42,6 +42,7 @@ type Token struct {
 	Group                 string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry       bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	Source                string         `json:"source" gorm:"index;default:''"`
+	OAuthGrantId          *string        `json:"oauth_grant_id" gorm:"column:oauth_grant_id;type:varchar(64);uniqueIndex"`
 	DeviceIdHash          string         `json:"device_id_hash" gorm:"index;default:''"`
 	ClientName            string         `json:"client_name" gorm:"default:''"`
 	ClientVersion         string         `json:"client_version" gorm:"default:''"`
@@ -219,6 +220,9 @@ func ValidateUserToken(key string) (token *Token, err error) {
 	}
 	token, err = GetTokenByKey(key, false)
 	if err == nil {
+		if token.Source == TokenSourceMcpOAuth {
+			return nil, ErrTokenInvalid
+		}
 		if token.Status == common.TokenStatusExhausted && !token.UnlimitedQuota {
 			return token, ErrTokenExhausted
 		}
@@ -376,7 +380,10 @@ func CreateUserTokenWithInviteReward(userId int, token *Token, maxTokens int, tr
 	return err
 }
 
-const TokenSourceCLI = "cli"
+const (
+	TokenSourceCLI      = "cli"
+	TokenSourceMcpOAuth = "mcp_oauth"
+)
 
 func createUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) error {
 	var user User
