@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -174,7 +175,7 @@ func TestMcpOAuthTokenMapsOAuthFailuresToSpecificErrorCodes(t *testing.T) {
 		"code_verifier": {strings.Repeat("u", 50)},
 	})
 	require.Equal(t, http.StatusBadRequest, unknownClient.Code)
-	assertMcpOAuthError(t, unknownClient.Body.Bytes(), "invalid_client")
+	assertMcpOAuthError(t, unknownClient.Body.Bytes(), "invalid_grant")
 
 	unknownCode := postMcpOAuthTokenForm(t, router, url.Values{
 		"grant_type":    {"authorization_code"},
@@ -236,6 +237,22 @@ func TestMcpOAuthTokenMapsOAuthFailuresToSpecificErrorCodes(t *testing.T) {
 	})
 	require.Equal(t, http.StatusBadRequest, refreshScope.Code)
 	assertMcpOAuthError(t, refreshScope.Body.Bytes(), "invalid_scope")
+
+	cimdRefresh := postMcpOAuthTokenForm(t, router, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {"unknown-refresh"},
+		"client_id":     {"https://client.example/oauth/client"},
+		"resource":      {service.McpOAuthResource},
+	})
+	require.Equal(t, http.StatusBadRequest, cimdRefresh.Code)
+	assertMcpOAuthError(t, cimdRefresh.Body.Bytes(), "invalid_grant")
+}
+
+func TestMcpOAuthTokenPassesHTTPRequestContextToLifecycle(t *testing.T) {
+	source, err := os.ReadFile("mcp_oauth.go")
+	require.NoError(t, err)
+	require.Contains(t, string(source), "Context:      c.Request.Context()")
+	require.Equal(t, 2, strings.Count(string(source), "Context:      c.Request.Context()"))
 }
 
 func TestMcpOAuthAuthorizationDetailsAndAuthorizeGenerateRedirectsForCurrentUser(t *testing.T) {

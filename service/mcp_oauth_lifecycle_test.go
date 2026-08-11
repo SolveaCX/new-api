@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -344,7 +345,61 @@ func TestMcpOAuthLifecycleExchangeAndRefreshRequireCurrentActiveClient(t *testin
 	requireMcpOAuthErrorCode(t, err, "invalid_client")
 }
 
+func TestMcpOAuthLifecycleExchangeInvalidCodeDoesNotResolveCIMDClient(t *testing.T) {
+	setupMcpOAuthLifecycleTestDB(t)
+	resolveCalls := 0
+	clientID := "https://client.example/oauth/client"
+	lifecycle := testMcpOAuthLifecycleWithResolver(t, func(ctx context.Context, requestedClientID string) (McpOAuthClientMetadata, error) {
+		resolveCalls++
+		return McpOAuthClientMetadata{
+			ClientID:     requestedClientID,
+			ClientName:   "CIMD Client",
+			RedirectURIs: []string{"https://client.example/callback"},
+		}, nil
+	})
+
+	_, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(McpOAuthAuthorizationCodeExchangeRequest{
+		Code:         "unknown-code",
+		ClientID:     clientID,
+		Resource:     McpOAuthResource,
+		RedirectURI:  "https://client.example/callback",
+		CodeVerifier: strings.Repeat("z", 50),
+	})
+
+	requireMcpOAuthErrorCode(t, err, "invalid_grant")
+	require.Zero(t, resolveCalls)
+}
+
+func TestMcpOAuthLifecycleRefreshInvalidTokenDoesNotResolveCIMDClient(t *testing.T) {
+	setupMcpOAuthLifecycleTestDB(t)
+	resolveCalls := 0
+	clientID := "https://client.example/oauth/client"
+	lifecycle := testMcpOAuthLifecycleWithResolver(t, func(ctx context.Context, requestedClientID string) (McpOAuthClientMetadata, error) {
+		resolveCalls++
+		return McpOAuthClientMetadata{
+			ClientID:     requestedClientID,
+			ClientName:   "CIMD Client",
+			RedirectURIs: []string{"https://client.example/callback"},
+		}, nil
+	})
+
+	_, err := lifecycle.RefreshMcpOAuthAccessToken(McpOAuthRefreshRequest{
+		RefreshToken: "unknown-refresh-token",
+		ClientID:     clientID,
+		Resource:     McpOAuthResource,
+		Scope:        "tools:read",
+	})
+
+	requireMcpOAuthErrorCode(t, err, "invalid_grant")
+	require.Zero(t, resolveCalls)
+}
+
 func testMcpOAuthLifecycle(t *testing.T) *McpOAuthLifecycle {
+	t.Helper()
+	return testMcpOAuthLifecycleWithResolver(t, nil)
+}
+
+func testMcpOAuthLifecycleWithResolver(t *testing.T, resolveClient func(context.Context, string) (McpOAuthClientMetadata, error)) *McpOAuthLifecycle {
 	t.Helper()
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	privateKey := testMcpOAuthPrivateKey(t)
@@ -355,8 +410,9 @@ func testMcpOAuthLifecycle(t *testing.T) *McpOAuthLifecycle {
 	require.NoError(t, err)
 	counter := 0
 	lifecycle, err := NewMcpOAuthLifecycle(McpOAuthLifecycleConfig{
-		Signer: signer,
-		Clock:  func() time.Time { return now },
+		Signer:        signer,
+		Clock:         func() time.Time { return now },
+		ResolveClient: resolveClient,
 		RandomString: func(length int) (string, error) {
 			if length == 0 {
 				return "", errors.New("bad length")

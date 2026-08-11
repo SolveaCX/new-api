@@ -81,6 +81,7 @@ func McpOAuthToken(c *gin.Context) {
 	switch c.PostForm("grant_type") {
 	case "authorization_code":
 		token, err := lifecycle.ExchangeMcpOAuthAuthorizationCode(service.McpOAuthAuthorizationCodeExchangeRequest{
+			Context:      c.Request.Context(),
 			Code:         c.PostForm("code"),
 			ClientID:     c.PostForm("client_id"),
 			Resource:     c.PostForm("resource"),
@@ -94,6 +95,7 @@ func McpOAuthToken(c *gin.Context) {
 		c.JSON(http.StatusOK, token)
 	case "refresh_token":
 		token, err := lifecycle.RefreshMcpOAuthAccessToken(service.McpOAuthRefreshRequest{
+			Context:      c.Request.Context(),
 			RefreshToken: c.PostForm("refresh_token"),
 			ClientID:     c.PostForm("client_id"),
 			Resource:     c.PostForm("resource"),
