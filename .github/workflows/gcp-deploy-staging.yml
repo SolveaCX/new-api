@@ -291,6 +291,20 @@ jobs:
             jq '{issuer}' <<< "${metadata}" >&2
             exit 1
           fi
+          token_probe="$(mktemp)"
+          token_code="$(curl -sS --max-time 20 -o "${token_probe}" -w '%{http_code}' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode 'grant_type=refresh_token' \
+            --data-urlencode 'refresh_token=staging-resource-probe' \
+            --data-urlencode 'client_id=staging-resource-probe' \
+            --data-urlencode "resource=${STAGING_FLATKEY_MCP_RESOURCE}" \
+            "${url}/oauth/token" || true)"
+          token_error="$(jq -r '.error // empty' "${token_probe}" 2>/dev/null || true)"
+          if [[ "${token_code}" != "400" || "${token_error}" != "invalid_client" ]]; then
+            echo "Expected candidate OAuth token probe to pass resource validation and fail pre-auth as invalid_client; got HTTP ${token_code}, error ${token_error:-<empty>}" >&2
+            cat "${token_probe}" >&2
+            exit 1
+          fi
 
       - name: Promote the new revision to 100% traffic
         run: |
