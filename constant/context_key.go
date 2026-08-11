@@ -21,6 +21,7 @@ const (
 	ContextKeyTokenModelBlacklistEnabled ContextKey = "token_model_blacklist_enabled"
 	ContextKeyTokenModelBlacklist        ContextKey = "token_model_blacklist"
 	ContextKeyTokenCrossGroupRetry       ContextKey = "token_cross_group_retry"
+	ContextKeyOAuthGrantId               ContextKey = "oauth_grant_id"
 
 	/* channel related keys */
 	ContextKeyChannelId                    ContextKey = "channel_id"
