@@ -1,0 +1,16 @@
+FROM golang:1.26.1-alpine@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder
+
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/logs_slimming ./cmd/logs_slimming
+RUN go build -trimpath -ldflags="-s -w" -o /out/logs-slimming ./cmd/logs_slimming
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /out/logs-slimming /logs-slimming
+USER nonroot:nonroot
+ENTRYPOINT ["/logs-slimming"]
