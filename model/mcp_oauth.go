@@ -962,15 +962,6 @@ func ResolveMcpOAuthDataToolIdentity(claims McpOAuthDataToolClaims, now int64) (
 		if token.Status != common.TokenStatusEnabled {
 			return ErrMcpOAuthGrantUnavailable
 		}
-		if now > 0 && grant.LastUsedAt < now {
-			if err := tx.Model(&grant).Updates(map[string]any{
-				"last_used_at": now,
-				"updated_time": now,
-			}).Error; err != nil {
-				return err
-			}
-			grant.LastUsedAt = now
-		}
 		identity = McpOAuthDataToolIdentity{
 			UserID:        grant.UserID,
 			GrantPublicID: grant.PublicID,
@@ -985,6 +976,55 @@ func ResolveMcpOAuthDataToolIdentity(claims McpOAuthDataToolClaims, now int64) (
 		return nil, err
 	}
 	return &identity, nil
+}
+
+func MarkMcpOAuthDataToolGrantUsed(grantPublicID string, dedicatedTokenID int, now int64) error {
+	if strings.TrimSpace(grantPublicID) == "" || dedicatedTokenID <= 0 || now <= 0 {
+		return nil
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var grant McpOAuthGrant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("public_id = ?", grantPublicID).
+			First(&grant).Error; err != nil {
+			return err
+		}
+		if grant.Status == McpOAuthGrantStatusRevoked || grant.RevokedAt != 0 {
+			return ErrMcpOAuthGrantRevoked
+		}
+		if grant.Status != McpOAuthGrantStatusActive {
+			return ErrMcpOAuthGrantUnavailable
+		}
+		if grant.DedicatedTokenId == nil || *grant.DedicatedTokenId != dedicatedTokenID {
+			return ErrMcpOAuthGrantTokenLinkCorrupt
+		}
+		var token Token
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND source = ? AND oauth_grant_id = ?", dedicatedTokenID, TokenSourceMcpOAuth, grantPublicID).
+			First(&token).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMcpOAuthGrantTokenLinkCorrupt
+			}
+			return err
+		}
+		if token.Status != common.TokenStatusEnabled {
+			return ErrMcpOAuthGrantUnavailable
+		}
+		if grant.LastUsedAt >= now {
+			return nil
+		}
+		result := tx.Model(&grant).Updates(map[string]any{
+			"last_used_at": now,
+			"updated_time": now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrMcpOAuthGrantUnavailable
+		}
+		return nil
+	})
 }
 
 func revokeMcpOAuthGrantRefreshTokensInTx(tx *gorm.DB, grantPublicID string, now int64) error {

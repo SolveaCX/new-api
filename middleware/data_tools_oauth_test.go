@@ -15,6 +15,8 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
@@ -169,6 +171,17 @@ func performDataToolsAuthRequest(router http.Handler, method string, auth string
 	return recorder
 }
 
+func performDataToolsAuthRequestFromIP(router http.Handler, method string, auth string, remoteAddr string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, "/probe", nil)
+	request.RemoteAddr = remoteAddr
+	if auth != "" {
+		request.Header.Set("Authorization", auth)
+	}
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
 func TestDataToolAuthOAuthScopesAndBillingContext(t *testing.T) {
 	setupDataToolsAuthTestDB(t)
 	signer := setupDataToolsAuthSignerEnv(t)
@@ -223,10 +236,19 @@ func TestDataToolAuthOAuthFailsClosed(t *testing.T) {
 	})
 
 	t.Run("grant scope mismatch fails closed", func(t *testing.T) {
+		require.NoError(t, model.DB.Model(&model.McpOAuthGrant{}).Where("public_id = ?", grant.PublicID).Updates(map[string]any{
+			"status":       model.McpOAuthGrantStatusActive,
+			"revoked_at":   int64(0),
+			"last_used_at": int64(100),
+		}).Error)
+		require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", token.Id).Update("status", common.TokenStatusEnabled).Error)
 		executeJWT := signDataToolsOAuthJWT(t, signer, grant, []string{"tools:execute"})
 		router := dataToolsAuthProbeRouter(t, "tools:execute", false, nil)
 		response := performDataToolsAuthRequest(router, http.MethodPost, "Bearer "+executeJWT)
 		require.Equal(t, http.StatusUnauthorized, response.Code, response.Body.String())
+		var refreshed model.McpOAuthGrant
+		require.NoError(t, model.DB.First(&refreshed, "public_id = ?", grant.PublicID).Error)
+		require.Equal(t, int64(100), refreshed.LastUsedAt)
 	})
 
 	t.Run("missing signer env", func(t *testing.T) {
@@ -264,6 +286,55 @@ func TestDataToolAuthOAuthFailsClosed(t *testing.T) {
 		require.NoError(t, model.DB.First(&refreshed, "public_id = ?", grant.PublicID).Error)
 		require.Equal(t, int64(100), refreshed.LastUsedAt)
 	})
+
+	t.Run("disabled user does not update last used", func(t *testing.T) {
+		require.NoError(t, model.DB.Model(&model.McpOAuthGrant{}).Where("public_id = ?", grant.PublicID).Updates(map[string]any{
+			"status":       model.McpOAuthGrantStatusActive,
+			"revoked_at":   int64(0),
+			"last_used_at": int64(100),
+		}).Error)
+		require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", token.Id).Update("status", common.TokenStatusEnabled).Error)
+		require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("status", common.UserStatusDisabled).Error)
+		t.Cleanup(func() {
+			_ = model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("status", common.UserStatusEnabled).Error
+		})
+		router := dataToolsAuthProbeRouter(t, "tools:read", true, nil)
+		response := performDataToolsAuthRequest(router, http.MethodGet, "Bearer "+readJWT)
+		require.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+		var refreshed model.McpOAuthGrant
+		require.NoError(t, model.DB.First(&refreshed, "public_id = ?", grant.PublicID).Error)
+		require.Equal(t, int64(100), refreshed.LastUsedAt)
+	})
+
+	t.Run("group drift does not update last used", func(t *testing.T) {
+		originalUsableGroups := setting.UserUsableGroups2JSONString()
+		originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1}`))
+		t.Cleanup(func() {
+			_ = setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups)
+			_ = ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio)
+		})
+		require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Updates(map[string]any{
+			"status": common.UserStatusEnabled,
+			"group":  "default",
+		}).Error)
+		require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+			"status": common.TokenStatusEnabled,
+			"group":  "retired",
+		}).Error)
+		require.NoError(t, model.DB.Model(&model.McpOAuthGrant{}).Where("public_id = ?", grant.PublicID).Updates(map[string]any{
+			"status":       model.McpOAuthGrantStatusActive,
+			"revoked_at":   int64(0),
+			"last_used_at": int64(100),
+		}).Error)
+		router := dataToolsAuthProbeRouter(t, "tools:read", true, nil)
+		response := performDataToolsAuthRequest(router, http.MethodGet, "Bearer "+readJWT)
+		require.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
+		var refreshed model.McpOAuthGrant
+		require.NoError(t, model.DB.First(&refreshed, "public_id = ?", grant.PublicID).Error)
+		require.Equal(t, int64(100), refreshed.LastUsedAt)
+	})
 }
 
 func TestDataToolAuthPreservesAPIKeyAndSessionBehavior(t *testing.T) {
@@ -282,6 +353,16 @@ func TestDataToolAuthPreservesAPIKeyAndSessionBehavior(t *testing.T) {
 		})
 		response := performDataToolsAuthRequest(router, http.MethodPost, "Bearer sk-"+normalToken.Key)
 		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	})
+
+	t.Run("ordinary api key rejects client ip outside token allowlist", func(t *testing.T) {
+		allowIps := "203.0.113.0/24"
+		require.NoError(t, model.DB.Model(&model.Token{}).Where("id = ?", normalToken.Id).Update("allow_ips", allowIps).Error)
+		router := dataToolsAuthProbeRouter(t, "tools:execute", false, nil)
+
+		response := performDataToolsAuthRequestFromIP(router, http.MethodPost, "Bearer sk-"+normalToken.Key, "198.51.100.10:12345")
+
+		require.Equal(t, http.StatusForbidden, response.Code, response.Body.String())
 	})
 
 	t.Run("list and inspect allow dashboard session", func(t *testing.T) {
