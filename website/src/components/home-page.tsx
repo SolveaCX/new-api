@@ -659,19 +659,12 @@ function PriceComparisonSection(props: {
           <p className="max-w-2xl text-base leading-7 font-medium text-[#575762] sm:text-[17px] dark:text-white/68">{props.experience.priceDescription}</p>
         </div>
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
+        <div className="mt-10 max-w-xl">
           <div className="fk-card-motion rounded-[1.35rem] border-2 border-[#101014] bg-[#5852FF] p-6 text-white shadow-[6px_6px_0_#101014] dark:border-white/20 dark:shadow-[6px_6px_0_rgba(255,255,255,0.14)]">
-            <p className="font-mono text-xs font-bold uppercase text-white/64">{props.home.compare.badge}</p>
-            <div className="mt-4 text-5xl leading-none font-extrabold text-[#F9F871] sm:text-6xl">{props.home.compare.flatkey}</div>
+            <p className="font-mono text-xs font-bold uppercase text-white/64">{props.home.compare.spotlightBadge}</p>
+            <div className="mt-4 text-5xl leading-none font-extrabold text-[#F9F871] sm:text-6xl">{props.home.compare.spotlightValue}</div>
             <p className="mt-4 text-sm leading-6 font-medium text-white/78">{props.home.compare.save}</p>
           </div>
-          {props.home.compare.layers.map((layer, index) => (
-            <article key={layer} className="fk-card-motion rounded-[1.35rem] border-2 border-[#101014] bg-white/86 p-6 shadow-[6px_6px_0_#C8A8FF] dark:border-white/20 dark:bg-white/8 dark:shadow-[6px_6px_0_rgba(124,58,237,0.42)]">
-              <p className="font-mono text-xs font-bold uppercase text-[#7C3AED]">{index === 0 ? props.experience.officialPriceLabel : props.experience.flatkeyPriceLabel}</p>
-              <h3 className="mt-4 text-2xl leading-snug font-bold">{props.home.compare.title}</h3>
-              <p className="mt-4 text-sm leading-6 font-medium text-[#6A6A75] dark:text-white/58">{layer}</p>
-            </article>
-          ))}
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
