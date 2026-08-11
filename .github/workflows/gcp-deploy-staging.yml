@@ -139,6 +139,48 @@ jobs:
     runs-on: ubuntu-latest
     # 无 environment：staging 不挂人工审批（按方案决策点 2）
     steps:
+      - name: Validate staging MCP OAuth resource
+        run: |
+          set -euo pipefail
+          resource="${STAGING_FLATKEY_MCP_RESOURCE:-}"
+          trimmed="$(printf '%s' "${resource}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's:/*$::')"
+          if [[ -z "${trimmed}" ]]; then
+            echo "::error::STAGING_FLATKEY_MCP_RESOURCE is required for staging deploys."
+            exit 1
+          fi
+          if [[ "${trimmed}" == "https://mcp.flatkey.ai" ]]; then
+            echo "::error::STAGING_FLATKEY_MCP_RESOURCE must not equal the production MCP resource."
+            exit 1
+          fi
+          if [[ "${trimmed}" != "${resource}" ]]; then
+            echo "::error::STAGING_FLATKEY_MCP_RESOURCE must be stored normalized without surrounding whitespace or trailing slashes."
+            exit 1
+          fi
+          STAGING_FLATKEY_MCP_RESOURCE="${trimmed}" python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlparse, urlunparse
+
+          value = os.environ["STAGING_FLATKEY_MCP_RESOURCE"]
+          parsed = urlparse(value)
+          try:
+              parsed.port
+          except ValueError:
+              print("::error::STAGING_FLATKEY_MCP_RESOURCE must include a valid port when a port is configured.")
+              sys.exit(1)
+          if (
+              parsed.scheme != "https"
+              or not parsed.hostname
+              or "@" in parsed.netloc
+              or parsed.params
+              or parsed.query
+              or parsed.fragment
+              or urlunparse(parsed) != value
+          ):
+              print("::error::STAGING_FLATKEY_MCP_RESOURCE must be a normalized absolute HTTPS URL with host and no userinfo, query, or fragment.")
+              sys.exit(1)
+          PY
+
       - name: Auth to GCP via WIF
         uses: google-github-actions/auth@v2
         with:
@@ -228,14 +270,27 @@ jobs:
           new_rev="${{ steps.deploy.outputs.new_revision }}"
           url="${{ steps.deploy.outputs.candidate_url }}"
           echo "Probing candidate ${new_rev} at ${url}/api/status ..."
+          status_ok=false
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' "${url}/api/status" || true)
             echo "attempt $i -> $code"
-            if [[ "${code}" == "200" ]]; then exit 0; fi
+            if [[ "${code}" == "200" ]]; then
+              status_ok=true
+              break
+            fi
             sleep 5
           done
-          echo "Candidate health check failed; traffic was not promoted" >&2
-          exit 1
+          if [[ "${status_ok}" != "true" ]]; then
+            echo "Candidate health check failed; traffic was not promoted" >&2
+            exit 1
+          fi
+          metadata="$(curl -fsS "${url}/.well-known/oauth-authorization-server")"
+          issuer="$(jq -r '.issuer // empty' <<< "${metadata}")"
+          if [[ "${issuer}" != "${STAGING_APP_CONSOLE_ORIGIN}" ]]; then
+            echo "Expected OAuth issuer ${STAGING_APP_CONSOLE_ORIGIN}, got ${issuer}" >&2
+            jq '{issuer}' <<< "${metadata}" >&2
+            exit 1
+          fi
 
       - name: Promote the new revision to 100% traffic
         run: |
