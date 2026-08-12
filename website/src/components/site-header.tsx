@@ -18,21 +18,20 @@ const legacyNavLabelByLocale: Record<
     compute: string;
     enterprise: string;
     playground: string;
-    requestDemo: string;
     status: string;
     usecases: string;
   }
 > = withIdFallback({
-  en: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Request a Demo", status: "Status", usecases: "Use Cases" },
-  zh: { compute: "算力", enterprise: "企业版", playground: "Playground", requestDemo: "预约演示", status: "服务状态", usecases: "使用场景" },
-  es: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Solicitar demo", status: "Estado", usecases: "Casos de uso" },
-  fr: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Demander une demo", status: "Statut", usecases: "Cas d'usage" },
-  pt: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Solicitar demo", status: "Status", usecases: "Casos de uso" },
-  ru: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Запросить демо", status: "Статус", usecases: "Сценарии" },
-  ja: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "デモを依頼", status: "ステータス", usecases: "ユースケース" },
-  vi: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Yeu cau demo", status: "Trạng thái", usecases: "Use cases" },
-  de: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Demo anfragen", status: "Status", usecases: "Anwendungsfälle" },
-  id: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Minta demo", status: "Status", usecases: "Use case" },
+  en: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Status", usecases: "Use Cases" },
+  zh: { compute: "算力", enterprise: "企业版", playground: "Playground", status: "服务状态", usecases: "使用场景" },
+  es: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Estado", usecases: "Casos de uso" },
+  fr: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Statut", usecases: "Cas d'usage" },
+  pt: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Status", usecases: "Casos de uso" },
+  ru: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Статус", usecases: "Сценарии" },
+  ja: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "ステータス", usecases: "ユースケース" },
+  vi: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Trạng thái", usecases: "Use cases" },
+  de: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Status", usecases: "Anwendungsfälle" },
+  id: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", status: "Status", usecases: "Use case" },
 });
 
 const startFreeLabelByLocale: Record<Locale, string> = withIdFallback({
@@ -242,9 +241,8 @@ export function SiteHeader(props: Props) {
   );
   const topLevelItems = [
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
-    { href: "/pricing#enterprise", label: legacyLabels.enterprise, publicPath: true },
+    { href: "/contact", label: legacyLabels.enterprise },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
-    { href: "/contact", label: legacyLabels.requestDemo, publicPath: true },
   ];
 
   useEffect(() => {

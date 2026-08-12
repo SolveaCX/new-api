@@ -36,17 +36,17 @@ const navGroupLabels: Record<Locale, { menu: string; products: string; resources
   id: { products: "Produk", resources: "Sumber daya", menu: "Menu" },
 });
 
-const navActionLabels: Record<Locale, { enterprise: string; requestDemo: string }> = withIdFallback({
-  en: { enterprise: "Enterprise", requestDemo: "Request a Demo" },
-  zh: { enterprise: "企业版", requestDemo: "预约演示" },
-  es: { enterprise: "Enterprise", requestDemo: "Solicitar demo" },
-  fr: { enterprise: "Enterprise", requestDemo: "Demander une demo" },
-  pt: { enterprise: "Enterprise", requestDemo: "Solicitar demo" },
-  ru: { enterprise: "Enterprise", requestDemo: "Запросить демо" },
-  ja: { enterprise: "Enterprise", requestDemo: "デモを依頼" },
-  vi: { enterprise: "Enterprise", requestDemo: "Yeu cau demo" },
-  de: { enterprise: "Enterprise", requestDemo: "Demo anfragen" },
-  id: { enterprise: "Enterprise", requestDemo: "Minta demo" },
+const navActionLabels: Record<Locale, { enterprise: string }> = withIdFallback({
+  en: { enterprise: "Enterprise" },
+  zh: { enterprise: "企业版" },
+  es: { enterprise: "Enterprise" },
+  fr: { enterprise: "Enterprise" },
+  pt: { enterprise: "Enterprise" },
+  ru: { enterprise: "Enterprise" },
+  ja: { enterprise: "Enterprise" },
+  vi: { enterprise: "Enterprise" },
+  de: { enterprise: "Enterprise" },
+  id: { enterprise: "Enterprise" },
 });
 
 type NavLink = {
@@ -129,9 +129,8 @@ export function OnlineNav(props: { active?: ShellProps["active"]; contactAction?
   ];
   const topLevelLinks: NavLink[] = [
     { active: "cli", href: internalHref("/cli"), label: copy.nav.cli },
-    { href: internalHref("/pricing#enterprise"), label: actionLabels.enterprise },
+    { href: "/contact", label: actionLabels.enterprise },
     { active: "pricing", href: internalHref("/pricing"), label: copy.nav.pricing },
-    { href: internalHref("/contact"), label: actionLabels.requestDemo },
   ];
 
   return (
