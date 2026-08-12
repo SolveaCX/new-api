@@ -5,6 +5,8 @@
 upload
 *.exe
 *.db
+*.pyc
+__pycache__/
 build
 *.db-journal
 logs

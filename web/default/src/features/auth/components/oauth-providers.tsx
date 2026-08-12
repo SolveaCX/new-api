@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   IconDiscord,
@@ -27,10 +27,12 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useOAuthLogin } from '../hooks/use-oauth-login'
+import type { AutoOAuthProvider } from '../lib/auto-oauth'
 import type { SystemStatus } from '../types'
 
 type OAuthProvidersProps = {
   status: SystemStatus | null
+  autoStartProvider?: AutoOAuthProvider
   disabled?: boolean
   className?: string
   onWeChatLogin?: () => void
@@ -77,6 +79,7 @@ function GoogleLogoColored(props: { className?: string }) {
 
 export function OAuthProviders({
   status,
+  autoStartProvider,
   disabled = false,
   className,
   onWeChatLogin,
@@ -95,6 +98,7 @@ export function OAuthProviders({
     handleTelegramLogin,
     handleCustomOAuthLogin,
   } = useOAuthLogin(status)
+  const autoStartRef = useRef(false)
 
   const providerButtons: ProviderButton[] = []
 
@@ -179,8 +183,28 @@ export function OAuthProviders({
   // else keeps its original order; this only promotes google/github, hides nothing.
   const providerLeadPriority: Record<string, number> = { google: 0, github: 1 }
   providerButtons.sort(
-    (a, b) => (providerLeadPriority[a.key] ?? 50) - (providerLeadPriority[b.key] ?? 50),
+    (a, b) =>
+      (providerLeadPriority[a.key] ?? 50) - (providerLeadPriority[b.key] ?? 50)
   )
+
+  useEffect(() => {
+    if (autoStartRef.current || disabled || isLoading) return
+    if (
+      autoStartProvider === 'google' &&
+      status?.google_oauth &&
+      status.google_client_id
+    ) {
+      autoStartRef.current = true
+      void handleGoogleLogin()
+    }
+  }, [
+    autoStartProvider,
+    disabled,
+    handleGoogleLogin,
+    isLoading,
+    status?.google_client_id,
+    status?.google_oauth,
+  ])
 
   if (providerButtons.length === 0) return null
 

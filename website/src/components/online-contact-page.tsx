@@ -1,15 +1,14 @@
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
-import { OnlineFooter, OnlineNav } from "@/components/online-static-shell";
+import { OnlineStaticShell } from "@/components/online-static-shell";
 import type { Locale } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 
 export function OnlineContactPage(props: { locale: Locale }) {
   const copy = getOnlineStaticCopy(props.locale);
   return (
-    <>
+    <OnlineStaticShell locale={props.locale} pathname="/contact">
       <style>{`
         body{background:linear-gradient(180deg,#FFFFFF,#F7F5FD)}
-        .onlineNavGroup{display:inline-flex;align-items:center;gap:10px}.onlineNavDot{color:var(--ink3);font-weight:800}
         .contactPage{display:grid;grid-template-columns:1fr minmax(520px,.95fr);min-height:calc(100vh - 76px)}
         .left{padding:54px 64px 56px;display:flex;flex-direction:column;position:relative}
         .right{display:flex;align-items:flex-start;justify-content:center;padding:92px 56px 72px 24px}
@@ -21,7 +20,6 @@ export function OnlineContactPage(props: { locale: Locale }) {
         @media (max-width:900px){.contactPage{grid-template-columns:1fr}.right{padding-top:20px}.box{max-width:620px}.tallyFrame{height:540px}}
         @media (max-width:620px){.box{padding:24px 18px 20px;border-radius:14px}.box h2{font-size:25px;margin-bottom:14px}.tallyFrame{height:560px}}
       `}</style>
-      <OnlineNav contactAction={false} locale={props.locale} pathname="/contact" />
       <div className="contactPage">
         <div className="left">
           <div className="pxgrid" data-seed="89" data-cell="20" data-cols="7" data-rows="4" data-n="10" style={{ top: 8, right: 28, opacity: 0.8 }} />
@@ -50,7 +48,6 @@ export function OnlineContactPage(props: { locale: Locale }) {
           </div>
       </div>
       </div>
-      <OnlineFooter locale={props.locale} />
-    </>
+    </OnlineStaticShell>
   );
 }

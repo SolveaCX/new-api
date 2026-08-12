@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+import { useSiteConfig } from "@/components/site-config-provider";
 import { getCopy } from "@/lib/copy";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
@@ -196,6 +197,7 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
 }
 
 export function SiteFooter(props: SiteFooterProps) {
+  const { docsUrl } = useSiteConfig();
   const siteCopy = getCopy(props.locale);
   const copy = siteCopy.footer;
   const labels = footerLabels[props.locale] ?? footerLabels.en;
@@ -212,7 +214,9 @@ export function SiteFooter(props: SiteFooterProps) {
   ];
   const developerLinks: FooterLink[] = [
     { href: "/cli", label: "CLI" },
-    { href: "/docs", label: siteCopy.nav.docs },
+    ...(docsUrl
+      ? [{ href: docsUrl, label: siteCopy.nav.docs, external: true }]
+      : []),
     { href: "/status", label: labels.status },
     { href: "/llms.txt", label: "llms.txt" },
     { href: "/blog", label: `${siteCopy.nav.blog} ↗` },
@@ -234,7 +238,7 @@ export function SiteFooter(props: SiteFooterProps) {
   ];
 
   return (
-    <footer className="relative overflow-hidden border-t border-[#0B0B0F14] bg-[#F7F6FB] text-[#0B0B0F]">
+    <footer className="fk-site-footer relative overflow-hidden border-t border-[#0B0B0F14] bg-[#F7F6FB] text-[#0B0B0F]">
       <div className="mx-auto grid max-w-[1240px] grid-cols-1 gap-8 px-5 pt-12 pb-2 sm:grid-cols-2 md:px-10 md:pt-14 lg:grid-cols-[2fr_repeat(4,1fr)] lg:gap-10">
         <div className="sm:col-span-2 lg:col-span-1">
           <Link href={localizePath("/", props.locale)} className="inline-flex items-center">

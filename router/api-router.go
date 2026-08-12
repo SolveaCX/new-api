@@ -48,10 +48,10 @@ func SetApiRouter(router *gin.Engine) {
 			blogRoute.GET("/categories", controller.GetBlogCategories)
 		}
 		promptLibraryRoute := apiRouter.Group("/prompt-library")
-		promptLibraryRoute.Use(middleware.PromptLibraryImportAuth())
 		{
-			promptLibraryRoute.POST("/import", anonymousRequestBodyLimit, controller.ImportPromptLibrary)
+			promptLibraryRoute.POST("/import", middleware.PromptLibraryImportAuth(), anonymousRequestBodyLimit, controller.ImportPromptLibrary)
 		}
+		apiRouter.GET("/website/prompt-library", controller.GetWebsitePromptLibrary)
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
@@ -96,6 +96,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.POST("/oauth/wechat/bind", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.WeChatBind)
 		apiRouter.GET("/oauth/telegram/login", middleware.CriticalRateLimit(), controller.TelegramLogin)
 		apiRouter.GET("/oauth/telegram/bind", middleware.CriticalRateLimit(), controller.TelegramBind)
+		apiRouter.POST("/oauth/google/one-tap", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.HandleGoogleOneTap)
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)

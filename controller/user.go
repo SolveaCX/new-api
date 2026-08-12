@@ -164,8 +164,7 @@ func primaryAcceptLanguage(header string) string {
 	return first
 }
 
-// setup session & cookies and then return user info
-func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
+func setupLoginSession(user *model.User, c *gin.Context, isNewUser ...bool) (map[string]any, error) {
 	model.UpdateUserLastLoginAt(user.Id)
 	if ip := c.ClientIP(); ip != "" && ip != user.LastLoginIp {
 		model.UpdateUserLastLoginIp(user.Id, ip)
@@ -181,8 +180,7 @@ func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
 	session.Set("group", user.Group)
 	err := session.Save()
 	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
-		return
+		return nil, err
 	}
 	data := map[string]any{
 		"id":            user.Id,
@@ -198,6 +196,16 @@ func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
 	// normal logins (back-compat).
 	if len(isNewUser) > 0 && isNewUser[0] {
 		data["is_new_user"] = true
+	}
+	return data, nil
+}
+
+// setup session & cookies and then return user info
+func setupLogin(user *model.User, c *gin.Context, isNewUser ...bool) {
+	data, err := setupLoginSession(user, c, isNewUser...)
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",

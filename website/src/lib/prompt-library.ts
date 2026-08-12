@@ -1,4 +1,5 @@
 import { type Locale, withIdFallback } from "./locales";
+import generatedPromptItemsData from "./generated-prompt-items.json";
 
 export type PromptArtifact =
   | {
@@ -29,7 +30,7 @@ export type PromptArtifact =
 
 export type PromptSource = {
   label: string;
-  platform: "GitHub" | "Social" | "Official docs" | "Flatkey generated" | "Local migration" | "External";
+  platform: "GitHub" | "Hugging Face" | "Social" | "Official docs" | "Flatkey generated" | "Local migration" | "External";
   url: string;
   capturedAt: string;
 };
@@ -63,17 +64,16 @@ export type PromptLibraryCopy = {
   heroBadge: string;
   heroBody: string;
   heroTitle: string;
-  latestLabel: string;
   metaDescription: string;
   metaTitle: string;
   promptLabel: string;
   sourceLabel: string;
-  updateNote: string;
 };
 
 const today = new Date().toISOString().slice(0, 10);
 const flatkeyGithubBase = "https://github.com/flatkey-ai";
 const solveaSourceUrl = "https://mkt-video-proxy-528088078482.us-central1.run.app/characters";
+const diffusionDbSourceUrl = "https://huggingface.co/datasets/anothy1/image-gen-instruct-360K";
 
 function promptText(en: string, zh: string): Record<Locale, string> {
   return withIdFallback({
@@ -188,6 +188,173 @@ function githubImagePromptItem(props: {
   };
 }
 
+function diffusionDbSource(): PromptSource {
+  return {
+    capturedAt: today,
+    label: "DiffusionDB image-gen-instruct-360K",
+    platform: "Hugging Face",
+    url: diffusionDbSourceUrl,
+  };
+}
+
+function diffusionDbImagePromptItem(props: {
+  alt: string;
+  imageId: number;
+  imageNsfw: number;
+  outputEn: string;
+  outputRatio: PromptItem["output"]["ratio"];
+  outputZh: string;
+  prompt: string;
+  promptNsfw: number;
+  row: number;
+  slug: string;
+  summaryEn: string;
+  summaryZh: string;
+  tags: string[];
+  titleEn: string;
+  titleZh: string;
+  url: string;
+}): PromptItem {
+  const nsfwTag = `nsfw<=${Math.max(props.imageNsfw, props.promptNsfw).toFixed(2)}`;
+
+  return {
+    artifact: {
+      alt: props.alt,
+      kind: "image",
+      url: props.url,
+    },
+    category: "image",
+    model: "stable-diffusion",
+    output: outputLabel(props.outputEn, props.outputZh, props.outputRatio),
+    prompt: props.prompt,
+    slug: props.slug,
+    source: diffusionDbSource(),
+    summary: promptText(
+      `${props.summaryEn} Source row ${props.row}, image id ${props.imageId}; image and prompt NSFW scores are below 0.15.`,
+      `${props.summaryZh} 来源 row ${props.row}，image id ${props.imageId}；图片与提示词 NSFW 分数均低于 0.15。`,
+    ),
+    tags: ["free", "diffusiondb", "hugging-face", nsfwTag, ...props.tags, "image"],
+    title: promptText(props.titleEn, props.titleZh),
+    updatedAt: today,
+  };
+}
+
+function sourceSignal(props: {
+  label: string;
+  platform: PromptSource["platform"];
+  url: string;
+}): PromptSource {
+  return {
+    capturedAt: today,
+    label: props.label,
+    platform: props.platform,
+    url: props.url,
+  };
+}
+
+function textPromptItem(props: {
+  artifactBody: string;
+  artifactTitle: string;
+  category?: PromptItem["category"];
+  model: string;
+  outputEn: string;
+  outputZh: string;
+  prompt: string;
+  slug: string;
+  source: PromptSource;
+  summaryEn: string;
+  summaryZh: string;
+  tags: string[];
+  titleEn: string;
+  titleZh: string;
+}): PromptItem {
+  const category = props.category ?? "text";
+  return {
+    artifact: {
+      body: props.artifactBody,
+      kind: "text",
+      title: props.artifactTitle,
+    },
+    category,
+    model: props.model,
+    output: outputLabel(props.outputEn, props.outputZh, "1:1"),
+    prompt: props.prompt,
+    slug: props.slug,
+    source: props.source,
+    summary: promptText(props.summaryEn, props.summaryZh),
+    tags: [...props.tags, category],
+    title: promptText(props.titleEn, props.titleZh),
+    updatedAt: today,
+  };
+}
+
+function codePromptItem(props: {
+  code: string;
+  language: string;
+  model: string;
+  outputEn: string;
+  outputZh: string;
+  prompt: string;
+  slug: string;
+  source: PromptSource;
+  summaryEn: string;
+  summaryZh: string;
+  tags: string[];
+  titleEn: string;
+  titleZh: string;
+}): PromptItem {
+  return {
+    artifact: {
+      code: props.code,
+      kind: "code",
+      language: props.language,
+    },
+    category: "agent",
+    model: props.model,
+    output: outputLabel(props.outputEn, props.outputZh, "1:1"),
+    prompt: props.prompt,
+    slug: props.slug,
+    source: props.source,
+    summary: promptText(props.summaryEn, props.summaryZh),
+    tags: [...props.tags, "agent"],
+    title: promptText(props.titleEn, props.titleZh),
+    updatedAt: today,
+  };
+}
+
+function storyboardPromptItem(props: {
+  frames: string[];
+  model: string;
+  outputEn: string;
+  outputRatio: PromptItem["output"]["ratio"];
+  outputZh: string;
+  prompt: string;
+  slug: string;
+  source: PromptSource;
+  summaryEn: string;
+  summaryZh: string;
+  tags: string[];
+  titleEn: string;
+  titleZh: string;
+}): PromptItem {
+  return {
+    artifact: {
+      frames: props.frames,
+      kind: "storyboard",
+    },
+    category: "video",
+    model: props.model,
+    output: outputLabel(props.outputEn, props.outputZh, props.outputRatio),
+    prompt: props.prompt,
+    slug: props.slug,
+    source: props.source,
+    summary: promptText(props.summaryEn, props.summaryZh),
+    tags: [...props.tags, "video", "storyboard"],
+    title: promptText(props.titleEn, props.titleZh),
+    updatedAt: today,
+  };
+}
+
 export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallback({
   en: {
     artifactLabel: "Produced artifact",
@@ -198,17 +365,15 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     detailSource: "Source and provenance",
     detailUseWith: "Use with",
     empty: "No prompts matched this source.",
-    heroBadge: "Daily sourced prompt library",
+    heroBadge: "Prompt library",
     heroBody:
-      "Prompts are stored in Flatkey's prompt database after source review. Every entry includes a source link and a produced artifact.",
+      "Prompts are stored in Flatkey's prompt database alongside the artifact they produced. The playground surfaces strong image, video, text, and agent examples with local assets and direct actions.",
     heroTitle: "Prompts that already shipped an output.",
-    latestLabel: "Latest source signals",
     metaDescription:
       "A daily refreshed prompt library for Flatkey users. Browse image, video, audio, text and agent prompts with source provenance and produced artifacts.",
     metaTitle: "Flatkey Prompts — daily sourced AI prompt library",
     promptLabel: "Prompt",
     sourceLabel: "Source",
-    updateNote: "GitHub and public source feeds refresh daily; local production assets are migrated as verified pairs.",
   },
   zh: {
     artifactLabel: "对应产物",
@@ -219,17 +384,15 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     detailSource: "来源与出处",
     detailUseWith: "适用模型",
     empty: "没有匹配这个来源的提示词。",
-    heroBadge: "每日抓取的提示词库",
+    heroBadge: "提示词库",
     heroBody:
-      "提示词经过来源校验后存入 Flatkey 数据库。每条都标明来处，并展示对应产物。",
+      "提示词和对应产物一起存入 Flatkey 数据库。这里优先展示图像、视频、文本和 Agent 的高质量示例，并保持本地图片可用。",
     heroTitle: "不只给提示词，也给已经产出的结果。",
-    latestLabel: "最新来源信号",
     metaDescription:
       "Flatkey 用户可用的每日更新提示词库，覆盖图像、视频、音频、文本和 Agent 提示词，每条都有来源和产物。",
     metaTitle: "Flatkey Prompts — 每日更新 AI 提示词库",
     promptLabel: "提示词",
     sourceLabel: "来源",
-    updateNote: "GitHub 和公开来源每日刷新；本地生产素材按已验证配对迁移。",
   },
   es: {
     artifactLabel: "Resultado producido",
@@ -244,13 +407,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Recolectamos primero proyectos de Flatkey en GitHub y después fuentes públicas de prompt engineering. Cada entrada incluye fuente y resultado.",
     heroTitle: "Prompts que ya tienen un resultado.",
-    latestLabel: "Señales recientes",
     metaDescription:
       "Biblioteca diaria de prompts para usuarios de Flatkey, con fuentes y resultados para imagen, video, audio, texto y agentes.",
     metaTitle: "Flatkey Prompts — biblioteca diaria de prompts IA",
     promptLabel: "Prompt",
     sourceLabel: "Fuente",
-    updateNote: "Se actualiza cada 24 horas desde GitHub y fuentes públicas.",
   },
   fr: {
     artifactLabel: "Résultat produit",
@@ -265,13 +426,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Nous collectons d'abord les projets Flatkey sur GitHub, puis des sources publiques de prompt engineering. Chaque entrée affiche sa source et son résultat.",
     heroTitle: "Des prompts avec leur résultat produit.",
-    latestLabel: "Sources récentes",
     metaDescription:
       "Bibliothèque de prompts actualisée chaque jour pour Flatkey, avec provenance et résultats pour image, vidéo, audio, texte et agents.",
     metaTitle: "Flatkey Prompts — bibliothèque quotidienne de prompts IA",
     promptLabel: "Prompt",
     sourceLabel: "Source",
-    updateNote: "Actualisé toutes les 24 heures depuis GitHub et des sources publiques.",
   },
   pt: {
     artifactLabel: "Resultado produzido",
@@ -286,13 +445,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Coletamos primeiro projetos Flatkey no GitHub e depois fontes públicas de engenharia de prompts. Cada item inclui fonte e resultado.",
     heroTitle: "Prompts que já têm resultado.",
-    latestLabel: "Sinais recentes",
     metaDescription:
       "Biblioteca diária de prompts para usuários Flatkey, com fontes e resultados para imagem, vídeo, áudio, texto e agentes.",
     metaTitle: "Flatkey Prompts — biblioteca diária de prompts de IA",
     promptLabel: "Prompt",
     sourceLabel: "Fonte",
-    updateNote: "Atualizado a cada 24 horas via GitHub e fontes públicas.",
   },
   ru: {
     artifactLabel: "Готовый результат",
@@ -307,13 +464,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Сначала собираем материалы из проектов Flatkey на GitHub, затем из публичных источников prompt engineering. У каждой записи есть источник и результат.",
     heroTitle: "Prompts с уже готовым результатом.",
-    latestLabel: "Последние источники",
     metaDescription:
       "Ежедневно обновляемая библиотека prompts для Flatkey: изображения, видео, аудио, текст и агенты с источниками и результатами.",
     metaTitle: "Flatkey Prompts — ежедневная библиотека AI prompts",
     promptLabel: "Prompt",
     sourceLabel: "Источник",
-    updateNote: "Обновляется каждые 24 часа из GitHub и публичных источников.",
   },
   ja: {
     artifactLabel: "生成済み成果物",
@@ -328,13 +483,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Flatkey の GitHub プロジェクトを優先して収集し、公開プロンプトエンジニアリング情報も追加します。各項目に出典と成果物を表示します。",
     heroTitle: "成果物まで確認できるプロンプト。",
-    latestLabel: "最新ソース",
     metaDescription:
       "Flatkey ユーザー向けの毎日更新プロンプト集。画像、動画、音声、テキスト、Agent の出典と成果物を掲載。",
     metaTitle: "Flatkey Prompts — 毎日更新 AI プロンプト集",
     promptLabel: "プロンプト",
     sourceLabel: "出典",
-    updateNote: "GitHub と公開ソースから 24 時間ごとに更新します。",
   },
   vi: {
     artifactLabel: "Sản phẩm đầu ra",
@@ -349,13 +502,11 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Chúng tôi lấy trước từ các dự án Flatkey trên GitHub, rồi bổ sung nguồn prompt engineering công khai. Mỗi mục có nguồn và sản phẩm đầu ra.",
     heroTitle: "Prompt có sẵn kết quả đầu ra.",
-    latestLabel: "Nguồn mới nhất",
     metaDescription:
       "Thư viện prompt cập nhật hằng ngày cho Flatkey, có nguồn và kết quả cho hình ảnh, video, âm thanh, văn bản và agent.",
     metaTitle: "Flatkey Prompts — thư viện prompt AI hằng ngày",
     promptLabel: "Prompt",
     sourceLabel: "Nguồn",
-    updateNote: "Làm mới mỗi 24 giờ từ GitHub và nguồn công khai.",
   },
   de: {
     artifactLabel: "Erzeugtes Ergebnis",
@@ -370,17 +521,167 @@ export const promptLibraryCopy: Record<Locale, PromptLibraryCopy> = withIdFallba
     heroBody:
       "Wir sammeln zuerst aus Flatkey-GitHub-Projekten und ergänzen öffentliche Prompt-Engineering-Quellen. Jeder Eintrag zeigt Quelle und Ergebnis.",
     heroTitle: "Prompts mit fertigem Ergebnis.",
-    latestLabel: "Aktuelle Quellen",
     metaDescription:
       "Täglich aktualisierte Prompt-Bibliothek für Flatkey mit Quellen und Ergebnissen für Bild, Video, Audio, Text und Agenten.",
     metaTitle: "Flatkey Prompts — tägliche KI-Prompt-Bibliothek",
     promptLabel: "Prompt",
     sourceLabel: "Quelle",
-    updateNote: "Alle 24 Stunden aus GitHub und öffentlichen Quellen aktualisiert.",
   },
 });
 
 export const staticPromptItems: PromptItem[] = [
+  diffusionDbImagePromptItem({
+    alt: "Silhouette photographer with colored studio bokeh",
+    imageId: 45,
+    imageNsfw: 0.0983564555644989,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create a silhouette illustration of a photographer taking a picture with a close-up telephoto lens. Use blue and red studio lighting, soft bokeh, a subtle vignette, and bluish darks.",
+    promptNsfw: 0.0009590951376594603,
+    row: 23,
+    slug: "diffusiondb-silhouette-photographer",
+    summaryEn: "A public DiffusionDB derivative prompt-output pair localized into the Flatkey prompt library.",
+    summaryZh: "从公开 DiffusionDB 派生数据集中筛出的提示词-图片产物配对，并本地化到 Flatkey 提示词库。",
+    tags: ["photography", "lighting", "studio"],
+    titleEn: "Silhouette photographer lighting study",
+    titleZh: "摄影剪影灯光练习",
+    url: "/assets/prompts/diffusiondb/silhouette-photographer.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Luminescent fantasy tree with glowing canopy",
+    imageId: 46,
+    imageNsfw: 0.09993492066860199,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create an ethereal fantasy tree called the Tree of Luminescence. Make the trunk intricate, the canopy glowing, and the surrounding grove misty, detailed, and luminous.",
+    promptNsfw: 0.0002848550211638212,
+    row: 24,
+    slug: "diffusiondb-luminescent-fantasy-tree",
+    summaryEn: "A CC0 DiffusionDB image pair with a normalized visual prompt and a locally hosted output image.",
+    summaryZh: "CC0 DiffusionDB 图片配对，已整理提示词并将产物图片转为本地托管。",
+    tags: ["fantasy", "environment", "glow"],
+    titleEn: "Luminescent fantasy tree",
+    titleZh: "发光幻想树",
+    url: "/assets/prompts/diffusiondb/luminescent-fantasy-tree.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Wooden chain swing in a quiet forest clearing",
+    imageId: 146,
+    imageNsfw: 0.05225906893610954,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Illustrate a rugged wooden swing supported by two chain sets in a quiet forest clearing. Keep the object centered, with natural daylight, realistic wood grain, and a simple background.",
+    promptNsfw: 0.01392119936645031,
+    row: 100,
+    slug: "diffusiondb-wooden-chain-swing",
+    summaryEn: "A simple object-and-environment prompt from the filtered image-gen-instruct subset.",
+    summaryZh: "来自过滤后 image-gen-instruct 子集的物体与环境类提示词。",
+    tags: ["object", "outdoor", "reference"],
+    titleEn: "Wooden chain swing",
+    titleZh: "木质链条秋千",
+    url: "/assets/prompts/diffusiondb/wooden-chain-swing.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Black red and green aurora over a mountain lake",
+    imageId: 728,
+    imageNsfw: 0.08734456449747086,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create a dramatic aurora borealis landscape using a black, white, red, and green color scheme. Add mountain silhouettes, water reflection, and a clean square composition.",
+    promptNsfw: 0.00725916214287281,
+    row: 500,
+    slug: "diffusiondb-black-red-aurora",
+    summaryEn: "A public landscape prompt-output pair selected for clear composition and safe NSFW scores.",
+    summaryZh: "筛选自公开风景类提示词-产物配对，构图清晰且 NSFW 分数安全。",
+    tags: ["landscape", "color", "nature"],
+    titleEn: "Black-red aurora landscape",
+    titleZh: "黑红极光风景",
+    url: "/assets/prompts/diffusiondb/black-red-aurora.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Domed building in Vienna under clear blue sky",
+    imageId: 732,
+    imageNsfw: 0.09363918751478195,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create a daylight architectural photograph of a domed building in Vienna. Use a clean blue sky, crisp facade detail, and a centered travel-photography composition.",
+    promptNsfw: 0.0019991325680166483,
+    row: 503,
+    slug: "diffusiondb-vienna-domed-building",
+    summaryEn: "A public architectural image pair normalized into a reusable travel and location prompt.",
+    summaryZh: "公开建筑图片配对，已整理成可复用的旅行与地点类提示词。",
+    tags: ["architecture", "travel", "photo"],
+    titleEn: "Vienna domed building photo",
+    titleZh: "维也纳穹顶建筑照片",
+    url: "/assets/prompts/diffusiondb/vienna-domed-building.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Tall fantasy tower in a lush valley with a river",
+    imageId: 333332,
+    imageNsfw: 0.06427015364170074,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create a photorealistic fantasy tower in a lush valley with a river flowing through it. Use misty mountains, dense greenery, and a high vantage point.",
+    promptNsfw: 0.00040953917778097093,
+    row: 20000,
+    slug: "diffusiondb-fantasy-tower-valley",
+    summaryEn: "A filtered DiffusionDB environment prompt paired with a locally hosted generated image.",
+    summaryZh: "过滤后的 DiffusionDB 环境类提示词，并配有本地托管生成图。",
+    tags: ["environment", "fantasy", "landscape"],
+    titleEn: "Fantasy tower valley",
+    titleZh: "幻想高塔山谷",
+    url: "/assets/prompts/diffusiondb/wizard-tower-valley.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Orchard street art scene with small house and blooming trees",
+    imageId: 174228,
+    imageNsfw: 0.05742084980010986,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create a street-art inspired farm scene with a small house, a tidy orchard, blooming trees, and soft surreal lighting. Keep the composition calm and graphic.",
+    promptNsfw: 0.0024766039568930864,
+    row: 40004,
+    slug: "diffusiondb-orchard-street-art",
+    summaryEn: "A public scene prompt-output pair rewritten to remove named-style dependencies while keeping the visual intent.",
+    summaryZh: "公开场景提示词-产物配对，已去掉命名风格依赖并保留视觉意图。",
+    tags: ["street-art", "scene", "farm"],
+    titleEn: "Orchard street-art scene",
+    titleZh: "果园街头艺术场景",
+    url: "/assets/prompts/diffusiondb/orchard-street-art.jpg",
+  }),
+  diffusionDbImagePromptItem({
+    alt: "Private archive room in a vinyl record store",
+    imageId: 47198,
+    imageNsfw: 0.032407861202955246,
+    outputEn: "1:1 generated image",
+    outputRatio: "1:1",
+    outputZh: "1:1 生成图",
+    prompt:
+      "Create an illustration of a private archive room inside a vinyl record store, packed with shelves of valuable records. Make it nostalgic, textured, and warmly lit.",
+    promptNsfw: 0.0018022130243480206,
+    row: 240007,
+    slug: "diffusiondb-vinyl-record-room",
+    summaryEn: "A safe public image pair selected for interior-detail prompting and visible artifact quality.",
+    summaryZh: "安全公开图片配对，适合作为室内细节提示词样例，且产物质量可见。",
+    tags: ["interior", "archive", "retail"],
+    titleEn: "Vinyl record archive room",
+    titleZh: "黑胶唱片档案室",
+    url: "/assets/prompts/diffusiondb/vinyl-record-room.jpg",
+  }),
   {
     artifact: {
       alt: "D-17 delivery robot identity sheet",
@@ -515,7 +816,7 @@ export const staticPromptItems: PromptItem[] = [
     artifact: {
       alt: "Commercial image prompt result from the Flatkey Image Buddy gallery",
       kind: "image",
-      url: "/assets/cli/campaign-hero.png",
+      url: "/assets/cli/product-reveal.png",
     },
     category: "image",
     model: "gpt-image-2",
@@ -770,7 +1071,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "1:1",
     outputZh: "1:1 电商主图",
     prompt:
-      "生成 {{产品}} 的电商平台主图，纯白背景，正面 3/4 角度，产品占画面 82%-88%。准确表现 {{材质}} 材质、边缘结构和真实比例。若包含 {{关键配件}}，将配件整齐放在产品右下角，主产品仍是绝对视觉中心。光线均匀，软阴影极淡，高清商业摄影，无场景道具、无人物、无文字、无边框、无水印。输出 1:1 方图，适合 Amazon / Shopify / TikTok Shop 列表页。",
+      "Create a marketplace main image for {{product}} on a pure white background with a front three-quarter angle and the product filling 82%-88% of the frame. Accurately show {{material}}, edge structure, and true proportions. If {{accessories}} are included, place them neatly at the lower right while the main product remains the visual center. Use even lighting, very soft shadows, clean commercial photography, no scene props, no people, no text, no border, and no watermark. Output a 1:1 square image suitable for Amazon, Shopify, and TikTok Shop listings.",
     slug: "awesome-images-marketplace-main-image",
     summaryEn: "GitHub Image Buddy ecommerce template paired with its skincare main-image demo output.",
     summaryZh: "GitHub Image Buddy 电商主图模板，配有护肤品主图 demo 产物。",
@@ -785,7 +1086,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "9:16",
     outputZh: "9:16 UGC 广告首帧",
     prompt:
-      "生成一张 9:16 竖版 UGC 广告封面帧。画面中 {{目标人群}} 在 {{场景}} 中自然使用 {{产品}}，表情显示刚解决 {{痛点}} 后的轻松感。构图像手机实拍但画质专业，手部动作真实，产品清晰可见，环境有生活细节。顶部留出 18% 安全文案区域，不直接生成文字。色彩明亮但不过度滤镜，真实皮肤质感，轻微景深，适合 TikTok / Reels 首帧。禁止塑料感、过度磨皮、乱码文字和多余品牌 logo。",
+      "Create a 9:16 UGC ad cover frame. Show {{audience}} naturally using {{product}} in {{scene}}, with the relaxed expression that comes after solving {{pain point}}. Frame it like a phone-shot clip, but keep the image professionally sharp, with realistic hand motion, a clearly visible product, and small lifestyle details in the environment. Leave 18% of the top area open for copy space without generating any text. Keep the colors bright without heavy filters, preserve natural skin texture, add slight depth of field, and make it suitable for TikTok and Reels first frames. Avoid plastic surfaces, over-smoothing, garbled text, and extra brand logos.",
     slug: "awesome-images-ugc-ad-still",
     summaryEn: "GitHub UGC ad cover-frame prompt paired with the coffee ad still artifact.",
     summaryZh: "GitHub UGC 广告封面帧提示词，配有咖啡广告首帧产物。",
@@ -800,7 +1101,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "16:9",
     outputZh: "16:9 Bento 信息图",
     prompt:
-      "创建 {{主题}} 的 16:9 横版 Bento 信息图，语言使用 {{语言}}。整体风格为高级液态玻璃界面，背景使用 {{主色}} 的柔和抽象纹理并强模糊，前景 8 个模块采用半透明玻璃卡片、细边框和真实阴影。M1 展示主题主视觉，M2 核心优势 4 点，M3 使用步骤 4 步，M4 展示 {{数据点}} 等关键数据，M5 适合人群，M6 注意事项，M7 速查信息，M8 冷知识。文本必须清晰、排版规整、不要乱码。图标统一线性风格，留白充足，适合网页文章封面和产品教育页。",
+      "Create a 16:9 bento infographic for {{topic}} in {{language}}. Use a premium liquid-glass interface style with a softly blurred abstract background in {{primary color}}. Build 8 foreground modules with translucent glass cards, thin borders, and realistic shadows. M1 should present the main visual, M2 the four core benefits, M3 the four-step workflow, M4 key data such as {{data point}}, M5 the target audience, M6 important notes, M7 quick reference info, and M8 a small surprise fact. Keep all text crisp and well organized, with no garbled characters. Use a consistent line-icon style and generous whitespace. Make it suitable for article covers and product education pages.",
     slug: "awesome-images-liquid-bento-infographic",
     summaryEn: "GitHub bento infographic template paired with a generated liquid-glass demo.",
     summaryZh: "GitHub Bento 信息图模板，配有液态玻璃 demo 产物。",
@@ -815,7 +1116,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "1:1",
     outputZh: "1:1 头像",
     prompt:
-      "为 {{角色}} 生成 1:1 高级头像。角色职业是 {{职业}}，视觉风格为 {{风格}}。面部自然、眼神清晰、肩颈比例真实，背景加入少量 {{背景元素}} 作为身份线索。构图为胸像，头部居中，背景不过度复杂。灯光柔和，有清晰轮廓光，适合作为产品社区、客服、创作者账号头像。输出高分辨率，避免夸张表情、畸形五官、文字、水印和多余装饰。",
+      "Create a premium 1:1 avatar for {{character}}. Their role is {{profession}} and the visual style is {{style}}. Keep the face natural, the gaze clear, and the shoulders proportionate. Add a small amount of {{background element}} as an identity cue. Use a bust composition with the head centered and a background that stays simple. Light it softly with a clean rim light so it works as an avatar for product communities, support accounts, and creator profiles. Render at high resolution and avoid exaggerated expressions, distorted facial features, text, watermarks, or extra decoration.",
     slug: "awesome-images-consistent-avatar",
     summaryEn: "GitHub avatar template paired with a finished cyber portrait demo image.",
     summaryZh: "GitHub 头像模板，配有完成的 cyber portrait demo 图。",
@@ -830,7 +1131,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "9:16",
     outputZh: "9:16 App 截图海报",
     prompt:
-      "为 {{App 名称}} 生成 9:16 App Store 截图海报。核心功能是 {{核心功能}}，界面类型是 {{界面类型}}。画面放置一台真实手机，屏幕展示清晰可信的产品 UI：顶部导航、关键数据区域、主操作按钮和列表/卡片内容。背景使用 {{品牌色}} 的干净渐变和轻量产品符号，手机周围保留标题与卖点文案空间，但不要直接生成长段文字。UI 必须像真实产品，不要乱码、不要不可读的小字、不要浮夸 3D 卡片。",
+      "Create a 9:16 App Store screenshot poster for {{app name}}. The core feature is {{core feature}} and the interface type is {{interface type}}. Place a realistic phone in the scene and show a credible product UI on the screen: top navigation, key data areas, primary action buttons, and list or card content. Use a clean gradient in {{brand color}} with lightweight product symbols in the background, and leave room around the phone for title and benefit copy without generating long text. The UI must feel like a real product, with no garbled text, no unreadably small copy, and no overdone 3D cards.",
     slug: "awesome-images-app-store-screenshot",
     summaryEn: "GitHub mobile app screenshot template paired with a finished fitness app demo.",
     summaryZh: "GitHub 移动应用截图模板，配有健身 App demo 产物。",
@@ -845,7 +1146,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "4:3",
     outputZh: "活动主视觉",
     prompt:
-      "为 {{活动主题}} 生成 3:4 活动海报主视觉。目标用户是 {{目标用户}}，核心视觉隐喻是 {{视觉隐喻}}。整体氛围为 {{氛围}}，画面有明确主物体、前景层次和背景空间。顶部保留标题区，中部放主视觉，底部保留时间/嘉宾/报名信息区，但不要直接生成具体文字。风格现代、商业、可用于公众号封面和线下易拉宝。光影有戏剧性但不脏，禁止乱码文字、水印、二维码。",
+      "Create a 3:4 key visual for {{event theme}}. The target audience is {{target audience}} and the visual metaphor is {{visual metaphor}}. Build the scene with a clear main object, strong foreground layering, and usable background space. Leave the top area open for the title, place the main visual in the middle, and reserve the bottom for date, speaker, and registration information without generating literal copy. Keep the style modern and commercial, suitable for official account covers and offline rollups. Use dramatic but clean lighting and avoid garbled text, watermarks, and QR codes.",
     slug: "awesome-images-event-poster-key-visual",
     summaryEn: "GitHub event-poster prompt paired with the AI agent poster demo artifact.",
     summaryZh: "GitHub 活动海报提示词，配有 AI Agent 海报 demo 产物。",
@@ -860,7 +1161,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "4:3",
     outputZh: "4:3 游戏道具设定",
     prompt:
-      "生成 {{道具类型}} 的游戏道具设定图，世界观是 {{世界观}}，材质以 {{材质}} 为主，稀有度表现为 {{稀有度}}。画面包含 6 个变体，排列在干净设定稿画布上，每个道具角度一致、轮廓清晰、可被单独裁切。底部可有极短标签区但不要生成不可读小字。风格统一，光源一致，细节适合 3D 建模或 2D sprite 后续制作。禁止重复粘连、透视混乱、背景过重和水印。",
+      "Create a game prop concept sheet for {{prop type}}. The world setting is {{world}}, the main material is {{material}}, and the rarity level is {{rarity}}. Include 6 variants arranged on a clean design-sheet canvas, with consistent angles, clear silhouettes, and separate cutout potential for each prop. You may include a very short label area at the bottom, but do not generate unreadably small text. Keep the style unified, the lighting consistent, and the details suitable for later 3D modeling or 2D sprite production. Avoid merged duplicates, broken perspective, heavy backgrounds, and watermarks.",
     slug: "awesome-images-game-prop-sheet",
     summaryEn: "GitHub game prop template paired with a crystal prop concept output.",
     summaryZh: "GitHub 游戏道具模板，配有水晶道具概念图产物。",
@@ -875,7 +1176,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "4:3",
     outputZh: "服装 Lookbook",
     prompt:
-      "生成 {{服装单品}} 的 4:5 高级 Lookbook 拼贴海报。模特气质为 {{模特气质}}，场景是 {{场景}}，品牌灵感接近 {{品牌灵感}}。同一位模特出现 3 个姿势：全身、半身、细节特写，层叠排版但不拥挤。服装材质、版型、褶皱、配饰清晰可见，背景有编辑杂志感。预留少量文案空间但不要生成具体文字。禁止畸形手指、错误肢体、乱码和多余 logo。",
+      "Create a premium 4:5 lookbook collage poster for {{garment}}. The model attitude is {{model mood}}, the setting is {{scene}}, and the brand inspiration is close to {{brand inspiration}}. Show the same model in 3 poses: full body, half body, and detail close-up, arranged in a layered layout without feeling crowded. Keep the fabric, cut, folds, and accessories clearly visible, with an editorial magazine feel in the background. Leave a small amount of copy space without generating literal text. Avoid distorted fingers, incorrect limbs, garbled text, and extra logos.",
     slug: "awesome-images-fashion-lookbook",
     summaryEn: "GitHub fashion lookbook template paired with a streetwear collage demo.",
     summaryZh: "GitHub 服装 Lookbook 模板，配有街头服饰拼贴 demo。",
@@ -890,7 +1191,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "16:9",
     outputZh: "16:9 SaaS 首图",
     prompt:
-      "为 {{产品名称}} 生成一张高端商业广告主视觉。品牌调性是 {{品牌调性}}，核心卖点是 {{核心卖点}}。画面中央展示产品本体，保持真实比例和清晰边缘，表面材质可被放大检查。背景使用 {{主色}} 作为主视觉线索，加入与卖点相关的轻量场景元素，但不要遮挡产品。构图采用 16:9 横版，产品占画面 42%，右侧保留干净留白给营销文案。灯光为大型柔光箱加一束轮廓光，细节锐利，高端电商摄影，真实阴影，8k，禁止水印、乱码文字、虚假 logo。",
+      "Create a premium commercial hero visual for {{product name}}. The brand tone is {{brand tone}} and the core benefit is {{core benefit}}. Show the product itself in the center with a true proportion, crisp edges, and a surface that can withstand zoom inspection. Use {{primary color}} as the main visual clue in the background and add light scene elements related to the benefit without covering the product. Compose the image in 16:9 landscape, with the product taking 42% of the frame and clean negative space on the right for marketing copy. Use a large softbox plus one rim light, sharp detail, premium ecommerce photography, realistic shadows, and 8k quality. Avoid watermarks, garbled text, and fake logos.",
     slug: "awesome-images-saas-hero-phone",
     summaryEn: "GitHub premium product hero template paired with a SaaS phone hero demo.",
     summaryZh: "GitHub 高端产品主视觉模板，配有 SaaS 手机首图 demo。",
@@ -905,7 +1206,7 @@ export const staticPromptItems: PromptItem[] = [
     outputRatio: "1:1",
     outputZh: "1:1 电商产品图",
     prompt:
-      "生成 {{产品}} 的电商平台主图，纯白背景，正面 3/4 角度，产品占画面 82%-88%。准确表现 {{材质}} 材质、边缘结构和真实比例。若包含 {{关键配件}}，将配件整齐放在产品右下角，主产品仍是绝对视觉中心。光线均匀，软阴影极淡，高清商业摄影，无场景道具、无人物、无文字、无边框、无水印。输出 1:1 方图，适合 Amazon / Shopify / TikTok Shop 列表页。",
+      "Create a marketplace main image for {{product}} on a pure white background with a front three-quarter angle and the product filling 82%-88% of the frame. Accurately show {{material}}, edge structure, and true proportions. If {{accessories}} are included, place them neatly at the lower right while the main product remains the visual center. Use even lighting, very soft shadows, clean commercial photography, no scene props, no people, no text, no border, and no watermark. Output a 1:1 square image suitable for Amazon, Shopify, and TikTok Shop listings.",
     slug: "awesome-images-sports-shoe-product",
     summaryEn: "GitHub ecommerce template reused with a finished sports shoe product artifact.",
     summaryZh: "GitHub 电商主图模板复用，配有运动鞋产品图产物。",
@@ -1205,6 +1506,867 @@ export const staticPromptItems: PromptItem[] = [
     }),
     updatedAt: today,
   },
+  textPromptItem({
+    artifactBody:
+      "Executive brief\nMarket motion: a new self-serve tier is likely aimed at smaller teams.\nEvidence to collect: launch post, pricing page diff, changelog, customer quotes, and hiring signals.\nNext move: update battlecard, run pricing comparison, and prepare two objection-handling notes.",
+    artifactTitle: "Competitor launch brief",
+    model: "gpt-5",
+    outputEn: "Research memo",
+    outputZh: "研究简报",
+    prompt:
+      "Build a concise competitor launch brief from public web evidence. Separate facts from inference, cite each source URL, summarize positioning, pricing change, target customer, distribution channel, and the likely counter-message for our sales team. Keep the final memo under 350 words.",
+    slug: "web-competitor-launch-brief",
+    source: sourceSignal({
+      label: "OpenAI prompt engineering guidance signal",
+      platform: "Official docs",
+      url: "https://platform.openai.com/docs/guides/prompt-engineering",
+    }),
+    summaryEn: "Original web-research prompt paired with a structured competitive-intelligence memo output.",
+    summaryZh: "原创网页研究提示词，配有结构化竞品情报简报产物。",
+    tags: ["research", "competitive", "gtm", "web"],
+    titleEn: "Web competitor launch brief",
+    titleZh: "网页竞品发布简报",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Persona: VP Engineering at a 200-person SaaS company.\nPain: AI feature spend is split across provider dashboards.\nMessage: one API key, route-level governance, and one ledger for finance.\nCTA: migrate the first agent workflow behind Flatkey this week.",
+    artifactTitle: "Sales account brief",
+    model: "claude-sonnet-5",
+    outputEn: "Account brief",
+    outputZh: "客户简报",
+    prompt:
+      "Create an enterprise account brief from a company website, hiring page, pricing page, and three recent public posts. Return buyer persona, likely pain, current trigger, relevant proof, and a 5-sentence first-touch email. Mark any unsupported claim as inference.",
+    slug: "enterprise-account-brief-from-web",
+    source: sourceSignal({
+      label: "Anthropic prompt engineering overview signal",
+      platform: "Official docs",
+      url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview",
+    }),
+    summaryEn: "Original sales-research prompt with a finished account brief artifact.",
+    summaryZh: "原创销售研究提示词，附带完成的客户简报产物。",
+    tags: ["sales", "research", "web", "enterprise"],
+    titleEn: "Enterprise account brief from web signals",
+    titleZh: "基于网页信号的企业客户简报",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Support cluster\nTop issue: users cannot map model names to billing rows.\nSuggested fix: add model aliases in docs and invoice exports.\nMacro reply: include exact model, timestamp, request id, and current pricing link.",
+    artifactTitle: "Support triage report",
+    model: "gpt-5-mini",
+    outputEn: "Support triage",
+    outputZh: "支持工单归类",
+    prompt:
+      "Cluster 40 support tickets into user-intent buckets. For each bucket, name the root cause hypothesis, impacted workflow, severity, fastest product fix, and a customer support macro. Do not merge tickets that have different failure points.",
+    slug: "support-ticket-intent-clustering",
+    source: sourceSignal({
+      label: "Flatkey generated support workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/how-to-use-flatkey`,
+    }),
+    summaryEn: "A support operations prompt with a paired triage report artifact.",
+    summaryZh: "支持运营提示词，配有工单归类报告产物。",
+    tags: ["support", "ops", "classification"],
+    titleEn: "Support ticket intent clustering",
+    titleZh: "支持工单意图聚类",
+  }),
+  textPromptItem({
+    artifactBody:
+      "PRD slice\nProblem: users can test prompts but cannot estimate production cost before copying code.\nRequirement: show model, context window, input/output estimate, and fallback route note.\nAcceptance: the estimate survives refresh and exports into snippet metadata.",
+    artifactTitle: "PRD acceptance slice",
+    model: "gpt-5",
+    outputEn: "Product requirements",
+    outputZh: "产品需求",
+    prompt:
+      "Turn a rough product idea into a one-page PRD. Include problem, user segment, job-to-be-done, non-goals, UX states, data contract, risks, launch guardrails, and five testable acceptance criteria. Keep decisions crisp and avoid roadmap filler.",
+    slug: "one-page-prd-from-rough-idea",
+    source: sourceSignal({
+      label: "Google Gemini prompting strategies signal",
+      platform: "Official docs",
+      url: "https://ai.google.dev/gemini-api/docs/prompting-strategies",
+    }),
+    summaryEn: "Original product-management prompt paired with a concrete PRD slice.",
+    summaryZh: "原创产品管理提示词，配有具体 PRD 切片产物。",
+    tags: ["product", "prd", "planning"],
+    titleEn: "One-page PRD from a rough idea",
+    titleZh: "粗略想法转一页 PRD",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Localization pack\nUS: Lead with time saved.\nJapan: Lead with operational reliability and support path.\nBrazil: Lead with prepaid control and local payment clarity.\nVariant rule: keep the same product fact, change proof order and objection handling.",
+    artifactTitle: "Localized ad variants",
+    model: "gemini-3.6-flash",
+    outputEn: "Ad variant pack",
+    outputZh: "广告变体包",
+    prompt:
+      "Generate localized ad message variants for three markets. Keep product claims identical, adapt proof order and objection handling, and output headline, 25-word body copy, CTA, required disclaimer, and one creative direction per market.",
+    slug: "localized-ad-message-variants",
+    source: sourceSignal({
+      label: "Microsoft Copilot prompt gallery signal",
+      platform: "External",
+      url: "https://adoption.microsoft.com/en-us/copilot/prompt-gallery/",
+    }),
+    summaryEn: "Original localization prompt paired with an ad message variant pack.",
+    summaryZh: "原创本地化提示词，配有广告消息变体包产物。",
+    tags: ["ads", "localization", "copywriting"],
+    titleEn: "Localized ad message variants",
+    titleZh: "本地化广告消息变体",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Eval rubric\nAccuracy: rejects unsupported claims.\nCompleteness: covers all required fields.\nDecision quality: names tradeoffs and gives a recommended next step.\nFailure mode: confident answer without source boundary.",
+    artifactTitle: "Prompt evaluation rubric",
+    model: "claude-opus-4-8",
+    outputEn: "Evaluation rubric",
+    outputZh: "评估量表",
+    prompt:
+      "Design a compact evaluation rubric for a research assistant prompt. Include scoring dimensions, pass/fail thresholds, examples of high-risk hallucination, and a reviewer checklist that a non-technical operator can use in under two minutes.",
+    slug: "research-assistant-eval-rubric",
+    source: sourceSignal({
+      label: "Anthropic evaluation workflow signal",
+      platform: "Official docs",
+      url: "https://docs.anthropic.com/en/docs/test-and-evaluate/define-success",
+    }),
+    summaryEn: "A prompt-quality evaluation prompt paired with a practical reviewer rubric.",
+    summaryZh: "提示词质量评估提示词，配有可执行评审量表产物。",
+    tags: ["evaluation", "qa", "research"],
+    titleEn: "Research assistant eval rubric",
+    titleZh: "研究助手评估量表",
+  }),
+  codePromptItem({
+    code: `{
+  "type": "object",
+  "required": ["company", "signal", "evidence_url", "confidence"],
+  "properties": {
+    "company": { "type": "string" },
+    "signal": { "enum": ["pricing", "hiring", "launch", "partnership", "customer_quote"] },
+    "evidence_url": { "type": "string", "format": "uri" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}`,
+    language: "json",
+    model: "gpt-5",
+    outputEn: "JSON schema",
+    outputZh: "JSON Schema",
+    prompt:
+      "Design a strict JSON schema for extracting competitive market signals from web pages. The schema must preserve source URL, confidence, timestamp, and whether the claim is fact or inference. Include only fields that can be validated downstream.",
+    slug: "market-signal-json-schema",
+    source: sourceSignal({
+      label: "OpenAI structured outputs signal",
+      platform: "Official docs",
+      url: "https://platform.openai.com/docs/guides/structured-outputs",
+    }),
+    summaryEn: "Original extraction prompt paired with a downstream-safe JSON schema artifact.",
+    summaryZh: "原创抽取提示词，配有适合下游校验的 JSON Schema 产物。",
+    tags: ["json", "extraction", "web", "agent"],
+    titleEn: "Market signal JSON schema",
+    titleZh: "市场信号 JSON Schema",
+  }),
+  codePromptItem({
+    code: `flatkey chat completions \\
+  --model claude-sonnet-5 \\
+  --prompt-file ./prompts/repo-audit.md \\
+  --max-tokens 1600 \\
+  --metadata task=repo-audit,env=staging`,
+    language: "bash",
+    model: "claude-sonnet-5",
+    outputEn: "CLI command",
+    outputZh: "CLI 命令",
+    prompt:
+      "Prepare a coding-agent prompt that audits a repository before a release. Require impact surface, risky files, migration concerns, test gaps, deployment targets, and a final go/no-go recommendation. Keep it usable as a CLI prompt file.",
+    slug: "coding-agent-release-audit-command",
+    source: sourceSignal({
+      label: "Flatkey CLI release workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/flatkey-cli`,
+    }),
+    summaryEn: "A release-audit agent prompt paired with a runnable Flatkey CLI command.",
+    summaryZh: "发布审计 Agent 提示词，配有可运行 Flatkey CLI 命令产物。",
+    tags: ["code", "release", "audit", "cli"],
+    titleEn: "Coding agent release audit command",
+    titleZh: "编程 Agent 发布审计命令",
+  }),
+  codePromptItem({
+    code: `const response = await client.responses.create({
+  model: "gpt-5",
+  input: prompt,
+  text: { format: marketSignalSchema },
+  metadata: { workflow: "source-review" }
+});`,
+    language: "typescript",
+    model: "gpt-5",
+    outputEn: "TypeScript snippet",
+    outputZh: "TypeScript 片段",
+    prompt:
+      "Write a minimal TypeScript snippet that sends a prompt to an OpenAI-compatible model endpoint and requests structured output for source review. Keep credentials external, include metadata, and avoid framework-specific code.",
+    slug: "structured-output-source-review-snippet",
+    source: sourceSignal({
+      label: "OpenAI API structured output pattern",
+      platform: "Official docs",
+      url: "https://platform.openai.com/docs/guides/structured-outputs",
+    }),
+    summaryEn: "A developer prompt paired with a compact structured-output TypeScript artifact.",
+    summaryZh: "开发者提示词，配有简洁结构化输出 TypeScript 产物。",
+    tags: ["typescript", "structured-output", "developer"],
+    titleEn: "Structured output source review snippet",
+    titleZh: "结构化来源评审代码片段",
+  }),
+  storyboardPromptItem({
+    frames: [
+      "Phone screen opens to a crowded ad dashboard.",
+      "Creator drags product still into the generator.",
+      "Prompt library card expands with model and ratio.",
+      "Seedance route preview shows cost before run.",
+      "Product rotates under soft window light.",
+      "Caption-safe frame leaves top space blank.",
+      "Three localized variants appear side by side.",
+      "Approved clip exports to the launch folder.",
+      "Ledger row records model, seconds, and cost.",
+    ],
+    model: "seedance-2.0",
+    outputEn: "9-frame video plan",
+    outputRatio: "3x3",
+    outputZh: "9 格视频计划",
+    prompt:
+      "Create a 9-frame storyboard for a 15-second product launch workflow video. Show the operator moving from prompt library to generated localized clips, with cost preview and final ledger record. Keep frames production-specific and avoid readable UI text.",
+    slug: "prompt-library-to-video-launch-storyboard",
+    source: sourceSignal({
+      label: "Flatkey generated video workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/flatkey-cli`,
+    }),
+    summaryEn: "A video workflow prompt paired with a nine-frame storyboard artifact.",
+    summaryZh: "视频工作流提示词，配有九格分镜产物。",
+    tags: ["video", "workflow", "launch"],
+    titleEn: "Prompt library to video launch storyboard",
+    titleZh: "提示词库到视频发布分镜",
+  }),
+  storyboardPromptItem({
+    frames: [
+      "Customer review sentence appears as a floating source card.",
+      "Agent extracts pain, product detail, and sentiment.",
+      "RAG answer drafts a claim with citation boundary.",
+      "Evaluator rejects an unsupported comparison.",
+      "Model retries with narrower evidence.",
+      "Final answer highlights the exact cited fact.",
+      "Human reviewer approves the short response.",
+      "Snippet moves into help-center draft.",
+      "Analytics marks source-reviewed completion.",
+    ],
+    model: "gpt-5",
+    outputEn: "Agent workflow board",
+    outputRatio: "3x3",
+    outputZh: "Agent 工作流板",
+    prompt:
+      "Storyboard an evidence-grounded support-answer workflow for an AI agent. Each frame should show one state transition from raw customer text to approved cited answer. Include rejection and retry when evidence is weak.",
+    slug: "evidence-grounded-support-agent-board",
+    source: sourceSignal({
+      label: "OpenAI eval and agent workflow signal",
+      platform: "Official docs",
+      url: "https://platform.openai.com/docs/guides/evals",
+    }),
+    summaryEn: "An agent workflow prompt paired with a storyboard showing evaluation and retry states.",
+    summaryZh: "Agent 工作流提示词，配有展示评估与重试状态的分镜产物。",
+    tags: ["agent", "support", "eval", "rag"],
+    titleEn: "Evidence-grounded support agent board",
+    titleZh: "有证据边界的支持 Agent 工作流板",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Answer quality review\nGrounding: pass, two citations attached.\nInstruction fit: partial, missing concise summary.\nRisk: medium, one pricing inference needs source.\nRevision: replace the inference with a current pricing link and timestamp.",
+    artifactTitle: "RAG answer review",
+    model: "deepseek-v4-flash",
+    outputEn: "QA review",
+    outputZh: "质检评审",
+    prompt:
+      "Review a RAG answer against retrieved evidence. Score grounding, instruction fit, completeness, and unsupported claims. Return the minimum edit needed to make the answer publishable, not a full rewrite.",
+    slug: "rag-answer-minimum-edit-review",
+    source: sourceSignal({
+      label: "Google Vertex AI prompt design signal",
+      platform: "Official docs",
+      url: "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/prompts/introduction-prompt-design",
+    }),
+    summaryEn: "A RAG quality prompt paired with a minimum-edit review artifact.",
+    summaryZh: "RAG 质量提示词，配有最小修改评审产物。",
+    tags: ["rag", "evaluation", "qa"],
+    titleEn: "RAG answer minimum-edit review",
+    titleZh: "RAG 答案最小修改评审",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Audio brief\nVoice: calm product narrator, medium pace.\nScene bed: soft office ambience, low keyboard taps.\nTiming: 0-2s hook, 2-7s workflow, 7-10s proof.\nMix note: leave room for captions and UI sounds.",
+    artifactTitle: "Voiceover production brief",
+    category: "audio",
+    model: "gpt-5",
+    outputEn: "Audio brief",
+    outputZh: "音频简报",
+    prompt:
+      "Write an audio production brief for a 10-second product workflow ad. Define voice, pace, ambience, beat timing, mix constraints, and one safety note that prevents the narration from overpromising product capability.",
+    slug: "product-workflow-audio-brief",
+    source: sourceSignal({
+      label: "Flatkey generated audio workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/flatkey-cli`,
+    }),
+    summaryEn: "An audio prompt paired with a production-ready voiceover brief.",
+    summaryZh: "音频提示词，配有可执行旁白制作简报产物。",
+    tags: ["audio", "voiceover", "ads"],
+    titleEn: "Product workflow audio brief",
+    titleZh: "产品工作流音频简报",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Decision note\nUse gpt-5 for first-pass synthesis when evidence is messy.\nUse claude-sonnet-5 for long policy drafts.\nUse deepseek-v4-flash for low-cost classification.\nEscalate to human review for legal, billing, or health claims.",
+    artifactTitle: "Model-routing decision note",
+    category: "agent",
+    model: "gpt-5",
+    outputEn: "Routing policy",
+    outputZh: "路由策略",
+    prompt:
+      "Create a model-routing decision note for an agent that handles research, summarization, extraction, and policy-sensitive answers. Include when to use a fast model, when to use a stronger model, and when to stop for human review.",
+    slug: "agent-model-routing-decision-note",
+    source: sourceSignal({
+      label: "Flatkey generated routing workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/how-to-use-flatkey`,
+    }),
+    summaryEn: "A routing-policy prompt paired with a practical agent decision note.",
+    summaryZh: "路由策略提示词，配有实用 Agent 决策说明产物。",
+    tags: ["agent", "routing", "policy"],
+    titleEn: "Agent model-routing decision note",
+    titleZh: "Agent 模型路由决策说明",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Incident summary\nImpact: elevated latency on image prompt previews.\nKnown good: text routes and billing ledger unaffected.\nCustomer message: acknowledge latency, give workaround, update every 30 minutes.\nPostmortem seed: compare provider status and internal queue depth.",
+    artifactTitle: "Incident communication draft",
+    model: "claude-sonnet-5",
+    outputEn: "Incident draft",
+    outputZh: "故障沟通草稿",
+    prompt:
+      "Draft a customer-facing incident update from raw engineering notes. Separate impact, current status, workaround, next update time, and what is still unknown. Do not blame providers unless the evidence is explicit.",
+    slug: "customer-incident-update-from-engineering-notes",
+    source: sourceSignal({
+      label: "Flatkey generated operations workflow",
+      platform: "Flatkey generated",
+      url: `${flatkeyGithubBase}/how-to-use-flatkey`,
+    }),
+    summaryEn: "An operations prompt paired with a concise customer incident update artifact.",
+    summaryZh: "运营提示词，配有简洁客户故障沟通产物。",
+    tags: ["ops", "incident", "support"],
+    titleEn: "Customer incident update from engineering notes",
+    titleZh: "工程笔记转客户故障更新",
+  }),
+  textPromptItem({
+    artifactBody:
+      "PRD skeleton\nProblem: teams test prompts but cannot estimate cost before shipping.\nUsers: PMs and engineers validating model workflows.\nAcceptance: cost estimate, model route, prompt state, and fallback note persist after refresh.",
+    artifactTitle: "PRD outline",
+    model: "gpt-5",
+    outputEn: "Product requirements",
+    outputZh: "产品需求",
+    prompt:
+      "Act as a product manager. When I provide a feature idea, create a concise PRD with subject, problem statement, goals, user stories, technical requirements, KPIs, risks, and acceptance criteria. Ask one clarifying question only when the feature is ambiguous.",
+    slug: "free-product-manager-prd-outline",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from the free prompts.chat Product Manager role prompt and paired with a PRD outline artifact.",
+    summaryZh: "改写自 prompts.chat 免费 Product Manager 角色提示词，并配有 PRD 大纲产物。",
+    tags: ["free", "prompts-chat", "product", "prd"],
+    titleEn: "Product manager PRD outline",
+    titleZh: "产品经理 PRD 大纲",
+  }),
+  textPromptItem({
+    artifactBody:
+      "| Idea | Persona | Pain | MVP | Validation |\n| Micro SaaS cost guard | AI builders | surprise model spend | route preview | 10 interviews + landing page |\n| Review-to-FAQ agent | support teams | repeated tickets | cited answer drafts | ticket deflection test |",
+    artifactTitle: "Startup validation table",
+    model: "claude-sonnet-5",
+    outputEn: "Startup idea table",
+    outputZh: "创业想法表",
+    prompt:
+      "Generate digital startup ideas from a user wish. Return a markdown table with idea name, one-line pitch, target persona, pain point, value proposition, MVP scope, validation steps, first-year operating cost estimate, and key risks.",
+    slug: "free-startup-idea-validation-table",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free startup-idea prompt and paired with a validation table output.",
+    summaryZh: "改写自免费创业想法提示词，并配有验证表格产物。",
+    tags: ["free", "prompts-chat", "startup", "growth"],
+    titleEn: "Startup idea validation table",
+    titleZh: "创业想法验证表",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Code review\nRisk: error path returns 200 with failed payload.\nFix: propagate typed error and add regression test.\nAlternative: keep controller thin and move retry policy into service.\nDeployment: console only unless shared API handler changes.",
+    artifactTitle: "Code review notes",
+    category: "agent",
+    model: "gpt-5",
+    outputEn: "Review report",
+    outputZh: "审查报告",
+    prompt:
+      "Act as a senior code reviewer. Review the provided code for correctness, security, maintainability, performance, and missing tests. Lead with findings ordered by severity, include file or function references, explain impact, and propose the smallest safe fix.",
+    slug: "free-code-review-actionable-findings",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free code reviewer prompt with a production-style review artifact.",
+    summaryZh: "改写自免费代码审查提示词，并配有生产风格审查产物。",
+    tags: ["free", "prompts-chat", "code", "review"],
+    titleEn: "Actionable code review findings",
+    titleZh: "可执行代码审查结论",
+  }),
+  codePromptItem({
+    code: `SELECT customer_id, COUNT(*) AS orders
+FROM orders
+WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+GROUP BY customer_id
+ORDER BY orders DESC
+LIMIT 10;`,
+    language: "sql",
+    model: "gpt-5-mini",
+    outputEn: "SQL answer",
+    outputZh: "SQL 答案",
+    prompt:
+      "Act as a SQL terminal for an example commerce database with Products, Users, Orders, and Suppliers tables. When I type a query request, return one SQL block and a compact result table. Do not add unrelated explanation.",
+    slug: "free-sql-terminal-commerce-query",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from the free SQL Terminal prompt and paired with a query artifact.",
+    summaryZh: "改写自免费 SQL Terminal 提示词，并配有查询产物。",
+    tags: ["free", "prompts-chat", "sql", "developer"],
+    titleEn: "Commerce SQL terminal query",
+    titleZh: "电商 SQL 终端查询",
+  }),
+  codePromptItem({
+    code: `> console.log(["flatkey", "router"].join("-"))
+flatkey-router`,
+    language: "javascript",
+    model: "gpt-5-mini",
+    outputEn: "Console output",
+    outputZh: "控制台输出",
+    prompt:
+      "Act as a JavaScript console. I will type JavaScript expressions or short snippets, and you will return only the console output inside one code block unless I explicitly ask for explanation.",
+    slug: "free-javascript-console-session",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from the free JavaScript Console prompt and paired with a console transcript artifact.",
+    summaryZh: "改写自免费 JavaScript Console 提示词，并配有控制台转录产物。",
+    tags: ["free", "prompts-chat", "javascript", "developer"],
+    titleEn: "JavaScript console session",
+    titleZh: "JavaScript 控制台会话",
+  }),
+  codePromptItem({
+    code: `contract Messenger {
+  string public message;
+  address public owner;
+  uint256 public updateCount;
+
+  modifier onlyOwner() {
+    require(msg.sender == owner, "not owner");
+    _;
+  }
+}`,
+    language: "solidity",
+    model: "gpt-5",
+    outputEn: "Contract scaffold",
+    outputZh: "合约骨架",
+    prompt:
+      "Act as an experienced Ethereum developer. Create a minimal Solidity smart contract for a public blockchain message that only the deployer can update. Include state variables, access control, update counting, and a short explanation of security considerations.",
+    slug: "free-ethereum-messenger-contract",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from the free Ethereum Developer prompt and paired with a smart-contract scaffold.",
+    summaryZh: "改写自免费 Ethereum Developer 提示词，并配有智能合约骨架。",
+    tags: ["free", "prompts-chat", "ethereum", "developer"],
+    titleEn: "Ethereum messenger contract",
+    titleZh: "以太坊留言合约",
+  }),
+  textPromptItem({
+    artifactBody:
+      "UX plan\nNavigation: group setup, usage, billing, and support.\nPrototype: two task paths, key creation and spend review.\nValidation: first-click test, keyboard pass, and mobile breakpoint scan.",
+    artifactTitle: "UX improvement plan",
+    model: "claude-sonnet-5",
+    outputEn: "UX plan",
+    outputZh: "UX 方案",
+    prompt:
+      "Act as a UX/UI developer. Given product details and audience, propose a navigation structure, primary screens, interaction states, accessibility checks, and validation plan. Keep recommendations tied to the business goal.",
+    slug: "free-ux-navigation-improvement-plan",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free UX/UI Developer prompt with a navigation improvement artifact.",
+    summaryZh: "改写自免费 UX/UI Developer 提示词，并配有导航优化产物。",
+    tags: ["free", "prompts-chat", "ux", "design"],
+    titleEn: "UX navigation improvement plan",
+    titleZh: "UX 导航优化方案",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Ecommerce IA\nTop nav: Shop, Collections, Reviews, Support.\nProduct card: clear price, delivery promise, trust proof.\nCheckout: guest path, wallet options, and abandoned-cart recovery.",
+    artifactTitle: "Web design plan",
+    model: "gpt-5-mini",
+    outputEn: "Design plan",
+    outputZh: "设计方案",
+    prompt:
+      "Act as a web design consultant. For the provided organization and goal, recommend information architecture, layout, interaction patterns, trust signals, content sections, and measurable conversion improvements.",
+    slug: "free-web-design-ecommerce-plan",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free web design consultant prompt and paired with an ecommerce IA artifact.",
+    summaryZh: "改写自免费网站设计顾问提示词，并配有电商信息架构产物。",
+    tags: ["free", "prompts-chat", "web-design", "commerce"],
+    titleEn: "Ecommerce web design plan",
+    titleZh: "电商网站设计方案",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Accessibility findings\nKeyboard: filter tabs need visible focus.\nScreen reader: source cards need clearer labels.\nContrast: secondary gray text passes on white, fails on violet tint.\nFix first: focus ring and aria labels.",
+    artifactTitle: "Accessibility audit",
+    model: "gpt-5",
+    outputEn: "Audit report",
+    outputZh: "审计报告",
+    prompt:
+      "Act as a web accessibility auditor. Review a page or component against WCAG 2.2 and Section 508. Focus on keyboard navigation, screen reader labels, color contrast, focus order, motion, and actionable fixes.",
+    slug: "free-accessibility-audit-checklist",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Accessibility Auditor prompt with a concise audit artifact.",
+    summaryZh: "改写自免费无障碍审计提示词，并配有精简审计产物。",
+    tags: ["free", "prompts-chat", "accessibility", "qa"],
+    titleEn: "Accessibility audit checklist",
+    titleZh: "无障碍审计清单",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Security plan\nData: classify secrets, customer data, and logs.\nControls: encryption at rest, scoped API keys, rotation, rate limits.\nDetection: suspicious usage alerts and audit trails.\nReview: quarterly access recertification.",
+    artifactTitle: "Security strategy",
+    category: "agent",
+    model: "claude-opus-4-8",
+    outputEn: "Security plan",
+    outputZh: "安全方案",
+    prompt:
+      "Act as a cybersecurity specialist. Given a system description, propose a practical data-protection strategy covering threat model, sensitive data, encryption, access control, logging, monitoring, incident response, and residual risks.",
+    slug: "free-cybersecurity-data-protection-plan",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Cyber Security Specialist prompt with a security-plan artifact.",
+    summaryZh: "改写自免费网络安全专家提示词，并配有数据保护方案产物。",
+    tags: ["free", "prompts-chat", "security", "ops"],
+    titleEn: "Cybersecurity data-protection plan",
+    titleZh: "网络安全数据保护方案",
+  }),
+  textPromptItem({
+    artifactBody:
+      "DevRel review\nPackage: express.\nSignals: docs breadth, issue velocity, StackOverflow footprint, examples, migration guides.\nGap: add production deployment examples and troubleshooting recipes.\nAudience: backend beginners and framework migrators.",
+    artifactTitle: "Developer relations review",
+    model: "gpt-5",
+    outputEn: "DevRel review",
+    outputZh: "DevRel 评审",
+    prompt:
+      "Act as a Developer Relations consultant. Research a software package and its docs. Summarize adoption signals, documentation gaps, examples to add, competitor comparison, and concrete content recommendations. Say when data is unavailable.",
+    slug: "free-devrel-package-documentation-review",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Developer Relations prompt with a package documentation review artifact.",
+    summaryZh: "改写自免费 DevRel 提示词，并配有包文档评审产物。",
+    tags: ["free", "prompts-chat", "developer", "docs"],
+    titleEn: "Package documentation DevRel review",
+    titleZh: "软件包文档 DevRel 评审",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Paper Q&A\nConcept: retrieval-augmented generation.\nPurpose: ground model responses in external evidence.\nProcedure: retrieve, rank, synthesize, cite.\nRisk: stale retrieval and unsupported synthesis.",
+    artifactTitle: "Research Q&A",
+    model: "claude-sonnet-5",
+    outputEn: "Research answer",
+    outputZh: "研究回答",
+    prompt:
+      "Act as an expert LLM researcher. When I provide a paper, excerpt, or concept, answer my questions with the reason, procedure, purpose, limitations, and references when available. Clearly separate source facts from inference.",
+    slug: "free-llm-researcher-paper-qa",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free LLM Researcher prompt and paired with a paper Q&A artifact.",
+    summaryZh: "改写自免费 LLM Researcher 提示词，并配有论文问答产物。",
+    tags: ["free", "prompts-chat", "research", "llm"],
+    titleEn: "LLM researcher paper Q&A",
+    titleZh: "LLM 研究员论文问答",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Insight brief\nMetric: week-2 retention fell from 31% to 24%.\nSegment: new mobile users from paid social.\nHypothesis: onboarding prompt length creates drop-off.\nNext analysis: compare completion by device and acquisition channel.",
+    artifactTitle: "Data insight brief",
+    model: "gpt-5-mini",
+    outputEn: "Analysis brief",
+    outputZh: "分析简报",
+    prompt:
+      "Act as a data analyst. Given a dataset summary or table, identify useful patterns, anomalies, likely causes, business impact, and the next analysis to run. Return actionable recommendations and avoid unsupported certainty.",
+    slug: "free-data-analyst-insight-brief",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Data Analyst prompt with a retention insight artifact.",
+    summaryZh: "改写自免费数据分析师提示词，并配有留存洞察产物。",
+    tags: ["free", "prompts-chat", "data", "analytics"],
+    titleEn: "Data analyst insight brief",
+    titleZh: "数据分析师洞察简报",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Enhanced prompt\nWrite a source-grounded launch brief from five URLs. Separate facts, quotes, and inference. Include target customer, pricing change, distribution channel, and a counter-message. Keep the memo under 350 words.",
+    artifactTitle: "Prompt rewrite",
+    category: "agent",
+    model: "gpt-5",
+    outputEn: "Optimized prompt",
+    outputZh: "优化提示词",
+    prompt:
+      "Act as a prompt enhancer. Rewrite the user's rough prompt into a precise, testable prompt with role, task, context, constraints, output format, and quality checks. Put the rewritten prompt first, then list the main improvements.",
+    slug: "free-prompt-enhancer-rewrite-flow",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Prompt Enhancer prompt and paired with an optimized prompt artifact.",
+    summaryZh: "改写自免费 Prompt Enhancer 提示词，并配有优化后提示词产物。",
+    tags: ["free", "prompts-chat", "prompt-engineering", "agent"],
+    titleEn: "Prompt enhancer rewrite flow",
+    titleZh: "提示词增强改写流程",
+  }),
+  textPromptItem({
+    artifactBody:
+      "SEO plan\nKeyword: best AI prompt library.\nIntent: discovery and comparison.\nPage structure: H1, source methodology, category pages, prompt examples, FAQ.\nRisk: avoid fake freshness; show captured dates.",
+    artifactTitle: "SEO action plan",
+    model: "gpt-5-mini",
+    outputEn: "SEO plan",
+    outputZh: "SEO 方案",
+    prompt:
+      "Act as an SEO specialist. For a keyword or page scenario, return search intent, page structure, title options, internal links, FAQ ideas, measurement plan, and risks. Stay focused on SEO rather than general marketing advice.",
+    slug: "free-seo-specialist-page-plan",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free SEO Specialist prompt with a page optimization artifact.",
+    summaryZh: "改写自免费 SEO Specialist 提示词，并配有页面优化产物。",
+    tags: ["free", "prompts-chat", "seo", "growth"],
+    titleEn: "SEO specialist page plan",
+    titleZh: "SEO 页面方案",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Campaign calendar\nWeek 1: founder story + product proof.\nWeek 2: customer objection series.\nWeek 3: short demo clips.\nWeek 4: sourced case study and retargeting hooks.\nMeasurement: saves, replies, demos booked.",
+    artifactTitle: "Social campaign plan",
+    model: "gemini-3.6-flash",
+    outputEn: "Campaign plan",
+    outputZh: "活动计划",
+    prompt:
+      "Act as a social media manager. Create a campaign plan for the provided organization, audience, and goal. Include platform focus, content pillars, posting cadence, engagement workflow, measurement metrics, and a weekly calendar.",
+    slug: "free-social-media-campaign-calendar",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Social Media Manager prompt with a campaign calendar artifact.",
+    summaryZh: "改写自免费社媒经理提示词，并配有活动日历产物。",
+    tags: ["free", "prompts-chat", "social", "growth"],
+    titleEn: "Social media campaign calendar",
+    titleZh: "社媒活动日历",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Recruiting plan\nRole: API partnerships AE.\nSignals: AI infra sales, developer platform deals, usage-based pricing.\nChannels: LinkedIn search, community posts, referral asks.\nScreen: demo ownership and technical buyer mapping.",
+    artifactTitle: "Recruiting sourcing plan",
+    model: "claude-sonnet-5",
+    outputEn: "Sourcing plan",
+    outputZh: "招聘寻源方案",
+    prompt:
+      "Act as a recruiter. Given a role, market, and must-have criteria, build a sourcing plan with target profiles, search strings, outreach message, screening questions, and a shortlist scoring rubric.",
+    slug: "free-recruiter-sourcing-plan",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Recruiter prompt with a candidate sourcing artifact.",
+    summaryZh: "改写自免费招聘提示词，并配有候选人寻源产物。",
+    tags: ["free", "prompts-chat", "recruiting", "sales"],
+    titleEn: "Recruiter sourcing plan",
+    titleZh: "招聘寻源方案",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Nearby itinerary\nAnchor: Istanbul Beyoglu.\nTheme: museums only.\nRoute: Pera Museum, Istanbul Modern, Galata Mevlevi Museum.\nNotes: walking order, opening-hour check, cafe stop, and transit backup.",
+    artifactTitle: "Travel itinerary",
+    model: "gpt-5-mini",
+    outputEn: "Itinerary",
+    outputZh: "行程方案",
+    prompt:
+      "Act as a travel guide. When I provide a location and preferred place type, suggest nearby places, explain why each fits, propose a practical route, and include timing, transit, and backup considerations.",
+    slug: "free-travel-guide-nearby-itinerary",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Travel Guide prompt and paired with a nearby itinerary artifact.",
+    summaryZh: "改写自免费旅行向导提示词，并配有附近行程产物。",
+    tags: ["free", "prompts-chat", "travel", "planning"],
+    titleEn: "Nearby travel itinerary",
+    titleZh: "附近旅行行程",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Book summary structure\n1. Core thesis\n2. Major concepts\n3. Examples and applications\n4. Key takeaways\n5. Questions for discussion\n6. What to verify against the original text",
+    artifactTitle: "Book summary framework",
+    model: "gpt-5-mini",
+    outputEn: "Summary framework",
+    outputZh: "摘要框架",
+    prompt:
+      "Act as a book summarizer. Summarize the provided book or chapter with major topics, examples, applications, key takeaways, and discussion questions. Keep the structure easy to scan and mark uncertain details.",
+    slug: "free-book-summary-framework",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free Book Summarizer prompt with a reusable summary framework.",
+    summaryZh: "改写自免费图书摘要提示词，并配有可复用摘要框架。",
+    tags: ["free", "prompts-chat", "writing", "summary"],
+    titleEn: "Book summary framework",
+    titleZh: "图书摘要框架",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Sales funnel\nURL input: product homepage.\nStages: visitor, lead, activated trial, paid account.\nAssets: landing page, demo email, objection FAQ, retargeting ad.\nMeasurement: page CVR, demo rate, activation, paid conversion.",
+    artifactTitle: "Sales funnel plan",
+    model: "gpt-5",
+    outputEn: "Funnel plan",
+    outputZh: "漏斗方案",
+    prompt:
+      "Act as a sales funnel architect. Given a product URL and target customer, design a funnel with stages, page sections, lead magnet, email sequence, objection handling, retargeting hooks, and conversion metrics.",
+    slug: "free-sales-funnel-from-url",
+    source: sourceSignal({
+      label: "prompts.chat CC0 dataset (117k+ rows)",
+      platform: "GitHub",
+      url: "https://github.com/f/prompts.chat/blob/main/prompts.csv",
+    }),
+    summaryEn: "Adapted from a free sales-funnel prompt and paired with a funnel-plan artifact.",
+    summaryZh: "改写自免费销售漏斗提示词，并配有漏斗方案产物。",
+    tags: ["free", "prompts-chat", "sales", "growth"],
+    titleEn: "Sales funnel from URL",
+    titleZh: "基于 URL 的销售漏斗",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Code hallucination guard\nScope: use one function at a time.\nEvidence: paste official docs or examples for niche libraries.\nConstraint: avoid undocumented packages and unsupported APIs.\nVerification: run the snippet, paste errors back, and revise only the failing part.",
+    artifactTitle: "Coding prompt guardrail",
+    category: "agent",
+    model: "gpt-5",
+    outputEn: "Guardrail prompt",
+    outputZh: "防幻觉提示词",
+    prompt:
+      "Write code one small unit at a time. Before using a library API, state whether it comes from supplied docs, an official package page, or an assumption. Use only documented APIs. If context is missing, ask for the relevant docs or propose a standard-library alternative. Return runnable code, verification steps, and likely failure points.",
+    slug: "social-hn-code-hallucination-guard",
+    source: sourceSignal({
+      label: "Hacker News discussion: avoiding code hallucinations",
+      platform: "Social",
+      url: "https://news.ycombinator.com/item?id=40479500",
+    }),
+    summaryEn: "A coding-agent prompt rewritten from public HN discussion signals about avoiding fabricated libraries and APIs.",
+    summaryZh: "根据 HN 公开讨论中关于避免编造库和 API 的经验改写成编程 Agent 提示词。",
+    tags: ["free", "social", "hacker-news", "code", "hallucination"],
+    titleEn: "Code hallucination guard",
+    titleZh: "代码幻觉防护提示词",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Prompt experiment matrix\nMetric: answer correctness and edit distance.\nVariants: direct prompt, example-driven prompt, structured prompt.\nRun: isolate context, score outputs, keep the shortest prompt that passes.\nDecision: iterate rather than over-template.",
+    artifactTitle: "Prompt test plan",
+    category: "agent",
+    model: "claude-sonnet-5",
+    outputEn: "Experiment plan",
+    outputZh: "实验计划",
+    prompt:
+      "Design a prompt experiment for a task. Create three prompt variants, define the success metric, isolate test context, specify how to score outputs, and recommend which variant to keep. Prefer simple direct instructions unless structured output measurably improves results.",
+    slug: "social-hn-prompt-experiment-matrix",
+    source: sourceSignal({
+      label: "Hacker News discussion: learning prompt engineering",
+      platform: "Social",
+      url: "https://news.ycombinator.com/item?id=38588127",
+    }),
+    summaryEn: "A prompt-testing workflow derived from public HN discussion about measuring what works instead of over-templating.",
+    summaryZh: "根据 HN 公开讨论中“用指标验证提示词效果”的观点改写成实验工作流。",
+    tags: ["free", "social", "hacker-news", "prompt-engineering", "evaluation"],
+    titleEn: "Prompt experiment matrix",
+    titleZh: "提示词实验矩阵",
+  }),
+  textPromptItem({
+    artifactBody:
+      "Prompt library routing note\nContext cards: tech stack, writing style, database schema, product constraints.\nRouting rule: apply the smallest relevant context card, show what was applied, and let the user reject it.\nRisk: hidden context can surprise users.",
+    artifactTitle: "Prompt routing note",
+    category: "agent",
+    model: "gpt-5",
+    outputEn: "Routing note",
+    outputZh: "路由说明",
+    prompt:
+      "Create a prompt-library routing policy for an AI workspace. Define reusable context cards, matching rules, user visibility, approval controls, and failure modes. The policy should help the assistant apply relevant prompts automatically without hiding important context from the user.",
+    slug: "social-hn-prompt-library-routing-policy",
+    source: sourceSignal({
+      label: "Hacker News discussion: prompt libraries and non-linear AI UI",
+      platform: "Social",
+      url: "https://news.ycombinator.com/item?id=40300126",
+    }),
+    summaryEn: "A routing-policy prompt adapted from public HN discussion about prompt libraries, BYO keys, and non-linear AI workflows.",
+    summaryZh: "根据 HN 关于提示词库、BYO key 和非线性 AI 工作流的公开讨论改写成路由策略提示词。",
+    tags: ["free", "social", "hacker-news", "prompt-library", "agent"],
+    titleEn: "Prompt library routing policy",
+    titleZh: "提示词库路由策略",
+  }),
+];
+
+const generatedPromptItems = generatedPromptItemsData as unknown as PromptItem[];
+const curatedDatasetPromptItems = staticPromptItems.slice(0, 8);
+const showcasePromptItems = staticPromptItems.slice(8);
+
+export const playgroundPromptItems: PromptItem[] = [
+  ...showcasePromptItems,
+  ...curatedDatasetPromptItems,
+  ...generatedPromptItems,
 ];
 
 function hasArtifact(item: PromptItem): boolean {

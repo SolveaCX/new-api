@@ -3,7 +3,9 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -12,6 +14,8 @@ import (
 )
 
 const promptLibraryImportMaxItems = 100
+const promptLibraryListDefaultLimit = 600
+const promptLibraryListMaxLimit = 1000
 
 type promptLibraryImportRequest struct {
 	Items []promptLibraryImportItem `json:"items"`
@@ -41,6 +45,74 @@ type promptLibraryImportResult struct {
 	Slug   string `json:"slug"`
 	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
+}
+
+type promptLibraryPublicSource struct {
+	CapturedAt string `json:"capturedAt"`
+	Label      string `json:"label"`
+	Platform   string `json:"platform"`
+	URL        string `json:"url"`
+}
+
+type promptLibraryStoredSource struct {
+	CapturedAt      string `json:"capturedAt"`
+	CapturedAtSnake string `json:"captured_at"`
+	Label           string `json:"label"`
+	Platform        string `json:"platform"`
+	URL             string `json:"url"`
+}
+
+type promptLibraryPublicItem struct {
+	Artifact  map[string]any            `json:"artifact"`
+	Category  string                    `json:"category"`
+	Model     string                    `json:"model"`
+	Output    map[string]any            `json:"output"`
+	Prompt    string                    `json:"prompt"`
+	Slug      string                    `json:"slug"`
+	Source    promptLibraryPublicSource `json:"source"`
+	Summary   map[string]string         `json:"summary"`
+	Tags      []string                  `json:"tags"`
+	Title     map[string]string         `json:"title"`
+	UpdatedAt string                    `json:"updatedAt"`
+}
+
+func GetWebsitePromptLibrary(c *gin.Context) {
+	category := strings.TrimSpace(c.Query("category"))
+	if category != "" && !model.IsPromptLibraryCategoryAllowed(category) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "category is invalid"})
+		return
+	}
+	query := model.PromptLibraryListQuery{
+		Category: category,
+		Limit:    promptLibraryIntQuery(c, "limit", promptLibraryListDefaultLimit, promptLibraryListMaxLimit),
+		Offset:   promptLibraryIntQuery(c, "offset", 0, 0),
+		Search:   strings.TrimSpace(c.Query("q")),
+	}
+	total, err := model.CountPromptLibraryItems(query)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	items, err := model.ListPromptLibraryItems(query)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	publicItems := make([]promptLibraryPublicItem, 0, len(items))
+	for _, item := range items {
+		publicItem, err := promptLibraryPublicItemFromModel(item)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		publicItems = append(publicItems, publicItem)
+	}
+	common.ApiSuccess(c, gin.H{
+		"items":  publicItems,
+		"limit":  query.Limit,
+		"offset": query.Offset,
+		"total":  total,
+	})
 }
 
 func ImportPromptLibrary(c *gin.Context) {
@@ -193,6 +265,59 @@ func validatePromptArtifact(artifact map[string]any) error {
 	return nil
 }
 
+func promptLibraryPublicItemFromModel(item model.PromptLibraryItem) (promptLibraryPublicItem, error) {
+	var title map[string]string
+	var summary map[string]string
+	var tags []string
+	var output map[string]any
+	var artifact map[string]any
+	var source promptLibraryStoredSource
+	if err := unmarshalPromptLibraryField(item.TitleJSON, &title); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	if err := unmarshalPromptLibraryField(item.SummaryJSON, &summary); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	if err := unmarshalPromptLibraryField(item.TagsJSON, &tags); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	if err := unmarshalPromptLibraryField(item.OutputJSON, &output); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	if err := unmarshalPromptLibraryField(item.ArtifactJSON, &artifact); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	if err := unmarshalPromptLibraryField(item.SourceJSON, &source); err != nil {
+		return promptLibraryPublicItem{}, err
+	}
+	capturedAt := firstPromptLibraryValue(source.CapturedAt, source.CapturedAtSnake, item.CapturedAt, promptLibraryTimestampDate(item.UpdatedTime))
+	return promptLibraryPublicItem{
+		Artifact: artifact,
+		Category: item.Category,
+		Model:    item.Model,
+		Output:   output,
+		Prompt:   item.Prompt,
+		Slug:     item.Slug,
+		Source: promptLibraryPublicSource{
+			CapturedAt: capturedAt,
+			Label:      source.Label,
+			Platform:   source.Platform,
+			URL:        source.URL,
+		},
+		Summary:   summary,
+		Tags:      tags,
+		Title:     title,
+		UpdatedAt: firstPromptLibraryValue(capturedAt, promptLibraryTimestampDate(item.UpdatedTime)),
+	}, nil
+}
+
+func unmarshalPromptLibraryField(value string, target any) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return common.UnmarshalJsonStr(value, target)
+}
+
 func stringField(values map[string]any, key string) string {
 	value, _ := values[key].(string)
 	return value
@@ -204,4 +329,35 @@ func marshalPromptLibraryField(value any) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func promptLibraryIntQuery(c *gin.Context, key string, fallback int, max int) int {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	if max > 0 && value > max {
+		return max
+	}
+	return value
+}
+
+func promptLibraryTimestampDate(timestamp int64) string {
+	if timestamp <= 0 {
+		return ""
+	}
+	return time.Unix(timestamp, 0).UTC().Format("2006-01-02")
+}
+
+func firstPromptLibraryValue(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

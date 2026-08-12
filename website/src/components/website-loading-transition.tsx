@@ -1,0 +1,178 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+
+const LOADING_FALLBACK_MS = 4500;
+const LOADING_MIN_VISIBLE_MS = 360;
+
+function currentRouteKey() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+type WebsiteLoadingNavigationInput = {
+  altKey?: boolean;
+  button?: number;
+  ctrlKey?: boolean;
+  defaultPrevented?: boolean;
+  download?: boolean;
+  href: string | null;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+  target?: string | null;
+  windowHref: string;
+};
+
+export function resolveWebsiteLoadingNavigationTarget(input: WebsiteLoadingNavigationInput) {
+  if (
+    input.defaultPrevented ||
+    (input.button ?? 0) !== 0 ||
+    input.metaKey ||
+    input.ctrlKey ||
+    input.shiftKey ||
+    input.altKey
+  ) {
+    return null;
+  }
+  if (input.download || (input.target && input.target !== "_self")) {
+    return null;
+  }
+
+  const href = input.href;
+  if (!href || href.startsWith("#")) return null;
+
+  let nextUrl: URL;
+  let currentUrl: URL;
+  try {
+    currentUrl = new URL(input.windowHref);
+    nextUrl = new URL(href, currentUrl.href);
+  } catch {
+    return null;
+  }
+
+  if (nextUrl.protocol !== "http:" && nextUrl.protocol !== "https:") return null;
+  if (nextUrl.href === currentUrl.href) return null;
+  if (
+    nextUrl.origin === currentUrl.origin &&
+    nextUrl.pathname === currentUrl.pathname &&
+    nextUrl.search === currentUrl.search &&
+    nextUrl.hash
+  ) {
+    return null;
+  }
+
+  return {
+    routeKey: `${nextUrl.pathname}${nextUrl.search}`,
+    sameOrigin: nextUrl.origin === currentUrl.origin,
+  };
+}
+
+type WebsiteLoadingTransitionProps = {
+  label: string;
+};
+
+export function WebsiteLoadingTransition({ label }: WebsiteLoadingTransitionProps) {
+  const [visible, setVisible] = useState(false);
+  const currentRouteRef = useRef<string | null>(null);
+  const visibleSinceRef = useRef<number>(0);
+
+  useEffect(() => {
+    currentRouteRef.current = currentRouteKey();
+    let hideAfterMinTimer: number | undefined;
+    let hideTimer: number | undefined;
+    let pathTimer: number | undefined;
+
+    const clearLoading = (respectMinimum = false) => {
+      window.clearTimeout(hideAfterMinTimer);
+      window.clearTimeout(hideTimer);
+      window.clearInterval(pathTimer);
+      if (respectMinimum) {
+        const elapsed = window.performance.now() - visibleSinceRef.current;
+        const remaining = Math.max(0, LOADING_MIN_VISIBLE_MS - elapsed);
+        if (remaining > 0) {
+          hideAfterMinTimer = window.setTimeout(() => clearLoading(false), remaining);
+          return;
+        }
+      }
+      currentRouteRef.current = currentRouteKey();
+      setVisible(false);
+    };
+
+    const showLoading = (target: { routeKey: string; sameOrigin: boolean }) => {
+      window.clearTimeout(hideAfterMinTimer);
+      window.clearTimeout(hideTimer);
+      window.clearInterval(pathTimer);
+      currentRouteRef.current = currentRouteKey();
+      visibleSinceRef.current = window.performance.now();
+      setVisible(true);
+      hideTimer = window.setTimeout(clearLoading, LOADING_FALLBACK_MS);
+
+      if (target.sameOrigin) {
+        pathTimer = window.setInterval(() => {
+          const routeKey = currentRouteKey();
+          if (routeKey === target.routeKey || currentRouteRef.current !== routeKey) {
+            clearLoading(true);
+          }
+        }, 80);
+      }
+    };
+
+    const onClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const navigationTarget = resolveWebsiteLoadingNavigationTarget({
+        altKey: event.altKey,
+        button: event.button,
+        ctrlKey: event.ctrlKey,
+        defaultPrevented: event.defaultPrevented,
+        download: anchor.hasAttribute("download"),
+        href: anchor.getAttribute("href"),
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        target: anchor.getAttribute("target"),
+        windowHref: window.location.href,
+      });
+      if (!navigationTarget) return;
+      showLoading(navigationTarget);
+    };
+
+    const onPageShow = () => clearLoading();
+    const onVisibilityChange = () => {
+      if (!document.hidden && currentRouteRef.current !== currentRouteKey()) {
+        clearLoading();
+      }
+    };
+
+    document.addEventListener("click", onClick, { capture: true });
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("popstate", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearTimeout(hideAfterMinTimer);
+      window.clearTimeout(hideTimer);
+      window.clearInterval(pathTimer);
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("popstate", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      className="fk-page-loading fixed inset-0 z-[1000] flex items-center justify-center overflow-hidden bg-[#F7F4EC]/98 px-4 dark:bg-[#050507]/98"
+      role="status"
+      aria-live="polite"
+      aria-label={label}
+    >
+      <div className="fk-page-loading-card">
+        <FlatkeyBrandLogo className="fk-page-loading-logo" />
+        <span className="fk-page-loading-track" aria-hidden="true" />
+      </div>
+    </div>
+  );
+}

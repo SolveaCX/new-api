@@ -21,17 +21,22 @@ import { useTranslation } from 'react-i18next'
 import { useStatus } from '@/hooks/use-status'
 import { AuthLayout } from '../auth-layout'
 import { TermsFooter } from '../components/terms-footer'
+import { resolveAutoOAuthProvider } from '../lib/auto-oauth'
 import { resolvePendingPostLoginRedirect } from '../lib/storage'
 import { UserAuthForm } from './components/user-auth-form'
 
 export function SignIn() {
   const { t } = useTranslation()
-  const { redirect: visibleRedirect, recall_redirect: recallRedirect } =
-    useSearch({ from: '/(auth)/sign-in' })
+  const {
+    provider,
+    redirect: visibleRedirect,
+    recall_redirect: recallRedirect,
+  } = useSearch({ from: '/(auth)/sign-in' })
   const redirect = resolvePendingPostLoginRedirect(
     visibleRedirect,
     recallRedirect
   )
+  const autoOAuthProvider = resolveAutoOAuthProvider(provider)
   const { status } = useStatus()
 
   return (
@@ -65,6 +70,7 @@ export function SignIn() {
         </div>
 
         <UserAuthForm
+          autoOAuthProvider={autoOAuthProvider}
           redirectTo={redirect}
           visibleRedirectTo={visibleRedirect}
           recallRedirectNonce={recallRedirect}

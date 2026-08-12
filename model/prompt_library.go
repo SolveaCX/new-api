@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -35,6 +36,13 @@ type PromptLibraryItem struct {
 	UpdatedTime    int64  `json:"updated_time" gorm:"bigint;index"`
 }
 
+type PromptLibraryListQuery struct {
+	Category string
+	Limit    int
+	Offset   int
+	Search   string
+}
+
 func IsPromptLibraryCategoryAllowed(category string) bool {
 	switch category {
 	case PromptLibraryCategoryImage, PromptLibraryCategoryVideo, PromptLibraryCategoryAudio, PromptLibraryCategoryText, PromptLibraryCategoryAgent:
@@ -42,6 +50,51 @@ func IsPromptLibraryCategoryAllowed(category string) bool {
 	default:
 		return false
 	}
+}
+
+func CountPromptLibraryItems(query PromptLibraryListQuery) (int64, error) {
+	var count int64
+	err := promptLibraryListScope(query).Count(&count).Error
+	return count, err
+}
+
+func ListPromptLibraryItems(query PromptLibraryListQuery) ([]PromptLibraryItem, error) {
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+	var items []PromptLibraryItem
+	err := promptLibraryListScope(query).
+		Order("updated_time DESC, id DESC").
+		Limit(query.Limit).
+		Offset(query.Offset).
+		Find(&items).Error
+	return items, err
+}
+
+func promptLibraryListScope(query PromptLibraryListQuery) *gorm.DB {
+	db := DB.Model(&PromptLibraryItem{})
+	category := strings.TrimSpace(query.Category)
+	if category != "" && IsPromptLibraryCategoryAllowed(category) {
+		db = db.Where("category = ?", category)
+	}
+	search := strings.TrimSpace(strings.ToLower(query.Search))
+	if search != "" {
+		like := "%" + search + "%"
+		db = db.Where(
+			"LOWER(slug) LIKE ? OR LOWER(model) LIKE ? OR LOWER(prompt) LIKE ? OR LOWER(title_json) LIKE ? OR LOWER(summary_json) LIKE ? OR LOWER(tags_json) LIKE ? OR LOWER(source_platform) LIKE ?",
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+			like,
+		)
+	}
+	return db
 }
 
 func IsPromptLibraryModelAllowed(modelName string) (bool, error) {

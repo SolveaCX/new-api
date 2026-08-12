@@ -1,15 +1,14 @@
-import { StaticFeaturePage } from "@/components/static-feature-page";
+import { getPlaygroundPromptsMetadata, PlaygroundPromptsPage } from "@/components/playground-prompts-page";
 import { buildMetadata } from "@/lib/seo";
-import { staticFeaturePages } from "@/lib/static-feature-pages";
 
-const page = staticFeaturePages.playground;
+const page = getPlaygroundPromptsMetadata("en");
 
 export const metadata = buildMetadata({
-  title: page.metadataTitle,
-  description: page.metadataDescription,
+  title: page.title,
+  description: page.description,
   pathname: page.pathname,
 });
 
 export default function Page() {
-  return <StaticFeaturePage pageKey="playground" locale="en" />;
+  return <PlaygroundPromptsPage locale="en" />;
 }

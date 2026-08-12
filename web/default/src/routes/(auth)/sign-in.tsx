@@ -30,6 +30,7 @@ import { SignIn } from '@/features/auth/sign-in'
 const searchSchema = z.object({
   redirect: z.string().optional(),
   recall_redirect: z.string().min(1).max(128).optional(),
+  provider: z.string().optional(),
 })
 
 export const Route = createFileRoute('/(auth)/sign-in')({

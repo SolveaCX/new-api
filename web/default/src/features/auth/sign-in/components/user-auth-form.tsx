@@ -54,6 +54,7 @@ import { beginPasskeyLogin, finishPasskeyLogin } from '@/features/auth/passkey'
 import type { AuthFormProps } from '@/features/auth/types'
 
 export function UserAuthForm({
+  autoOAuthProvider,
   className,
   redirectTo,
   visibleRedirectTo,
@@ -257,6 +258,7 @@ export function UserAuthForm({
     <>
       {/* OAuth Providers */}
       <OAuthProviders
+        autoStartProvider={autoOAuthProvider}
         status={status}
         disabled={isLoading}
         onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}

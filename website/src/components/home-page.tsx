@@ -1,18 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, BadgeDollarSign, BarChart3, Check, KeyRound, Link2, Server, ShieldCheck } from "lucide-react";
-import { HomeHealthTrends } from "@/components/home-health-trends";
+import { buildHomePriceComparisonRows, HomePriceComparisonSection } from "@/components/home-price-comparison-section";
 import { HomeModelsTable } from "@/components/home-models-table";
 import { HomeModelCloud } from "@/components/home-model-cloud";
 import { HomeSupport } from "@/components/home-support";
 import { SiteShell } from "@/components/site-shell";
 import { getCopy } from "@/lib/copy";
 import { getHomeCopy, type HomeCopy } from "@/lib/home-copy";
-import { buildHomeModelRows, pickFlagshipModels } from "@/lib/home-models";
+import { buildHomeModelRows } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
 import { localizePath } from "@/lib/locales";
 import { ROUTER_ORIGIN, consoleUrl } from "@/lib/origins";
-import { getPricingData } from "@/lib/pricing";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 
 // "Start free trial" lands the user straight on the console API Keys tab:
 // already-authenticated users skip the form, new users land on /keys after signing up.
@@ -32,10 +32,12 @@ const PRIVACY_BADGES = [
 export async function HomePage(props: Props) {
   const copy = getCopy(props.locale);
   const home = getHomeCopy(props.locale);
-  const pricing = await getPricingData();
-  const flagships = pickFlagshipModels(pricing);
+  const [pricing, comparisonPricing] = await Promise.all([
+    getPricingData(),
+    getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
+  ]);
   const tableRows = buildHomeModelRows(pricing);
-  const healthModels = flagships.slice(0, 3).map((row) => ({ name: row.name, iconKey: row.iconKey }));
+  const priceComparisonRows = buildHomePriceComparisonRows(comparisonPricing);
 
   const apiBaseUrlDescription = (text: string) => text.replace("{{apiBaseUrl}}", API_BASE_URL);
   // {{host}} is the API endpoint developers pin in their SDK config — the router origin, not the console.
@@ -114,10 +116,7 @@ export async function HomePage(props: Props) {
           </div>
         </section>
 
-        <Stats items={home.stats} />
-
-        {/* Screen 2: 30-day model health from real traffic. */}
-        {healthModels.length > 0 ? <HomeHealthTrends locale={props.locale} copy={home.health} usageCopy={home.usage} models={healthModels} /> : null}
+        <HomePriceComparisonSection home={home} locale={props.locale} rows={priceComparisonRows} />
 
         {/* Screen 3: core value blocks — reliability, cost, privacy. */}
         <section className="relative z-10 overflow-hidden px-6 py-20 md:py-24">
@@ -243,22 +242,5 @@ function ValueBlock(props: {
         <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
       </span>
     </Link>
-  );
-}
-
-function Stats(props: { items: { value: string; label: string }[] }) {
-  return (
-    <div className="relative z-10 border-y border-violet-500/10 bg-white/45 backdrop-blur-sm dark:bg-white/[0.02]">
-      <div className="mx-auto max-w-6xl px-6 py-10 md:py-12">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12">
-          {props.items.map((item) => (
-            <div key={item.label} className="flex flex-col items-center text-center">
-              <span className="bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-2xl font-bold tracking-tight text-transparent md:text-3xl dark:from-violet-300 dark:to-fuchsia-300">{item.value}</span>
-              <span className="text-muted-foreground mt-1.5 text-xs">{item.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }

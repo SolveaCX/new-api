@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { User } from '@/features/users/types'
+import type { AutoOAuthProvider } from './lib/auto-oauth'
 
 // ============================================================================
 // API Payloads
@@ -230,6 +231,7 @@ export interface CustomOAuthProviderInfo {
 // ============================================================================
 
 export interface AuthFormProps extends React.HTMLAttributes<HTMLFormElement> {
+  autoOAuthProvider?: AutoOAuthProvider
   redirectTo?: string
   visibleRedirectTo?: string
   recallRedirectNonce?: string
