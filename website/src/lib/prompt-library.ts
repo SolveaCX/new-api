@@ -1,5 +1,4 @@
 import { type Locale, withIdFallback } from "./locales";
-import generatedPromptItemsData from "./generated-prompt-items.json";
 
 export type PromptArtifact =
   | {
@@ -2359,7 +2358,7 @@ flatkey-router`,
   }),
 ];
 
-const generatedPromptItems = generatedPromptItemsData as unknown as PromptItem[];
+const generatedPromptItems: PromptItem[] = [];
 const curatedDatasetPromptItems = staticPromptItems.slice(0, 8);
 const showcasePromptItems = staticPromptItems.slice(8);
 
