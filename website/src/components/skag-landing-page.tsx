@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { localizePath } from "@/lib/locales";
 import { ROUTER_ORIGIN } from "@/lib/origins";
+import { cn } from "@/lib/utils";
 import {
   SKAG_TRUST_LINE,
   getSkagLandingCtaUrl,
@@ -30,30 +31,31 @@ export function SkagLandingPage({ config }: Props) {
   const locale = config.locale ?? "en";
   const pathname = config.pathname ?? skagLandingPath(config.slug);
   const trustLine = config.trustLine ?? SKAG_TRUST_LINE;
+  const compactHero = config.compactHero ?? false;
 
   return (
-    <SiteShell locale={locale} pathname={pathname} hideLanguageSwitcher>
+    <SiteShell locale={locale} pathname={pathname} expandNavigationAtTablet>
       <main className="fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
         <div aria-hidden="true" className={skagGridClass} />
-        <section className="relative z-10 border-b-2 border-[#101014] px-4 pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-16 sm:px-6 md:pb-20 dark:border-white/20">
-          <div className="relative mx-auto grid max-w-[2160px] items-center gap-12 lg:grid-cols-[1fr_1fr]">
+        <section className={cn("relative z-10 border-b-2 border-[#101014] px-4 sm:px-6 dark:border-white/20", compactHero ? "pt-[calc(var(--fk-header-safe-area)+1rem)] pb-10 md:pt-[calc(var(--fk-header-safe-area)+1.5rem)] md:pb-14" : "pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-16 md:pb-20")}>
+          <div className={cn("relative mx-auto grid max-w-[2160px] items-center", compactHero ? "gap-8 xl:grid-cols-[1fr_1fr]" : "gap-12 lg:grid-cols-[1fr_1fr]")}>
             <div className="mx-auto max-w-3xl text-center lg:mx-0 lg:text-left">
               <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-[#F9F871] px-4 py-2 font-mono text-xs font-black uppercase text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
                 <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.75)] dark:bg-emerald-300" />
                 {config.badge}
               </div>
 
-              <h1 className="mt-7 text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance">
+              <h1 className={cn("leading-[0.94] font-black tracking-normal text-balance", compactHero ? "mt-5 text-[clamp(2.35rem,5.4vw,4.25rem)]" : "mt-7 text-[clamp(2.7rem,7vw,6.4rem)]")}>
                 {config.h1Lead}{" "}
                 <span className="text-[#5852FF] dark:text-[#C8A8FF]">
                   {config.h1Accent}
                 </span>
               </h1>
-              <p className={`mx-auto mt-6 max-w-2xl text-lg leading-8 font-semibold lg:mx-0 ${skagMutedClass}`}>
+              <p className={cn(`mx-auto max-w-2xl text-lg leading-8 font-semibold lg:mx-0 ${skagMutedClass}`, compactHero ? "mt-4" : "mt-6")}>
                 {config.description}
               </p>
 
-              <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start">
+              <div className={cn("flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start", compactHero ? "mt-6" : "mt-8")}>
                 <a
                   href={ctaUrl}
                   className="flatkey-primary-cta inline-flex min-h-14 w-full items-center justify-center gap-2 px-7 text-base sm:w-auto"
@@ -61,16 +63,18 @@ export function SkagLandingPage({ config }: Props) {
                   {config.ctaLabel}
                   <ArrowRight className="size-4" />
                 </a>
-                <Link
-                  href={localizePath("/pricing", locale)}
-                  className="flatkey-cta-secondary inline-flex min-h-14 w-full items-center justify-center px-7 text-base sm:w-auto"
-                >
-                  {config.secondaryCtaLabel ?? "See live pricing"}
-                </Link>
+                {!config.hideSecondaryCta && (
+                  <Link
+                    href={localizePath("/pricing", locale)}
+                    className="flatkey-cta-secondary inline-flex min-h-14 w-full items-center justify-center px-7 text-base sm:w-auto"
+                  >
+                    {config.secondaryCtaLabel ?? "See live pricing"}
+                  </Link>
+                )}
               </div>
-              <p className={`mt-5 text-sm font-semibold ${skagMutedClass}`}>{trustLine}</p>
+              <p className={cn(`text-sm font-semibold ${skagMutedClass}`, compactHero ? "mt-4" : "mt-5")}>{trustLine}</p>
 
-              <div className={`${skagCardClass} mt-8 p-5 text-left`}>
+              <div className={cn(`${skagCardClass} p-5 text-left`, compactHero ? "mt-6" : "mt-8")}>
                 <p className={`font-mono text-xs font-black uppercase ${skagMutedClass}`}>{config.pricingTitle}</p>
                 <table className="mt-3 w-full text-sm">
                   <tbody>

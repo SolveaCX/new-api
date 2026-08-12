@@ -16,6 +16,8 @@ type Props = {
   locale: Locale;
   pathname: string;
   languageCookieDomain?: string;
+  /** Paid-search pages opt in so desktop navigation matches the homepage at 1024px+. */
+  expandNavigationAtTablet?: boolean;
   hideLanguageSwitcher?: boolean;
 };
 
@@ -189,6 +191,9 @@ export function SiteHeader(props: Props) {
   const accountHref = authenticated ? dashboardHref : signInHref;
   const accountLabel = authenticated ? dashboardLabel : copy.nav.signIn;
   const isHome = currentPath === "/";
+  const desktopNavigation = props.expandNavigationAtTablet
+    ? { show: "min-[1024px]:flex", hide: "min-[1024px]:hidden" }
+    : { show: "min-[1180px]:flex", hide: "min-[1180px]:hidden" };
 
   const productItems = useMemo<NavItem[]>(
     () => [
@@ -332,7 +337,7 @@ export function SiteHeader(props: Props) {
           <span className="sr-only">flatkey.ai</span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center justify-center min-[1180px]:flex">
+        <div className={cn("hidden min-w-0 flex-1 items-center justify-center", desktopNavigation.show)}>
           <div className="fk-nav-shell inline-flex items-center gap-1 rounded-full p-1">
             {renderNavGroup("products", groupLabels.products, productItems)}
             {renderNavGroup("developers", groupLabels.developers, developerItems)}
@@ -341,7 +346,7 @@ export function SiteHeader(props: Props) {
           </div>
         </div>
 
-        <div className="ml-auto hidden shrink-0 items-center gap-2 min-[1180px]:flex">
+        <div className={cn("ml-auto hidden shrink-0 items-center gap-2", desktopNavigation.show)}>
           {!props.hideLanguageSwitcher && (
             <StaticLanguageSelect locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} />
           )}
@@ -361,7 +366,10 @@ export function SiteHeader(props: Props) {
 
         <button
           type="button"
-          className="fk-icon-motion ml-auto inline-flex size-[42px] cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] bg-white text-[#101014] shadow-[3px_3px_0_#101014] min-[1180px]:hidden dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]"
+          className={cn(
+            "fk-icon-motion ml-auto inline-flex size-[42px] cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] bg-white text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]",
+            desktopNavigation.hide
+          )}
           aria-label={copy.nav.toggle}
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((value) => !value)}
@@ -372,7 +380,8 @@ export function SiteHeader(props: Props) {
 
       <div
         className={cn(
-          "fixed inset-x-3 top-[90px] z-40 rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/98 p-3 shadow-[6px_6px_0_#101014,0_24px_70px_-46px_rgba(16,16,20,.52)] backdrop-blur-xl transition min-[1180px]:hidden dark:border-white/22 dark:bg-[#101014]/96 dark:shadow-[6px_6px_0_rgba(255,255,255,.16)]",
+          "fixed inset-x-3 top-[90px] z-40 rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/98 p-3 shadow-[6px_6px_0_#101014,0_24px_70px_-46px_rgba(16,16,20,.52)] backdrop-blur-xl transition dark:border-white/22 dark:bg-[#101014]/96 dark:shadow-[6px_6px_0_rgba(255,255,255,.16)]",
+          desktopNavigation.hide,
           mobileOpen ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-3 opacity-0"
         )}
       >
