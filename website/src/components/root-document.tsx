@@ -17,6 +17,8 @@ export const ROOT_DOCUMENT_PERFORMANCE_POLICY = {
   livechatStrategy: "lazyOnload",
 } as const;
 
+export const ONLINE_STATIC_STYLESHEET_HREF = "/fk2.css?v=728n";
+
 export const LIVECHAT_BOOTSTRAP_SCRIPT = `(function(){
   var loaded=false;
   function load(){
@@ -127,6 +129,7 @@ export function RootDocument({ bodyStart, children, docsUrl, lang }: RootDocumen
   return (
     <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
       <body>
+        <link rel="stylesheet" href={ONLINE_STATIC_STYLESHEET_HREF} precedence="default" />
         {bodyStart}
         <Script id="google-tag-manager" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.gtmStrategy}>
           {`

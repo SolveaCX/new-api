@@ -17,12 +17,6 @@ function asset(path: string) {
   return `/assets/${path}`;
 }
 
-const ONLINE_STATIC_STYLESHEET_HREF = "/fk2.css?v=728n";
-
-export function OnlineStaticStylesheet() {
-  return <link rel="stylesheet" href={ONLINE_STATIC_STYLESHEET_HREF} precedence="default" />;
-}
-
 const navGroupLabels: Record<Locale, { menu: string; products: string; resources: string }> = withIdFallback({
   en: { products: "Product", resources: "Resource", menu: "Menu" },
   zh: { products: "产品", resources: "资源", menu: "菜单" },
@@ -34,19 +28,6 @@ const navGroupLabels: Record<Locale, { menu: string; products: string; resources
   vi: { products: "Sản phẩm", resources: "Tài nguyên", menu: "Menu" },
   de: { products: "Produkt", resources: "Ressourcen", menu: "Menu" },
   id: { products: "Produk", resources: "Sumber daya", menu: "Menu" },
-});
-
-const navActionLabels: Record<Locale, { enterprise: string }> = withIdFallback({
-  en: { enterprise: "Enterprise" },
-  zh: { enterprise: "企业版" },
-  es: { enterprise: "Enterprise" },
-  fr: { enterprise: "Enterprise" },
-  pt: { enterprise: "Enterprise" },
-  ru: { enterprise: "Enterprise" },
-  ja: { enterprise: "Enterprise" },
-  vi: { enterprise: "Enterprise" },
-  de: { enterprise: "Enterprise" },
-  id: { enterprise: "Enterprise" },
 });
 
 type NavLink = {
@@ -110,7 +91,6 @@ function renderNavItem(item: NavLink, current?: ShellProps["active"]) {
 export function OnlineNav(props: { active?: ShellProps["active"]; contactAction?: boolean; locale: Locale; pathname?: string }) {
   const copy = getOnlineStaticCopy(props.locale);
   const groupLabels = navGroupLabels[props.locale];
-  const actionLabels = navActionLabels[props.locale];
   const internalHref = (href: string) => localizePath(href, props.locale);
   const signInHref = consoleUrl("/sign-in", `lng=${props.locale}`);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
@@ -129,7 +109,6 @@ export function OnlineNav(props: { active?: ShellProps["active"]; contactAction?
   ];
   const topLevelLinks: NavLink[] = [
     { active: "cli", href: internalHref("/cli"), label: copy.nav.cli },
-    { href: "/contact", label: actionLabels.enterprise },
     { active: "pricing", href: internalHref("/pricing"), label: copy.nav.pricing },
   ];
 
@@ -258,7 +237,6 @@ export function OnlineFooter(props: { locale: Locale }) {
 export function OnlineStaticShell(props: ShellProps) {
   return (
     <>
-      <OnlineStaticStylesheet />
       <style>
         {`
           .nav-group:hover .nav-group-menu,

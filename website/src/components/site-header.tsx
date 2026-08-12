@@ -241,7 +241,6 @@ export function SiteHeader(props: Props) {
   );
   const topLevelItems = [
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
-    { href: "/contact", label: legacyLabels.enterprise },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
   ];
 

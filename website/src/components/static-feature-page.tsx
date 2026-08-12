@@ -24,6 +24,7 @@ function secondaryHref(pageKey: StaticFeaturePageKey, locale: Locale) {
 
 export function StaticFeaturePage(props: Props) {
   const content = getStaticFeaturePage(props.pageKey, props.locale);
+  const showPrimaryAction = props.pageKey !== "compute";
 
   return (
     <SiteShell locale={props.locale} pathname={content.pathname}>
@@ -36,14 +37,16 @@ export function StaticFeaturePage(props: Props) {
             </h1>
             <p className="mx-auto mt-5 max-w-[720px] text-lg leading-8 text-[#43434C]">{content.description}</p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <a
-                href={primaryHref(props.pageKey)}
-                className="inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-lg bg-[#070707] px-5 text-sm font-bold text-white"
-                style={{ color: "#fff" }}
-              >
-                {content.primary}
-                <ArrowRight className="size-4" />
-              </a>
+              {showPrimaryAction && (
+                <a
+                  href={primaryHref(props.pageKey)}
+                  className="inline-flex h-12 min-w-40 items-center justify-center gap-2 rounded-lg bg-[#070707] px-5 text-sm font-bold text-white"
+                  style={{ color: "#fff" }}
+                >
+                  {content.primary}
+                  <ArrowRight className="size-4" />
+                </a>
+              )}
               <Link
                 href={secondaryHref(props.pageKey, props.locale)}
                 className="inline-flex h-12 min-w-40 items-center justify-center rounded-lg bg-white px-5 text-sm font-bold text-[#0B0B0F] shadow-[inset_0_0_0_1px_#0B0B0F14]"

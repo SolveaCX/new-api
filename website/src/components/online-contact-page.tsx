@@ -1,5 +1,5 @@
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
-import { OnlineFooter, OnlineNav, OnlineStaticStylesheet } from "@/components/online-static-shell";
+import { OnlineFooter, OnlineNav } from "@/components/online-static-shell";
 import type { Locale } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 
@@ -7,7 +7,6 @@ export function OnlineContactPage(props: { locale: Locale }) {
   const copy = getOnlineStaticCopy(props.locale);
   return (
     <>
-      <OnlineStaticStylesheet />
       <style>{`
         body{background:linear-gradient(180deg,#FFFFFF,#F7F5FD)}
         .onlineNavGroup{display:inline-flex;align-items:center;gap:10px}.onlineNavDot{color:var(--ink3);font-weight:800}

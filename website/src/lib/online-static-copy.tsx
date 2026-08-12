@@ -221,7 +221,7 @@ const en: OnlineCopy = {
     invoice: "Every model. Every tool. One invoice.",
     pay: "Pay per successful call.",
     savings: ["Model subscriptions", "Data tool subscriptions", "Automation subscriptions"],
-    sub: "One balance covers 300+ official models and 1,000+ pay-per-call tools. No idle seats, duplicate subscriptions, or API keys scattered across providers.",
+    sub: "One balance covers 100+ official models and 1,000+ pay-per-call tools. No idle seats, duplicate subscriptions, or API keys scattered across providers.",
     terminal: {
       billed: "✓ $0.83 billed · failed calls $0.00",
       contacts: "✓ 489 contacts waterfall enriched across 5 providers",
@@ -419,7 +419,7 @@ const zh: OnlineCopy = {
     invoice: "每个模型、每个工具，只需一张账单。",
     pay: "仅成功调用才付费。",
     savings: ["模型订阅", "数据工具订阅", "自动化工具订阅"],
-    sub: "一个余额覆盖 300+个官方模型和1,000+个按调用付费工具。无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key。",
+    sub: "一个余额覆盖 100+个官方模型和1,000+个按调用付费工具。无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key。",
     terminal: {
       billed: "✓ 计费 $0.83 · 失败调用 $0.00",
       contacts: "✓ 通过 5 个供应商瀑布式补全 489 位联系人",
