@@ -32,14 +32,15 @@ export function SkagLandingPage({ config }: Props) {
   const pathname = config.pathname ?? skagLandingPath(config.slug);
   const trustLine = config.trustLine ?? SKAG_TRUST_LINE;
   const compactHero = config.compactHero ?? false;
+  const hideCodeWindow = config.hideCodeWindow ?? false;
 
   return (
     <SiteShell locale={locale} pathname={pathname} expandNavigationAtTablet>
       <main className="fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
         <div aria-hidden="true" className={skagGridClass} />
         <section className={cn("relative z-10 border-b-2 border-[#101014] px-4 sm:px-6 dark:border-white/20", compactHero ? "pt-[calc(var(--fk-header-safe-area)+1rem)] pb-10 md:pt-[calc(var(--fk-header-safe-area)+1.5rem)] md:pb-14" : "pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-16 md:pb-20")}>
-          <div className={cn("relative mx-auto grid max-w-[2160px] items-center", compactHero ? "gap-8 xl:grid-cols-[1fr_1fr]" : "gap-12 lg:grid-cols-[1fr_1fr]")}>
-            <div className="mx-auto max-w-3xl text-center lg:mx-0 lg:text-left">
+          <div className={cn("relative mx-auto items-center", hideCodeWindow ? "max-w-6xl" : "grid max-w-[2160px]", !hideCodeWindow && (compactHero ? "gap-8 xl:grid-cols-[1fr_1fr]" : "gap-12 lg:grid-cols-[1fr_1fr]"))}>
+            <div className={cn(hideCodeWindow ? "mx-auto max-w-6xl text-center lg:text-left" : "mx-auto max-w-3xl text-center lg:mx-0 lg:text-left")}>
               <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-[#F9F871] px-4 py-2 font-mono text-xs font-black uppercase text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
                 <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.75)] dark:bg-emerald-300" />
                 {config.badge}
@@ -91,7 +92,7 @@ export function SkagLandingPage({ config }: Props) {
               </div>
             </div>
 
-            <CodeWindow config={config} apiBaseUrl={apiBaseUrl} />
+            {!hideCodeWindow && <CodeWindow config={config} apiBaseUrl={apiBaseUrl} />}
           </div>
         </section>
 
