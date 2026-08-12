@@ -1,4 +1,4 @@
-import { PricingPage } from "@/components/pricing-page";
+import { OnlinePricingPage } from "@/components/online-pricing-page";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
@@ -9,5 +9,5 @@ export const metadata = buildMetadata({
 });
 
 export default function Page() {
-  return <PricingPage locale="en" />;
+  return <OnlinePricingPage locale="en" />;
 }

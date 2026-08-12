@@ -1,9 +1,11 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
+// Shared responsive brand standard used by the website and console:
+// mark + lowercase "flatkey" in Public Sans Bold, with no ".ai" suffix.
 const FLATKEY_MARK = "/flatkey-mark.svg";
 
-const WORDMARK_FONT_FAMILY = "'Space Grotesk', 'Flatkey Line Seed Sans', 'Public Sans', Inter, -apple-system, sans-serif";
+const WORDMARK_FONT_FAMILY = "'Public Sans', Inter, -apple-system, sans-serif";
 
 type FlatkeyBrandLogoProps = {
   alt?: string;
@@ -19,7 +21,7 @@ export function FlatkeyBrandLogo({
       data-flatkey-brand="lockup"
       aria-label={alt}
       className={cn(
-        "group/flatkey-brand inline-flex shrink-0 items-center gap-[9px] min-[901px]:gap-2 min-[1481px]:gap-[9px]",
+        "inline-flex shrink-0 items-center gap-[9px] min-[901px]:gap-2 min-[1481px]:gap-[9px]",
         className
       )}
     >
@@ -33,10 +35,10 @@ export function FlatkeyBrandLogo({
       />
       <span
         data-flatkey-wordmark="true"
-        className="relative inline-flex text-[30px] leading-none font-bold tracking-normal text-[#0B0B0F] after:absolute after:right-0 after:-bottom-1 after:left-0 after:h-2 after:rounded-full after:bg-[#C8A8FF]/55 after:content-[''] min-[901px]:text-[28px] min-[1481px]:text-[32px] dark:text-[#F5F5F2] dark:after:bg-[#7C3AED]/45 max-[420px]:hidden"
-        style={{ fontFamily: WORDMARK_FONT_FAMILY }}
+        className="text-[30px] leading-none font-bold text-[#0B0B0F] min-[901px]:text-[28px] min-[1481px]:text-[32px] dark:text-[#F5F5F2] max-[420px]:hidden"
+        style={{ fontFamily: WORDMARK_FONT_FAMILY, letterSpacing: "-0.043em" }}
       >
-        <span className="relative z-10">flatkey</span>
+        flatkey
       </span>
     </span>
   );

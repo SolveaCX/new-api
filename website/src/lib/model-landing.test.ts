@@ -116,4 +116,23 @@ describe("model landing configuration", () => {
     expect(config?.generator?.endpoint).toBe("/v1/video-to-music");
     expect(config?.generator?.storageKey).toBe("flatkey:model-generator-draft:sonilo-video-to-music");
   });
+
+  test("builds text landing configs for generic live pricing models", () => {
+    const kimi: PricingModel = {
+      model_name: "kimi-k2.5",
+      vendor_name: "Moonshot AI",
+      quota_type: 0,
+      model_ratio: 0.3,
+      completion_ratio: 4,
+      supported_endpoint_types: ["openai"],
+    };
+
+    const config = getModelLandingConfigForPricingModel(kimi);
+
+    expect(config.slug).toBe("kimi-k2.5");
+    expect(config.modelId).toBe("kimi-k2.5");
+    expect(config.officialName).toBe("Moonshot AI");
+    expect(config.generator).toBeUndefined();
+    expect(config.seo.title).toContain("kimi-k2.5");
+  });
 });

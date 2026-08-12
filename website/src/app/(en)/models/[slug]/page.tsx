@@ -1,15 +1,12 @@
 import { notFound } from "next/navigation";
 import { ModelLandingPage } from "@/components/model-landing-page";
-import { ModelPublicPage } from "@/components/model-public-page";
-import { SiteShell } from "@/components/site-shell";
 import {
   getModelLandingConfig,
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
-import { buildModelPublicView, modelPublicPath, resolvePublicModel } from "@/lib/model-public";
-import { consoleUrl, ROUTER_ORIGIN } from "@/lib/origins";
+import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName } from "@/lib/pricing";
 import { buildMetadata } from "@/lib/seo";
 
@@ -39,16 +36,9 @@ export async function generateMetadata(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
-  if (modelSpecificConfig) {
-    return buildMetadata({
-      title: modelSpecificConfig.seo.title,
-      description: modelSpecificConfig.seo.description,
-      pathname: modelPublicPath(model.model_name),
-    });
-  }
   return buildMetadata({
-    title: `${model.model_name} — pricing, availability & API`,
-    description: `Live pricing, 30-day availability and a ready-to-run API example for ${model.model_name} on flatkey.ai.`,
+    title: modelSpecificConfig.seo.title,
+    description: modelSpecificConfig.seo.description,
     pathname: modelPublicPath(model.model_name),
   });
 }
@@ -80,24 +70,11 @@ export default async function Page(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
-  if (modelSpecificConfig) {
-    return (
-      <ModelLandingPage
-        config={modelSpecificConfig}
-        locale="en"
-        liveModels={resolveModelLandingModels(modelSpecificConfig, [modelWithVendor])}
-      />
-    );
-  }
-
   return (
-    <SiteShell locale="en" pathname={modelPublicPath(model.model_name)}>
-      <ModelPublicPage
-        locale="en"
-        {...buildModelPublicView(model, pricing)}
-        apiBaseUrl={`${ROUTER_ORIGIN}/v1`}
-        consoleTopUpUrl={consoleUrl("/wallet")}
-      />
-    </SiteShell>
+    <ModelLandingPage
+      config={modelSpecificConfig}
+      locale="en"
+      liveModels={resolveModelLandingModels(modelSpecificConfig, [modelWithVendor])}
+    />
   );
 }

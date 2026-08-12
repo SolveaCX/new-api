@@ -167,65 +167,58 @@ function mailto(subject: string) {
   return `mailto:${APPLY_EMAIL}?subject=${encodeURIComponent(subject)}`;
 }
 
-const gridBackdropClass =
-  "pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45";
-const hardCardClass =
-  "rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
-const mutedTextClass = "text-[#5C5861] dark:text-white/62";
-
 export function CareersPage({ locale, pathname }: { locale: Locale; pathname: string }) {
   const t = copy[(locale === "zh" ? "zh" : "en") as CareersLocale];
   return (
     <SiteShell locale={locale} pathname={pathname}>
-      <main className="fk-careers-page fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] px-4 pt-[var(--fk-header-safe-area)] pb-24 text-[#101014] antialiased sm:px-6 dark:bg-[#050507] dark:text-[#F6F3EA]">
-        <div aria-hidden className={gridBackdropClass} />
-        <div className="relative z-10 mx-auto w-full max-w-[2160px]">
-          <header className="border-b-2 border-[#101014] py-10 md:py-14 dark:border-white/20">
+      <main className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] px-6 pt-28 pb-24 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
+        <div className="mx-auto w-full max-w-5xl">
+          <header>
             <div className="mb-5 flex flex-wrap gap-2">
               {t.heroPills.map((p) => (
-                <span key={p} className="rounded-full border-2 border-[#101014] bg-[#F9F871] px-3 py-1.5 font-mono text-[11px] font-black uppercase shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">{p}</span>
+                <span key={p} className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800 dark:bg-violet-500/15 dark:text-violet-300">{p}</span>
               ))}
             </div>
-            <h1 className="max-w-5xl text-[clamp(2.7rem,7vw,6.4rem)] leading-[0.94] font-black tracking-normal text-balance">
+            <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-white">
               {t.heroTitle1}
               <br />
-              <span className="text-[#5852FF] dark:text-[#C8A8FF]">{t.heroTitle2}</span>
+              <span className="text-violet-700 dark:text-violet-400">{t.heroTitle2}</span>
             </h1>
-            <p className={`mt-6 max-w-3xl text-base leading-7 md:text-lg ${mutedTextClass}`}>{t.heroSub}</p>
+            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">{t.heroSub}</p>
             <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {t.stats.map((s) => (
-                <div key={s.big} className={`${hardCardClass} p-4`}>
-                  <div className="text-2xl font-black text-[#5852FF] dark:text-[#C8A8FF]">{s.big}</div>
-                  <div className={`mt-1 text-xs font-bold leading-5 ${mutedTextClass}`}>{s.small}</div>
+                <div key={s.big} className="rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
+                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{s.big}</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{s.small}</div>
                 </div>
               ))}
             </div>
           </header>
 
-          <section className="mt-14">
-            <h2 className="text-3xl font-black tracking-normal text-[#101014] dark:text-white">{t.valuesTitle}</h2>
-            <p className={`mt-2 max-w-2xl leading-7 ${mutedTextClass}`}>{t.valuesLead}</p>
+          <section className="mt-16">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{t.valuesTitle}</h2>
+            <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">{t.valuesLead}</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {t.values.map((v) => (
-                <div key={v.k} className={`${hardCardClass} p-5`}>
-                  <div className="font-mono text-[11px] font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">{v.k}</div>
-                  <div className="mt-2 text-lg font-black text-[#101014] dark:text-white">{v.title}</div>
-                  <p className={`mt-2 text-sm leading-6 ${mutedTextClass}`}>{v.body}</p>
+                <div key={v.k} className="rounded-xl border border-slate-200 bg-white/70 p-5 dark:border-white/10 dark:bg-white/5">
+                  <div className="font-mono text-[11px] font-bold tracking-widest text-violet-700 dark:text-violet-400">{v.k}</div>
+                  <div className="mt-2 font-semibold text-slate-900 dark:text-white">{v.title}</div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{v.body}</p>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="mt-14 rounded-[1.25rem] border-2 border-[#101014] bg-[#101014] p-8 text-white shadow-[5px_5px_0_#7C3AED] sm:p-10 dark:border-white/24 dark:shadow-[5px_5px_0_rgba(124,58,237,0.72)]">
+          <section className="mt-16 rounded-2xl bg-slate-950 p-8 text-slate-100 sm:p-10 dark:border dark:border-white/10">
             <h2 className="text-2xl font-bold text-white">{t.podTitle}</h2>
             {t.podBody.map((p) => (
-              <p key={p.slice(0, 16)} className="mt-3 max-w-3xl leading-7 text-white/72">{p}</p>
+              <p key={p.slice(0, 16)} className="mt-3 max-w-3xl leading-relaxed text-slate-300">{p}</p>
             ))}
           </section>
 
-          <section className="mt-14">
-            <h2 className="text-3xl font-black tracking-normal text-[#101014] dark:text-white">{t.photosTitle}</h2>
-            <p className={`mt-2 leading-7 ${mutedTextClass}`}>{t.photosLead}</p>
+          <section className="mt-16">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{t.photosTitle}</h2>
+            <p className="mt-2 text-slate-600 dark:text-slate-300">{t.photosLead}</p>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               {([
                 { src: "/careers/openai-award.jpg", w: 720, h: 960, cap: t.awardCaption },
@@ -235,39 +228,39 @@ export function CareersPage({ locale, pathname }: { locale: Locale; pathname: st
                 { src: "/team/community-audience.jpg", w: 1600, h: 1066, cap: t.audienceCaption },
                 { src: "/team/seattle-community.jpg", w: 1600, h: 1200, cap: t.communityCaption },
               ] as const).map((ph) => (
-                <figure key={ph.src} className={`${hardCardClass} overflow-hidden`}>
+                <figure key={ph.src} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
                   <Image src={ph.src} alt={ph.cap} width={ph.w} height={ph.h} loading="eager" sizes="(min-width: 640px) 50vw, 100vw" className="h-64 w-full object-cover" />
-                  <figcaption className={`border-t-2 border-[#101014] bg-[#FFFDF6] px-4 py-3 text-sm font-semibold dark:border-white/20 dark:bg-[#111116] ${mutedTextClass}`}>{ph.cap}</figcaption>
+                  <figcaption className="bg-white/80 px-4 py-3 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300">{ph.cap}</figcaption>
                 </figure>
               ))}
             </div>
           </section>
 
-          <section className="mt-14">
-            <h2 className="text-3xl font-black tracking-normal text-[#101014] dark:text-white">{t.rolesTitle}</h2>
-            <p className={`mt-2 max-w-2xl leading-7 ${mutedTextClass}`}>{t.rolesLead}</p>
+          <section className="mt-16">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{t.rolesTitle}</h2>
+            <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">{t.rolesLead}</p>
             <div className="mt-6 space-y-4">
               {t.roles.map((r) => (
-                <div key={r.title} className={`${hardCardClass} flex flex-wrap items-center gap-5 p-6`}>
+                <div key={r.title} className="flex flex-wrap items-center gap-5 rounded-xl border border-slate-200 bg-white/70 p-6 dark:border-white/10 dark:bg-white/5">
                   <div className="min-w-[240px] flex-1">
-                    <h3 className="text-lg font-black text-[#101014] dark:text-white">{r.title}</h3>
-                    <p className={`mt-2 text-sm leading-6 ${mutedTextClass}`}>{r.body}</p>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{r.title}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{r.body}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {r.tags.map((tag) => (
-                        <span key={tag} className="rounded-full border border-[#101014]/18 bg-white/62 px-2.5 py-0.5 font-mono text-[11px] font-bold text-[#5C5861] dark:border-white/15 dark:bg-white/8 dark:text-white/62">{tag}</span>
+                        <span key={tag} className="rounded-full border border-slate-200 px-2.5 py-0.5 font-mono text-[11px] text-slate-500 dark:border-white/15 dark:text-slate-400">{tag}</span>
                       ))}
                     </div>
                   </div>
-                  <a href={mailto(r.mailSubject)} className="flatkey-primary-cta inline-flex items-center justify-center px-5 py-2.5 text-sm">{r.cta}</a>
+                  <a href={mailto(r.mailSubject)} className="rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-600">{r.cta}</a>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className={`${hardCardClass} mt-14 bg-[#F9F871]/88 p-8 dark:bg-white/8`}>
-            <h3 className="text-xl font-black text-[#101014] dark:text-white">{t.barTitle}</h3>
-            <p className={`mt-3 max-w-3xl leading-7 ${mutedTextClass}`}>{t.barBody}</p>
-            <p className="mt-4 inline-block rounded-full border-2 border-[#101014] bg-white px-4 py-2 font-mono text-sm font-black text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/20 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">{t.barQuestion}</p>
+          <section className="mt-16 rounded-2xl bg-violet-50 p-8 dark:bg-violet-500/10">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white">{t.barTitle}</h3>
+            <p className="mt-3 max-w-3xl leading-relaxed text-slate-700 dark:text-slate-300">{t.barBody}</p>
+            <p className="mt-4 inline-block rounded-lg bg-white px-4 py-2 font-mono text-sm font-semibold text-violet-800 dark:bg-white/10 dark:text-violet-300">{t.barQuestion}</p>
           </section>
         </div>
       </main>

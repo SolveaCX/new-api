@@ -438,6 +438,7 @@ const GENERIC_MEDIA_FIELDS: Record<ModelGeneratorConfig["kind"], ModelGeneratorF
 };
 
 export type ModelLandingKey =
+  | "All models"
   | "↓ Go $10 · Pro $30 · Max $100 per month — usage worth up to 4.5× the price"
   | "▶ Sign in to run"
   | "Start generating"
@@ -534,23 +535,7 @@ export type ModelLandingKey =
   | "50% off";
 
 export function getModelLandingConfig(slug: string): ModelConfig | null {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(slug);
-  } catch {
-    return null;
-  }
-  const direct = MODEL_CONFIGS[decoded] ?? MODEL_CONFIGS[slug];
-  if (direct) return direct;
-
-  const normalized = normalizeModelId(decoded);
-  if (!normalized) return null;
-  return getModelLandingConfigs().find((config) =>
-    normalizeModelId(config.slug) === normalized ||
-    normalizeModelId(config.displayName) === normalized ||
-    normalizeModelId(config.modelId) === normalized ||
-    config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
-  ) ?? null;
+  return MODEL_CONFIGS[slug] ?? null;
 }
 
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
@@ -560,10 +545,10 @@ export function getModelLandingConfigForModel(modelId: string): ModelConfig | nu
   ) ?? null;
 }
 
-export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig | null {
+export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
   const explicitConfig = getModelLandingConfigForModel(model.model_name);
   if (explicitConfig) return modelLandingConfigForModel(explicitConfig, model);
-  return buildGenericMediaLandingConfig(model);
+  return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
 }
 
 export function modelLandingConfigForModel(config: ModelConfig, model: PricingModel): ModelConfig {
@@ -654,6 +639,54 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
   };
 }
 
+function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
+  const displayName = model.model_name;
+  const officialName = model.vendor_name ?? "Provider";
+  const tokenBased = model.quota_type === 0;
+  const officialUnitPrice = tokenBased
+    ? Number(model.model_ratio ?? 0) * 2 * Number(model.completion_ratio ?? 1)
+    : Number(model.model_price ?? 0);
+  const flatkeyUnitPrice = officialUnitPrice * 0.67;
+  const officialPrice = officialUnitPrice > 0 ? formatPriceLiteral(officialUnitPrice) : "$0";
+  const flatkeyPrice = flatkeyUnitPrice > 0 ? formatPriceLiteral(flatkeyUnitPrice) : "$0";
+
+  return {
+    slug: encodeURIComponent(model.model_name),
+    modelIds: [model.model_name],
+    displayName,
+    modelId: model.model_name,
+    officialName,
+    officialPrice,
+    flatkeyPrice,
+    estFlatkey: flatkeyPrice,
+    estOfficial: officialPrice,
+    examplePrompt:
+      "You are a senior backend engineer. In 3 sentences, explain why developers should use an LLM gateway instead of calling each official API directly.",
+    priceUnit: tokenBased ? "/ million output tokens" : "/ request",
+    rows: [
+      { label: "Live flatkey pricing", flatkey: flatkeyPrice, official: officialPrice },
+      { label: "Live model data from pricing API", flatkey: "", value: officialName },
+      { label: "Coverage", flatkey: "", value: COVERAGE },
+    ],
+    seo: {
+      title: `${displayName} — pricing, availability & API`,
+      description: `Live pricing, 30-day availability and a ready-to-run API example for ${displayName} on flatkey.ai.`,
+    },
+    positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
+    useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
+    faq: [
+      {
+        question: "Does this use the same model id in my SDK?",
+        answer: "Yes. Keep your SDK and switch base_url plus api_key.",
+      },
+      {
+        question: "Can I control usage before scaling?",
+        answer: "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.",
+      },
+    ],
+  };
+}
+
 function inferMediaKind(model: PricingModel): ModelGeneratorConfig["kind"] | null {
   const name = normalizeModelId(model.model_name);
   const endpoints = (model.supported_endpoint_types ?? []).map((endpoint) => normalizeModelId(endpoint));
@@ -707,6 +740,7 @@ function formatPriceLiteral(value: number): string {
 }
 
 const en: Record<ModelLandingKey, string> = {
+  "All models": "All models",
   "You pay": "You pay",
   "per month on the Go plan": "per month on the Go plan",
   "You get": "You get",
@@ -806,6 +840,7 @@ const en: Record<ModelLandingKey, string> = {
 const translations: Record<Locale, Record<string, string>> = withIdFallback<Record<string, string>>({
   en,
   zh: {
+    "All models": "全部模型",
     "Back to Market": "返回模型市场",
     "Copy page": "复制页面",
     "Copy model id": "复制模型 ID",
@@ -1037,6 +1072,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "5 折",
   },
   es: {
+    "All models": "Todos los modelos",
     "You pay": "Pagas",
     "per month on the Go plan": "al mes en el plan Go",
     "You get": "Recibes",
@@ -1132,6 +1168,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "50% de descuento",
   },
   fr: {
+    "All models": "Tous les modèles",
     "You pay": "Vous payez",
     "per month on the Go plan": "par mois avec le plan Go",
     "You get": "Vous recevez",
@@ -1227,6 +1264,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "50% de réduction",
   },
   pt: {
+    "All models": "Todos os modelos",
     "You pay": "Você paga",
     "per month on the Go plan": "por mês no plano Go",
     "You get": "Você recebe",
@@ -1322,6 +1360,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "50% de desconto",
   },
   ru: {
+    "All models": "Все модели",
     "You pay": "Вы платите",
     "per month on the Go plan": "в месяц на плане Go",
     "You get": "Вы получаете",
@@ -1417,6 +1456,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "скидка 50%",
   },
   ja: {
+    "All models": "すべてのモデル",
     "You pay": "支払うのは",
     "per month on the Go plan": "／月（Go プラン）",
     "You get": "使えるのは",
@@ -1512,6 +1552,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "50% オフ",
   },
   vi: {
+    "All models": "Tất cả mô hình",
     "You pay": "Bạn trả",
     "per month on the Go plan": "mỗi tháng với gói Go",
     "You get": "Bạn nhận",
@@ -1607,6 +1648,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "50% off": "giảm 50%",
   },
   de: {
+    "All models": "Alle Modelle",
     "You pay": "Sie zahlen",
     "per month on the Go plan": "pro Monat im Go-Plan",
     "You get": "Sie erhalten",

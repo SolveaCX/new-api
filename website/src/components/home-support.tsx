@@ -43,50 +43,50 @@ function XLogo(props: { className?: string }) {
 
 export function HomeSupport({ copy }: Props) {
   const cardClass =
-    "group flex flex-col items-start rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-7 text-left shadow-[5px_5px_0_#101014] backdrop-blur-sm transition-transform duration-300 hover:-translate-y-0.5 md:p-8 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
+    "group flex flex-col items-start rounded-2xl border border-violet-500/16 bg-white/62 p-7 text-left shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm transition-colors duration-300 hover:border-violet-500/28 hover:bg-white/78 md:p-8 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]";
   const iconClass =
-    "mb-5 flex size-12 items-center justify-center rounded-full border-2 border-[#101014] bg-[#EEE4FF] text-[#7C3AED] shadow-[3px_3px_0_#101014] transition-transform duration-300 group-hover:scale-[1.03] dark:border-white/20 dark:bg-white/10 dark:text-[#C8A8FF] dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]";
-  const actionClass = "mt-auto inline-flex items-center pt-5 text-sm font-black text-[#7C3AED] dark:text-[#C8A8FF]";
+    "mb-5 flex size-12 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/8 text-violet-700 shadow-[0_18px_44px_-30px_rgba(124,58,237,0.8)] transition-transform duration-300 group-hover:scale-[1.03] dark:text-violet-300";
+  const actionClass = "mt-auto inline-flex items-center pt-5 text-sm font-semibold text-violet-700 dark:text-violet-300";
 
   return (
-    <section className="relative z-10 border-t-2 border-[#101014] px-4 py-16 sm:px-6 md:py-20 dark:border-white/20">
-      <div className="mx-auto max-w-[2160px]">
+    <section className="relative z-10 border-t border-violet-500/10 px-6 py-20 md:py-24">
+      <div className="mx-auto max-w-6xl">
         <div className="mb-12 max-w-2xl">
-          <p className="mb-3 font-mono text-xs font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">{copy.eyebrow}</p>
-          <h2 className="text-2xl leading-tight font-black tracking-normal md:text-3xl">{copy.title}</h2>
-          <p className="mt-4 text-sm leading-relaxed text-[#5C5861] md:text-base dark:text-white/62">{copy.description}</p>
+          <p className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">{copy.eyebrow}</p>
+          <h2 className="text-2xl leading-tight font-bold tracking-tight md:text-3xl">{copy.title}</h2>
+          <p className="text-muted-foreground mt-4 text-sm leading-relaxed md:text-base">{copy.description}</p>
         </div>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <a className={cardClass} href={`mailto:${SUPPORT_EMAIL}`}>
             <div className={iconClass}>
               <Mail className="size-5" strokeWidth={1.6} />
             </div>
-            <h3 className="text-lg font-black tracking-normal">{copy.email.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-[#5C5861] dark:text-white/62">{copy.email.desc}</p>
+            <h3 className="text-lg font-semibold tracking-tight">{copy.email.title}</h3>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.email.desc}</p>
             <span className={actionClass}>{SUPPORT_EMAIL}</span>
           </a>
           <button type="button" className={`${cardClass} cursor-pointer`} onClick={openLiveChat}>
             <div className={iconClass}>
               <MessageCircle className="size-5" strokeWidth={1.6} />
             </div>
-            <h3 className="text-lg font-black tracking-normal">{copy.chat.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-[#5C5861] dark:text-white/62">{copy.chat.desc}</p>
+            <h3 className="text-lg font-semibold tracking-tight">{copy.chat.title}</h3>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.chat.desc}</p>
             <span className={actionClass}>{copy.chat.action}</span>
           </button>
           <a className={cardClass} href={`sms:${SUPPORT_SMS_NUMBER}`}>
             <div className={iconClass}>
               <Smartphone className="size-5" strokeWidth={1.6} />
             </div>
-            <h3 className="text-lg font-black tracking-normal">{copy.sms.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-[#5C5861] dark:text-white/62">{copy.sms.desc}</p>
+            <h3 className="text-lg font-semibold tracking-tight">{copy.sms.title}</h3>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.sms.desc}</p>
             <span className={actionClass}>{SUPPORT_SMS_DISPLAY}</span>
           </a>
           <a className={cardClass} href={SUPPORT_X_URL} target="_blank" rel="noopener noreferrer">
             <div className={iconClass}>
               <XLogo className="size-4" />
             </div>
-            <h3 className="text-lg font-black tracking-normal">{copy.x.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-[#5C5861] dark:text-white/62">{copy.x.desc}</p>
+            <h3 className="text-lg font-semibold tracking-tight">{copy.x.title}</h3>
+            <p className="text-muted-foreground mt-2 text-sm leading-6">{copy.x.desc}</p>
             <span className={actionClass}>{SUPPORT_X_HANDLE}</span>
           </a>
         </div>

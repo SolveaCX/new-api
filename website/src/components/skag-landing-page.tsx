@@ -3,7 +3,6 @@ import { ArrowRight } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { localizePath } from "@/lib/locales";
 import { ROUTER_ORIGIN } from "@/lib/origins";
-import { cn } from "@/lib/utils";
 import {
   SKAG_TRUST_LINE,
   getSkagLandingCtaUrl,
@@ -15,12 +14,6 @@ type Props = {
   config: SkagLandingConfig;
 };
 
-const skagGridClass =
-  "pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(16,16,20,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,16,20,0.07)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.075)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)] dark:opacity-45";
-const skagCardClass =
-  "rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]";
-const skagMutedClass = "text-[#5C5861] dark:text-white/62";
-
 // Google Ads SKAG landing page: the H1 echoes the ad keyword exactly and the
 // first screen carries the value prop, price table, runnable snippet, CTA,
 // and trust line. Styling mirrors the glm-landing/model-landing pages so the
@@ -31,117 +24,120 @@ export function SkagLandingPage({ config }: Props) {
   const locale = config.locale ?? "en";
   const pathname = config.pathname ?? skagLandingPath(config.slug);
   const trustLine = config.trustLine ?? SKAG_TRUST_LINE;
-  const compactHero = config.compactHero ?? false;
-  const hideCodeWindow = config.hideCodeWindow ?? false;
 
   return (
-    <SiteShell locale={locale} pathname={pathname} expandNavigationAtTablet>
-      <main className="fk-subpage-surface relative min-h-screen overflow-hidden bg-[#F7F4EC] text-[#101014] antialiased dark:bg-[#050507] dark:text-[#F6F3EA]">
-        <div aria-hidden="true" className={skagGridClass} />
-        <section className={cn("relative z-10 border-b-2 border-[#101014] px-4 sm:px-6 dark:border-white/20", compactHero ? "pt-[calc(var(--fk-header-safe-area)+1rem)] pb-10 md:pt-[calc(var(--fk-header-safe-area)+1.5rem)] md:pb-14" : "pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-16 md:pb-20")}>
-          <div className={cn("relative mx-auto items-center", hideCodeWindow ? "max-w-6xl" : "grid max-w-[2160px]", !hideCodeWindow && (compactHero ? "gap-8 xl:grid-cols-[1fr_1fr]" : "gap-12 lg:grid-cols-[1fr_1fr]"))}>
-            <div className={cn(hideCodeWindow ? "mx-auto max-w-6xl text-center lg:text-left" : "mx-auto max-w-3xl text-center lg:mx-0 lg:text-left")}>
-              <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#101014] bg-[#F9F871] px-4 py-2 font-mono text-xs font-black uppercase text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,0.16)]">
-                <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.75)] dark:bg-emerald-300" />
+    <SiteShell locale={locale} pathname={pathname} hideLanguageSwitcher>
+      <div className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
+        <section className="relative border-b border-violet-500/10 pt-20 pb-16 dark:border-white/10 md:pt-28 md:pb-24">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_46%_-18%,rgba(124,58,237,0.24),transparent_38%),radial-gradient(circle_at_82%_76%,rgba(79,70,229,0.14),transparent_34%),linear-gradient(180deg,#f6f2ff_0%,#fbfaff_48%,#ffffff_100%)] dark:bg-[radial-gradient(circle_at_50%_-20%,rgba(72,103,255,0.33),transparent_36%),radial-gradient(circle_at_86%_82%,rgba(130,80,255,0.22),transparent_32%),linear-gradient(180deg,#111a33_0%,#070911_48%,#05070d_100%)]"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-[0.34] [background-image:linear-gradient(rgba(124,58,237,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(124,58,237,0.1)_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(ellipse_70%_58%_at_50%_18%,black_0%,transparent_78%)] dark:opacity-[0.18] dark:[background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)]"
+          />
+          <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-6 lg:grid-cols-[1fr_1fr]">
+            <div className="mx-auto max-w-3xl text-center lg:mx-0 lg:text-left">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/35 bg-emerald-50/85 px-4 py-2 font-mono text-xs font-bold tracking-[0.18em] text-emerald-700 uppercase shadow-[0_18px_48px_rgba(16,185,129,0.16)] dark:border-emerald-300/35 dark:bg-emerald-300/10 dark:text-emerald-300 dark:shadow-[0_0_40px_rgba(52,211,153,0.16)]">
+                <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.75)] dark:bg-emerald-300 dark:shadow-[0_0_16px_rgba(52,211,153,0.9)]" />
                 {config.badge}
               </div>
 
-              <h1 className={cn("leading-[0.94] font-black tracking-normal text-balance", compactHero ? "mt-5 text-[clamp(2.35rem,5.4vw,4.25rem)]" : "mt-7 text-[clamp(2.7rem,7vw,6.4rem)]")}>
+              <h1 className="mt-7 text-[clamp(2.6rem,6.4vw,4.9rem)] leading-[1.02] font-black tracking-tight text-balance">
                 {config.h1Lead}{" "}
-                <span className="text-[#5852FF] dark:text-[#C8A8FF]">
+                <span className="bg-gradient-to-r from-[#5d8cff] via-[#7f6bff] to-[#a855f7] bg-clip-text text-transparent">
                   {config.h1Accent}
                 </span>
               </h1>
-              <p className={cn(`mx-auto max-w-2xl text-lg leading-8 font-semibold lg:mx-0 ${skagMutedClass}`, compactHero ? "mt-4" : "mt-6")}>
+              <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 font-medium text-slate-600 lg:mx-0 dark:text-slate-300">
                 {config.description}
               </p>
 
-              <div className={cn("flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start", compactHero ? "mt-6" : "mt-8")}>
+              <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row lg:justify-start">
                 <a
                   href={ctaUrl}
-                  className="flatkey-primary-cta inline-flex min-h-14 w-full items-center justify-center gap-2 px-7 text-base sm:w-auto"
+                  className="inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#5f86ff] to-[#8357ff] px-7 text-base font-extrabold text-white shadow-[0_22px_70px_rgba(95,134,255,0.35)] transition-transform hover:-translate-y-0.5 sm:w-auto"
                 >
                   {config.ctaLabel}
                   <ArrowRight className="size-4" />
                 </a>
-                {!config.hideSecondaryCta && (
-                  <Link
-                    href={localizePath("/pricing", locale)}
-                    className="flatkey-cta-secondary inline-flex min-h-14 w-full items-center justify-center px-7 text-base sm:w-auto"
-                  >
-                    {config.secondaryCtaLabel ?? "See live pricing"}
-                  </Link>
-                )}
+                <Link
+                  href={localizePath("/pricing", locale)}
+                  className="inline-flex min-h-14 w-full items-center justify-center rounded-lg border border-slate-300 bg-white/70 px-7 text-base font-extrabold text-slate-950 shadow-[0_18px_46px_rgba(15,23,42,0.08)] transition-colors hover:border-violet-400/70 dark:border-slate-600/70 dark:bg-slate-950/30 dark:text-white dark:shadow-none dark:hover:border-violet-300/60 sm:w-auto"
+                >
+                  {config.secondaryCtaLabel ?? "See live pricing"}
+                </Link>
               </div>
-              <p className={cn(`text-sm font-semibold ${skagMutedClass}`, compactHero ? "mt-4" : "mt-5")}>{trustLine}</p>
+              <p className="mt-5 text-sm font-medium text-slate-500 dark:text-slate-500">{trustLine}</p>
 
-              <div className={cn(`${skagCardClass} p-5 text-left`, compactHero ? "mt-6" : "mt-8")}>
-                <p className={`font-mono text-xs font-black uppercase ${skagMutedClass}`}>{config.pricingTitle}</p>
+              <div className="mt-8 rounded-lg border border-violet-200/70 bg-white/80 p-5 text-left shadow-[0_18px_48px_rgba(79,70,229,0.08)] dark:border-slate-800 dark:bg-[#0d121c] dark:shadow-none">
+                <p className="font-mono text-xs font-bold tracking-[0.2em] text-slate-500 uppercase">{config.pricingTitle}</p>
                 <table className="mt-3 w-full text-sm">
                   <tbody>
                     {config.priceRows.map((row) => (
-                      <tr key={row.label} className="border-b border-[#101014]/10 last:border-0 dark:border-white/10">
-                        <td className={`py-2.5 pr-2 ${skagMutedClass}`}>{row.label}</td>
+                      <tr key={row.label} className="border-b border-violet-500/10 last:border-0">
+                        <td className="py-2.5 pr-2 text-slate-600 dark:text-slate-400">{row.label}</td>
                         <td className="py-2.5 pr-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-300">{row.flatkey}</td>
                         <td className="py-2.5 text-right font-mono text-slate-400 line-through dark:text-slate-500">{row.official}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <p className={`mt-3 text-xs ${skagMutedClass}`}>{config.priceFootnote}</p>
+                <p className="mt-3 text-xs text-slate-500 dark:text-slate-600">{config.priceFootnote}</p>
               </div>
             </div>
 
-            {!hideCodeWindow && <CodeWindow config={config} apiBaseUrl={apiBaseUrl} />}
+            <CodeWindow config={config} apiBaseUrl={apiBaseUrl} />
           </div>
         </section>
 
-        <section className="relative z-10 border-b-2 border-[#101014] bg-[#FFFDF6]/72 px-4 py-16 backdrop-blur-sm sm:px-6 md:py-18 dark:border-white/20 dark:bg-[#111116]/54">
-          <div className="mx-auto max-w-[2160px]">
+        <section className="border-b border-violet-500/10 bg-[#fbfaff] px-6 py-16 dark:border-white/10 dark:bg-[#05070d] md:py-20">
+          <div className="mx-auto max-w-7xl">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {config.features.map((feature) => (
                 <article
                   key={feature.title}
-                  className={`${skagCardClass} p-6`}
+                  className="rounded-lg border border-violet-200/70 bg-white/80 p-6 shadow-[0_18px_48px_rgba(79,70,229,0.08)] dark:border-slate-800 dark:bg-[#0d121c] dark:shadow-none"
                 >
-                  <h2 className="text-lg font-black tracking-normal text-[#101014] dark:text-white">{feature.title}</h2>
-                  <p className={`mt-3 text-sm leading-7 ${skagMutedClass}`}>{feature.body}</p>
+                  <h2 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">{feature.title}</h2>
+                  <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-400">{feature.body}</p>
                 </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="relative z-10 px-4 py-16 sm:px-6 md:py-18">
-          <div className="mx-auto grid max-w-[2160px] gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className={`${skagCardClass} bg-[#F9F871]/75 p-8 dark:bg-white/8`}>
-              <h2 className="text-3xl font-black tracking-normal text-[#101014] dark:text-white md:text-4xl">
+        <section className="bg-[linear-gradient(180deg,#ffffff_0%,#f4f1ff_100%)] px-6 py-16 dark:!bg-none dark:bg-[#05070d] md:py-20">
+          <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-lg border border-violet-300/40 bg-[linear-gradient(135deg,rgba(99,102,241,0.14),rgba(16,185,129,0.08),rgba(255,255,255,0.88))] p-8 shadow-[0_24px_80px_rgba(79,70,229,0.14)] dark:border-violet-400/25 dark:!bg-[linear-gradient(135deg,rgba(96,132,255,0.22),rgba(16,185,129,0.10),rgba(5,7,13,0.6))] dark:shadow-none">
+              <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white md:text-4xl">
                 {config.h1Lead} {config.h1Accent}
               </h2>
-              <p className={`mt-5 text-base leading-8 ${skagMutedClass}`}>{config.description}</p>
+              <p className="mt-5 text-base leading-8 text-slate-600 dark:text-slate-300">{config.description}</p>
               <a
                 href={ctaUrl}
-                className="flatkey-primary-cta mt-8 inline-flex min-h-12 items-center justify-center gap-2 px-6 text-sm"
+                className="mt-8 inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#5f86ff] to-[#8357ff] px-6 text-sm font-black text-white shadow-[0_20px_60px_rgba(95,134,255,0.25)] transition-transform hover:-translate-y-0.5"
               >
                 {config.ctaLabel}
                 <ArrowRight className="size-4" />
               </a>
-              <p className={`mt-4 text-xs font-semibold ${skagMutedClass}`}>{trustLine}</p>
+              <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-500">{trustLine}</p>
             </div>
             <div className="space-y-4">
               {config.faq.map((faq) => (
                 <article
                   key={faq.question}
-                  className={`${skagCardClass} p-6`}
+                  className="rounded-lg border border-violet-200/70 bg-white/80 p-6 shadow-[0_18px_48px_rgba(79,70,229,0.08)] dark:border-slate-800 dark:bg-[#0d121c] dark:shadow-none"
                 >
-                  <h3 className="text-base font-black text-[#101014] dark:text-white">{faq.question}</h3>
-                  <p className={`mt-3 text-sm leading-7 ${skagMutedClass}`}>{faq.answer}</p>
+                  <h3 className="text-base font-black text-slate-950 dark:text-white">{faq.question}</h3>
+                  <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-400">{faq.answer}</p>
                 </article>
               ))}
             </div>
           </div>
         </section>
-      </main>
+      </div>
     </SiteShell>
   );
 }
@@ -176,7 +172,7 @@ print(response.choices[0].message.content)`,
   ];
 
   return (
-    <div className="overflow-hidden rounded-[1.25rem] border-2 border-[#101014] bg-[#101014] text-white shadow-[5px_5px_0_#7C3AED] dark:border-white/20 dark:shadow-[5px_5px_0_rgba(124,58,237,0.72)]">
+    <div className="overflow-hidden rounded-lg border border-slate-800 bg-[#090d16] shadow-[0_34px_110px_rgba(79,70,229,0.20),0_14px_44px_rgba(15,23,42,0.18)] dark:border-slate-700 dark:shadow-[0_40px_120px_rgba(0,0,0,0.34)]">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="size-2.5 rounded-full bg-red-400" />
@@ -187,8 +183,8 @@ print(response.choices[0].message.content)`,
       </div>
       <div className="grid gap-4 p-4">
         {snippets.map((snippet) => (
-          <div key={snippet.label} className="min-w-0 rounded-[1rem] border border-white/10 bg-[#060912]">
-            <div className="border-b border-white/10 px-4 py-3 text-xs font-black text-[#C8A8FF]">{snippet.label}</div>
+          <div key={snippet.label} className="min-w-0 rounded-lg border border-white/10 bg-[#060912]">
+            <div className="border-b border-white/10 px-4 py-3 text-xs font-bold tracking-wide text-violet-300">{snippet.label}</div>
             <pre className="overflow-x-auto p-4 font-mono text-sm leading-7 text-slate-300">
               <code>{snippet.code}</code>
             </pre>

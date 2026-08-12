@@ -1,23 +1,82 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, ChevronDown, Globe2, Menu, X } from "lucide-react";
-import { FocusEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
-import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
 import { CLI_LANDING_PATH, cliLandingCopy } from "@/lib/cli-landing";
 import { getCopy } from "@/lib/copy";
 import { LOCALE_LABELS, LOCALES, type Locale, localeLanguageTag, localizePath, stripLocale, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
+import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import { cn } from "@/lib/utils";
+
+const legacyNavLabelByLocale: Record<
+  Locale,
+  {
+    compute: string;
+    enterprise: string;
+    playground: string;
+    requestDemo: string;
+    status: string;
+    usecases: string;
+  }
+> = withIdFallback({
+  en: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Request a Demo", status: "Status", usecases: "Use Cases" },
+  zh: { compute: "算力", enterprise: "企业版", playground: "Playground", requestDemo: "预约演示", status: "服务状态", usecases: "使用场景" },
+  es: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Solicitar demo", status: "Estado", usecases: "Casos de uso" },
+  fr: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Demander une demo", status: "Statut", usecases: "Cas d'usage" },
+  pt: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Solicitar demo", status: "Status", usecases: "Casos de uso" },
+  ru: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Запросить демо", status: "Статус", usecases: "Сценарии" },
+  ja: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "デモを依頼", status: "ステータス", usecases: "ユースケース" },
+  vi: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Yeu cau demo", status: "Trạng thái", usecases: "Use cases" },
+  de: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Demo anfragen", status: "Status", usecases: "Anwendungsfälle" },
+  id: { compute: "Compute", enterprise: "Enterprise", playground: "Playground", requestDemo: "Minta demo", status: "Status", usecases: "Use case" },
+});
+
+const startFreeLabelByLocale: Record<Locale, string> = withIdFallback({
+  en: "Start Free",
+  zh: "免费开始",
+  es: "Empieza gratis",
+  fr: "Commencer gratuitement",
+  pt: "Começar grátis",
+  ru: "Начать бесплатно",
+  ja: "無料で開始",
+  vi: "Bắt đầu miễn phí",
+  de: "Kostenlos starten",
+});
+
+const navGroupLabelByLocale: Record<Locale, { menu: string; products: string; resources: string }> = withIdFallback({
+  en: { products: "Product", resources: "Resource", menu: "Menu" },
+  zh: { products: "产品", resources: "资源", menu: "菜单" },
+  es: { products: "Producto", resources: "Recursos", menu: "Menu" },
+  fr: { products: "Produit", resources: "Ressources", menu: "Menu" },
+  pt: { products: "Produto", resources: "Recursos", menu: "Menu" },
+  ru: { products: "Продукт", resources: "Ресурсы", menu: "Меню" },
+  ja: { products: "プロダクト", resources: "リソース", menu: "メニュー" },
+  vi: { products: "Sản phẩm", resources: "Tài nguyên", menu: "Menu" },
+  de: { products: "Produkt", resources: "Ressourcen", menu: "Menu" },
+  id: { products: "Produk", resources: "Sumber daya", menu: "Menu" },
+});
+
+const languagePanelLabelByLocale: Record<Locale, string> = withIdFallback({
+  en: "Language",
+  zh: "语言",
+  es: "Idioma",
+  fr: "Langue",
+  pt: "Idioma",
+  ru: "Язык",
+  ja: "言語",
+  vi: "Ngôn ngữ",
+  de: "Sprache",
+  id: "Bahasa",
+});
 
 type Props = {
   locale: Locale;
   pathname: string;
   languageCookieDomain?: string;
-  /** Paid-search pages opt in so desktop navigation matches the homepage at 1024px+. */
-  expandNavigationAtTablet?: boolean;
   hideLanguageSwitcher?: boolean;
 };
 
@@ -28,76 +87,12 @@ type NavItem = {
   publicPath?: boolean;
 };
 
-type NavGroupKey = "products" | "developers" | "resources";
-
-const legacyNavLabelByLocale: Record<Locale, { compute: string; playground: string; status: string; usecases: string }> = withIdFallback({
-  en: { compute: "Compute", playground: "Playground", status: "Status", usecases: "Use cases" },
-  zh: { compute: "算力", playground: "Playground", status: "服务状态", usecases: "使用场景" },
-  es: { compute: "Compute", playground: "Playground", status: "Estado", usecases: "Casos de uso" },
-  fr: { compute: "Compute", playground: "Playground", status: "Statut", usecases: "Cas d'usage" },
-  pt: { compute: "Compute", playground: "Playground", status: "Status", usecases: "Casos de uso" },
-  ru: { compute: "Compute", playground: "Playground", status: "Статус", usecases: "Сценарии" },
-  ja: { compute: "Compute", playground: "Playground", status: "ステータス", usecases: "ユースケース" },
-  vi: { compute: "Compute", playground: "Playground", status: "Trạng thái", usecases: "Use cases" },
-  de: { compute: "Compute", playground: "Playground", status: "Status", usecases: "Anwendungsfälle" },
-});
-
-const enterpriseLabelByLocale: Record<Locale, string> = withIdFallback({
-  en: "Enterprise",
-  zh: "企业版",
-  es: "Empresa",
-  fr: "Enterprise",
-  pt: "Empresarial",
-  ru: "Enterprise",
-  ja: "エンタープライズ",
-  vi: "Doanh nghiệp",
-  de: "Enterprise",
-});
-
-const dashboardLabelByLocale: Record<Locale, string> = withIdFallback({
-  en: "Dashboard",
-  zh: "控制台",
-  es: "Dashboard",
-  fr: "Dashboard",
-  pt: "Dashboard",
-  ru: "Dashboard",
-  ja: "Dashboard",
-  vi: "Dashboard",
-  de: "Dashboard",
-});
-
-const startFreeLabelByLocale: Record<Locale, string> = withIdFallback({
-  en: "Start free",
-  zh: "免费使用",
-  es: "Empieza gratis",
-  fr: "Commencer",
-  pt: "Começar grátis",
-  ru: "Начать",
-  ja: "無料で開始",
-  vi: "Bắt đầu miễn phí",
-  de: "Kostenlos starten",
-});
-
-const navGroupLabelByLocale: Record<Locale, { careers: string; developers: string; products: string; resources: string }> = withIdFallback({
-  en: { products: "Products", developers: "Developers", resources: "Resources", careers: "Careers" },
-  zh: { products: "产品", developers: "开发者", resources: "资源", careers: "加入我们" },
-  es: { products: "Productos", developers: "Desarrolladores", resources: "Recursos", careers: "Carreras" },
-  fr: { products: "Produits", developers: "Développeurs", resources: "Ressources", careers: "Carrières" },
-  pt: { products: "Produtos", developers: "Desenvolvedores", resources: "Recursos", careers: "Carreiras" },
-  ru: { products: "Продукты", developers: "Разработчикам", resources: "Ресурсы", careers: "Вакансии" },
-  ja: { products: "プロダクト", developers: "開発者向け", resources: "リソース", careers: "採用情報" },
-  vi: { products: "Sản phẩm", developers: "Nhà phát triển", resources: "Tài nguyên", careers: "Tuyển dụng" },
-  de: { products: "Produkte", developers: "Entwickler", resources: "Ressourcen", careers: "Karriere" },
-});
-
-const topNavClass =
-  "fk-nav-pill fk-header-stagger inline-flex h-10 cursor-pointer items-center whitespace-nowrap rounded-full px-3.5 text-[15px] font-extrabold text-[#24242B] outline-none transition-[background-color,color,box-shadow,transform] hover:bg-[#EEE4FF] hover:text-[#101014] hover:shadow-[inset_0_0_0_1px_rgba(16,16,20,.12)] focus-visible:bg-[#EEE4FF] focus-visible:text-[#101014] focus-visible:shadow-[inset_0_0_0_1px_rgba(16,16,20,.12)] dark:text-white/78 dark:hover:bg-white/12 dark:hover:text-white dark:hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,.16)]";
-const topNavActiveClass = "border-2 border-[#101014] bg-[#101014] !text-white shadow-[3px_3px_0_#C8A8FF] hover:bg-[#101014] hover:!text-white hover:shadow-[3px_3px_0_#C8A8FF] focus-visible:shadow-[3px_3px_0_#C8A8FF] dark:border-white/24 dark:bg-white dark:!text-[#101014]";
-const dropdownSurfaceClass =
-  "fk-popover min-w-[270px] rounded-[1.1rem] border-2 border-[#101014] bg-[#FFFDF6]/98 p-2 shadow-[5px_5px_0_#101014,0_24px_70px_-48px_rgba(16,16,20,.48)] backdrop-blur-xl dark:border-white/22 dark:bg-[#101014]/98 dark:shadow-[5px_5px_0_rgba(255,255,255,.16)]";
-const dropdownItemClass =
-  "fk-dropdown-item flex h-10 w-full cursor-pointer items-center justify-between rounded-[0.85rem] px-3 text-left text-[14px] font-extrabold leading-none text-[#3F3F48] outline-none transition-[background-color,color,box-shadow,transform] hover:bg-[#EEE4FF] hover:text-[#101014] hover:shadow-[inset_0_0_0_1px_rgba(16,16,20,.10)] focus-visible:bg-[#EEE4FF] focus-visible:text-[#101014] focus-visible:shadow-[inset_0_0_0_1px_rgba(16,16,20,.10)] dark:text-white/72 dark:hover:bg-white/12 dark:hover:text-white dark:hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,.14)]";
-const dropdownItemActiveClass = "bg-[#101014] !text-white shadow-[2px_2px_0_#C8A8FF] hover:bg-[#101014] hover:!text-white hover:shadow-[2px_2px_0_#C8A8FF] dark:bg-white dark:!text-[#101014]";
+const mobileMenuSurfaceClass = "grid gap-0.5 rounded-xl border border-[#0B0B0F12] bg-white p-2";
+const mobileNavRowClass =
+  "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold text-[#0B0B0F] transition hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
+const mobileNavActiveClass = "bg-[#F3EDFF] text-[#6B46C1]";
+const mobileNavNestedClass = "grid gap-0.5 pt-0.5 pl-4";
+const mobileNavOpenClass = "group-open:bg-[#F3EDFF] group-open:text-[#6B46C1]";
 
 function persistLanguagePreference(locale: Locale, cookieDomain?: string) {
   for (const cookie of buildLanguagePreferenceCookieWrites(locale, cookieDomain)) {
@@ -105,176 +100,152 @@ function persistLanguagePreference(locale: Locale, cookieDomain?: string) {
   }
 }
 
-function StaticLanguageSelect(props: { cookieDomain?: string; locale: Locale; pathname: string }) {
-  const strippedPath = stripLocale(props.pathname);
+function HeaderLanguageMenu(props: { cookieDomain?: string; locale: Locale; pathname: string; variant?: "dropdown" | "panel" }) {
   const [open, setOpen] = useState(false);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancelClose = () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  };
-
-  const openMenu = () => {
-    cancelClose();
-    setOpen(true);
-  };
-
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimerRef.current = setTimeout(() => setOpen(false), 220);
-  };
-
-  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-      scheduleClose();
-    }
-  };
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const strippedPath = stripLocale(props.pathname);
+  const languageLinks = useMemo(
+    () =>
+      LOCALES.map((locale) => ({
+        code: locale,
+        href: localizePath(strippedPath, locale),
+        label: LOCALE_LABELS[locale],
+      })),
+    [strippedPath]
+  );
 
   useEffect(() => {
-    return () => {
-      cancelClose();
+    if (!open) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
-  }, []);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const handleLanguageClick = (locale: Locale) => {
+    persistLanguagePreference(locale, props.cookieDomain);
+    setOpen(false);
+  };
+
+  if (props.variant === "panel") {
+    return (
+      <details className="group">
+        <summary className={cn(mobileNavRowClass, mobileNavOpenClass, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{languagePanelLabelByLocale[props.locale]}</span>
+          <ChevronDown className="ml-auto size-4 shrink-0 text-[#8D8994] transition group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <nav aria-label="Change language" className={mobileNavNestedClass}>
+          {languageLinks.map((lang) => (
+            <a
+              key={lang.code}
+              className={cn(mobileNavRowClass, props.locale === lang.code && mobileNavActiveClass)}
+              href={lang.href}
+              hrefLang={localeLanguageTag(lang.code)}
+              lang={localeLanguageTag(lang.code)}
+              aria-current={props.locale === lang.code ? "page" : undefined}
+              onClick={() => handleLanguageClick(lang.code)}
+            >
+              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{lang.label}</span>
+              <Check className={cn("ml-auto size-4 shrink-0", props.locale !== lang.code && "invisible")} aria-hidden="true" />
+            </a>
+          ))}
+        </nav>
+      </details>
+    );
+  }
 
   return (
-    <div className="fk-lang-menu relative" onPointerEnter={openMenu} onPointerLeave={scheduleClose} onFocus={openMenu} onBlur={handleBlur}>
+    <div ref={rootRef} className="relative">
       <button
         type="button"
+        className="inline-flex size-10 items-center justify-center rounded-full border border-[#0B0B0F14] bg-white text-[#43434C] shadow-[0_1px_2px_rgba(11,11,15,.05)] transition hover:border-[#0B0B0F24] hover:text-[#0B0B0F] aria-expanded:border-[#0B0B0F24] aria-expanded:text-[#0B0B0F]"
         aria-label="Change language"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="fk-icon-motion inline-flex size-10 cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] bg-white text-[#101014] outline-none shadow-[3px_3px_0_#101014] transition-colors hover:bg-[#EEE4FF] focus-visible:bg-[#EEE4FF] dark:border-white/24 dark:bg-white/10 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)] dark:hover:bg-white dark:hover:text-[#101014]"
+        aria-controls={menuId}
+        onClick={() => setOpen((value) => !value)}
       >
-        <Globe2 className="size-5" strokeWidth={2.25} />
+        <Globe2 className="size-4" aria-hidden="true" />
       </button>
-      <div className={cn("fk-dropdown-panel absolute top-full right-0 z-50 pt-2", open ? "fk-dropdown-panel-open" : "")}>
-        <div className={cn("grid gap-1", dropdownSurfaceClass)}>
-          {LOCALES.map((locale) => (
-            <a
-              key={locale}
-              lang={localeLanguageTag(locale)}
-              href={localizePath(strippedPath, locale)}
-              className={cn(dropdownItemClass, locale === props.locale ? dropdownItemActiveClass : "")}
-              aria-current={locale === props.locale ? "page" : undefined}
-              onClick={() => persistLanguagePreference(locale, props.cookieDomain)}
-            >
-              <span>{LOCALE_LABELS[locale]}</span>
-              <span className="font-mono text-[11px] uppercase opacity-62">{locale}</span>
-            </a>
-          ))}
-        </div>
-      </div>
+
+      <nav
+        id={menuId}
+        aria-label="Change language"
+        className={cn(
+          "absolute right-0 top-[calc(100%+0.75rem)] z-50 grid w-44 gap-1 rounded-xl border border-[#0B0B0F14] bg-white p-2 shadow-[0_24px_80px_-48px_rgba(11,11,15,.6)] transition",
+          open ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-1 opacity-0"
+        )}
+      >
+        {languageLinks.map((lang) => (
+          <a
+            key={lang.code}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-[#43434C] transition hover:bg-[#F7F7F8] hover:text-[#0B0B0F]"
+            href={lang.href}
+            hrefLang={localeLanguageTag(lang.code)}
+            lang={localeLanguageTag(lang.code)}
+            aria-current={props.locale === lang.code ? "page" : undefined}
+            onClick={() => handleLanguageClick(lang.code)}
+          >
+            <span>{lang.label}</span>
+            <Check className={cn("ml-auto size-4", props.locale !== lang.code && "invisible")} aria-hidden="true" />
+          </a>
+        ))}
+      </nav>
     </div>
   );
 }
 
 export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
-  const { docsUrl } = useSiteConfig();
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
+  const toolsCopy = toolsLandingCopy[props.locale];
   const legacyLabels = legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels = navGroupLabelByLocale[props.locale] ?? navGroupLabelByLocale.en;
   const startFreeLabel = startFreeLabelByLocale[props.locale] ?? startFreeLabelByLocale.en;
-  const enterpriseLabel = enterpriseLabelByLocale[props.locale] ?? enterpriseLabelByLocale.en;
-  const dashboardLabel = dashboardLabelByLocale[props.locale] ?? dashboardLabelByLocale.en;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [openMenu, setOpenMenu] = useState<NavGroupKey | null>(null);
-  const navCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleUrl("/sign-in", `lng=${props.locale}`);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
-  const dashboardHref = consoleUrl("/dashboard", `lng=${props.locale}`);
-  const accountHref = authenticated ? dashboardHref : signInHref;
-  const accountLabel = authenticated ? dashboardLabel : copy.nav.signIn;
-  const isHome = currentPath === "/";
-  const desktopNavigation = props.expandNavigationAtTablet
-    ? { show: "min-[1024px]:flex", hide: "min-[1024px]:hidden" }
-    : { show: "min-[1180px]:flex", hide: "min-[1180px]:hidden" };
-
-  useEffect(() => {
-    if (!props.expandNavigationAtTablet) return;
-
-    const media = window.matchMedia("(min-width: 1024px)");
-    const closeMobileMenuAtDesktop = () => {
-      if (media.matches) setMobileOpen(false);
-    };
-
-    closeMobileMenuAtDesktop();
-    if (media.addEventListener) {
-      media.addEventListener("change", closeMobileMenuAtDesktop);
-      return () => media.removeEventListener("change", closeMobileMenuAtDesktop);
-    }
-
-    media.addListener(closeMobileMenuAtDesktop);
-    return () => media.removeListener(closeMobileMenuAtDesktop);
-  }, [props.expandNavigationAtTablet]);
 
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
+      { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
-      { href: "/rankings", label: copy.nav.rankings, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },
-      { href: "/usecases", label: legacyLabels.usecases, publicPath: true },
     ],
-    [copy.nav.modelPricing, copy.nav.rankings, legacyLabels.compute, legacyLabels.playground, legacyLabels.usecases]
-  );
-  const developerItems = useMemo<NavItem[]>(
-    () => [
-      ...(docsUrl ? [{ href: docsUrl, label: copy.nav.docs, external: true }] : []),
-      { href: "/status", label: legacyLabels.status, publicPath: true },
-    ],
-    [copy.nav.docs, docsUrl, legacyLabels.status]
+    [copy.nav.modelPricing, legacyLabels, toolsCopy.navLabel]
   );
   const resourceItems = useMemo<NavItem[]>(
     () => [
-      { href: "/blog", label: copy.nav.blog, publicPath: true },
-      { href: "/about", label: copy.nav.about, publicPath: true },
-      { href: "/careers", label: groupLabels.careers, publicPath: true },
-      { href: "/contact", label: copy.nav.contact, publicPath: true },
+      { href: "/blog", label: props.locale === "en" ? "Blogs" : copy.nav.blog, publicPath: true },
+      { href: "/rankings", label: props.locale === "en" ? "Ranking" : copy.nav.rankings, publicPath: true },
+      { href: "/usecases", label: legacyLabels.usecases, publicPath: true },
+      { href: "/status", label: legacyLabels.status, publicPath: true },
     ],
-    [copy.nav.about, copy.nav.blog, copy.nav.contact, groupLabels.careers]
+    [copy.nav.blog, copy.nav.rankings, legacyLabels.status, legacyLabels.usecases, props.locale]
   );
-  const topLevelItems = useMemo<NavItem[]>(
-    () => [
-      { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
-      { href: "/#enterprise", label: enterpriseLabel, publicPath: true },
-      { href: "/pricing", label: copy.nav.pricing, publicPath: true },
-    ],
-    [cliCopy.navLabel, copy.nav.pricing, enterpriseLabel]
-  );
-  const mobileItems = [...productItems, ...topLevelItems, ...developerItems, ...resourceItems];
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-
-    void fetch("/api/auth/session", {
-      cache: "no-store",
-      credentials: "include",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) return false;
-        const payload = (await response.json().catch(() => null)) as { authenticated?: boolean } | null;
-        return payload?.authenticated === true;
-      })
-      .then((value) => {
-        if (active) setAuthenticated(value);
-      })
-      .catch(() => {
-        if (active) setAuthenticated(false);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, []);
+  const topLevelItems = [
+    { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
+    { href: "/pricing#enterprise", label: legacyLabels.enterprise, publicPath: true },
+    { href: "/pricing", label: copy.nav.pricing, publicPath: true },
+    { href: "/contact", label: legacyLabels.requestDemo, publicPath: true },
+  ];
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
@@ -283,138 +254,148 @@ export function SiteHeader(props: Props) {
     };
   }, [mobileOpen]);
 
-  const cancelNavClose = () => {
-    if (navCloseTimerRef.current) {
-      clearTimeout(navCloseTimerRef.current);
-      navCloseTimerRef.current = null;
-    }
-  };
-
-  const openNavMenu = (menu: NavGroupKey) => {
-    cancelNavClose();
-    setOpenMenu(menu);
-  };
-
-  const scheduleNavClose = () => {
-    cancelNavClose();
-    navCloseTimerRef.current = setTimeout(() => setOpenMenu(null), 220);
-  };
-
-  const handleNavGroupBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-      scheduleNavClose();
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      cancelNavClose();
-    };
-  }, []);
-
-  const renderNavLink = (item: NavItem, compact = false) => {
-    const active = item.publicPath && currentPath === item.href;
-    const className = cn(compact ? dropdownItemClass : topNavClass, active ? (compact ? dropdownItemActiveClass : topNavActiveClass) : "");
+  const renderNavLink = (item: NavItem, compact = false, withDot = false) => {
+    const hrefPath = item.href.split("#")[0] || item.href;
+    const active = item.publicPath && currentPath === hrefPath && !item.href.includes("#");
+    const className = cn(
+      compact
+        ? "flex min-h-11 items-center rounded-lg px-3 py-2.5 text-base font-semibold"
+        : "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-[13px] font-semibold",
+      active ? "text-[#0B0B0F]" : "text-[#43434C] hover:text-[#0B0B0F]"
+    );
+    const children = (
+      <>
+        {withDot ? <span className={cn("size-1.5 rounded-full", active ? "bg-violet-600" : "bg-[#aaa7b0]")} aria-hidden="true" /> : null}
+        {item.label}
+      </>
+    );
 
     return item.external ? (
-      <a key={item.href} className={className} href={item.href} target="_blank" rel="noopener noreferrer" onClick={() => setMobileOpen(false)}>
-        <span>{item.label}</span>
-        {compact ? <ArrowRight className="size-3.5 -rotate-45 opacity-60" /> : null}
+      <a key={item.href} className={className} href={item.href} target="_blank" rel="noopener noreferrer">
+        {children}
       </a>
     ) : (
       <Link key={item.href} className={className} href={item.publicPath ? localizePath(item.href, props.locale) : item.href} onClick={() => setMobileOpen(false)}>
-        <span>{item.label}</span>
-        {compact ? <ArrowRight className="size-3.5 -rotate-45 opacity-45" /> : null}
+        {children}
       </Link>
     );
   };
 
-  const renderNavGroup = (key: NavGroupKey, label: string, items: NavItem[]) => {
-    const open = openMenu === key;
+  const renderMobileNavLink = (item: NavItem) => {
+    const hrefPath = item.href.split("#")[0] || item.href;
+    const active = item.publicPath && currentPath === hrefPath && !item.href.includes("#");
+    const className = cn(mobileNavRowClass, active && mobileNavActiveClass);
 
-    return (
-    <div className="fk-nav-menu relative" onPointerEnter={() => openNavMenu(key)} onPointerLeave={scheduleNavClose} onFocus={() => openNavMenu(key)} onBlur={handleNavGroupBlur}>
-      <button type="button" className={cn(topNavClass, "gap-1.5")} aria-haspopup="menu" aria-expanded={open}>
-        <span>{label}</span>
-        <ChevronDown className="fk-nav-caret size-4" strokeWidth={2.4} />
-      </button>
-      <div className={cn("fk-dropdown-panel absolute top-full left-0 z-50 pt-2", open ? "fk-dropdown-panel-open" : "")}>
-        <div className={cn("grid gap-1", dropdownSurfaceClass)}>
-          {items.map((item) => renderNavLink(item, true))}
-        </div>
-      </div>
-    </div>
+    return item.external ? (
+      <a key={item.href} className={className} href={item.href} target="_blank" rel="noopener noreferrer">
+        {item.label}
+      </a>
+    ) : (
+      <Link key={item.href} className={className} href={item.publicPath ? localizePath(item.href, props.locale) : item.href} onClick={() => setMobileOpen(false)}>
+        {item.label}
+      </Link>
     );
   };
 
+  const renderNavGroup = (label: string, items: NavItem[]) => (
+    <div className="group/nav relative">
+      <button
+        type="button"
+        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-[13px] font-semibold text-[#43434C] hover:text-[#0B0B0F]"
+        aria-haspopup="menu"
+      >
+        {label}
+        <ChevronDown className="size-3.5 text-[#8D8994] transition group-hover/nav:rotate-180" aria-hidden="true" />
+      </button>
+      <div className="pointer-events-none absolute top-full left-0 z-50 pt-3 opacity-0 transition-opacity group-hover/nav:pointer-events-auto group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:opacity-100">
+        <div className="grid min-w-52 gap-1 rounded-xl border border-[#0B0B0F14] bg-white p-2 shadow-[0_22px_70px_-45px_rgba(11,11,15,.48)]">
+          {items.map((item) => (
+            <div key={item.href}>{renderNavLink(item, true)}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMobileGroup = (label: string, items: NavItem[]) => (
+    <details className="group">
+      <summary className={cn(mobileNavRowClass, mobileNavOpenClass, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+        <ChevronDown className="ml-auto size-4 shrink-0 text-[#8D8994] transition group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className={mobileNavNestedClass}>{items.map((item) => renderMobileNavLink(item))}</div>
+    </details>
+  );
+
   return (
-    <header className={cn("fk-site-header fixed inset-x-0 top-0 z-50 h-0 bg-transparent px-4 pt-3 text-[#101014]", isHome && "fk-home-header-arrival")}>
-      <nav className="fk-site-nav fk-header-card mx-auto flex h-[62px] max-w-[2160px] items-center gap-3 rounded-full border-2 border-[#101014] bg-[#FBF7EE]/94 px-2 shadow-[6px_6px_0_#101014,0_18px_52px_-36px_rgba(16,16,20,.48)] backdrop-blur-xl dark:border-white/24 dark:bg-[#101014]/90 dark:shadow-[6px_6px_0_rgba(255,255,255,.16)]">
-        <Link href={localizePath("/", props.locale)} className="fk-site-logo-link fk-header-stagger inline-flex h-12 cursor-pointer shrink-0 items-center rounded-full px-1.5 pr-3 transition-colors hover:bg-white/76 dark:hover:bg-white/10">
-          <FlatkeyBrandLogo />
+    <header className="sticky top-0 z-50 border-b border-[#0B0B0F14] bg-white/95 backdrop-blur-md">
+      <nav className="flex h-[76px] items-center gap-3 px-4 text-[#0B0B0F] sm:px-5 min-[1180px]:gap-3 min-[1320px]:px-8">
+        <Link href={localizePath("/", props.locale)} className="mr-1 inline-flex shrink-0 items-center">
+          <FlatkeyBrandLogo className="[&_[data-flatkey-wordmark='true']]:text-[30px] [&_img]:h-10 [&_img]:w-10 min-[1480px]:[&_[data-flatkey-wordmark='true']]:text-[32px] min-[1480px]:[&_img]:h-11 min-[1480px]:[&_img]:w-11" />
           <span className="sr-only">flatkey.ai</span>
         </Link>
 
-        <div className={cn("hidden min-w-0 flex-1 items-center justify-center", desktopNavigation.show)}>
-          <div className="fk-nav-shell inline-flex items-center gap-1 rounded-full p-1">
-            {renderNavGroup("products", groupLabels.products, productItems)}
-            {renderNavGroup("developers", groupLabels.developers, developerItems)}
-            {renderNavGroup("resources", groupLabels.resources, resourceItems)}
-            {topLevelItems.map((item) => renderNavLink(item))}
-          </div>
+        <div className="hidden min-w-0 flex-1 items-center gap-1 min-[1180px]:flex">
+          {renderNavGroup(groupLabels.products, productItems)}
+          {renderNavGroup(groupLabels.resources, resourceItems)}
+          {topLevelItems.map((item) => renderNavLink(item, false, true))}
         </div>
 
-        <div className={cn("ml-auto hidden shrink-0 items-center gap-2", desktopNavigation.show)}>
+        <div className="ml-auto hidden shrink-0 items-center gap-2 min-[1180px]:flex">
           {!props.hideLanguageSwitcher && (
-            <StaticLanguageSelect locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} />
+            <HeaderLanguageMenu locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} />
           )}
-          <div className="flex items-center gap-1 rounded-full p-1">
-            <a className="fk-button-motion fk-header-stagger inline-flex h-9 cursor-pointer items-center justify-center whitespace-nowrap rounded-full border-2 border-[#101014] bg-white px-4 text-[14.5px] font-extrabold !text-[#101014] shadow-[3px_3px_0_#101014] hover:bg-[#EEE4FF] hover:!text-[#101014] dark:border-white/24 dark:bg-white/10 dark:!text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]" href={accountHref}>
-              {accountLabel}
-            </a>
-            <a
-              className="fk-button-motion fk-header-stagger inline-flex h-9 cursor-pointer items-center justify-center whitespace-nowrap rounded-full border-2 border-[#101014] !bg-[#101014] px-4 text-[14.5px] font-extrabold !text-white shadow-[4px_4px_0_#7C3AED] hover:!bg-[#3E36F6] hover:!text-white dark:border-white dark:!bg-white dark:!text-[#101014] dark:shadow-[4px_4px_0_#7C3AED]"
-              href={signUpHref}
-            >
-              {startFreeLabel}
-              <ArrowRight className="ml-1.5 size-4" strokeWidth={2.6} />
-            </a>
-          </div>
+          <a className="inline-flex h-9 items-center whitespace-nowrap px-2 text-[13px] font-semibold text-[#0B0B0F] hover:text-[#4C1D95]" href={signInHref}>
+            {copy.nav.signIn}
+          </a>
+          <a
+            className="inline-flex h-11 items-center justify-center whitespace-nowrap rounded-lg bg-[#070707] px-4 text-[13px] font-bold text-white transition hover:-translate-y-px hover:bg-[#17171B]"
+            href={signUpHref}
+            style={{ color: "#fff" }}
+          >
+            {startFreeLabel}
+          </a>
         </div>
 
+        <a
+          className="ml-auto inline-flex h-10 max-w-[8.5rem] shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-lg bg-[#070707] px-3 text-[13px] font-bold text-ellipsis text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)] min-[1180px]:hidden"
+          href={signUpHref}
+          style={{ color: "#fff" }}
+        >
+          {startFreeLabel}
+        </a>
         <button
           type="button"
-          className={cn(
-            "fk-icon-motion ml-auto inline-flex size-[42px] cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] bg-white text-[#101014] shadow-[3px_3px_0_#101014] dark:border-white/24 dark:bg-white/8 dark:text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]",
-            desktopNavigation.hide
-          )}
+          className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-[#0B0B0F14] bg-white px-3 text-sm font-bold text-[#0B0B0F] shadow-[0_1px_2px_rgba(11,11,15,.05)] min-[1180px]:hidden"
           aria-label={copy.nav.toggle}
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((value) => !value)}
         >
-          {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          {mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+          {groupLabels.menu}
         </button>
       </nav>
 
       <div
         className={cn(
-          "fixed inset-x-3 top-[90px] z-40 rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/98 p-3 shadow-[6px_6px_0_#101014,0_24px_70px_-46px_rgba(16,16,20,.52)] backdrop-blur-xl transition dark:border-white/22 dark:bg-[#101014]/96 dark:shadow-[6px_6px_0_rgba(255,255,255,.16)]",
-          desktopNavigation.hide,
+          "fixed inset-x-0 top-[76px] z-40 max-h-[calc(100dvh-76px)] overflow-y-auto border-b border-[#0B0B0F14] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition min-[1180px]:hidden",
           mobileOpen ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-3 opacity-0"
         )}
       >
-        <div className="grid gap-1 sm:grid-cols-2">{mobileItems.map((item) => renderNavLink(item, true))}</div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#101014]/10 pt-4 dark:border-white/12">
-          <div className="flex items-center gap-1 rounded-full bg-white/72 p-1 ring-1 ring-[#101014]/10 dark:bg-white/7 dark:ring-white/10">
-            <a className="fk-button-motion inline-flex h-9 cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] bg-white px-3.5 text-sm font-extrabold !text-[#101014] shadow-[3px_3px_0_#101014] hover:bg-[#EEE4FF] dark:border-white/24 dark:bg-white/10 dark:!text-white dark:shadow-[3px_3px_0_rgba(255,255,255,.16)]" href={accountHref}>
-              {accountLabel}
-            </a>
-            <a className="fk-button-motion inline-flex h-9 cursor-pointer items-center justify-center rounded-full border-2 border-[#101014] !bg-[#101014] px-4 text-sm font-extrabold !text-white shadow-[4px_4px_0_#7C3AED] dark:border-white dark:!bg-white dark:!text-[#101014]" href={signUpHref}>
-              {startFreeLabel}
-            </a>
-          </div>
+        <div className="mb-3 grid">
+          <a
+            className="flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none"
+            href={signInHref}
+          >
+            {copy.nav.signIn}
+          </a>
+        </div>
+        <div className={mobileMenuSurfaceClass}>
+          {renderMobileGroup(groupLabels.products, productItems)}
+          {renderMobileGroup(groupLabels.resources, resourceItems)}
+          {topLevelItems.map((item) => renderMobileNavLink(item))}
           {!props.hideLanguageSwitcher && (
-            <StaticLanguageSelect locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} />
+            <HeaderLanguageMenu locale={props.locale} pathname={props.pathname} cookieDomain={props.languageCookieDomain} variant="panel" />
           )}
         </div>
       </div>

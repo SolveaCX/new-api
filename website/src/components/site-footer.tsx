@@ -1,9 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Mail, MessageCircle } from "lucide-react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
-import { useSiteConfig } from "@/components/site-config-provider";
 import { getCopy } from "@/lib/copy";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
@@ -23,6 +22,7 @@ const footerLabels = withIdFallback({
     product: "Product",
     developers: "Developers",
     company: "Company",
+    socials: "Socials",
     tools: "Tools",
     playground: "Playground",
     compute: "Compute",
@@ -30,9 +30,7 @@ const footerLabels = withIdFallback({
     status: "API status",
     careers: "Careers",
     about: "About",
-    contact: "Talk to sales",
-    contactChannels: "Contact channels",
-    contactDesc: "Enterprise contracts, invoices, model governance, procurement and SLA support.",
+    contact: "Contact us",
     trusted: "TRUSTED & VERIFIED BY",
     zeroRetention: "Zero retention of request content",
   },
@@ -40,6 +38,7 @@ const footerLabels = withIdFallback({
     product: "产品",
     developers: "开发者",
     company: "公司",
+    socials: "社交",
     tools: "工具",
     playground: "Playground",
     compute: "算力",
@@ -47,9 +46,7 @@ const footerLabels = withIdFallback({
     status: "服务状态",
     careers: "加入我们",
     about: "关于我们",
-    contact: "联系销售",
-    contactChannels: "联系方式",
-    contactDesc: "企业合同、发票、模型治理、采购流程和 SLA 支持。",
+    contact: "联系我们",
     trusted: "可信与认证",
     zeroRetention: "不保留请求内容",
   },
@@ -57,6 +54,7 @@ const footerLabels = withIdFallback({
     product: "Producto",
     developers: "Desarrolladores",
     company: "Empresa",
+    socials: "Redes",
     tools: "Herramientas",
     playground: "Playground",
     compute: "Compute",
@@ -64,9 +62,7 @@ const footerLabels = withIdFallback({
     status: "Estado de API",
     careers: "Carreras",
     about: "Acerca de",
-    contact: "Contactar ventas",
-    contactChannels: "Canales de contacto",
-    contactDesc: "Contratos enterprise, facturas, gobierno de modelos, procurement y SLA.",
+    contact: "Contacto",
     trusted: "CONFIANZA Y VERIFICACIÓN",
     zeroRetention: "Cero retención del contenido de solicitudes",
   },
@@ -74,6 +70,7 @@ const footerLabels = withIdFallback({
     product: "Produit",
     developers: "Développeurs",
     company: "Entreprise",
+    socials: "Réseaux",
     tools: "Outils",
     playground: "Playground",
     compute: "Compute",
@@ -81,9 +78,7 @@ const footerLabels = withIdFallback({
     status: "Statut API",
     careers: "Carrières",
     about: "À propos",
-    contact: "Contacter l'équipe commerciale",
-    contactChannels: "Canaux de contact",
-    contactDesc: "Contrats enterprise, factures, gouvernance modèles, achats et SLA.",
+    contact: "Contact",
     trusted: "CONFIANCE ET VÉRIFICATION",
     zeroRetention: "Aucune rétention du contenu des requêtes",
   },
@@ -91,6 +86,7 @@ const footerLabels = withIdFallback({
     product: "Produto",
     developers: "Desenvolvedores",
     company: "Empresa",
+    socials: "Redes",
     tools: "Ferramentas",
     playground: "Playground",
     compute: "Compute",
@@ -98,9 +94,7 @@ const footerLabels = withIdFallback({
     status: "Status da API",
     careers: "Carreiras",
     about: "Sobre",
-    contact: "Falar com vendas",
-    contactChannels: "Canais de contato",
-    contactDesc: "Contratos enterprise, faturas, governança de modelos, procurement e SLA.",
+    contact: "Contato",
     trusted: "CONFIÁVEL E VERIFICADO",
     zeroRetention: "Zero retenção do conteúdo das solicitações",
   },
@@ -108,6 +102,7 @@ const footerLabels = withIdFallback({
     product: "Продукт",
     developers: "Разработчикам",
     company: "Компания",
+    socials: "Соцсети",
     tools: "Инструменты",
     playground: "Playground",
     compute: "Compute",
@@ -115,9 +110,7 @@ const footerLabels = withIdFallback({
     status: "Статус API",
     careers: "Вакансии",
     about: "О нас",
-    contact: "Связаться с продажами",
-    contactChannels: "Каналы связи",
-    contactDesc: "Enterprise-контракты, счета, управление моделями, закупки и SLA.",
+    contact: "Контакты",
     trusted: "ДОВЕРИЕ И ПРОВЕРКА",
     zeroRetention: "Нулевое хранение содержимого запросов",
   },
@@ -125,6 +118,7 @@ const footerLabels = withIdFallback({
     product: "プロダクト",
     developers: "開発者向け",
     company: "会社",
+    socials: "ソーシャル",
     tools: "ツール",
     playground: "Playground",
     compute: "Compute",
@@ -132,9 +126,7 @@ const footerLabels = withIdFallback({
     status: "API ステータス",
     careers: "採用情報",
     about: "会社概要",
-    contact: "営業に相談",
-    contactChannels: "お問い合わせ先",
-    contactDesc: "Enterprise 契約、請求書、モデル管理、購買、SLA サポート。",
+    contact: "お問い合わせ",
     trusted: "信頼と認証",
     zeroRetention: "リクエスト内容を保持しません",
   },
@@ -142,6 +134,7 @@ const footerLabels = withIdFallback({
     product: "Sản phẩm",
     developers: "Nhà phát triển",
     company: "Công ty",
+    socials: "Mạng xã hội",
     tools: "Tools",
     playground: "Playground",
     compute: "Compute",
@@ -149,9 +142,7 @@ const footerLabels = withIdFallback({
     status: "Trạng thái API",
     careers: "Tuyển dụng",
     about: "Giới thiệu",
-    contact: "Liên hệ sales",
-    contactChannels: "Kênh liên hệ",
-    contactDesc: "Hợp đồng enterprise, hóa đơn, quản trị model, procurement và SLA.",
+    contact: "Liên hệ",
     trusted: "ĐÁNG TIN CẬY & ĐÃ XÁC MINH",
     zeroRetention: "Không lưu nội dung yêu cầu",
   },
@@ -159,6 +150,7 @@ const footerLabels = withIdFallback({
     product: "Produkt",
     developers: "Entwickler",
     company: "Unternehmen",
+    socials: "Socials",
     tools: "Tools",
     playground: "Playground",
     compute: "Compute",
@@ -166,9 +158,7 @@ const footerLabels = withIdFallback({
     status: "API-Status",
     careers: "Karriere",
     about: "Über uns",
-    contact: "Sales kontaktieren",
-    contactChannels: "Kontaktkanäle",
-    contactDesc: "Enterprise-Verträge, Rechnungen, Modell-Governance, Procurement und SLA.",
+    contact: "Kontakt",
     trusted: "VERTRAUEN & VERIFIZIERUNG",
     zeroRetention: "Keine Speicherung von Anfrageinhalten",
   },
@@ -177,8 +167,8 @@ const footerLabels = withIdFallback({
 function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: string }) {
   return (
     <div className="min-w-0">
-      <h3 className="mb-3.5 font-mono text-[11px] font-extrabold uppercase text-[#7C3AED]">{props.title}</h3>
-      <div className="grid gap-[10px]">
+      <h5 className="mb-3.5 text-sm font-semibold text-[#83838E]">{props.title}</h5>
+      <div className="grid gap-[11px]">
         {props.links.map((link) =>
           link.external || link.href.startsWith("mailto:") ? (
             <a
@@ -186,7 +176,7 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
               href={link.href}
               target={link.external ? "_blank" : undefined}
               rel={link.external ? "noopener noreferrer" : undefined}
-              className="fk-footer-link w-fit text-[15px] leading-6 font-bold text-[#101014] no-underline hover:text-[#2F2AAE] dark:text-white/78 dark:hover:text-white"
+              className="text-[15px] font-semibold text-[#0B0B0F] no-underline hover:text-[#4C1D95]"
             >
               {link.label}
             </a>
@@ -194,7 +184,7 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
             <Link
               key={link.href}
               href={link.href === "/llms.txt" ? link.href : localizePath(link.href, props.locale)}
-              className="fk-footer-link w-fit text-[15px] leading-6 font-bold text-[#101014] no-underline hover:text-[#2F2AAE] dark:text-white/78 dark:hover:text-white"
+              className="text-[15px] font-semibold text-[#0B0B0F] no-underline hover:text-[#4C1D95]"
             >
               {link.label}
             </Link>
@@ -206,101 +196,107 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
 }
 
 export function SiteFooter(props: SiteFooterProps) {
-  const { docsUrl } = useSiteConfig();
   const siteCopy = getCopy(props.locale);
   const copy = siteCopy.footer;
   const labels = footerLabels[props.locale] ?? footerLabels.en;
   const currentYear = new Date().getFullYear();
   const productLinks: FooterLink[] = [
     { href: "/models", label: siteCopy.nav.modelPricing },
+    { href: "/tools", label: labels.tools },
     { href: "/playground", label: labels.playground },
     { href: "/rankings", label: siteCopy.nav.rankings },
     { href: "/pricing", label: siteCopy.nav.pricing },
     { href: "/compute", label: labels.compute },
     { href: "/usecases", label: labels.usecases },
+    { href: consoleUrl("/dashboard"), label: `${siteCopy.nav.console} ↗`, external: true },
   ];
   const developerLinks: FooterLink[] = [
     { href: "/cli", label: "CLI" },
-    ...(docsUrl ? [{ href: docsUrl, label: siteCopy.nav.docs, external: true }] : []),
+    { href: "/docs", label: siteCopy.nav.docs },
     { href: "/status", label: labels.status },
     { href: "/llms.txt", label: "llms.txt" },
-    { href: consoleUrl("/dashboard"), label: `${siteCopy.nav.console} ↗`, external: true },
+    { href: "/blog", label: `${siteCopy.nav.blog} ↗` },
   ];
   const companyLinks: FooterLink[] = [
     { href: "/careers", label: labels.careers },
     { href: "/contact", label: labels.contact },
     { href: "/about", label: labels.about },
-    { href: "/blog", label: `${siteCopy.nav.blog} ↗` },
     { href: "/terms", label: copy.termsOfService },
     { href: "/privacy", label: copy.privacyPolicy },
     { href: "/sla", label: copy.serviceLevelAgreement },
     { href: "/refund-policy", label: copy.refundPolicy },
   ];
+  const socialLinks: FooterLink[] = [
+    { href: "https://x.com/flatkey101", label: "X @flatkey101", external: true },
+    { href: "mailto:support@flatkey.ai", label: "support@flatkey.ai" },
+    { href: "https://www.linkedin.com/company/flatkey/", label: "LinkedIn", external: true },
+    { href: "https://discord.gg/VrbZFDXj5g", label: "Discord", external: true },
+  ];
 
   return (
-    <footer className="fk-site-footer relative overflow-hidden border-t-2 border-[#101014] bg-[#F7F4EC] text-[#101014] dark:border-white/18 dark:bg-[#050507] dark:text-[#F6F3EA]">
-      <div aria-hidden className="fk-hero-grid absolute inset-0 opacity-35" />
-      <div className="relative mx-auto max-w-[2160px] px-5 py-12 sm:px-6 lg:px-8 xl:px-10">
-        <div className="grid gap-10 lg:grid-cols-[1.25fr_repeat(3,minmax(0,0.72fr))]">
-          <div>
-            <Link href={localizePath("/", props.locale)} className="inline-flex items-center">
-              <FlatkeyBrandLogo className="[&_[data-flatkey-wordmark='true']]:text-[32px]" />
-              <span className="sr-only">flatkey.ai</span>
-            </Link>
-            <p className="mt-4 max-w-[330px] text-[15px] leading-7 font-semibold text-[#575762] dark:text-white/62">{copy.tagline}</p>
-          </div>
-          <FooterColumn title={labels.product} links={productLinks} locale={props.locale} />
-          <FooterColumn title={labels.developers} links={developerLinks} locale={props.locale} />
-          <FooterColumn title={labels.company} links={companyLinks} locale={props.locale} />
+    <footer className="relative overflow-hidden border-t border-[#0B0B0F14] bg-[#F7F6FB] text-[#0B0B0F]">
+      <div className="mx-auto grid max-w-[1240px] grid-cols-1 gap-8 px-5 pt-12 pb-2 sm:grid-cols-2 md:px-10 md:pt-14 lg:grid-cols-[2fr_repeat(4,1fr)] lg:gap-10">
+        <div className="sm:col-span-2 lg:col-span-1">
+          <Link href={localizePath("/", props.locale)} className="inline-flex items-center">
+            <FlatkeyBrandLogo className="[&_[data-flatkey-wordmark='true']]:text-[30px] [&_img]:h-11 [&_img]:w-11" />
+            <span className="sr-only">flatkey.ai</span>
+          </Link>
+          <p className="mt-3 max-w-[300px] text-sm leading-7 text-[#43434C]">{copy.tagline}</p>
         </div>
 
-        <div className="mt-10 flex flex-col gap-4 border-t-2 border-[#101014] pt-6 dark:border-white/16 xl:flex-row xl:items-center xl:justify-between">
-          <div className="max-w-2xl">
-            <h3 className="font-mono text-[11px] font-extrabold uppercase text-[#7C3AED]">{labels.contactChannels}</h3>
-            <p className="mt-2 text-sm leading-6 font-semibold text-[#666672] dark:text-white/60">{labels.contactDesc}</p>
-          </div>
-          <div className="flex flex-wrap gap-2 xl:justify-end">
-            <a href="mailto:support@flatkey.ai" className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border border-[#101014]/14 bg-white px-4 text-sm font-extrabold text-[#101014] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white dark:hover:bg-white/14">
-              <Mail className="size-4" />
-              support@flatkey.ai
-            </a>
-            <a href="https://discord.gg/VrbZFDXj5g" target="_blank" rel="noopener noreferrer" className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border border-[#101014]/14 bg-white px-4 text-sm font-extrabold text-[#101014] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white dark:hover:bg-white/14">
-              <MessageCircle className="size-4" />
-              Discord
-            </a>
-            <a href="https://www.linkedin.com/company/flatkey/" target="_blank" rel="noopener noreferrer" className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border border-[#101014]/14 bg-white px-4 text-sm font-extrabold text-[#101014] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white dark:hover:bg-white/14">
-              LinkedIn
-              <ArrowRight className="size-4 -rotate-45" />
-            </a>
-            <a href="https://x.com/flatkey101" target="_blank" rel="noopener noreferrer" className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full border border-[#101014]/14 bg-white px-4 text-sm font-extrabold text-[#101014] hover:border-[#101014] hover:bg-[#F9F871] dark:border-white/14 dark:bg-white/8 dark:text-white dark:hover:bg-white/14">
-              X @flatkey101
-              <ArrowRight className="size-4 -rotate-45" />
-            </a>
-            <Link href={localizePath("/contact", props.locale)} className="fk-button-motion inline-flex h-10 items-center gap-2 rounded-full bg-[#101014] px-4 text-sm font-extrabold !text-white hover:bg-[#5852FF] dark:bg-white dark:!text-[#101014]">
-              {labels.contact}
-              <ArrowRight className="size-4" />
-            </Link>
-          </div>
+        <FooterColumn title={labels.product} links={productLinks} locale={props.locale} />
+        <FooterColumn title={labels.developers} links={developerLinks} locale={props.locale} />
+        <FooterColumn title={labels.company} links={companyLinks} locale={props.locale} />
+        <FooterColumn title={labels.socials} links={socialLinks} locale={props.locale} />
+      </div>
+
+      <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-3 px-5 pt-5 pb-2 md:px-10">
+        <span className="font-mono text-[10.5px] tracking-[1.2px] text-[#83838E]">{labels.trusted}</span>
+        <a className="rounded-full border border-[#0B0B0F14] bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#43434C] hover:border-[#5B21B6] hover:text-[#4C1D95]" href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&certificate=USA-SOC2-220513" target="_blank" rel="noopener noreferrer nofollow">
+          SOC 2 Type II
+        </a>
+        <a className="rounded-full border border-[#0B0B0F14] bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#43434C] hover:border-[#5B21B6] hover:text-[#4C1D95]" href="https://www.cert-assure.com/serchresult.php?type=Management+System+Certification&certificate=USA-I-270513" target="_blank" rel="noopener noreferrer nofollow">
+          ISO 27001
+        </a>
+        <span className="rounded-full border border-[#0B0B0F14] bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#43434C]">GDPR compliant</span>
+        <a className="rounded-full border border-[#0B0B0F14] bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#43434C] hover:border-[#5B21B6] hover:text-[#4C1D95]" href="https://www.vanta.com/integrations?built-by=Partner" target="_blank" rel="noopener noreferrer nofollow">
+          Vanta monitored
+        </a>
+        <span className="rounded-full border border-[#0B0B0F14] bg-white px-3.5 py-1.5 text-[13px] font-semibold text-[#43434C]">{labels.zeroRetention}</span>
+      </div>
+
+      <div className="flex flex-col gap-6 px-5 pt-2 md:px-12 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+        <div className="max-w-[470px] pb-8 text-sm leading-7 text-[#43434C]">
+          © {currentYear} flatkey.ai · VOC AI INC, San Jose, CA. {copy.defaultCopyright}{" "}
+          <Link className="text-[#0B0B0F] underline underline-offset-4" href={localizePath("/terms", props.locale)}>
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link className="text-[#0B0B0F] underline underline-offset-4" href={localizePath("/privacy", props.locale)}>
+            Privacy
+          </Link>{" "}
+          ·{" "}
+          <Link className="text-[#0B0B0F] underline underline-offset-4" href={localizePath("/sla", props.locale)}>
+            SLA
+          </Link>{" "}
+          ·{" "}
+          <Link className="text-[#0B0B0F] underline underline-offset-4" href={localizePath("/refund-policy", props.locale)}>
+            Refunds
+          </Link>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-[clamp(14px,1.8vw,30px)] pb-8 font-bold leading-none tracking-[-0.045em] whitespace-nowrap text-[#0B0B0F]">
+          <Image src="/flatkey-mark.svg" alt="" width={160} height={160} className="h-[0.84em] w-[0.84em] text-[clamp(58px,13.5vw,200px)]" />
+          <span className="text-[clamp(58px,13.5vw,200px)]">flatkey</span>
         </div>
       </div>
 
-      <div className="relative mx-auto flex max-w-[2160px] flex-wrap items-center gap-2 border-t-2 border-[#101014] px-5 py-5 sm:px-6 lg:px-8 xl:px-10 dark:border-white/16">
-        <span className="mr-2 font-mono text-[10.5px] font-extrabold text-[#83838E]">{labels.trusted}</span>
-        {["SOC 2 Type II", "ISO 27001", "GDPR compliant", "Vanta monitored", labels.zeroRetention].map((badge) => (
-          <span key={badge} className="rounded-full border border-[#101014]/12 bg-white/78 px-3 py-1.5 text-[12.5px] font-bold text-[#43434C] dark:border-white/12 dark:bg-white/8 dark:text-white/62">
-            {badge}
-          </span>
-        ))}
-      </div>
-
-      <div className="relative mx-auto flex max-w-[2160px] flex-col gap-3 px-5 pb-8 text-sm leading-7 font-semibold text-[#575762] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 xl:px-10 dark:text-white/58">
-        <p>© {currentYear} flatkey.ai · VOC AI INC, San Jose, CA. {copy.defaultCopyright}</p>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          <Link className="underline underline-offset-4" href={localizePath("/terms", props.locale)}>Terms</Link>
-          <Link className="underline underline-offset-4" href={localizePath("/privacy", props.locale)}>Privacy</Link>
-          <Link className="underline underline-offset-4" href={localizePath("/sla", props.locale)}>SLA</Link>
-          <Link className="underline underline-offset-4" href={localizePath("/refund-policy", props.locale)}>Refunds</Link>
-        </div>
+      <div className="flex h-2.5">
+        <i className="flex-1 bg-[#0B0B0F]" />
+        <i className="flex-1 bg-[#7C3AED]" />
+        <i className="flex-1 bg-[#4C1D95]" />
+        <i className="flex-1 bg-[#15803D]" />
+        <i className="flex-1 bg-[#1E1B4B]" />
       </div>
     </footer>
   );

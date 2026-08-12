@@ -16,8 +16,6 @@ export type HomeCopy = {
     title: string;
     subtitle: string;
     badge: string;
-    spotlightBadge: string;
-    spotlightValue: string;
     layers: string[];
     official: string;
     flatkey: string;
@@ -93,8 +91,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Two discounts, stacked",
       subtitle: "Input price per 1M tokens",
       badge: "As low as -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "As low as 50% off",
       layers: ["Model prices: 60-90% of official list", "Top up $200, get $100 free — you pay 2/3"],
       official: "Official",
       flatkey: "After bonus",
@@ -194,8 +190,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "双重优惠",
       subtitle: "每 1M token 输入价",
       badge: "最低 5 折",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "最低5折",
       layers: ["模型定价：官方 6～9 折", "充值 $200 送 $100：实付 2/3"],
       official: "官方价",
       flatkey: "充值后",
@@ -295,8 +289,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Dos descuentos combinados",
       subtitle: "Precio de entrada por 1M de tokens",
       badge: "Hasta -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Hasta 50% desc.",
       layers: ["Precio de modelo: 60-90% del oficial", "Recarga $200 y recibe $100 gratis: pagas 2/3"],
       official: "Oficial",
       flatkey: "Con bono",
@@ -396,8 +388,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Deux remises cumulées",
       subtitle: "Prix d'entrée par 1M de tokens",
       badge: "Jusqu'à -50 %",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Jusqu'à -50 %",
       layers: ["Prix des modèles : 60-90 % du tarif officiel", "Rechargez 200 $, recevez 100 $ : vous payez 2/3"],
       official: "Officiel",
       flatkey: "Avec bonus",
@@ -497,8 +487,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Dois descontos somados",
       subtitle: "Preço de entrada por 1M de tokens",
       badge: "Até -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Até 50% off",
       layers: ["Preço do modelo: 60-90% do oficial", "Recarregue $200, ganhe $100: você paga 2/3"],
       official: "Oficial",
       flatkey: "Com bônus",
@@ -598,8 +586,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Две скидки вместе",
       subtitle: "Цена входа за 1M токенов",
       badge: "До -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "До -50%",
       layers: ["Цена модели: 60-90% от официальной", "Пополните $200, получите $100: платите 2/3"],
       official: "Официально",
       flatkey: "С бонусом",
@@ -699,8 +685,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "二重の割引",
       subtitle: "1M トークンあたりの入力価格",
       badge: "最安 -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "最大50%オフ",
       layers: ["モデル価格：公式の 60〜90%", "$200 チャージで $100 進呈：支払いは 2/3"],
       official: "公式",
       flatkey: "チャージ後",
@@ -800,8 +784,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Hai ưu đãi cộng dồn",
       subtitle: "Giá input mỗi 1M token",
       badge: "Thấp nhất -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Giảm tới 50%",
       layers: ["Giá model: 60-90% giá chính thức", "Nạp $200 tặng $100: chỉ trả 2/3"],
       official: "Chính thức",
       flatkey: "Sau ưu đãi",
@@ -901,8 +883,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Zwei Rabatte, kombiniert",
       subtitle: "Input-Preis pro 1M Tokens",
       badge: "Bis zu -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Bis zu 50% sparen",
       layers: ["Modellpreise: 60-90% des offiziellen Listenpreises", "$200 aufladen, $100 geschenkt: du zahlst 2/3"],
       official: "Offiziell",
       flatkey: "Mit Bonus",
@@ -1002,8 +982,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       title: "Dua diskon, digabung",
       subtitle: "Harga input per 1M token",
       badge: "Serendah -50%",
-      spotlightBadge: "FLATKEY",
-      spotlightValue: "Hemat hingga 50%",
       layers: ["Harga model: 60-90% dari harga resmi", "Top-up $200 dapat $100 gratis: kamu bayar 2/3"],
       official: "Resmi",
       flatkey: "Setelah bonus",

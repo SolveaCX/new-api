@@ -59,7 +59,7 @@ export function ClaudeCodeInstallTabs({ locale }: Props) {
   };
 
   return (
-    <div className="min-w-0 max-w-full rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 p-3 shadow-[5px_5px_0_#101014] sm:p-4 dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
+    <div className="min-w-0 max-w-full rounded-xl border border-violet-500/16 bg-white/78 p-3 shadow-[0_24px_80px_-58px_rgba(91,33,182,0.72)] sm:rounded-2xl sm:p-4 dark:border-violet-300/14 dark:bg-white/[0.04]">
       <div className="mb-4 grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap" role="tablist" aria-label={copy.aria}>
         {tabs.map((tab) => (
           <button
@@ -69,10 +69,10 @@ export function ClaudeCodeInstallTabs({ locale }: Props) {
             aria-selected={active === tab.id}
             aria-controls={`claude-code-${tab.id}-command`}
             className={cn(
-              "inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-full border-2 px-3 text-sm font-black transition-colors sm:px-4",
+              "inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors sm:rounded-xl sm:px-4",
               active === tab.id
-                ? "border-[#101014] bg-[#5852FF] text-white shadow-[2px_2px_0_#101014] dark:border-white/24 dark:bg-white dark:text-[#101014] dark:shadow-[2px_2px_0_rgba(255,255,255,0.16)]"
-                : "border-[#101014]/16 bg-white/68 text-[#5C5861] hover:border-[#101014] hover:bg-[#F9F871] hover:text-[#101014] dark:border-white/14 dark:bg-white/[0.06] dark:text-white/62 dark:hover:border-white/24 dark:hover:bg-white/12 dark:hover:text-white"
+                ? "border-violet-600 bg-violet-600 text-white"
+                : "border-violet-500/16 bg-white/68 text-muted-foreground hover:text-foreground dark:bg-white/[0.04]"
             )}
             onClick={() => setActive(tab.id)}
           >
@@ -86,7 +86,7 @@ export function ClaudeCodeInstallTabs({ locale }: Props) {
         id={`claude-code-${active}-command`}
         role="tabpanel"
         aria-label={`${activeLabel} ${copy.oneLiner}`}
-        className="min-w-0 overflow-hidden rounded-[1rem] border-2 border-[#101014] bg-zinc-950 dark:border-white/18"
+        className="min-w-0 overflow-hidden rounded-xl border border-violet-500/12 bg-zinc-950"
       >
         <div className="flex min-w-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-2 sm:gap-3 sm:px-4">
           <span className="min-w-0 truncate text-xs font-semibold text-zinc-400">{activeLabel} {copy.oneLiner}</span>

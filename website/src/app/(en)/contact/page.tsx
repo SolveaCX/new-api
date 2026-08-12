@@ -1,4 +1,4 @@
-import { ContactPage } from "@/components/contact-page";
+import { OnlineContactPage } from "@/components/online-contact-page";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata = buildMetadata({
@@ -9,5 +9,5 @@ export const metadata = buildMetadata({
 });
 
 export default function Page() {
-  return <ContactPage locale="en" />;
+  return <OnlineContactPage locale="en" />;
 }

@@ -79,18 +79,19 @@ client.chat.completions.create(
 
   return (
     <div className="relative mx-auto w-full max-w-3xl">
-      <div className="relative overflow-hidden rounded-[1.25rem] border-2 border-[#101014] bg-[#FFFDF6]/94 shadow-[5px_5px_0_#101014] backdrop-blur-sm dark:border-white/24 dark:bg-[#111116]/88 dark:shadow-[5px_5px_0_rgba(255,255,255,0.16)]">
-        <div className="flex items-center gap-1 border-b-2 border-[#101014] bg-white/72 px-3 dark:border-white/18 dark:bg-white/[0.06]">
+      <div className="absolute -inset-6 rounded-[2rem] bg-violet-500/18 blur-3xl dark:bg-violet-500/20" aria-hidden="true" />
+      <div className="relative overflow-hidden rounded-2xl border border-violet-200/80 bg-white/88 shadow-[0_36px_110px_rgba(79,70,229,0.18)] backdrop-blur-sm dark:border-violet-400/20 dark:bg-white/[0.06] dark:shadow-[0_40px_120px_rgba(0,0,0,0.45)]">
+        <div className="flex items-center gap-1 border-b border-violet-200/80 bg-white/70 px-3 dark:border-violet-300/10 dark:bg-white/[0.04]">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={[
-                "relative -mb-0.5 min-h-12 border-b-2 px-3 text-left text-xs font-black transition-colors",
+                "relative -mb-px min-h-12 border-b-2 px-3 text-left text-xs font-bold tracking-wide transition-colors",
                 active.id === tab.id
-                  ? "border-[#101014] text-[#101014] dark:border-white dark:text-white"
-                  : "border-transparent text-[#5C5861] hover:text-[#101014] dark:text-white/52 dark:hover:text-white",
+                  ? "border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-200"
+                  : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-500 dark:hover:text-slate-300",
               ].join(" ")}
             >
               {tab.label}
@@ -98,29 +99,29 @@ client.chat.completions.create(
           ))}
           <div className="ml-auto flex items-center gap-2 pr-2">
             <span className="inline-block size-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.55)] dark:bg-emerald-300 dark:shadow-[0_0_10px_rgba(52,211,153,0.75)]" />
-            <span className="font-mono text-[10px] font-black uppercase text-[#5C5861] dark:text-white/52">200 ok</span>
+            <span className="font-mono text-[10px] tracking-wider text-slate-600 uppercase dark:text-slate-500">200 ok</span>
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2.5 border-b-2 border-[#101014] bg-[#EEE4FF]/75 px-5 py-3 dark:border-white/18 dark:bg-white/[0.06]">
-          <span className="rounded-md border border-[#101014]/16 bg-[#F9F871] px-1.5 py-0.5 font-mono text-[10px] font-black text-[#101014] dark:border-white/16 dark:bg-white/10 dark:text-white">POST</span>
-          <code className="truncate font-mono text-[12.5px] text-[#4D4D56] dark:text-white/70">{active.endpoint}</code>
+        <div className="flex min-w-0 items-center gap-2.5 border-b border-violet-200/80 bg-violet-50/70 px-5 py-3 dark:border-violet-300/10 dark:bg-violet-500/[0.035]">
+          <span className="rounded-md bg-violet-100 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">POST</span>
+          <code className="truncate font-mono text-[12.5px] text-slate-700 dark:text-slate-300">{active.endpoint}</code>
         </div>
 
         <div className="grid min-h-[390px] grid-rows-[1fr_auto] font-mono text-[12.5px] leading-[1.65]">
           <div className="p-5">
-            <div className="mb-4 flex items-center gap-2 text-[#5C5861] dark:text-white/52">
+            <div className="mb-4 flex items-center gap-2 text-slate-600 dark:text-slate-500">
               <Code2 className="size-4 text-emerald-600 dark:text-emerald-300" />
-              <span className="font-sans text-[10px] font-black uppercase">{active.status}</span>
+              <span className="font-sans text-[10px] font-bold tracking-[0.18em] uppercase">{active.status}</span>
             </div>
 
-            <pre className="min-h-[20rem] overflow-x-auto rounded-[1rem] border-2 border-[#101014] bg-[#060912] p-4 text-slate-100 dark:border-white/10 dark:bg-[#060912]/80 dark:text-slate-300">
+            <pre className="min-h-[20rem] overflow-x-auto rounded-lg border border-slate-950/15 bg-[#060912] p-4 text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:border-white/10 dark:bg-[#060912]/80 dark:text-slate-300">
               <code>{active.code}</code>
             </pre>
           </div>
 
-          <div className="border-t-2 border-[#101014] bg-[#FFFDF6] px-5 py-4 dark:border-white/18 dark:bg-white/[0.06]">
-            <div className="flex flex-col gap-3 text-[#5C5861] sm:flex-row sm:items-center sm:justify-between dark:text-white/62">
+          <div className="border-t border-violet-200/80 bg-violet-50/70 px-5 py-4 dark:border-violet-300/10 dark:bg-violet-500/[0.035]">
+            <div className="flex flex-col gap-3 text-slate-600 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
               <span>{copy.visual.compatibility}</span>
               <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-300">{copy.visual.priceSignal}</span>
             </div>

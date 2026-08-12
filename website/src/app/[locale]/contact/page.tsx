@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ContactPage } from "@/components/contact-page";
+import { OnlineContactPage } from "@/components/online-contact-page";
 import { DEFAULT_LOCALE, isLocale, LOCALES } from "@/lib/locales";
 import { buildMetadata } from "@/lib/seo";
 
@@ -26,5 +26,5 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === DEFAULT_LOCALE) notFound();
-  return <ContactPage locale={params.locale} />;
+  return <OnlineContactPage locale={params.locale} />;
 }

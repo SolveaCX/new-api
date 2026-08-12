@@ -1,5 +1,5 @@
 import { ArrowRight, Check, Circle, SquareArrowOutUpRight } from "lucide-react";
-import { SiteHeader } from "@/components/site-header";
+import Link from "next/link";
 import {
   getClaudeToolsAdMarketplaceUrl,
   getClaudeToolsAdSignupUrl,
@@ -9,12 +9,19 @@ import {
 export function ClaudeToolsAdLandingPage({ config }: { config: ClaudeToolsAdConfig }) {
   const marketplaceUrl = getClaudeToolsAdMarketplaceUrl(config);
   const signupUrl = getClaudeToolsAdSignupUrl(config);
-  const languageCookieDomain = process.env.COOKIE_SESSION_DOMAIN?.trim() || undefined;
 
   return (
-    <>
-      <SiteHeader locale="en" pathname={`/lp/tools-ads/claude/${config.slug}`} languageCookieDomain={languageCookieDomain} hideLanguageSwitcher />
-      <main className="fk-site-main fk-new-home min-h-screen bg-[#f4f1ea] pt-[var(--fk-header-safe-area)] text-[#12140f]">
+    <main className="min-h-screen bg-[#f4f1ea] text-[#12140f]">
+      <header className="border-b border-[#12140f] px-5 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-5">
+          <Link href="/" className="font-mono text-sm font-black tracking-[-0.04em]">FLATKEY / TOOLS</Link>
+          <div className="hidden items-center gap-6 font-mono text-[10px] tracking-[0.12em] uppercase sm:flex">
+            <span>SPECIFICATION 01</span><span className="text-[#1f5c4a]">● LIVE CATALOG</span>
+          </div>
+          <a href={signupUrl} className="border border-[#12140f] px-4 py-2 font-mono text-[10px] font-bold uppercase transition-colors hover:bg-[#12140f] hover:text-[#f4f1ea]">Create key</a>
+        </div>
+      </header>
+
       <section className="px-5 py-14 sm:px-8 md:py-20">
         <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-12 lg:gap-8">
           <div className="lg:col-span-7 xl:col-span-8">
@@ -128,7 +135,6 @@ export function ClaudeToolsAdLandingPage({ config }: { config: ClaudeToolsAdConf
           <span>FLATKEY / ONE KEY · ONE BALANCE</span><span className="flex items-center gap-2"><Check className="size-3 text-[#66b89f]" /> VERIFY CURRENT COVERAGE IN THE LIVE CATALOG</span>
         </div>
       </footer>
-      </main>
-    </>
+    </main>
   );
 }

@@ -1,5 +1,4 @@
 import { ArrowUpRight } from "lucide-react";
-import { SiteShell } from "@/components/site-shell";
 
 export const metadata = {
   title: "Flatkey Tools Ads — landing page review",
@@ -29,29 +28,27 @@ function Preview({ label, direction, url }: { label: string; direction: string; 
 
 export default function Page() {
   return (
-    <SiteShell locale="en" pathname="/lp/tools-ads-review" hideLanguageSwitcher>
-      <main className="fk-subpage-surface min-h-screen bg-[#F7F4EC] px-4 pt-[calc(var(--fk-header-safe-area)+2.5rem)] pb-16 text-[#101014] sm:px-6 md:pb-24 dark:bg-[#050507] dark:text-[#F6F3EA]">
-        <div className="mx-auto max-w-[1540px]">
-          <header className="grid gap-6 border-y-2 border-[#101014] py-7 md:grid-cols-[1fr_auto] md:items-end dark:border-white/20">
-            <div><p className="font-mono text-xs font-black uppercase text-[#7C3AED] dark:text-[#C8A8FF]">Flatkey / Tools Ads / Local Review</p><h1 className="mt-4 text-4xl leading-none font-black tracking-normal md:text-7xl">Three intents.<br />Two creative systems.</h1></div>
-            <div className="max-w-sm font-mono text-[11px] leading-5 uppercase text-[#5C5861] dark:text-white/62"><p>Codex: agent-workflow editorial</p><p>Claude Opus 5: instrument specification sheet</p><p className="mt-2 font-bold">Compare message match, clarity, and CTA-not decoration alone.</p></div>
-          </header>
+    <main className="min-h-screen bg-[#d8ff67] px-4 py-10 text-[#151612] sm:px-6 md:py-16">
+      <div className="mx-auto max-w-[1540px]">
+        <header className="grid gap-6 border-y-2 border-[#151612] py-7 md:grid-cols-[1fr_auto] md:items-end">
+          <div><p className="font-mono text-xs font-black tracking-[0.16em] uppercase">Flatkey / Tools Ads / Local Review</p><h1 className="mt-4 text-4xl leading-none font-black tracking-[-0.05em] md:text-7xl">Three intents.<br />Two creative systems.</h1></div>
+          <div className="max-w-sm font-mono text-[11px] leading-5 uppercase"><p>Codex: agent-workflow editorial</p><p>Claude Opus 5: instrument specification sheet</p><p className="mt-2 font-bold">Compare message match, clarity, and CTA—not decoration alone.</p></div>
+        </header>
 
-          <div className="mt-12 space-y-16">
-            {ROWS.map((row, index) => (
-              <section key={row.name}>
-                <div className="mb-5 flex flex-col gap-2 border-b border-[#101014] pb-4 sm:flex-row sm:items-end sm:justify-between dark:border-white/20">
-                  <div className="flex items-baseline gap-4"><span className="font-mono text-xs">0{index + 1}</span><h2 className="text-2xl font-black tracking-normal md:text-4xl">{row.name}</h2></div><p className="font-mono text-[10px] uppercase text-[#5C5861] dark:text-white/62">{row.intent}</p>
-                </div>
-                <div className="grid gap-7 xl:grid-cols-2">
-                  <Preview label="Codex / A" direction="Workflow proof + execution receipt" url={row.codex} />
-                  <Preview label="Claude Opus 5 / B" direction="Technical spec sheet + priced rows" url={row.claude} />
-                </div>
-              </section>
-            ))}
-          </div>
+        <div className="mt-12 space-y-16">
+          {ROWS.map((row, index) => (
+            <section key={row.name}>
+              <div className="mb-5 flex flex-col gap-2 border-b border-[#151612] pb-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex items-baseline gap-4"><span className="font-mono text-xs">0{index + 1}</span><h2 className="text-2xl font-black tracking-[-0.03em] md:text-4xl">{row.name}</h2></div><p className="font-mono text-[10px] uppercase">{row.intent}</p>
+              </div>
+              <div className="grid gap-7 xl:grid-cols-2">
+                <Preview label="Codex / A" direction="Workflow proof + execution receipt" url={row.codex} />
+                <Preview label="Claude Opus 5 / B" direction="Technical spec sheet + priced rows" url={row.claude} />
+              </div>
+            </section>
+          ))}
         </div>
-      </main>
-    </SiteShell>
+      </div>
+    </main>
   );
 }

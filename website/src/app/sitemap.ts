@@ -6,6 +6,8 @@ import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
+import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
+import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
 import { getPricingData, getTopVendors, getVendorName } from "@/lib/pricing";
 
@@ -55,6 +57,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/", 1, "daily"),
     ...entry("/pricing", 0.8, "daily"),
     ...entry("/models", 0.82, "daily"),
+    ...entry(TOOLS_LANDING_PATH, 0.9, "daily"),
     ...entry("/docs", 0.7, "weekly"),
     ...entry("/playground", 0.7, "weekly"),
     ...entry("/compute", 0.7, "weekly"),
@@ -69,7 +72,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/glm-5-2", 0.86, "daily"),
     ...entry("/rankings", 0.7, "daily"),
     ...entry("/about", 0.5, "monthly"),
-    ...entry("/careers", 0.6, "monthly"),
+    ...entry("/careers", 0.6, "monthly", ["en", "zh"]),
     ...entry("/contact", 0.5, "monthly"),
     ...entry("/blog", 0.9, "daily"),
     ...entry("/terms", 0.3, "yearly"),
@@ -81,6 +84,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const skagLandingEntries = SKAG_LANDING_SLUGS.flatMap((slug) =>
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );
+  const toolsAdLandingEntries = getToolsAdLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
   const landingSlugs = new Set(getModelLandingPathnames().map((pathname) => pathname.replace(/^\/models\//, "")));
@@ -138,6 +142,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...marketEntries,
     ...modelLandingEntries,
     ...skagLandingEntries,
+    ...toolsAdLandingEntries,
     ...modelPublicEntries,
     ...vendorEntries,
     ...categoryEntries,
