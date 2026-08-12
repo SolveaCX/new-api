@@ -87,10 +87,10 @@ describe("home model rows", () => {
 
   test("home model logo resolver keeps Kimi and DeepSeek local even with stale icon keys", () => {
     expect(resolveHomeModelLogo({ modelName: "kimi3", vendor: "Moonshot", iconKey: "openai" }).src).toBe(
-      "/logos/moonshotai.svg"
+      "/assets/logos/moonshotai.svg"
     );
     expect(resolveHomeModelLogo({ modelName: "deepseek-v4-flash", vendor: "DeepSeek", iconKey: "openai" }).src).toBe(
-      "/logos/deepseek.svg"
+      "/assets/logos/deepseek.svg"
     );
   });
 });
