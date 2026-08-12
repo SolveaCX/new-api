@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ModelLandingPage } from "./model-landing-page";
-import { GPT_CONFIG, GPT_IMAGE_2_CONFIG, SEEDANCE_CONFIG } from "@/lib/model-landing";
+import { GPT_CONFIG, GPT_IMAGE_2_CONFIG, MINIMAX_H3_CONFIG, SEEDANCE_CONFIG } from "@/lib/model-landing";
 import type { PricingModel } from "@/lib/pricing";
 
 describe("ModelLandingPage", () => {
@@ -65,6 +65,18 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("href=\"/models\"");
     expect(html).toContain("All models");
     expect(html).toContain("Seedance 2.0");
+  });
+
+  test("renders back and playground actions on localized media model landings", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="zh" liveModels={[]} />
+    );
+
+    expect(html).toContain('href="/zh/models"');
+    expect(html).toContain("返回模型市场");
+    expect(html).toContain("在 Playground 打开");
+    expect(html).toContain("https://console.flatkey.ai/playground");
+    expect(html).toContain("model=MiniMax-H3");
   });
 
   test("renders breadcrumbs on text model landings", () => {

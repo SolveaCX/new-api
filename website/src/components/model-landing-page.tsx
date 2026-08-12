@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   BookOpen,
   ChevronDown,
@@ -190,12 +191,19 @@ function MediaModelLanding(props: {
     <SiteShell locale={props.locale} pathname={`/models/${props.config.slug}`}>
       <div className="model-square-page bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] text-[#0B0B0F] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
         <div className="px-6 pt-10 pb-8 sm:px-8 lg:px-10 lg:pt-14">
-          <ModelLandingBreadcrumb
-            locale={props.locale}
-            modelName={props.config.displayName}
-            t={props.t}
-            className="mb-5"
-          />
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <ModelLandingBreadcrumb
+              locale={props.locale}
+              modelName={props.config.displayName}
+              t={props.t}
+            />
+            <ModelLandingActions
+              locale={props.locale}
+              runHref={runHref}
+              onRunClick={props.onRunClick}
+              t={props.t}
+            />
+          </div>
 
           <section className="grid gap-6 pb-5">
             <div className="min-w-0">
@@ -505,7 +513,13 @@ function TextModelGuide(props: {
               modelName={props.config.modelId}
               t={props.t}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <ModelLandingActions
+                locale={props.locale}
+                runHref={runHref}
+                onRunClick={props.onRunClick}
+                t={props.t}
+              />
               <a href="#overview" className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold shadow-sm">
                 <BookOpen className="size-3.5" />
                 Markdown
@@ -665,6 +679,34 @@ function TextModelGuide(props: {
         </div>
       </div>
     </SiteShell>
+  );
+}
+
+function ModelLandingActions(props: {
+  locale: Locale;
+  runHref: string;
+  onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link
+        href={localizePath("/models", props.locale)}
+        className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
+      >
+        <ArrowLeft className="size-3.5" />
+        {props.t("Back to Market")}
+      </Link>
+      <a
+        href={props.runHref}
+        onClick={props.onRunClick}
+        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#070707] px-4 text-xs font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] hover:bg-[#1a1a1d]"
+        style={{ color: "#fff" }}
+      >
+        <Play className="size-3.5 fill-current" />
+        {props.t("Open in Playground")}
+      </a>
+    </div>
   );
 }
 

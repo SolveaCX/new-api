@@ -624,7 +624,7 @@ const HOME_PRICE_COMPARISON_STYLES = `
   white-space: nowrap;
 }
 
-.fk-home-price-model span {
+.fk-home-price-model > div span {
   display: block;
   margin-top: 3px;
   color: var(--ink3, #83838e);
@@ -641,6 +641,7 @@ const HOME_PRICE_COMPARISON_STYLES = `
   border-radius: 11px;
   background: #fff;
   color: var(--violet-deep, #4c1d95);
+  line-height: 0;
   box-shadow: 0 10px 24px -18px rgba(16, 16, 20, 0.45);
 }
 
