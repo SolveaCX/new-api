@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { HomePriceHealthScore } from "@/components/home-price-health-score";
-import { ModelLogo } from "@/components/pricing-model-browser";
+import { HomeModelLogo } from "@/components/home-model-logo";
 import type { HomeCopy } from "@/lib/home-copy";
 import { buildRowsForModels, modelIconKey, type HomePricedModel } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
@@ -229,7 +229,7 @@ export function buildHomePriceComparisonRows(data: PricingData, limit = HOME_PRI
         vendor: liveRow?.vendor ?? seed.vendor,
         official: liveRow?.official ?? seed.officialPrice,
         discounted: liveRow?.discounted ?? seed.flatkeyPrice,
-        iconKey: liveRow?.iconKey ?? seed.iconKey ?? modelIconKey(seed.model, seed.vendor),
+        iconKey: seed.iconKey ?? modelIconKey(seed.model, liveRow?.vendor ?? seed.vendor),
         discountLabel: model ? formatHomePriceDiscount(model, data.groupRatio) : seed.discountLabel,
       };
     })
@@ -321,7 +321,12 @@ function FeaturedModelRow(props: {
       aria-label={`Open ${props.row.name} model page`}
     >
       <div className="fk-home-price-model">
-        <ModelLogoSurface iconKey={props.row.iconKey} fallback={props.row.name.charAt(0).toUpperCase()} />
+        <ModelLogoSurface
+          iconKey={props.row.iconKey}
+          modelName={props.row.name}
+          vendor={props.row.vendor}
+          fallback={props.row.name.charAt(0)}
+        />
         <div>
           <strong>{props.row.name}</strong>
           <span>{props.row.vendor}</span>
@@ -340,11 +345,17 @@ function FeaturedModelRow(props: {
   );
 }
 
-function ModelLogoSurface(props: { iconKey?: string; fallback: string }) {
+function ModelLogoSurface(props: { iconKey?: string; fallback: string; modelName: string; vendor: string }) {
   return (
-    <span className="fk-home-price-logo">
-      <ModelLogo iconKey={props.iconKey} fallback={props.fallback} size={28} />
-    </span>
+    <HomeModelLogo
+      className="fk-home-price-logo"
+      iconKey={props.iconKey}
+      modelName={props.modelName}
+      vendor={props.vendor}
+      fallback={props.fallback}
+      surfaceSize={42}
+      imageSize={28}
+    />
   );
 }
 
@@ -621,12 +632,11 @@ const HOME_PRICE_COMPARISON_STYLES = `
 }
 
 .fk-home-price-logo {
-  display: inline-flex;
+  display: inline-grid;
   flex: none;
   width: 42px;
   height: 42px;
-  align-items: center;
-  justify-content: center;
+  place-items: center;
   border: 1px solid rgba(16, 16, 20, 0.1);
   border-radius: 11px;
   background: #fff;
@@ -639,6 +649,7 @@ const HOME_PRICE_COMPARISON_STYLES = `
   width: 28px;
   height: 28px;
   object-fit: contain;
+  object-position: center;
 }
 
 .fk-home-price-logo > span {
