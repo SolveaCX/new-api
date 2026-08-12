@@ -17,6 +17,12 @@ function asset(path: string) {
   return `/assets/${path}`;
 }
 
+const ONLINE_STATIC_STYLESHEET_HREF = "/fk2.css?v=728n";
+
+export function OnlineStaticStylesheet() {
+  return <link rel="stylesheet" href={ONLINE_STATIC_STYLESHEET_HREF} precedence="default" />;
+}
+
 const navGroupLabels: Record<Locale, { menu: string; products: string; resources: string }> = withIdFallback({
   en: { products: "Product", resources: "Resource", menu: "Menu" },
   zh: { products: "产品", resources: "资源", menu: "菜单" },
@@ -253,7 +259,7 @@ export function OnlineFooter(props: { locale: Locale }) {
 export function OnlineStaticShell(props: ShellProps) {
   return (
     <>
-      <link rel="stylesheet" href="/fk2.css?v=728n" />
+      <OnlineStaticStylesheet />
       <style>
         {`
           .nav-group:hover .nav-group-menu,
