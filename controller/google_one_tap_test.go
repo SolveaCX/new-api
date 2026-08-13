@@ -33,6 +33,26 @@ func TestGoogleOneTapSuccessStartsFreshSameOriginNavigation(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "L2Rhc2hib2FyZA==")
 }
 
+func TestGoogleOneTapAlreadyLoggedInPreservesStoredUser(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/oauth/google/one-tap?return_to=%2Fdashboard",
+		nil,
+	)
+
+	respondGoogleOneTapAlreadyLoggedIn(context)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	require.NotContains(t, recorder.Body.String(), "localStorage.setItem('user'")
+	require.NotContains(t, recorder.Body.String(), "localStorage.setItem('uid'")
+	require.NotContains(t, recorder.Body.String(), "already_logged_in")
+	require.Contains(t, recorder.Body.String(), "location.replace")
+	require.Contains(t, recorder.Body.String(), "L2Rhc2hib2FyZA==")
+}
+
 func TestGoogleOneTapSuccessEscapesReturnPath(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)

@@ -234,7 +234,7 @@ func HandleGoogleOneTap(c *gin.Context) {
 
 	session := sessions.Default(c)
 	if session.Get("username") != nil {
-		respondGoogleOneTapSuccess(c, gin.H{"already_logged_in": true})
+		respondGoogleOneTapAlreadyLoggedIn(c)
 		return
 	}
 
@@ -327,6 +327,14 @@ func respondGoogleOneTapOAuthError(c *gin.Context, err error) {
 }
 
 func respondGoogleOneTapSuccess(c *gin.Context, data any) {
+	respondGoogleOneTapSuccessWithStorage(c, data, true)
+}
+
+func respondGoogleOneTapAlreadyLoggedIn(c *gin.Context) {
+	respondGoogleOneTapSuccessWithStorage(c, gin.H{"already_logged_in": true}, false)
+}
+
+func respondGoogleOneTapSuccessWithStorage(c *gin.Context, data any, storeUser bool) {
 	if googleOneTapWantsJSON(c) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "",
@@ -341,12 +349,18 @@ func respondGoogleOneTapSuccess(c *gin.Context, data any) {
 	// the user appears logged out. First commit a same-origin document, then let
 	// that document start a fresh navigation where the Strict cookie is sent.
 	returnPath := googleOneTapReturnPath(c)
-	userJSON, err := common.Marshal(data)
-	if err != nil {
-		respondGoogleOneTapFailure(c, http.StatusInternalServerError, i18n.T(c, i18n.MsgUserSessionSaveFailed))
-		return
+	storageScript := ""
+	if storeUser {
+		userJSON, err := common.Marshal(data)
+		if err != nil {
+			respondGoogleOneTapFailure(c, http.StatusInternalServerError, i18n.T(c, i18n.MsgUserSessionSaveFailed))
+			return
+		}
+		encodedUser := base64.StdEncoding.EncodeToString(userJSON)
+		storageScript = "var user=JSON.parse(atob('" + encodedUser + "'));" +
+			"localStorage.setItem('user',JSON.stringify(user));" +
+			"if(user&&user.id!=null)localStorage.setItem('uid',String(user.id));"
 	}
-	encodedUser := base64.StdEncoding.EncodeToString(userJSON)
 	encodedReturnPath := base64.StdEncoding.EncodeToString([]byte(returnPath))
 	escapedReturnPath := html.EscapeString(returnPath)
 	c.Header("Cache-Control", "no-store")
@@ -354,9 +368,7 @@ func respondGoogleOneTapSuccess(c *gin.Context, data any) {
 		"<!doctype html><html><head><meta charset=\"utf-8\">"+
 			"<title>Signing in</title></head><body>"+
 			"<script>(function(){"+
-			"var user=JSON.parse(atob('"+encodedUser+"'));"+
-			"localStorage.setItem('user',JSON.stringify(user));"+
-			"if(user&&user.id!=null)localStorage.setItem('uid',String(user.id));"+
+			storageScript+
 			"location.replace(atob('"+encodedReturnPath+"'));"+
 			"})();</script>"+
 			"<a href=\""+escapedReturnPath+"\">Continue</a></body></html>",
