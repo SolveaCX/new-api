@@ -505,17 +505,42 @@ Append to `cost_billing.go`:
 // cannot be read: the alternative is charging a number nobody reported.
 func completedQuota(task *model.Task) int {
 	if task == nil || task.PrivateData.BillingContext == nil {
-		return 0
+		return keepReservedQuota(task, "billing snapshot is missing")
 	}
 	usd, ok := parseUpstreamCost(task.Data)
 	if !ok {
-		return 0
+		return keepReservedQuota(task,
+			"upstream reported no usable usage.cost_in_usd_ticks")
 	}
-	return settledQuotaFromCost(usd, task.PrivateData.BillingContext.GroupRatio)
+	quota := settledQuotaFromCost(usd, task.PrivateData.BillingContext.GroupRatio)
+	if quota <= 0 {
+		return keepReservedQuota(task, "settled quota is not positive")
+	}
+	return quota
+}
+
+// keepReservedQuota returns 0 -- the caller's signal to leave the reservation
+// alone -- and says why.
+//
+// Without this line a stuck settlement is invisible: every task silently bills
+// at the worst-case reservation, which is exactly what happens if xAI renames
+// cost_in_usd_ticks. Mirrors hailuo_v2's keepReservedQuota.
+func keepReservedQuota(task *model.Task, reason string) int {
+	taskID := "unknown"
+	if task != nil && task.TaskID != "" {
+		taskID = task.TaskID
+	}
+	common.SysError(fmt.Sprintf(
+		"Grok video task %s keeps its pre-consumed quota: %s", taskID, reason))
+	return 0
 }
 ```
 
-Substitute the real group-ratio field name found in Step 1.
+Substitute the real group-ratio field name found in Step 1. Add `fmt` to the
+import block.
+
+This is the log the Risk section depends on. An earlier draft described it
+without giving any task the job of writing it, so it would have been dropped.
 
 - [ ] **Step 5: Add the adapter method**
 
