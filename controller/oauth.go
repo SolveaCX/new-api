@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/base64"
 	"fmt"
 	"html"
 	"net/http"
@@ -339,13 +340,26 @@ func respondGoogleOneTapSuccess(c *gin.Context, data any) {
 	// the session cookie (SameSite=Strict) is withheld from the destination and
 	// the user appears logged out. First commit a same-origin document, then let
 	// that document start a fresh navigation where the Strict cookie is sent.
-	returnPath := html.EscapeString(googleOneTapReturnPath(c))
+	returnPath := googleOneTapReturnPath(c)
+	userJSON, err := common.Marshal(data)
+	if err != nil {
+		respondGoogleOneTapFailure(c, http.StatusInternalServerError, i18n.T(c, i18n.MsgUserSessionSaveFailed))
+		return
+	}
+	encodedUser := base64.StdEncoding.EncodeToString(userJSON)
+	encodedReturnPath := base64.StdEncoding.EncodeToString([]byte(returnPath))
+	escapedReturnPath := html.EscapeString(returnPath)
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
 		"<!doctype html><html><head><meta charset=\"utf-8\">"+
-			"<meta http-equiv=\"refresh\" content=\"0;url="+returnPath+"\">"+
 			"<title>Signing in</title></head><body>"+
-			"<a href=\""+returnPath+"\">Continue</a></body></html>",
+			"<script>(function(){"+
+			"var user=JSON.parse(atob('"+encodedUser+"'));"+
+			"localStorage.setItem('user',JSON.stringify(user));"+
+			"if(user&&user.id!=null)localStorage.setItem('uid',String(user.id));"+
+			"location.replace(atob('"+encodedReturnPath+"'));"+
+			"})();</script>"+
+			"<a href=\""+escapedReturnPath+"\">Continue</a></body></html>",
 	))
 }
 

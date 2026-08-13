@@ -22,12 +22,15 @@ func TestGoogleOneTapSuccessStartsFreshSameOriginNavigation(t *testing.T) {
 		nil,
 	)
 
-	respondGoogleOneTapSuccess(context, nil)
+	respondGoogleOneTapSuccess(context, gin.H{"id": 42, "username": "one-tap-user"})
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Empty(t, recorder.Header().Get("Location"))
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
-	require.Contains(t, recorder.Body.String(), `http-equiv="refresh" content="0;url=/dashboard"`)
+	require.Contains(t, recorder.Body.String(), "localStorage.setItem('user'")
+	require.Contains(t, recorder.Body.String(), "localStorage.setItem('uid'")
+	require.Contains(t, recorder.Body.String(), "eyJpZCI6NDIsInVzZXJuYW1lIjoib25lLXRhcC11c2VyIn0=")
+	require.Contains(t, recorder.Body.String(), "L2Rhc2hib2FyZA==")
 }
 
 func TestGoogleOneTapSuccessEscapesReturnPath(t *testing.T) {
@@ -39,9 +42,13 @@ func TestGoogleOneTapSuccessEscapesReturnPath(t *testing.T) {
 		nil,
 	)
 
-	respondGoogleOneTapSuccess(context, nil)
+	respondGoogleOneTapSuccess(context, gin.H{
+		"id":       42,
+		"username": "</script><script>alert(1)</script>",
+	})
 
-	require.False(t, strings.Contains(recorder.Body.String(), "<script>"))
+	require.False(t, strings.Contains(recorder.Body.String(), "alert(1)"))
+	require.Equal(t, 1, strings.Count(recorder.Body.String(), "<script>"))
 	require.Contains(t, recorder.Body.String(), "&amp;")
 }
 
