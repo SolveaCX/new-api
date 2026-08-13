@@ -123,6 +123,7 @@ type RootDocumentProps = {
   bodyStart?: ReactNode;
   children: ReactNode;
   docsUrl: string | null;
+  hasConsoleSessionHint: boolean;
   googleOneTap: PublicSiteSettings["googleOneTap"];
   lang: Locale;
 };
@@ -131,6 +132,7 @@ export function RootDocument({
   bodyStart,
   children,
   docsUrl,
+  hasConsoleSessionHint,
   googleOneTap,
   lang,
 }: RootDocumentProps) {
@@ -179,6 +181,7 @@ export function RootDocument({
         <GoogleOneTapPrompt
           clientId={googleOneTap.clientId}
           cookieDomain={googleOneTapCookieDomain}
+          disabled={hasConsoleSessionHint}
           enabled={googleOneTap.enabled}
           loginUri={consoleUrl(
             "/api/oauth/google/one-tap",

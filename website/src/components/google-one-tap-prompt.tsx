@@ -5,12 +5,13 @@ import Script from "next/script";
 type Props = {
   clientId: string | null;
   cookieDomain?: string;
+  disabled?: boolean;
   enabled: boolean;
   loginUri: string;
 };
 
 export function GoogleOneTapPrompt(props: Props) {
-  if (!props.enabled || !props.clientId) return null;
+  if (!props.enabled || !props.clientId || props.disabled) return null;
 
   const cookieDomain = normalizeCookieDomain(props.cookieDomain);
 

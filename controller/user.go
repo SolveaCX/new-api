@@ -26,6 +26,8 @@ import (
 )
 
 const maxAdsAttributionLength = 4096
+const consoleSessionHintCookieName = "flatkey_console_session_hint"
+const consoleSessionHintMaxAge = 60 * 60 * 24 * 30
 
 var allowedAdsAttributionKeys = map[string]struct{}{
 	"aff": {}, "fbclid": {}, "gad_campaignid": {}, "gad_source": {},
@@ -182,6 +184,7 @@ func setupLoginSession(user *model.User, c *gin.Context, isNewUser ...bool) (map
 	if err != nil {
 		return nil, err
 	}
+	setConsoleSessionHintCookie(c, true)
 	data := map[string]any{
 		"id":            user.Id,
 		"username":      user.Username,
@@ -225,10 +228,50 @@ func Logout(c *gin.Context) {
 		})
 		return
 	}
+	setConsoleSessionHintCookie(c, false)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
 	})
+}
+
+func setConsoleSessionHintCookie(c *gin.Context, enabled bool) {
+	maxAge := consoleSessionHintMaxAge
+	value := "1"
+	if !enabled {
+		maxAge = -1
+		value = ""
+	}
+	for _, domain := range sharedCookieHintDomainsForRequest(c) {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     consoleSessionHintCookieName,
+			Value:    value,
+			Path:     "/",
+			Domain:   domain,
+			MaxAge:   maxAge,
+			HttpOnly: false,
+			Secure:   common.SessionCookieSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+}
+
+func sharedCookieHintDomainsForRequest(c *gin.Context) []string {
+	if configured := strings.TrimSpace(common.CookieSessionDomain); configured != "" {
+		return []string{"", configured}
+	}
+	host := strings.TrimSpace(c.Request.Host)
+	if host == "" {
+		return []string{""}
+	}
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.ToLower(host)
+	if host == "flatkey.ai" || strings.HasSuffix(host, ".flatkey.ai") {
+		return []string{"", ".flatkey.ai"}
+	}
+	return []string{""}
 }
 
 // ensureDefaultUserToken idempotently creates the initial API key for a newly

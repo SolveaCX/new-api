@@ -1,4 +1,4 @@
-export const CONSOLE_SESSION_HINT_COOKIE_NAME = "flatkey_console_session";
+export const CONSOLE_SESSION_HINT_COOKIE_NAME = "flatkey_console_session_hint";
 export const CONSOLE_SESSION_HINT_STORAGE_KEY = "flatkey:console-session";
 
 const HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -9,6 +9,23 @@ export type ConsoleCurrentUserPayload = {
   } | null;
   success?: unknown;
 };
+
+type ConsoleRequestCookieStore = {
+  get(name: string): { value?: string } | undefined;
+};
+
+export function hasConsoleSessionHintCookie(cookieHeader: string): boolean {
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .some((part) => part === `${CONSOLE_SESSION_HINT_COOKIE_NAME}=1`);
+}
+
+export function hasConsoleSessionHintFromRequestCookieStore(
+  cookieStore: ConsoleRequestCookieStore,
+): boolean {
+  return cookieStore.get(CONSOLE_SESSION_HINT_COOKIE_NAME)?.value === "1";
+}
 
 export function hasConsoleSessionHint(): boolean {
   if (typeof window === "undefined") return false;
@@ -21,10 +38,7 @@ export function hasConsoleSessionHint(): boolean {
     /* ignore storage failures */
   }
 
-  return document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .some((part) => part === `${CONSOLE_SESSION_HINT_COOKIE_NAME}=1`);
+  return hasConsoleSessionHintCookie(document.cookie);
 }
 
 export function rememberConsoleSessionHint() {
@@ -100,5 +114,5 @@ export function buildConsoleSessionHintCookieWrites(input: {
   const domain = sharedCookieDomainForHostname(window.location.hostname);
   if (!domain) return [value];
 
-  return [value, `${value}; domain=${domain}`];
+  return [value, `${value}; Domain=${domain}`];
 }
