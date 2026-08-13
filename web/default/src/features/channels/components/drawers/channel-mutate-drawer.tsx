@@ -156,6 +156,7 @@ import {
 import type { Channel } from '../../types'
 import { useChannels } from '../channels-provider'
 import { CodexOAuthDialog } from '../dialogs/codex-oauth-dialog'
+import { CopilotDeviceFlowDialog } from '../dialogs/copilot-device-flow-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
   MissingModelsConfirmationDialog,
@@ -290,6 +291,7 @@ export function ChannelMutateDrawer({
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
   const [codexOAuthDialogOpen, setCodexOAuthDialogOpen] = useState(false)
+  const [copilotDeviceFlowOpen, setCopilotDeviceFlowOpen] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
   const initialModelsRef = useRef<string[]>([])
@@ -2228,6 +2230,34 @@ export function ChannelMutateDrawer({
                         </div>
                       )}
 
+                      {currentType === 112 && (
+                        <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                          <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                            <div className='flex flex-col gap-0.5'>
+                              <div className='text-sm font-semibold'>
+                                {t('GitHub Copilot Authorization')}
+                              </div>
+                              <div className='text-muted-foreground text-xs'>
+                                {isEditing
+                                  ? t('Authorize this saved channel with GitHub Device Flow.')
+                                  : t('Enter a GitHub token now, or save the channel first to use GitHub Device Flow.')}
+                              </div>
+                            </div>
+                            {isEditing && channelId && (
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='sm'
+                                onClick={() => setCopilotDeviceFlowOpen(true)}
+                              >
+                                <Link2 className='mr-2 h-4 w-4' />
+                                {t('Authorize with GitHub')}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <CodexOAuthDialog
                         open={codexOAuthDialogOpen}
                         onOpenChange={setCodexOAuthDialogOpen}
@@ -2235,6 +2265,19 @@ export function ChannelMutateDrawer({
                           form.setValue('key', key, { shouldDirty: true })
                         }}
                       />
+
+                      {channelId && (
+                        <CopilotDeviceFlowDialog
+                          channelId={channelId}
+                          open={copilotDeviceFlowOpen}
+                          onOpenChange={setCopilotDeviceFlowOpen}
+                          onAuthorized={() => {
+                            queryClient.invalidateQueries({
+                              queryKey: channelsQueryKeys.detail(channelId),
+                            })
+                          }}
+                        />
+                      )}
 
                       {isEditing && isMultiKeyChannel && (
                         <FormField

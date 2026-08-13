@@ -58,3 +58,19 @@ test('MiniMax H3 channel has a visible channel type label', () => {
   expect(CHANNEL_TYPES[110]).toBe('MiniMax H3')
   expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 110)).toBe(true)
 })
+
+test('ModelAPISeedance channel is selectable with internal video-channel metadata only', () => {
+  expect(CHANNEL_TYPES[111]).toBe('ModelAPISeedance')
+  expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 111)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(111)).toBe(false)
+  expect(CREATE_MODEL_FETCHABLE_TYPES.has(111)).toBe(false)
+  expect(getDefaultBaseUrl(111)).toBe('https://api.modelapi.co')
+})
+
+test('GitHub Copilot channel is selectable with its official endpoint', () => {
+  expect(CHANNEL_TYPES[112]).toBe('GitHub Copilot')
+  expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 112)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(112)).toBe(false)
+  expect(CREATE_MODEL_FETCHABLE_TYPES.has(112)).toBe(false)
+  expect(getDefaultBaseUrl(112)).toBe('https://api.githubcopilot.com')
+})

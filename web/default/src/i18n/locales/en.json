@@ -6566,6 +6566,27 @@
     "Use Flatkey CLI to generate a \"beautiful sunrise\" picture.": "Use Flatkey CLI to generate a \"beautiful sunrise\" picture.",
     "Step 2 · Install Flatkey for your system": "Step 2 · Install Flatkey for your system",
     "Flatkey CLI": "Flatkey CLI",
-    "Codex & Claude Code": "Codex & Claude Code"
+    "Codex & Claude Code": "Codex & Claude Code",
+    "GitHub Copilot": "GitHub Copilot",
+    "GitHub token with Copilot access": "GitHub token with Copilot access",
+    "Default: https://api.githubcopilot.com": "Default: https://api.githubcopilot.com",
+    "Save the channel first to authorize with GitHub Device Flow instead of entering a token.": "Save the channel first to authorize with GitHub Device Flow instead of entering a token.",
+    "GitHub Copilot Authorization": "GitHub Copilot Authorization",
+    "Authorize the saved channel with GitHub Device Flow.": "Authorize the saved channel with GitHub Device Flow.",
+    "Open GitHub, enter the one-time code, and approve access. This dialog detects completion automatically.": "Open GitHub, enter the one-time code, and approve access. This dialog detects completion automatically.",
+    "Start GitHub authorization": "Start GitHub authorization",
+    "One-time code": "One-time code",
+    "Copy one-time code": "Copy one-time code",
+    "Open GitHub verification page": "Open GitHub verification page",
+    "Waiting for GitHub authorization...": "Waiting for GitHub authorization...",
+    "Authorization expired": "Authorization expired",
+    "Authorization denied": "Authorization denied",
+    "Authorization failed": "Authorization failed",
+    "Authorization response is incomplete": "Authorization response is incomplete",
+    "GitHub authorization completed": "GitHub authorization completed",
+    "Authorize this saved channel with GitHub Device Flow.": "Authorize this saved channel with GitHub Device Flow.",
+    "Enter a GitHub token now, or save the channel first to use GitHub Device Flow.": "Enter a GitHub token now, or save the channel first to use GitHub Device Flow.",
+    "Authorize with GitHub": "Authorize with GitHub",
+    "GitHub Copilot channels support one credential only": "GitHub Copilot channels support one credential only"
   }
 }
