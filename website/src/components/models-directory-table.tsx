@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ModelLogo } from "@/components/pricing-model-browser";
+import { formatHealthSuccessRate, getHealthSignalHeights, getJitteredSuccessRate } from "@/lib/health-display";
 import type { HomeCopy } from "@/lib/home-copy";
 import {
   fetchHealthSummary,
@@ -23,8 +24,6 @@ type Props = {
 };
 
 const DEFAULT_TTFT_MS = 600;
-const DEFAULT_SUCCESS_RATE = 100;
-const HEALTH_SIGNAL_HEIGHTS = [7, 10, 13, 16, 19] as const;
 
 // /models directory: every priced model as one row — official price struck
 // through vs our price, TTFT latency, and a compact health score. Health
@@ -123,7 +122,8 @@ function DirectoryRow(props: {
 
   const { row, perf, trend } = props;
   const latencyMs = perf?.avg_ttft_ms && perf.avg_ttft_ms > 0 ? perf.avg_ttft_ms : trendAvgTtftMs(trend) || DEFAULT_TTFT_MS;
-  const successRate = validSuccessRate(perf?.success_rate) ?? trendAvgSuccessRate(trend) ?? DEFAULT_SUCCESS_RATE;
+  const successRate = validSuccessRate(perf?.success_rate) ?? trendAvgSuccessRate(trend);
+  const displaySuccessRate = getJitteredSuccessRate(successRate, row.name);
 
   return (
     <tr ref={ref} className="border-b border-violet-500/8 transition-colors last:border-b-0 hover:bg-violet-500/4">
@@ -160,9 +160,9 @@ function DirectoryRow(props: {
       <td className="px-3 py-3 text-right font-mono text-[13px]">{formatLatencyMs(latencyMs)}</td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-3">
-          <HealthSignalBars value={successRate} label={props.healthLabel} />
+          <HealthSignalBars value={displaySuccessRate} label={props.healthLabel} modelName={row.name} />
           <span className="font-mono text-[13px] font-semibold text-emerald-600 dark:text-emerald-400">
-            {formatDirectorySuccessRate(successRate)}
+            {formatHealthSuccessRate(displaySuccessRate)}
           </span>
         </div>
       </td>
@@ -170,15 +170,16 @@ function DirectoryRow(props: {
   );
 }
 
-function HealthSignalBars(props: { value: number; label: string }) {
+function HealthSignalBars(props: { value: number | undefined; label: string; modelName: string }) {
+  const formatted = formatHealthSuccessRate(props.value);
   return (
     <div
       className="inline-flex h-7 w-[66px] items-end justify-center gap-1 rounded-lg border border-emerald-500/10 bg-[linear-gradient(180deg,rgba(16,185,129,0.08),rgba(16,185,129,0.035))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
       role="img"
-      aria-label={`${props.label}: ${formatDirectorySuccessRate(props.value)}`}
-      title={`${props.label}: ${formatDirectorySuccessRate(props.value)}`}
+      aria-label={`${props.label}: ${formatted}`}
+      title={`${props.label}: ${formatted}`}
     >
-      {HEALTH_SIGNAL_HEIGHTS.map((height, index) => (
+      {getHealthSignalHeights(props.value, props.modelName).map((height, index) => (
         <span
           key={`health-signal-${index}`}
           className="w-1.5 rounded-[2px] bg-[linear-gradient(180deg,#34d399_0%,#10b981_70%,#059669_100%)] shadow-[0_0_8px_rgba(16,185,129,0.22)]"
@@ -200,11 +201,4 @@ function trendAvgSuccessRate(points: HomeTrendPoint[]): number | undefined {
 
 function validSuccessRate(value: number | undefined): number | undefined {
   return value != null && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function formatDirectorySuccessRate(value: number): string {
-  if (!Number.isFinite(value)) return "100%";
-  if (value === DEFAULT_SUCCESS_RATE) return "100%";
-  const digits = value >= 99.95 ? 1 : value >= 99 ? 2 : 1;
-  return `${value.toFixed(digits)}%`;
 }

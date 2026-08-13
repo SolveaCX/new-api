@@ -241,7 +241,6 @@ export function CliPromptActionPanel(props: Props) {
   const copy = copyByLocale[props.locale];
   const [prompt, setPrompt] = useState(props.defaultPrompt);
   const [copied, setCopied] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const modelOptions = props.kind === "image" ? imageModelOptions : videoModelOptions;
   const [selectedModel, setSelectedModel] = useState(modelOptions.includes(props.model) ? props.model : modelOptions[0]);
@@ -279,10 +278,6 @@ export function CliPromptActionPanel(props: Props) {
   };
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!showCreateDialog) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -292,7 +287,7 @@ export function CliPromptActionPanel(props: Props) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showCreateDialog]);
 
-  const createDialog = showCreateDialog && mounted
+  const createDialog = showCreateDialog && typeof document !== "undefined"
     ? createPortal(
         <div
           className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#0B0B0F]/42 px-4 py-6 backdrop-blur-sm"

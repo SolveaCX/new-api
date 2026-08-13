@@ -17,6 +17,7 @@ type WebsiteLoadingNavigationInput = {
   defaultPrevented?: boolean;
   download?: boolean;
   href: string | null;
+  localOnly?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
   target?: string | null;
@@ -30,7 +31,8 @@ export function resolveWebsiteLoadingNavigationTarget(input: WebsiteLoadingNavig
     input.metaKey ||
     input.ctrlKey ||
     input.shiftKey ||
-    input.altKey
+    input.altKey ||
+    input.localOnly
   ) {
     return null;
   }
@@ -128,6 +130,7 @@ export function WebsiteLoadingTransition({ label }: WebsiteLoadingTransitionProp
         defaultPrevented: event.defaultPrevented,
         download: anchor.hasAttribute("download"),
         href: anchor.getAttribute("href"),
+        localOnly: anchor.hasAttribute("data-local-models-filter"),
         metaKey: event.metaKey,
         shiftKey: event.shiftKey,
         target: anchor.getAttribute("target"),

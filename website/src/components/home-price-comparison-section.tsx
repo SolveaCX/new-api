@@ -137,29 +137,26 @@ type HomePriceComparisonRow = {
 } & HomePricedModel;
 
 type HomePriceSeedRow = {
-  discountLabel: string;
-  flatkeyPrice: string;
   iconKey?: string;
   model: string;
-  officialPrice: string;
   vendor: string;
 };
 
 const HOME_PRICE_MODEL_ROWS: HomePriceSeedRow[] = [
-  { model: "MiniMax-H3", vendor: "MiniMax", flatkeyPrice: "$0.08 / req", officialPrice: "$0.08 / req", discountLabel: "0%" },
-  { model: "Seedance2.0", vendor: "ByteDance", flatkeyPrice: "$6.3 / billing unit", officialPrice: "$7 / billing unit", discountLabel: "10%" },
-  { model: "kimi-k3", vendor: "Moonshot", flatkeyPrice: "in $1.8 / out $9 / 1M tokens", officialPrice: "in $3 / out $15 / 1M tokens", discountLabel: "40%" },
-  { model: "gpt-5.6-sol", vendor: "OpenAI", flatkeyPrice: "in $1.5 / out $9 / 1M tokens", officialPrice: "in $5 / out $30 / 1M tokens", discountLabel: "70%" },
-  { model: "gpt-4o-mini", vendor: "OpenAI", flatkeyPrice: "in $0.135 / out $0.54 / 1M tokens", officialPrice: "in $0.15 / out $0.6 / 1M tokens", discountLabel: "10%" },
-  { model: "claude-opus-5", vendor: "Anthropic", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discountLabel: "10%" },
-  { model: "deepseek-v4-flash", vendor: "DeepSeek", flatkeyPrice: "in $0.084 / out $0.168 / 1M tokens", officialPrice: "in $0.14 / out $0.28 / 1M tokens", discountLabel: "40%" },
-  { model: "claude-opus-4-6", vendor: "Anthropic", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discountLabel: "10%" },
-  { model: "gpt-5.6-luna", vendor: "OpenAI", flatkeyPrice: "in $0.06 / out $0.36 / 1M tokens", officialPrice: "in $0.2 / out $1.2 / 1M tokens", discountLabel: "70%" },
-  { model: "claude-sonnet-5", vendor: "Anthropic", flatkeyPrice: "in $1.8 / out $9 / 1M tokens", officialPrice: "in $2 / out $10 / 1M tokens", discountLabel: "10%" },
-  { model: "claude-opus-4-8", vendor: "Anthropic", flatkeyPrice: "in $4.5 / out $22.5 / 1M tokens", officialPrice: "in $5 / out $25 / 1M tokens", discountLabel: "10%" },
-  { model: "gemini-3.6-flash", vendor: "Google", flatkeyPrice: "in $1.35 / out $6.75 / 1M tokens", officialPrice: "in $1.5 / out $7.5 / 1M tokens", discountLabel: "10%" },
-  { model: "gpt-5.4", vendor: "OpenAI", flatkeyPrice: "in $0.75 / out $4.5 / 1M tokens", officialPrice: "in $2.5 / out $15 / 1M tokens", discountLabel: "70%" },
-  { model: "glm-5.2", vendor: "Z.ai", flatkeyPrice: "in $0.84 / out $2.64 / 1M tokens", officialPrice: "in $1.4 / out $4.4 / 1M tokens", discountLabel: "40%" },
+  { model: "MiniMax-H3", vendor: "MiniMax" },
+  { model: "Seedance2.0", vendor: "ByteDance" },
+  { model: "kimi-k3", vendor: "Moonshot" },
+  { model: "gpt-5.6-sol", vendor: "OpenAI" },
+  { model: "gpt-4o-mini", vendor: "OpenAI" },
+  { model: "claude-opus-5", vendor: "Anthropic" },
+  { model: "deepseek-v4-flash", vendor: "DeepSeek" },
+  { model: "claude-opus-4-6", vendor: "Anthropic" },
+  { model: "gpt-5.6-luna", vendor: "OpenAI" },
+  { model: "claude-sonnet-5", vendor: "Anthropic" },
+  { model: "claude-opus-4-8", vendor: "Anthropic" },
+  { model: "gemini-3.6-flash", vendor: "Google" },
+  { model: "gpt-5.4", vendor: "OpenAI" },
+  { model: "glm-5.2", vendor: "Z.ai" },
 ];
 
 const HOME_PRICE_TABLE_COPY = withIdFallback({
@@ -219,21 +216,28 @@ export function buildHomePriceComparisonRows(data: PricingData, limit = HOME_PRI
   const models = selectHomePriceModels(prepareHomePriceModels(data));
   const modelsByName = new Map(models.map((model) => [normalizeModelName(model.model_name), model]));
   const rowsByName = new Map(buildRowsForModels(models, data.vendors, data.groupRatio).map((row) => [row.name, row]));
+  const selected: HomePriceComparisonRow[] = [];
+  const seen = new Set<string>();
 
-  return HOME_PRICE_MODEL_ROWS.slice(0, limit)
-    .map((seed) => {
-      const model = modelsByName.get(normalizeModelName(seed.model));
-      const liveRow = model ? rowsByName.get(model.model_name) : undefined;
-      return {
-        name: seed.model,
-        vendor: liveRow?.vendor ?? seed.vendor,
-        official: liveRow?.official ?? seed.officialPrice,
-        discounted: liveRow?.discounted ?? seed.flatkeyPrice,
-        iconKey: seed.iconKey ?? modelIconKey(seed.model, liveRow?.vendor ?? seed.vendor),
-        discountLabel: model ? formatHomePriceDiscount(model, data.groupRatio) : seed.discountLabel,
-      };
-    })
-    .filter((row) => row.official !== "-" && row.discounted !== "-");
+  for (const seed of HOME_PRICE_MODEL_ROWS) {
+    const model = modelsByName.get(normalizeModelName(seed.model));
+    if (!model) continue;
+    const row = buildHomePriceComparisonRow(model, rowsByName.get(model.model_name), data.groupRatio, seed);
+    if (!row || seen.has(normalizeModelName(row.name))) continue;
+    selected.push(row);
+    seen.add(normalizeModelName(row.name));
+    if (selected.length >= limit) return selected;
+  }
+
+  for (const model of models) {
+    const row = buildHomePriceComparisonRow(model, rowsByName.get(model.model_name), data.groupRatio);
+    if (!row || seen.has(normalizeModelName(row.name))) continue;
+    selected.push(row);
+    seen.add(normalizeModelName(row.name));
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
 }
 
 export function HomePriceComparisonSection(props: {
@@ -313,6 +317,7 @@ function FeaturedModelRow(props: {
   officialPriceLabel: string;
 }) {
   const href = localizePath(modelPublicPath(props.row.name), props.locale);
+  const priceBar = getPriceBarWidths(props.row);
 
   return (
     <Link
@@ -332,8 +337,18 @@ function FeaturedModelRow(props: {
           <span>{props.row.vendor}</span>
         </div>
       </div>
-      <span className="fk-home-price-flat" data-label={props.flatkeyPriceLabel}>{props.row.discounted}</span>
-      <span className="fk-home-price-official" data-label={props.officialPriceLabel}>{props.row.official}</span>
+      <span className="fk-home-price-flat" data-label={props.flatkeyPriceLabel}>
+        <span className="fk-home-price-value">{props.row.discounted}</span>
+        <span className="fk-home-price-track" aria-hidden="true">
+          <span className="fk-home-price-fill flatkey" style={{ width: `${priceBar.flatkey}%` }} />
+        </span>
+      </span>
+      <span className="fk-home-price-official" data-label={props.officialPriceLabel}>
+        <span className="fk-home-price-value">{props.row.official}</span>
+        <span className="fk-home-price-track" aria-hidden="true">
+          <span className="fk-home-price-fill official" style={{ width: `${priceBar.official}%` }} />
+        </span>
+      </span>
       <span className="fk-home-price-discount" data-label={props.tableCopy.discount}>
         <span>{props.tableCopy.save}</span>
         {props.row.discountLabel}
@@ -390,6 +405,12 @@ function selectHomePriceModels(models: PricingModel[]): PricingModel[] {
     seen.add(model.model_name);
   }
 
+  for (const model of priced) {
+    if (seen.has(model.model_name)) continue;
+    selected.push(model);
+    seen.add(model.model_name);
+  }
+
   return selected;
 }
 
@@ -400,6 +421,31 @@ function formatHomePriceDiscount(model: PricingModel, groupRatio: Record<string,
   const discounted = discountedPriceUsd(listed);
   const percent = Math.max(0, Math.round((1 - discounted / official) * 100));
   return `${percent}%`;
+}
+
+function buildHomePriceComparisonRow(
+  model: PricingModel,
+  liveRow: HomePricedModel | undefined,
+  groupRatio: Record<string, number>,
+  seed?: HomePriceSeedRow
+): HomePriceComparisonRow | null {
+  if (!liveRow || liveRow.official === "-" || liveRow.discounted === "-") return null;
+  const vendor = liveRow.vendor || seed?.vendor || model.vendor_name || "";
+  return {
+    ...liveRow,
+    name: model.model_name,
+    vendor,
+    iconKey: seed?.iconKey ?? modelIconKey(model.model_name, vendor),
+    discountLabel: formatHomePriceDiscount(model, groupRatio),
+  };
+}
+
+function getPriceBarWidths(row: HomePriceComparisonRow): { flatkey: number; official: number } {
+  if (!Number.isFinite(row.officialUsd) || row.officialUsd <= 0 || !Number.isFinite(row.discountedUsd) || row.discountedUsd <= 0) {
+    return { flatkey: 0, official: 100 };
+  }
+  const flatkey = Math.round(Math.max(6, Math.min(100, (row.discountedUsd / row.officialUsd) * 100)));
+  return { flatkey, official: 100 };
 }
 
 function normalizeModelName(value: string): string {
@@ -415,6 +461,7 @@ const HOME_PRICE_COMPARISON_STYLES = `
 .fk-home-price-section {
   position: relative;
   z-index: 1;
+  max-width: 100%;
   overflow: hidden;
   border-top: 1px solid var(--line, rgba(11, 11, 15, 0.08));
   border-bottom: 1px solid var(--line, rgba(11, 11, 15, 0.08));
@@ -436,9 +483,11 @@ const HOME_PRICE_COMPARISON_STYLES = `
 .fk-home-price-inner {
   position: relative;
   z-index: 1;
-  width: min(100%, 1240px);
+  width: 100%;
+  min-width: 0;
+  max-width: var(--fk-site-frame-max-width, calc(1480px + 144px));
   margin: 0 auto;
-  padding: 76px 40px 82px;
+  padding: 76px var(--fk-site-gutter, clamp(20px, 4vw, 72px)) 82px;
 }
 
 .fk-home-price-head {
@@ -669,6 +718,8 @@ const HOME_PRICE_COMPARISON_STYLES = `
 }
 
 .fk-home-price-flat {
+  display: grid;
+  gap: 7px;
   color: #5852ff;
   font-size: 13.5px;
   font-weight: 800;
@@ -676,11 +727,48 @@ const HOME_PRICE_COMPARISON_STYLES = `
 }
 
 .fk-home-price-official {
+  display: grid;
+  gap: 7px;
   color: #8c8c97;
   font-size: 12.5px;
   font-weight: 650;
   line-height: 1.45;
+}
+
+.fk-home-price-official .fk-home-price-value {
   text-decoration: line-through;
+}
+
+.fk-home-price-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fk-home-price-track {
+  position: relative;
+  display: block;
+  width: min(100%, 132px);
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ece9f5;
+}
+
+.fk-home-price-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 5px;
+  border-radius: inherit;
+}
+
+.fk-home-price-fill.flatkey {
+  background: linear-gradient(90deg, #7c3aed, #c026d3);
+}
+
+.fk-home-price-fill.official {
+  background: #c9c4d3;
 }
 
 .fk-home-price-discount {
@@ -791,30 +879,91 @@ const HOME_PRICE_COMPARISON_STYLES = `
 
 @media (max-width: 760px) {
   .fk-home-price-inner {
-    padding: 62px 20px 68px;
+    padding: 54px var(--fk-site-gutter, clamp(20px, 4vw, 72px)) 60px;
+  }
+
+  .fk-home-price-head {
+    gap: 16px;
+  }
+
+  .fk-home-price-eyebrow {
+    margin-bottom: 11px;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
   }
 
   .fk-home-price-title-block h2 {
-    font-size: clamp(34px, 9vw, 44px);
-    letter-spacing: -0.045em;
+    max-width: 100%;
+    font-size: clamp(30px, 8.2vw, 36px);
+    letter-spacing: 0;
+    line-height: 1.08;
+    overflow-wrap: anywhere;
   }
 
   .fk-home-price-description {
+    max-width: 100%;
     font-size: 15px;
+    line-height: 1.62;
+    overflow-wrap: anywhere;
   }
 
   .fk-home-price-tags {
+    flex-wrap: nowrap;
     gap: 7px;
+    width: auto;
+    margin: 20px calc(-1 * var(--fk-site-gutter, 20px)) 0;
+    overflow-x: auto;
+    padding: 0 var(--fk-site-gutter, 20px) 2px;
+    scrollbar-width: none;
+  }
+
+  .fk-home-price-tags::-webkit-scrollbar {
+    display: none;
   }
 
   .fk-home-price-tags span {
+    flex: none;
     min-height: 31px;
     padding: 6px 10px;
     font-size: 11.5px;
   }
 
+  .fk-home-price-body {
+    gap: 14px;
+    margin-top: 22px;
+  }
+
   .fk-home-price-spotlight {
-    padding: 21px 18px;
+    border-radius: 16px;
+    padding: 18px;
+  }
+
+  .fk-home-price-spotlight p {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  .fk-home-price-spotlight strong {
+    margin-top: 12px;
+    font-size: clamp(32px, 10vw, 44px);
+    letter-spacing: -0.025em;
+    line-height: 0.98;
+  }
+
+  .fk-home-price-spotlight span {
+    margin-top: 12px;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  .fk-home-price-board {
+    display: grid;
+    gap: 10px;
+    max-width: 100%;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .fk-home-price-board-head {
@@ -823,17 +972,65 @@ const HOME_PRICE_COMPARISON_STYLES = `
 
   .fk-home-price-row {
     grid-template-columns: minmax(0, 1fr);
-    gap: 9px;
+    grid-template-areas:
+      "model"
+      "flat"
+      "official"
+      "discount"
+      "health";
+    gap: 10px;
     min-height: 0;
-    padding: 15px 16px;
+    max-width: 100%;
+    border: 1px solid rgba(16, 16, 20, 0.09);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.94);
+    padding: 14px;
+    box-shadow: 0 16px 38px -32px rgba(46, 16, 101, 0.42);
   }
 
-  .fk-home-price-flat,
-  .fk-home-price-official,
-  .fk-home-price-discount,
+  .fk-home-price-row > * {
+    min-width: 0;
+  }
+
+  .fk-home-price-row:last-child {
+    border-bottom: 1px solid rgba(16, 16, 20, 0.09);
+  }
+
+  .fk-home-price-model {
+    grid-area: model;
+    gap: 10px;
+    padding-bottom: 2px;
+  }
+
+  .fk-home-price-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .fk-home-price-logo img {
+    width: 25px;
+    height: 25px;
+  }
+
+  .fk-home-price-model strong {
+    font-size: 14.5px;
+  }
+
+  .fk-home-price-flat {
+    grid-area: flat;
+  }
+
+  .fk-home-price-official {
+    grid-area: official;
+  }
+
+  .fk-home-price-discount {
+    grid-area: discount;
+  }
+
   .fk-home-price-health-cell {
-    font-size: 12.5px;
-    line-height: 1.45;
+    grid-area: health;
   }
 
   .fk-home-price-flat::before,
@@ -848,6 +1045,34 @@ const HOME_PRICE_COMPARISON_STYLES = `
     text-transform: uppercase;
   }
 
+  .fk-home-price-flat,
+  .fk-home-price-official {
+    min-height: 0;
+    border-radius: 12px;
+    background: #f8f6fc;
+    padding: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .fk-home-price-flat {
+    color: #4f46e5;
+  }
+
+  .fk-home-price-official {
+    color: #7a7783;
+  }
+
+  .fk-home-price-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .fk-home-price-track {
+    width: 100%;
+    margin-top: 8px;
+  }
+
   .fk-home-price-flat::before {
     content: attr(data-label);
   }
@@ -860,21 +1085,82 @@ const HOME_PRICE_COMPARISON_STYLES = `
     content: attr(data-label);
   }
 
+  .fk-home-price-discount {
+    width: 100%;
+    min-height: 36px;
+    justify-content: center;
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .fk-home-price-discount::before {
+    display: none;
+  }
+
   .fk-home-price-health-cell {
-    display: block;
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid rgba(16, 185, 129, 0.1);
+    border-radius: 12px;
+    background: rgba(236, 253, 245, 0.72);
+    padding: 7px 9px;
   }
 
   .fk-home-price-health-cell::before {
     content: attr(data-label);
+    margin: 0;
+  }
+
+  .fk-home-health {
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .fk-home-health-bars {
+    width: 48px;
+    height: 24px;
+    border-radius: 8px;
+    padding: 5px 6px;
   }
 
   .fk-home-price-foot {
+    gap: 14px;
     align-items: stretch;
     flex-direction: column;
+    margin-top: 18px;
+  }
+
+  .fk-home-price-foot p {
+    font-size: 12.5px;
+    line-height: 1.58;
   }
 
   .fk-home-price-foot a {
     width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .fk-home-price-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "model"
+      "flat"
+      "official"
+      "discount"
+      "health";
+  }
+
+  .fk-home-price-flat,
+  .fk-home-price-official {
+    min-height: 0;
+  }
+
+  .fk-home-price-health-cell {
+    justify-content: flex-start;
   }
 }
 `;

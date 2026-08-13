@@ -277,7 +277,7 @@ export function PlaygroundPromptsExplorer(props: { items: PromptItem[]; locale: 
       <style>{`
         .playgroundHero{position:relative;overflow:hidden;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff 0%,#f7f5fd 100%)}
         .playgroundHero:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(124,58,237,.055) 1px,transparent 1px),linear-gradient(to bottom,rgba(124,58,237,.055) 1px,transparent 1px);background-size:72px 72px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.72),transparent 88%)}
-        .playgroundHeroIn{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:92px 40px 60px;display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,520px);gap:40px;align-items:center}
+        .playgroundHeroIn{position:relative;z-index:1;width:100%;max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:92px var(--fk-site-gutter) 60px;display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,520px);gap:40px;align-items:center}
         .playgroundHeroCopy{max-width:720px}
         .playgroundEyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;background:var(--violet-tint);color:var(--violet-deep);font:600 12px/1 var(--mono);letter-spacing:.04em;text-transform:none}
         .playgroundHeroTitle{max-width:720px;margin:18px 0 0;color:var(--ink);font-family:var(--disp);font-size:clamp(42px,4.5vw,62px);line-height:1.02;font-weight:700;letter-spacing:-.055em;text-wrap:balance}
@@ -287,18 +287,18 @@ export function PlaygroundPromptsExplorer(props: { items: PromptItem[]; locale: 
         .playgroundOutputRail{width:100%;min-width:0}
         .playgroundHeroMedia{display:block;min-width:0;overflow:hidden;border:1px solid #e7e2f1;border-radius:18px;background:#f7f4fc;color:var(--ink);box-shadow:0 26px 72px -50px rgba(46,16,101,.28);text-decoration:none}
         .playgroundHeroMediaFrame{position:relative;aspect-ratio:16/9;overflow:hidden}
-        .playgroundHeroMediaFrame img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .35s ease,filter .35s ease}
-        .playgroundHeroMedia:hover .playgroundHeroMediaFrame img{transform:scale(1.02);filter:saturate(1.02)}
+        .playgroundHeroMediaFrame img{display:block;width:100%;height:100%;object-fit:contain;transition:filter .35s ease}
+        .playgroundHeroMedia:hover .playgroundHeroMediaFrame img{filter:saturate(1.02)}
         .playgroundBand{position:relative;overflow:hidden;border-bottom:1px solid var(--line);background:#fff}
         .playgroundBand.soft{background:var(--home-surface)}
         .playgroundBand.gradient{background:linear-gradient(180deg,#f7f5fd 0%,#fcfbff 100%)}
-        .playgroundIn{max-width:1240px;margin:0 auto;padding:68px 40px;position:relative;z-index:1}
+        .playgroundIn{width:100%;max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:68px var(--fk-site-gutter);position:relative;z-index:1}
         .playgroundSectionHead{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.56fr);gap:34px;align-items:end;margin-bottom:28px}
         .playgroundSectionHead p{color:#615b64;font-size:15.5px;line-height:1.65}
         .playgroundKicker{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;background:var(--violet-tint);color:var(--violet-deep);font:600 12px/1 var(--mono);letter-spacing:.04em;text-transform:none}
         .playgroundSectionTitle{margin-top:15px;font-family:var(--disp);font-size:clamp(34px,3.8vw,52px);line-height:1.02;font-weight:700;letter-spacing:-.055em;text-wrap:balance}
         .promptToolbar{position:sticky;top:0;z-index:8;border-bottom:1px solid var(--line);background:rgba(255,255,255,.92);backdrop-filter:blur(10px)}
-        .promptToolbarIn{max-width:1240px;margin:0 auto;padding:15px 40px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+        .promptToolbarIn{width:100%;max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:15px var(--fk-site-gutter);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
         .promptSearch{position:relative}
         .promptSearch svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);color:#6f6873}
         .promptSearch input{width:100%;height:46px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 16px 0 46px;color:var(--ink);font:650 14px/1 var(--sans);outline:none;box-shadow:0 18px 50px -44px rgba(30,22,40,.48)}
@@ -332,24 +332,24 @@ export function PlaygroundPromptsExplorer(props: { items: PromptItem[]; locale: 
         .artifactSurface.hero{aspect-ratio:16/10}
         .artifactSurface.compact{aspect-ratio:4/3}
         .artifactSurface.default{aspect-ratio:16/10}
-        .artifactSurface img,.artifactSurface video{display:block;height:100%;width:100%;max-width:none;object-fit:cover}
+        .artifactSurface img,.artifactSurface video{display:block;height:100%;width:100%;max-width:100%;object-fit:contain}
         .videoPlay{position:absolute;right:14px;bottom:14px;width:38px;height:38px;display:grid;place-items:center;border-radius:999px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.92);color:#101014}
-        .codeArtifact,.storyArtifact,.textArtifact{aspect-ratio:16/10;overflow:hidden;padding:18px}
+        .codeArtifact,.storyArtifact,.textArtifact{min-height:180px;overflow:visible;padding:18px}
         .codeArtifact{background:#111014;color:#f4f0ff}
         .artifactLang{display:flex;align-items:center;gap:8px;margin-bottom:12px;color:#d9ef6e;font:800 11px/1 var(--mono);text-transform:uppercase}
-        .codeArtifact pre{overflow:hidden;margin:0;white-space:pre-wrap;font:500 11px/1.6 var(--mono)}
-        .storyArtifact{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:#12121a}
-        .storyFrame{overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:6px;background:rgba(255,255,255,.08);padding:8px;color:#f4f0ff;font-size:10px;line-height:1.35}
+        .codeArtifact pre{overflow:visible;margin:0;white-space:pre-wrap;font:500 11px/1.6 var(--mono)}
+        .storyArtifact{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:6px;background:#12121a}
+        .storyFrame{overflow:visible;border:1px solid rgba(255,255,255,.12);border-radius:6px;background:rgba(255,255,255,.08);padding:8px;color:#f4f0ff;font-size:10px;line-height:1.35}
         .storyFrame b{display:block;margin-bottom:4px;color:#d9ef6e;font:800 10px/1 var(--mono)}
         .textArtifact{background:#f7f7f2}
         .textArtifactIcon{width:40px;height:40px;display:grid;place-items:center;border-radius:8px;background:#fff;color:#5f27c2;box-shadow:0 16px 34px -28px rgba(36,25,50,.55)}
         .textArtifact b{display:block;margin-top:14px;font-size:13px}
-        .textArtifact p{margin-top:10px;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;color:#625c66;font-size:12px;line-height:1.55;white-space:pre-line}
+        .textArtifact p{margin-top:10px;overflow:visible;color:#625c66;font-size:12px;line-height:1.55;white-space:pre-line}
         .emptyState{border:1px dashed rgba(11,11,15,.18);border-radius:16px;background:#fff;padding:42px;text-align:center;color:#625c66;font-weight:700}
         .loadMoreRow{display:flex;justify-content:center;margin-top:28px}
         .loadMoreRow .btn{min-height:44px;border-radius:8px}
         @media(max-width:1050px){.playgroundHeroIn,.playgroundSectionHead,.promptToolbarIn{grid-template-columns:1fr}.playgroundHeroTitle{font-size:60px}.playgroundOutputRail{max-width:760px}.promptGrid,.promptGrid.full{grid-template-columns:repeat(2,minmax(0,1fr))}.categoryTabs{padding-bottom:2px}}
-        @media(max-width:700px){.playgroundHeroIn{width:100%;max-width:100vw;grid-template-columns:minmax(0,1fr);padding:72px 20px 52px;gap:34px;min-width:0;overflow:hidden}.playgroundHeroCopy,.playgroundOutputRail{width:100%;max-width:100%;inline-size:100%;max-inline-size:100%;min-width:0}.playgroundHeroTitle{width:100%;max-width:100%;font-size:42px;line-height:1.05;overflow-wrap:anywhere;word-break:normal;text-wrap:wrap}.playgroundHeroBody{width:100%;max-width:100%;font-size:15.5px;overflow-wrap:anywhere}.playgroundHeroCtas{width:100%;flex-direction:column}.playgroundHeroCtas .btn{width:100%}.playgroundIn{padding:56px 20px}.promptToolbarIn{padding:14px 20px}.promptGrid,.promptGrid.full{grid-template-columns:1fr}.playgroundSectionTitle{font-size:36px}.promptPreview pre{max-height:116px}}
+        @media(max-width:700px){.playgroundHeroIn{width:100%;max-width:100vw;grid-template-columns:minmax(0,1fr);padding:72px var(--fk-site-gutter) 52px;gap:34px;min-width:0;overflow:hidden}.playgroundHeroCopy,.playgroundOutputRail{width:100%;max-width:100%;inline-size:100%;max-inline-size:100%;min-width:0}.playgroundHeroTitle{width:100%;max-width:100%;font-size:42px;line-height:1.05;overflow-wrap:anywhere;word-break:normal;text-wrap:wrap}.playgroundHeroBody{width:100%;max-width:100%;font-size:15.5px;overflow-wrap:anywhere}.playgroundHeroCtas{width:100%;flex-direction:column}.playgroundHeroCtas .btn{width:100%}.playgroundIn{padding:56px var(--fk-site-gutter)}.promptToolbarIn{padding:14px var(--fk-site-gutter)}.promptGrid,.promptGrid.full{grid-template-columns:1fr}.playgroundSectionTitle{font-size:36px}.promptPreview pre{max-height:116px}}
         @media(max-width:480px){.playgroundHeroTitle{font-size:39px}.playgroundHeroBody{font-size:15px}}
       `}</style>
       <header className="hero heroUnified playgroundHero">
@@ -606,7 +606,7 @@ function ArtifactPreview(props: { artifact: PromptArtifact; title: string; varia
   if (props.artifact.kind === "storyboard") {
     return (
       <div className="storyArtifact">
-        {props.artifact.frames.slice(0, 9).map((frame, index) => (
+        {props.artifact.frames.map((frame, index) => (
           <div className="storyFrame" key={`${frame}-${index}`}>
             <b>{index + 1}</b>
             {frame}

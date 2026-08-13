@@ -34,6 +34,7 @@ describe("resolveWebsiteLoadingNavigationTarget", () => {
   test("skips anchors and non-page navigation", () => {
     expect(resolveWebsiteLoadingNavigationTarget({ href: "#pricing", windowHref: CURRENT })).toBeNull();
     expect(resolveWebsiteLoadingNavigationTarget({ href: "/models#pricing", windowHref: CURRENT })).toBeNull();
+    expect(resolveWebsiteLoadingNavigationTarget({ href: "/models?vendor=Qwen", localOnly: true, windowHref: CURRENT })).toBeNull();
     expect(resolveWebsiteLoadingNavigationTarget({ href: "mailto:sales@flatkey.ai", windowHref: CURRENT })).toBeNull();
     expect(resolveWebsiteLoadingNavigationTarget({ href: "/download", download: true, windowHref: CURRENT })).toBeNull();
     expect(resolveWebsiteLoadingNavigationTarget({ href: "/contact", target: "_blank", windowHref: CURRENT })).toBeNull();

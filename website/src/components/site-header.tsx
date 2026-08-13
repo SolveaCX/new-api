@@ -173,10 +173,16 @@ const mobileNavActiveClass = "bg-[#F3EDFF] text-[#6B46C1]";
 const mobileNavNestedClass = "grid gap-0.5 pt-0.5 pl-4";
 const mobileNavOpenClass = "group-open:bg-[#F3EDFF] group-open:text-[#6B46C1]";
 const desktopNavTriggerClass =
-  "inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 text-[14.5px] font-semibold text-[#4A4650] transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F]";
+  "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[12.75px] font-semibold text-[#4A4650] transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F] min-[1120px]:gap-2 min-[1120px]:px-3 min-[1120px]:text-[13.5px] min-[1360px]:text-[14.5px]";
 const desktopNavActiveClass = "bg-[#F7F2FF] text-[#0B0B0F]";
 const desktopNavDotClass =
   "size-1.5 shrink-0 rounded-full bg-[#AAA7B0] transition group-hover/nav:bg-[#7C3AED]";
+const desktopSecondaryActionClass =
+  "inline-flex h-10 items-center whitespace-nowrap rounded-[9px] border border-[#E7E4EC] bg-white px-2.5 text-[13px] font-bold text-[#0B0B0F] no-underline shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95] min-[1180px]:px-3 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
+const desktopPrimaryActionClass =
+  "inline-flex h-10 max-w-[10rem] items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] bg-[#070707] px-3 text-[13px] font-bold text-ellipsis text-white no-underline shadow-[0_10px_24px_-18px_rgba(11,11,15,.75)] transition hover:-translate-y-px hover:bg-[#17171B] min-[1180px]:h-11 min-[1180px]:max-w-[12rem] min-[1180px]:px-4 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
+const headerLogoClass =
+  "gap-2 [&_img]:!h-9 [&_img]:!w-9 [&_[data-flatkey-wordmark='true']]:!text-[28px] min-[1180px]:gap-[9px] min-[1180px]:[&_img]:!h-10 min-[1180px]:[&_img]:!w-10 min-[1180px]:[&_[data-flatkey-wordmark='true']]:!text-[32px] min-[1480px]:[&_img]:!h-11 min-[1480px]:[&_img]:!w-11 min-[1480px]:[&_[data-flatkey-wordmark='true']]:!text-[36px]";
 
 function persistLanguagePreference(locale: Locale, cookieDomain?: string) {
   for (const cookie of buildLanguagePreferenceCookieWrites(
@@ -287,14 +293,14 @@ function HeaderLanguageMenu(props: {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        className="inline-flex size-10 items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] aria-expanded:border-[#D8D1E2] aria-expanded:bg-[#F8F4FF] aria-expanded:text-[#0B0B0F]"
+        className="inline-flex size-9 items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] aria-expanded:border-[#D8D1E2] aria-expanded:bg-[#F8F4FF] aria-expanded:text-[#0B0B0F] min-[1180px]:size-10"
         aria-label="Change language"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
       >
-        <Globe2 className="size-[18px]" aria-hidden="true" />
+        <Globe2 className="size-[17px] min-[1180px]:size-[18px]" aria-hidden="true" />
       </button>
 
       <nav
@@ -592,22 +598,22 @@ export function SiteHeader(props: Props) {
 
   return (
     <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
-      <nav className="relative flex h-[88px] items-center gap-[30px] px-8 text-[#0B0B0F] max-[900px]:h-[72px] max-[900px]:gap-3 max-[900px]:px-4">
+      <nav className="relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-3 px-[var(--fk-site-gutter)] text-[#0B0B0F] min-[901px]:h-[76px] min-[1180px]:h-[84px] min-[1180px]:gap-5 min-[1480px]:h-[88px] min-[1480px]:gap-[30px]">
         <Link
           href={localizePath("/", props.locale)}
           className="inline-flex shrink-0 items-center no-underline"
         >
-          <FlatkeyBrandLogo className="gap-[11px] [&_img]:!h-10 [&_img]:!w-10 [&_[data-flatkey-wordmark='true']]:!text-[32px] min-[901px]:gap-[13px] min-[901px]:[&_img]:!h-[52px] min-[901px]:[&_img]:!w-[52px] min-[901px]:[&_[data-flatkey-wordmark='true']]:!text-[46px]" />
+          <FlatkeyBrandLogo className={headerLogoClass} />
           <span className="sr-only">flatkey.ai</span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-0.5 min-[901px]:flex">
+        <div className="hidden min-w-0 flex-1 items-center gap-0 min-[901px]:flex min-[1120px]:gap-0.5">
           {renderNavGroup(groupLabels.products, productItems)}
           {renderNavGroup(groupLabels.resources, resourceItems)}
           {topLevelItems.map((item) => renderNavLink(item, false, true))}
         </div>
 
-        <div className="ml-auto hidden shrink-0 items-center gap-2 min-[901px]:flex">
+        <div className="ml-auto hidden shrink-0 items-center gap-1.5 min-[901px]:flex min-[1180px]:gap-2">
           {!props.hideLanguageSwitcher && (
             <HeaderLanguageMenu
               locale={props.locale}
@@ -616,7 +622,7 @@ export function SiteHeader(props: Props) {
             />
           )}
           <a
-            className="inline-flex h-10 items-center whitespace-nowrap rounded-[9px] border border-[#E7E4EC] bg-white px-3 text-[14px] font-bold text-[#0B0B0F] no-underline shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95]"
+            className={desktopSecondaryActionClass}
             href={accountHref}
             aria-label={accountLabel}
           >
@@ -624,7 +630,7 @@ export function SiteHeader(props: Props) {
           </a>
           {!consoleSessionActive && (
             <a
-              className="inline-flex h-11 max-w-[12rem] items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] bg-[#070707] px-4 text-[14px] font-bold text-ellipsis text-white no-underline shadow-[0_10px_24px_-18px_rgba(11,11,15,.75)] transition hover:-translate-y-px hover:bg-[#17171B]"
+              className={desktopPrimaryActionClass}
               href={signUpHref}
               style={{ color: "#fff" }}
             >

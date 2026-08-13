@@ -51,6 +51,8 @@ describe("home model rows", () => {
     // official = ratio × $2; discounted = official × best group ratio × 2/3
     expect(gpt.official).toBe("$5");
     expect(gpt.discounted).toBe("$2"); // 5 × 0.6 × 2/3 — the "as low as 50% off" case
+    expect(gpt.officialUsd).toBe(5);
+    expect(gpt.discountedUsd).toBe(2);
     expect(opus.official).toBe("$5");
     expect(opus.discounted).toBe("$3"); // 5 × 0.9 × 2/3
     expect(gemini.official).toBe("$1.25");
@@ -83,6 +85,14 @@ describe("home model rows", () => {
 
     const deepseek = rows.find((row) => row.name === "deepseek-v4-flash");
     expect(deepseek?.iconKey).toBe("deepseek-color");
+  });
+
+  test("home price comparison only emits rows backed by live pricing data", () => {
+    const rows = buildHomePriceComparisonRows(pricing);
+
+    expect(rows.map((row) => row.name)).toEqual(["claude-sonnet-5", "claude-opus-4-8", "gpt-5.4", "gpt-5.4-mini", "gemini-3-pro", "sora-2"]);
+    expect(rows.some((row) => row.name === "Seedance2.0")).toBe(false);
+    expect(rows.every((row) => Number.isFinite(row.officialUsd) && Number.isFinite(row.discountedUsd))).toBe(true);
   });
 
   test("home model logo resolver keeps Kimi and DeepSeek local even with stale icon keys", () => {

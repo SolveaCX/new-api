@@ -24,7 +24,7 @@ function renderFooter(docsUrl: string | null) {
 }
 
 describe("website documentation links", () => {
-  test("renders safe desktop and mobile header links after Models and before Use Case", () => {
+  test("renders safe desktop and mobile resource links before Use Cases", () => {
     const html = renderHeader(DOCS_URL);
     const docsAnchors =
       html.match(/<a[^>]+href="https:\/\/docs\.example\.com\/start"[^>]*>/g) ??
@@ -35,11 +35,9 @@ describe("website documentation links", () => {
       expect(anchor).toContain('target="_blank"');
       expect(anchor).toContain('rel="noopener noreferrer"');
     }
-    expect(html.indexOf(">Models<")).toBeLessThan(
-      html.indexOf(">Documentation<"),
-    );
+    expect(html.indexOf(">Ranking<")).toBeLessThan(html.indexOf(">Documentation<"));
     expect(html.indexOf(">Documentation<")).toBeLessThan(
-      html.indexOf(">Use Case<"),
+      html.indexOf(">Use Cases<"),
     );
     expect(html).toContain('aria-label="Toggle navigation menu"');
     expect(html).not.toContain(">Menu<");
