@@ -18,9 +18,19 @@ func sendActivationEvent(c *gin.Context, name string, params map[string]any) {
 		params = map[string]any{}
 	}
 	params["activation_surface"] = name
-	service.SendGAEvent(c, service.GAEvent{
+	base := service.GAEvent{
 		Name: name, ClientID: clientID, SessionID: sessionID,
 		TimestampMicros: common.GetTimestamp() * 1_000_000, Params: params,
+	}
+	service.SendGAEvent(c, base)
+	activateParams := make(map[string]any, len(params)+1)
+	for key, value := range params {
+		activateParams[key] = value
+	}
+	activateParams["activation_type"] = name
+	service.SendGAEvent(c, service.GAEvent{
+		Name: "activate_success", ClientID: base.ClientID, SessionID: base.SessionID,
+		TimestampMicros: base.TimestampMicros, Params: activateParams,
 	})
 }
 
