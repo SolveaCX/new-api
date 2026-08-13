@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, BadgeDollarSign, BarChart3, Check, KeyRound, Link2, Server, ShieldCheck } from "lucide-react";
-import { buildHomePriceComparisonRows, HomePriceComparisonSection } from "@/components/home-price-comparison-section";
 import { HomeModelsTable } from "@/components/home-models-table";
 import { HomeModelCloud } from "@/components/home-model-cloud";
 import { HomeSupport } from "@/components/home-support";
@@ -12,7 +11,7 @@ import { buildHomeModelRows } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
 import { localizePath } from "@/lib/locales";
 import { ROUTER_ORIGIN, consoleUrl } from "@/lib/origins";
-import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+import { getPricingData } from "@/lib/pricing";
 
 // "Start free trial" lands the user straight on the console API Keys tab:
 // already-authenticated users skip the form, new users land on /keys after signing up.
@@ -32,12 +31,8 @@ const PRIVACY_BADGES = [
 export async function HomePage(props: Props) {
   const copy = getCopy(props.locale);
   const home = getHomeCopy(props.locale);
-  const [pricing, comparisonPricing] = await Promise.all([
-    getPricingData(),
-    getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
-  ]);
+  const pricing = await getPricingData();
   const tableRows = buildHomeModelRows(pricing);
-  const priceComparisonRows = buildHomePriceComparisonRows(comparisonPricing);
 
   const apiBaseUrlDescription = (text: string) => text.replace("{{apiBaseUrl}}", API_BASE_URL);
   // {{host}} is the API endpoint developers pin in their SDK config — the router origin, not the console.
@@ -115,8 +110,6 @@ export async function HomePage(props: Props) {
             </div>
           </div>
         </section>
-
-        <HomePriceComparisonSection home={home} locale={props.locale} rows={priceComparisonRows} />
 
         {/* Screen 3: core value blocks — reliability, cost, privacy. */}
         <section className="relative z-10 overflow-hidden px-6 py-20 md:py-24">

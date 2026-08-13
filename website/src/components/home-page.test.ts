@@ -4,7 +4,6 @@ import { buildHomeModelRows, pickFlagshipModels } from "@/lib/home-models";
 import { LOCALES } from "@/lib/locales";
 import type { PricingData } from "@/lib/pricing";
 import { resolveHomeModelLogo } from "./home-model-logo";
-import { buildHomePriceComparisonRows } from "./home-price-comparison-section";
 
 describe("home copy", () => {
   test("every locale has a full copy set", () => {
@@ -64,35 +63,6 @@ describe("home model rows", () => {
     expect(names).not.toContain("sora-2");
     expect(names).not.toContain("free-model");
     expect(names).toContain("gpt-5.4-mini");
-  });
-
-  test("home price comparison derives DeepSeek icon instead of trusting stale payload icons", () => {
-    const rows = buildHomePriceComparisonRows({
-      ...pricing,
-      models: [
-        {
-          model_name: "deepseek-v4-flash",
-          quota_type: 0,
-          model_ratio: 0.07,
-          completion_ratio: 2,
-          vendor_name: "DeepSeek",
-          icon: "openai",
-          vendor_icon: "openai",
-        },
-      ],
-      groupRatio: {},
-    });
-
-    const deepseek = rows.find((row) => row.name === "deepseek-v4-flash");
-    expect(deepseek?.iconKey).toBe("deepseek-color");
-  });
-
-  test("home price comparison only emits rows backed by live pricing data", () => {
-    const rows = buildHomePriceComparisonRows(pricing);
-
-    expect(rows.map((row) => row.name)).toEqual(["claude-sonnet-5", "claude-opus-4-8", "gpt-5.4", "gpt-5.4-mini", "gemini-3-pro", "sora-2"]);
-    expect(rows.some((row) => row.name === "Seedance2.0")).toBe(false);
-    expect(rows.every((row) => Number.isFinite(row.officialUsd) && Number.isFinite(row.discountedUsd))).toBe(true);
   });
 
   test("home model logo resolver keeps Kimi and DeepSeek local even with stale icon keys", () => {

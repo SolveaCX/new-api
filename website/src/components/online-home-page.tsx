@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { buildHomePriceComparisonRows, HomePriceComparisonSection } from "@/components/home-price-comparison-section";
 import { consoleSignInUrl } from "@/lib/console-auth-links";
 import { getHomeCopy } from "@/lib/home-copy";
 import { type Locale, localizePath } from "@/lib/locales";
@@ -10,7 +9,6 @@ import {
   getOnlineStaticText,
 } from "@/lib/online-static-copy";
 import { consoleUrl } from "@/lib/origins";
-import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { OnlineStaticShell } from "./online-static-shell";
 
 const providers = [
@@ -285,8 +283,6 @@ function renderInlineEm(value: string) {
 export async function OnlineHomePage(props: { locale: Locale }) {
   const copy = getOnlineStaticCopy(props.locale);
   const home = getHomeCopy(props.locale);
-  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
-  const priceComparisonRows = buildHomePriceComparisonRows(pricing);
   const t = (key: string, fallback: string) =>
     getOnlineStaticText(props.locale, key, fallback);
   const ht = (key: string, fallback: string) =>
@@ -383,7 +379,6 @@ export async function OnlineHomePage(props: { locale: Locale }) {
           </div>
         </div>
       </header>
-      <HomePriceComparisonSection home={home} locale={props.locale} rows={priceComparisonRows} />
       <section className="tools-intro">
         <div className="tools-intro-inner">
           <div>
