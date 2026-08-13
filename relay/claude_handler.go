@@ -46,6 +46,46 @@ func shouldClaudeUseResponsesBridge(info *relaycommon.RelayInfo) bool {
 	)
 }
 
+func shouldRejectUnsupportedClaudeThinking(request *dto.ClaudeRequest, info *relaycommon.RelayInfo) bool {
+	if request == nil || request.Thinking == nil || request.Thinking.Type == "" || info == nil || info.ChannelMeta == nil {
+		return false
+	}
+
+	modelName := strings.ToLower(strings.TrimSpace(request.Model))
+	upstreamModelName := strings.ToLower(strings.TrimSpace(info.UpstreamModelName))
+	originModelName := strings.ToLower(strings.TrimSpace(info.OriginModelName))
+	if !isKimiK3ModelName(modelName) && !isKimiK3ModelName(upstreamModelName) && !isKimiK3ModelName(originModelName) {
+		return false
+	}
+
+	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelBaseUrl))
+	if strings.Contains(baseURL, "cometapi.com") || strings.Contains(upstreamModelName, "fireworks") {
+		return true
+	}
+	return false
+}
+
+func isKimiK3ModelName(modelName string) bool {
+	return modelName == "kimi-k3" || strings.HasSuffix(modelName, "/kimi-k3")
+}
+
+func unsupportedClaudeThinkingError(request *dto.ClaudeRequest, info *relaycommon.RelayInfo) *types.NewAPIError {
+	modelName := ""
+	if request != nil {
+		modelName = request.Model
+	}
+	if modelName == "" && info != nil {
+		modelName = info.OriginModelName
+	}
+	if modelName == "" {
+		modelName = "requested model"
+	}
+	return types.WithClaudeError(types.ClaudeError{
+		Type:    "invalid_request_error",
+		Message: fmt.Sprintf("thinking is not supported for model %q on this upstream route", modelName),
+	}, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+}
+
 func applyClaudeChannelSystemPrompt(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest, deferToAdaptor bool) {
 	if info == nil || info.ChannelMeta == nil || request == nil || info.ChannelSetting.SystemPrompt == "" {
 		return
@@ -178,6 +218,10 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	useResponsesBridge := shouldClaudeUseResponsesBridge(info)
 	applyClaudeChannelSystemPrompt(c, info, request, useResponsesBridge && info.ApiType == constant.APITypeCodex)
+
+	if shouldRejectUnsupportedClaudeThinking(request, info) {
+		return unsupportedClaudeThinkingError(request, info)
+	}
 
 	if useResponsesBridge {
 		openAIRequest, convErr := service.ClaudeToOpenAIRequest(*request, info)

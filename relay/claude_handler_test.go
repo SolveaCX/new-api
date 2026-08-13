@@ -137,6 +137,94 @@ func TestShouldClaudeUseResponsesBridgePreservesPolicyForOtherChannels(t *testin
 	require.True(t, shouldClaudeUseResponsesBridge(info))
 }
 
+func TestShouldRejectUnsupportedClaudeThinking(t *testing.T) {
+	thinking := &dto.Thinking{Type: "enabled"}
+
+	tests := []struct {
+		name    string
+		request *dto.ClaudeRequest
+		info    *relaycommon.RelayInfo
+		want    bool
+	}{
+		{
+			name:    "rejects kimi k3 thinking on comet fireworks route",
+			request: &dto.ClaudeRequest{Model: "kimi-k3", Thinking: thinking},
+			info: &relaycommon.RelayInfo{
+				OriginModelName: "kimi-k3",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.cometapi.com",
+					UpstreamModelName: "accounts/fireworks/models/kimi-k3",
+				},
+			},
+			want: true,
+		},
+		{
+			name:    "rejects mapped fireworks kimi k3 upstream name",
+			request: &dto.ClaudeRequest{Model: "accounts/fireworks/models/kimi-k3", Thinking: thinking},
+			info: &relaycommon.RelayInfo{
+				OriginModelName: "kimi-k3",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.cometapi.com",
+					UpstreamModelName: "accounts/fireworks/models/kimi-k3",
+				},
+			},
+			want: true,
+		},
+		{
+			name:    "allows kimi k3 without thinking",
+			request: &dto.ClaudeRequest{Model: "kimi-k3"},
+			info: &relaycommon.RelayInfo{
+				OriginModelName: "kimi-k3",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.cometapi.com",
+					UpstreamModelName: "accounts/fireworks/models/kimi-k3",
+				},
+			},
+			want: false,
+		},
+		{
+			name:    "allows other thinking models",
+			request: &dto.ClaudeRequest{Model: "claude-opus-4-8", Thinking: thinking},
+			info: &relaycommon.RelayInfo{
+				OriginModelName: "claude-opus-4-8",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.anthropic.com",
+					UpstreamModelName: "claude-opus-4-8",
+				},
+			},
+			want: false,
+		},
+		{
+			name:    "allows kimi k3 on non flagged upstream",
+			request: &dto.ClaudeRequest{Model: "kimi-k3", Thinking: thinking},
+			info: &relaycommon.RelayInfo{
+				OriginModelName: "kimi-k3",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.kimi.com",
+					UpstreamModelName: "kimi-k3",
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, shouldRejectUnsupportedClaudeThinking(tt.request, tt.info))
+		})
+	}
+}
+
+func TestUnsupportedClaudeThinkingErrorIsClaudeBadRequest(t *testing.T) {
+	err := unsupportedClaudeThinkingError(&dto.ClaudeRequest{Model: "kimi-k3"}, &relaycommon.RelayInfo{})
+
+	require.Equal(t, http.StatusBadRequest, err.StatusCode)
+	claudeErr := err.ToClaudeError()
+	require.Equal(t, "invalid_request_error", claudeErr.Type)
+	require.Contains(t, claudeErr.Message, "thinking")
+	require.Contains(t, claudeErr.Message, "kimi-k3")
+}
+
 func TestCodexClaudeBridgeAppliesChannelSystemPromptOnce(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
