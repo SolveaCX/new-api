@@ -73,4 +73,8 @@ test('GitHub Copilot channel is selectable with its official endpoint', () => {
   expect(MODEL_FETCHABLE_TYPES.has(112)).toBe(false)
   expect(CREATE_MODEL_FETCHABLE_TYPES.has(112)).toBe(false)
   expect(getDefaultBaseUrl(112)).toBe('https://api.githubcopilot.com')
+  expect(getChannelTypeIcon(112)).toBe('Github')
+  expect(getKeyPromptForType(112)).toBe(
+    'Copilot authorization is available after saving the channel'
+  )
 })

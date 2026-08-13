@@ -148,6 +148,7 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  hasAdvancedSettingsValues,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -209,29 +210,6 @@ const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
 function readAdvancedSettingsPreference(): boolean {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(ADVANCED_SETTINGS_EXPANDED_KEY) === 'true'
-}
-
-function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
-  return Boolean(
-    values.param_override?.trim() ||
-    values.header_override?.trim() ||
-    values.status_code_mapping?.trim() ||
-    values.tag?.trim() ||
-    values.remark?.trim() ||
-    values.priority ||
-    values.weight ||
-    values.max_concurrency ||
-    values.proxy?.trim() ||
-    values.system_prompt?.trim() ||
-    values.force_format ||
-    values.thinking_to_content ||
-    values.pass_through_body_enabled ||
-    values.system_prompt_override ||
-    values.claude_beta_query ||
-    values.upstream_model_update_check_enabled ||
-    values.upstream_model_update_auto_sync_enabled ||
-    values.upstream_model_update_ignored_models?.trim()
-  )
 }
 
 function parseSettingsRecord(
@@ -622,6 +600,10 @@ export function ChannelMutateDrawer({
   useEffect(() => {
     if (isEditing) return // Don't auto-set defaults when editing
 
+    if (currentType === 112 && multiKeyMode !== 'single') {
+      form.setValue('multi_key_mode', 'single')
+    }
+
     // Type 45 (VolcEngine) - set default base_url
     if (currentType === 45) {
       const currentBaseUrlValue = form.getValues('base_url')
@@ -643,6 +625,13 @@ export function ChannelMutateDrawer({
       }
     }
 
+    if (currentType === 112) {
+      const currentBaseUrlValue = form.getValues('base_url')
+      if (!currentBaseUrlValue) {
+        form.setValue('base_url', 'https://api.githubcopilot.com')
+      }
+    }
+
     // Type 18 (Xunfei) - set default other (version)
     if (currentType === 18) {
       const currentOther = form.getValues('other')
@@ -650,7 +639,7 @@ export function ChannelMutateDrawer({
         form.setValue('other', 'v2.1')
       }
     }
-  }, [blockRunPaymentChain, currentType, isEditing, form])
+  }, [blockRunPaymentChain, currentType, isEditing, form, multiKeyMode])
 
   // Validate base_url - warn if it ends with /v1
   useEffect(() => {
@@ -950,7 +939,7 @@ export function ChannelMutateDrawer({
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
       // Validate key is required when creating
-      if (!isEditing && !data.key?.trim()) {
+      if (!isEditing && currentType !== 112 && !data.key?.trim()) {
         form.setError('key', {
           type: 'manual',
           message: ERROR_MESSAGES.REQUIRED_KEY,
@@ -1928,7 +1917,7 @@ export function ChannelMutateDrawer({
                     )}
 
                     {/* General base_url for other types */}
-                    {![3, 8, 22, 36, 45, 100].includes(currentType) && (
+                    {![3, 8, 22, 36, 45, 100, 112].includes(currentType) && (
                       <FormField
                         control={form.control}
                         name='base_url'
@@ -1953,7 +1942,7 @@ export function ChannelMutateDrawer({
                     )}
 
                     <ChannelAuthSection>
-                      {!isEditing && (
+                      {!isEditing && currentType !== 112 && (
                         <FormField
                           control={form.control}
                           name='multi_key_mode'
@@ -2081,7 +2070,7 @@ export function ChannelMutateDrawer({
                                           {t(
                                             'Enter new key to update, or leave empty to keep current key'
                                           )}
-                                          {isMultiKeyChannel && (
+                                          {isMultiKeyChannel && currentType !== 112 && (
                                             <span className='text-warning mt-1 block'>
                                               {t(
                                                 'Multi-key channel: Keys will be'
@@ -2239,8 +2228,12 @@ export function ChannelMutateDrawer({
                               </div>
                               <div className='text-muted-foreground text-xs'>
                                 {isEditing
-                                  ? t('Authorize this saved channel with GitHub Device Flow.')
-                                  : t('Enter a GitHub token now, or save the channel first to use GitHub Device Flow.')}
+                                  ? t(
+                                      'Authorize this saved channel with GitHub Device Flow.'
+                                    )
+                                  : t(
+                                      'Save the channel first, then authorize it with GitHub Device Flow.'
+                                    )}
                               </div>
                             </div>
                             {isEditing && channelId && (
@@ -2258,6 +2251,33 @@ export function ChannelMutateDrawer({
                         </div>
                       )}
 
+                      {currentType === 57 && (
+                        <FormField
+                          control={form.control}
+                          name='codex_fingerprint_mode'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Codex Fingerprint Convergence')}</FormLabel>
+                              <Select items={[
+                                { label: t('Off (passthrough)'), value: 'off' },
+                                { label: t('Device only'), value: 'device' },
+                                { label: t('Device + Session (recommended)'), value: 'session' },
+                                { label: t('Full convergence'), value: 'full' },
+                              ]} value={field.value || 'session'} onValueChange={field.onChange}>
+                                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent>
+                                  <SelectItem value='off'>{t('Off (passthrough)')}</SelectItem>
+                                  <SelectItem value='device'>{t('Device only')}</SelectItem>
+                                  <SelectItem value='session'>{t('Device + Session (recommended)')}</SelectItem>
+                                  <SelectItem value='full'>{t('Full convergence')}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>{t('Converge Codex device and session identifiers for shared OAuth accounts')}</FormDescription>
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
                       <CodexOAuthDialog
                         open={codexOAuthDialogOpen}
                         onOpenChange={setCodexOAuthDialogOpen}
@@ -2272,14 +2292,14 @@ export function ChannelMutateDrawer({
                           open={copilotDeviceFlowOpen}
                           onOpenChange={setCopilotDeviceFlowOpen}
                           onAuthorized={() => {
-                            queryClient.invalidateQueries({
+                            void queryClient.invalidateQueries({
                               queryKey: channelsQueryKeys.detail(channelId),
                             })
                           }}
                         />
                       )}
 
-                      {isEditing && isMultiKeyChannel && (
+                      {isEditing && isMultiKeyChannel && currentType !== 112 && (
                         <FormField
                           control={form.control}
                           name='key_mode'
@@ -2331,7 +2351,9 @@ export function ChannelMutateDrawer({
                         />
                       )}
 
-                      {!isEditing && multiKeyMode === 'multi_to_single' && (
+                      {!isEditing &&
+                        currentType !== 112 &&
+                        multiKeyMode === 'multi_to_single' && (
                         <FormField
                           control={form.control}
                           name='multi_key_type'
@@ -3462,27 +3484,31 @@ export function ChannelMutateDrawer({
                         />
                       </div>
 
-                      <FormField
-                        control={form.control}
-                        name='proxy'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Proxy Address')}</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={t('socks5://user:pass@host:port')}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t(
-                                'Network proxy for this channel (supports socks5 protocol)'
-                              )}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {currentType !== 111 && (
+                        <FormField
+                          control={form.control}
+                          name='proxy'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Proxy Address')}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder={t(
+                                    'socks5://user:pass@host:port'
+                                  )}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'Network proxy for this channel (supports socks5 protocol)'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
 
                       <FormField
                         control={form.control}
