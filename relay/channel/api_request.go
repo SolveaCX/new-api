@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -317,7 +318,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
-	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
+	logger.LogDebug(c, "upstream host/path: %s", sanitizeUpstreamURL(fullRequestURL))
 	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
@@ -347,7 +348,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
-	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
+	logger.LogDebug(c, "upstream host/path: %s", sanitizeUpstreamURL(fullRequestURL))
 	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
@@ -492,12 +493,73 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
+
+func sanitizeUpstreamURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "<invalid>"
+	}
+	// Log only the host and path. This also drops URL user info, query, and fragment.
+	path := parsed.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	return parsed.Host + path
+}
+
+func upstreamResponseOutcome(status int) string {
+	if status >= http.StatusInternalServerError {
+		return "http_5xx"
+	}
+	if status >= http.StatusBadRequest {
+		return "http_4xx"
+	}
+	return "normal_response"
+}
+
+func upstreamRequestErrorKind(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "context_canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var netErr interface{ Timeout() bool }
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "timeout"
+	}
+	return "other"
+}
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	requestID, channelID := "", 0
+	if info != nil {
+		requestID = info.RequestId
+		channelID = info.ChannelId
+	}
+	method, upstreamURL := "", "<nil>"
+	if req != nil {
+		method = req.Method
+		if req.URL != nil {
+			upstreamURL = sanitizeUpstreamURL(req.URL.String())
+		}
+	}
+	startedAt := time.Now()
+	logRequest := func(event, outcome string, status int, extra string) string {
+		message := fmt.Sprintf("event=%s request_id=%s channel_id=%d method=%s upstream_host_path=%s duration_ms=%d status=%d outcome=%s", event, requestID, channelID, method, upstreamURL, time.Since(startedAt).Milliseconds(), status, outcome)
+		if extra != "" {
+			message += " " + extra
+		}
+		return message
+	}
+	logger.LogInfo(c, logRequest("upstream_request_start", "started", 0, ""))
+
 	var client *http.Client
 	var err error
 	if info.ChannelSetting.Proxy != "" {
 		client, err = service.NewProxyHttpClient(info.ChannelSetting.Proxy)
 		if err != nil {
+			logger.LogError(c, logRequest("upstream_request_error", "client_setup_error", 0, ""))
 			return nil, fmt.Errorf("new proxy http client failed: %w", err)
 		}
 	} else {
@@ -524,12 +586,15 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.LogError(c, "do request failed: "+err.Error())
+		errorKind := upstreamRequestErrorKind(err)
+		logger.LogError(c, logRequest("upstream_request_error", "client_do_error", 0, "error_kind="+errorKind+" error=upstream request failed"))
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {
+		logger.LogError(c, logRequest("upstream_request_error", "nil_response", 0, ""))
 		return nil, errors.New("resp is nil")
 	}
+	logger.LogInfo(c, logRequest("upstream_request_end", upstreamResponseOutcome(resp.StatusCode), resp.StatusCode, ""))
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)
