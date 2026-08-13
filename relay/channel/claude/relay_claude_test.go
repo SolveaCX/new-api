@@ -473,3 +473,82 @@ func TestRequestOpenAI2ClaudeMessage_ConvertsTextFileContentToText(t *testing.T)
 	require.NotNil(t, content[0].Text)
 	require.Equal(t, "alpha\nbeta", *content[0].Text)
 }
+
+func TestRequestOpenAI2ClaudeMessage_TransfersVideoUrlContent(t *testing.T) {
+	videoData := base64.StdEncoding.EncodeToString([]byte("demo-video"))
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-3-5-sonnet",
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					dto.MediaContent{
+						Type: dto.ContentTypeVideoUrl,
+						VideoUrl: &dto.MessageVideoUrl{
+							Url: "data:video/mp4;base64," + videoData,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Len(t, claudeRequest.Messages, 1)
+
+	content, ok := claudeRequest.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	require.Equal(t, "video", content[0].Type)
+	require.NotNil(t, content[0].Source)
+	require.Equal(t, "base64", content[0].Source.Type)
+	require.Equal(t, "video/mp4", content[0].Source.MediaType)
+	require.Equal(t, videoData, content[0].Source.Data)
+}
+
+func TestResponseClaude2OpenAI_TextOnlyDoesNotInventReasoning(t *testing.T) {
+	text := "437"
+	resp := &dto.ClaudeResponse{
+		Id:    "msg_text_only",
+		Type:  "message",
+		Model: "kimi-k3",
+		Content: []dto.ClaudeMediaMessage{
+			{
+				Type: "text",
+				Text: &text,
+			},
+		},
+	}
+
+	openAIResp := ResponseClaude2OpenAI(resp)
+	require.Len(t, openAIResp.Choices, 1)
+	require.Equal(t, "437", openAIResp.Choices[0].Message.StringContent())
+	require.Nil(t, openAIResp.Choices[0].Message.ReasoningContent)
+}
+
+func TestResponseClaude2OpenAI_PreservesThinkingContent(t *testing.T) {
+	text := "437"
+	thinking := "step by step"
+	resp := &dto.ClaudeResponse{
+		Id:    "msg_with_thinking",
+		Type:  "message",
+		Model: "kimi-k3",
+		Content: []dto.ClaudeMediaMessage{
+			{
+				Type:     "thinking",
+				Thinking: &thinking,
+			},
+			{
+				Type: "text",
+				Text: &text,
+			},
+		},
+	}
+
+	openAIResp := ResponseClaude2OpenAI(resp)
+	require.Len(t, openAIResp.Choices, 1)
+	require.Equal(t, "437", openAIResp.Choices[0].Message.StringContent())
+	require.NotNil(t, openAIResp.Choices[0].Message.ReasoningContent)
+	require.Equal(t, "step by step", *openAIResp.Choices[0].Message.ReasoningContent)
+}

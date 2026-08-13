@@ -396,7 +396,11 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 		if file == nil || file.FileData == "" {
 			return nil
 		}
-		return types.NewFileSourceFromData(file.FileData, "")
+		mimeType := ""
+		if file.FileName != "" {
+			mimeType = mimeTypeFromFileName(file.FileName)
+		}
+		return types.NewFileSourceFromData(file.FileData, mimeType)
 	case ContentTypeVideoUrl:
 		video := m.GetVideoUrl()
 		if video == nil || video.Url == "" {
@@ -430,6 +434,51 @@ type MessageFile struct {
 
 type MessageVideoUrl struct {
 	Url string `json:"url"`
+}
+
+func mimeTypeFromFileName(fileName string) string {
+	if idx := strings.LastIndex(fileName, "."); idx != -1 && idx+1 < len(fileName) {
+		ext := strings.ToLower(fileName[idx+1:])
+		switch ext {
+		case "txt", "md", "markdown", "csv", "json", "xml", "html", "htm":
+			return "text/plain"
+		case "pdf":
+			return "application/pdf"
+		case "jpg", "jpeg":
+			return "image/jpeg"
+		case "png":
+			return "image/png"
+		case "gif":
+			return "image/gif"
+		case "jfif":
+			return "image/jpeg"
+		case "heic":
+			return "image/heic"
+		case "heif":
+			return "image/heif"
+		case "mp3":
+			return "audio/mp3"
+		case "wav":
+			return "audio/wav"
+		case "mpeg":
+			return "audio/mpeg"
+		case "mp4":
+			return "video/mp4"
+		case "wmv":
+			return "video/wmv"
+		case "flv":
+			return "video/flv"
+		case "mov":
+			return "video/mov"
+		case "mpg":
+			return "video/mpg"
+		case "avi":
+			return "video/avi"
+		case "mpegps":
+			return "video/mpegps"
+		}
+	}
+	return ""
 }
 
 const (

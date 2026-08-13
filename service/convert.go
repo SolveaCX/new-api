@@ -165,6 +165,16 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 						ImageUrl: &dto.MessageImageUrl{Url: imageData},
 					}
 					mediaMessages = append(mediaMessages, mediaMessage)
+				case "video":
+					if source := mediaMsg.ToFileSource(); source != nil {
+						videoURL := source.GetRawData()
+						if videoURL != "" {
+							mediaMessages = append(mediaMessages, dto.MediaContent{
+								Type:     dto.ContentTypeVideoUrl,
+								VideoUrl: &dto.MessageVideoUrl{Url: videoURL},
+							})
+						}
+					}
 				case "tool_use":
 					toolCall := dto.ToolCallRequest{
 						ID:   mediaMsg.Id,

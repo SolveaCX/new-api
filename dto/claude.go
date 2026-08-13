@@ -20,6 +20,7 @@ type ClaudeMediaMessage struct {
 	Text         *string              `json:"text,omitempty"`
 	Model        string               `json:"model,omitempty"`
 	Source       *ClaudeMessageSource `json:"source,omitempty"`
+	VideoURL     any                  `json:"video_url,omitempty"`
 	Usage        *ClaudeUsage         `json:"usage,omitempty"`
 	StopReason   *string              `json:"stop_reason,omitempty"`
 	PartialJson  *string              `json:"partial_json,omitempty"`
@@ -100,16 +101,37 @@ func (c *ClaudeMediaMessage) ParseMediaContent() []ClaudeMediaMessage {
 
 func (m *ClaudeMediaMessage) ToFileSource() types.FileSource {
 	if m.Source == nil {
-		return nil
+		return m.toVideoFileSource()
 	}
 	data := m.Source.Url
 	if data == "" {
 		data = common.Interface2String(m.Source.Data)
 	}
 	if data == "" {
-		return nil
+		return m.toVideoFileSource()
 	}
 	return types.NewFileSourceFromData(data, m.Source.MediaType)
+}
+
+func (m *ClaudeMediaMessage) toVideoFileSource() types.FileSource {
+	if m == nil || m.VideoURL == nil {
+		return nil
+	}
+	switch v := m.VideoURL.(type) {
+	case string:
+		if v == "" {
+			return nil
+		}
+		return types.NewFileSourceFromData(v, "")
+	case map[string]any:
+		if url := common.Interface2String(v["url"]); url != "" {
+			return types.NewFileSourceFromData(url, common.Interface2String(v["mime_type"]))
+		}
+		if data := common.Interface2String(v["data"]); data != "" {
+			return types.NewFileSourceFromData(data, common.Interface2String(v["mime_type"]))
+		}
+	}
+	return nil
 }
 
 type ClaudeMessageSource struct {
@@ -167,7 +189,24 @@ func (c *ClaudeMessage) SetContent(content any) {
 }
 
 func (c *ClaudeMessage) ParseContent() ([]ClaudeMediaMessage, error) {
-	return common.Any2Type[[]ClaudeMediaMessage](c.Content)
+	mediaContent, err := common.Any2Type[[]ClaudeMediaMessage](c.Content)
+	if err != nil {
+		return nil, err
+	}
+	for i := range mediaContent {
+		if mediaContent[i].Type != "video" && mediaContent[i].Type != ContentTypeVideoUrl {
+			continue
+		}
+		if source := mediaContent[i].ToFileSource(); source != nil {
+			mediaContent[i].Source = &ClaudeMessageSource{
+				Type:      "url",
+				MediaType: "",
+				Url:       source.GetRawData(),
+			}
+		}
+		mediaContent[i].Type = "video"
+	}
+	return mediaContent, nil
 }
 
 type Tool struct {
@@ -300,6 +339,13 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 				if source := media.ToFileSource(); source != nil {
 					fileMeta = append(fileMeta, &types.FileMeta{
 						FileType: types.FileTypeImage,
+						Source:   source,
+					})
+				}
+			case "video":
+				if source := media.ToFileSource(); source != nil {
+					fileMeta = append(fileMeta, &types.FileMeta{
+						FileType: types.FileTypeVideo,
 						Source:   source,
 					})
 				}
