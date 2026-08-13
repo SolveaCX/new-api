@@ -167,13 +167,13 @@ func parseGASessionIDFromCookie(value string) string {
 }
 
 func SendGAEventWithConfig(cfg GAConfig, event GAEvent) error {
-	return SendGAEventsWithConfig(cfg, []GAEvent{event})
+	return sendGAEventsWithConfig(cfg, []GAEvent{event})
 }
 
 // SendGAEventsWithConfig sends a batch of GA4 events in one Measurement
 // Protocol request. Callers can use this to keep related conversion events
 // consistent across retries.
-func SendGAEventsWithConfig(cfg GAConfig, events []GAEvent) error {
+func sendGAEventsWithConfig(cfg GAConfig, events []GAEvent) error {
 	cfg.MeasurementID = strings.TrimSpace(cfg.MeasurementID)
 	cfg.APISecret = strings.TrimSpace(cfg.APISecret)
 	cfg.Endpoint = strings.TrimSpace(cfg.Endpoint)
