@@ -17,7 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { FieldPath } from 'react-hook-form'
-import type { ChannelFormValues } from './channel-form'
+import {
+  CHANNEL_FORM_DEFAULT_VALUES,
+  type ChannelFormValues,
+} from './channel-form'
 
 type ChannelFormErrorMap = Partial<
   Record<FieldPath<ChannelFormValues>, unknown>
@@ -64,5 +67,12 @@ export function hasAdvancedSettingsErrors(
 ): boolean {
   return Object.keys(errors).some((fieldName) =>
     isAdvancedSettingsField(fieldName)
+  )
+}
+
+export function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
+  return Array.from(ADVANCED_SETTINGS_FIELDS).some(
+    (fieldName) =>
+      values[fieldName] !== CHANNEL_FORM_DEFAULT_VALUES[fieldName]
   )
 }
