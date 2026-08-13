@@ -5,8 +5,8 @@
 `xaigrok` settles on the cost the upstream reports for the completed task,
 instead of a fixed per-second rate configured locally.
 
-`ModelPrice` changes meaning for this channel: it becomes a markup multiplier
-applied to the upstream cost, not a price per second.
+The markup over that cost is a code constant. `ModelPrice` keeps its current
+meaning — dollars per second — and keeps driving the reservation.
 
 ## Why
 
@@ -56,7 +56,7 @@ tier, which is consistent with that being the only tier produced so far.
 That evidence covers 480P only; whether 720P and 1080P are likewise
 undiscounted is unknown. It does not need to be known — following the reported
 cost is correct under a discount, a price change, or a new tier, none of which
-require a config edit.
+require any change on this side.
 
 ## Mechanism
 
@@ -64,7 +64,7 @@ require a config edit.
 submit    reserve at the configured worst case
           ...task runs...
 complete  AdjustPerCallBillingOnComplete reads cost_in_usd_ticks
-          final quota = upstream cost x ModelPrice
+          final quota = upstream cost x grokMarkup
           difference settled against the reservation
 ```
 
@@ -95,35 +95,33 @@ if bc := task.PrivateData.BillingContext; bc != nil && bc.PerCallBilling {
 `xaigrok` implements `perCallTaskBillingAdjuster`. `hailuo_v2` already uses the
 same seam, so this is an established path rather than a new one.
 
-## ModelPrice becomes a markup multiplier
+## Markup is a code constant, and ModelPrice keeps its meaning
 
 ```
-final quota = upstream cost x ModelPrice
+final quota = upstream cost x grokMarkup
 ```
 
-| Value | Meaning |
-| ---: | --- |
-| `1.0` | sell at cost |
-| `1.3` | 30% markup |
-| `1.5` | 50% markup |
+`grokMarkup` is a constant in the adaptor. `ModelPrice` is left alone: it keeps
+meaning dollars per second and keeps driving the reservation, exactly as today.
 
-Reusing `ModelPrice` keeps repricing a one-number edit and matches how the field
-reads elsewhere — a factor applied to a base.
+The alternative was to reuse `ModelPrice` as the markup multiplier, which would
+have made repricing a one-number config edit. It was rejected because the field
+would then mean two different things depending on which build is running, with
+nothing in the data to say which:
 
-### This is a breaking configuration change
+| Order | `0.09` / `1.3` read as | Result |
+| --- | --- | --- |
+| Code first, config unchanged | multiplier | charges 9% of cost |
+| Config first, code unchanged | dollars per second | charges $1.30/s, ~26x |
 
-For this channel `ModelPrice` currently means dollars per second
-(`grok-imagine-video` = `0.09`). After this change it means a multiplier.
-Deploying one without the other misprices badly in both directions:
+Both values are ordinary positive floats, so no type, validation, or test could
+catch the mismatch. Keeping the markup in code removes the ordering hazard
+entirely — the deploy is a plain code deploy with no configuration step, and
+nothing is wrong in between.
 
-| Order | Result |
-| --- | --- |
-| Code first, config unchanged | `0.09` read as a multiplier — charges 9% of cost |
-| Config first, code unchanged | `1.3` read as dollars per second — charges $1.30/s, ~26x |
-
-**Deploy the code, then change the configuration immediately.** The PR must say
-so, and the two values to write are `grok-imagine-video` and
-`grok-imagine-video-1.5`.
+The cost is that changing the markup needs a release. That is an acceptable
+trade for this channel: the markup is a business constant that changes rarely,
+and the reservation rates it sits alongside are already code-level values.
 
 ## Reservation
 
@@ -159,8 +157,8 @@ settlement primitive.
 
 - `cost_in_usd_ticks` converts at `1e10`, verified against the observed pairs
   (`500000000` → `$0.05`, `800000000` → `$0.08`).
-- Final quota equals upstream cost times `ModelPrice`; a markup of `1.0` charges
-  cost exactly.
+- Final quota equals upstream cost times `grokMarkup`; a markup of `1.0`
+  charges cost exactly.
 - Absent `usage`, absent field, zero, negative, and non-finite each keep the
   reservation and return 0.
 - **A cost below the reservation refunds the difference.** This is the case that
@@ -174,10 +172,13 @@ settlement primitive.
 `Router deploy: required` — the change is in `relay/channel/task/xaigrok/`, on
 the `/v1/videos` settlement path.
 
-`newapi-console` needs the same build so the configuration can be edited. No DB
-migration, no new environment variable, no frontend change.
+No DB migration, no new environment variable, no frontend change, and nothing
+to edit in the console.
 
-**Rollout risk is in the configuration, not the code.** Ship the code, then
-immediately set both models' `ModelPrice` to the intended markup. Until that
-second step, billing for this channel is wrong by roughly 10x in the safe
-direction (undercharging).
+**No configuration step.** The markup lives in code, so this is a plain code
+deploy with no window in which the two halves disagree. Changing the markup
+later needs a release, which is the trade made for removing that hazard.
+
+Minimum validation after deploy: submit one video job per model and confirm the
+settled amount equals the upstream's reported cost times the markup, and that a
+render cheaper than the reservation refunds the difference.
