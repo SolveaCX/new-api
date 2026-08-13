@@ -308,6 +308,11 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	eventName := "api_key_created"
+	if strings.EqualFold(strings.TrimSpace(cleanToken.Name), "Flatkey CLI") {
+		eventName = "cli_key_created"
+	}
+	sendActivationEvent(c, eventName, map[string]any{"key_type": "manual"})
 	// Return the freshly minted key once (OpenRouter-style reveal). It is masked on every
 	// subsequent list/get, so this is the only chance for the client to surface it in full.
 	// `key` is the raw key; the frontend prepends the `sk-` prefix.
@@ -356,6 +361,13 @@ func EnsureInitialToken(c *gin.Context) {
 		}
 		common.ApiError(c, err)
 		return
+	}
+	if created && createdToken != nil {
+		eventName := "api_key_created"
+		if strings.EqualFold(strings.TrimSpace(createdToken.Name), "Flatkey CLI") {
+			eventName = "cli_key_created"
+		}
+		sendActivationEvent(c, eventName, map[string]any{"key_type": "initial"})
 	}
 	data := gin.H{
 		"created": created,

@@ -214,6 +214,7 @@ func ApproveCliDeviceAuthorization(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgCliAuthorizationTokenCreateFail)
 		return
 	}
+	sendActivationEvent(c, "cli_key_created", map[string]any{"key_type": "cli"})
 	common.ApiSuccess(c, cliAuthorizationResponse(&approval.Authorization, now))
 }
 
