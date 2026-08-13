@@ -8,6 +8,7 @@ import {
 } from "@/lib/model-landing";
 import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName } from "@/lib/pricing";
+import { fetchRankingsData } from "@/lib/rankings-live";
 import { buildMetadata } from "@/lib/seo";
 
 type Props = {
@@ -46,24 +47,27 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   const config = getModelLandingConfig(params.slug);
-  const pricing = await getPricingData();
+  const [pricing, rankings] = await Promise.all([getPricingData(), fetchRankingsData()]);
+  const models = pricing.models.map((model) => ({
+    ...model,
+    vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
+  }));
 
   if (config) {
-    const models = pricing.models.map((model) => ({
-      ...model,
-      vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
-    }));
     return (
       <ModelLandingPage
         config={config}
         locale="en"
         liveModels={resolveModelLandingModels(config, models)}
+        allModels={models}
+        groupRatio={pricing.groupRatio}
+        rankings={rankings}
       />
     );
   }
 
   // Generic public model page: rankings / directory click-through target.
-  const model = resolvePublicModel(pricing.models, params.slug);
+  const model = resolvePublicModel(models, params.slug);
   if (!model) notFound();
   const modelWithVendor = {
     ...model,
@@ -75,6 +79,9 @@ export default async function Page(props: Props) {
       config={modelSpecificConfig}
       locale="en"
       liveModels={resolveModelLandingModels(modelSpecificConfig, [modelWithVendor])}
+      allModels={models}
+      groupRatio={pricing.groupRatio}
+      rankings={rankings}
     />
   );
 }

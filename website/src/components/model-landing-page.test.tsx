@@ -1,8 +1,75 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ModelLandingPage } from "./model-landing-page";
-import { GPT_CONFIG, GPT_IMAGE_2_CONFIG, MINIMAX_H3_CONFIG, SEEDANCE_CONFIG } from "@/lib/model-landing";
+import {
+  GPT_CONFIG,
+  GPT_IMAGE_2_CONFIG,
+  MINIMAX_H3_CONFIG,
+  SEEDANCE_CONFIG,
+  getModelLandingConfigForPricingModel,
+} from "@/lib/model-landing";
 import type { PricingModel } from "@/lib/pricing";
+import type { RankingsData } from "@/lib/rankings-live";
+
+const gptFamilyModels: PricingModel[] = [
+  {
+    model_name: "gpt-5.5",
+    vendor_name: "OpenAI",
+    quota_type: 0,
+    model_ratio: 0.5,
+    completion_ratio: 8,
+    description: "Flagship GPT model for coding and agent workflows.",
+    supported_endpoint_types: ["openai"],
+    tags: "256K context",
+  },
+  {
+    model_name: "gpt-5",
+    vendor_name: "OpenAI",
+    quota_type: 0,
+    model_ratio: 0.35,
+    completion_ratio: 8,
+    supported_endpoint_types: ["openai"],
+  },
+  {
+    model_name: "gpt-5-mini",
+    vendor_name: "OpenAI",
+    quota_type: 0,
+    model_ratio: 0.1,
+    completion_ratio: 1,
+    supported_endpoint_types: ["openai"],
+  },
+  {
+    model_name: "gpt-4o",
+    vendor_name: "OpenAI",
+    quota_type: 0,
+    model_ratio: 0.25,
+    completion_ratio: 4,
+    supported_endpoint_types: ["openai"],
+  },
+  {
+    model_name: "gpt-4.1",
+    vendor_name: "OpenAI",
+    quota_type: 0,
+    model_ratio: 0.3,
+    completion_ratio: 5,
+    supported_endpoint_types: ["openai"],
+  },
+];
+
+const gptRankings: RankingsData = {
+  models: [
+    { rank: 1, model_name: "gpt-5.5", vendor: "OpenAI", total_tokens: 1200, share: 0.42 },
+  ],
+  usage: {
+    series: ["gpt-5.5"],
+    total: 120000,
+    days: [
+      { label: "Aug 11", total: 1000, values: [1000] },
+      { label: "Aug 12", total: 1400, values: [1400] },
+      { label: "Aug 13", total: 1800, values: [1800] },
+    ],
+  },
+};
 
 describe("ModelLandingPage", () => {
   test("uses the exact configured model as the primary live model", () => {
@@ -24,11 +91,15 @@ describe("ModelLandingPage", () => {
     ];
 
     const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={liveModels} />
+      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={liveModels} allModels={liveModels} />
     );
 
-    expect(html).toContain("$0.7 in / $5.6 out");
-    expect(html).not.toContain("$0.2 in / $0.2 out");
+    expect(html).toContain("Primary Vendor");
+    expect(html).toContain("$0.7");
+    expect(html).toContain("$5.6");
+    const providersSection = html.slice(html.indexOf('id="providers"'), html.indexOf('id="related"'));
+    expect(providersSection).not.toContain("Mini Vendor");
+    expect(providersSection).not.toContain("$0.2");
   });
 
   test("opens GPT-image-2 directly in Playground with its model and prompt", () => {
@@ -45,15 +116,22 @@ describe("ModelLandingPage", () => {
     expect(url.searchParams.has("redirect")).toBe(false);
   });
 
-  test("renders playable video examples for video model landings", () => {
+  test("renders Flatkey homepage-style sections for video model landings", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(html).toContain("/assets/video/v1.1.mp4");
-    expect(html).toContain("<video");
-    expect(html).toContain("controls=\"\"");
-    expect(html).toContain("poster=\"/assets/video/v1.1.jpg\"");
+    for (const id of ["workbench", "health", "providers", "related", "faq"]) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).toContain("Playground (edit before sign-up)");
+    expect(html).toContain("Generator setup");
+    expect(html).toContain("Open in Playground");
+    expect(html).toContain("Request preview");
+    expect(html).toContain("Model price comparison");
+    expect(html).toContain("Model catalog");
+    expect(html).toContain("Related models");
+    expect(html).toContain("Frequently asked questions");
   });
 
   test("renders breadcrumbs on media model landings", () => {
@@ -75,8 +153,83 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('href="/zh/models"');
     expect(html).toContain("返回模型市场");
     expect(html).toContain("在 Playground 打开");
+    expect(html).toContain("获取 API Key");
     expect(html).toContain("https://console.flatkey.ai/playground");
     expect(html).toContain("model=MiniMax-H3");
+  });
+
+  test("renders Flatkey sections and related model links on localized Sonilo model pages", () => {
+    const sonilo: PricingModel = {
+      model_name: "sonilo-video-to-music",
+      vendor_name: "Sonilo",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.009,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video-to-music"],
+    };
+    const relatedModels: PricingModel[] = [
+      sonilo,
+      {
+        model_name: "gpt-image-2",
+        vendor_name: "OpenAI",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.04,
+        completion_ratio: 0,
+        supported_endpoint_types: ["image-generation"],
+      },
+      {
+        model_name: "seedance-2.0-pro",
+        vendor_name: "ByteDance",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.047,
+        completion_ratio: 0,
+        supported_endpoint_types: ["video"],
+      },
+    ];
+    const config = getModelLandingConfigForPricingModel(sonilo);
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={config} locale="zh" liveModels={[sonilo]} allModels={relatedModels} />
+    );
+
+    expect(html).toContain("供应商");
+    expect(html).toContain("价格");
+    expect(html).toContain("性能");
+    expect(html).toContain("可用性");
+    expect(html).toContain("模型价格对比");
+    expect(html).toContain("实时模型健康");
+    expect(html).toContain("生成器配置");
+    expect(html).toContain("Playground（注册前可编辑）");
+    expect(html).toContain("在 Playground 打开");
+    expect(html).toContain("请求预览");
+    expect(html).toContain("可用目录条目");
+    expect(html).toContain("常见问题");
+    expect(html).toContain("继续浏览 Flatkey");
+    expect(html).toContain('href="/zh/models/gpt-image-2"');
+    expect(html).toContain('href="/zh/models/seedance-api"');
+  });
+
+  test("renders GPT-series related model internal links on GPT model pages", () => {
+    const gpt55Config = { ...GPT_CONFIG, slug: "gpt-5.5", displayName: "gpt-5.5", modelId: "gpt-5.5" };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={gpt55Config}
+        locale="en"
+        liveModels={[gptFamilyModels[0]]}
+        allModels={gptFamilyModels}
+        rankings={gptRankings}
+      />
+    );
+
+    expect(html).toContain("More models from OpenAI");
+    expect(html).toContain('href="/models/gpt-5"');
+    expect(html).toContain('href="/models/gpt-5-mini"');
+    expect(html).toContain('href="/models/gpt-4o"');
+    expect(html).toContain("120K");
+    const relatedSection = html.slice(html.indexOf("More models from OpenAI"));
+    expect(relatedSection).not.toContain('href="/models/gpt-5.5"');
   });
 
   test("renders breadcrumbs on text model landings", () => {
@@ -88,5 +241,6 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("href=\"/models\"");
     expect(html).toContain("All models");
     expect(html).toContain("gpt-5");
+    expect(html).not.toContain('id="workbench"');
   });
 });

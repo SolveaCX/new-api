@@ -2,10 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { GoogleOneTapPrompt } from "@/components/google-one-tap-prompt";
-import { LoadingTransitionPreloads } from "@/components/loading-transition-preloads";
 import { SiteConfigProvider } from "@/components/site-config-provider";
-import { WebsiteLoadingTransition } from "@/components/website-loading-transition";
-import { getCopy } from "@/lib/copy";
 import { MIXPANEL_BROWSER_SCRIPT } from "@/lib/mixpanel";
 import { localeLanguageTag, type Locale } from "@/lib/locales";
 import { SITE_ORIGIN, consoleUrl } from "@/lib/origins";
@@ -137,7 +134,6 @@ export function RootDocument({
   googleOneTap,
   lang,
 }: RootDocumentProps) {
-  const copy = getCopy(lang);
   const googleOneTapSearch = new URLSearchParams({
     lng: lang,
     return_to: "/",
@@ -147,9 +143,7 @@ export function RootDocument({
   return (
     <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
       <body>
-        <LoadingTransitionPreloads />
         {bodyStart}
-        <WebsiteLoadingTransition label={copy.nav.loading} />
         <Script id="google-tag-manager" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.gtmStrategy}>
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':

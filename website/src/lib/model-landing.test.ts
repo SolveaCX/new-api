@@ -6,6 +6,7 @@ import {
   GPT_IMAGE_2_CONFIG,
   MINIMAX_H3_CONFIG,
   QWEN_CONFIG,
+  SONILO_VIDEO_TO_MUSIC_CONFIG,
   getModelLandingConfig,
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
@@ -38,9 +39,12 @@ describe("model landing configuration", () => {
   test("resolves configured landing pages by slug", () => {
     expect(getModelLandingConfig("gpt-api")?.displayName).toBe("GPT-5");
     expect(getModelLandingConfig("gpt-image-2")).toBe(GPT_IMAGE_2_CONFIG);
+    expect(getModelLandingConfig("gpt-4.1-mini")?.modelId).toBe("gpt-4.1-mini");
     expect(getModelLandingConfig("minimax-h3")).toBe(MINIMAX_H3_CONFIG);
+    expect(getModelLandingConfig("sonilo-video-to-music")).toBe(SONILO_VIDEO_TO_MUSIC_CONFIG);
     expect(getModelLandingConfigForModel("gpt-image-2")?.generator?.kind).toBe("image");
     expect(getModelLandingConfigForModel("MiniMax-H3")?.generator?.kind).toBe("video");
+    expect(getModelLandingConfigForModel("sonilo-video-to-music")?.generator?.kind).toBe("audio");
     expect(getModelLandingConfig("missing-model")).toBeNull();
   });
 
@@ -49,12 +53,14 @@ describe("model landing configuration", () => {
       "/models/claude-api",
       "/models/deepseek-api",
       "/models/gemini-api",
+      "/models/gpt-4.1-mini",
       "/models/gpt-image-2",
       "/models/glm-api",
       "/models/gpt-api",
       "/models/minimax-h3",
       "/models/qwen-api",
       "/models/seedance-api",
+      "/models/sonilo-video-to-music",
     ]);
   });
 
