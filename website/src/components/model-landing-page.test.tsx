@@ -228,8 +228,12 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('href="/models/gpt-5-mini"');
     expect(html).toContain('href="/models/gpt-4o"');
     expect(html).toContain("120K");
-    const relatedSection = html.slice(html.indexOf("More models from OpenAI"));
-    expect(relatedSection).not.toContain('href="/models/gpt-5.5"');
+    const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
+    expect(relatedSection).toContain('className="relative z-10 border-y border-violet-500/10 bg-white px-6 py-16 dark:bg-white/[0.02]"');
+    expect(relatedSection).toContain("bg-white p-4 shadow-none");
+    expect(relatedSection).toContain("shadow-none");
+    expect(relatedSection).not.toContain("bg-white/72");
+    expect(relatedSection).not.toContain("backdrop-blur-sm");
   });
 
   test("renders breadcrumbs on text model landings", () => {
