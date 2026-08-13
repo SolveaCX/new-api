@@ -167,6 +167,10 @@ type NavItem = {
 
 const mobileMenuSurfaceClass =
   "grid gap-0.5 rounded-xl border border-[#0B0B0F12] bg-white p-2";
+const mobileMenuButtonClass =
+  "inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition duration-200 ease-out hover:border-[#D8D1E2] hover:bg-[#F8F4FF] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] focus-visible:ring-offset-2 min-[901px]:hidden";
+const mobileMenuButtonOpenClass =
+  "border-[#C9B8FF] bg-[#F3EDFF] text-[#6B46C1] shadow-[inset_0_0_0_1px_rgba(124,58,237,.18),0_12px_26px_-18px_rgba(76,29,149,.65)]";
 const mobileNavRowClass =
   "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold text-[#0B0B0F] transition hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const mobileNavActiveClass = "bg-[#F3EDFF] text-[#6B46C1]";
@@ -348,6 +352,7 @@ export function SiteHeader(props: Props) {
   const groupLabels =
     navGroupLabelByLocale[props.locale] ?? navGroupLabelByLocale.en;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleSignInUrl(props.locale);
@@ -648,21 +653,34 @@ export function SiteHeader(props: Props) {
         </a>
         <button
           type="button"
-          className="inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] min-[901px]:hidden"
+          className={cn(
+            mobileMenuButtonClass,
+            mobileOpen && mobileMenuButtonOpenClass,
+          )}
           aria-label={copy.nav.toggle}
           aria-expanded={mobileOpen}
+          aria-controls={mobileMenuId}
           onClick={() => setMobileOpen((value) => !value)}
         >
-          {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          <span
+            className={cn(
+              "inline-flex size-5 items-center justify-center transition-transform duration-200 ease-out",
+              mobileOpen && "scale-105 rotate-90",
+            )}
+            aria-hidden="true"
+          >
+            {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </span>
         </button>
       </nav>
 
       <div
+        id={mobileMenuId}
         className={cn(
-          "fixed inset-x-0 top-[72px] z-40 max-h-[calc(100dvh-72px)] overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition min-[901px]:hidden",
+          "fixed inset-x-0 top-[72px] z-40 max-h-[calc(100dvh-72px)] overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden",
           mobileOpen
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-3 opacity-0",
+            ? "translate-y-0 opacity-100 shadow-[0_24px_70px_-42px_rgba(76,29,149,.52)]"
+            : "pointer-events-none -translate-y-4 opacity-0 shadow-none",
         )}
       >
         <div className="mb-3 grid">
