@@ -10,6 +10,12 @@ import { describe, expect, test } from 'bun:test'
 import { buildGoogleOneTapLoginUri } from '../lib/google-one-tap'
 
 describe('buildGoogleOneTapLoginUri', () => {
+  test('falls back to the dashboard when no redirect is provided', () => {
+    expect(buildGoogleOneTapLoginUri()).toBe(
+      '/api/oauth/google/one-tap?return_to=%2Fdashboard'
+    )
+  })
+
   test('preserves a safe console redirect', () => {
     expect(buildGoogleOneTapLoginUri('/dashboard?tab=usage')).toBe(
       '/api/oauth/google/one-tap?return_to=%2Fdashboard%3Ftab%3Dusage'

@@ -15,7 +15,7 @@ const GOOGLE_IDENTITY_SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
 type GoogleOneTapProps = {
   clientId?: string
   enabled: boolean
-  returnTo: string
+  returnTo?: string
 }
 
 export function GoogleOneTap({
