@@ -40,6 +40,7 @@ func deliverPaymentAnalyticsEvent(config GAConfig, event model.PaymentAnalyticsO
 	base := GAEvent{ClientID: event.ClientId, SessionID: event.SessionId,
 		TimestampMicros: occurredAt * int64(time.Second/time.Microsecond), Params: params}
 	return sendGAEventsWithConfig(config, []GAEvent{
+		{Name: "purchase", ClientID: base.ClientID, SessionID: base.SessionID, TimestampMicros: base.TimestampMicros, Params: base.Params},
 		{Name: eventName, ClientID: base.ClientID, SessionID: base.SessionID, TimestampMicros: base.TimestampMicros, Params: base.Params},
 		{Name: "payment_success", ClientID: base.ClientID, SessionID: base.SessionID, TimestampMicros: base.TimestampMicros, Params: base.Params},
 	})

@@ -44,15 +44,16 @@ func TestDeliverPaymentAnalyticsEventSendsCanonicalPurchase(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(bodies[0], &payload))
 	require.Equal(t, "123.456", payload.ClientID)
-	require.Len(t, payload.Events, 2)
-	require.Equal(t, "topup_success", payload.Events[0].Name)
-	require.Equal(t, "order-1", payload.Events[0].Params["transaction_id"])
-	require.Equal(t, "USD", payload.Events[0].Params["currency"])
-	require.Equal(t, "stripe", payload.Events[0].Params["payment_provider"])
-	require.Equal(t, "top_up", payload.Events[0].Params["product_type"])
+	require.Len(t, payload.Events, 3)
+	require.Equal(t, "purchase", payload.Events[0].Name)
+	require.Equal(t, "topup_success", payload.Events[1].Name)
+	require.Equal(t, "order-1", payload.Events[1].Params["transaction_id"])
+	require.Equal(t, "USD", payload.Events[1].Params["currency"])
+	require.Equal(t, "stripe", payload.Events[1].Params["payment_provider"])
+	require.Equal(t, "top_up", payload.Events[1].Params["product_type"])
 	require.EqualValues(t, 1_800_000_000_000_000, payload.TimestampMicros)
 	require.NotContains(t, payload.Events[0].Params, "timestamp_micros")
-	require.Equal(t, "payment_success", payload.Events[1].Name)
+	require.Equal(t, "payment_success", payload.Events[2].Name)
 }
 
 func TestDeliverPaymentAnalyticsEventUsesSubscriptionEventForRenewal(t *testing.T) {
@@ -78,7 +79,7 @@ func TestDeliverPaymentAnalyticsEventUsesSubscriptionEventForRenewal(t *testing.
 		} `json:"events"`
 	}
 	require.NoError(t, common.Unmarshal(body, &payload))
-	require.Equal(t, []string{"subscription_success", "payment_success"}, []string{payload.Events[0].Name, payload.Events[1].Name})
+	require.Equal(t, []string{"purchase", "subscription_success", "payment_success"}, []string{payload.Events[0].Name, payload.Events[1].Name, payload.Events[2].Name})
 }
 
 func TestGA4DeliveryErrorClassification(t *testing.T) {
