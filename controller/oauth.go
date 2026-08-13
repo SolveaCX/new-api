@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -333,7 +334,19 @@ func respondGoogleOneTapSuccess(c *gin.Context, data any) {
 		})
 		return
 	}
-	c.Redirect(http.StatusSeeOther, googleOneTapReturnPath(c))
+	// Google posts the One Tap credential from accounts.google.com. A direct
+	// redirect from that cross-site POST keeps the redirect chain cross-site, so
+	// the session cookie (SameSite=Strict) is withheld from the destination and
+	// the user appears logged out. First commit a same-origin document, then let
+	// that document start a fresh navigation where the Strict cookie is sent.
+	returnPath := html.EscapeString(googleOneTapReturnPath(c))
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
+		"<!doctype html><html><head><meta charset=\"utf-8\">"+
+			"<meta http-equiv=\"refresh\" content=\"0;url="+returnPath+"\">"+
+			"<title>Signing in</title></head><body>"+
+			"<a href=\""+returnPath+"\">Continue</a></body></html>",
+	))
 }
 
 func respondGoogleOneTapFailure(c *gin.Context, status int, message string) {

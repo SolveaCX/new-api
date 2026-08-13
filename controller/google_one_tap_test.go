@@ -1,12 +1,49 @@
 package controller
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/idtoken"
 )
+
+func TestGoogleOneTapSuccessStartsFreshSameOriginNavigation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/oauth/google/one-tap?return_to=%2Fdashboard",
+		nil,
+	)
+
+	respondGoogleOneTapSuccess(context, nil)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Empty(t, recorder.Header().Get("Location"))
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	require.Contains(t, recorder.Body.String(), `http-equiv="refresh" content="0;url=/dashboard"`)
+}
+
+func TestGoogleOneTapSuccessEscapesReturnPath(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/oauth/google/one-tap?return_to=%2Fdashboard%3Fa%3D1%26next%3D%2522%253E%253Cscript%253E",
+		nil,
+	)
+
+	respondGoogleOneTapSuccess(context, nil)
+
+	require.False(t, strings.Contains(recorder.Body.String(), "<script>"))
+	require.Contains(t, recorder.Body.String(), "&amp;")
+}
 
 func TestGoogleOneTapOAuthUser(t *testing.T) {
 	payload := &idtoken.Payload{
