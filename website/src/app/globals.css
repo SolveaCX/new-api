@@ -752,13 +752,12 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
   background: rgb(91 33 182 / 0.12);
 }
 
-.fk-page-loading-track::before {
+.fk-page-loading-track-bar {
   position: absolute;
   inset: 0 auto 0 0;
   width: 44%;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, #5b21b6 24%, #7c3aed 74%, transparent);
-  content: "";
   animation: fk-page-loading-track 1.02s cubic-bezier(0.72, 0, 0.28, 1) infinite;
 }
 
@@ -797,7 +796,7 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
   background: rgb(255 255 255 / 0.12);
 }
 
-.dark .fk-page-loading-track::before {
+.dark .fk-page-loading-track-bar {
   background: linear-gradient(90deg, transparent, #c4b5fd 24%, #ffffff 74%, transparent);
 }
 
@@ -1059,7 +1058,7 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
   .fk-page-loading,
   .fk-page-loading-card,
   .fk-page-loading-logo,
-  .fk-page-loading-track::before {
+  .fk-page-loading-track-bar {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

@@ -169,9 +169,18 @@ export function WebsiteLoadingTransition({ label }: WebsiteLoadingTransitionProp
       aria-live="polite"
       aria-label={label}
     >
-      <div className="fk-page-loading-card">
-        <FlatkeyBrandLogo className="fk-page-loading-logo" />
-        <span className="fk-page-loading-track" aria-hidden="true" />
+      <div className="fk-page-loading-card relative flex w-[min(90vw,21rem)] flex-col items-center justify-center rounded-[18px] border border-[#0b0b0f1a] bg-white/92 px-7 pb-[1.35rem] pt-[1.6rem] shadow-[0_24px_70px_-36px_rgba(46,16,101,0.38)] backdrop-blur-[18px] dark:border-white/12 dark:bg-[#12121a]/90 dark:shadow-[0_24px_70px_-36px_rgba(0,0,0,0.78)]">
+        <span
+          className="pointer-events-none absolute inset-px rounded-[17px] bg-gradient-to-b from-white/75 to-transparent dark:from-white/8"
+          aria-hidden="true"
+        />
+        <FlatkeyBrandLogo className="fk-page-loading-logo relative z-10 [&_[data-flatkey-wordmark='true']]:!text-[34px] [&_[data-flatkey-wordmark='true']]:!text-[#0b0b0f] dark:[&_[data-flatkey-wordmark='true']]:!text-[#f5f5f2]" />
+        <span
+          className="fk-page-loading-track relative z-10 mt-5 block h-[3px] w-[min(100%,13.5rem)] overflow-hidden rounded-full bg-[#5b21b61f] dark:bg-white/12"
+          aria-hidden="true"
+        >
+          <span className="fk-page-loading-track-bar absolute inset-y-0 left-0 block w-[44%] rounded-full bg-[linear-gradient(90deg,transparent,#5b21b6_24%,#7c3aed_74%,transparent)] dark:bg-[linear-gradient(90deg,transparent,#c4b5fd_24%,#fff_74%,transparent)]" />
+        </span>
       </div>
     </div>
   );
