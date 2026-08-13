@@ -360,6 +360,35 @@ func TestDoApiRequestUsesGinRequestContext(t *testing.T) {
 	}
 }
 
+func TestSanitizeUpstreamURL(t *testing.T) {
+	t.Parallel()
+
+	got := sanitizeUpstreamURL("https://user:secret@example.com/v1/models?api_key=secret&x=1#fragment")
+	require.Equal(t, "example.com/v1/models", got)
+	require.NotContains(t, got, "secret")
+	require.Equal(t, "example.com/", sanitizeUpstreamURL("https://example.com?token=secret"))
+	require.Equal(t, "<invalid>", sanitizeUpstreamURL("://invalid"))
+}
+
+func TestUpstreamResponseOutcome(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "http_5xx", upstreamResponseOutcome(http.StatusInternalServerError))
+	require.Equal(t, "http_5xx", upstreamResponseOutcome(http.StatusBadGateway))
+	require.Equal(t, "http_4xx", upstreamResponseOutcome(http.StatusBadRequest))
+	require.Equal(t, "http_4xx", upstreamResponseOutcome(http.StatusUnauthorized))
+	require.Equal(t, "normal_response", upstreamResponseOutcome(http.StatusOK))
+	require.Equal(t, "normal_response", upstreamResponseOutcome(http.StatusNoContent))
+}
+
+func TestUpstreamRequestErrorKind(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "context_canceled", upstreamRequestErrorKind(context.Canceled))
+	require.Equal(t, "timeout", upstreamRequestErrorKind(context.DeadlineExceeded))
+	require.Equal(t, "other", upstreamRequestErrorKind(errors.New("api_key=secret body=secret")))
+}
+
 type requestContextAdaptor struct {
 	url string
 }
