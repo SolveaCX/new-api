@@ -31,7 +31,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
 import { HomeModelLogo } from "@/components/home-model-logo";
-import { cn } from "@/lib/utils";
 import {
   fetchHealthSummary,
   fetchModelTrend,
@@ -1647,22 +1646,7 @@ function RelatedModelsCarousel(props: {
   title: string;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReducedMotion(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-
   if (props.models.length === 0) return null;
-
-  const track = [...props.models, ...props.models];
-  const loopClass = reducedMotion
-    ? "flex gap-3 overflow-x-auto pb-2"
-    : "home-model-marquee flex gap-3 overflow-hidden pb-2";
 
   return (
     <div className="mt-10">
@@ -1677,15 +1661,12 @@ function RelatedModelsCarousel(props: {
           {props.t("Swipe or scroll to compare")}
         </span>
       </div>
-      <div className={cn("-mx-6 px-6 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10", loopClass)}>
-        <div className={cn("flex min-w-max gap-3", !reducedMotion && "home-model-marquee-track")}>
-          {track.map((model, index) => (
+      <div className="-mx-6 flex snap-x gap-3 overflow-x-auto px-6 pb-2 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+        {props.models.map((model) => (
             <Link
-              key={`${model.name}-${index}`}
+              key={model.name}
               href={model.href}
-              className="group grid min-h-36 min-w-[16rem] rounded-2xl border border-black/10 bg-white p-4 shadow-sm transition hover:border-[#7c3aed]/40 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] sm:min-w-[18rem]"
-              aria-hidden={index >= props.models.length}
-              tabIndex={index >= props.models.length ? -1 : undefined}
+              className="group grid min-h-36 min-w-[16rem] snap-start rounded-2xl border border-black/10 bg-white p-4 shadow-sm transition hover:border-[#7c3aed]/40 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] sm:min-w-[18rem]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="grid size-9 place-items-center rounded-full bg-[#f4f0ff] text-sm font-extrabold text-[#6d28d9]">
@@ -1706,8 +1687,7 @@ function RelatedModelsCarousel(props: {
                 </span>
               </div>
             </Link>
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   );
