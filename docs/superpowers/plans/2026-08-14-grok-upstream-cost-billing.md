@@ -655,20 +655,43 @@ func worstCaseRatePerSecond(model string) (float64, bool) {
 
 - [ ] **Step 5: Use it in the reservation**
 
-In `EstimateBilling`, where the per-second rate is currently taken from
-`info.PriceData.ModelPrice`, prefer the worst-case rate when the model has one:
+**Read `EstimateBilling` fully before editing.** Its actual shape differs from
+what an earlier draft of this plan assumed, and the difference matters.
+
+The function ends by returning a plain seconds multiplier:
 
 ```go
-	rate := info.PriceData.ModelPrice
-	if worst, ok := worstCaseRatePerSecond(info.OriginModelName); ok && worst > rate {
-		// Reserve at the tier the model could actually produce. Settlement
-		// refunds down to the reported cost.
-		rate = worst
-	}
+	return map[string]float64{"seconds": float64(seconds)}
 ```
 
-Then use `rate` where `ModelPrice` was used. **Read the surrounding code and
-adapt** — the variable names and the exact expression differ from this sketch.
+That is the path grok takes today, because grok has **no rules in the video
+price table** — so `IsVideoModelConfigured` is false and the early return above
+it never fires. The reservation is therefore `ModelPrice x seconds`, where
+`ModelPrice` is the per-second rate (`0.09` / `0.11` in production).
+
+To reserve at the worst tier without touching `ModelPrice`, scale that
+multiplier by the ratio between the worst-case rate and the configured rate:
+
+```go
+	multiplier := float64(seconds)
+	if info != nil {
+		if worst, ok := worstCaseRatePerSecond(info.OriginModelName); ok {
+			if configured := info.PriceData.ModelPrice; configured > 0 && worst > configured {
+				// Reserve at the tier the model could actually produce, not the
+				// tier the configured rate assumes. Settlement refunds down to
+				// the cost the upstream reports, so over-reserving is visible
+				// and self-correcting; under-reserving is not.
+				multiplier = float64(seconds) * (worst / configured)
+			}
+		}
+	}
+	return map[string]float64{"seconds": multiplier}
+```
+
+Leave the rule-table branch above untouched — it is the path for models that
+*are* configured, and grok is not one of them. If grok is ever added to the
+rule table, that branch takes over and this scaling stops applying, which is
+correct: an administrator's explicit rate should win over a guess.
 
 - [ ] **Step 6: Run the full package**
 
