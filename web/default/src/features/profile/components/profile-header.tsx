@@ -16,15 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, BarChart3, WalletCards } from 'lucide-react'
+import { Activity, BarChart3, Gift, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
-  formatCompactNumber,
+  formatNumber,
   formatQuota,
   formatTimestampToDate,
 } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/status-badge'
@@ -282,7 +283,7 @@ export function ProfileHeader(props: ProfileHeaderProps) {
     },
     {
       label: t('API Requests'),
-      value: formatCompactNumber(props.profile.request_count),
+      value: formatNumber(props.profile.request_count),
       icon: Activity,
     },
   ]
@@ -339,12 +340,6 @@ export function ProfileHeader(props: ProfileHeaderProps) {
                     <span className='truncate'>{props.profile.email}</span>
                   </>
                 )}
-                {props.profile.group && (
-                  <>
-                    <span>•</span>
-                    <span className='truncate'>{props.profile.group}</span>
-                  </>
-                )}
               </div>
             </div>
           </div>
@@ -368,6 +363,15 @@ export function ProfileHeader(props: ProfileHeaderProps) {
                 {formatQuota(props.profile.quota)}
               </span>
             </div>
+            <Button
+              variant='outline'
+              size='sm'
+              className='h-8 lg:ml-auto'
+              render={<a href='/redeem' />}
+            >
+              <Gift className='size-3.5' aria-hidden='true' />
+              {t('Redeem Code')}
+            </Button>
             <div
               data-slot='profile-balance-guidance'
               className='text-muted-foreground space-y-1 text-xs leading-relaxed'
