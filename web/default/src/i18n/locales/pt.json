@@ -6621,6 +6621,18 @@
     "Cool down on rate-limit keywords in error messages (prone to false positives)": "Resfriar por palavras-chave (propenso a falsos positivos)",
     "Also trigger cooldown when error messages merely mention rate-limit-like keywords; fuzzy matching, off by default": "Dispara também por mera menção de palavras-chave; correspondência difusa, desativado por padrão",
     "Load snapshot cache (reduces Redis pressure)": "Cache de snapshot de carga (reduz pressão no Redis)",
-    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Faz cache breve de snapshots de carga; desative apenas para depurar leituras ao vivo"
+    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Faz cache breve de snapshots de carga; desative apenas para depurar leituras ao vivo",
+    "All codes have been claimed": "Todos os códigos já foram resgatados",
+    "Credits added to your wallet": "Créditos adicionados à sua carteira",
+    "Enter your code to add credits to your wallet.": "Insira seu código para adicionar créditos à sua carteira.",
+    "For example: YCPrompt": "Por exemplo: YCPrompt",
+    "Go to wallet": "Ir para a carteira",
+    "Group codes by where they will be distributed (1-20 characters).": "Agrupe os códigos pela finalidade de distribuição (1 a 20 caracteres).",
+    "Loading redemption code": "Carregando código de resgate",
+    "Offer": "Oferta",
+    "Purpose": "Finalidade",
+    "Redeem credits": "Resgatar créditos",
+    "Too late — all codes have already been claimed": "Você chegou tarde — todos os códigos já foram resgatados",
+    "You already claimed this offer": "Você já resgatou esta oferta"
   }
 }
