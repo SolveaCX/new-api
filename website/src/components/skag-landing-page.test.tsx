@@ -94,6 +94,17 @@ describe("SkagLandingPage", () => {
     expect(html).toContain("max-w-6xl");
   });
 
+  test("renders DeepSeek feature links in English", () => {
+    const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("deepseek-api")} />);
+
+    expect(html).toContain("Transparent DeepSeek pricing");
+    expect(html).toContain("See live DeepSeek pricing");
+    expect(html).toContain("/models?vendor=DeepSeek");
+    expect(html).toContain("One account for model comparison");
+    expect(html).toContain("See all models");
+    expect(html).toContain("/models");
+  });
+
   test("limits the DeepSeek language switcher to translated locales", () => {
     const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("deepseek-api", "pt")} />);
 

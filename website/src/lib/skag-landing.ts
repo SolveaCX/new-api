@@ -469,12 +469,14 @@ const DEEPSEEK_API: SkagLandingConfig = {
       body: "Keep the OpenAI SDK already in your application. Change base_url, set a flatkey API key, and select a DeepSeek model id.",
     },
     {
-      title: "Per-token cost visibility",
-      body: "Check current per-token pricing and availability in one account before you scale code, automation, and other API workloads.",
+      title: "Transparent DeepSeek pricing",
+      body: "Check prices per 1M tokens, official price comparison, latency, and health score for DeepSeek models before you scale code and automation.",
+      link: { label: "See live DeepSeek pricing", href: "/models?vendor=DeepSeek" },
     },
     {
       title: "One account for model comparison",
-      body: "Compare DeepSeek with GPT, Claude, Gemini, Qwen, and GLM without creating separate provider accounts or changing your API integration.",
+      body: "Compare DeepSeek with GPT, Claude, Gemini, Qwen, and GLM in the same model directory without creating separate provider accounts or changing your API integration.",
+      link: { label: "See all models", href: "/models" },
     },
   ],
   faq: [
