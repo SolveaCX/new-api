@@ -6621,6 +6621,18 @@
     "Cool down on rate-limit keywords in error messages (prone to false positives)": "Cool down on rate-limit keywords in error messages (prone to false positives)",
     "Also trigger cooldown when error messages merely mention rate-limit-like keywords; fuzzy matching, off by default": "Also trigger cooldown when error messages merely mention rate-limit-like keywords; fuzzy matching, off by default",
     "Load snapshot cache (reduces Redis pressure)": "Load snapshot cache (reduces Redis pressure)",
-    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads"
+    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads",
+    "All codes have been claimed": "All codes have been claimed",
+    "Credits added to your wallet": "Credits added to your wallet",
+    "Enter your code to add credits to your wallet.": "Enter your code to add credits to your wallet.",
+    "For example: YCPrompt": "For example: YCPrompt",
+    "Go to wallet": "Go to wallet",
+    "Group codes by where they will be distributed (1-20 characters).": "Group codes by where they will be distributed (1-20 characters).",
+    "Loading redemption code": "Loading redemption code",
+    "Offer": "Offer",
+    "Purpose": "Purpose",
+    "Redeem credits": "Redeem credits",
+    "Too late — all codes have already been claimed": "Too late — all codes have already been claimed",
+    "You already claimed this offer": "You already claimed this offer"
   }
 }

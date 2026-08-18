@@ -6621,6 +6621,18 @@
     "Cool down on rate-limit keywords in error messages (prone to false positives)": "Охлаждать по ключевым словам (риск ложных срабатываний)",
     "Also trigger cooldown when error messages merely mention rate-limit-like keywords; fuzzy matching, off by default": "Срабатывает по упоминанию ключевых слов; нечёткое сопоставление, по умолчанию выкл.",
     "Load snapshot cache (reduces Redis pressure)": "Кэш снимков нагрузки (снижает нагрузку на Redis)",
-    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Кратко кэширует снимки нагрузки для маршрутизации; отключайте только для отладки"
+    "Cache channel load snapshots briefly for routing decisions; disable only to debug routing with live reads": "Кратко кэширует снимки нагрузки для маршрутизации; отключайте только для отладки",
+    "All codes have been claimed": "Все коды уже разобраны",
+    "Credits added to your wallet": "Кредиты добавлены в ваш кошелёк",
+    "Enter your code to add credits to your wallet.": "Введите код, чтобы добавить кредиты в кошелёк.",
+    "For example: YCPrompt": "Например: YCPrompt",
+    "Go to wallet": "Перейти в кошелёк",
+    "Group codes by where they will be distributed (1-20 characters).": "Группируйте коды по цели распространения (1–20 символов).",
+    "Loading redemption code": "Получение кода",
+    "Offer": "Предложение",
+    "Purpose": "Назначение",
+    "Redeem credits": "Активировать кредиты",
+    "Too late — all codes have already been claimed": "Вы опоздали — все коды уже разобраны",
+    "You already claimed this offer": "Вы уже получили это предложение"
   }
 }
