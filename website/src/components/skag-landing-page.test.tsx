@@ -72,6 +72,7 @@ describe("SkagLandingPage", () => {
     const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("deepseek-api", "pt")} />);
 
     expect(html).toContain("Obter chave da API DeepSeek");
+    expect(html).toContain("disponibilidade acima de 98%");
     expect(html).toContain("bg-gradient-to-r from-[#5f86ff] to-[#8357ff]");
     expect(html).toContain('style="color:#fff"');
     expect(html).not.toContain("Ver preços ao vivo");

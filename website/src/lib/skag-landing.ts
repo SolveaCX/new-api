@@ -524,7 +524,7 @@ const PT_DEEPSEEK_API: SkagLandingConfig = {
   features: [
     {
       title: "Acesso estável para produção",
-      body: "Encaminhe chamadas DeepSeek por uma API gerenciada em vez de depender de um único console de fornecedor quando a disponibilidade importa para seu aplicativo.",
+      body: "Encaminhe chamadas DeepSeek por uma API gerenciada com disponibilidade acima de 98%, em vez de depender de um único console de fornecedor quando a disponibilidade importa para seu aplicativo.",
     },
     {
       title: "API compatível com OpenAI",
