@@ -266,6 +266,27 @@ describe('ProfileHeader', () => {
     expect(html).not.toContain(internalGroup)
   })
 
+  test('keeps balance and redeem actions visually aligned with clear spacing', () => {
+    const html = renderHeader(activeSubscription)
+    const actionsClass = classForDataSlot(html, 'profile-balance-actions')
+    const balanceClass = classForDataSlot(html, 'profile-balance')
+    const actions = sliceBetweenDataSlots(
+      html,
+      'profile-balance-actions',
+      'profile-balance-guidance'
+    )
+
+    expect(actionsClass).toContain('flex')
+    expect(actionsClass).toContain('flex-wrap')
+    expect(actionsClass).toContain('gap-3')
+    expect(actionsClass).toContain('lg:justify-end')
+    expect(balanceClass).toContain('h-9')
+    expect(balanceClass).toContain('rounded-lg')
+    expect(balanceClass).toContain('bg-background')
+    expect(balanceClass).toContain('shadow-xs')
+    expect(actions).toContain('h-9 rounded-lg px-3 shadow-xs')
+  })
+
   test('keeps the loading header aligned to the desktop balance column', () => {
     const html = renderLoadingHeader()
 
