@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "Esta ferramenta não requer nenhuma entrada.",
     "True": "Verdadeiro",
     "Try again": "Tentar novamente",
+    "Unable to claim redemption code": "Não foi possível resgatar o código",
+    "Please try again in a moment.": "Tente novamente em instantes.",
     "Use provider default": "Usar o padrão do provedor",
     "{{count}} matching APIs": "{{count}} APIs correspondentes",
     "Developer tools": "Ferramentas para desenvolvedores",

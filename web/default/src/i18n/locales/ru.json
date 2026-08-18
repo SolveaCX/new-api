@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "Этот инструмент не требует входных данных.",
     "True": "Истина",
     "Try again": "Повторить",
+    "Unable to claim redemption code": "Не удалось получить код активации",
+    "Please try again in a moment.": "Повторите попытку через некоторое время.",
     "Use provider default": "Использовать значение поставщика по умолчанию",
     "{{count}} matching APIs": "Найдено API: {{count}}",
     "Developer tools": "Инструменты разработчика",

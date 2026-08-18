@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "Esta herramienta no requiere datos de entrada.",
     "True": "Verdadero",
     "Try again": "Intentar de nuevo",
+    "Unable to claim redemption code": "No se pudo obtener el código de canje",
+    "Please try again in a moment.": "Inténtalo de nuevo en unos instantes.",
     "Use provider default": "Usar valor predeterminado del proveedor",
     "{{count}} matching APIs": "{{count}} API coincidentes",
     "Developer tools": "Herramientas para desarrolladores",

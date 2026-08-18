@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -46,6 +47,9 @@ func TestClaimRedemptionByPurposeAllocatesOneCodePerUser(t *testing.T) {
 func TestClaimRedemptionByPurposeAllocatesUniqueCodesConcurrently(t *testing.T) {
 	setupLifecycleQuotaMutationTestDB(t, 4)
 	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	for _, userID := range []int{8151, 8152} {
+		require.NoError(t, DB.Create(&User{Id: userID, Username: fmt.Sprintf("concurrent-user-%d", userID), AffCode: fmt.Sprintf("concurrent-user-%d", userID)}).Error)
+	}
 	for _, code := range []string{"concurrent-one", "concurrent-two"} {
 		require.NoError(t, DB.Create(&Redemption{
 			Key:    code,
@@ -74,6 +78,46 @@ func TestClaimRedemptionByPurposeAllocatesUniqueCodesConcurrently(t *testing.T) 
 	require.NoError(t, first.err)
 	require.NoError(t, second.err)
 	require.NotEqual(t, first.redemption.Key, second.redemption.Key)
+}
+
+func TestClaimRedemptionByPurposeIsIdempotentForConcurrentSameUser(t *testing.T) {
+	setupLifecycleQuotaMutationTestDB(t, 4)
+	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	require.NoError(t, DB.Create(&User{Id: 8161, Username: "same-redeem-user", AffCode: "same-redeem-user"}).Error)
+	for _, code := range []string{"same-user-one", "same-user-two"} {
+		require.NoError(t, DB.Create(&Redemption{
+			Key:    code,
+			Name:   "YCPrompt",
+			Status: common.RedemptionCodeStatusEnabled,
+		}).Error)
+	}
+
+	start := make(chan struct{})
+	results := make(chan *Redemption, 2)
+	errors := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			redemption, err := ClaimRedemptionByPurpose("YCPrompt", 8161)
+			results <- redemption
+			errors <- err
+		}()
+	}
+	close(start)
+
+	first := <-results
+	second := <-results
+	require.NoError(t, <-errors)
+	require.NoError(t, <-errors)
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.Equal(t, first.Id, second.Id)
+
+	var claimedCount int64
+	require.NoError(t, DB.Model(&Redemption{}).
+		Where("name = ? AND claimed_user_id = ?", "YCPrompt", 8161).
+		Count(&claimedCount).Error)
+	require.EqualValues(t, 1, claimedCount)
 }
 
 func TestClaimedRedemptionCanOnlyBeRedeemedByOwner(t *testing.T) {
@@ -114,6 +158,7 @@ func TestClaimedRedemptionCanOnlyBeRedeemedByOwner(t *testing.T) {
 func TestClaimRedemptionByPurposeSkipsExpiredAndDisabledCodes(t *testing.T) {
 	setupLifecycleQuotaMutationTestDB(t, 1)
 	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	require.NoError(t, DB.Create(&User{Id: 8301, Username: "skip-user", AffCode: "skip-user"}).Error)
 	now := common.GetTimestamp()
 	fixtures := []Redemption{
 		{Key: "expired", Name: "YCPrompt", Status: common.RedemptionCodeStatusEnabled, ExpiredTime: now - 1},
@@ -132,6 +177,7 @@ func TestClaimRedemptionByPurposeSkipsExpiredAndDisabledCodes(t *testing.T) {
 func TestClaimRedemptionByPurposeIncludesLegacyUnclaimedCodes(t *testing.T) {
 	setupLifecycleQuotaMutationTestDB(t, 1)
 	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	require.NoError(t, DB.Create(&User{Id: 8401, Username: "legacy-user", AffCode: "legacy-user"}).Error)
 	legacy := Redemption{
 		Key:    "legacy-unclaimed",
 		Name:   "YCPrompt",

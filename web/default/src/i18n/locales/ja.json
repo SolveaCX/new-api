@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "このツールには入力パラメータがありません。",
     "True": "真",
     "Try again": "再試行",
+    "Unable to claim redemption code": "引き換えコードを取得できません",
+    "Please try again in a moment.": "しばらくしてからもう一度お試しください。",
     "Use provider default": "プロバイダーの既定値を使用",
     "{{count}} matching APIs": "{{count}} 件の API が一致",
     "Developer tools": "開発者ツール",

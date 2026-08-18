@@ -65,6 +65,11 @@ export function RedeemCredits(props: RedeemCreditsProps) {
     (claimQuery.data.code === 'redemption_codes_exhausted' ||
       claimQuery.data.code === 'redemption_already_claimed')
 
+  const claimFailed =
+    purpose.length > 0 &&
+    (claimQuery.isError ||
+      (claimQuery.data && !claimQuery.data.success && !claimUnavailable))
+
   if (claimUnavailable) {
     const alreadyClaimed =
       claimQuery.data?.code === 'redemption_already_claimed'
@@ -92,6 +97,42 @@ export function RedeemCredits(props: RedeemCreditsProps) {
               onClick={() => navigate({ to: '/wallet' })}
             >
               {t('Go to wallet')}
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
+
+  if (claimFailed) {
+    return (
+      <main className='flex min-h-[calc(100dvh-8rem)] items-center justify-center px-4 py-8'>
+        <Card className='border-border/70 w-full max-w-md shadow-sm'>
+          <CardContent className='flex flex-col items-center px-6 py-10 text-center sm:px-10'>
+            <div className='bg-muted mb-5 flex size-12 items-center justify-center rounded-full'>
+              <Gift
+                aria-hidden='true'
+                className='text-muted-foreground size-6'
+              />
+            </div>
+            <h1 className='text-xl font-semibold tracking-tight'>
+              {t('Unable to claim redemption code')}
+            </h1>
+            <p className='text-muted-foreground mt-2 text-sm'>
+              {claimQuery.data?.message || t('Please try again in a moment.')}
+            </p>
+            <Button
+              className='mt-6 w-full'
+              disabled={claimQuery.isFetching}
+              onClick={() => claimQuery.refetch()}
+            >
+              {claimQuery.isFetching ? (
+                <Loader2
+                  aria-hidden='true'
+                  className='mr-2 size-4 animate-spin'
+                />
+              ) : null}
+              {t('Try again')}
             </Button>
           </CardContent>
         </Card>

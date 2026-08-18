@@ -26,7 +26,7 @@ export interface ClaimedRedemptionCode {
 
 export interface ClaimRedemptionResponse {
   success: boolean
-  code?: 'redemption_codes_exhausted' | 'redemption_already_claimed'
+  code?: string
   message?: string
   data?: ClaimedRedemptionCode
 }

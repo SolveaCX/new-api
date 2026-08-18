@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "Công cụ này không yêu cầu dữ liệu đầu vào.",
     "True": "Đúng",
     "Try again": "Thử lại",
+    "Unable to claim redemption code": "Không thể nhận mã đổi thưởng",
+    "Please try again in a moment.": "Vui lòng thử lại sau ít phút.",
     "Use provider default": "Dùng giá trị mặc định của nhà cung cấp",
     "{{count}} matching APIs": "{{count}} API phù hợp",
     "Developer tools": "Công cụ dành cho nhà phát triển",

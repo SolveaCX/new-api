@@ -6223,6 +6223,8 @@
     "This tool does not require any input.": "此工具无需输入参数。",
     "True": "是",
     "Try again": "重试",
+    "Unable to claim redemption code": "无法领取兑换码",
+    "Please try again in a moment.": "请稍后重试。",
     "Use provider default": "使用默认值",
     "{{count}} matching APIs": "找到 {{count}} 个 API",
     "Developer tools": "开发者工具",

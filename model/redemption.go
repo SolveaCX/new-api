@@ -40,6 +40,13 @@ func ClaimRedemptionByPurpose(purpose string, userId int) (*Redemption, error) {
 
 	var claimed Redemption
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Serialize claims for the same user across application instances. The
+		// redemption path takes the same lock first to keep lock ordering stable.
+		var user User
+		if err := lockQuery(tx).Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+
 		now := common.GetTimestamp()
 		available := lockQuery(tx).Where("name = ? AND status = ? AND claimed_user_id = ? AND (expired_time = 0 OR expired_time >= ?)",
 			purpose, common.RedemptionCodeStatusEnabled, userId, now).
@@ -194,6 +201,13 @@ func Redeem(key string, userId int) (quota int, err error) {
 	}
 	common.RandomSleep()
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		// Match ClaimRedemptionByPurpose's lock order so a claim racing with a
+		// redemption cannot deadlock or allocate another code for this user.
+		var user User
+		if err := lockQuery(tx).Select("id").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
