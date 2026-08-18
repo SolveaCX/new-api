@@ -24,7 +24,6 @@ import {
 } from '@/components/page-transition'
 import { CheckinCalendarCard } from './components/checkin-calendar-card'
 import { LanguagePreferencesCard } from './components/language-preferences-card'
-import { PasskeyCard } from './components/passkey-card'
 import { ProfileHeader } from './components/profile-header'
 import { ProfileSecurityCard } from './components/profile-security-card'
 import { ProfileSettingsCard } from './components/profile-settings-card'
@@ -77,7 +76,6 @@ export function Profile() {
                     turnstileSiteKey={turnstileSiteKey}
                   />
                 )}
-                <PasskeyCard loading={loading} />
                 <TwoFACard loading={loading} />
               </div>
             </div>
