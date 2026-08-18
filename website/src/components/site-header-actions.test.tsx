@@ -16,16 +16,20 @@ describe("SiteHeaderDesktopActions", () => {
       />,
     );
 
+    const consoleHrefIndex = html.indexOf(
+      'href="https://console.flatkey.ai/dashboard"',
+    );
     const consoleButton = html.slice(
-      html.indexOf('href="https://console.flatkey.ai/dashboard"'),
+      html.lastIndexOf("<a", consoleHrefIndex),
       html.indexOf(
         "</a>",
-        html.indexOf('href="https://console.flatkey.ai/dashboard"'),
+        consoleHrefIndex,
       ),
     );
+    const contactSalesHrefIndex = html.indexOf('href="/contact"');
     const contactSalesButton = html.slice(
-      html.indexOf('href="/contact"'),
-      html.indexOf("</a>", html.indexOf('href="/contact"')),
+      html.lastIndexOf("<a", contactSalesHrefIndex),
+      html.indexOf("</a>", contactSalesHrefIndex),
     );
 
     expect(html).toContain(">Console<");
