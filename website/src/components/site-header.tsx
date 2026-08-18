@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
@@ -182,11 +182,16 @@ const mobileNavRowClass =
 const mobileNavActiveClass = "bg-[#F3EDFF] text-[#6B46C1]";
 const mobileNavNestedClass = "grid gap-0.5 pt-0.5 pl-4";
 const mobileNavOpenClass = "group-open:bg-[#F3EDFF] group-open:text-[#6B46C1]";
-const desktopNavTriggerClass =
-  "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[12.75px] font-semibold text-[#4A4650] transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F] min-[1120px]:gap-2 min-[1120px]:px-3 min-[1120px]:text-[13.5px] min-[1360px]:text-[14.5px]";
-const desktopNavActiveClass = "bg-[#F7F2FF] text-[#0B0B0F]";
-const desktopNavDotClass =
-  "size-1.5 shrink-0 rounded-full bg-[#AAA7B0] transition group-hover/nav:bg-[#7C3AED]";
+const desktopNavLinkClass =
+  "inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-1.5 [font-family:inherit] text-[14px] font-semibold leading-none text-[#0B0B0F] no-underline transition-colors duration-200 ease-out hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
+const desktopNavDropdownTriggerClass =
+  "inline-flex h-10 shrink-0 appearance-none items-center justify-center gap-1 whitespace-nowrap border-0 bg-transparent px-1.5 [font-family:inherit] text-[14px] font-semibold leading-none text-[#0B0B0F] transition-colors duration-200 ease-out hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none group-hover/nav:text-[#050505] group-focus-within/nav:text-[#050505] min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
+const desktopNavDropdownItemClass =
+  "flex min-h-10 origin-center items-center rounded-[10px] px-3 py-2 text-sm font-semibold text-[#4A4650] transition-all duration-200 ease-out hover:translate-x-1 hover:scale-[1.01] hover:bg-[#F7F2FF] hover:text-[#0B0B0F] focus-visible:bg-[#F7F2FF] focus-visible:text-[#0B0B0F] focus-visible:outline-none";
+const desktopNavActiveClass =
+  "text-[#050505]";
+const desktopDropdownChevronClass =
+  "size-3 shrink-0 text-current opacity-55 transition-all duration-200 ease-out group-hover/nav:rotate-180 group-hover/nav:opacity-75 group-focus-within/nav:rotate-180 group-focus-within/nav:opacity-75";
 const desktopSecondaryActionClass =
   "inline-flex h-10 items-center whitespace-nowrap rounded-[9px] border border-[#E7E4EC] bg-white px-2.5 text-[13px] font-bold text-[#0B0B0F] no-underline shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95] min-[1180px]:px-3 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
 const desktopPrimaryActionClass =
@@ -209,9 +214,7 @@ function HeaderLanguageMenu(props: {
   pathname: string;
   variant?: "dropdown" | "panel";
 }) {
-  const [open, setOpen] = useState(false);
   const menuId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
   const strippedPath = stripLocale(props.pathname);
   const languageLinks = useMemo(
     () =>
@@ -223,31 +226,8 @@ function HeaderLanguageMenu(props: {
     [strippedPath],
   );
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
   const handleLanguageClick = (locale: Locale) => {
     persistLanguagePreference(locale, props.cookieDomain);
-    setOpen(false);
   };
 
   if (props.variant === "panel") {
@@ -300,15 +280,14 @@ function HeaderLanguageMenu(props: {
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div className="group/language relative before:absolute before:top-full before:right-0 before:z-[69] before:h-3 before:w-[178px] before:bg-transparent before:content-['']">
       <button
         type="button"
-        className="inline-flex size-9 items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] aria-expanded:border-[#D8D1E2] aria-expanded:bg-[#F8F4FF] aria-expanded:text-[#0B0B0F] min-[1180px]:size-10"
+        className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition-all duration-200 ease-out hover:-translate-y-px hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] focus-visible:border-[#D8D1E2] focus-visible:bg-[#F8F4FF] focus-visible:text-[#0B0B0F] focus-visible:outline-none group-hover/language:-translate-y-px group-hover/language:border-[#D8D1E2] group-hover/language:bg-[#F8F4FF] group-hover/language:text-[#0B0B0F] min-[1180px]:size-10"
         aria-label="Change language"
         aria-haspopup="menu"
-        aria-expanded={open}
         aria-controls={menuId}
-        onClick={() => setOpen((value) => !value)}
+        onMouseDown={(event) => event.preventDefault()}
       >
         <Globe2 className="size-[17px] min-[1180px]:size-[18px]" aria-hidden="true" />
       </button>
@@ -316,21 +295,18 @@ function HeaderLanguageMenu(props: {
       <nav
         id={menuId}
         aria-label="Change language"
-        className={cn(
-          "absolute right-0 top-[calc(100%+10px)] z-[70] grid w-[178px] gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] shadow-[0_22px_60px_-26px_rgba(24,14,38,.38)] backdrop-blur-[18px] transition",
-          open
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-1 opacity-0",
-        )}
+        role="menu"
+        className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-[70] grid w-[178px] origin-top-right -translate-y-1 scale-[0.97] gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] opacity-0 shadow-[0_22px_60px_-26px_rgba(24,14,38,.38)] backdrop-blur-[18px] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/language:pointer-events-auto group-hover/language:translate-y-0 group-hover/language:scale-100 group-hover/language:opacity-100 group-focus-within/language:pointer-events-auto group-focus-within/language:translate-y-0 group-focus-within/language:scale-100 group-focus-within/language:opacity-100"
       >
         {languageLinks.map((lang) => (
           <a
             key={lang.code}
-            className="flex min-h-10 items-center gap-2 rounded-[10px] px-3 py-2 text-sm font-semibold text-[#4A4650] transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F]"
+            className="flex min-h-10 items-center gap-2 rounded-[10px] px-3 py-2 text-sm font-semibold text-[#4A4650] transition-all duration-200 ease-out hover:translate-x-1 hover:scale-[1.01] hover:bg-[#F7F2FF] hover:text-[#0B0B0F] focus-visible:bg-[#F7F2FF] focus-visible:text-[#0B0B0F] focus-visible:outline-none"
             href={lang.href}
             hrefLang={localeLanguageTag(lang.code)}
             lang={localeLanguageTag(lang.code)}
             aria-current={props.locale === lang.code ? "page" : undefined}
+            role="menuitem"
             onClick={() => handleLanguageClick(lang.code)}
           >
             <span>{lang.label}</span>
@@ -479,31 +455,20 @@ export function SiteHeader(props: Props) {
     };
   }, []);
 
-  const renderNavLink = (item: NavItem, compact = false, withDot = false) => {
+  const renderNavLink = (item: NavItem, compact = false) => {
     const hrefPath = item.href.split("#")[0] || item.href;
     const active =
       item.publicPath && currentPath === hrefPath && !item.href.includes("#");
     const className = cn(
       compact
-        ? "flex min-h-10 items-center rounded-[10px] px-3 py-2 text-sm font-semibold transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F]"
-        : desktopNavTriggerClass,
+        ? desktopNavDropdownItemClass
+        : desktopNavLinkClass,
       active ? desktopNavActiveClass : "text-[#4A4650]",
     );
     const children = (
-      <>
-        {withDot ? (
-          <span
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              active ? "bg-[#7C3AED]" : "bg-[#AAA7B0]",
-            )}
-            aria-hidden="true"
-          />
-        ) : null}
-        <span className="min-w-0 overflow-hidden text-ellipsis">
-          {item.label}
-        </span>
-      </>
+      <span className="min-w-0 overflow-hidden text-ellipsis">
+        {item.label}
+      </span>
     );
 
     return item.external ? (
@@ -513,6 +478,7 @@ export function SiteHeader(props: Props) {
         href={item.href}
         target="_blank"
         rel="noopener noreferrer"
+        role={compact ? "menuitem" : undefined}
       >
         {children}
       </a>
@@ -524,6 +490,7 @@ export function SiteHeader(props: Props) {
           item.publicPath ? localizePath(item.href, props.locale) : item.href
         }
         onClick={() => setMobileOpen(false)}
+        role={compact ? "menuitem" : undefined}
       >
         {children}
       </Link>
@@ -560,29 +527,40 @@ export function SiteHeader(props: Props) {
     );
   };
 
-  const renderNavGroup = (label: string, items: NavItem[]) => (
-    <div className="group/nav relative">
-      <div
-        className={cn(
-          desktopNavTriggerClass,
-          "cursor-default select-none group-hover/nav:bg-[#F7F2FF] group-hover/nav:text-[#0B0B0F]",
-        )}
-      >
-        <span
-          className={desktopNavDotClass}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 overflow-hidden text-ellipsis">{label}</span>
-      </div>
-      <div className="pointer-events-none absolute top-full left-1/2 z-[70] w-[220px] -translate-x-1/2 translate-y-1 pt-[10px] opacity-0 transition group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:opacity-100">
-        <div className="grid gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] shadow-[0_22px_60px_-26px_rgba(24,14,38,.38)] backdrop-blur-[18px]">
+  const renderNavGroup = (label: string, items: NavItem[]) => {
+    const active = items.some((item) => {
+      const hrefPath = item.href.split("#")[0] || item.href;
+      return item.publicPath && currentPath === hrefPath && !item.href.includes("#");
+    });
+
+    return (
+      <div className="group/nav relative before:absolute before:top-full before:left-1/2 before:z-[69] before:h-3 before:w-[240px] before:-translate-x-1/2 before:bg-transparent before:content-['']">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          className={cn(
+            desktopNavDropdownTriggerClass,
+            "cursor-pointer select-none",
+            active && desktopNavActiveClass,
+          )}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <span className="min-w-0 overflow-hidden text-ellipsis">{label}</span>
+          <ChevronDown className={desktopDropdownChevronClass} aria-hidden="true" />
+        </button>
+        <div className="pointer-events-none absolute top-full left-1/2 z-[70] w-[220px] origin-top -translate-x-1/2 -translate-y-1 scale-[0.97] pt-[10px] opacity-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:scale-100 group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:scale-100 group-focus-within/nav:opacity-100">
+          <div
+            role="menu"
+            className="grid gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] shadow-[0_24px_70px_-32px_rgba(24,14,38,.42)] backdrop-blur-[18px]"
+          >
           {items.map((item) => (
             <div key={item.href}>{renderNavLink(item, true)}</div>
           ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderMobileGroup = (label: string, items: NavItem[]) => (
     <details className="group">
@@ -618,10 +596,10 @@ export function SiteHeader(props: Props) {
           <span className="sr-only">flatkey.ai</span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-0 min-[901px]:flex min-[1120px]:gap-0.5">
+        <div className="hidden min-w-0 flex-1 items-center gap-4 min-[901px]:flex min-[1120px]:gap-5 min-[1360px]:gap-6">
           {renderNavGroup(groupLabels.products, productItems)}
           {renderNavGroup(groupLabels.resources, resourceItems)}
-          {topLevelItems.map((item) => renderNavLink(item, false, true))}
+          {topLevelItems.map((item) => renderNavLink(item))}
         </div>
 
         <div className="ml-auto hidden shrink-0 items-center gap-1.5 min-[901px]:flex min-[1180px]:gap-2">
