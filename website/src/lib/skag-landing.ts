@@ -48,7 +48,7 @@ export type SkagLandingConfig = {
   /** Model id used in the runnable curl / Python example. */
   exampleModel: string;
   codeTitle: string;
-  features: Array<{ title: string; body: string }>;
+  features: Array<{ title: string; body: string; link?: { label: string; href: string } }>;
   faq: Array<{ question: string; answer: string }>;
   seo: {
     title: string;
@@ -452,9 +452,9 @@ const DEEPSEEK_API: SkagLandingConfig = {
   hideCodeWindow: true,
   pricingTitle: "Stable DeepSeek API access",
   priceRows: [
-    { label: "DeepSeek V4 Flash / 1M tokens", flatkey: "$0.056", official: "$0.14" },
-    { label: "DeepSeek V3, V3.2, V4 Pro", flatkey: "One key", official: "Separate setup" },
-    { label: "OpenAI SDK migration", flatkey: "base_url + key", official: "Provider SDK work" },
+    { label: "deepseek-v3 / 1M tokens", flatkey: "$0.34", official: "$0.4" },
+    { label: "deepseek-v4-flash / 1M tokens", flatkey: "$0.374", official: "$0.44" },
+    { label: "deepseek-v4-pro / 1M tokens", flatkey: "$1.122", official: "$1.32" },
   ],
   priceFootnote: "* Representative coverage — see live pricing for current model rates and availability.",
   exampleModel: "deepseek-v4-flash",
@@ -514,9 +514,9 @@ const PT_DEEPSEEK_API: SkagLandingConfig = {
   trustLine: "DeepSeek · GPT · Claude · Gemini · Qwen · GLM — uma chave, uma fatura · sem cartão de crédito para começar",
   pricingTitle: "Acesso estável à API DeepSeek",
   priceRows: [
-    { label: "DeepSeek V4 Flash / 1M tokens", flatkey: "$0.056", official: "$0.14" },
-    { label: "DeepSeek V3, V3.2, V4 Pro", flatkey: "Uma chave", official: "Configurações separadas" },
-    { label: "Migração do SDK OpenAI", flatkey: "base_url + key", official: "Trabalho por fornecedor" },
+    { label: "deepseek-v3 / 1M tokens", flatkey: "$0.34", official: "$0.4" },
+    { label: "deepseek-v4-flash / 1M tokens", flatkey: "$0.374", official: "$0.44" },
+    { label: "deepseek-v4-pro / 1M tokens", flatkey: "$1.122", official: "$1.32" },
   ],
   priceFootnote: "* Cobertura representativa — veja os preços ao vivo para taxas e disponibilidade atuais.",
   exampleModel: "deepseek-v4-flash",
@@ -528,15 +528,17 @@ const PT_DEEPSEEK_API: SkagLandingConfig = {
     },
     {
       title: "API compatível com OpenAI",
-      body: "Mantenha o SDK da OpenAI que já existe no seu aplicativo. Altere base_url, use uma chave flatkey e escolha o ID do modelo DeepSeek.",
+      body: "Mantenha o SDK da OpenAI que já existe no seu aplicativo. Altere base_url, use uma chave flatkey e escolha o ID do modelo DeepSeek, sem grandes mudanças no código e pronto para usar imediatamente.",
     },
     {
-      title: "Visibilidade de custo por token",
-      body: "Confira preço por token e disponibilidade atuais em uma conta antes de escalar código, automação e outras cargas de API.",
+      title: "Preços DeepSeek transparentes",
+      body: "Confira preços por 1M tokens, comparação com preço oficial, latência e pontuação de saúde dos modelos DeepSeek antes de escalar código e automação.",
+      link: { label: "Veja a lista ao vivo", href: "/pt/models?vendor=DeepSeek" },
     },
     {
       title: "Compare modelos sem novas contas",
-      body: "Compare DeepSeek com GPT, Claude, Gemini, Qwen e GLM sem abrir contas separadas de fornecedor nem mudar sua integração de API.",
+      body: "Compare DeepSeek com GPT, Claude, Gemini, Qwen e GLM no mesmo diretório de modelos, sem abrir contas separadas de fornecedor nem mudar sua integração de API.",
+      link: { label: "Veja todos os modelos", href: "/pt/models" },
     },
   ],
   faq: [
