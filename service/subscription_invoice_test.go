@@ -22,6 +22,34 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestValidateStripeInvoicePaymentAmount(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected int64
+		actual   int64
+		subtotal int64
+		discount int64
+		wantErr  bool
+	}{
+		{name: "exact amount", expected: 1234, actual: 1234},
+		{name: "verified promotion discount", expected: 1234, actual: 1000, subtotal: 1234, discount: 234},
+		{name: "reduced without discount proof", expected: 1234, actual: 1000, subtotal: 1234, wantErr: true},
+		{name: "subtotal mismatch", expected: 1234, actual: 1000, subtotal: 1200, discount: 200, wantErr: true},
+		{name: "discount arithmetic mismatch", expected: 1234, actual: 1000, subtotal: 1234, discount: 200, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateStripeInvoicePaymentAmount(tt.expected, tt.actual, tt.subtotal, tt.discount)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "amount mismatch")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestGetStripeInvoiceForReconcileExpandsDahliaInvoiceShape(t *testing.T) {
 	originalBackend := stripe.GetBackend(stripe.APIBackend)
 	originalSecret := setting.StripeApiSecret
@@ -241,7 +269,7 @@ func TestCreateStripeSubscriptionCheckoutDiscountSelectionVariants(t *testing.T)
 	require.Empty(t, sessionForms[0].Get("allow_promotion_codes"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][promotion_code]"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][coupon]"))
-	require.Empty(t, sessionForms[1].Get("allow_promotion_codes"))
+	require.Equal(t, "true", sessionForms[1].Get("allow_promotion_codes"))
 }
 
 func TestPaymentAnalyticsEventForPaidRenewalUsesCurrentPlanID(t *testing.T) {

@@ -288,6 +288,8 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
 			{Coupon: stripe.String(strings.TrimSpace(coupon.ID))},
 		}
+	} else if kind := strings.TrimSpace(input.DiscountKind); kind == "" || kind == SubscriptionDiscountKindNone {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 	ApplyStripeCheckoutPresentation(params, input.Presentation, input.TradeNo)
 	if strings.TrimSpace(input.CustomerID) != "" {
@@ -660,6 +662,8 @@ type paidInvoiceFacts struct {
 	ContractID         int64
 	ChangeIntentID     int64
 	AmountPaid         int64
+	Subtotal           int64
+	DiscountAmount     int64
 	Currency           string
 	Livemode           bool
 	ProviderStatus     string
@@ -675,6 +679,8 @@ type stripeInvoiceCommonFacts struct {
 	CustomerID         string
 	PriceID            string
 	Amount             int64
+	Subtotal           int64
+	DiscountAmount     int64
 	Currency           string
 	Livemode           bool
 	ProviderStatus     string
@@ -749,6 +755,8 @@ func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (pa
 		ContractID:         contractID,
 		ChangeIntentID:     intentID,
 		AmountPaid:         commonFacts.Amount,
+		Subtotal:           commonFacts.Subtotal,
+		DiscountAmount:     commonFacts.DiscountAmount,
 		Currency:           commonFacts.Currency,
 		Livemode:           commonFacts.Livemode,
 		ProviderStatus:     commonFacts.ProviderStatus,
@@ -794,6 +802,8 @@ func validateStripeInvoiceCommonFacts(inv *stripe.Invoice, sub *stripe.Subscript
 		CustomerID:         firstNonEmptyString(subscriptionCustomer, invoiceCustomer),
 		PriceID:            priceID,
 		Amount:             stripeInvoiceAmountForValidation(inv),
+		Subtotal:           inv.Subtotal,
+		DiscountAmount:     stripeInvoiceTotalDiscountAmount(inv),
 		Currency:           strings.ToUpper(string(inv.Currency)),
 		Livemode:           inv.Livemode,
 		ProviderStatus:     string(sub.Status),
@@ -814,6 +824,30 @@ func stripeInvoiceAmountForValidation(inv *stripe.Invoice) int64 {
 		return inv.AmountDue
 	}
 	return inv.Total
+}
+
+func stripeInvoiceTotalDiscountAmount(inv *stripe.Invoice) int64 {
+	if inv == nil {
+		return 0
+	}
+	var total int64
+	for _, discount := range inv.TotalDiscountAmounts {
+		if discount == nil || discount.Amount <= 0 || total > math.MaxInt64-discount.Amount {
+			continue
+		}
+		total += discount.Amount
+	}
+	return total
+}
+
+func validateStripeInvoicePaymentAmount(expected int64, actual int64, subtotal int64, discount int64) error {
+	if actual == expected {
+		return nil
+	}
+	if expected <= 0 || actual < 0 || subtotal != expected || discount <= 0 || actual != subtotal-discount {
+		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expected, actual)
+	}
+	return nil
 }
 
 func stripeInvoiceIsPaid(inv *stripe.Invoice) bool {
@@ -1083,8 +1117,8 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 			return err
 		}
 	}
-	if expectedMinor != facts.AmountPaid {
-		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.AmountPaid)
+	if err := validateStripeInvoicePaymentAmount(expectedMinor, facts.AmountPaid, facts.Subtotal, facts.DiscountAmount); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1718,8 +1752,8 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	} else if found {
 		expectedMinor = snapshotExpected
 	}
-	if expectedMinor != facts.Amount {
-		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.Amount)
+	if err := validateStripeInvoicePaymentAmount(expectedMinor, facts.Amount, facts.Subtotal, facts.DiscountAmount); err != nil {
+		return err
 	}
 	return nil
 }

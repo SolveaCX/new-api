@@ -962,7 +962,7 @@ func TestSubscriptionSelfPurchaseStripeRecurringNoDiscountCreatesCheckout(t *tes
 	require.NotNil(t, form)
 	require.Empty(t, form.Get("discounts[0][promotion_code]"))
 	require.Empty(t, form.Get("discounts[0][coupon]"))
-	require.Empty(t, form.Get("allow_promotion_codes"))
+	require.Equal(t, "true", form.Get("allow_promotion_codes"))
 	var count int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", 9123).Count(&count).Error)
 	require.Equal(t, int64(1), count)

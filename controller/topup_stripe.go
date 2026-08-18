@@ -1329,7 +1329,8 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 		return errors.New("Stripe one-time checkout is not paid")
 	}
 	actualAmount := stripeEventAmountMinor(event, "amount_total")
-	if actualAmount != order.PaymentAmountMinor {
+	if actualAmount != order.PaymentAmountMinor &&
+		(!oneTimePlanAllowsPromotionCodes(order) || !stripeCheckoutPromotionDiscountMatches(event, order.PaymentAmountMinor, actualAmount)) {
 		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d got %d", order.PaymentAmountMinor, actualAmount)
 	}
 	actualCurrency := strings.ToUpper(strings.TrimSpace(event.GetObjectValue("currency")))
@@ -1389,6 +1390,19 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 		}
 	}
 	return nil
+}
+
+func stripeCheckoutPromotionDiscountMatches(event stripe.Event, expectedSubtotal int64, actualTotal int64) bool {
+	if expectedSubtotal <= 0 || actualTotal < 0 {
+		return false
+	}
+	subtotal := stripeEventAmountMinor(event, "amount_subtotal")
+	discount := stripeEventAmountMinor(event, "total_details", "amount_discount")
+	shipping := stripeEventAmountMinor(event, "total_details", "amount_shipping")
+	tax := stripeEventAmountMinor(event, "total_details", "amount_tax")
+	return subtotal == expectedSubtotal &&
+		discount > 0 &&
+		actualTotal == subtotal-discount+shipping+tax
 }
 
 func validateOneTimePlanStripeSessionIdentity(event stripe.Event, order *model.SubscriptionOrder) error {
@@ -1877,8 +1891,8 @@ func stripePaymentProcessingErrorClass(err error) string {
 	}
 }
 
-func stripeEventAmountMinor(event stripe.Event, key string) int64 {
-	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, key))
+func stripeEventAmountMinor(event stripe.Event, keys ...string) int64 {
+	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, keys...))
 	if rawAmount == "" {
 		return 0
 	}
@@ -2739,6 +2753,8 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 			"recall_campaign_id":  strconv.FormatInt(recall.CampaignID, 10),
 			"recall_recipient_id": strconv.FormatInt(recall.RecipientID, 10),
 		}
+	} else {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
 	if embedded {

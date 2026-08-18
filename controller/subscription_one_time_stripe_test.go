@@ -131,6 +131,8 @@ func TestBuildOneTimePlanCheckoutUsesPaymentModeAndRequestedMethod(t *testing.T)
 	require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
 	require.Equal(t, "purchase", params.Metadata["purchase_intent"])
 	require.Equal(t, "2", params.Metadata["purchase_months"])
+	require.NotNil(t, params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
 }
 
 func TestBuildOneTimePlanCheckoutUsesQuantityOneAndFullOrderAmount(t *testing.T) {
@@ -168,6 +170,7 @@ func TestOneTimePlanMetadataIncludesInvitationDiscountSnapshot(t *testing.T) {
 	require.Equal(t, "700", params.Metadata["subscription_discount_usd_minor"])
 	require.Equal(t, "700", params.Metadata["subscription_discount_amount_minor"])
 	require.Equal(t, params.Metadata, params.PaymentIntentData.Metadata)
+	require.Nil(t, params.AllowPromotionCodes)
 }
 
 func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClaim(t *testing.T) {
@@ -189,6 +192,7 @@ func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClai
 	require.Equal(t, "promo_local", params.Metadata["recall_promotion_code_id"])
 	require.Equal(t, "20", params.Metadata["recall_discount_amount_minor"])
 	require.Equal(t, params.Metadata, params.PaymentIntentData.Metadata)
+	require.Nil(t, params.AllowPromotionCodes)
 	for key, value := range params.Metadata {
 		require.NotContains(t, strings.ToLower(key), "claim")
 		require.NotContains(t, strings.ToLower(value), "claim")
@@ -511,6 +515,23 @@ func TestOneTimePlanWebhookRejectsAmountCurrencySessionAndMethodMismatch(t *test
 			require.Contains(t, err.Error(), tc.want)
 		})
 	}
+}
+
+func TestOneTimePlanWebhookAcceptsVerifiedPromotionCodeDiscount(t *testing.T) {
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.ProviderSessionId = "cs_expected"
+	object := oneTimeStripePaidSessionObject(order)
+	object["amount_subtotal"] = float64(4990)
+	object["amount_total"] = float64(3990)
+	object["total_details"] = map[string]interface{}{
+		"amount_discount": float64(1000),
+		"amount_shipping": float64(0),
+		"amount_tax":      float64(0),
+	}
+
+	err := validateOneTimePlanStripeSessionEvent(stripe.Event{Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order)
+
+	require.NoError(t, err)
 }
 
 func TestOneTimePlanWebhookRequiresCheckoutMetadata(t *testing.T) {

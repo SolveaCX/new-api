@@ -476,6 +476,8 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
 			{PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId))},
 		}
+	} else if oneTimePlanAllowsPromotionCodes(order) {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 	if user != nil {
 		if strings.TrimSpace(user.StripeCustomer) != "" {
@@ -489,6 +491,18 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 	}
 	params.SetIdempotencyKey("subscription-one-time:" + strings.TrimSpace(order.TradeNo))
 	return params, nil
+}
+
+func oneTimePlanAllowsPromotionCodes(order *model.SubscriptionOrder) bool {
+	if order == nil || order.RecallDiscountAmountMinor > 0 || order.SubscriptionDiscountAmountMinor > 0 {
+		return false
+	}
+	switch strings.TrimSpace(order.DiscountKind) {
+	case "", service.SubscriptionDiscountKindNone:
+		return true
+	default:
+		return false
+	}
 }
 
 func oneTimePlanCheckoutExpiresAt(order *model.SubscriptionOrder) (int64, error) {
