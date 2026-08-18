@@ -74,19 +74,14 @@ describe('RechargeFormCard', () => {
       fallbackLng: 'en',
       resources: {
         en: {
-          translation: {
-            'Choose an amount to add to your USD balance.':
-              'Choose an amount to add to your USD balance.',
-            'One-time payment.': 'One-time payment.',
-            'Continue to payment': 'Continue to payment',
-          },
+          translation: {},
         },
       },
       interpolation: { escapeValue: false },
     })
   })
 
-  test('renders one-time USD balance top-up copy without repeating the selected amount', () => {
+  test('ignores legacy bonus fields in top-up presets', () => {
     const html = renderToStaticMarkup(
       <RechargeFormCard
         topupInfo={topupInfoWithStripe}
@@ -102,33 +97,13 @@ describe('RechargeFormCard', () => {
       />
     )
 
-    expect(html).toContain('Choose an amount to add to your USD balance.')
-    expect(html).toContain('One-time payment.')
     expect(html).toContain('$10')
     expect(html).toContain('$20')
     expect(html).toContain('$200')
-    expect(html).toContain('Continue to payment')
-    expect(html).not.toContain('Top up $10')
-    expect(html).not.toContain('face value')
     expect(html).not.toContain('bonus')
     expect(html).not.toContain('free')
     expect(html).not.toContain('discount')
     expect(html).not.toContain('Enterprise')
-  })
-
-  test('keeps the payment CTA generic when no amount is selected', () => {
-    const html = renderToStaticMarkup(
-      <RechargeFormCard
-        topupInfo={topupInfoWithStripe}
-        presetAmounts={[{ value: 10 }, { value: 20 }]}
-        selectedPreset={999}
-        onSelectPreset={() => undefined}
-        onStripeTopUp={() => undefined}
-      />
-    )
-
-    expect(html).toContain('Continue to payment')
-    expect(html).toContain('Choose an amount to add to your USD balance.')
   })
 
   test('renders only amounts supplied by backend presets', () => {

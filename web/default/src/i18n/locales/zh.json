@@ -3613,6 +3613,7 @@
     "Redeemed By": "兑换人",
     "Redeemed:": "已兑换：",
     "redemption code": "兑换码",
+    "Redemption code top-up: {{amount}} (ID: {{id}})": "通过兑换码充值 {{amount}}（ID：{{id}}）",
     "Redemption Code": "兑换码",
     "Redemption code deleted successfully": "兑换码删除成功",
     "Redemption code disabled successfully": "兑换码已禁用",

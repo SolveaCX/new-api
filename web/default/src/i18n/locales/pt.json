@@ -3613,6 +3613,7 @@
     "Redeemed By": "Resgatado por",
     "Redeemed:": "Resgatado:",
     "redemption code": "código de resgate",
+    "Redemption code top-up: {{amount}} (ID: {{id}})": "Recarga com código de resgate: {{amount}} (ID: {{id}})",
     "Redemption Code": "Código de resgate",
     "Redemption code deleted successfully": "Código de resgate excluído com sucesso",
     "Redemption code disabled successfully": "Código de resgate desativado com sucesso",

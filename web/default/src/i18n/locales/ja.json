@@ -3613,6 +3613,7 @@
     "Redeemed By": "引き換え元",
     "Redeemed:": "引き換え済み:",
     "redemption code": "引き換えコード",
+    "Redemption code top-up: {{amount}} (ID: {{id}})": "引き換えコードによるチャージ：{{amount}}（ID：{{id}}）",
     "Redemption Code": "引き換えコード",
     "Redemption code deleted successfully": "引き換えコードを正常に削除しました",
     "Redemption code disabled successfully": "引き換えコードを正常に無効にしました",

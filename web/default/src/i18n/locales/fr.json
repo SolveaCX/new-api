@@ -3613,6 +3613,7 @@
     "Redeemed By": "Utilisé par",
     "Redeemed:": "Utilisé :",
     "redemption code": "code d'échange",
+    "Redemption code top-up: {{amount}} (ID: {{id}})": "Recharge par code d’échange : {{amount}} (ID : {{id}})",
     "Redemption Code": "Code d'échange",
     "Redemption code deleted successfully": "Code d'échange supprimé avec succès",
     "Redemption code disabled successfully": "Code d'échange désactivé avec succès",
