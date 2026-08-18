@@ -297,8 +297,8 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	if common.EmailAliasRestrictionEnabled {
-		containsSpecialSymbols := strings.Contains(localPart, "+") || strings.Contains(localPart, ".")
-		if containsSpecialSymbols {
+		containsAliasMarker := strings.Contains(localPart, "+")
+		if containsAliasMarker {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "管理员已启用邮箱地址别名限制，您的邮箱地址由于包含特殊符号而被拒绝。",
