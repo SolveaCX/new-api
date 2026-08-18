@@ -97,6 +97,9 @@ describe("SkagLandingPage", () => {
   test("renders DeepSeek feature links in English", () => {
     const html = renderToStaticMarkup(<SkagLandingPage config={getSkagLandingConfig("deepseek-api")} />);
 
+    expect(html).toContain("over 98% availability");
+    expect(html).toContain("without major code changes");
+    expect(html).toContain("ready to use immediately");
     expect(html).toContain("Transparent DeepSeek pricing");
     expect(html).toContain("See live DeepSeek pricing");
     expect(html).toContain("/models?vendor=DeepSeek");

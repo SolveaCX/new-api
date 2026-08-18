@@ -462,11 +462,11 @@ const DEEPSEEK_API: SkagLandingConfig = {
   features: [
     {
       title: "Stable access for production",
-      body: "Route DeepSeek requests through one managed API instead of depending on a single provider console when availability matters to your application.",
+      body: "Route DeepSeek requests through one managed API with over 98% availability instead of depending on a single provider console when availability matters to your application.",
     },
     {
       title: "OpenAI-compatible API",
-      body: "Keep the OpenAI SDK already in your application. Change base_url, set a flatkey API key, and select a DeepSeek model id.",
+      body: "Keep the OpenAI SDK already in your application. Change base_url, set a flatkey API key, and select a DeepSeek model id without major code changes, ready to use immediately.",
     },
     {
       title: "Transparent DeepSeek pricing",
