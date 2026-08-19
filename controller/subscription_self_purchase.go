@@ -515,9 +515,9 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	if checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) == "" {
 		return "", errors.New("Stripe checkout session ID is missing")
 	}
-	if presentation.Embedded {
+	if presentation.UsesClientSecret() {
 		if strings.TrimSpace(checkoutSession.ClientSecret) == "" {
-			return "", errors.New("Stripe embedded checkout session client secret is missing")
+			return "", errors.New("Stripe client checkout session client secret is missing")
 		}
 	} else if strings.TrimSpace(checkoutSession.URL) == "" {
 		return "", errors.New("Stripe checkout session URL is missing")

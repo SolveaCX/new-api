@@ -53,6 +53,21 @@ type StripeSubscriptionCheckoutSession struct {
 type StripeCheckoutPresentation struct {
 	RequestedUIMode string
 	Embedded        bool
+	Elements        bool
+}
+
+func (presentation StripeCheckoutPresentation) UsesClientSecret() bool {
+	return presentation.Embedded || presentation.Elements
+}
+
+func (presentation StripeCheckoutPresentation) SessionUIMode() (stripe.CheckoutSessionUIMode, bool) {
+	if presentation.Elements {
+		return stripe.CheckoutSessionUIModeElements, true
+	}
+	if presentation.Embedded {
+		return stripe.CheckoutSessionUIModeEmbeddedPage, true
+	}
+	return "", false
 }
 
 type PaidInvoiceReconcileResult struct {
@@ -107,23 +122,29 @@ var stripeCheckoutSessionExpirer = expireStripeCheckoutSessionForSubscription
 
 func ResolveStripeCheckoutPresentation(uiMode string) StripeCheckoutPresentation {
 	requested := strings.ToLower(strings.TrimSpace(uiMode))
+	clientSecretAvailable := strings.TrimSpace(setting.StripePublishableKey) != ""
 	return StripeCheckoutPresentation{
 		RequestedUIMode: requested,
-		Embedded:        requested == "embedded" && strings.TrimSpace(setting.StripePublishableKey) != "",
+		Embedded:        requested == "embedded" && clientSecretAvailable,
+		Elements:        requested == "elements" && clientSecretAvailable,
 	}
 }
 
 func ApplyStripeCheckoutPresentation(params *stripe.CheckoutSessionParams, presentation StripeCheckoutPresentation, tradeNo string) {
-	if params == nil || !presentation.Embedded {
+	if params == nil {
 		return
 	}
-	params.UIMode = stripe.String(string(stripe.CheckoutSessionUIModeEmbeddedPage))
-	params.ReturnURL = stripe.String(stripeEmbeddedCheckoutReturnURL(tradeNo))
+	uiMode, ok := presentation.SessionUIMode()
+	if !ok {
+		return
+	}
+	params.UIMode = stripe.String(string(uiMode))
+	params.ReturnURL = stripe.String(stripeClientCheckoutReturnURL(tradeNo))
 	params.SuccessURL = nil
 	params.CancelURL = nil
 }
 
-func stripeEmbeddedCheckoutReturnURL(tradeNo string) string {
+func stripeClientCheckoutReturnURL(tradeNo string) string {
 	base := consoleSubscriptionReturnPath()
 	separator := "?"
 	if strings.Contains(base, "?") {
@@ -307,9 +328,9 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	if created == nil || strings.TrimSpace(created.ID) == "" {
 		return nil, errors.New("Stripe checkout session missing id")
 	}
-	if input.Presentation.Embedded {
+	if input.Presentation.UsesClientSecret() {
 		if strings.TrimSpace(created.ClientSecret) == "" {
-			return nil, errors.New("Stripe embedded checkout session missing client secret")
+			return nil, errors.New("Stripe client checkout session missing client secret")
 		}
 	} else if strings.TrimSpace(created.URL) == "" {
 		return nil, errors.New("Stripe checkout session missing url")

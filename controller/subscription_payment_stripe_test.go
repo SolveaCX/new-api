@@ -35,7 +35,11 @@ func (b *subscriptionStripeRecordingBackend) Call(_ string, _ string, _ string, 
 		b.params = append(b.params, typed)
 		session := result.(*stripe.CheckoutSession)
 		session.ID = "cs_subscription_test"
-		session.URL = "https://checkout.stripe.test/subscription"
+		if typed.UIMode != nil && (*typed.UIMode == string(stripe.CheckoutSessionUIModeElements) || *typed.UIMode == string(stripe.CheckoutSessionUIModeEmbeddedPage)) {
+			session.ClientSecret = "cs_secret_subscription"
+		} else {
+			session.URL = "https://checkout.stripe.test/subscription"
+		}
 	case *stripe.CouponParams:
 		b.couponParams = append(b.couponParams, typed)
 		coupon := result.(*stripe.Coupon)
@@ -58,6 +62,22 @@ func setupSubscriptionStripeRecordingBackend(t *testing.T) *subscriptionStripeRe
 		setting.StripeApiSecret = originalSecret
 	})
 	return backend
+}
+
+func TestSubscriptionStripePayResponseDataIncludesElementsCredentials(t *testing.T) {
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_subscription_elements"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+
+	data := subscriptionStripePayResponseData(&service.PurchaseSubscriptionResult{
+		CheckoutURL:  "https://checkout.stripe.test/unused",
+		ClientSecret: "cs_secret_subscription",
+	})
+
+	require.Equal(t, "cs_secret_subscription", data["client_secret"])
+	require.Equal(t, "pk_test_subscription_elements", data["publishable_key"])
+	_, hasPayLink := data["pay_link"]
+	require.False(t, hasPayLink, "Elements credentials must take precedence over a hosted URL")
 }
 
 func TestSubscriptionStripeOrdinaryPromotionCodes(t *testing.T) {

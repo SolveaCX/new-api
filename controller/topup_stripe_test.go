@@ -49,8 +49,9 @@ func TestStripePayRequestsBindRecallClaim(t *testing.T) {
 	require.Equal(t, "claim_topup", topUp.RecallClaim)
 
 	var subscription SubscriptionStripePayRequest
-	require.NoError(t, common.Unmarshal([]byte(`{"plan_id":7,"recall_claim":"claim_subscription"}`), &subscription))
+	require.NoError(t, common.Unmarshal([]byte(`{"plan_id":7,"recall_claim":"claim_subscription","ui_mode":"elements"}`), &subscription))
 	require.Equal(t, "claim_subscription", subscription.RecallClaim)
+	require.Equal(t, "elements", subscription.UIMode)
 }
 
 func TestStripeMinorUnitAmount(t *testing.T) {
@@ -397,7 +398,7 @@ func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -421,7 +422,7 @@ func TestStripeCheckoutSessionOrdinaryPromotionCodes(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -442,7 +443,7 @@ func TestStripeCheckoutSessionRecallPromotionCode(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		&service.RecallCheckoutDiscount{
 			PromotionCodeID: "promo_recall",
@@ -732,7 +733,7 @@ func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -755,7 +756,7 @@ func TestStripeCheckoutSessionRequestsThreeDSecure(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		true,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -780,7 +781,7 @@ func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"$27 in credits ($20 + $7 bonus) will be added to your account immediately after payment.",
 		nil,
 	)
@@ -800,7 +801,7 @@ func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -819,7 +820,7 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		true,
+		service.StripeCheckoutPresentation{Embedded: true},
 		"",
 		nil,
 	)
@@ -842,13 +843,38 @@ func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
 	require.Nil(t, params.UIMode)
 	require.NotNil(t, params.SuccessURL)
 	require.NotNil(t, params.CancelURL)
+}
+
+func TestStripeCheckoutSessionElementsModeUsesReturnURL(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_elements",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"BRL",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+		service.StripeCheckoutPresentation{Elements: true},
+		"",
+		nil,
+	)
+
+	require.NotNil(t, params.UIMode)
+	require.Equal(t, string(stripe.CheckoutSessionUIModeElements), *params.UIMode)
+	require.NotNil(t, params.ReturnURL)
+	require.Equal(t, "https://example.com/success?session_id={CHECKOUT_SESSION_ID}&trade_no=trade_elements", *params.ReturnURL)
+	require.Nil(t, params.SuccessURL, "Elements sessions reject success_url")
+	require.Nil(t, params.CancelURL, "Elements sessions reject cancel_url")
 }
 
 func TestResumeStripeTopUpCheckoutReturnsExistingHostedSession(t *testing.T) {
@@ -969,7 +995,7 @@ func TestStripeCheckoutSessionPassesSelectedCurrency(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
@@ -989,7 +1015,7 @@ func TestStripeCheckoutSessionPassesSelectedCurrency(t *testing.T) {
 		"https://example.com/cancel",
 		false,
 		false,
-		false,
+		service.StripeCheckoutPresentation{},
 		"",
 		nil,
 	)
