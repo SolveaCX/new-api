@@ -300,7 +300,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
   };
   const modelPrice = (price: string) =>
     price === "Early access" ? t("md.early", price) : price;
-  const authActionHref = consoleUrl("/sign-up", `lng=${props.locale}`);
+  const authActionHref = consoleUrl("/sign-up");
   const authActionLabel = copy.home.ctaKey;
   const finalCtaLabel = t("cta.b1", "Get started");
 

@@ -72,6 +72,10 @@ describe("getDocsUrl", () => {
               docs_link: "https://docs.example.com/start",
               google_client_id: " google-client.apps.googleusercontent.com ",
               google_oauth: true,
+              official_website_banner_content: "Official launch credits are live.",
+              official_website_banner_enabled: true,
+              official_website_banner_href: "https://console.example.com/sign-up",
+              official_website_banner_icon: "data:image/png;base64,iVBORw0KGgo=",
             },
           }),
         ),
@@ -82,6 +86,43 @@ describe("getDocsUrl", () => {
       googleOneTap: {
         clientId: "google-client.apps.googleusercontent.com",
         enabled: true,
+      },
+      promoBanner: {
+        content: "Official launch credits are live.",
+        enabled: true,
+        href: "https://console.example.com/sign-up",
+        icon: "data:image/png;base64,iVBORw0KGgo=",
+      },
+    });
+  });
+
+  test("reads official website banner settings from the public status response", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              official_website_banner_content: " Join the launch event. ",
+              official_website_banner_enabled: false,
+              official_website_banner_href: " /campaigns/launch ",
+              official_website_banner_icon: " data:image/webp;base64,UklGRg== ",
+            },
+          }),
+        ),
+      )) as typeof fetch;
+
+    await expect(getPublicSiteSettings()).resolves.toEqual({
+      docsUrl: null,
+      googleOneTap: {
+        clientId: null,
+        enabled: false,
+      },
+      promoBanner: {
+        content: "Join the launch event.",
+        enabled: false,
+        href: "/campaigns/launch",
+        icon: "data:image/webp;base64,UklGRg==",
       },
     });
   });
@@ -110,6 +151,13 @@ describe("getDocsUrl", () => {
         googleOneTap: {
           clientId: data.google_client_id?.trim() || null,
           enabled: false,
+        },
+        promoBanner: {
+          content:
+            "Seedance is 15% off for a limited time. Join our Discord to get $5 in free credit.",
+          enabled: true,
+          href: "/models/seedance-api",
+          icon: "/assets/logos/bytedance.svg",
         },
       });
     }

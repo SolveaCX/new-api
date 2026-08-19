@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { SitewideStructuredData } from "@/components/sitewide-structured-data";
 import type { Locale } from "@/lib/locales";
 
 type ShellProps = {
@@ -32,6 +33,7 @@ export function OnlineStaticShell(props: ShellProps) {
         locale={props.locale}
         pathname={props.pathname ?? "/"}
       />
+      <SitewideStructuredData locale={props.locale} pathname={props.pathname ?? "/"} />
       <div className={ONLINE_STATIC_PAGE_CLASS_NAME}>{props.children}</div>
       <SiteFooter locale={props.locale} />
     </>

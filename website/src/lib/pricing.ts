@@ -112,6 +112,7 @@ export type PricingSearch = {
   q?: string;
   vendor?: string;
   endpoint?: string;
+  purpose?: string;
   pricing?: string;
   quota?: string;
 };

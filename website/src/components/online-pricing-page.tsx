@@ -18,20 +18,20 @@ type PlanName = "go" | "pro" | "max";
 
 const plans = [
   {
-    href: subscriptionSignupHref("go"),
     hot: false,
+    id: "go",
     name: "Go",
     price: "$10",
   },
   {
-    href: subscriptionSignupHref("pro"),
     hot: true,
+    id: "pro",
     name: "Pro",
     price: "$30",
   },
   {
-    href: subscriptionSignupHref("max"),
     hot: false,
+    id: "max",
     name: "Max",
     price: "$100",
   },
@@ -81,7 +81,7 @@ export function OnlinePricingPlansSection(props: { locale: Locale }) {
                 <b>{plan.price}</b>
                 <span className="per">{copy.pricing.perMonth}</span>
               </div>
-              <a className={`btn ${plan.hot ? "primary" : "white"} tcta`} href={plan.href}>{planCopy.cta}</a>
+              <a className={`btn ${plan.hot ? "primary" : "white"} tcta`} href={subscriptionSignupHref(plan.id)}>{planCopy.cta}</a>
               <div className="tval">
                 <span className="tglabel">{copy.pricing.textModelsLabel}</span>
                 <div className="tgmain">{planCopy.text}</div>
