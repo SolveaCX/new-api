@@ -87,14 +87,16 @@ type User struct {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:           user.Id,
-		Group:        user.Group,
-		Quota:        user.Quota,
-		Status:       user.Status,
-		Username:     user.Username,
-		Setting:      user.Setting,
-		Email:        user.Email,
-		IsEnterprise: user.IsEnterprise,
+		Id:              user.Id,
+		Group:           user.Group,
+		Quota:           user.Quota,
+		Status:          user.Status,
+		Username:        user.Username,
+		Setting:         user.Setting,
+		Email:           user.Email,
+		IsEnterprise:    user.IsEnterprise,
+		EmailVerifiedAt: user.EmailVerifiedAt,
+		Role:            user.Role,
 	}
 	return cache
 }

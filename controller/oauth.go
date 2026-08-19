@@ -661,6 +661,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if oauthUser.Email != "" {
 		user.Email = oauthUser.Email
 		user.EmailDomain = emailDecision.Domain
+		// The OAuth provider already verified this email address (Google, GitHub,
+		// Discord, ...), so treat the account as verified at creation. This keeps
+		// OAuth users exempt from the "verify email before using tokens" gate
+		// while still blocking unverified password-registered accounts.
+		user.EmailVerifiedAt = common.GetTimestamp()
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled

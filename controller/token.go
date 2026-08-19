@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,34 @@ func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	maskedToken.Key = token.GetMaskedKey()
 	maskedToken.Status = model.GetEffectiveTokenStatus(token, common.GetTimestamp())
 	return &maskedToken
+}
+
+// tokenCreationBlockedByEmailVerification reports whether the current user must
+// verify their email before creating tokens. Enforced only when the system has
+// email verification enabled AND the token_setting.require_email_verification
+// toggle is on. Users without an email address (root, internal accounts) and
+// admin/root roles are exempt. Fail-open: if the user cannot be loaded the
+// request is allowed through rather than locked out.
+func tokenCreationBlockedByEmailVerification(c *gin.Context) bool {
+	if !operation_setting.RequireEmailVerificationForTokens() {
+		return false
+	}
+	id := c.GetInt("id")
+	if id == 0 {
+		return false
+	}
+	if c.GetInt("role") >= common.RoleAdminUser {
+		return false
+	}
+	user, err := model.GetUserCache(id)
+	if err != nil || user == nil {
+		common.SysLog(fmt.Sprintf("token email-verification check: failed to load user %d: %v", id, err))
+		return false
+	}
+	if user.Email == "" || user.EmailVerifiedAt != 0 {
+		return false
+	}
+	return true
 }
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
@@ -297,6 +326,10 @@ func applyInitialTokenDefaults(c *gin.Context, token *model.Token) error {
 }
 
 func AddToken(c *gin.Context) {
+	if tokenCreationBlockedByEmailVerification(c) {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+		return
+	}
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
@@ -342,6 +375,10 @@ func AddToken(c *gin.Context) {
 }
 
 func EnsureInitialToken(c *gin.Context) {
+	if tokenCreationBlockedByEmailVerification(c) {
+		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+		return
+	}
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
