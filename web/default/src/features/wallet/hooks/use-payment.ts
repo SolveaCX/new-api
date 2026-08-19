@@ -30,7 +30,7 @@ import {
   requestStripePayment,
   isApiSuccess,
 } from '../api'
-import type { StripeEmbeddedCheckoutSession } from '../components/dialogs/stripe-embedded-checkout-dialog'
+import type { StripeCheckoutDialogSession } from '../components/dialogs/stripe-checkout-dialog'
 import {
   isStripePayment,
   isPaddlePayment,
@@ -40,6 +40,11 @@ import {
   rememberPaddleCheckoutUrlFallback,
   buildStripePaymentRequest,
 } from '../lib'
+import {
+  normalizeCheckoutUrl,
+  resolveStripeCheckoutOpening,
+  type StripeCheckoutData,
+} from '../lib/stripe-checkout-opening'
 import type {
   ApiResponse,
   PaddlePaymentResponse,
@@ -83,15 +88,6 @@ function navigateToPaymentPage(url: string): void {
   toast.success(i18next.t('Redirecting to payment page...'))
 }
 
-export type StripeCheckoutData = {
-  client_secret?: string
-  publishable_key?: string
-  pay_link?: string
-  checkout_url?: string
-  hosted_invoice_url?: string
-  topup_summary?: StripeTopupSummary
-}
-
 export type StripeCheckoutPresentation = {
   title?: string
   description?: string
@@ -99,19 +95,7 @@ export type StripeCheckoutPresentation = {
   fallbackUrl?: string
 }
 
-export type StripeCheckoutOpenResult = 'embedded' | 'hosted' | null
-
-export type StripeCheckoutOpening =
-  | {
-      kind: 'embedded'
-      clientSecret: string
-      publishableKey: string
-      fallbackUrl?: string
-    }
-  | {
-      kind: 'hosted'
-      url: string
-    }
+export type StripeCheckoutOpenResult = 'elements' | 'hosted' | null
 
 function getStripeRedirectUrls(): { success_url: string; cancel_url: string } {
   return {
@@ -119,65 +103,6 @@ function getStripeRedirectUrls(): { success_url: string; cancel_url: string } {
       .href,
     cancel_url: new URL('/wallet', window.location.origin).href,
   }
-}
-
-function normalizeCheckoutUrl(url: string | undefined): string | undefined {
-  if (!url) {
-    return undefined
-  }
-
-  const normalizedUrl = url.trim()
-  const isAbsoluteHttpUrl = /^https?:\/\//i.test(normalizedUrl)
-  const isRootRelativeUrl =
-    normalizedUrl.startsWith('/') && !normalizedUrl.startsWith('//')
-  if (!isAbsoluteHttpUrl && !isRootRelativeUrl) {
-    return undefined
-  }
-
-  if (isRootRelativeUrl && typeof window === 'undefined') {
-    return undefined
-  }
-
-  try {
-    const parsedUrl = new URL(
-      normalizedUrl,
-      typeof window === 'undefined' ? undefined : window.location.origin
-    )
-    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
-      return parsedUrl.href
-    }
-  } catch (_error) {
-    return undefined
-  }
-
-  return undefined
-}
-
-export function resolveStripeCheckoutOpening(
-  data: StripeCheckoutData | null | undefined
-): StripeCheckoutOpening | null {
-  const fallbackUrl =
-    normalizeCheckoutUrl(data?.pay_link) ??
-    normalizeCheckoutUrl(data?.checkout_url) ??
-    normalizeCheckoutUrl(data?.hosted_invoice_url)
-
-  if (data?.client_secret && data.publishable_key) {
-    return {
-      kind: 'embedded',
-      clientSecret: data.client_secret,
-      publishableKey: data.publishable_key,
-      ...(fallbackUrl ? { fallbackUrl } : {}),
-    }
-  }
-
-  if (fallbackUrl) {
-    return {
-      kind: 'hosted',
-      url: fallbackUrl,
-    }
-  }
-
-  return null
 }
 
 function getPaddleCheckoutUrl(response: PaddlePaymentResponse): string | null {
@@ -215,11 +140,11 @@ export function usePayment() {
   const [amount, setAmount] = useState<number>(0)
   const [calculating, setCalculating] = useState(false)
   const [processing, setProcessing] = useState(false)
-  const [embeddedCheckout, setEmbeddedCheckout] =
-    useState<StripeEmbeddedCheckoutSession | null>(null)
+  const [checkoutDialog, setCheckoutDialog] =
+    useState<StripeCheckoutDialogSession | null>(null)
 
-  const closeEmbeddedCheckout = useCallback(() => {
-    setEmbeddedCheckout(null)
+  const closeCheckoutDialog = useCallback(() => {
+    setCheckoutDialog(null)
   }, [])
 
   const openStripeCheckout = useCallback(
@@ -228,8 +153,8 @@ export function usePayment() {
       presentation?: StripeCheckoutPresentation
     ): StripeCheckoutOpenResult => {
       const opening = resolveStripeCheckoutOpening(data)
-      if (opening?.kind === 'embedded') {
-        setEmbeddedCheckout({
+      if (opening?.kind === 'elements') {
+        setCheckoutDialog({
           clientSecret: opening.clientSecret,
           publishableKey: opening.publishableKey,
           summary: presentation?.summary ?? data?.topup_summary ?? null,
@@ -239,7 +164,7 @@ export function usePayment() {
             normalizeCheckoutUrl(presentation?.fallbackUrl) ??
             opening.fallbackUrl,
         })
-        return 'embedded'
+        return 'elements'
       }
       if (opening?.kind === 'hosted') {
         navigateToPaymentPage(opening.url)
@@ -318,7 +243,7 @@ export function usePayment() {
           redirectUrls: getStripeRedirectUrls(),
           invoiceRequested: options?.invoiceRequested,
           invoiceProfile: options?.invoiceProfile,
-          preferEmbeddedCheckout: options?.preferEmbeddedCheckout,
+          preferElementsCheckout: options?.preferElementsCheckout,
           recallClaim: isStripe ? options?.recallClaim : undefined,
         })
 
@@ -392,8 +317,8 @@ export function usePayment() {
     amount,
     calculating,
     processing,
-    embeddedCheckout,
-    closeEmbeddedCheckout,
+    checkoutDialog,
+    closeCheckoutDialog,
     openStripeCheckout,
     openStripeCheckoutResponse,
     calculatePaymentAmount,

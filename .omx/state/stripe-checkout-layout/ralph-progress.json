@@ -1,0 +1,33 @@
+{
+  "score": 93,
+  "verdict": "pass",
+  "category_match": true,
+  "differences": [
+    {
+      "severity": "low",
+      "area": "desktop vertical position",
+      "detail": "The implementation is vertically centered slightly lower than the reference."
+    },
+    {
+      "severity": "low",
+      "area": "background tone",
+      "detail": "The implementation background is slightly cooler than the reference wash."
+    },
+    {
+      "severity": "low",
+      "area": "mobile page height usage",
+      "detail": "Dynamic Stripe fields make the implementation end slightly higher on mobile."
+    },
+    {
+      "severity": "low",
+      "area": "payment method card height",
+      "detail": "The Payment Element card height varies with Stripe's selected payment method."
+    }
+  ],
+  "suggestions": [
+    "Optionally nudge the desktop checkout shell upward.",
+    "Optionally tune the outer background toward the reference blue-gray.",
+    "Optionally reserve more Payment Element height when a stable visual weight is preferred."
+  ],
+  "reasoning": "The approved 1120px shell, desktop columns, responsive stacking, amount hierarchy, blue CTA, rounded surfaces, dividers, close control, and Stripe footer match the reference. Localized copy and Stripe-rendered payment fields are dynamic and were excluded from the visual mismatch score."
+}

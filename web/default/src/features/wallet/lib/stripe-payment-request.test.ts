@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { resolveStripeCheckoutOpening } from './stripe-checkout-opening'
 import { buildStripePaymentRequest } from './stripe-payment-request'
-import { resolveStripeCheckoutOpening } from '../hooks/use-payment'
 
 const redirectUrls = {
   success_url: 'https://app.example.com/wallet?show_history=true',
@@ -27,6 +27,16 @@ const redirectUrls = {
 }
 
 describe('buildStripePaymentRequest', () => {
+  test('requests Checkout Elements when the in-console checkout is preferred', () => {
+    const request = buildStripePaymentRequest({
+      amount: 20,
+      redirectUrls,
+      preferElementsCheckout: true,
+    })
+
+    expect(request.ui_mode).toBe('elements')
+  })
+
   test('sends USD as the default Stripe checkout currency', () => {
     const request = buildStripePaymentRequest({
       amount: 20,
@@ -85,7 +95,22 @@ describe('buildStripePaymentRequest', () => {
 })
 
 describe('resolveStripeCheckoutOpening', () => {
-  test('prefers embedded client secret before hosted URLs', () => {
+  test('uses an explicit safe fallback URL for an Elements session', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_fallback',
+        publishable_key: 'pk_test_fallback',
+        fallback_url: 'https://checkout.example.com/fallback',
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_fallback',
+      publishableKey: 'pk_test_fallback',
+      fallbackUrl: 'https://checkout.example.com/fallback',
+    })
+  })
+
+  test('does not infer an Elements fallback from legacy hosted fields', () => {
     expect(
       resolveStripeCheckoutOpening({
         client_secret: 'cs_test_1',
@@ -93,10 +118,9 @@ describe('resolveStripeCheckoutOpening', () => {
         pay_link: 'https://pay.example.com/hosted',
       })
     ).toEqual({
-      kind: 'embedded',
+      kind: 'elements',
       clientSecret: 'cs_test_1',
       publishableKey: 'pk_test_1',
-      fallbackUrl: 'https://pay.example.com/hosted',
     })
   })
 

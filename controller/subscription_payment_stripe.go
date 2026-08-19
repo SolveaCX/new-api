@@ -25,6 +25,7 @@ import (
 
 type SubscriptionStripePayRequest struct {
 	PlanId      int    `json:"plan_id"`
+	UIMode      string `json:"ui_mode,omitempty"`
 	RecallClaim string `json:"recall_claim,omitempty"`
 	RequestId   string `json:"request_id"`
 	GAClientID  string `json:"ga_client_id,omitempty"`
@@ -55,6 +56,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		PaymentChoice: service.SubscriptionPaymentChoiceStripeRecurring,
 		Months:        1,
 		RequestID:     requestID,
+		UIMode:        strings.TrimSpace(req.UIMode),
 		RecallClaim:   strings.TrimSpace(req.RecallClaim),
 		GAClientID:    gaClientID,
 		GASessionID:   gaSessionID,
@@ -65,9 +67,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	} else if found {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "success",
-			"data": gin.H{
-				"pay_link": replay.CheckoutURL,
-			},
+			"data":    subscriptionStripePayResponseData(replay),
 		})
 		return
 	}
@@ -130,10 +130,24 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
-		"data": gin.H{
-			"pay_link": result.CheckoutURL,
-		},
+		"data":    subscriptionStripePayResponseData(result),
 	})
+}
+
+func subscriptionStripePayResponseData(result *service.PurchaseSubscriptionResult) gin.H {
+	data := gin.H{}
+	if result == nil {
+		return data
+	}
+	if secret := strings.TrimSpace(result.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
+		data["client_secret"] = secret
+		data["publishable_key"] = strings.TrimSpace(setting.StripePublishableKey)
+		return data
+	}
+	if checkoutURL := strings.TrimSpace(result.CheckoutURL); checkoutURL != "" {
+		data["pay_link"] = checkoutURL
+	}
+	return data
 }
 
 func applySubscriptionCheckoutDiscountSelection(order *model.SubscriptionOrder, plan *model.SubscriptionPlan, recall *service.RecallCheckoutDiscount) error {
@@ -209,6 +223,7 @@ func requestStripeRecurringSubscriptionViaPurchasePath(userID int, plan *model.S
 		PaymentChoice: service.SubscriptionPaymentChoiceStripeRecurring,
 		Months:        1,
 		RequestID:     requestID,
+		UIMode:        strings.TrimSpace(req.UIMode),
 		RecallClaim:   req.RecallClaim,
 		GAClientID:    service.NormalizeGAIdentifier(req.GAClientID),
 		GASessionID:   service.NormalizeGAIdentifier(req.GASessionID),
@@ -356,9 +371,9 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 	if created == nil || strings.TrimSpace(created.ID) == "" {
 		return nil, errors.New("Stripe checkout session missing id")
 	}
-	if presentation.Embedded {
+	if presentation.UsesClientSecret() {
 		if strings.TrimSpace(created.ClientSecret) == "" {
-			return nil, errors.New("Stripe embedded checkout session missing client secret")
+			return nil, errors.New("Stripe client checkout session missing client secret")
 		}
 	} else if strings.TrimSpace(created.URL) == "" {
 		return nil, errors.New("Stripe checkout session missing url")

@@ -16,13 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// ============================================================================
-// Wallet Library Exports
-// ============================================================================
+interface StripeCheckoutMountFailureActions {
+  fallbackUrl?: string
+  navigate: (url: string) => void
+  notifyFailure: () => void
+  close: () => void
+}
 
-export * from './format'
-export * from './payment'
-export * from './stripe-currency'
-export * from './stripe-checkout-opening'
-export * from './stripe-payment-request'
-export * from './ui'
+export function recoverStripeCheckoutMountFailure({
+  fallbackUrl,
+  navigate,
+  notifyFailure,
+  close,
+}: StripeCheckoutMountFailureActions): 'hosted' | 'closed' {
+  if (fallbackUrl) {
+    navigate(fallbackUrl)
+    return 'hosted'
+  }
+
+  notifyFailure()
+  close()
+  return 'closed'
+}

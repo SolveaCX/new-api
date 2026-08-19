@@ -61,8 +61,8 @@ type StripePayRequest struct {
 	InvoiceRequested bool `json:"invoice_requested,omitempty"`
 	// InvoiceProfile is snapshotted to the local order when InvoiceRequested is true.
 	InvoiceProfile *model.InvoiceProfileFields `json:"invoice_profile,omitempty"`
-	// UIMode selects the Checkout presentation. "embedded" renders Checkout inside the
-	// console on our own domain (requires StripePublishableKey to be configured);
+	// UIMode selects the Checkout presentation. "elements" lets the console render
+	// Checkout Elements on our own domain. Legacy "embedded" remains supported;
 	// anything else keeps the hosted checkout.stripe.com redirect.
 	UIMode string `json:"ui_mode,omitempty"`
 	// SaveCard, when true (onboarding promo top-ups), saves the card during payment via
@@ -505,12 +505,11 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		checkoutCustomerId = customerId
 	}
 
-	// Embedded mode needs the publishable key on the client to mount Checkout; without
-	// it configured we silently keep the hosted redirect so payment never breaks.
-	embedded := strings.EqualFold(strings.TrimSpace(req.UIMode), "embedded") &&
-		strings.TrimSpace(setting.StripePublishableKey) != ""
+	// Client-rendered modes need the publishable key. ResolveStripeCheckoutPresentation
+	// silently falls back to hosted Checkout when the key is unavailable.
+	presentation := service.ResolveStripeCheckoutPresentation(req.UIMode)
 
-	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, embedded, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), recallDiscount)
+	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, presentation, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), recallDiscount)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusFailed)
@@ -536,7 +535,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		}
 	}
 
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Stripe 充值订单创建成功 user_id=%d trade_no=%s amount=%d normalized_amount=%d money=%.2f currency=%s embedded=%t", id, referenceId, req.Amount, normalizedAmount, checkout.Money, checkout.PaymentCurrency, embedded))
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Stripe 充值订单创建成功 user_id=%d trade_no=%s amount=%d normalized_amount=%d money=%.2f currency=%s ui_mode=%s client_secret=%t", id, referenceId, req.Amount, normalizedAmount, checkout.Money, checkout.PaymentCurrency, presentation.RequestedUIMode, presentation.UsesClientSecret()))
 
 	failMissingPayload := func(what string) {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe Checkout Session 缺少%s user_id=%d trade_no=%s", what, id, referenceId))
@@ -547,12 +546,12 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 	}
 
-	if embedded {
+	if presentation.UsesClientSecret() {
 		if checkoutSession == nil || strings.TrimSpace(checkoutSession.ClientSecret) == "" {
 			failMissingPayload("client secret")
 			return
 		}
-		// The embedded dialog renders its own bonus banner above the Stripe form.
+		// The in-console dialog renders its own bonus summary beside the Stripe form.
 		// Amounts are trustworthy only in USD display mode (token display amounts are
 		// huge and unreadable in a headline), mirroring stripeCheckoutSubmitMessage.
 		c.JSON(http.StatusOK, gin.H{
@@ -2595,7 +2594,7 @@ func ensureStripeCustomerTaxID(ctx context.Context, customerId string, fields mo
 //   - cancelURL: custom URL to redirect when payment is canceled (empty for default)
 //
 // Returns the checkout session URL or an error if the session creation fails.
-func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSession, error) {
+func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, fmt.Errorf("无效的Stripe API密钥")
 	}
@@ -2613,7 +2612,7 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 		cancelURL = consolePaymentReturnPath("/console/topup")
 	}
 
-	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, embedded, submitMessage, recall)
+	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, recall)
 	params.SetIdempotencyKey("topup-stripe:" + strings.TrimSpace(referenceId))
 
 	result, err := session.New(params)
@@ -2723,7 +2722,7 @@ func stripeCheckoutSubmitMessage(amount int64, bonusAmount int64) string {
 	return fmt.Sprintf("$%d in credits will be added to your account immediately after payment.", amount)
 }
 
-func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, embedded bool, submitMessage string, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
+func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
@@ -2741,11 +2740,11 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 		}
 	}
 
-	if embedded {
-		// Embedded sessions reject success_url/cancel_url. return_url is still required
+	if uiMode, ok := presentation.SessionUIMode(); ok {
+		// Client-rendered sessions reject success_url/cancel_url. return_url is still required
 		// because redirect-based payment methods (Alipay, WeChat Pay, Pix...) leave the
 		// page and need somewhere to land; the success URL is the natural target.
-		params.UIMode = stripe.String(string(stripe.CheckoutSessionUIModeEmbeddedPage))
+		params.UIMode = stripe.String(string(uiMode))
 		// Carry the Stripe session id and our trade_no back so the frontend can
 		// locate this Checkout Session / order and recover status when a
 		// redirect-based method returns to the page. {CHECKOUT_SESSION_ID} is

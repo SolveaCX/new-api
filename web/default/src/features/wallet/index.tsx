@@ -42,7 +42,7 @@ import { getCardStatus } from '@/features/onboarding/api'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import { getPaddleTopUpStatus, isApiSuccess, resumeStripeTopup } from './api'
 import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog'
-import { StripeEmbeddedCheckoutDialog } from './components/dialogs/stripe-embedded-checkout-dialog'
+import { StripeCheckoutDialog } from './components/dialogs/stripe-checkout-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import {
@@ -198,8 +198,8 @@ export function Wallet(props: WalletProps) {
   const {
     processing,
     processPayment,
-    embeddedCheckout,
-    closeEmbeddedCheckout,
+    checkoutDialog,
+    closeCheckoutDialog,
     openStripeCheckout,
     openStripeCheckoutResponse,
   } = usePayment()
@@ -777,7 +777,7 @@ export function Wallet(props: WalletProps) {
 
       const success = await processPayment(preset.value, 'stripe', {
         stripeCurrency: checkoutCurrency,
-        preferEmbeddedCheckout: true,
+        preferElementsCheckout: true,
         recallClaim: validatedRecallClaim,
       })
       if (success) {
@@ -789,15 +789,15 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Stable so the embedded Stripe Checkout effect (which depends on this
+  // Stable so the Checkout Elements effect (which depends on this
   // callback) does not re-run and remount the form on every wallet re-render.
-  const handleEmbeddedCheckoutOpenChange = useCallback(
+  const handleCheckoutDialogOpenChange = useCallback(
     (open: boolean) => {
       if (!open) {
-        closeEmbeddedCheckout()
+        closeCheckoutDialog()
       }
     },
-    [closeEmbeddedCheckout]
+    [closeCheckoutDialog]
   )
 
   let recallDiscountLabel = ''
@@ -989,9 +989,9 @@ export function Wallet(props: WalletProps) {
         </DialogContent>
       </Dialog>
 
-      <StripeEmbeddedCheckoutDialog
-        session={embeddedCheckout}
-        onOpenChange={handleEmbeddedCheckoutOpenChange}
+      <StripeCheckoutDialog
+        session={checkoutDialog}
+        onOpenChange={handleCheckoutDialogOpenChange}
       />
 
       <Dialog open={cardBoundDialogOpen} onOpenChange={setCardBoundDialogOpen}>

@@ -46,9 +46,14 @@ import { Separator } from '@/components/ui/separator'
 import { Dialog } from '@/components/dialog'
 import { GroupBadge } from '@/components/group-badge'
 import {
+  StripeCheckoutDialog,
+  type StripeCheckoutDialogSession,
+} from '@/features/wallet/components/dialogs/stripe-checkout-dialog'
+import {
   isRecallPriceEligible,
   validateRecallClaim,
 } from '@/features/wallet/lib/recall-claim'
+import { resolveStripeCheckoutOpening } from '@/features/wallet/lib/stripe-checkout-opening'
 import type { RecallClaimView, RecallOfferView } from '@/features/wallet/types'
 import {
   paySubscriptionStripe,
@@ -136,6 +141,8 @@ export function SubscriptionPurchaseDialog(props: Props) {
   const { t } = useTranslation()
   const { currency } = useSystemConfig()
   const [paying, setPaying] = useState(false)
+  const [stripeCheckoutSession, setStripeCheckoutSession] =
+    useState<StripeCheckoutDialogSession | null>(null)
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('')
   const purchaseRequestIdsRef = useRef<Record<string, string>>({})
   const recallClaim = useRecallClaimContext()
@@ -153,6 +160,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
     } else if (!props.open) {
       purchaseRequestIdsRef.current = {}
       queueMicrotask(() => setSelectedEpayMethod(''))
+      queueMicrotask(() => setStripeCheckoutSession(null))
     }
   }, [props.open, props.epayMethods])
 
@@ -235,12 +243,26 @@ export function SubscriptionPurchaseDialog(props: Props) {
       const res = await paySubscriptionStripe({
         plan_id: plan.id,
         request_id: getStablePurchaseRequestId(requestScope),
+        ui_mode: 'elements',
         ...(validatedRecallClaim ? { recall_claim: validatedRecallClaim } : {}),
         ...getGAMeasurementIdentifiers(),
       })
-      if (res.message === 'success' && res.data?.pay_link) {
-        window.open(res.data.pay_link, '_blank')
-        toast.success(t('Payment page opened'))
+      const opening =
+        res.message === 'success'
+          ? resolveStripeCheckoutOpening(res.data)
+          : null
+      if (opening?.kind === 'elements') {
+        setStripeCheckoutSession({
+          clientSecret: opening.clientSecret,
+          publishableKey: opening.publishableKey,
+          fallbackUrl: opening.fallbackUrl,
+          summary: null,
+          title: t('Confirm Payment'),
+          description: plan.title,
+        })
+      } else if (opening?.kind === 'hosted') {
+        window.location.assign(opening.url)
+        toast.success(t('Redirecting to payment page...'))
         props.onOpenChange(false)
       } else {
         toast.error(
@@ -393,210 +415,225 @@ export function SubscriptionPurchaseDialog(props: Props) {
   }
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={props.onOpenChange}
-      title={
-        <>
-          <Crown className='h-5 w-5' />
-          {t('Purchase Subscription')}
-        </>
-      }
-      contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
-      titleClassName='flex items-center gap-2'
-      contentHeight='auto'
-      bodyClassName='space-y-4'
-    >
-      <div className='space-y-3 sm:space-y-4'>
-        <div className='bg-muted/50 space-y-2.5 rounded-lg border p-3 sm:space-y-3 sm:p-4'>
-          <div className='flex justify-between'>
-            <span className='text-muted-foreground text-sm'>
-              {t('Plan Name')}
-            </span>
-            <span className='max-w-[200px] truncate text-sm font-medium'>
-              {plan.title}
-            </span>
-          </div>
-          <div className='flex items-center justify-between'>
-            <span className='text-muted-foreground text-sm'>
-              {t('Validity Period')}
-            </span>
-            <span className='flex items-center gap-1 text-sm'>
-              <CalendarClock className='h-3.5 w-3.5' />
-              {formatDuration(plan, t)}
-            </span>
-          </div>
-          {formatResetPeriod(plan, t) !== t('No Reset') && (
+    <>
+      <Dialog
+        open={props.open && !stripeCheckoutSession}
+        onOpenChange={props.onOpenChange}
+        title={
+          <>
+            <Crown className='h-5 w-5' />
+            {t('Purchase Subscription')}
+          </>
+        }
+        contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-md'
+        titleClassName='flex items-center gap-2'
+        contentHeight='auto'
+        bodyClassName='space-y-4'
+      >
+        <div className='space-y-3 sm:space-y-4'>
+          <div className='bg-muted/50 space-y-2.5 rounded-lg border p-3 sm:space-y-3 sm:p-4'>
             <div className='flex justify-between'>
               <span className='text-muted-foreground text-sm'>
-                {t('Reset Period')}
+                {t('Plan Name')}
               </span>
-              <span className='text-sm'>{formatResetPeriod(plan, t)}</span>
-            </div>
-          )}
-          {/* Plan quota is an estimated max usage value, not a wallet top-up —
-              mirror the plan card's two-category framing. */}
-          <div className='flex items-center justify-between'>
-            <span className='text-muted-foreground text-sm'>
-              {t('Text models')}
-            </span>
-            <span className='flex items-center gap-1 text-sm'>
-              <Package className='h-3.5 w-3.5' />
-              {totalAmount > 0
-                ? t('Up to {{value}} in model usage', {
-                    value: formatQuota(totalAmount),
-                  })
-                : t('Unlimited')}
-            </span>
-          </div>
-          {Number(plan.media_credits_monthly || 0) > 0 && (
-            <div className='flex items-start justify-between gap-3'>
-              <span className='text-muted-foreground text-sm'>
-                {t('Image & video models')}
-              </span>
-              <span className='text-right text-sm'>
-                {t('{{count}} media credits / month', {
-                  count: Number(plan.media_credits_monthly || 0),
-                })}
-                <span className='text-muted-foreground block text-xs'>
-                  {formatMediaValue(Number(plan.media_credits_monthly || 0), t)}
-                </span>
+              <span className='max-w-[200px] truncate text-sm font-medium'>
+                {plan.title}
               </span>
             </div>
-          )}
-          {plan.upgrade_group && (
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-sm'>
-                {t('Upgrade Group')}
+                {t('Validity Period')}
               </span>
-              <GroupBadge group={plan.upgrade_group} />
+              <span className='flex items-center gap-1 text-sm'>
+                <CalendarClock className='h-3.5 w-3.5' />
+                {formatDuration(plan, t)}
+              </span>
             </div>
-          )}
-          <Separator />
-          <div className='flex items-center justify-between'>
-            <span className='text-sm font-medium'>{t('Amount Due')}</span>
-            <span className='text-primary text-lg font-bold'>${price}</span>
+            {formatResetPeriod(plan, t) !== t('No Reset') && (
+              <div className='flex justify-between'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Reset Period')}
+                </span>
+                <span className='text-sm'>{formatResetPeriod(plan, t)}</span>
+              </div>
+            )}
+            {/* Plan quota is an estimated max usage value, not a wallet top-up —
+              mirror the plan card's two-category framing. */}
+            <div className='flex items-center justify-between'>
+              <span className='text-muted-foreground text-sm'>
+                {t('Text models')}
+              </span>
+              <span className='flex items-center gap-1 text-sm'>
+                <Package className='h-3.5 w-3.5' />
+                {totalAmount > 0
+                  ? t('Up to {{value}} in model usage', {
+                      value: formatQuota(totalAmount),
+                    })
+                  : t('Unlimited')}
+              </span>
+            </div>
+            {Number(plan.media_credits_monthly || 0) > 0 && (
+              <div className='flex items-start justify-between gap-3'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Image & video models')}
+                </span>
+                <span className='text-right text-sm'>
+                  {t('{{count}} media credits / month', {
+                    count: Number(plan.media_credits_monthly || 0),
+                  })}
+                  <span className='text-muted-foreground block text-xs'>
+                    {formatMediaValue(
+                      Number(plan.media_credits_monthly || 0),
+                      t
+                    )}
+                  </span>
+                </span>
+              </div>
+            )}
+            {plan.upgrade_group && (
+              <div className='flex items-center justify-between'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Upgrade Group')}
+                </span>
+                <GroupBadge group={plan.upgrade_group} />
+              </div>
+            )}
+            <Separator />
+            <div className='flex items-center justify-between'>
+              <span className='text-sm font-medium'>{t('Amount Due')}</span>
+              <span className='text-primary text-lg font-bold'>${price}</span>
+            </div>
           </div>
-        </div>
 
-        {limitReached && (
-          <Alert variant='destructive'>
-            <AlertDescription>
-              {t('Purchase limit reached')} ({props.purchaseCount}/
-              {props.purchaseLimit})
-            </AlertDescription>
-          </Alert>
-        )}
+          {limitReached && (
+            <Alert variant='destructive'>
+              <AlertDescription>
+                {t('Purchase limit reached')} ({props.purchaseCount}/
+                {props.purchaseLimit})
+              </AlertDescription>
+            </Alert>
+          )}
 
-        {recallClaim.offers.length > 0 && (
-          <Alert>
-            <AlertDescription>
-              {recallPlanEligible
-                ? t(
-                    'Your recall offer applies to this plan only when you pay with Stripe. Other payment methods will not use the discount.'
-                  )
-                : t(
-                    'This plan is not eligible for your recall offer. Choose an eligible Stripe plan to use the discount.'
-                  )}
-            </AlertDescription>
-          </Alert>
-        )}
+          {recallClaim.offers.length > 0 && (
+            <Alert>
+              <AlertDescription>
+                {recallPlanEligible
+                  ? t(
+                      'Your recall offer applies to this plan only when you pay with Stripe. Other payment methods will not use the discount.'
+                    )
+                  : t(
+                      'This plan is not eligible for your recall offer. Choose an eligible Stripe plan to use the discount.'
+                    )}
+              </AlertDescription>
+            </Alert>
+          )}
 
-        {/* Card payment is the primary path; balance redemption only surfaces
+          {/* Card payment is the primary path; balance redemption only surfaces
             as a secondary option when the wallet can actually cover the plan. */}
-        {hasStripe && (
-          <Button
-            className='w-full'
-            size='lg'
-            onClick={handlePayStripe}
-            disabled={paying || limitReached}
-          >
-            {t('Pay with card (Stripe)')}
-          </Button>
-        )}
-
-        {allowBalancePay && !insufficientBalance && (
-          <div className='flex flex-col gap-2 rounded-md border p-3'>
-            <div className='flex items-center justify-between gap-2 text-xs'>
-              <span className='text-muted-foreground'>{t('Available')}</span>
-              <span>{formatQuota(userQuota)}</span>
-            </div>
+          {hasStripe && (
             <Button
-              variant='outline'
-              onClick={handlePayBalance}
+              className='w-full'
+              size='lg'
+              onClick={handlePayStripe}
               disabled={paying || limitReached}
             >
-              {t('Pay with Balance')}
+              {t('Pay with card (Stripe)')}
             </Button>
-          </div>
-        )}
+          )}
 
-        {hasAnyPayment && (hasCreem || hasWaffoPancake || hasEpay) && (
-          <div className='space-y-3'>
-            <p className='text-muted-foreground text-xs'>
-              {t('Select payment method')}
-            </p>
-            {(hasCreem || hasWaffoPancake) && (
-              <div className='grid grid-cols-2 gap-2 sm:flex'>
-                {hasCreem && (
-                  <Button
-                    variant='outline'
-                    className='flex-1'
-                    onClick={handlePayCreem}
-                    disabled={paying || limitReached}
-                  >
-                    Creem
-                  </Button>
-                )}
-                {hasWaffoPancake && (
-                  <Button
-                    variant='outline'
-                    className='flex-1'
-                    onClick={handlePayWaffoPancake}
-                    disabled={paying || limitReached}
-                  >
-                    Waffo Pancake
-                  </Button>
-                )}
+          {allowBalancePay && !insufficientBalance && (
+            <div className='flex flex-col gap-2 rounded-md border p-3'>
+              <div className='flex items-center justify-between gap-2 text-xs'>
+                <span className='text-muted-foreground'>{t('Available')}</span>
+                <span>{formatQuota(userQuota)}</span>
               </div>
-            )}
-            {hasEpay && (
-              <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
-                <Select
-                  items={[
-                    ...epayMethods.map((m) => ({
-                      value: m.type,
-                      label: m.name || m.type,
-                    })),
-                  ]}
-                  value={selectedEpayMethodValue}
-                  onValueChange={(v) => v !== null && setSelectedEpayMethod(v)}
-                  disabled={limitReached}
-                >
-                  <SelectTrigger className='flex-1'>
-                    <SelectValue>{selectedEpayMethodLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {epayMethods.map((m) => (
-                        <SelectItem key={m.type} value={m.type}>
-                          {m.name || m.type}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <Button
-                  onClick={handlePayEpay}
-                  disabled={paying || !selectedEpayMethodValue || limitReached}
-                >
-                  {t('Pay')}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </Dialog>
+              <Button
+                variant='outline'
+                onClick={handlePayBalance}
+                disabled={paying || limitReached}
+              >
+                {t('Pay with Balance')}
+              </Button>
+            </div>
+          )}
+
+          {hasAnyPayment && (hasCreem || hasWaffoPancake || hasEpay) && (
+            <div className='space-y-3'>
+              <p className='text-muted-foreground text-xs'>
+                {t('Select payment method')}
+              </p>
+              {(hasCreem || hasWaffoPancake) && (
+                <div className='grid grid-cols-2 gap-2 sm:flex'>
+                  {hasCreem && (
+                    <Button
+                      variant='outline'
+                      className='flex-1'
+                      onClick={handlePayCreem}
+                      disabled={paying || limitReached}
+                    >
+                      Creem
+                    </Button>
+                  )}
+                  {hasWaffoPancake && (
+                    <Button
+                      variant='outline'
+                      className='flex-1'
+                      onClick={handlePayWaffoPancake}
+                      disabled={paying || limitReached}
+                    >
+                      Waffo Pancake
+                    </Button>
+                  )}
+                </div>
+              )}
+              {hasEpay && (
+                <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+                  <Select
+                    items={[
+                      ...epayMethods.map((m) => ({
+                        value: m.type,
+                        label: m.name || m.type,
+                      })),
+                    ]}
+                    value={selectedEpayMethodValue}
+                    onValueChange={(v) =>
+                      v !== null && setSelectedEpayMethod(v)
+                    }
+                    disabled={limitReached}
+                  >
+                    <SelectTrigger className='flex-1'>
+                      <SelectValue>{selectedEpayMethodLabel}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {epayMethods.map((m) => (
+                          <SelectItem key={m.type} value={m.type}>
+                            {m.name || m.type}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={handlePayEpay}
+                    disabled={
+                      paying || !selectedEpayMethodValue || limitReached
+                    }
+                  >
+                    {t('Pay')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Dialog>
+      <StripeCheckoutDialog
+        session={stripeCheckoutSession}
+        onOpenChange={(open) => {
+          if (!open) setStripeCheckoutSession(null)
+        }}
+      />
+    </>
   )
 }

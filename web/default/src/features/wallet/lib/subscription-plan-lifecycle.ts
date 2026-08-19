@@ -387,7 +387,7 @@ export function buildFlexiblePurchaseRequest(args: {
     ...(args.orderId ? { order_id: args.orderId } : {}),
     ...(args.recallClaim ? { recall_claim: args.recallClaim } : {}),
     ...(args.paymentChoice !== 'balance'
-      ? { ui_mode: 'embedded' as const }
+      ? { ui_mode: 'elements' as const }
       : {}),
   }
 }
