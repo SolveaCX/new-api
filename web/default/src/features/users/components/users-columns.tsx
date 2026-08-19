@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { INTERFACE_LANGUAGE_OPTIONS } from '@/i18n/languages'
 import { getPreferredUserLanguage } from '@/i18n/user-language-preference'
 import { formatQuota, formatTimestamp } from '@/lib/format'
+import { countryLabel } from '@/lib/country'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -65,7 +66,7 @@ const LANGUAGE_LABELS = new Map<string, string>(
 )
 
 export function useUsersColumns(): ColumnDef<User>[] {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return [
     {
       id: 'select',
@@ -165,8 +166,18 @@ export function useUsersColumns(): ColumnDef<User>[] {
       ),
       cell: ({ row }) => {
         const ip = row.getValue('ip') as string
+        const country = row.original.ip_country
         return ip ? (
-          <span className='text-muted-foreground text-sm tabular-nums'>{ip}</span>
+          <div className='flex flex-col gap-0.5'>
+            <span className='text-muted-foreground text-sm tabular-nums'>
+              {ip}
+            </span>
+            {country && (
+              <span className='text-muted-foreground text-xs'>
+                {countryLabel(country, i18n.language)}
+              </span>
+            )}
+          </div>
         ) : (
           <span className='text-muted-foreground text-sm'>-</span>
         )

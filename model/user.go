@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/phuslu/iploc"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -71,6 +73,10 @@ type User struct {
 	// user. It is not persisted on the user row — FillPaidAmounts aggregates it
 	// from the top_ups table when listing users (admin console only).
 	PaidAmount float64 `json:"paid_amount,omitempty" gorm:"-"`
+	// IPCountry is the ISO country code resolved from the user's registration
+	// (or last-login) IP. Not persisted — FillIPCountries resolves it at list
+	// time via the embedded iploc database (admin console only).
+	IPCountry string `json:"ip_country,omitempty" gorm:"-"`
 	// SetEmailVerified is a control field for the admin UpdateUser endpoint.
 	// When non-nil it overrides EmailVerifiedAt (true → now, false → 0); when
 	// nil the existing value is left untouched. Never persisted.
@@ -265,6 +271,7 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 	if err := FillPaidAmounts(users); err != nil {
 		common.SysError("failed to fill paid amounts for user list: " + err.Error())
 	}
+	FillIPCountries(users)
 
 	return users, total, nil
 }
@@ -432,6 +439,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 	if err := FillPaidAmounts(users); err != nil {
 		common.SysError("failed to fill paid amounts for user search: " + err.Error())
 	}
+	FillIPCountries(users)
 
 	return users, total, nil
 }
@@ -467,6 +475,35 @@ func FillPaidAmounts(users []*User) error {
 		u.PaidAmount = totals[u.Id]
 	}
 	return nil
+}
+
+// FillIPCountries resolves each user's IP to an ISO country code using the
+// embedded iploc database (offline, no network). Prefers the registration IP
+// and falls back to the last-login IP. Private/unknown addresses leave the
+// field empty. Read-only; safe under multi-node.
+func FillIPCountries(users []*User) {
+	for _, u := range users {
+		ip := u.RegistrationIP
+		if ip == "" {
+			ip = u.LastLoginIp
+		}
+		u.IPCountry = resolveIPCountry(ip)
+	}
+}
+
+func resolveIPCountry(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ""
+	}
+	country := iploc.IPCountry(addr)
+	if country == "" || country == "ZZ" {
+		return ""
+	}
+	return country
 }
 
 func applyUserLanguageFilter(query *gorm.DB, language string) *gorm.DB {

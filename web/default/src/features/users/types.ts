@@ -59,6 +59,7 @@ export const userSchema = z.object({
   last_login_at: z.number().optional(),
   registration_ip: z.string().optional(),
   last_login_ip: z.string().optional(),
+  ip_country: z.string().optional(),
   email_verified_at: z.number().optional(),
   paid_amount: z.number().optional(),
   DeletedAt: z.any().nullable().optional(),
