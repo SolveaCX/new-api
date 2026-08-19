@@ -6667,6 +6667,8 @@
     "Purpose": "用途",
     "Redeem credits": "兑换额度",
     "Too late — all codes have already been claimed": "来晚了，code已经发完了",
-    "You already claimed this offer": "你已经领取过这个活动"
+    "You already claimed this offer": "你已经领取过这个活动",
+    "Paid": "已付费",
+    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证"
   }
 }

@@ -158,6 +158,23 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { label: t('Email') },
     },
     {
+      id: 'ip',
+      accessorFn: (user) => user.registration_ip || user.last_login_ip || '',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('IP Address')} />
+      ),
+      cell: ({ row }) => {
+        const ip = row.getValue('ip') as string
+        return ip ? (
+          <span className='text-muted-foreground text-sm tabular-nums'>{ip}</span>
+        ) : (
+          <span className='text-muted-foreground text-sm'>-</span>
+        )
+      },
+      enableSorting: false,
+      meta: { label: t('IP Address'), mobileHidden: true },
+    },
+    {
       id: 'language',
       accessorFn: (user) => getPreferredUserLanguage(user) ?? '',
       header: ({ column }) => (
@@ -285,6 +302,24 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       meta: { label: t('Quota') },
+    },
+    {
+      id: 'paid',
+      accessorKey: 'paid_amount',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Paid Amount')} />
+      ),
+      cell: ({ row }) => {
+        const amount = row.getValue('paid_amount') as number | undefined
+        return amount && amount > 0 ? (
+          <span className='text-sm font-medium tabular-nums'>
+            ${amount.toFixed(2)}
+          </span>
+        ) : (
+          <span className='text-muted-foreground text-sm'>-</span>
+        )
+      },
+      meta: { label: t('Paid Amount'), mobileHidden: true },
     },
     {
       id: 'usage_logs',
@@ -542,7 +577,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
     {
       id: 'actions',
       cell: ({ row }) => <DataTableRowActions row={row} />,
-      meta: { label: t('Actions') },
+      meta: { label: t('Actions'), pinned: 'right' },
     },
   ]
 }

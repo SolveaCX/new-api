@@ -474,8 +474,12 @@ func SearchUsers(c *gin.Context) {
 			status = &parsed
 		}
 	}
+	paid := false
+	if paidStr := c.Query("paid"); paidStr == "1" || paidStr == "true" {
+		paid = true
+	}
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, role, status, language, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -952,9 +956,35 @@ func UpdateUser(c *gin.Context) {
 	// account email, mark it verified so enterprise/managed accounts are never
 	// blocked by the email-verification gate on token creation or API usage.
 	applyAdminEmailTrust(originUser, &updatedUser)
+	emailChanged := updatedUser.Email != "" && updatedUser.Email != originUser.Email
 	if err := updatedUser.Edit(updatePassword); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+
+	// Edit() deliberately omits email and email_verified_at. Apply them here in
+	// the admin context only: a changed email is trusted (verified), and the
+	// explicit set_email_verified control flips verification on/off without
+	// touching the email. Missing control leaves the existing value untouched.
+	emailUpdates := map[string]interface{}{}
+	if emailChanged {
+		emailUpdates["email"] = updatedUser.Email
+		emailUpdates["email_verified_at"] = updatedUser.EmailVerifiedAt
+	} else if updatedUser.SetEmailVerified != nil {
+		if *updatedUser.SetEmailVerified {
+			emailUpdates["email_verified_at"] = common.GetTimestamp()
+		} else {
+			emailUpdates["email_verified_at"] = 0
+		}
+	}
+	if len(emailUpdates) > 0 {
+		if err := model.DB.Model(&originUser).Updates(emailUpdates).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if err := model.InvalidateUserCache(originUser.Id); err != nil {
+			common.SysError("failed to invalidate user cache after admin email update: " + err.Error())
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

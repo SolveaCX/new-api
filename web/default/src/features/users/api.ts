@@ -56,6 +56,7 @@ export async function searchUsers(
     role = '',
     status = '',
     language = '',
+    paid = false,
     p = 1,
     page_size = 10,
   } = params
@@ -65,6 +66,7 @@ export async function searchUsers(
   if (role) queryParams.set('role', role)
   if (status) queryParams.set('status', status)
   if (language) queryParams.set('language', language)
+  if (paid) queryParams.set('paid', '1')
   queryParams.set('p', String(p))
   queryParams.set('page_size', String(page_size))
   const res = await api.get(`/api/user/search?${queryParams.toString()}`)
