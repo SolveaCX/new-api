@@ -84,6 +84,22 @@ describe('subscription dashboard messaging', () => {
   })
 })
 
+describe('overview wallet balance', () => {
+  test('loads the current profile balance and links to the wallet', () => {
+    const dashboardSource = readFileSync(
+      new URL('./overview-dashboard.tsx', import.meta.url),
+      'utf8'
+    )
+
+    expect(dashboardSource).toContain('getUserProfile')
+    expect(dashboardSource).toContain(
+      "queryKey: ['dashboard', 'overview', 'profile']"
+    )
+    expect(dashboardSource).toContain("t('Available balance')")
+    expect(dashboardSource).toContain("to='/wallet'")
+  })
+})
+
 describe('overview integration copy', () => {
   const overviewKeys = collectOverviewKeys()
 

@@ -18,11 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { WalletCards } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { getUserModels } from '@/lib/api'
+import { formatQuota } from '@/lib/format'
+import { Skeleton } from '@/components/ui/skeleton'
 import { getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { getPricing } from '@/features/pricing/api'
+import { getUserProfile } from '@/features/profile/api'
 import { useApiInfo } from '../../hooks/use-status-data'
 import { IntegrationCards } from './integration-cards'
 import { IntegrationDialog } from './integration-dialog'
@@ -90,6 +96,7 @@ function getPreferredKey(keys: ApiKey[]): ApiKey | null {
 }
 
 export function OverviewDashboard() {
+  const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { status } = useApiInfo()
   const [openIntegration, setOpenIntegration] = useState<IntegrationId | null>(
@@ -123,6 +130,16 @@ export function OverviewDashboard() {
   })
 
   const apiKeys = useMemo(() => apiKeysQuery.data ?? [], [apiKeysQuery.data])
+
+  const profileQuery = useQuery({
+    queryKey: ['dashboard', 'overview', 'profile'],
+    queryFn: async () => {
+      const result = await getUserProfile()
+      return result.success ? (result.data ?? null) : null
+    },
+    staleTime: 60 * 1000,
+  })
+  const availableBalance = profileQuery.data?.quota ?? user?.quota
 
   const selectedKey = useMemo(() => {
     // An explicit selection is never silently replaced with another key:
@@ -244,6 +261,27 @@ export function OverviewDashboard() {
   return (
     <div className='flex flex-col gap-8'>
       <OverviewHero />
+      <Link
+        to='/wallet'
+        aria-label={t('Available balance')}
+        className='bg-card hover:bg-accent/40 flex items-center gap-3 rounded-xl border p-4 transition-colors sm:max-w-sm'
+      >
+        <div className='bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-lg'>
+          <WalletCards className='size-5' aria-hidden='true' />
+        </div>
+        <div className='min-w-0 flex-1'>
+          <div className='text-muted-foreground text-xs font-medium'>
+            {t('Available balance')}
+          </div>
+          {profileQuery.isPending && availableBalance == null ? (
+            <Skeleton className='mt-1 h-7 w-24' />
+          ) : (
+            <div className='text-foreground mt-1 truncate font-mono text-lg font-semibold tabular-nums'>
+              {availableBalance == null ? '—' : formatQuota(availableBalance)}
+            </div>
+          )}
+        </div>
+      </Link>
       <UsageMetrics />
       <IntegrationCards onSelect={setOpenIntegration} />
       <IntegrationDialog
