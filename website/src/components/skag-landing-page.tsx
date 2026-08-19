@@ -21,9 +21,9 @@ type Props = {
 // and trust line. Styling mirrors the glm-landing/model-landing pages so the
 // route looks native to the rest of the site.
 export function SkagLandingPage({ config }: Props) {
-  const ctaUrl = getSkagLandingCtaUrl();
   const apiBaseUrl = `${ROUTER_ORIGIN}/v1`;
   const locale = config.locale ?? "en";
+  const ctaUrl = getSkagLandingCtaUrl();
   const pathname = config.pathname ?? skagLandingPath(config.slug);
   const trustLine = config.trustLine ?? SKAG_TRUST_LINE;
   const compactHero = config.compactHero ?? false;

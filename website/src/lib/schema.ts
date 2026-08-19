@@ -1,6 +1,6 @@
 import type { BlogPost } from "./blog";
 import type { Locale } from "./locales";
-import { localizePath } from "./locales";
+import { isLocale, localizePath } from "./locales";
 import { SITE_NAME, SITE_ORIGIN } from "./seo";
 
 type JsonLdValue = string | number | boolean | null | JsonLdObject | JsonLdValue[];
@@ -36,8 +36,32 @@ type HomepageSchemaInput = {
   description: string;
 };
 
+type BasePageSchemaInput = {
+  locale: Locale;
+  pathname: string;
+};
+
 export function stringifyJsonLd(value: JsonLdObject | JsonLdGraph): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+export function buildBasePageSchema(input: BasePageSchemaInput): JsonLdGraph {
+  const pagePath = localizePath(input.pathname, input.locale);
+  const pageUrl = absoluteUrl(pagePath);
+  const breadcrumbs = buildBreadcrumbItems(pagePath);
+
+  return graph([
+    websiteSchema(),
+    {
+      "@type": "WebPage",
+      name: pageNameFromPath(input.pathname),
+      url: pageUrl,
+      inLanguage: input.locale,
+      isPartOf: websiteSchema(),
+      publisher: organizationSchema(),
+    },
+    breadcrumbSchema(breadcrumbs),
+  ]);
 }
 
 export function buildHomepageSchema(input: HomepageSchemaInput): JsonLdGraph {
@@ -305,6 +329,36 @@ function navigationItem(position: number, name: string, path: string): JsonLdObj
     name,
     url: absoluteUrl(path),
   };
+}
+
+function buildBreadcrumbItems(localizedPath: string): Array<{ name: string; item: string }> {
+  const segments = localizedPath.split("/").filter(Boolean);
+  const localeSegment = isLocale(segments[0]) ? segments[0] : undefined;
+  const contentSegments = localeSegment ? segments.slice(1) : segments;
+  const homePath = localeSegment ? `/${localeSegment}` : "/";
+  const pathSegments: string[] = [];
+  const items = [{ name: "Home", item: absoluteUrl(homePath) }];
+
+  for (const segment of contentSegments) {
+    pathSegments.push(segment);
+    items.push({
+      name: breadcrumbName(segment),
+      item: absoluteUrl(`${homePath === "/" ? "" : homePath}/${pathSegments.join("/")}`),
+    });
+  }
+
+  return items;
+}
+
+function breadcrumbName(segment: string): string {
+  return decodeURIComponent(segment)
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function pageNameFromPath(pathname: string): string {
+  const lastSegment = pathname.split("/").filter(Boolean).at(-1);
+  return lastSegment ? `${breadcrumbName(lastSegment)} | ${SITE_NAME}` : SITE_NAME;
 }
 
 function absoluteUrl(path: string): string {

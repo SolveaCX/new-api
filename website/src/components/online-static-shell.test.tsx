@@ -38,4 +38,29 @@ describe("OnlineStaticShell", () => {
       'href="https://console.flatkey.ai/sign-in?lng=en"',
     );
   });
+
+  test("renders baseline structured data for online static pages", async () => {
+    const { OnlineStaticShell } = await import("./online-static-shell");
+    const html = renderToStaticMarkup(
+      <OnlineStaticShell locale="de" pathname="/pricing">
+        <div>body</div>
+      </OnlineStaticShell>,
+    );
+
+    expect(html).toContain('data-sitewide-schema="true"');
+    expect(html).toContain('"@type":"WebPage"');
+    expect(html).toContain('"url":"https://flatkey.ai/de/pricing"');
+  });
+
+  test("localizes footer careers links for every non-English locale", async () => {
+    const { OnlineStaticShell } = await import("./online-static-shell");
+    const html = renderToStaticMarkup(
+      <OnlineStaticShell locale="es" pathname="/pricing">
+        <div>body</div>
+      </OnlineStaticShell>,
+    );
+
+    expect(html).toContain('href="/es/careers"');
+    expect(html).not.toContain('href="/careers"');
+  });
 });

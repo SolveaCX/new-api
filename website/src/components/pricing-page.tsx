@@ -17,6 +17,7 @@ import {
 import { PricingExplorer } from "@/components/pricing-explorer";
 import { FlatkeyTallyEmbed } from "@/components/flatkey-tally-embed";
 import type { Locale } from "@/lib/locales";
+import { consoleUrl } from "@/lib/origins";
 import { pricingCheckoutUrl, signUpUrlForLocale } from "@/lib/pricing-links";
 
 type PricingPageProps = {
@@ -25,6 +26,7 @@ type PricingPageProps = {
 };
 
 export const MODELS_PAGE_PRICING_GROUP = WEBSITE_PUBLIC_PRICING_GROUP;
+export const MODELS_PAGE_FRAME_CLASS = "fk-site-frame relative mt-[60px] pb-8 sm:pb-10 md:mt-[64px]";
 
 type PricingPageBaseCopy = {
   modelsDirectory: string;
@@ -89,6 +91,85 @@ type PricingPageLocalizedUiCopy = {
 };
 
 type PricingPageCopy = PricingPageBaseCopy & PricingPageLocalizedUiCopy;
+
+type ModelsPageCopy = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  cta: string;
+};
+
+const MODELS_PAGE_COPY: Record<Locale, ModelsPageCopy> = {
+  en: {
+    eyebrow: "Models",
+    title: "Models Directory",
+    description:
+      "Browse live availability, input and output pricing, endpoint support, and health signals for models you can call with one Flatkey API key.",
+    cta: "Get API key",
+  },
+  zh: {
+    eyebrow: "模型",
+    title: "模型目录",
+    description: "浏览可通过一个 Flatkey API 密钥调用的模型，查看实时可用性、输入/输出价格、端点支持和健康度信号。",
+    cta: "获取 API Key",
+  },
+  es: {
+    eyebrow: "Modelos",
+    title: "Directorio de modelos",
+    description:
+      "Explora disponibilidad en vivo, precios de entrada y salida, soporte de endpoints y señales de salud para los modelos que puedes llamar con una clave API de Flatkey.",
+    cta: "Obtener clave API",
+  },
+  fr: {
+    eyebrow: "Modèles",
+    title: "Répertoire des modèles",
+    description:
+      "Parcourez la disponibilité live, les prix d'entrée et de sortie, le support des endpoints et les signaux de santé des modèles appelables avec une clé API Flatkey.",
+    cta: "Obtenir une clé API",
+  },
+  pt: {
+    eyebrow: "Modelos",
+    title: "Diretório de modelos",
+    description:
+      "Explore disponibilidade ao vivo, preços de entrada e saída, suporte a endpoints e sinais de saúde dos modelos que você pode chamar com uma chave API Flatkey.",
+    cta: "Obter chave API",
+  },
+  ru: {
+    eyebrow: "Модели",
+    title: "Каталог моделей",
+    description:
+      "Просматривайте live-доступность, цены входа и выхода, поддержку endpoints и сигналы здоровья моделей, доступных через один API-ключ Flatkey.",
+    cta: "Получить API-ключ",
+  },
+  ja: {
+    eyebrow: "モデル",
+    title: "モデルディレクトリ",
+    description:
+      "1 つの Flatkey API キーで呼び出せるモデルのライブ可用性、入力/出力料金、エンドポイント対応、ヘルスシグナルを確認できます。",
+    cta: "API キーを取得",
+  },
+  vi: {
+    eyebrow: "Mô hình",
+    title: "Danh mục mô hình",
+    description:
+      "Duyệt availability trực tiếp, giá đầu vào và đầu ra, hỗ trợ endpoint và tín hiệu sức khỏe cho các mô hình có thể gọi bằng một khóa API Flatkey.",
+    cta: "Lấy khóa API",
+  },
+  de: {
+    eyebrow: "Modelle",
+    title: "Modellverzeichnis",
+    description:
+      "Durchsuche Live-Verfügbarkeit, Eingabe- und Ausgabepreise, Endpoint-Support und Health-Signale für Modelle, die du mit einem Flatkey API-Schlüssel aufrufen kannst.",
+    cta: "API-Schlüssel holen",
+  },
+  id: {
+    eyebrow: "Model",
+    title: "Direktori Model",
+    description:
+      "Jelajahi ketersediaan live, harga input dan output, dukungan endpoint, serta sinyal kesehatan untuk model yang dapat dipanggil dengan satu kunci API Flatkey.",
+    cta: "Dapatkan API key",
+  },
+};
 
 const PRICING_COPY: Record<Locale, PricingPageBaseCopy> =withIdFallback({
   en: {
@@ -651,6 +732,10 @@ export function getPricingPageCopy(locale: Locale): PricingPageCopy {
   return { ...baseCopy, ...uiCopy };
 }
 
+export function getModelsPageCopy(locale: Locale): ModelsPageCopy {
+  return MODELS_PAGE_COPY[locale] ?? MODELS_PAGE_COPY.en;
+}
+
 function pricingCopy(locale: Locale): PricingPageCopy {
   return getPricingPageCopy(locale);
 }
@@ -881,7 +966,7 @@ export function getPricingPlans(locale: Locale): PricingPlan[] {
 export function parsePricingSearch(searchParams?: Record<string, string | string[] | undefined>): PricingSearch {
   return {
     vendor: parseParam(searchParams?.vendor),
-    endpoint: parseParam(searchParams?.endpoint),
+    purpose: parseParam(searchParams?.purpose),
     pricing: parseParam(searchParams?.pricing) ?? parseParam(searchParams?.quota),
   };
 }
@@ -943,57 +1028,64 @@ export async function PricingPage(props: PricingPageProps) {
 export async function ModelsPage(props: PricingPageProps) {
   const pricing = await getPricingData(MODELS_PAGE_PRICING_GROUP);
   const allModels = enrichVendorNames(pricing.models, pricing.vendors, pricing.groupRatio, pricing.groupModelRatio, pricing.usableGroup);
-  const copy = pricingCopy(props.locale);
+  const copy = getModelsPageCopy(props.locale);
 
   return (
     <SiteShell locale={props.locale} pathname="/models">
-      <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)]">
+      <main className="home-landing models-directory-page relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#faf9ff_0%,#ffffff_42%,#f7f8ff_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.04)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-55 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-35"
         />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-[640px] opacity-75"
-          style={{
-            background: [
-              "radial-gradient(ellipse 56% 46% at 22% 8%, rgba(168,85,247,0.30) 0%, transparent 68%)",
-              "radial-gradient(ellipse 46% 36% at 78% 6%, rgba(99,102,241,0.28) 0%, transparent 70%)",
-              "radial-gradient(ellipse 48% 34% at 50% 46%, rgba(217,70,239,0.18) 0%, transparent 72%)",
-            ].join(", "),
-            maskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(to bottom, black 40%, transparent 100%)",
-          }}
-        />
-        <div className="fk-site-frame relative pt-16 pb-8 sm:pt-20 sm:pb-10">
-          <header className="mx-auto mb-6 max-w-3xl pt-5 text-center sm:mb-10 sm:pt-10">
-            <p className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-violet-400/35 bg-violet-500/10 px-4 py-1.5 text-xs font-semibold tracking-[0.18em] text-violet-700 uppercase shadow-[0_0_28px_rgba(168,85,247,0.14)] dark:border-violet-300/25 dark:bg-violet-300/10 dark:text-violet-200">
-              <span className="size-1.5 rounded-full bg-violet-500 shadow-[0_0_12px_rgba(168,85,247,0.9)] dark:bg-violet-300" />
-              {copy.modelsEyebrow}
-            </p>
-            <h1 className="bg-[linear-gradient(90deg,#171321_0%,#7c3aed_46%,#2563eb_100%)] bg-clip-text text-[clamp(2.6rem,7vw,5rem)] leading-[0.98] font-black tracking-tight text-transparent dark:bg-[linear-gradient(90deg,#ffffff_0%,#c4b5fd_48%,#93c5fd_100%)] dark:bg-clip-text">
-              {copy.modelsDirectory}
-            </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base">
-              {copy.modelsDescription}
-            </p>
-          </header>
+        <div className={MODELS_PAGE_FRAME_CLASS}>
+          <ModelsPageHero copy={copy} locale={props.locale} />
 
-          <PricingExplorer
-            locale={props.locale}
-            models={allModels}
-            vendors={pricing.vendors}
-            groupRatio={pricing.groupRatio}
-            usableGroup={pricing.usableGroup}
-            endpointMap={pricing.supportedEndpoint}
-            autoGroups={pricing.autoGroups}
-            initialSearch={props.search}
-          />
+          <div className="mt-6">
+            <PricingExplorer
+              locale={props.locale}
+              models={allModels}
+              vendors={pricing.vendors}
+              groupRatio={pricing.groupRatio}
+              usableGroup={pricing.usableGroup}
+              endpointMap={pricing.supportedEndpoint}
+              autoGroups={pricing.autoGroups}
+              initialSearch={props.search}
+            />
+          </div>
 
           <PricingSeoContent locale={props.locale} modelCount={allModels.length} vendorCount={pricing.vendors.length} />
         </div>
       </main>
     </SiteShell>
+  );
+}
+
+export function ModelsPageHero(props: { copy: ModelsPageCopy; locale?: Locale }) {
+  const locale = props.locale ?? "en";
+  const apiKeyHref = consoleUrl(
+    "/sign-up",
+    new URLSearchParams({ redirect: "/dashboard/overview", lng: locale }).toString()
+  );
+
+  return (
+    <header className="grid gap-5 text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="max-w-3xl">
+        <h1 className="text-[clamp(2.1rem,4.8vw,3.9rem)] leading-[1] font-black tracking-tight text-slate-950 dark:text-white">
+          {props.copy.title}
+        </h1>
+        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
+          {props.copy.description}
+        </p>
+      </div>
+      <a
+        className="flatkey-hero-cta inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-sm transition-opacity hover:opacity-90 lg:justify-self-end"
+        href={apiKeyHref}
+      >
+        <KeyRound className="size-4" />
+        {props.copy.cta}
+        <ArrowRight className="size-4" />
+      </a>
+    </header>
   );
 }
 
@@ -1144,7 +1236,7 @@ function QuickStartSteps(props: { steps: string[] }) {
 function PricingSeoContent(props: { locale: Locale; modelCount: number; vendorCount: number }) {
   const copy = pricingCopy(props.locale);
   return (
-    <section className="mt-10 rounded-3xl border border-violet-500/12 bg-white/70 p-6 shadow-[0_20px_70px_-58px_rgba(91,33,182,0.6)] backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.055] dark:shadow-[0_20px_70px_-58px_rgba(124,58,237,0.95)]">
+    <section className="mt-10 rounded-2xl border border-slate-200/80 bg-white/76 p-6 shadow-[0_20px_70px_-58px_rgba(15,23,42,0.35)] backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.045] dark:shadow-[0_20px_70px_-62px_rgba(14,165,233,0.52)]">
       <p className="text-muted-foreground mb-2 text-xs font-medium tracking-widest uppercase">{copy.seoEyebrow}</p>
       <h2 className="text-xl font-bold tracking-tight">{copy.seoTitle}</h2>
       <div className="mt-4 grid gap-4 text-sm leading-7 text-muted-foreground md:grid-cols-3">
