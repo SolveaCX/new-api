@@ -41,6 +41,10 @@ const defaultSiteSettings: SiteSettings = {
   HeaderNavModules: '',
   SidebarModulesAdmin: '',
   PlaygroundDefaultModel: 'gpt-4o',
+  'console_setting.official_website_banner_enabled': true,
+  'console_setting.official_website_banner_content': '',
+  'console_setting.official_website_banner_href': '',
+  'console_setting.official_website_banner_icon': '',
 }
 
 export function SiteSettings() {

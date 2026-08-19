@@ -6680,6 +6680,23 @@
     "Purpose": "用途",
     "Redeem credits": "クレジットを引き換える",
     "Too late — all codes have already been claimed": "申し訳ありません。コードの配布は終了しました",
-    "You already claimed this offer": "このキャンペーンはすでに受け取り済みです"
+    "You already claimed this offer": "このキャンペーンはすでに受け取り済みです",
+    "Banner icon": "バナーのアイコン",
+    "Banner link": "バナーのリンク先",
+    "Banner text by language": "言語別のバナー文言",
+    "Banner text must be {{max}} characters or fewer": "バナーの文言は {{max}} 文字以内で入力してください",
+    "English is required. Languages left empty fall back to the English text.": "英語は必須です。空欄の言語は英語の文言が使われます。",
+    "English text is required — other languages fall back to it when left empty": "英語の文言は必須です。空欄の言語は英語にフォールバックします",
+    "Enter a site path starting with / or a full http(s) link": "/ で始まるサイト内パス、または完全な http(s) リンクを入力してください",
+    "Icon file must be {{max}} KB or smaller": "アイコンファイルは {{max}} KB 以下にしてください",
+    "Link must be {{max}} characters or fewer": "リンクは {{max}} 文字以内で入力してください",
+    "New model is live. Join our Discord for free credits.": "新しいモデルが登場しました。Discord に参加して無料クレジットを受け取りましょう。",
+    "Official website content": "公式サイトのコンテンツ",
+    "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG、JPEG、WebP、SVG、GIF に対応、最大 {{max}} KB。空欄にするとアイコンは表示されません。",
+    "Save banner": "バナーを保存",
+    "Show website banner": "サイトバナーを表示",
+    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "/ で始まるサイト内パスは言語ごとに自動でローカライズされます。空欄にするとリンクなしのバナーになります。",
+    "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "このバナーは公式サイトの全ページ上部に表示されます。すべての文言を空欄にすると、組み込みの既定バナーが表示されます。変更は約 2 分で訪問者に反映されます。",
+    "Turn off to hide the banner across the whole official website.": "オフにすると、公式サイト全体でバナーが非表示になります。"
   }
 }

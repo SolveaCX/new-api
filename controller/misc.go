@@ -154,6 +154,13 @@ func GetStatus(c *gin.Context) {
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
 		"invite_reward_mode":          inviteRewardMode(),
 		"invite_reward_badge_usd":     inviteRewardBadgeUSD(),
+
+		// 官网（website/）全局横幅。文案按语种下发，官网侧再按访问语种取值；
+		// 文案为空时官网回退到内置的默认横幅。
+		"official_website_banner_enabled": cs.OfficialWebsiteBannerEnabled,
+		"official_website_banner_content": console_setting.GetOfficialWebsiteBannerContentMap(),
+		"official_website_banner_href":    cs.OfficialWebsiteBannerHref,
+		"official_website_banner_icon":    cs.OfficialWebsiteBannerIcon,
 	}
 
 	// 根据启用状态注入可选内容

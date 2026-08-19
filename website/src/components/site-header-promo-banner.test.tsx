@@ -1,22 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import {
+  DEFAULT_PROMO_BANNER_CONTENT,
+  DEFAULT_PROMO_BANNER_HREF,
+  DEFAULT_PROMO_BANNER_ICON,
+} from "@/lib/promo-banner";
 import { SiteConfigProvider } from "./site-config-provider";
 import { SiteHeader } from "./site-header";
 
 describe("SiteHeader promo banner", () => {
-  test("renders the default Seedance promo banner at the top of the site", () => {
+  test("renders the built-in default promo banner at the top of the site", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider docsUrl={null}>
         <SiteHeader locale="en" pathname="/" />
       </SiteConfigProvider>,
     );
 
-    expect(html).toContain("Seedance is 15% off for a limited time.");
-    expect(html).toContain("Join our Discord to get $5 in free credit.");
+    expect(html).toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
     expect(html).toContain(">Learn more →<");
     expect(html).toContain('aria-label="Dismiss website banner"');
-    expect(html).toContain('href="/models/seedance-api"');
-    expect(html.indexOf("Seedance is 15% off for a limited time.")).toBeLessThan(
+    expect(html).toContain(`href="${DEFAULT_PROMO_BANNER_HREF}"`);
+    expect(html.indexOf(DEFAULT_PROMO_BANNER_CONTENT.en)).toBeLessThan(
       html.indexOf('aria-label="Dismiss website banner"'),
     );
   });
@@ -26,7 +30,7 @@ describe("SiteHeader promo banner", () => {
       <SiteConfigProvider
         docsUrl={null}
         promoBanner={{
-          content: "Black Friday credits are live.",
+          content: { en: "Black Friday credits are live." },
           enabled: true,
           href: "https://console.example.com/sign-up",
           icon: "data:image/png;base64,iVBORw0KGgo=",
@@ -40,8 +44,8 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain(">Learn more →<");
     expect(html).toContain('href="https://console.example.com/sign-up"');
     expect(html).toContain('src="data:image/png;base64,iVBORw0KGgo="');
-    expect(html).not.toContain("Seedance is 15% off for a limited time.");
-    expect(html).not.toContain("/assets/logos/bytedance.svg");
+    expect(html).not.toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
+    expect(html).not.toContain(DEFAULT_PROMO_BANNER_ICON);
   });
 
   test("localizes configured relative banner links", () => {
@@ -49,7 +53,10 @@ describe("SiteHeader promo banner", () => {
       <SiteConfigProvider
         docsUrl={null}
         promoBanner={{
-          content: "加入活动领取额度。",
+          content: {
+            en: "Join the campaign for free credit.",
+            zh: "加入活动领取额度。",
+          },
           enabled: true,
           href: "/campaigns/summer",
           icon: "",
@@ -65,12 +72,55 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain('href="/zh/campaigns/summer"');
   });
 
+  test("falls back to the configured english copy for unconfigured locales", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        promoBanner={{
+          content: {
+            en: "Join the campaign for free credit.",
+            zh: "加入活动领取额度。",
+          },
+          enabled: true,
+          href: "/campaigns/summer",
+          icon: "",
+        }}
+      >
+        <SiteHeader locale="ja" pathname="/ja" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).toContain("Join the campaign for free credit.");
+    expect(html).toContain(">詳細を見る →<");
+    expect(html).not.toContain("加入活动领取额度。");
+  });
+
+  test("renders a copy-only banner when no link is configured", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        promoBanner={{
+          content: { en: "Scheduled maintenance this Sunday." },
+          enabled: true,
+          href: "",
+          icon: "",
+        }}
+      >
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).toContain("Scheduled maintenance this Sunday.");
+    expect(html).toContain('aria-label="Dismiss website banner"');
+    expect(html).not.toContain(">Learn more →<");
+  });
+
   test("hides the promo banner when it is disabled by site settings", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider
         docsUrl={null}
         promoBanner={{
-          content: "Hidden campaign",
+          content: { en: "Hidden campaign" },
           enabled: false,
           href: "/hidden",
           icon: "data:image/png;base64,iVBORw0KGgo=",
@@ -81,7 +131,26 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).not.toContain("Hidden campaign");
-    expect(html).not.toContain("Seedance is 15% off for a limited time.");
+    expect(html).not.toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
+    expect(html).toContain("top-[72px] max-h-[calc(100dvh-72px)]");
+  });
+
+  test("hides the promo banner when the configured copy is empty", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        promoBanner={{
+          content: {},
+          enabled: true,
+          href: "/campaigns/summer",
+          icon: "",
+        }}
+      >
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).not.toContain('aria-label="Dismiss website banner"');
     expect(html).toContain("top-[72px] max-h-[calc(100dvh-72px)]");
   });
 });

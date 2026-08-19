@@ -6,10 +6,80 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGetStatusIncludesOfficialWebsiteBannerSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	bannerSetting := console_setting.GetConsoleSetting()
+	originalEnabled := bannerSetting.OfficialWebsiteBannerEnabled
+	originalContent := bannerSetting.OfficialWebsiteBannerContent
+	originalHref := bannerSetting.OfficialWebsiteBannerHref
+	originalIcon := bannerSetting.OfficialWebsiteBannerIcon
+	t.Cleanup(func() {
+		bannerSetting.OfficialWebsiteBannerEnabled = originalEnabled
+		bannerSetting.OfficialWebsiteBannerContent = originalContent
+		bannerSetting.OfficialWebsiteBannerHref = originalHref
+		bannerSetting.OfficialWebsiteBannerIcon = originalIcon
+	})
+	bannerSetting.OfficialWebsiteBannerEnabled = true
+	bannerSetting.OfficialWebsiteBannerContent = `{"en":"Black Friday credits are live.","zh":"黑五额度已开放。"}`
+	bannerSetting.OfficialWebsiteBannerHref = "https://console.example.com/sign-up"
+	bannerSetting.OfficialWebsiteBannerIcon = "data:image/png;base64,iVBORw0KGgo="
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+
+	GetStatus(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
+	}
+	require.NoError(t, common.DecodeJson(recorder.Body, &response))
+	require.True(t, response.Success)
+	require.Equal(t, true, response.Data["official_website_banner_enabled"])
+	require.Equal(t, map[string]any{
+		"en": "Black Friday credits are live.",
+		"zh": "黑五额度已开放。",
+	}, response.Data["official_website_banner_content"])
+	require.Equal(t, "https://console.example.com/sign-up", response.Data["official_website_banner_href"])
+	require.Equal(t, "data:image/png;base64,iVBORw0KGgo=", response.Data["official_website_banner_icon"])
+}
+
+func TestGetStatusOmitsUnconfiguredOfficialWebsiteBannerContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	bannerSetting := console_setting.GetConsoleSetting()
+	originalContent := bannerSetting.OfficialWebsiteBannerContent
+	t.Cleanup(func() {
+		bannerSetting.OfficialWebsiteBannerContent = originalContent
+	})
+	bannerSetting.OfficialWebsiteBannerContent = ""
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+
+	GetStatus(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
+	}
+	require.NoError(t, common.DecodeJson(recorder.Body, &response))
+	require.True(t, response.Success)
+	require.Equal(t, map[string]any{}, response.Data["official_website_banner_content"])
+}
 
 func TestGetStatusIncludesPlaygroundDefaultModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)

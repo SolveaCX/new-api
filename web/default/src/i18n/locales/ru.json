@@ -6680,6 +6680,23 @@
     "Purpose": "Назначение",
     "Redeem credits": "Активировать кредиты",
     "Too late — all codes have already been claimed": "Вы опоздали — все коды уже разобраны",
-    "You already claimed this offer": "Вы уже получили это предложение"
+    "You already claimed this offer": "Вы уже получили это предложение",
+    "Banner icon": "Значок баннера",
+    "Banner link": "Ссылка баннера",
+    "Banner text by language": "Текст баннера по языкам",
+    "Banner text must be {{max}} characters or fewer": "Текст баннера не должен превышать {{max}} символов",
+    "English is required. Languages left empty fall back to the English text.": "Английский обязателен. Для незаполненных языков будет использован английский текст.",
+    "English text is required — other languages fall back to it when left empty": "Английский текст обязателен — остальные языки используют его, если оставлены пустыми",
+    "Enter a site path starting with / or a full http(s) link": "Укажите внутренний путь, начинающийся с /, или полную http(s)-ссылку",
+    "Icon file must be {{max}} KB or smaller": "Файл значка не должен превышать {{max}} КБ",
+    "Link must be {{max}} characters or fewer": "Длина ссылки не должна превышать {{max}} символов",
+    "New model is live. Join our Discord for free credits.": "Новая модель уже доступна. Присоединяйтесь к нашему Discord, чтобы получить бесплатные кредиты.",
+    "Official website content": "Контент официального сайта",
+    "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG, JPEG, WebP, SVG или GIF, до {{max}} КБ. Оставьте пустым, чтобы значок не отображался.",
+    "Save banner": "Сохранить баннер",
+    "Show website banner": "Показывать баннер сайта",
+    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "Внутренние пути, начинающиеся с /, локализуются автоматически. Оставьте пустым, чтобы баннер был без ссылки.",
+    "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Этот баннер отображается вверху каждой страницы официального сайта. Оставьте все тексты пустыми, чтобы показать встроенный баннер по умолчанию. Изменения дойдут до посетителей примерно за две минуты.",
+    "Turn off to hide the banner across the whole official website.": "Выключите, чтобы скрыть баннер на всём официальном сайте."
   }
 }

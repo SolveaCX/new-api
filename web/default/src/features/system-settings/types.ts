@@ -95,6 +95,10 @@ export type SiteSettings = {
   HeaderNavModules: string
   SidebarModulesAdmin: string
   PlaygroundDefaultModel: string
+  'console_setting.official_website_banner_enabled': boolean
+  'console_setting.official_website_banner_content': string
+  'console_setting.official_website_banner_href': string
+  'console_setting.official_website_banner_icon': string
 }
 
 export type AuthSettings = {

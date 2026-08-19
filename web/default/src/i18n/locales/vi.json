@@ -6680,6 +6680,23 @@
     "Purpose": "Mục đích",
     "Redeem credits": "Đổi tín dụng",
     "Too late — all codes have already been claimed": "Bạn đến muộn — tất cả mã đã được nhận hết",
-    "You already claimed this offer": "Bạn đã nhận ưu đãi này"
+    "You already claimed this offer": "Bạn đã nhận ưu đãi này",
+    "Banner icon": "Biểu tượng của biểu ngữ",
+    "Banner link": "Liên kết của biểu ngữ",
+    "Banner text by language": "Nội dung biểu ngữ theo ngôn ngữ",
+    "Banner text must be {{max}} characters or fewer": "Nội dung biểu ngữ không được vượt quá {{max}} ký tự",
+    "English is required. Languages left empty fall back to the English text.": "Tiếng Anh là bắt buộc. Ngôn ngữ để trống sẽ dùng nội dung tiếng Anh.",
+    "English text is required — other languages fall back to it when left empty": "Bắt buộc nhập nội dung tiếng Anh — các ngôn ngữ để trống sẽ dùng nội dung này",
+    "Enter a site path starting with / or a full http(s) link": "Nhập đường dẫn nội bộ bắt đầu bằng / hoặc một liên kết http(s) đầy đủ",
+    "Icon file must be {{max}} KB or smaller": "Tệp biểu tượng không được vượt quá {{max}} KB",
+    "Link must be {{max}} characters or fewer": "Liên kết không được vượt quá {{max}} ký tự",
+    "New model is live. Join our Discord for free credits.": "Mô hình mới đã ra mắt. Tham gia Discord của chúng tôi để nhận tín dụng miễn phí.",
+    "Official website content": "Nội dung trang web chính thức",
+    "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG, JPEG, WebP, SVG hoặc GIF, tối đa {{max}} KB. Để trống nếu không muốn hiển thị biểu tượng.",
+    "Save banner": "Lưu biểu ngữ",
+    "Show website banner": "Hiển thị biểu ngữ trang web",
+    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "Đường dẫn nội bộ bắt đầu bằng / sẽ được bản địa hóa tự động. Để trống nếu chỉ muốn hiển thị văn bản.",
+    "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Biểu ngữ này hiển thị ở đầu mọi trang của trang web chính thức. Để trống toàn bộ nội dung sẽ hiển thị biểu ngữ mặc định có sẵn. Thay đổi sẽ đến với khách truy cập trong khoảng hai phút.",
+    "Turn off to hide the banner across the whole official website.": "Tắt để ẩn biểu ngữ trên toàn bộ trang web chính thức."
   }
 }

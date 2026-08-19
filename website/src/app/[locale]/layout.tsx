@@ -34,6 +34,7 @@ export default async function RootLayout({ children, params }: Props) {
       hasConsoleSessionHint={hasConsoleSessionHint}
       googleOneTap={publicSiteSettings.googleOneTap}
       lang={locale}
+      promoBanner={publicSiteSettings.promoBanner}
       bodyStart={
         <Script id="flatkey-attribution-cookie" strategy="beforeInteractive">
           {ATTRIBUTION_COOKIE_SCRIPT}

@@ -1,4 +1,9 @@
 import { APP_CONSOLE_ORIGIN } from "./origins";
+import {
+  defaultPromoBannerSettings,
+  normalizePromoBannerSettings,
+  type PromoBannerSettings,
+} from "./promo-banner";
 
 export const DOCS_LINK_REVALIDATE_SECONDS = 60;
 export const DOCS_LINK_TIMEOUT_MS = 3000;
@@ -9,6 +14,10 @@ type StatusPayload = {
     docs_link?: unknown;
     google_client_id?: unknown;
     google_oauth?: unknown;
+    official_website_banner_content?: unknown;
+    official_website_banner_enabled?: unknown;
+    official_website_banner_href?: unknown;
+    official_website_banner_icon?: unknown;
   } | null;
 };
 
@@ -18,6 +27,7 @@ export type PublicSiteSettings = {
     clientId: string | null;
     enabled: boolean;
   };
+  promoBanner: PromoBannerSettings;
 };
 
 export function normalizeDocsUrl(value: unknown): string | null {
@@ -62,6 +72,7 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
         clientId: googleClientId,
         enabled: payload.data.google_oauth === true && googleClientId !== null,
       },
+      promoBanner: normalizePromoBannerSettings(payload.data),
     };
   } catch {
     return emptyPublicSiteSettings();
@@ -81,5 +92,6 @@ function emptyPublicSiteSettings(): PublicSiteSettings {
       clientId: null,
       enabled: false,
     },
+    promoBanner: defaultPromoBannerSettings(),
   };
 }

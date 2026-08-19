@@ -6680,6 +6680,23 @@
     "Purpose": "Finalidade",
     "Redeem credits": "Resgatar créditos",
     "Too late — all codes have already been claimed": "Você chegou tarde — todos os códigos já foram resgatados",
-    "You already claimed this offer": "Você já resgatou esta oferta"
+    "You already claimed this offer": "Você já resgatou esta oferta",
+    "Banner icon": "Ícone do banner",
+    "Banner link": "Link do banner",
+    "Banner text by language": "Texto do banner por idioma",
+    "Banner text must be {{max}} characters or fewer": "O texto do banner não pode ultrapassar {{max}} caracteres",
+    "English is required. Languages left empty fall back to the English text.": "O inglês é obrigatório. Os idiomas deixados vazios usarão o texto em inglês.",
+    "English text is required — other languages fall back to it when left empty": "O texto em inglês é obrigatório — os demais idiomas o utilizam quando ficam vazios",
+    "Enter a site path starting with / or a full http(s) link": "Informe um caminho interno começando com / ou um link http(s) completo",
+    "Icon file must be {{max}} KB or smaller": "O arquivo do ícone não pode ultrapassar {{max}} KB",
+    "Link must be {{max}} characters or fewer": "O link não pode ultrapassar {{max}} caracteres",
+    "New model is live. Join our Discord for free credits.": "Um novo modelo já está disponível. Entre no nosso Discord para receber créditos grátis.",
+    "Official website content": "Conteúdo do site oficial",
+    "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG, JPEG, WebP, SVG ou GIF, até {{max}} KB. Deixe vazio para não exibir nenhum ícone.",
+    "Save banner": "Salvar banner",
+    "Show website banner": "Mostrar o banner do site",
+    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "Os caminhos internos que começam com / são localizados automaticamente. Deixe vazio para um banner apenas de texto.",
+    "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Este banner aparece no topo de todas as páginas do site oficial. Deixe todos os textos vazios para exibir o banner padrão integrado. As alterações chegam aos visitantes em cerca de dois minutos.",
+    "Turn off to hide the banner across the whole official website.": "Desative para ocultar o banner em todo o site oficial."
   }
 }

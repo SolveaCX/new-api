@@ -6,6 +6,11 @@ import {
   getPublicSiteSettings,
   normalizeDocsUrl,
 } from "./public-site-settings";
+import {
+  DEFAULT_PROMO_BANNER_CONTENT,
+  DEFAULT_PROMO_BANNER_HREF,
+  DEFAULT_PROMO_BANNER_ICON,
+} from "./promo-banner";
 
 const originalFetch = globalThis.fetch;
 
@@ -72,7 +77,9 @@ describe("getDocsUrl", () => {
               docs_link: "https://docs.example.com/start",
               google_client_id: " google-client.apps.googleusercontent.com ",
               google_oauth: true,
-              official_website_banner_content: "Official launch credits are live.",
+              official_website_banner_content: {
+                en: "Official launch credits are live.",
+              },
               official_website_banner_enabled: true,
               official_website_banner_href: "https://console.example.com/sign-up",
               official_website_banner_icon: "data:image/png;base64,iVBORw0KGgo=",
@@ -88,7 +95,7 @@ describe("getDocsUrl", () => {
         enabled: true,
       },
       promoBanner: {
-        content: "Official launch credits are live.",
+        content: { en: "Official launch credits are live." },
         enabled: true,
         href: "https://console.example.com/sign-up",
         icon: "data:image/png;base64,iVBORw0KGgo=",
@@ -103,7 +110,10 @@ describe("getDocsUrl", () => {
           JSON.stringify({
             success: true,
             data: {
-              official_website_banner_content: " Join the launch event. ",
+              official_website_banner_content: {
+                en: " Join the launch event. ",
+                zh: " 加入上线活动。 ",
+              },
               official_website_banner_enabled: false,
               official_website_banner_href: " /campaigns/launch ",
               official_website_banner_icon: " data:image/webp;base64,UklGRg== ",
@@ -119,7 +129,7 @@ describe("getDocsUrl", () => {
         enabled: false,
       },
       promoBanner: {
-        content: "Join the launch event.",
+        content: { en: "Join the launch event.", zh: "加入上线活动。" },
         enabled: false,
         href: "/campaigns/launch",
         icon: "data:image/webp;base64,UklGRg==",
@@ -153,11 +163,10 @@ describe("getDocsUrl", () => {
           enabled: false,
         },
         promoBanner: {
-          content:
-            "Seedance is 15% off for a limited time. Join our Discord to get $5 in free credit.",
+          content: DEFAULT_PROMO_BANNER_CONTENT,
           enabled: true,
-          href: "/models/seedance-api",
-          icon: "/assets/logos/bytedance.svg",
+          href: DEFAULT_PROMO_BANNER_HREF,
+          icon: DEFAULT_PROMO_BANNER_ICON,
         },
       });
     }

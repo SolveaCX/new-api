@@ -521,6 +521,33 @@ func prepareOptionUpdate(c *gin.Context, option *OptionUpdateRequest) bool {
 			})
 			return false
 		}
+	case "console_setting.official_website_banner_content":
+		err = console_setting.ValidateOfficialWebsiteBannerContent(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return false
+		}
+	case "console_setting.official_website_banner_href":
+		err = console_setting.ValidateOfficialWebsiteBannerHref(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return false
+		}
+	case "console_setting.official_website_banner_icon":
+		err = console_setting.ValidateOfficialWebsiteBannerIcon(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return false
+		}
 	}
 	return true
 }

@@ -20,6 +20,7 @@ import {
   withIdFallback,
 } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
+import { promoBannerCopyForLocale } from "@/lib/promo-banner";
 import { PROMPTS_PATH } from "@/lib/prompt-library-path";
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
@@ -167,60 +168,43 @@ const promptsNavLabelByLocale: Record<Locale, string> = withIdFallback({
 
 const promoBannerCopyByLocale: Record<
   Locale,
-  { dismissLabel: string; linkLabel: string; message: string }
+  { dismissLabel: string; linkLabel: string }
 > = withIdFallback({
   en: {
-    dismissLabel: "Dismiss Seedance promotion",
+    dismissLabel: "Dismiss website banner",
     linkLabel: "Learn more →",
-    message:
-      "Seedance is 15% off for a limited time. Join our Discord to get $5 in free credit.",
   },
   zh: {
-    dismissLabel: "关闭 Seedance 优惠横幅",
+    dismissLabel: "关闭官网横幅",
     linkLabel: "了解更多 →",
-    message: "Seedance 限时 85 折。加入我们的 Discord，可领取 5 美元免费额度。",
   },
   es: {
-    dismissLabel: "Cerrar promoción de Seedance",
+    dismissLabel: "Cerrar el banner del sitio",
     linkLabel: "Más información →",
-    message:
-      "Seedance tiene un 15 % de descuento por tiempo limitado. Únete a nuestro Discord para conseguir 5 USD de crédito gratis.",
   },
   fr: {
-    dismissLabel: "Fermer la promotion Seedance",
+    dismissLabel: "Fermer la bannière du site",
     linkLabel: "En savoir plus →",
-    message:
-      "Seedance est à -15 % pour une durée limitée. Rejoins notre Discord pour obtenir 5 $ de crédit offert.",
   },
   pt: {
-    dismissLabel: "Fechar promoção do Seedance",
+    dismissLabel: "Fechar o banner do site",
     linkLabel: "Saiba mais →",
-    message:
-      "O Seedance está com 15% de desconto por tempo limitado. Entre no nosso Discord para receber US$ 5 em crédito grátis.",
   },
   ru: {
-    dismissLabel: "Закрыть промо Seedance",
+    dismissLabel: "Закрыть баннер сайта",
     linkLabel: "Узнать больше →",
-    message:
-      "Seedance со скидкой 15% на ограниченное время. Присоединяйтесь к нашему Discord, чтобы получить 5 $ бесплатного кредита.",
   },
   ja: {
-    dismissLabel: "Seedance プロモーションを閉じる",
+    dismissLabel: "サイトバナーを閉じる",
     linkLabel: "詳細を見る →",
-    message:
-      "Seedance が期間限定で 15% オフ。Discord に参加すると、5 ドル分の無料クレジットを受け取れます。",
   },
   vi: {
-    dismissLabel: "Đóng khuyến mãi Seedance",
+    dismissLabel: "Đóng biểu ngữ trang web",
     linkLabel: "Tìm hiểu thêm →",
-    message:
-      "Seedance đang giảm 15% trong thời gian có hạn. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
   },
   de: {
-    dismissLabel: "Seedance-Aktion schließen",
+    dismissLabel: "Website-Banner schließen",
     linkLabel: "Mehr erfahren →",
-    message:
-      "Seedance ist für kurze Zeit um 15 % reduziert. Tritt unserem Discord bei und sichere dir 5 $ Gratisguthaben.",
   },
 });
 
@@ -454,7 +438,7 @@ export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
   const toolsCopy = toolsLandingCopy[props.locale];
-  const { docsUrl } = useSiteConfig();
+  const { docsUrl, promoBanner } = useSiteConfig();
   const legacyLabels =
     legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels =
@@ -464,7 +448,7 @@ export function SiteHeader(props: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
-  const [promoBannerVisible, setPromoBannerVisible] = useState(true);
+  const [promoBannerDismissed, setPromoBannerDismissed] = useState(false);
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleSignInUrl(props.locale);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
@@ -480,7 +464,18 @@ export function SiteHeader(props: Props) {
     : startFreeLabel;
   const promoBannerCopy =
     promoBannerCopyByLocale[props.locale] ?? promoBannerCopyByLocale.en;
-  const promoBannerHref = localizePath("/models/seedance-api", props.locale);
+  const promoBannerMessage = promoBannerCopyForLocale(
+    promoBanner.content,
+    props.locale,
+  );
+  // A configured banner with an empty link still renders — it just stops being
+  // clickable, so operators can run a copy-only announcement.
+  const promoBannerHref = promoBanner.href.startsWith("/")
+    ? localizePath(promoBanner.href, props.locale)
+    : promoBanner.href;
+  const promoBannerVisible = promoBanner.enabled &&
+    !promoBannerDismissed &&
+    promoBannerMessage !== "";
   const mobileMenuOffsetClass = promoBannerVisible
     ? "top-[132px] max-h-[calc(100dvh-132px)] min-[700px]:top-[112px] min-[700px]:max-h-[calc(100dvh-112px)]"
     : "top-[72px] max-h-[calc(100dvh-72px)]";
@@ -721,38 +716,57 @@ export function SiteHeader(props: Props) {
   );
 
   const dismissPromoBanner = () => {
-    setPromoBannerVisible(false);
+    setPromoBannerDismissed(true);
   };
+
+  const promoBannerBody = (
+    <>
+      {promoBanner.icon && (
+        <span
+          className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
+          aria-hidden="true"
+        >
+          <Image
+            alt=""
+            src={promoBanner.icon}
+            width={16}
+            height={16}
+            unoptimized
+            className="size-[14px] min-[700px]:size-4"
+          />
+        </span>
+      )}
+      <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
+        {promoBannerMessage}
+        {promoBannerHref && (
+          <>
+            {" "}
+            <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
+              {promoBannerCopy.linkLabel}
+            </span>
+          </>
+        )}
+      </span>
+    </>
+  );
 
   return (
     <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
       {promoBannerVisible && (
         <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F]">
           <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
-            <Link
-              className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] no-underline min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate"
-              href={promoBannerHref}
-            >
-              <span
-                className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
-                aria-hidden="true"
+            {promoBannerHref ? (
+              <Link
+                className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] no-underline min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate"
+                href={promoBannerHref}
               >
-                <Image
-                  alt=""
-                  src="/assets/logos/bytedance.svg"
-                  width={16}
-                  height={16}
-                  unoptimized
-                  className="size-[14px] min-[700px]:size-4"
-                />
+                {promoBannerBody}
+              </Link>
+            ) : (
+              <span className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate">
+                {promoBannerBody}
               </span>
-              <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
-                {promoBannerCopy.message}{" "}
-                <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
-                  {promoBannerCopy.linkLabel}
-                </span>
-              </span>
-            </Link>
+            )}
             <button
               type="button"
               className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
