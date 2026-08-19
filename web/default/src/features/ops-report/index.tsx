@@ -143,48 +143,82 @@ const pct = (part: number, total: number): string =>
 
 const usd = (v: number): string => `$${v.toFixed(v >= 100 ? 0 : 2)}`
 
-// FunnelBarDatum is one bar in the daily funnel chart. `usd` marks the
-// dollar-valued metric so the tooltip can render it with a "$" prefix.
-interface FunnelBarDatum {
+interface FunnelCountDatum {
   date: string
   metric: string
   value: number
-  usd: boolean
 }
 
-// FunnelBarChart draws the four funnel metrics (registrations / activated /
-// paid / paid amount) as grouped bars on one shared axis, one group per day.
-function FunnelBarChart({ data }: { data: FunnelBarDatum[] }) {
+interface FunnelUsdDatum {
+  date: string
+  value: number
+}
+
+// FunnelComboChart draws the three count funnel metrics (registrations /
+// activated / paid) as grouped bars on the left axis and the dollar-valued
+// paid amount as a line on the right axis, in one shared coordinate system.
+function FunnelComboChart({
+  counts,
+  usdSeries,
+  usdLabel,
+}: {
+  counts: FunnelCountDatum[]
+  usdSeries: FunnelUsdDatum[]
+  usdLabel: string
+}) {
   const { resolvedTheme } = useTheme()
   return (
     <div className='h-72 w-full'>
       <VChart
-        key={`funnel-bars-${resolvedTheme}`}
+        key={`funnel-combo-${resolvedTheme}`}
         spec={{
-          type: 'bar',
-          data: [{ id: 'funnel', values: data }],
-          xField: 'date',
-          yField: 'value',
-          seriesField: 'metric',
+          type: 'common',
+          series: [
+            {
+              type: 'bar',
+              id: 'counts',
+              data: { id: 'funnel-counts', values: counts },
+              xField: 'date',
+              yField: 'value',
+              seriesField: 'metric',
+              bar: { style: { cornerRadius: [4, 4, 0, 0] } },
+            },
+            {
+              type: 'line',
+              id: 'usd',
+              data: { id: 'funnel-usd', values: usdSeries },
+              xField: 'date',
+              yField: 'value',
+              point: { visible: true, style: { size: 4 } },
+              line: { style: { lineWidth: 2 } },
+            },
+          ],
+          axes: [
+            { orient: 'bottom', sampling: true, label: { autoHide: true } },
+            { orient: 'left', seriesId: ['counts'], title: { visible: false } },
+            {
+              orient: 'right',
+              seriesId: ['usd'],
+              title: { visible: false },
+              label: {
+                formatMethod: (val: number | string) => `$${val}`,
+              },
+            },
+          ],
+          legends: { visible: true },
           theme: resolvedTheme === 'dark' ? 'dark' : 'light',
           background: 'transparent',
           height: 288,
           padding: { top: 8, bottom: 4, left: 4, right: 8 },
-          bar: { style: { cornerRadius: [4, 4, 0, 0] } },
-          legends: { visible: true },
-          axes: [
-            { orient: 'bottom', sampling: true, label: { autoHide: true } },
-            { orient: 'left', title: { visible: false } },
-          ],
           tooltip: {
             mark: {
               content: [
                 {
-                  key: (datum: any) => String(datum?.metric ?? ''),
+                  key: (datum: any) => String(datum?.metric ?? usdLabel),
                   value: (datum: any) =>
-                    datum?.usd
-                      ? usd(Number(datum?.value ?? 0))
-                      : String(datum?.value ?? ''),
+                    datum?.metric != null
+                      ? String(datum?.value ?? '')
+                      : usd(Number(datum?.value ?? 0)),
                 },
               ],
             },
@@ -1004,35 +1038,30 @@ export function OpsReport() {
                     <CardTitle>{t('Daily Registrations')}</CardTitle>
                   </CardHeader>
                   <CardContent className='space-y-4'>
-                    <FunnelBarChart
-                      data={[...report.daily]
+                    <FunnelComboChart
+                      counts={[...report.daily]
                         .sort((a, b) => a.key.localeCompare(b.key))
                         .flatMap((row) => [
                           {
                             date: row.key,
                             metric: t('Registrations'),
                             value: row.registrations,
-                            usd: false,
                           },
                           {
                             date: row.key,
                             metric: t('Activated'),
                             value: row.activated,
-                            usd: false,
                           },
                           {
                             date: row.key,
                             metric: t('Paid Users'),
                             value: row.paid,
-                            usd: false,
-                          },
-                          {
-                            date: row.key,
-                            metric: t('Paid Amount'),
-                            value: row.paid_usd,
-                            usd: true,
                           },
                         ])}
+                      usdSeries={[...report.daily]
+                        .sort((a, b) => a.key.localeCompare(b.key))
+                        .map((row) => ({ date: row.key, value: row.paid_usd }))}
+                      usdLabel={t('Paid Amount')}
                     />
                     <DailyFunnelTable rows={report.daily} />
                   </CardContent>
