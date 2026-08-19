@@ -56,6 +56,12 @@ func tokenCreationBlockedByEmailVerification(c *gin.Context) bool {
 	return true
 }
 
+// errTokenEmailVerificationRequired is returned by buildTokenForInsert when the
+// current user must verify their email first. Callers translate it to the i18n
+// message; keeping it a sentinel lets every token-creation path (console form,
+// initial-token ensure, CLI device authorization) share one choke point.
+var errTokenEmailVerificationRequired = errors.New("email verification required before creating tokens")
+
 func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	maskedTokens := make([]*model.Token, 0, len(tokens))
 	for _, token := range tokens {
@@ -253,6 +259,12 @@ func validateTokenCreatePayload(c *gin.Context, token *model.Token) bool {
 }
 
 func buildTokenForInsert(c *gin.Context, token model.Token, key string) (model.Token, error) {
+	// Single choke point for all token-creation paths (console form,
+	// initial-token ensure, CLI device authorization): unverified users must
+	// verify their email first.
+	if tokenCreationBlockedByEmailVerification(c) {
+		return model.Token{}, errTokenEmailVerificationRequired
+	}
 	// PLG users cannot pick a group — force every token onto plg.
 	canUseGroups, err := userCanUseGroups(c.GetInt("id"))
 	if err != nil {
@@ -326,10 +338,6 @@ func applyInitialTokenDefaults(c *gin.Context, token *model.Token) error {
 }
 
 func AddToken(c *gin.Context) {
-	if tokenCreationBlockedByEmailVerification(c) {
-		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
-		return
-	}
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
@@ -348,6 +356,10 @@ func AddToken(c *gin.Context) {
 	}
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
+		if errors.Is(err, errTokenEmailVerificationRequired) {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -375,10 +387,6 @@ func AddToken(c *gin.Context) {
 }
 
 func EnsureInitialToken(c *gin.Context) {
-	if tokenCreationBlockedByEmailVerification(c) {
-		common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
-		return
-	}
 	token := model.Token{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
@@ -397,6 +405,10 @@ func EnsureInitialToken(c *gin.Context) {
 
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
+		if errors.Is(err, errTokenEmailVerificationRequired) {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
