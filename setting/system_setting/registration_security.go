@@ -138,7 +138,10 @@ func (s RegistrationSecuritySettings) IsEmailBlacklisted(email string) bool {
 	email = strings.TrimSpace(email)
 	for _, pattern := range s.EmailBlacklistPatterns {
 		matched, err := regexp.MatchString(pattern, email)
-		if err == nil && matched {
+		if err != nil {
+			return true
+		}
+		if matched {
 			return true
 		}
 	}
