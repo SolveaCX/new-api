@@ -134,7 +134,14 @@ func (s RegistrationSecuritySettings) IsTrustedDomain(domain string) bool {
 	return false
 }
 
-func (s RegistrationSecuritySettings) IsEmailBlacklisted(email string) bool {
+func (s RegistrationSecuritySettings) IsEmailBlacklisted(email string) (blacklisted bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			common.SysError(fmt.Sprintf("recovered from panic while evaluating registration email blacklist: %v", r))
+			blacklisted = false
+		}
+	}()
+
 	email = strings.TrimSpace(email)
 	for _, pattern := range s.EmailBlacklistPatterns {
 		matched, err := regexp.MatchString(pattern, email)
