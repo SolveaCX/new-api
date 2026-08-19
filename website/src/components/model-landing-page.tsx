@@ -396,9 +396,9 @@ function FlatkeyModelDetailPage(props: {
           className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(37,99,235,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(37,99,235,0.035)_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-80 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
         />
 
-        <section className="relative z-10 px-6 pt-8 pb-6 md:pt-10">
+        <section className="relative z-10 px-6 pt-5 pb-4 md:pt-6">
           <div className="mx-auto max-w-7xl">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <ModelLandingBreadcrumb
                 locale={props.locale}
                 modelName={props.config.modelId}
@@ -426,7 +426,7 @@ function FlatkeyModelDetailPage(props: {
 
             <div className="max-w-6xl">
               <div className="min-w-0">
-                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
+                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1 text-[10px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
                   <span className="relative flex size-1.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
                     <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
@@ -434,17 +434,17 @@ function FlatkeyModelDetailPage(props: {
                   <span>{model ? pageProfile.kindLabel : props.t("Catalog data unavailable")}</span>
                 </div>
 
-                <div className="mb-3 flex items-center gap-3">
+                <div className="mb-2 flex items-center gap-3">
                   <HomeModelLogo
                     iconKey={model?.icon ?? model?.vendor_icon}
                     modelName={props.config.modelId}
                     vendor={providerName}
                     fallback={props.config.modelId.slice(0, 1)}
-                    surfaceSize={48}
-                    imageSize={30}
+                    surfaceSize={40}
+                    imageSize={26}
                   />
                   <div className="min-w-0">
-                    <h1 className="text-[clamp(2rem,4vw,3rem)] leading-[1.08] font-bold tracking-tight">
+                    <h1 className="text-[clamp(1.6rem,3vw,2.25rem)] leading-[1.1] font-bold tracking-tight">
                       {props.config.displayName} API
                     </h1>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
@@ -463,7 +463,10 @@ function FlatkeyModelDetailPage(props: {
                   </div>
                 </div>
 
-                <p className="max-w-4xl text-[15px] leading-7 text-[#505764] dark:text-white/66">
+                {/* Clamped: the full description lives in the README section,
+                    and an unbounded paragraph pushed the workbench off the
+                    first screen. */}
+                <p className="line-clamp-3 max-w-4xl text-[13.5px] leading-6 text-[#505764] dark:text-white/66">
                   {pageProfile.summary}
                 </p>
 
@@ -472,7 +475,7 @@ function FlatkeyModelDetailPage(props: {
                     from a sidebar. The modality moved up to the status pill. */}
                 <div
                   data-model-hero-attributes="true"
-                  className="mt-4 grid max-w-4xl gap-2.5 text-xs"
+                  className="mt-2.5 grid max-w-4xl gap-2 text-xs"
                 >
                   <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
                     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-blue-500/8 px-2 font-bold text-blue-700">
@@ -2555,7 +2558,7 @@ function ModelHeroPricingRow(props: {
     <div
       data-model-hero-price-row="true"
       title={props.note}
-      className="mt-4 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
+      className="mt-3 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
     >
       <div className="grid min-w-[900px]" style={{ gridTemplateColumns: columns }}>
         <div data-model-price-logo-cell="true" className="flex min-w-0 items-center gap-3 p-3">
