@@ -181,6 +181,10 @@ function FunnelComboChart({
               xField: 'date',
               yField: 'value',
               seriesField: 'metric',
+              // Funnel stages are monotonic subsets (registrations >= activated
+              // >= paid), so keep the bars side-by-side instead of stacking
+              // them into one additive total.
+              stack: false,
               bar: { style: { cornerRadius: [4, 4, 0, 0] } },
             },
             {
