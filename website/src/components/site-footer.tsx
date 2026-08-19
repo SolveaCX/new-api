@@ -243,7 +243,7 @@ export function SiteFooter(props: SiteFooterProps) {
       <div className="fk-site-frame grid grid-cols-1 gap-8 pt-12 pb-2 sm:grid-cols-2 md:pt-14 lg:grid-cols-[2fr_repeat(4,1fr)] lg:gap-10">
         <div className="sm:col-span-2 lg:col-span-1">
           <Link href={localizePath("/", props.locale)} className="inline-flex items-center">
-            <FlatkeyBrandLogo className="fk-site-footer-logo" />
+            <FlatkeyBrandLogo className="[&_[data-flatkey-wordmark='true']]:text-[30px] [&_img]:h-11 [&_img]:w-11" />
             <span className="sr-only">flatkey.ai</span>
           </Link>
           <p className="mt-3 max-w-[300px] text-sm leading-7 text-[#43434C]">{copy.tagline}</p>

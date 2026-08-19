@@ -9,14 +9,14 @@ import {
   ChevronRight,
   Code2,
   Copy,
-  FileAudio,
   FileText,
-  FileVideo,
   ImageIcon,
   KeyRound,
   Layers3,
+  Minus,
   Music2,
   Play,
+  Plus,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -122,8 +122,6 @@ type FlatkeyPriceTableRow = {
   officialPercent: number;
 };
 
-const MAX_REFERENCE_MEDIA_FILES = 10;
-
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [
     { poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png" },
@@ -131,9 +129,9 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
     { poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png" },
   ],
   video: [
-    { poster: "/assets/cli/ugc-ad-clips.png", video: "/assets/cli/ugc-ad-clips.mp4" },
-    { poster: "/assets/cli/product-reveal.png", video: "/assets/cli/product-reveal.mp4" },
-    { poster: "/assets/cli/localized-variants.png", video: "/assets/cli/localized-variants.mp4" },
+    { poster: "/assets/video/v1.1.jpg", video: "/assets/video/v1.1.mp4" },
+    { poster: "/assets/video/v1.2.jpg", video: "/assets/video/v1.2.mp4" },
+    { poster: "/assets/video/v1.3.jpg", video: "/assets/video/v1.3.mp4" },
   ],
   audio: [
     { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
@@ -163,46 +161,29 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     });
   }, [config.slug, locale]);
 
-  const buildDraft = (): DraftValue => {
-    const referenceMedia = referenceImages.map(({ name, size, type }) => ({ name, size, type }));
-    return {
-      source: "model_landing",
-      model: config.modelId,
-      slug: config.slug,
-      mediaKind,
-      endpoint: generator?.endpoint ?? "/v1/chat/completions",
-      storageKey: generator?.storageKey ?? "flatkey:model-generator-draft",
-      prompt,
-      fields: fieldValues,
-      referenceImages: referenceMedia,
-      referenceMedia,
-      request: buildGeneratorRequest(config, prompt, fieldValues, referenceImages),
-      locale,
-      savedAt: new Date().toISOString(),
-    };
-  };
+  const buildDraft = (): DraftValue => ({
+    source: "model_landing",
+    model: config.modelId,
+    slug: config.slug,
+    mediaKind,
+    endpoint: generator?.endpoint ?? "/v1/chat/completions",
+    storageKey: generator?.storageKey ?? "flatkey:model-generator-draft",
+    prompt,
+    fields: fieldValues,
+    referenceImages: referenceImages.map(({ name, size, type }) => ({ name, size, type })),
+    request: buildGeneratorRequest(config, prompt, fieldValues, referenceImages),
+    locale,
+    savedAt: new Date().toISOString(),
+  });
 
-  const onRunClick = async (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
+  const onRunClick = (event: MouseEvent<HTMLAnchorElement>) => {
     (window as GtagWindow).gtag?.("event", "flatkey_sign_in_to_run_click", {
       model: config.slug,
       media_kind: mediaKind,
     });
     const draft = buildDraft();
-    const fallbackHref = withCurrentSearch(buildDraftFallbackRunHref(config, locale, draft));
-    try {
-      const handoffId = await createModelHandoffDraft(config, locale, mediaKind, draft);
-      window.location.assign(withCurrentSearch(buildHandoffRunHref(config, locale, handoffId, mediaKind)));
-    } catch {
-      window.location.assign(fallbackHref);
-    }
-  };
-
-  const onReset = () => {
-    referenceImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-    setPrompt(config.examplePrompt);
-    setFieldValues(buildInitialGeneratorValues(config));
-    setReferenceImages([]);
+    window.localStorage.setItem(generator?.storageKey ?? "flatkey:model-generator-draft", JSON.stringify(draft));
+    event.currentTarget.href = withCurrentSearch(buildRunHref(config, locale, prompt, draft));
   };
 
   return (
@@ -215,7 +196,6 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       onPromptChange={setPrompt}
       onFieldChange={(name, value) => setFieldValues((current) => ({ ...current, [name]: value }))}
       onReferenceImagesChange={setReferenceImages}
-      onReset={onReset}
       onRunClick={onRunClick}
       primaryLiveModel={primaryLiveModel}
       liveModels={liveModels}
@@ -236,7 +216,6 @@ function FlatkeyModelDetailPage(props: {
   onPromptChange: (prompt: string) => void;
   onFieldChange: (name: string, value: string | number | boolean) => void;
   onReferenceImagesChange: (images: ReferenceImageDraft[]) => void;
-  onReset: () => void;
   onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
   primaryLiveModel: PricingModel | null;
   liveModels: PricingModel[];
@@ -255,17 +234,18 @@ function FlatkeyModelDetailPage(props: {
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.groupRatio, props.t);
   const providerRows = buildCatalogProviderRows(props.config, props.liveModels, providerName);
   const priceRows = buildFlatkeyPriceRows(props.config, model, props.groupRatio, props.t);
+  const modalityLabels = buildModalityLabels(props.config, model, props.t);
   const generator = props.config.generator;
   const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
+  const releasedAt = formatModelDate(model?.availability_detected_at ?? model?.availability_checked_at);
+  const contextValue = inferContextValue(model);
   const modelDescription = buildModelDescription(props.config, model, props.t);
-  const pageKind: ModelReadmeKind = generator?.kind ?? "text";
-  const pageProfile = buildModelPageProfile(props.config, pageKind, providerName, modelDescription, props.t);
   const faqItems = buildModelFaq(props.config, props.t);
   const schema = buildModelSchema({
     locale: props.locale,
     modelName: props.config.displayName,
     vendorName: providerName,
-    description: pageProfile.summary,
+    description: modelDescription,
     inputPriceUsd: model
       ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
       : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
@@ -302,27 +282,29 @@ function FlatkeyModelDetailPage(props: {
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
   const successRate = summary?.success_rate ?? trendSuccess;
   const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
+  const heroPrice = priceRows.rows[0]?.flatkey ?? (model ? "—" : `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`);
+  const endpointLabel = props.config.generator?.endpoint ?? model?.supported_endpoint_types?.[0] ?? "/v1/chat/completions";
   const dashboardHref = consoleUrl("/dashboard");
 
   return (
     <SiteShell locale={props.locale} pathname={`/models/${props.config.slug}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
-      <main className="home-landing relative overflow-x-clip bg-[#f7f9fc] text-[#0B0B0F] dark:bg-[#070812] dark:text-white">
+      <main className="home-landing relative overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_28%,#ffffff_58%,#f4f1ff_100%)] text-[#0B0B0F] dark:bg-[linear-gradient(180deg,#050712_0%,#080b18_36%,#070712_72%,#03040b_100%)] dark:text-white">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(37,99,235,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(37,99,235,0.035)_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-80 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
+          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
         />
 
-        <section className="relative z-10 px-6 pt-8 pb-6 md:pt-10">
+        <section className="relative z-10 px-6 pt-20 pb-12 md:pt-28 md:pb-16">
           <div className="mx-auto max-w-7xl">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
               <ModelLandingBreadcrumb
                 locale={props.locale}
                 modelName={props.config.modelId}
                 t={props.t}
                 className="text-[13px]"
               />
-              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={localizePath("/models", props.locale)}
                   className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-500/20 bg-white/65 px-4 text-sm font-medium hover:border-violet-500/35 hover:bg-violet-500/10"
@@ -332,7 +314,7 @@ function FlatkeyModelDetailPage(props: {
                 </a>
                 <a
                   href={dashboardHref}
-                  className="flatkey-hero-cta inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_16px_34px_-18px_rgba(37,99,235,0.6)]"
+                  className="flatkey-hero-cta inline-flex h-10 items-center gap-2 px-4 text-sm font-medium shadow-[0_16px_34px_-18px_rgba(124,58,237,0.85)]"
                   style={{ borderRadius: "0.5rem" }}
                 >
                   <KeyRound className="size-4" />
@@ -341,115 +323,105 @@ function FlatkeyModelDetailPage(props: {
               </div>
             </div>
 
-            <div className="max-w-6xl">
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.58fr)] lg:items-start">
-                <div className="min-w-0">
-                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
-                    <span className="relative flex size-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                      <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
-                    </span>
-                    <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
-                  </div>
-
-                  <div className="mb-3 flex items-start gap-3">
-                    <HomeModelLogo
-                      iconKey={model?.icon ?? model?.vendor_icon}
-                      modelName={props.config.modelId}
-                      vendor={providerName}
-                      fallback={props.config.modelId.slice(0, 1)}
-                      surfaceSize={48}
-                      imageSize={30}
-                    />
-                    <div className="min-w-0">
-                      <h1 className="text-[clamp(2rem,4vw,3rem)] leading-[1.08] font-bold tracking-tight">
-                        {props.config.displayName} API
-                      </h1>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
-                        <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
-                          {props.config.modelId}
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
-                          className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
-                          aria-label={props.t("Copy model id")}
-                        >
-                          <Copy className="size-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="max-w-3xl text-[15px] leading-7 text-[#505764] dark:text-white/66">
-                    {pageProfile.summary}
-                  </p>
+            <div className="grid items-start gap-8 lg:grid-cols-12">
+              <div className="min-w-0 lg:col-span-7">
+                <div className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 text-[11px] font-medium text-violet-700 shadow-[0_12px_34px_-22px_rgba(124,58,237,0.75)]">
+                  <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-violet-500" />
+                  </span>
+                  <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
                 </div>
 
-                <div className="grid gap-2.5 text-xs lg:border-l lg:border-slate-200 lg:pl-5 dark:lg:border-white/10">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ModelTypeChip label={props.t("Model Type")} value={pageProfile.kindLabel} active />
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white/72 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
-                    <div className="mb-1.5 flex items-center gap-1.5 font-bold text-blue-700">
-                      <Sparkles className="size-3.5" />
-                      {props.t("Use cases")}
+                <div className="mb-4 flex items-start gap-3">
+                  <HomeModelLogo
+                    iconKey={model?.icon ?? model?.vendor_icon}
+                    modelName={props.config.modelId}
+                    vendor={providerName}
+                    fallback={props.config.modelId.slice(0, 1)}
+                    surfaceSize={48}
+                    imageSize={30}
+                  />
+                  <div className="min-w-0">
+                    <h1 className="text-[clamp(2.15rem,4.2vw,3.25rem)] leading-[1.08] font-bold tracking-tight">
+                      {providerName}: {props.config.displayName}
+                    </h1>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
+                      <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
+                        {props.config.modelId}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
+                        className="grid size-7 place-items-center rounded-lg border border-violet-500/16 bg-white/70 text-[#6b7280] hover:text-[#111827]"
+                        aria-label={props.t("Copy model id")}
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
                     </div>
-                    <p className="leading-5 font-semibold text-[#4f5867] dark:text-white/66">
-                      {props.t(props.config.positioning)}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {props.config.useCases.slice(0, 3).map((useCase) => (
-                        <span key={useCase} className="inline-flex min-h-7 items-center rounded-md bg-slate-100 px-2 font-semibold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/66">
-                          {props.t(useCase)}
-                        </span>
-                      ))}
-                    </div>
                   </div>
+                </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
-                    <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-blue-500/8 px-2 font-bold text-blue-700">
-                      <Zap className="size-3.5" />
-                      {props.t("Capabilities")}
-                    </span>
-                    {pageProfile.modelTypes.map((item) => (
-                      <span key={item} className="inline-flex min-h-7 items-center rounded-md border border-slate-200 bg-white/70 px-2 font-semibold text-[#626b78] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66">
-                        {item}
-                      </span>
-                    ))}
-                  </div>
+                <p className="text-muted-foreground/80 max-w-2xl text-base leading-relaxed md:text-[15px]">
+                  {modelDescription}
+                </p>
+
+                <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <FlatkeyHeroMetric label={props.t("Modalities")} value={modalityLabels.join(" · ")} />
+                  <FlatkeyHeroMetric label={props.t("API")} value={endpointLabel} />
+                  <FlatkeyHeroMetric label={props.t("Context")} value={contextValue} />
+                  <FlatkeyHeroMetric label={props.t("Released")} value={releasedAt} />
                 </div>
               </div>
 
-              <ModelHeroPricingRow
-                config={props.config}
-                model={model}
-                providerName={providerName}
-                rows={priceRows.rows}
-                note={priceRows.note}
-                health={formatSuccessRate(successRate)}
-                requests={formatCallCount(summary?.request_count)}
-                t={props.t}
-              />
+              <aside className="min-w-0 rounded-2xl border border-violet-500/16 bg-white/72 p-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm lg:col-span-5 dark:bg-white/[0.04]">
+                <div className="mb-5 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-muted-foreground mb-2 text-xs font-medium tracking-widest uppercase">{props.t("Model price comparison")}</p>
+                    <h2 className="text-2xl font-bold tracking-tight">{heroPrice}</h2>
+                  </div>
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                    {props.t("After bonus")}
+                  </span>
+                </div>
+                <div className="grid gap-3">
+                  {priceRows.rows.length > 0 ? priceRows.rows.map((row) => (
+                    <FlatkeyPriceRow key={row.label} row={row} officialLabel={props.t("Reference price")} flatkeyLabel={props.t("Flatkey price")} />
+                  )) : (
+                    <div className="rounded-xl border border-violet-500/12 bg-white/62 p-4 text-sm text-muted-foreground">
+                      {props.t("Pricing data unavailable")}
+                    </div>
+                  )}
+                </div>
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  {priceRows.note}
+                </p>
+              </aside>
             </div>
           </div>
         </section>
 
-        <ModelPageTabs t={props.t} generator={Boolean(generator)} />
-
         {generator ? (
-          <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-8 dark:border-white/10 dark:bg-white/[0.02]">
+          <section id="workbench" className="relative z-10 scroll-mt-24 border-y border-violet-500/10 bg-white/60 px-6 py-16 backdrop-blur-sm dark:bg-white/[0.02]">
             <div className="mx-auto max-w-7xl">
-              <div className="max-w-3xl">
+              <div className="flex flex-wrap items-end justify-between gap-4">
                 <FlatkeySectionHeading
                   eyebrow={props.t("Generator setup")}
-                  title={props.t("Create with this model")}
-                  description={props.t("Explore different use cases and parameter configurations")}
+                  title={props.t("Playground (edit before sign-up)")}
+                  description={props.t("Edit the prompt and settings here. We save the draft locally, then open Flatkey so you can run it after signup.")}
                 />
+                <a
+                  href={runHref}
+                  onClick={props.onRunClick}
+                  className="flatkey-hero-cta inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_16px_34px_-18px_rgba(124,58,237,0.85)] sm:w-auto"
+                >
+                  <Play className="size-4 fill-current" />
+                  {props.t("Open in Playground")}
+                </a>
               </div>
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
-                <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
-                  <PanelHeader title={props.t("Generator setup")} right={props.t("Use cases")} />
+              <div className="mt-8 grid overflow-hidden rounded-2xl border border-violet-500/16 bg-white/78 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)] dark:bg-white/[0.04]">
+                <div className="min-w-0 border-b border-violet-500/12 p-4 sm:p-5 lg:border-r lg:border-b-0 xl:p-6">
+                  <PanelHeader title={props.t("Input")} right={props.t("Form")} />
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
@@ -461,52 +433,57 @@ function FlatkeyModelDetailPage(props: {
                     onReferenceImagesChange={props.onReferenceImagesChange}
                     t={props.t}
                   />
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={props.onReset}
-                      className="inline-flex min-h-12 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-[#3f4652] transition hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-                    >
-                      {props.t("Reset")}
-                    </button>
+                  <a
+                    href={runHref}
+                    onClick={props.onRunClick}
+                    className="flatkey-hero-cta mt-5 flex min-h-12 flex-wrap items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow-[0_18px_42px_-24px_rgba(124,58,237,.85)] sm:text-base"
+                  >
+                    <WandSparkles className="size-4" />
+                    {props.t("Start generating")}
+                    <span className="text-white/70">·</span>
+                    <span className="text-sm text-white/85">{props.t("Join and run")}</span>
+                  </a>
+                </div>
+
+                <div className="min-w-0 p-4 sm:p-5 xl:p-6">
+                  <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
+                  <OutputPreview
+                    modelName={props.config.displayName}
+                    prompt={props.prompt}
+                    kind={generator.kind}
+                    images={examples}
+                    t={props.t}
+                  />
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <a
                       href={runHref}
                       onClick={props.onRunClick}
-                      className="flatkey-hero-cta inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-violet-500/16 bg-white/70 px-4 text-sm font-semibold hover:border-violet-500/32 hover:bg-violet-500/8"
                     >
-                      <WandSparkles className="size-4" />
-                      {props.t("Start generating")}
+                      <Play className="size-4" />
+                      {props.t("Open in Playground")}
+                    </a>
+                    <a
+                      href={runHref}
+                      onClick={props.onRunClick}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-violet-500/16 bg-white/70 px-4 text-sm font-semibold hover:border-violet-500/32 hover:bg-violet-500/8"
+                    >
+                      <KeyRound className="size-4" />
+                      {props.t("Get API Key")}
                     </a>
                   </div>
                 </div>
-
-                <OutputPreview
-                  modelName={props.config.displayName}
-                  prompt={props.prompt}
-                  kind={generator.kind}
-                  images={examples}
-                  t={props.t}
-                />
               </div>
+              <RequestPreview
+                config={props.config}
+                prompt={props.prompt}
+                fieldValues={props.fieldValues}
+                referenceImages={props.referenceImages}
+                t={props.t}
+              />
             </div>
           </section>
         ) : null}
-
-        <ModelExamplesAndRelated
-          config={props.config}
-          kind={pageKind}
-          examples={examples}
-          relatedModels={relatedModels.models}
-          relatedTitle={relatedModels.title}
-          t={props.t}
-        />
-
-        <ModelReadmeSections
-          config={props.config}
-          kind={pageKind}
-          profile={pageProfile}
-          t={props.t}
-        />
 
         <section id="health" className="relative z-10 border-y border-violet-500/10 bg-white/60 px-6 py-16 backdrop-blur-sm dark:bg-white/[0.02]">
           <div className="mx-auto max-w-7xl">
@@ -543,7 +520,7 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <section id="providers" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-16">
+        <section id="providers" className="relative z-10 px-6 py-16">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow={props.t("Model catalog")}
@@ -575,6 +552,40 @@ function FlatkeyModelDetailPage(props: {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="related" className="relative z-10 border-y border-violet-500/10 bg-white px-6 py-16 dark:bg-white/[0.02]">
+          <div className="mx-auto max-w-7xl">
+            <FlatkeySectionHeading
+              eyebrow={props.t("Related models")}
+              title={relatedModels.title}
+              description={props.t("Related models from the pricing catalog.")}
+            />
+            <div className="mt-8 flex gap-3 overflow-x-auto pb-2">
+              {relatedModels.models.map((related) => (
+                <Link
+                  key={related.href}
+                  href={related.href}
+                  className="group grid min-h-[150px] min-w-[260px] rounded-2xl border border-violet-500/16 bg-white p-4 shadow-none transition-colors hover:border-violet-500/28 dark:bg-white/[0.04]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <HomeModelLogo
+                      modelName={related.name}
+                      vendor={related.description}
+                      fallback={related.name.charAt(0)}
+                      surfaceSize={34}
+                      imageSize={22}
+                    />
+                    <ArrowRight className="size-4 text-violet-600 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                  <div className="mt-4 min-w-0">
+                    <h3 className="truncate font-mono text-sm font-semibold">{related.name}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">{related.description}</p>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </section>
@@ -1185,383 +1196,6 @@ function ModelLandingBreadcrumb(props: {
   );
 }
 
-type ModelReadmeKind = NonNullable<ModelConfig["generator"]>["kind"] | "text";
-
-type ModelReadmeCard = {
-  title: string;
-  body: string;
-  icon: ReactNode;
-};
-
-type ModelPageProfile = {
-  kindLabel: string;
-  modelTypes: string[];
-  summary: string;
-  playgroundDescription: string;
-  heroImage: string;
-  waysTitle: string;
-  ways: ModelReadmeCard[];
-  valuesTitle: string;
-  values: ModelReadmeCard[];
-};
-
-type SectionScrollWindow = Pick<Window, "cancelAnimationFrame" | "matchMedia" | "requestAnimationFrame" | "scrollTo" | "scrollY">;
-
-type ScrollAnimationOptions = {
-  durationMs?: number;
-};
-
-export function animateScrollToTop(windowLike: SectionScrollWindow, targetTop: number, options: ScrollAnimationOptions = {}) {
-  const finalTop = Math.max(0, Math.round(targetTop));
-  const startTop = Math.max(0, Math.round(windowLike.scrollY ?? 0));
-  const durationMs = Math.max(0, options.durationMs ?? 360);
-  const prefersReducedMotion = windowLike.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-
-  if (prefersReducedMotion || durationMs === 0 || Math.abs(finalTop - startTop) < 1 || typeof windowLike.requestAnimationFrame !== "function") {
-    windowLike.scrollTo({ top: finalTop, behavior: "auto" });
-    return;
-  }
-
-  let startTime: number | null = null;
-  const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
-  const step = (time: number) => {
-    if (startTime == null) startTime = time;
-    const progress = Math.min(1, (time - startTime) / durationMs);
-    const nextTop = startTop + (finalTop - startTop) * easeOutCubic(progress);
-    windowLike.scrollTo({ top: nextTop, behavior: "auto" });
-    if (progress < 1) {
-      windowLike.requestAnimationFrame(step);
-    }
-  };
-
-  windowLike.requestAnimationFrame(step);
-}
-
-function ModelPageTabs(props: {
-  generator: boolean;
-  t: (key: string, vars?: Record<string, string>) => string;
-}) {
-  type ModelSectionTab = { id: string; href: string; label: string; icon: ReactNode };
-  const sectionIds = useMemo(
-    () => (props.generator ? ["workbench", "related", "readme", "providers"] : ["related", "readme", "providers"]),
-    [props.generator]
-  );
-  const tabs: ModelSectionTab[] = [
-    ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "related", href: "#related", label: props.t("Similar"), icon: <Layers3 className="size-3.5" /> },
-    { id: "readme", href: "#readme", label: props.t("README"), icon: <FileText className="size-3.5" /> },
-    { id: "providers", href: "#providers", label: props.t("API"), icon: <Code2 className="size-3.5" /> },
-  ].filter((tab) => sectionIds.includes(tab.id));
-  const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const updateOffsets = () => {
-      const headerHeight =
-        document.querySelector(".fk-site-header")?.getBoundingClientRect().height ??
-        Number.parseFloat(getComputedStyle(root).getPropertyValue("--fk-site-header-height")) ??
-        0;
-      const navHeight =
-        Number.parseFloat(getComputedStyle(root).getPropertyValue("--fk-model-section-nav-height")) || 48;
-      root.style.setProperty("--fk-model-sticky-offset", `${Math.ceil(headerHeight)}px`);
-      root.style.setProperty("--fk-model-section-scroll-margin", `${Math.ceil(headerHeight + navHeight + 16)}px`);
-    };
-
-    updateOffsets();
-    window.addEventListener("resize", updateOffsets);
-    const header = document.querySelector(".fk-site-header");
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateOffsets);
-    if (header) observer?.observe(header);
-
-    return () => {
-      window.removeEventListener("resize", updateOffsets);
-      observer?.disconnect();
-      root.style.removeProperty("--fk-model-sticky-offset");
-      root.style.removeProperty("--fk-model-section-scroll-margin");
-    };
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    let frame = 0;
-
-    const updateActiveSection = () => {
-      frame = 0;
-      const scrollMargin =
-        Number.parseFloat(getComputedStyle(root).getPropertyValue("--fk-model-section-scroll-margin")) || 112;
-      const activationLine = scrollMargin + 8;
-      let nextActive = sectionIds[0] ?? "related";
-
-      for (const id of sectionIds) {
-        const node = document.getElementById(id);
-        if (!node) continue;
-        if (node.getBoundingClientRect().top <= activationLine) {
-          nextActive = id;
-        }
-      }
-
-      setActiveSection(nextActive);
-    };
-
-    const requestUpdate = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(updateActiveSection);
-    };
-
-    requestUpdate();
-    window.addEventListener("scroll", requestUpdate, { passive: true });
-    window.addEventListener("resize", requestUpdate);
-    window.addEventListener("hashchange", requestUpdate);
-
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", requestUpdate);
-      window.removeEventListener("resize", requestUpdate);
-      window.removeEventListener("hashchange", requestUpdate);
-    };
-  }, [sectionIds]);
-
-  const handleSectionClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (!href.startsWith("#")) return;
-    const target = document.getElementById(href.slice(1));
-    if (!target) return;
-    event.preventDefault();
-    setActiveSection(href.slice(1));
-    const targetTop = target.getBoundingClientRect().top + window.scrollY;
-    const scrollMargin = Number.parseFloat(window.getComputedStyle(target).scrollMarginTop || "");
-    animateScrollToTop(window, Number.isFinite(scrollMargin) ? targetTop - scrollMargin : targetTop);
-    window.history?.pushState?.(null, "", href);
-  };
-
-  return (
-    <div className="sticky z-30 border-y border-slate-200 bg-white/92 backdrop-blur-md dark:border-white/10 dark:bg-[#080a13]/88" style={{ top: "var(--fk-model-sticky-offset, var(--fk-site-header-height))" }}>
-      <nav
-        aria-label="Model page sections"
-        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] gap-5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
-      >
-        {tabs.map((tab) => {
-          const isActive = activeSection === tab.id;
-          return (
-            <a
-              key={tab.href}
-              href={tab.href}
-              data-model-section-link
-              data-section-id={tab.id}
-              data-active-model-section={isActive ? "true" : undefined}
-              aria-current={isActive ? "true" : undefined}
-              onClick={(event) => handleSectionClick(event, tab.href)}
-              className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 font-semibold transition ${
-                isActive
-                  ? "border-blue-500 text-blue-700 dark:border-blue-400 dark:text-white"
-                  : "border-transparent text-[#5f6673] hover:border-blue-500 hover:text-blue-700 dark:text-white/62 dark:hover:text-white"
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </a>
-          );
-        })}
-      </nav>
-    </div>
-  );
-}
-
-function ModelTypeChip(props: { label?: string; value: string; active?: boolean }) {
-  return (
-    <span
-      data-model-type-chip="true"
-      className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold ${
-        props.active
-          ? "border-blue-500/22 bg-blue-500/10 text-blue-700"
-          : "border-slate-200 bg-white text-[#5f6673] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66"
-      }`}
-    >
-      {props.label ? <span className="text-[#8b93a3]">{props.label}</span> : null}
-      <span>{props.value}</span>
-    </span>
-  );
-}
-
-function ModelHeroVisual(props: {
-  image: string;
-  modelName: string;
-  label: string;
-  priority?: boolean;
-  t: (key: string, vars?: Record<string, string>) => string;
-}) {
-  return (
-    <figure className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.55)] dark:border-white/10 dark:bg-white/[0.04]">
-      <div className="relative aspect-video bg-slate-950">
-        <Image
-          src={props.image}
-          alt=""
-          fill
-          sizes="(min-width: 1024px) 420px, 100vw"
-          className="object-cover"
-          priority={props.priority}
-        />
-      </div>
-      <figcaption className="flex items-center justify-between gap-3 px-4 py-3 text-xs">
-        <span className="min-w-0 truncate font-semibold">{props.modelName}</span>
-        <span className="shrink-0 rounded-full bg-blue-500/10 px-2.5 py-1 font-bold text-blue-700">
-          {props.label}
-        </span>
-      </figcaption>
-    </figure>
-  );
-}
-
-function ModelReadmeSections(props: {
-  config: ModelConfig;
-  kind: ModelReadmeKind;
-  profile: ModelPageProfile;
-  t: (key: string, vars?: Record<string, string>) => string;
-}) {
-  const content = buildModelReadmeContent(props.config, props.kind, props.t);
-  const examples = props.kind === "text" ? [] : MEDIA_EXAMPLES[props.kind];
-  const storyImages = [
-    props.profile.heroImage,
-    examples[0]?.poster ?? props.profile.heroImage,
-    examples[1]?.poster ?? props.profile.heroImage,
-  ];
-
-  return (
-    <section id="readme" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-16 dark:bg-white/[0.02]">
-      <div className="mx-auto max-w-7xl">
-        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(380px,1.05fr)]">
-          <FlatkeySectionHeading
-            eyebrow="README"
-            title={props.t("{{model}} API implementation guide", { model: props.config.displayName })}
-            description={props.t("Use this model page as a request blueprint. Edit parameters above when available, then continue into the console with the complete draft preserved.")}
-          />
-          <ModelHeroVisual
-            image={props.profile.heroImage}
-            modelName={props.config.displayName}
-            label={props.profile.kindLabel}
-            t={props.t}
-          />
-        </div>
-
-        <div className="mt-14">
-          <h2 className="text-center text-3xl font-bold tracking-tight">{props.profile.waysTitle}</h2>
-          <div className="mt-8 grid gap-5 md:grid-cols-2">
-            {props.profile.ways.map((item) => (
-              <ModelReadmeFeature key={item.title} item={item} />
-            ))}
-          </div>
-        </div>
-
-        <div id="capabilities" className="mt-16 grid gap-12">
-          <FlatkeySectionHeading
-            eyebrow={props.t("Capabilities")}
-            title={content.capabilitiesTitle}
-            description={props.t("Core model capabilities, request controls, and production use cases for this page.")}
-          />
-          {content.capabilities.map((item, index) => (
-            <ModelReadmeStory
-              key={item.title}
-              item={item}
-              image={storyImages[index] ?? props.profile.heroImage}
-              reverse={index % 2 === 1}
-            />
-          ))}
-        </div>
-
-        <div className="mt-16 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-          <div id="access" className="rounded-xl border border-slate-200 bg-[#f8fafc] p-6 dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="mb-6 flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-700">
-                <KeyRound className="size-5" />
-              </span>
-              <div>
-                <p className="text-xs font-bold tracking-widest text-blue-700 uppercase">{props.t("Access")}</p>
-                <h2 className="text-2xl font-bold tracking-tight">{content.accessTitle}</h2>
-              </div>
-            </div>
-            <ol className="grid gap-4">
-              {content.accessSteps.map((step, index) => (
-                <li key={step} className="grid grid-cols-[2rem_1fr] gap-3 text-sm leading-6 text-muted-foreground">
-                  <span className="grid size-8 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                    {index + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-
-          <div id="use-cases" className="rounded-xl border border-slate-200 bg-white p-6 dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="mb-6 flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-lg bg-emerald-500/10 text-emerald-700">
-                <Sparkles className="size-5" />
-              </span>
-              <div>
-                <p className="text-xs font-bold tracking-widest text-emerald-700 uppercase">{props.t("Use cases")}</p>
-                <h2 className="text-2xl font-bold tracking-tight">{content.useCasesTitle}</h2>
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {content.useCases.map((item) => (
-                <div key={item} className="rounded-xl border border-slate-200 bg-[#f8fafc] px-4 py-4 text-sm font-semibold text-[#364152] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-16">
-          <h2 className="text-center text-3xl font-bold tracking-tight">{props.profile.valuesTitle}</h2>
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
-            {props.profile.values.map((item) => (
-              <ModelReadmeFeature key={item.title} item={item} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ModelReadmeStory(props: { item: ModelReadmeCard; image: string; reverse?: boolean }) {
-  return (
-    <div className={`grid items-center gap-8 lg:grid-cols-2 ${props.reverse ? "lg:[&>figure]:order-2" : ""}`}>
-      <figure className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 shadow-[0_22px_60px_-42px_rgba(15,23,42,0.55)] dark:border-white/10">
-        <div className="relative aspect-video">
-          <Image
-            src={props.image}
-            alt=""
-            fill
-            sizes="(min-width: 1024px) 560px, 100vw"
-            className="object-cover"
-          />
-        </div>
-      </figure>
-      <div className="min-w-0">
-        <span className="mb-5 grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-700">
-          {props.item.icon}
-        </span>
-        <h3 className="text-2xl font-bold tracking-tight">{props.item.title}</h3>
-        <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">{props.item.body}</p>
-      </div>
-    </div>
-  );
-}
-
-function ModelReadmeFeature(props: { item: ModelReadmeCard }) {
-  return (
-    <div className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-      <span className="grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-700">
-        {props.item.icon}
-      </span>
-      <span>
-        <b className="block text-sm">{props.item.title}</b>
-        <span className="mt-1 block text-sm leading-6 text-muted-foreground">{props.item.body}</span>
-      </span>
-    </div>
-  );
-}
-
 function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
@@ -1574,25 +1208,15 @@ function MediaPromptEditor(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const fields = useMemo(() => props.generator.fields, [props.generator.fields]);
-  const promptPresets = props.generator.kind === "video"
-    ? ["UGC ad clips", "Product motion", "Social video variants"]
-    : props.generator.kind === "audio"
-      ? ["Video Music Bed", "Voiceover", "Podcast Intro", "Product Demo Sound"]
-      : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
-  const supportsReferenceMedia = props.generator.kind === "image" || props.generator.kind === "video";
-  const referenceLabel = props.generator.kind === "video" ? props.t("Reference media") : props.t("Reference Images");
-  const referenceHelp = props.generator.kind === "video"
-    ? props.t("Up to 10 images, videos, or audio files")
-    : props.t("Up to 10 reference images");
-  const uploadLabel = props.generator.kind === "video" ? props.t("Upload assets") : props.t("Upload reference");
-  const referenceAccept = props.generator.kind === "video" ? "image/*,video/*,audio/*" : "image/*";
-  const remainingReferenceSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
-  const isReferenceUploadDisabled = remainingReferenceSlots <= 0;
+  const quickPrompts = props.generator.kind === "video"
+    ? ["Product Reveal", "UGC Ad", "Cinematic Scene", "Social Clip"]
+    : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
+  const supportsReferenceImages = props.generator.kind === "image";
 
   const onReferenceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? []);
     if (files.length === 0) return;
-    const remainingSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
+    const remainingSlots = Math.max(0, 4 - props.referenceImages.length);
     const nextImages = files.slice(0, remainingSlots).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
@@ -1611,87 +1235,72 @@ function MediaPromptEditor(props: {
 
   return (
     <>
-      <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
-        <span>{props.t("Use cases")}</span>
-        <span className="relative block">
-          <select
-            defaultValue=""
-            onChange={(event) => {
-              if (!event.target.value) return;
-              props.onPromptChange(buildQuickPrompt(event.target.value, props.generator.kind));
-            }}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
-          >
-            <option value="">{props.t("Explore different use cases and parameter configurations")}</option>
-            {promptPresets.map((item) => (
-              <option key={item} value={item}>{props.t(item)}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#8b93a3]" />
-        </span>
-      </label>
-
-      <label className="mt-4 block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
+      <label className="block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
         {props.t("Prompt")}
         <textarea
           value={props.prompt}
           onChange={(event) => props.onPromptChange(event.target.value)}
-          className="mt-2 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="mt-2 min-h-[140px] w-full resize-y rounded-[1.1rem] border border-[#ded8ea] bg-[#fcfbff] p-4 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-[0_10px_28px_-26px_rgba(76,29,149,.72)] outline-none transition focus:border-[#7c3aed] focus:bg-white focus:ring-4 focus:ring-[#7c3aed]/10"
         />
       </label>
       <div className="mt-2 text-right text-xs font-medium text-muted-foreground">
         {props.prompt.length} / 10000
       </div>
-      <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-6">
-        {fields.map((field) => (
-          <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
-            <GeneratorFieldControl
-              kind={props.generator.kind}
-              field={field}
-              value={props.fieldValues[field.name] ?? field.defaultValue}
-              onChange={(value) => props.onFieldChange(field.name, value)}
-              t={props.t}
-            />
-          </div>
-        ))}
-      </div>
-      {supportsReferenceMedia ? (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{referenceLabel}</div>
-              <div className="mt-1 text-xs font-medium text-[#7b8494] dark:text-white/48">
-                {referenceHelp} · {props.referenceImages.length}/{MAX_REFERENCE_MEDIA_FILES}
-              </div>
-            </div>
-            <label
-              data-reference-media-limit={MAX_REFERENCE_MEDIA_FILES}
-              className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition ${
-                isReferenceUploadDisabled
-                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
-                  : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-              }`}
+      <div className="mt-5">
+        <div className="mb-3 text-sm font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Quick Prompts")}</div>
+        <div className="flex flex-wrap gap-2.5">
+          {quickPrompts.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => props.onPromptChange(buildQuickPrompt(item, props.generator.kind))}
+              className="rounded-xl border border-[#e4deed] bg-[#fcfbff] px-3.5 py-2 text-[13px] font-bold text-[#4f4d56] shadow-[0_10px_20px_-18px_rgba(76,29,149,.45)] transition hover:border-[#7c3aed]/45 hover:bg-white hover:text-[#4c1d95]"
             >
+              {props.t(item)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6">
+        <div className="rounded-[1.35rem] border border-[#e2dbea] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9ff_100%)] p-4 shadow-[0_18px_38px_-32px_rgba(76,29,149,.55)] sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="text-sm font-extrabold text-[#2c2d33]">{props.t("Advanced Options")}</div>
+          </div>
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-6">
+            {fields.map((field) => (
+              <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
+                <GeneratorFieldControl
+                  kind={props.generator.kind}
+                  field={field}
+                  value={props.fieldValues[field.name] ?? field.defaultValue}
+                  onChange={(value) => props.onFieldChange(field.name, value)}
+                  t={props.t}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {supportsReferenceImages ? (
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Reference Images")}</div>
+            <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-violet-500/16 bg-white/70 px-4 text-sm font-semibold text-[#4f4d56] hover:border-violet-500/35 hover:bg-violet-500/8 hover:text-violet-700">
               <Upload className="size-3.5" />
-              {uploadLabel}
-              <input
-                type="file"
-                accept={referenceAccept}
-                multiple
-                disabled={isReferenceUploadDisabled}
-                className="sr-only"
-                onChange={onReferenceInputChange}
-              />
+              {props.t("Upload reference")}
+              <input type="file" accept="image/*" multiple className="sr-only" onChange={onReferenceInputChange} />
             </label>
           </div>
           {props.referenceImages.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {props.referenceImages.map((image) => (
                 <div key={image.id} className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-3 rounded-xl border border-violet-500/12 bg-white/70 p-3">
-                  <ReferenceMediaThumb item={image} />
+                  <div className="relative aspect-square overflow-hidden rounded-lg bg-white">
+                    <Image src={image.previewUrl} alt="" fill sizes="52px" className="object-cover" unoptimized />
+                  </div>
                   <div className="min-w-0">
                     <div className="truncate text-xs font-extrabold text-[#2c2d33]">{image.name}</div>
-                    <div className="mt-0.5 text-[10px] font-medium text-[#8b8891]">{referenceMediaKindLabel(image.type, props.t)} · {formatUploadedSize(image.size)}</div>
+                    <div className="mt-0.5 text-[10px] font-medium text-[#8b8891]">{formatUploadedSize(image.size)}</div>
                   </div>
                   <button
                     type="button"
@@ -1718,119 +1327,150 @@ function GeneratorFieldControl(props: {
   onChange: (value: string | number | boolean) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const options = generatorFieldSelectOptions(props.field, props.t);
+  const optionCount = props.field.options?.length ?? 0;
+  const canUseSegmented =
+    props.field.type === "select" && optionCount > 0 && (optionCount <= 4 || (props.kind === "video" && props.field.name === "ratio"));
 
-  return (
-    <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
-      <span>{props.t(props.field.label)}</span>
-      {options.length > 0 ? (
-        <span className="relative block">
-          <select
+  if (props.field.type === "boolean") {
+    return (
+      <label className="flex min-h-[4.55rem] min-w-0 cursor-pointer items-center justify-between gap-4 rounded-[1.05rem] border border-[#ded8ea] bg-white px-4 py-3 text-sm font-extrabold text-[#5d5b64] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] transition hover:border-[#7c3aed]/35 hover:bg-[#fdfcff]">
+        <span className="min-w-0 leading-5">{props.t(props.field.label)}</span>
+        <span className="relative inline-flex h-7 w-12 shrink-0 items-center">
+          <input
+            type="checkbox"
+            checked={Boolean(props.value)}
+            onChange={(event) => props.onChange(event.target.checked)}
+            className="peer sr-only"
+          />
+          <span className="absolute inset-0 rounded-full bg-violet-500/14 transition-colors peer-checked:bg-violet-600" />
+          <span className="absolute left-1 size-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+        </span>
+      </label>
+    );
+  }
+
+  if (props.field.type === "number" && props.field.name === "n") {
+    const numericValue = Number(props.value);
+    const min = props.field.min ?? 1;
+    const max = props.field.max ?? 10;
+    const update = (next: number) => props.onChange(Math.min(max, Math.max(min, next)));
+
+    return (
+      <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#77717f] uppercase">
+        <span>{props.t(props.field.label)}</span>
+        <span className="grid h-11 grid-cols-[2.75rem_1fr_2.75rem] overflow-hidden rounded-[0.95rem] border border-[#ded8ea] bg-white text-base font-bold tracking-normal text-[#20222a] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] transition focus-within:border-[#7c3aed] focus-within:ring-4 focus-within:ring-[#7c3aed]/10">
+          <button
+            type="button"
+            onClick={() => update(numericValue - 1)}
+            className="grid place-items-center border-r border-[#ede7f4] text-[#5d5b64] transition hover:bg-[#f4f0ff] hover:text-[#4c1d95]"
+          >
+            <Minus className="size-3.5" />
+          </button>
+          <input
+            type="number"
+            min={min}
+            max={max}
             value={String(props.value)}
             onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+            className="min-w-0 bg-transparent px-2 text-center outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => update(numericValue + 1)}
+            className="grid place-items-center border-l border-[#ede7f4] text-[#5d5b64] transition hover:bg-[#f4f0ff] hover:text-[#4c1d95]"
           >
-            {options.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#8b93a3]" />
+            <Plus className="size-3.5" />
+          </button>
         </span>
-      ) : (
-        <input
-          type="text"
-          value={String(props.value)}
-          onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-          className="h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
-        />
-      )}
-      {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b93a3] normal-case">{props.t(props.field.help)}</span> : null}
-    </label>
-  );
-}
+      </label>
+    );
+  }
 
-function ReferenceMediaThumb(props: {
-  item: ReferenceImageDraft;
-}) {
-  if (props.item.type.startsWith("image/")) {
+  if (canUseSegmented) {
     return (
-      <div className="relative aspect-square overflow-hidden rounded-lg bg-white">
-        <Image src={props.item.previewUrl} alt="" fill sizes="52px" className="object-cover" unoptimized />
+      <div className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#77717f] uppercase">
+        <span>{props.t(props.field.label)}</span>
+        <div className={`${segmentedGridClass(props.field)} min-h-11 gap-1.5 rounded-[0.95rem] border border-[#ded8ea] bg-[#f3f0f9] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.8)]`}>
+          {(props.field.options ?? []).map((item) => {
+            const active = String(props.value) === item;
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => props.onChange(coerceGeneratorValue(props.field, item))}
+                className={`min-h-9 min-w-0 rounded-[0.72rem] px-3 py-2 text-[13px] leading-5 font-extrabold tracking-normal transition ${
+                  active
+                    ? "bg-white text-[#4c1d95] shadow-[0_8px_18px_-12px_rgba(76,29,149,.85)] ring-1 ring-[#7c3aed]/20"
+                    : "text-[#5d5b64] hover:bg-white/75 hover:text-[#3f236b]"
+                }`}
+              >
+                <span className="block">{item}</span>
+              </button>
+            );
+          })}
+        </div>
+        {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b8891] normal-case">{props.t(props.field.help)}</span> : null}
       </div>
     );
   }
 
-  const Icon = props.item.type.startsWith("audio/")
-    ? FileAudio
-    : props.item.type.startsWith("video/")
-      ? FileVideo
-      : FileText;
-
   return (
-    <div className="grid aspect-square place-items-center rounded-lg border border-slate-200 bg-slate-50 text-[#5f6673] dark:border-white/10 dark:bg-white/[0.05] dark:text-white/66">
-      <Icon className="size-5" />
-    </div>
+    <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#77717f] uppercase">
+      <span>{props.t(props.field.label)}</span>
+      {props.field.type === "select" ? (
+        <span className="relative block">
+          <select
+            value={String(props.value)}
+            onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
+            className="h-11 w-full min-w-0 appearance-none rounded-[0.95rem] border border-[#ded8ea] bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] outline-none transition focus:border-[#7c3aed] focus:ring-4 focus:ring-[#7c3aed]/10"
+          >
+            {(props.field.options ?? []).map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#8b8891]" />
+        </span>
+      ) : (
+        <input
+          type={props.field.type === "number" ? "number" : "text"}
+          min={props.field.min}
+          max={props.field.max}
+          value={String(props.value)}
+          onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
+          className="h-11 w-full min-w-0 rounded-[0.95rem] border border-[#ded8ea] bg-white px-3.5 text-sm font-bold tracking-normal text-[#20222a] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] outline-none transition focus:border-[#7c3aed] focus:ring-4 focus:ring-[#7c3aed]/10"
+        />
+      )}
+      {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b8891] normal-case">{props.t(props.field.help)}</span> : null}
+    </label>
   );
-}
-
-function referenceMediaKindLabel(type: string, t: (key: string, vars?: Record<string, string>) => string) {
-  if (type.startsWith("image/")) return t("Image");
-  if (type.startsWith("video/")) return t("Video");
-  if (type.startsWith("audio/")) return t("Audio");
-  return t("File");
-}
-
-function generatorFieldSelectOptions(
-  field: ModelGeneratorField,
-  t: (key: string, vars?: Record<string, string>) => string
-): Array<{ value: string; label: string }> {
-  if (field.type === "boolean" || typeof field.defaultValue === "boolean") {
-    return [
-      { value: "false", label: t("Off") },
-      { value: "true", label: t("On") },
-    ];
-  }
-
-  if (field.options && field.options.length > 0) {
-    return field.options.map((option) => ({ value: String(option), label: String(option) }));
-  }
-
-  if (field.type !== "number" && typeof field.defaultValue !== "number") {
-    return [];
-  }
-
-  if (field.name === "frames") {
-    return [
-      { value: "0", label: t("Auto") },
-      ...[24, 48, 96, 120, 240].map((value) => ({ value: String(value), label: String(value) })),
-    ];
-  }
-
-  if (field.name === "seed") {
-    return [
-      { value: "0", label: t("Random") },
-      ...[1001, 2026, 4096, 12345].map((value) => ({ value: String(value), label: String(value) })),
-    ];
-  }
-
-  const min = field.min ?? 1;
-  const max = field.max ?? Math.max(min, Number(field.defaultValue) || min);
-  const count = Math.min(12, Math.max(1, Math.floor(max - min + 1)));
-  return Array.from({ length: count }, (_, index) => {
-    const value = min + index;
-    return { value: String(value), label: String(value) };
-  });
 }
 
 function generatorFieldColumnClass(kind: NonNullable<ModelConfig["generator"]>["kind"], field: ModelGeneratorField) {
   if (kind === "image") {
-    if (field.name === "size") return "sm:col-span-3";
+    if (field.name === "n") return "sm:col-span-2";
+    if (field.name === "size") return "sm:col-span-6";
     return "sm:col-span-3";
   }
   if (kind === "video") {
-    return "sm:col-span-3";
+    if (field.name === "ratio") return "sm:col-span-6";
+    if (field.name === "resolution" || field.name === "duration" || field.name === "frames" || field.name === "seed") {
+      return "sm:col-span-3";
+    }
+    return "sm:col-span-2";
   }
   return "sm:col-span-3";
+}
+
+function segmentedGridClass(field: ModelGeneratorField) {
+  if (field.name === "ratio") {
+    const optionCount = field.options?.length ?? 0;
+    if (optionCount >= 7) return "grid grid-cols-2 min-[900px]:grid-cols-4 min-[1280px]:grid-cols-7";
+    if (optionCount === 5) return "grid grid-cols-2 min-[900px]:grid-cols-3 min-[1280px]:grid-cols-5";
+  }
+  if (field.name === "size") return "grid grid-cols-2 min-[1280px]:grid-cols-4";
+  if ((field.options?.length ?? 0) === 4) return "grid grid-cols-2";
+  if ((field.options?.length ?? 0) === 3) return "grid grid-cols-3";
+  return "grid grid-cols-2";
 }
 
 function formatUploadedSize(size: number) {
@@ -1862,26 +1502,6 @@ function OutputPreview(props: {
 }) {
   const primary = props.images[0] ?? { poster: "/assets/prompts/awesome-images/sports-shoe.png" };
 
-  if (props.kind === "video" && primary?.video) {
-    return (
-      <div
-        data-model-output-video="true"
-        className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
-      >
-        <video
-          className="aspect-video h-full w-full bg-[#10131a] object-cover"
-          autoPlay
-          controls
-          loop
-          playsInline
-          poster={primary.poster}
-          preload="metadata"
-          src={primary.video}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white shadow-[0_18px_42px_-32px_rgba(15,15,18,.8)]" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F] shadow-[0_18px_42px_-34px_rgba(76,29,149,.65)]"}>
       <div className={`relative overflow-hidden rounded-[1.05rem] ${props.kind === "video" ? "aspect-video bg-[#171b24]" : "aspect-[16/10] bg-[#11131a]"}`}>
@@ -1891,6 +1511,7 @@ function OutputPreview(props: {
             autoPlay
             controls
             loop
+            muted
             playsInline
             poster={primary.poster}
             preload="metadata"
@@ -1904,6 +1525,7 @@ function OutputPreview(props: {
               fill
               sizes="(min-width: 1280px) 620px, (min-width: 1024px) 56vw, 100vw"
               className="object-cover"
+              priority={props.kind === "image"}
             />
           </>
         )}
@@ -1946,6 +1568,7 @@ function GeneratedExamplesCarousel(props: {
               autoPlay
               controls
               loop
+              muted
               playsInline
               poster={activeExample.poster}
               preload="metadata"
@@ -2029,88 +1652,6 @@ function GeneratedExamplesCarousel(props: {
         </div>
       ) : null}
     </figure>
-  );
-}
-
-function ModelExamplesAndRelated(props: {
-  config: ModelConfig;
-  kind: ModelReadmeKind;
-  examples: readonly MediaExample[];
-  relatedModels: CatalogRelatedModel[];
-  relatedTitle: string;
-  t: (key: string, vars?: Record<string, string>) => string;
-}) {
-  const visualKind = props.kind === "text" ? "text" : props.kind;
-  return (
-    <section id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-b border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
-      <div className="mx-auto max-w-7xl">
-        {props.examples.length > 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="mb-4">
-              <h2 className="text-base font-bold tracking-tight">{props.t("Examples")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{props.t("Explore different use cases and parameter configurations")}</p>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {props.examples.map((example, index) => (
-                <div key={example.video ?? example.poster} className="min-w-[160px] overflow-hidden rounded-lg border border-slate-200 bg-slate-950 dark:border-white/10">
-                  <div className="relative aspect-video">
-                    <Image
-                      src={example.poster}
-                      alt=""
-                      fill
-                      sizes="180px"
-                      className="object-cover"
-                    />
-                    <span className="absolute bottom-2 left-2 rounded bg-black/65 px-2 py-1 text-[10px] font-bold text-white">
-                      {visualKind.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="bg-white px-3 py-2 text-xs font-semibold dark:bg-white/[0.04]">
-                    {props.t("Example {{index}} of {{total}}", { index: String(index + 1), total: String(props.examples.length) })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold tracking-widest text-blue-700 uppercase">{props.t("Related models")}</p>
-              <h2 className="mt-1 text-xl font-bold tracking-tight">{props.relatedTitle}</h2>
-            </div>
-            <span className="text-xs font-semibold text-muted-foreground">{props.t("Swipe or scroll to compare")}</span>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {props.relatedModels.slice(0, 8).map((model) => (
-              <Link
-                key={model.href}
-                href={model.href}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-blue-500/35 dark:border-white/10 dark:bg-white/[0.03]"
-              >
-                <div className="relative aspect-video bg-slate-950">
-                  <Image
-                    src={relatedVisualForModel(model.name, model.description)}
-                    alt=""
-                    fill
-                    sizes="(min-width: 1024px) 260px, 50vw"
-                    className="object-cover opacity-92 transition group-hover:scale-[1.02]"
-                  />
-                </div>
-                <div className="p-3">
-                  <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
-                    {model.sameProvider ? props.config.officialName : props.t("Model catalog")}
-                  </div>
-                  <h3 className="mt-1 truncate font-mono text-sm font-bold">{model.name}</h3>
-                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{model.description}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -2256,103 +1797,11 @@ function FlatkeySectionHeading(props: { eyebrow: string; title: string; descript
   );
 }
 
-function ModelHeroPricingRow(props: {
-  config: ModelConfig;
-  model: PricingModel | null;
-  providerName: string;
-  rows: FlatkeyPriceTableRow[];
-  note: string;
-  health: string;
-  requests: string;
-  t: (key: string, vars?: Record<string, string>) => string;
-}) {
-  const rows = props.rows.slice(0, 2);
-  const primaryRow = rows[0];
-  const savings = primaryRow ? formatSavings(primaryRow.flatkey, primaryRow.official) : "—";
-  const hasRequests = props.requests !== "—";
-
+function FlatkeyHeroMetric(props: { label: string; value: string }) {
   return (
-    <div
-      data-model-hero-price-row="true"
-      title={props.note}
-      className="mt-4 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
-    >
-      <div className="grid min-w-[900px] grid-cols-[minmax(260px,1.45fr)_minmax(160px,0.8fr)_minmax(160px,0.8fr)_minmax(130px,0.62fr)_minmax(150px,0.72fr)]">
-        <div data-model-price-logo-cell="true" className="flex min-w-0 items-center gap-3 p-3">
-          <HomeModelLogo
-            iconKey={props.model?.icon ?? props.model?.vendor_icon}
-            modelName={props.config.modelId}
-            vendor={props.providerName}
-            fallback={props.config.modelId.slice(0, 1)}
-            surfaceSize={38}
-            imageSize={24}
-          />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold">{props.config.displayName}</div>
-            <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{props.config.modelId}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-[#5f6673] dark:text-white/60">
-              <span>{props.providerName}</span>
-              <span className="text-slate-300 dark:text-white/20">/</span>
-              <span>{props.t("Model price comparison")}</span>
-            </div>
-          </div>
-        </div>
-        <ModelHeroPriceCell
-          label={props.t("Flatkey price")}
-          rows={rows}
-          valueForRow={(row) => row.flatkey}
-          valueClassName="text-emerald-700 dark:text-emerald-300"
-          emptyLabel={props.t("Pricing data unavailable")}
-        />
-        <ModelHeroPriceCell
-          label={props.t("Reference price")}
-          rows={rows}
-          valueForRow={(row) => row.official}
-          valueClassName="text-[#68707c] line-through dark:text-white/54"
-          emptyLabel={props.t("Pricing data unavailable")}
-        />
-        <div className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
-          <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
-        </div>
-        <div data-model-health-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Live model health")}</div>
-          <div className="mt-2 flex items-center gap-2">
-            <span className={`size-2 rounded-full ${props.health === "—" ? "bg-slate-300" : "bg-emerald-500"}`} />
-            <span className="font-mono text-lg font-bold">{props.health}</span>
-          </div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
-            {hasRequests ? `${props.t("Requests")}: ${props.requests}` : props.t("Not enough data yet")}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ModelHeroPriceCell(props: {
-  label: string;
-  rows: FlatkeyPriceTableRow[];
-  valueForRow: (row: FlatkeyPriceTableRow) => string;
-  valueClassName: string;
-  emptyLabel: string;
-}) {
-  return (
-    <div className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-      <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
-      <div className="mt-2 grid gap-1.5">
-        {props.rows.length > 0 ? props.rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-2">
-            <div className="truncate text-[11px] font-semibold text-[#6a7280] dark:text-white/52">{row.label}</div>
-            <div className={`shrink-0 truncate font-mono text-sm font-bold ${props.valueClassName}`}>
-              {props.valueForRow(row)}
-            </div>
-          </div>
-        )) : (
-          <div className="text-sm font-semibold text-muted-foreground">{props.emptyLabel}</div>
-        )}
-      </div>
+    <div className="rounded-2xl border border-violet-500/16 bg-white/62 p-4 shadow-[0_18px_48px_-42px_rgba(91,33,182,0.72)] backdrop-blur-sm dark:bg-white/[0.04]">
+      <div className="text-muted-foreground text-[11px] font-bold tracking-[0.1em] uppercase">{props.label}</div>
+      <div className="mt-2 truncate font-mono text-sm font-semibold">{props.value}</div>
     </div>
   );
 }
@@ -2550,332 +1999,6 @@ function buildModalityLabels(
   return [...labels];
 }
 
-function buildModelPageProfile(
-  config: ModelConfig,
-  kind: ModelReadmeKind,
-  providerName: string,
-  fallbackDescription: string,
-  t: (key: string, vars?: Record<string, string>) => string
-): ModelPageProfile {
-  const model = config.displayName;
-
-  if (kind === "video") {
-    return {
-      kindLabel: t("Text to Video"),
-      modelTypes: [t("Image to Video"), t("Reference-guided Video"), t("Short-form Video")],
-      summary: t("{{model}} is a video generation model served through Flatkey for text-to-video, image-to-video, and production prompt testing. Use the form below to prepare the full request, including resolution, aspect ratio, duration, seed, audio, and reference metadata before opening the console.", { model }),
-      playgroundDescription: t("Configure a real {{model}} video request here. The public page keeps generation disabled, then hands prompt, fields, and reference metadata to the console after sign-up or login.", { model }),
-      heroImage: "/assets/model-pages/video-api-hero.png",
-      waysTitle: t("Main ways to create with {{model}} API", { model }),
-      ways: [
-        {
-          icon: <Video className="size-4" />,
-          title: t("Text to video production"),
-          body: t("Turn scene prompts into short clips with explicit camera, motion, duration, resolution, and aspect-ratio control."),
-        },
-        {
-          icon: <Upload className="size-4" />,
-          title: t("Reference-guided video workflows"),
-          body: t("Prepare reference-image or first-frame guided drafts for product shots, character motion, storyboards, and social clips."),
-        },
-      ],
-      valuesTitle: t("Why build video workflows on Flatkey"),
-      values: [
-        {
-          icon: <KeyRound className="size-4" />,
-          title: t("One console handoff for video drafts"),
-          body: t("The page preserves prompt settings and request fields so users can continue in the console without rebuilding the job."),
-        },
-        {
-          icon: <Settings2 className="size-4" />,
-          title: t("Parameter clarity before spend"),
-          body: t("Resolution, ratio, duration, seed, audio, and camera options are visible before any generation starts."),
-        },
-        {
-          icon: <ShieldCheck className="size-4" />,
-          title: t("Production API path"),
-          body: t("Move from prompt preview to API usage with one Flatkey account and unified billing across media models."),
-        },
-      ],
-    };
-  }
-
-  if (kind === "image") {
-    return {
-      kindLabel: t("Image"),
-      modelTypes: [t("Text to Image"), t("Image to Image"), t("Reference Images")],
-      summary: t("{{model}} is an image generation API for prompt-driven visuals, product mockups, reference-based variants, and creative asset production. Configure size, quality, output format, background, moderation, and reference metadata before opening the console.", { model }),
-      playgroundDescription: t("Prepare a {{model}} image request here. The console receives the prompt, image options, output count, and reference metadata after login.", { model }),
-      heroImage: "/assets/model-pages/image-api-hero.png",
-      waysTitle: t("Main ways to create with {{model}} API", { model }),
-      ways: [
-        {
-          icon: <ImageIcon className="size-4" />,
-          title: t("Text to image generation"),
-          body: t("Create product visuals, posters, thumbnails, ecommerce images, and campaign concepts from structured prompts."),
-        },
-        {
-          icon: <Upload className="size-4" />,
-          title: t("Reference image preparation"),
-          body: t("Attach reference-image metadata for style, composition, and subject continuity before continuing to the console."),
-        },
-      ],
-      valuesTitle: t("Where {{model}} adds the most value", { model }),
-      values: [
-        {
-          icon: <Sparkles className="size-4" />,
-          title: t("Campaign visual creation"),
-          body: t("Generate many polished creative directions while keeping prompt and parameter history tied to the model page."),
-        },
-        {
-          icon: <Settings2 className="size-4" />,
-          title: t("Product image iteration"),
-          body: t("Test sizes, formats, quality levels, and backgrounds before moving the request into production."),
-        },
-        {
-          icon: <ShieldCheck className="size-4" />,
-          title: t("Console-only execution"),
-          body: t("The public page is a preview surface; real image generation starts only after sign-up or login."),
-        },
-      ],
-    };
-  }
-
-  if (kind === "audio") {
-    return {
-      kindLabel: t("Audio"),
-      modelTypes: [t("Video to Music"), t("Voice and Sound"), t("Audio Variants")],
-      summary: t("{{model}} is an audio workflow model for video-to-music, narration, sound beds, and synchronized output variants. Configure duration, format, speech preservation, and output count before opening the console.", { model }),
-      playgroundDescription: t("Prepare an audio request for {{model}} here. The console receives prompt, timing, format, source URL, and variant settings after authentication.", { model }),
-      heroImage: "/assets/model-pages/audio-api-hero.png",
-      waysTitle: t("Main ways to create with {{model}} API", { model }),
-      ways: [
-        {
-          icon: <Music2 className="size-4" />,
-          title: t("Video-to-music generation"),
-          body: t("Use source timing and speech preservation settings to prepare music beds for product clips and short videos."),
-        },
-        {
-          icon: <Timer className="size-4" />,
-          title: t("Audio variant control"),
-          body: t("Set duration, format, and output count for campaign tests, narration drafts, and sound-design alternatives."),
-        },
-      ],
-      valuesTitle: t("Where {{model}} adds the most value", { model }),
-      values: [
-        {
-          icon: <Video className="size-4" />,
-          title: t("Product video soundtracks"),
-          body: t("Prepare music that follows the visual timing without turning the public model page into a generator."),
-        },
-        {
-          icon: <Settings2 className="size-4" />,
-          title: t("Format-ready outputs"),
-          body: t("Choose MP3, M4A, WAV, and output counts before continuing into the console."),
-        },
-        {
-          icon: <KeyRound className="size-4" />,
-          title: t("Unified media API access"),
-          body: t("Route audio, video, image, and text model usage through one Flatkey account."),
-        },
-      ],
-    };
-  }
-
-  return {
-    kindLabel: t("Text"),
-    modelTypes: [t("Chat"), t("Coding"), t("Agent workflows")],
-    summary: fallbackDescription || t("{{model}} is a production text model from {{provider}} for chat, coding, long-context reasoning, tool workflows, and API-backed assistants through Flatkey-compatible access.", { model, provider: providerName }),
-    playgroundDescription: t("Open the console with {{model}} selected. The prompt and request draft are preserved after sign-up or login without placing full content in the URL.", { model }),
-    heroImage: "/assets/model-pages/text-api-hero.png",
-    waysTitle: t("Main ways to build with {{model}} API", { model }),
-    ways: [
-      {
-        icon: <Code2 className="size-4" />,
-        title: t("Chat and agent backends"),
-        body: t("Use the model for assistants, coding agents, search workflows, support automation, and internal tools."),
-      },
-      {
-        icon: <FileText className="size-4" />,
-        title: t("Long-context knowledge work"),
-        body: t("Prepare prompts for codebase analysis, document processing, structured outputs, and technical generation."),
-      },
-    ],
-    valuesTitle: t("Why build text workflows on Flatkey"),
-    values: [
-      {
-        icon: <KeyRound className="size-4" />,
-        title: t("One OpenAI-compatible key"),
-        body: t("Keep SDK changes small while routing text model usage through a unified Flatkey account."),
-      },
-      {
-        icon: <Layers3 className="size-4" />,
-        title: t("Compare model families"),
-        body: t("Use related model pages, live pricing, health, and catalog entries to choose the best model for each workload."),
-      },
-      {
-        icon: <ShieldCheck className="size-4" />,
-        title: t("Production controls"),
-        body: t("Manage keys, quotas, logs, billing, and fallback model access from the console after authentication."),
-      },
-    ],
-  };
-}
-
-function buildModelReadmeContent(
-  config: ModelConfig,
-  kind: ModelReadmeKind,
-  t: (key: string, vars?: Record<string, string>) => string
-) {
-  const model = config.displayName;
-  const modelId = config.modelId;
-  const endpoint = config.generator?.endpoint ?? "/v1/chat/completions";
-  const sharedAccessSteps = [
-    t("Choose {{model}} on this page and adjust the prompt or parameters to match the workflow.", { model }),
-    t("Click Open in console. Flatkey stores a short handoff id, not the full prompt or uploaded media in the URL."),
-    t("After sign-up or login, the console opens the matching generation page and restores the complete request draft."),
-  ];
-
-  if (kind === "video") {
-    return {
-      capabilitiesTitle: t("Key features of {{model}} API", { model }),
-      accessTitle: t("How to access {{model}} API on Flatkey", { model }),
-      useCasesTitle: t("What you can build with {{model}} API", { model }),
-      capabilities: [
-        {
-          icon: <Video className="size-4" />,
-          title: t("Reference-guided video generation"),
-          body: t("Use text prompts plus supported image or video references to control subject, style, and motion across short clips."),
-        },
-        {
-          icon: <Settings2 className="size-4" />,
-          title: t("Aspect ratio, duration, and resolution control"),
-          body: t("Configure production parameters such as ratio, duration, resolution, seed, audio generation, and camera behavior before entering the console."),
-        },
-        {
-          icon: <ShieldCheck className="size-4" />,
-          title: t("Console-only execution"),
-          body: t("The public page is a safe preview. Real generation starts only after the user signs in and runs the restored request from Flatkey."),
-        },
-      ],
-      accessSteps: [
-        ...sharedAccessSteps,
-        t("Call {{endpoint}} with model {{modelId}} from your backend when the workflow is ready.", { endpoint, modelId }),
-      ],
-      useCases: [
-        t("Image-to-video production"),
-        t("Product launch and ecommerce clips"),
-        t("UGC ads, social reels, and campaign variants"),
-        t("Storyboard exploration before full production"),
-      ],
-    };
-  }
-
-  if (kind === "audio") {
-    return {
-      capabilitiesTitle: t("Key features of {{model}} API", { model }),
-      accessTitle: t("How to access {{model}} API on Flatkey", { model }),
-      useCasesTitle: t("What you can build with {{model}} API", { model }),
-      capabilities: [
-        {
-          icon: <Music2 className="size-4" />,
-          title: t("Voice, music, and sound workflow control"),
-          body: t("Set the input prompt, media URL, duration, output format, and variants so the console draft matches the intended audio job."),
-        },
-        {
-          icon: <Sparkles className="size-4" />,
-          title: t("Studio-quality voiceover and narration"),
-          body: t("Prepare voice, narration, music-bed, and sound-design prompts for ads, product videos, tutorials, and short-form content."),
-        },
-        {
-          icon: <Timer className="size-4" />,
-          title: t("Timing-aware video-to-music setup"),
-          body: t("For video-to-music models, preserve speech and match audio length to the source clip before opening the console."),
-        },
-      ],
-      accessSteps: [
-        ...sharedAccessSteps,
-        t("Call {{endpoint}} with model {{modelId}} once the audio request is ready for production.", { endpoint, modelId }),
-      ],
-      useCases: [
-        t("Voiceover and narration drafts"),
-        t("Music beds for short videos"),
-        t("Podcast, tutorial, and product-demo audio"),
-        t("Sound variants for campaign testing"),
-      ],
-    };
-  }
-
-  if (kind === "image") {
-    const imageModel = normalizeModelId(modelId) === "gpt-image-2" ? "GPT Image-2" : model;
-    return {
-      capabilitiesTitle: t("Key features of {{model}} API", { model }),
-      accessTitle: t("How to access {{model}} API on Flatkey", { model }),
-      useCasesTitle: t("What you can build with {{model}} API", { model }),
-      capabilities: [
-        {
-          icon: <ImageIcon className="size-4" />,
-          title: t("Text to Image with {{model}} API", { model: imageModel }),
-          body: t("Turn production prompts into image requests with size, quality, output format, background, and moderation controls."),
-        },
-        {
-          icon: <Upload className="size-4" />,
-          title: t("Reference image handoff"),
-          body: t("Image references stay out of long URLs. The page records metadata now and leaves room for secure asset handoff in the console."),
-        },
-        {
-          icon: <WandSparkles className="size-4" />,
-          title: t("Creative variant setup"),
-          body: t("Prepare multiple outputs, ecommerce scenes, thumbnails, ads, and style variants before committing spend."),
-        },
-      ],
-      accessSteps: [
-        ...sharedAccessSteps,
-        t("Call {{endpoint}} with model {{modelId}} after the restored image request is ready.", { endpoint, modelId }),
-      ],
-      useCases: [
-        t("Product mockups and ecommerce images"),
-        t("Ad creative and campaign visuals"),
-        t("Thumbnail and social post production"),
-        t("Reference-guided image variations"),
-      ],
-    };
-  }
-
-  return {
-    capabilitiesTitle: t("Key features of {{model}} API", { model }),
-    accessTitle: t("How to access {{model}} API on Flatkey", { model }),
-    useCasesTitle: t("What you can build with {{model}} API", { model }),
-    capabilities: [
-      {
-        icon: <Code2 className="size-4" />,
-        title: t("OpenAI-compatible chat completions"),
-        body: t("Use familiar chat completion payloads with a Flatkey base URL, one API key, and unified usage tracking."),
-      },
-      {
-        icon: <FileText className="size-4" />,
-        title: t("Long-context reasoning and coding"),
-        body: t("Prepare prompts for code generation, document analysis, agents, search, and production assistants."),
-      },
-      {
-        icon: <Layers3 className="size-4" />,
-        title: t("Streaming and tool workflows"),
-        body: t("Move from prompt tests to streaming UIs, tool calls, structured outputs, and backend automation."),
-      },
-    ],
-    accessSteps: [
-      ...sharedAccessSteps,
-      t("Call {{endpoint}} with model {{modelId}} from your app when the chat workflow is ready.", { endpoint, modelId }),
-    ],
-    useCases: [
-      t("AI app backends"),
-      t("Agent workflows"),
-      t("Coding agents"),
-      t("Long document analysis"),
-    ],
-  };
-}
-
 function configModalityKey(config: ModelConfig) {
   return config.generator?.kind ?? "text";
 }
@@ -2887,14 +2010,6 @@ function modelModalityKey(model: PricingModel) {
   if (/video/.test(endpoints) || /(^|-)(video|seedance|kling|sora|veo|wan)(-|$)/.test(name)) return "video";
   if (/image/.test(endpoints) || /(^|-)(image|imagen|flux|dall-e)(-|$)/.test(name)) return "image";
   return "text";
-}
-
-function relatedVisualForModel(name: string, description: string) {
-  const text = normalizeModelId(`${name} ${description}`);
-  if (/(audio|music|sound|tts|voice|sonilo|suno)/.test(text)) return "/assets/model-pages/audio-api-hero.png";
-  if (/(video|seedance|kling|sora|veo|wan|runway|minimax)/.test(text)) return "/assets/model-pages/video-api-hero.png";
-  if (/(image|imagen|banana|flux|ideogram|gpt-image|dall-e|qwen-image|recraft)/.test(text)) return "/assets/model-pages/image-api-hero.png";
-  return "/assets/model-pages/text-api-hero.png";
 }
 
 function buildModelDescription(
@@ -3158,15 +2273,7 @@ function buildGeneratorRequest(
 ) {
   if (config.generator?.kind === "video") {
     const content = [{ type: "text", text: prompt }];
-    return compactRequest({
-      model: config.modelId,
-      content,
-      ...values,
-      reference_assets:
-        referenceImages.length > 0
-          ? referenceImages.map(({ name, size, type }) => ({ name, size, type }))
-          : undefined,
-    });
+    return compactRequest({ model: config.modelId, content, ...values });
   }
   if (config.generator?.kind === "audio") {
     return compactRequest({ model: config.modelId, input: prompt, ...values });
@@ -3187,7 +2294,7 @@ function buildGeneratorRequest(
 
 function compactRequest(value: Record<string, unknown>) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== "" && entry !== undefined)
+    Object.entries(value).filter(([, entry]) => entry !== "" && entry !== 0 && entry !== undefined)
   );
 }
 
@@ -3197,90 +2304,16 @@ function buildRunHref(
   prompt: string,
   draft: DraftValue
 ) {
-  void prompt;
-  void draft;
-  const playgroundParams = buildPlaygroundEntryParams(config, locale);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
-}
-
-export function buildDraftFallbackRunHref(config: ModelConfig, locale: Locale, draft: DraftValue) {
-  const playgroundParams = buildPlaygroundEntryParams(config, locale);
-  const draftText = JSON.stringify(draft);
-  if (draftText.length <= 12000) {
-    playgroundParams.set("draft", draftText);
-  }
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
-}
-
-function buildHandoffRunHref(
-  config: ModelConfig,
-  locale: Locale,
-  handoffId: string,
-  mediaKind: string
-) {
-  const playgroundParams = buildPlaygroundEntryParams(config, locale);
-  playgroundParams.set("handoff_id", handoffId);
-  playgroundParams.set("media_kind", mediaKind);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
-}
-
-function buildPlaygroundEntryParams(config: ModelConfig, locale: Locale) {
   const playgroundParams = new URLSearchParams({
-    source: "model_landing",
     model: config.modelId,
+    prompt,
     lng: locale,
+    draft: JSON.stringify(draft),
   });
   if (config.generator?.kind === "image" || config.generator?.kind === "video") {
     playgroundParams.set("generate", config.generator.kind);
   }
-  if (config.generator?.kind) {
-    playgroundParams.set("media_kind", config.generator.kind);
-  }
-  return playgroundParams;
-}
-
-async function createModelHandoffDraft(
-  config: ModelConfig,
-  locale: Locale,
-  mediaKind: string,
-  draft: DraftValue
-) {
-  const response = await fetch(consoleUrl("/api/model-handoffs"), {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: "model_landing",
-      model: config.modelId,
-      media_kind: mediaKind,
-      locale,
-      payload: draft,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to create model handoff");
-  }
-  const data = (await response.json()) as {
-    success?: boolean;
-    data?: { handoff_id?: string };
-  };
-  const handoffId = data.data?.handoff_id;
-  if (!data.success || !handoffId) {
-    throw new Error("Failed to create model handoff");
-  }
-  return handoffId;
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 function withCurrentSearch(baseHref: string) {
@@ -3295,7 +2328,6 @@ function withCurrentSearch(baseHref: string) {
 }
 
 function coerceGeneratorValue(field: ModelGeneratorField, raw: string) {
-  if (field.type === "boolean" || typeof field.defaultValue === "boolean") return raw === "true";
   if (field.type !== "number" && typeof field.defaultValue !== "number") return raw;
   const value = Number(raw);
   if (!Number.isFinite(value)) return field.defaultValue;

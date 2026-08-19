@@ -5,8 +5,6 @@ import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/loc
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
 import { modelPublicPath } from "@/lib/model-public";
-import { PROMPTS_PATH } from "@/lib/prompt-library-path";
-import { getPromptLibraryStaticPathnames } from "@/lib/prompt-library-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
 import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
@@ -73,9 +71,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );
   const toolsAdLandingEntries = getToolsAdLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
-  const promptEntries = getPromptLibraryStaticPathnames().flatMap((pathname) =>
-    entry(pathname, pathname === PROMPTS_PATH ? 0.78 : 0.72, "weekly")
-  );
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
   const landingSlugs = new Set(getModelLandingPathnames().map((pathname) => pathname.replace(/^\/models\//, "")));
@@ -126,7 +121,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...modelLandingEntries,
     ...skagLandingEntries,
     ...toolsAdLandingEntries,
-    ...promptEntries,
     ...modelPublicEntries,
     ...categoryEntries,
     ...postEntries,

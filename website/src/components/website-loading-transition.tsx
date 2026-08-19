@@ -177,7 +177,7 @@ export function WebsiteLoadingTransition({ label }: WebsiteLoadingTransitionProp
           className="pointer-events-none absolute inset-px rounded-[17px] bg-gradient-to-b from-white/75 to-transparent dark:from-white/8"
           aria-hidden="true"
         />
-        <FlatkeyBrandLogo className="fk-page-loading-logo relative z-10" />
+        <FlatkeyBrandLogo className="fk-page-loading-logo relative z-10 [&_[data-flatkey-wordmark='true']]:!text-[34px] [&_[data-flatkey-wordmark='true']]:!text-[#0b0b0f] dark:[&_[data-flatkey-wordmark='true']]:!text-[#f5f5f2]" />
         <span
           className="fk-page-loading-track relative z-10 mt-5 block h-[3px] w-[min(100%,13.5rem)] overflow-hidden rounded-full bg-[#5b21b61f] dark:bg-white/12"
           aria-hidden="true"

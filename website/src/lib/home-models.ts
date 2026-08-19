@@ -5,7 +5,6 @@ import {
   getOfficialPriceUsd,
   getVendorName,
   isTokenBasedModel,
-  parseTags,
   resolveModelDisplayPrice,
   sortPricingModelsBySeries,
   type PricingData,
@@ -21,13 +20,6 @@ export type HomePricedModel = {
   discountedUsd: number;
   priceUnit?: string;
   pricePrefix?: string;
-  input?: string;
-  inputOfficial?: string;
-  output?: string;
-  outputOfficial?: string;
-  billing?: string;
-  capabilities?: string[];
-  endpointTypes?: string[];
   // Lobehub static-svg icon key rendered by ModelLogo; derived from the model
   // name because the pricing payload's icon fields are empty in production.
   iconKey: string;
@@ -123,10 +115,6 @@ export function buildRowsForModels(
       const officialDisplayPrice = displayPrice
         ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", groupRatio)
         : null;
-      const inputPrice = resolveModelDisplayPrice(model, "input", "plg", groupRatio);
-      const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", groupRatio) : null;
-      const outputPrice = resolveModelDisplayPrice(model, "output", "plg", groupRatio);
-      const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", groupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
       return {
         name: model.model_name,
@@ -135,13 +123,6 @@ export function buildRowsForModels(
         discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedPriceUsd(listed)),
         officialUsd: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.value : official,
         discountedUsd: usesParsedDisplayPrice ? displayPrice.value : discountedPriceUsd(listed),
-        input: inputPrice?.text ?? (usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedPriceUsd(listed))),
-        inputOfficial: officialInputPrice?.text ?? (usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official)),
-        output: outputPrice?.text,
-        outputOfficial: officialOutputPrice?.text,
-        billing: modelBillingLabel(model, displayPrice?.unit),
-        capabilities: modelCapabilities(model),
-        endpointTypes: model.supported_endpoint_types ?? [],
         priceUnit: displayPrice ? normalizeDisplayUnit(displayPrice.unit) : isTokenBasedModel(model) ? "per 1M tokens" : "per request",
         pricePrefix: displayPrice?.from ? "from" : undefined,
         iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
@@ -178,59 +159,4 @@ function toHomeRow(model: PricingModel, data: PricingData): HomePricedModel {
 
 function normalizeDisplayUnit(unit: string): string {
   return unit.replace(/^\s*\/\s*/, "per ");
-}
-
-function modelBillingLabel(model: PricingModel, displayUnit?: string): string {
-  if (isTokenBasedModel(model)) return "Token";
-  if (displayUnit === "/ second") return "Second";
-  return "Request";
-}
-
-const CAPABILITY_LABELS: Record<string, string> = {
-  audio: "Audio",
-  api: "API",
-  cache: "Cache",
-  chat: "Chat",
-  code: "Code",
-  image: "Image",
-  json: "JSON",
-  reasoning: "Reasoning",
-  realtime: "Realtime",
-  response: "Responses",
-  responses: "Responses",
-  think: "Think",
-  thinking: "Think",
-  tool: "Tools",
-  tools: "Tools",
-  video: "Video",
-  vision: "Vision",
-  web: "Web",
-};
-
-function modelCapabilities(model: PricingModel): string[] {
-  const labels: string[] = [];
-  const add = (value: string | undefined) => {
-    if (!value) return;
-    const key = value.trim().toLowerCase();
-    if (!key) return;
-    const label = CAPABILITY_LABELS[key] ?? endpointCapabilityLabel(key);
-    if (!label) return;
-    if (!labels.some((existing) => existing.toLowerCase() === label.toLowerCase())) labels.push(label);
-  };
-
-  for (const tag of parseTags(model.tags)) add(tag);
-  for (const endpoint of model.supported_endpoint_types ?? []) add(endpoint);
-  if (labels.length === 0) add(isTokenBasedModel(model) ? "chat" : "api");
-  return labels.slice(0, 3);
-}
-
-function endpointCapabilityLabel(value: string): string | undefined {
-  if (value.includes("image")) return "Image";
-  if (value.includes("video")) return "Video";
-  if (value.includes("audio") || value.includes("tts") || value.includes("speech")) return "Audio";
-  if (value.includes("embedding")) return "Embeddings";
-  if (value.includes("realtime")) return "Realtime";
-  if (value.includes("responses")) return "Responses";
-  if (value.includes("chat")) return "Chat";
-  return undefined;
 }

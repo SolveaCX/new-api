@@ -72,12 +72,4 @@ describe("home model rows", () => {
       "/assets/logos/deepseek.svg"
     );
   });
-
-  test("white surface logos keep a white background for brand clarity", () => {
-    expect(resolveHomeModelLogo({ modelName: "gpt-5.4", vendor: "OpenAI" }).background).toBe("#FFFFFF");
-    expect(resolveHomeModelLogo({ modelName: "gemini-3-pro", vendor: "Google" }).background).toBe("#FFFFFF");
-    expect(resolveHomeModelLogo({ modelName: "claude-sonnet-5", vendor: "Anthropic" }).background).toBe("#FFFFFF");
-    expect(resolveHomeModelLogo({ modelName: "qwen3-max", vendor: "Qwen" }).background).toBe("#FFFFFF");
-    expect(resolveHomeModelLogo({ modelName: "deepseek-v4-flash", vendor: "DeepSeek" }).background).toBe("#FFFFFF");
-  });
 });

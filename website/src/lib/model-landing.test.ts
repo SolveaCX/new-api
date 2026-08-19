@@ -3,11 +3,9 @@ import {
   DEEPSEEK_CONFIG,
   GEMINI_CONFIG,
   GLM_API_CONFIG,
-  GPT_CONFIG,
   GPT_IMAGE_2_CONFIG,
   MINIMAX_H3_CONFIG,
   QWEN_CONFIG,
-  SEEDANCE_CONFIG,
   SONILO_VIDEO_TO_MUSIC_CONFIG,
   getModelLandingConfig,
   getModelLandingConfigForModel,
@@ -142,47 +140,5 @@ describe("model landing configuration", () => {
     expect(config.officialName).toBe("Moonshot AI");
     expect(config.generator).toBeUndefined();
     expect(config.seo.title).toContain("kimi-k2.5");
-  });
-
-  test("describes media model SEO with exact model names and distinguishing capabilities", () => {
-    const mediaConfigs = [
-      {
-        config: SEEDANCE_CONFIG,
-        titleNeedle: "Seedance 2.0",
-        descriptionNeedles: ["video generation", "text-to-video", "image-to-video"],
-      },
-      {
-        config: GPT_IMAGE_2_CONFIG,
-        titleNeedle: "GPT-image-2",
-        descriptionNeedles: ["image generation", "product mockups", "reference-based"],
-      },
-      {
-        config: MINIMAX_H3_CONFIG,
-        titleNeedle: "MiniMax-H3",
-        descriptionNeedles: ["video generation", "duration", "aspect ratio"],
-      },
-      {
-        config: SONILO_VIDEO_TO_MUSIC_CONFIG,
-        titleNeedle: "sonilo-video-to-music",
-        descriptionNeedles: ["video-to-music", "sound beds", "speech preservation"],
-      },
-    ];
-
-    for (const { config, titleNeedle, descriptionNeedles } of mediaConfigs) {
-      expect(config.seo.title).toContain(titleNeedle);
-      expect(config.seo.title.toLowerCase()).toContain("api");
-      for (const needle of descriptionNeedles) {
-        expect(config.seo.description.toLowerCase()).toContain(needle);
-      }
-      expect(config.seo.description.toLowerCase()).not.toContain("configure prompts before signup");
-    }
-  });
-
-  test("describes configured GPT SEO with the exact model and capabilities", () => {
-    expect(GPT_CONFIG.seo.title).toContain("GPT-5");
-    expect(GPT_CONFIG.seo.description).toContain("GPT-5");
-    expect(GPT_CONFIG.seo.description.toLowerCase()).toContain("chat");
-    expect(GPT_CONFIG.seo.description.toLowerCase()).toContain("agents");
-    expect(GPT_CONFIG.seo.description.toLowerCase()).not.toContain("GPT models");
   });
 });

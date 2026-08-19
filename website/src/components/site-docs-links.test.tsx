@@ -15,6 +15,19 @@ function renderHeader(docsUrl: string | null, pathname = "/") {
   );
 }
 
+function openingTagBeforeText(html: string, tagName: "a" | "button", text: string) {
+  const textIndex = html.indexOf(`>${text}<`);
+  expect(textIndex).toBeGreaterThanOrEqual(0);
+
+  const tagStart = html.lastIndexOf(`<${tagName}`, textIndex);
+  expect(tagStart).toBeGreaterThanOrEqual(0);
+
+  const tagEnd = html.indexOf(">", tagStart);
+  expect(tagEnd).toBeGreaterThan(tagStart);
+
+  return html.slice(tagStart, tagEnd + 1);
+}
+
 function renderFooter(docsUrl: string | null) {
   return renderToStaticMarkup(
     <SiteConfigProvider docsUrl={docsUrl}>
@@ -23,45 +36,7 @@ function renderFooter(docsUrl: string | null) {
   );
 }
 
-function findDesktopGroupTrigger(html: string, label: string) {
-  const labelIndex = html.indexOf(`>${label}<`);
-  const buttonStart = html.lastIndexOf("<button", labelIndex);
-  const buttonEnd = html.indexOf("</button>", labelIndex);
-  if (labelIndex < 0 || buttonStart < 0 || buttonEnd < 0) return undefined;
-
-  return html.slice(buttonStart, buttonEnd + "</button>".length);
-}
-
-function findButtonByAriaLabel(html: string, label: string) {
-  const labelIndex = html.indexOf(`aria-label="${label}"`);
-  const buttonStart = html.lastIndexOf("<button", labelIndex);
-  const buttonEnd = html.indexOf(">", labelIndex);
-  if (labelIndex < 0 || buttonStart < 0 || buttonEnd < 0) return undefined;
-
-  return html.slice(buttonStart, buttonEnd + 1);
-}
-
-function findAnchorByHref(html: string, href: string) {
-  return html.match(
-    new RegExp(`<a[^>]+href="${href.replace("/", "\\/")}"[^>]*>[\\s\\S]*?<\\/a>`),
-  )?.[0];
-}
-
 describe("website documentation links", () => {
-  test("renders the public prompt library in the top navigation", () => {
-    const enHtml = renderHeader(DOCS_URL);
-    const zhHtml = renderToStaticMarkup(
-      <SiteConfigProvider docsUrl={DOCS_URL}>
-        <SiteHeader locale="zh" pathname="/zh" />
-      </SiteConfigProvider>,
-    );
-
-    expect(enHtml).toContain('href="/prompts"');
-    expect(enHtml).toContain(">Prompts<");
-    expect(zhHtml).toContain('href="/zh/prompts"');
-    expect(zhHtml).toContain(">提示词<");
-  });
-
   test("renders safe desktop and mobile resource links before Use Cases", () => {
     const html = renderHeader(DOCS_URL);
     const docsAnchors =
@@ -100,78 +75,6 @@ describe("website documentation links", () => {
     expect(renderFooter(null)).not.toContain("Documentation");
   });
 
-  test("marks desktop nav groups as dropdowns without decorating ordinary links", () => {
-    const html = renderHeader(DOCS_URL);
-    const productTrigger = findDesktopGroupTrigger(html, "Product");
-    const resourceTrigger = findDesktopGroupTrigger(html, "Resource");
-    const cliLink = findAnchorByHref(html, "/cli");
-    const languageButton = findButtonByAriaLabel(html, "Change language");
-
-    expect(productTrigger).toContain('aria-haspopup="menu"');
-    expect(resourceTrigger).toContain('aria-haspopup="menu"');
-    expect(productTrigger).toContain("lucide-chevron-down");
-    expect(resourceTrigger).toContain("lucide-chevron-down");
-    expect(productTrigger).toContain("border-0");
-    expect(resourceTrigger).toContain("border-0");
-    expect(productTrigger).toContain("bg-transparent");
-    expect(resourceTrigger).toContain("bg-transparent");
-    expect(productTrigger).toContain("text-[14px]");
-    expect(cliLink).toContain("text-[14px]");
-    expect(productTrigger).toContain("[font-family:inherit]");
-    expect(cliLink).toContain("[font-family:inherit]");
-    expect(productTrigger).toContain("text-[#0B0B0F]");
-    expect(cliLink).toContain("text-[#0B0B0F]");
-    expect(productTrigger).toContain("inline-flex h-10 shrink-0");
-    expect(cliLink).toContain("inline-flex h-10 shrink-0");
-    expect(productTrigger).toContain("items-center justify-center gap-1");
-    expect(cliLink).toContain("items-center justify-center gap-1");
-    expect(html).toContain(
-      "relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-1.5 px-[var(--fk-site-gutter)]",
-    );
-    expect(html).toContain(
-      "hidden min-w-0 shrink-0 items-center gap-2.5 ml-6 min-[901px]:flex min-[1180px]:gap-3 min-[1360px]:gap-3.5",
-    );
-    expect(html).toContain(
-      "ml-auto hidden shrink-0 items-center gap-1.5 min-[901px]:flex min-[1180px]:gap-2",
-    );
-    expect(productTrigger).not.toContain("w-[100px]");
-    expect(cliLink).not.toContain("w-[100px]");
-    expect(productTrigger).toContain("hover:-translate-y-px");
-    expect(cliLink).toContain("hover:-translate-y-px");
-    expect(productTrigger).not.toContain("after:");
-    expect(cliLink).not.toContain("after:");
-    expect(productTrigger).not.toContain("border-[#E7E4EC]");
-    expect(resourceTrigger).not.toContain("border-[#E7E4EC]");
-    expect(cliLink).not.toContain('aria-hidden="true"');
-    expect(languageButton).toContain("cursor-pointer");
-    expect(html).toContain("before:w-[256px]");
-    expect(html).toContain("before:w-[178px]");
-    expect(html).toContain("group-hover/language:pointer-events-auto");
-  });
-
-  test("renders active desktop nav without background, underline, or layout shift", () => {
-    const modelsHtml = renderHeader(DOCS_URL, "/models");
-    const productTrigger = findDesktopGroupTrigger(modelsHtml, "Product");
-    const promptsHtml = renderHeader(DOCS_URL, "/prompts");
-    const promptsLink = findAnchorByHref(promptsHtml, "/prompts");
-
-    expect(productTrigger).toContain("text-[#050505]");
-    expect(productTrigger).toContain("font-bold");
-    expect(productTrigger).not.toContain("bg-[#F3EDFF]");
-    expect(productTrigger).not.toContain("bg-[#F7F2FF]");
-    expect(productTrigger).not.toContain("[font-weight:800]");
-    expect(productTrigger).not.toContain("scale-[1.04]");
-    expect(productTrigger).not.toContain("after:");
-
-    expect(promptsLink).toContain("text-[#050505]");
-    expect(promptsLink).toContain("font-bold");
-    expect(promptsLink).not.toContain("bg-[#F3EDFF]");
-    expect(promptsLink).not.toContain("bg-[#F7F2FF]");
-    expect(promptsLink).not.toContain("[font-weight:800]");
-    expect(promptsLink).not.toContain("scale-[1.04]");
-    expect(promptsLink).not.toContain("after:");
-  });
-
   test("defaults the public site sign-in link to the console sign-in page", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider docsUrl={DOCS_URL}>
@@ -186,18 +89,71 @@ describe("website documentation links", () => {
     );
   });
 
-  test("renders baseline structured data for ordinary SiteShell pages", () => {
-    const html = renderToStaticMarkup(
-      <SiteConfigProvider docsUrl={DOCS_URL}>
-        <SiteShell locale="zh" pathname="/models">
-          <div>body</div>
-        </SiteShell>
-      </SiteConfigProvider>,
-    );
+  test("renders desktop dropdown triggers as borderless menu buttons matching normal link typography", () => {
+    const html = renderHeader(DOCS_URL);
+    const productButton = openingTagBeforeText(html, "button", "Product");
+    const resourceButton = openingTagBeforeText(html, "button", "Resource");
+    const cliLink = openingTagBeforeText(html, "a", "CLI");
 
-    expect(html).toContain('data-sitewide-schema="true"');
-    expect(html).toContain('type="application/ld+json"');
-    expect(html).toContain('"@type":"WebPage"');
-    expect(html).toContain('"url":"https://flatkey.ai/zh/models"');
+    for (const trigger of [productButton, resourceButton]) {
+      expect(trigger).toContain("border-0");
+      expect(trigger).toContain("appearance-none");
+      expect(trigger).toContain("cursor-pointer");
+      expect(trigger).toContain("[font-family:inherit]");
+      expect(trigger).toContain("text-[14px]");
+      expect(trigger).toContain("font-semibold");
+      expect(trigger).toContain("text-[#0B0B0F]");
+      expect(trigger).toContain("px-1.5");
+      expect(trigger).not.toContain("hover:bg");
+      expect(trigger).not.toContain("after:");
+    }
+
+    expect(cliLink).toContain("[font-family:inherit]");
+    expect(cliLink).toContain("text-[14px]");
+    expect(cliLink).toContain("font-semibold");
+    expect(cliLink).toContain("text-[#0B0B0F]");
+    expect(cliLink).toContain("px-1.5");
+    expect(cliLink).not.toContain("after:");
+    expect(html).not.toContain("desktopNavDotClass");
+    expect(html).not.toContain("rounded-full bg-[#AAA7B0]");
+    expect(html).not.toContain("size-1.5 shrink-0 rounded-full");
+  });
+
+  test("uses a stable selected menu text state without background, underline, or scaling", () => {
+    const modelsHtml = renderHeader(DOCS_URL, "/models");
+    const pricingHtml = renderHeader(DOCS_URL, "/pricing");
+    const productButton = openingTagBeforeText(modelsHtml, "button", "Product");
+    const pricingLink = openingTagBeforeText(pricingHtml, "a", "Pricing");
+
+    for (const activeItem of [productButton, pricingLink]) {
+      expect(activeItem).toContain("text-[#050505]");
+      expect(activeItem).not.toContain("bg-[#F7F2FF]");
+      expect(activeItem).not.toContain("bg-[#F3EDFF]");
+      expect(activeItem).not.toContain("scale-[1.04]");
+      expect(activeItem).not.toContain("text-shadow");
+      expect(activeItem).not.toContain("after:");
+    }
+  });
+
+  test("keeps dropdowns open across the hover bridge and animates dropdown item hover", () => {
+    const html = renderHeader(DOCS_URL);
+
+    expect(html).toContain("before:top-full");
+    expect(html).toContain("before:h-3");
+    expect(html).toContain("group-hover/nav:pointer-events-auto");
+    expect(html).toContain("hover:translate-x-1");
+    expect(html).toContain("hover:scale-[1.01]");
+  });
+
+  test("opens the desktop language menu on hover with a pointer cursor", () => {
+    const html = renderHeader(DOCS_URL);
+    const languageButton = html.match(
+      /<button[^>]+aria-label="Change language"[^>]*>/,
+    )?.[0];
+
+    expect(languageButton).toContain("cursor-pointer");
+    expect(html).toContain("group/language");
+    expect(html).toContain("group-hover/language:pointer-events-auto");
+    expect(html).toContain("before:w-[178px]");
   });
 });

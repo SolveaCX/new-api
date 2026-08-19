@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { SitewideStructuredData } from "@/components/sitewide-structured-data";
 import type { Locale } from "@/lib/locales";
 
 type Props = {
@@ -29,7 +28,6 @@ export function SiteShell(props: Props) {
         hideLanguageSwitcher={props.hideLanguageSwitcher}
         languageSwitcherLocales={props.languageSwitcherLocales}
       />
-      <SitewideStructuredData locale={props.locale} pathname={props.pathname} />
       <div className="fk-site-main fk-new-home" data-route={props.pathname}>
         {props.children}
       </div>
