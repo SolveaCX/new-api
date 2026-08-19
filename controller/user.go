@@ -902,6 +902,20 @@ func GetUserModels(c *gin.Context) {
 	return
 }
 
+// applyAdminEmailTrust marks an account's email as verified when an admin sets
+// or changes it. Admin editing is a trust signal (the admin manages the account
+// directly), so managed/enterprise accounts must not be blocked by the
+// email-verification gate afterwards. Clearing the email leaves verification
+// as-is (email-less accounts are exempt from the gate anyway).
+func applyAdminEmailTrust(originUser *model.User, updatedUser *model.User) {
+	if updatedUser == nil || originUser == nil {
+		return
+	}
+	if updatedUser.Email != "" && updatedUser.Email != originUser.Email {
+		updatedUser.EmailVerifiedAt = common.GetTimestamp()
+	}
+}
+
 func UpdateUser(c *gin.Context) {
 	var updatedUser model.User
 	err := common.DecodeJson(c.Request.Body, &updatedUser)
@@ -934,6 +948,10 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
+	// An admin editing a user is a trust signal: if the admin sets/changes the
+	// account email, mark it verified so enterprise/managed accounts are never
+	// blocked by the email-verification gate on token creation or API usage.
+	applyAdminEmailTrust(originUser, &updatedUser)
 	if err := updatedUser.Edit(updatePassword); err != nil {
 		common.ApiError(c, err)
 		return
@@ -1198,6 +1216,12 @@ func CreateUser(c *gin.Context) {
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
 		Role:        user.Role, // 保持管理员设置的角色
+	}
+	// Admin-created accounts are trusted: carry the email (if provided) and mark
+	// it verified so the account can use tokens/API right away.
+	cleanUser.Email = strings.TrimSpace(user.Email)
+	if cleanUser.Email != "" {
+		cleanUser.EmailVerifiedAt = common.GetTimestamp()
 	}
 	if err := cleanUser.Insert(0); err != nil {
 		common.ApiError(c, err)
