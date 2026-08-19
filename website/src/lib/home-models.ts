@@ -11,6 +11,7 @@ import {
   type PricingData,
   type PricingModel,
 } from "./pricing";
+import { getModelMeta, inferSeries } from "./model-directory-meta";
 
 export type HomePricedModel = {
   name: string;
@@ -28,6 +29,11 @@ export type HomePricedModel = {
   billing?: string;
   capabilities?: string[];
   endpointTypes?: string[];
+  // Directory-only metadata, sourced from model-directory-meta rather than the
+  // pricing payload. Optional so home/pricing callers are unaffected.
+  series?: string;
+  contextTokens?: number | null;
+  top10?: number;
   // Lobehub static-svg icon key rendered by ModelLogo; derived from the model
   // name because the pricing payload's icon fields are empty in production.
   iconKey: string;
@@ -128,6 +134,7 @@ export function buildRowsForModels(
       const outputPrice = resolveModelDisplayPrice(model, "output", "plg", groupRatio);
       const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", groupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
+      const directoryMeta = getModelMeta(model.model_name);
       return {
         name: model.model_name,
         vendor,
@@ -144,6 +151,9 @@ export function buildRowsForModels(
         endpointTypes: model.supported_endpoint_types ?? [],
         priceUnit: displayPrice ? normalizeDisplayUnit(displayPrice.unit) : isTokenBasedModel(model) ? "per 1M tokens" : "per request",
         pricePrefix: displayPrice?.from ? "from" : undefined,
+        series: directoryMeta?.series ?? inferSeries(model.model_name),
+        contextTokens: directoryMeta?.contextTokens ?? null,
+        top10: directoryMeta?.top10,
         iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
       };
     });

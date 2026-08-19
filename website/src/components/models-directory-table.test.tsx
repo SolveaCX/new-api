@@ -4,7 +4,7 @@ import { ModelsDirectoryTable, buildDirectoryHealthTrend } from "./models-direct
 import { getModelsDirectoryTableCopy } from "./pricing-explorer";
 
 describe("ModelsDirectoryTable", () => {
-  test("uses default latency and five healthy bars when health data is missing", () => {
+  test("uses default latency and a full healthy bar wall when health data is missing", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
         locale="en"
@@ -29,10 +29,10 @@ describe("ModelsDirectoryTable", () => {
     expect(html).not.toContain("30-day health");
     expect(html).toContain("600ms");
     expect(html).toContain(">100%</span>");
-    expect(html.match(/title="[^"]* · 100\.00%"/g)?.length).toBe(5);
+    expect(html.match(/title="[^"]* · 100\.00%"/g)?.length).toBe(15);
   });
 
-  test("pads short health trends to five daily points with healthy defaults", () => {
+  test("pads short health trends up to the full daily window with healthy defaults", () => {
     const day = 24 * 60 * 60;
     const first = Date.UTC(2026, 7, 16) / 1000;
     const second = first + day;
@@ -42,13 +42,14 @@ describe("ModelsDirectoryTable", () => {
       { ts: second, success_rate: 92, avg_ttft_ms: 810 },
     ]);
 
-    expect(points).toHaveLength(5);
+    // Two real days, padded on the left to the 15-bar window.
+    expect(points).toHaveLength(15);
     expect(points.slice(0, 3)).toEqual([
-      { ts: first - day * 3, success_rate: 100, avg_ttft_ms: 600 },
-      { ts: first - day * 2, success_rate: 100, avg_ttft_ms: 600 },
-      { ts: first - day, success_rate: 100, avg_ttft_ms: 600 },
+      { ts: first - day * 13, success_rate: 100, avg_ttft_ms: 600 },
+      { ts: first - day * 12, success_rate: 100, avg_ttft_ms: 600 },
+      { ts: first - day * 11, success_rate: 100, avg_ttft_ms: 600 },
     ]);
-    expect(points.slice(3)).toEqual([
+    expect(points.slice(-2)).toEqual([
       { ts: first, success_rate: 97, avg_ttft_ms: 540 },
       { ts: second, success_rate: 92, avg_ttft_ms: 810 },
     ]);
