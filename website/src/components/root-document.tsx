@@ -135,6 +135,7 @@ type RootDocumentProps = {
   hasConsoleSessionHint: boolean;
   googleOneTap: PublicSiteSettings["googleOneTap"];
   lang: Locale;
+  promoBanner: PublicSiteSettings["promoBanner"];
 };
 
 export function RootDocument({
@@ -144,6 +145,7 @@ export function RootDocument({
   hasConsoleSessionHint,
   googleOneTap,
   lang,
+  promoBanner,
 }: RootDocumentProps) {
   const googleOneTapSearch = new URLSearchParams({
     lng: lang,
@@ -203,7 +205,9 @@ export function RootDocument({
             googleOneTapSearch.toString(),
           )}
         />
-        <SiteConfigProvider docsUrl={docsUrl}>{children}</SiteConfigProvider>
+        <SiteConfigProvider docsUrl={docsUrl} promoBanner={promoBanner}>
+          {children}
+        </SiteConfigProvider>
         <Script id="solvea-livechat-bootstrap" strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.livechatStrategy}>
           {LIVECHAT_BOOTSTRAP_SCRIPT}
         </Script>

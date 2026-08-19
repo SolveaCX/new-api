@@ -881,11 +881,11 @@ describe('buildFlexiblePurchaseRequest', () => {
       months: 3,
       request_id: 'request-1',
       quote_id: 'quote-pix-3',
-      ui_mode: 'embedded',
+      ui_mode: 'elements',
     })
   })
 
-  test('requests embedded checkout only for hosted payment choices', () => {
+  test('requests Checkout Elements only for hosted payment choices', () => {
     for (const paymentChoice of [
       'stripe_recurring',
       'alipay',
@@ -897,10 +897,10 @@ describe('buildFlexiblePurchaseRequest', () => {
           planId: 2,
           paymentChoice,
           months: 3,
-          requestId: 'request-embedded',
+          requestId: 'request-elements',
           quoteId: `quote-${paymentChoice}-3`,
         }).ui_mode
-      ).toBe('embedded')
+      ).toBe('elements')
     }
 
     expect(

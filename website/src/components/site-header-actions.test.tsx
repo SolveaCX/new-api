@@ -2,6 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SiteHeaderDesktopActions } from "./site-header";
 
+function anchorForText(html: string, text: string): string {
+  const textIndex = html.indexOf(`>${text}<`);
+  expect(textIndex).toBeGreaterThanOrEqual(0);
+
+  const anchorStart = html.lastIndexOf("<a", textIndex);
+  const anchorEnd = html.indexOf("</a>", textIndex);
+  expect(anchorStart).toBeGreaterThanOrEqual(0);
+  expect(anchorEnd).toBeGreaterThanOrEqual(0);
+
+  return html.slice(anchorStart, anchorEnd + "</a>".length);
+}
+
 describe("SiteHeaderDesktopActions", () => {
   test("renders authenticated Console as secondary and Contact sales as primary", () => {
     const html = renderToStaticMarkup(
@@ -38,5 +50,12 @@ describe("SiteHeaderDesktopActions", () => {
     expect(consoleButton).toContain("bg-white");
     expect(contactSalesButton).toContain("bg-[#070707]");
     expect(html).not.toContain(">Start Free<");
+
+    const consoleAnchor = anchorForText(html, "Console");
+    const contactSalesAnchor = anchorForText(html, "Contact sales");
+    expect(consoleAnchor).toContain("bg-white");
+    expect(consoleAnchor).not.toContain("bg-[#070707]");
+    expect(contactSalesAnchor).toContain("bg-[#070707]");
+    expect(contactSalesAnchor).toContain("text-white");
   });
 });

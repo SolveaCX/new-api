@@ -23,5 +23,6 @@ For commercial licensing, please contact support@quantumnous.com
 export * from './format'
 export * from './payment'
 export * from './stripe-currency'
+export * from './stripe-checkout-opening'
 export * from './stripe-payment-request'
 export * from './ui'

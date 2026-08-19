@@ -227,6 +227,106 @@ func TestUpdateOptionRejectsNullInviterRewardLimit(t *testing.T) {
 	}
 }
 
+func TestUpdateOptionRejectsUnsafeOfficialWebsiteBannerHref(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"key":   "console_setting.official_website_banner_href",
+		"value": "javascript:alert(1)",
+	})
+	UpdateOption(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if response.Success {
+		t.Fatalf("expected unsafe official website banner href to fail")
+	}
+
+	var count int64
+	if err := db.Model(&model.Option{}).Where("key = ?", "console_setting.official_website_banner_href").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count official website banner href option rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected rejected official website banner href not to persist, got %d rows", count)
+	}
+}
+
+func TestUpdateOptionAcceptsUploadedOfficialWebsiteBannerIcon(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+	const iconDataURL = "data:image/png;base64,iVBORw0KGgo="
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"key":   "console_setting.official_website_banner_icon",
+		"value": iconDataURL,
+	})
+	UpdateOption(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected uploaded official website banner icon to save, got message: %s", response.Message)
+	}
+
+	var iconOption model.Option
+	if err := db.First(&iconOption, "key = ?", "console_setting.official_website_banner_icon").Error; err != nil {
+		t.Fatalf("failed to load official website banner icon option: %v", err)
+	}
+	if iconOption.Value != iconDataURL {
+		t.Fatalf("unexpected official website banner icon value: %q", iconOption.Value)
+	}
+}
+
+func TestUpdateOptionAcceptsPerLocaleOfficialWebsiteBannerContent(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+	const content = `{"en":"Launch credits are live.","zh":"上线额度已开放。"}`
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"key":   "console_setting.official_website_banner_content",
+		"value": content,
+	})
+	UpdateOption(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected per-locale banner content to save, got message: %s", response.Message)
+	}
+
+	var contentOption model.Option
+	if err := db.First(&contentOption, "key = ?", "console_setting.official_website_banner_content").Error; err != nil {
+		t.Fatalf("failed to load official website banner content option: %v", err)
+	}
+	if contentOption.Value != content {
+		t.Fatalf("unexpected official website banner content value: %q", contentOption.Value)
+	}
+}
+
+func TestUpdateOptionAcceptsOfficialWebsiteBannerContentWithoutEnglishFallback(t *testing.T) {
+	// Options are saved one row at a time, so this handler cannot see the
+	// `enabled` value the operator is submitting alongside the copy. Rejecting
+	// here would make "switch the banner off" unsaveable whenever the copy is
+	// half-written. The website falls back to its built-in banner when the
+	// english copy is missing, so persisting it is safe.
+	db := setupOptionControllerTestDB(t)
+	const content = `{"zh":"上线额度已开放。"}`
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"key":   "console_setting.official_website_banner_content",
+		"value": content,
+	})
+	UpdateOption(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected banner content without english fallback to save, got message: %s", response.Message)
+	}
+
+	var contentOption model.Option
+	if err := db.First(&contentOption, "key = ?", "console_setting.official_website_banner_content").Error; err != nil {
+		t.Fatalf("failed to load official website banner content option: %v", err)
+	}
+	if contentOption.Value != content {
+		t.Fatalf("unexpected official website banner content value: %q", contentOption.Value)
+	}
+}
+
 func TestGetOptionsOmitsRetiredInviteRewardUnlockDelay(t *testing.T) {
 	setupOptionControllerTestDB(t)
 	common.OptionMapRWMutex.Lock()

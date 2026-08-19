@@ -25,6 +25,7 @@ export default async function RootLayout({
       hasConsoleSessionHint={hasConsoleSessionHint}
       googleOneTap={publicSiteSettings.googleOneTap}
       lang={DEFAULT_LOCALE}
+      promoBanner={publicSiteSettings.promoBanner}
       bodyStart={
         <Script id="flatkey-attribution-cookie" strategy="beforeInteractive">
           {ATTRIBUTION_COOKIE_SCRIPT}

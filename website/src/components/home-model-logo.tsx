@@ -29,19 +29,19 @@ const DEFAULT_LOGO: LogoSpec = {
 const LOGO_SPECS: Array<{ match: RegExp; spec: LogoSpec }> = [
   {
     match: /openai|gpt|(^|\s)o[1-9]|dall-e|sora|codex/,
-    spec: { src: "/assets/logos/openai.svg", label: "OpenAI", background: "#F6F6F6", border: "rgba(17, 17, 17, 0.14)", fallbackColor: "#111111" },
+    spec: { src: "/assets/logos/openai.svg", label: "OpenAI", background: "#FFFFFF", border: "rgba(226, 232, 240, 0.95)", fallbackColor: "#111111" },
   },
   {
     match: /anthropic|claude/,
-    spec: { src: "/assets/logos/claude.svg", label: "Claude", background: "#FFF3EE", border: "rgba(217, 119, 87, 0.22)", fallbackColor: "#D97757" },
+    spec: { src: "/assets/logos/claude.svg", label: "Claude", background: "#FFFFFF", border: "rgba(226, 232, 240, 0.95)", fallbackColor: "#D97757" },
   },
   {
     match: /google|gemini|imagen|veo/,
-    spec: { src: "/assets/logos/googlegemini.svg", label: "Gemini", background: "#F4F0FF", border: "rgba(66, 133, 244, 0.2)", fallbackColor: "#4285F4" },
+    spec: { src: "/assets/logos/googlegemini.svg", label: "Gemini", background: "#FFFFFF", border: "rgba(226, 232, 240, 0.95)", fallbackColor: "#4285F4" },
   },
   {
     match: /deepseek|deep-seek/,
-    spec: { src: "/assets/logos/deepseek.svg", label: "DeepSeek", background: "#EEF3FF", border: "rgba(77, 107, 254, 0.22)", fallbackColor: "#4D6BFE" },
+    spec: { src: "/assets/logos/deepseek.svg", label: "DeepSeek", background: "#FFFFFF", border: "rgba(226, 232, 240, 0.95)", fallbackColor: "#4D6BFE" },
   },
   {
     match: /kimi|moonshot/,
@@ -49,7 +49,7 @@ const LOGO_SPECS: Array<{ match: RegExp; spec: LogoSpec }> = [
   },
   {
     match: /qwen|alibaba|aliyun|通义/,
-    spec: { src: "/assets/logos/qwen.svg", label: "Qwen", background: "#F2F1FF", border: "rgba(97, 92, 237, 0.2)", fallbackColor: "#615CED" },
+    spec: { src: "/assets/logos/qwen.svg", label: "Qwen", background: "#FFFFFF", border: "rgba(226, 232, 240, 0.95)", fallbackColor: "#615CED" },
   },
   {
     match: /minimax/,
@@ -110,7 +110,7 @@ export function HomeModelLogo(props: HomeModelLogoProps) {
     <span
       aria-label={spec.label}
       title={spec.label}
-      className={cn("inline-grid shrink-0 place-items-center overflow-hidden border shadow-[0_10px_24px_-18px_rgba(16,16,20,0.45)]", props.className)}
+      className={cn("inline-grid shrink-0 place-items-center overflow-hidden border shadow-sm", props.className)}
       style={{
         width: surfaceSize,
         height: surfaceSize,

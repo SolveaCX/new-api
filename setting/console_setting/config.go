@@ -11,6 +11,13 @@ type ConsoleSetting struct {
 	UptimeKumaEnabled    bool   `json:"uptime_kuma_enabled"`   // 是否启用 Uptime Kuma 面板
 	AnnouncementsEnabled bool   `json:"announcements_enabled"` // 是否启用系统公告面板
 	FAQEnabled           bool   `json:"faq_enabled"`           // 是否启用常见问答面板
+
+	// 官网（website/ 独立 Next 应用）全局横幅配置。这些值通过 /api/status 暴露给官网，
+	// 官网侧再按访问语种取文案；内容为空时官网回退到内置的默认横幅。
+	OfficialWebsiteBannerEnabled bool   `json:"official_website_banner_enabled"` // 是否展示官网全局横幅
+	OfficialWebsiteBannerContent string `json:"official_website_banner_content"` // 横幅文案 (语种 -> 文案 的 JSON 对象字符串)
+	OfficialWebsiteBannerHref    string `json:"official_website_banner_href"`    // 横幅跳转链接 (站内绝对路径或 http/https 链接)
+	OfficialWebsiteBannerIcon    string `json:"official_website_banner_icon"`    // 横幅图标 (上传图片生成的 data URL)
 }
 
 // 默认配置
@@ -23,6 +30,11 @@ var defaultConsoleSetting = ConsoleSetting{
 	UptimeKumaEnabled:    true,
 	AnnouncementsEnabled: true,
 	FAQEnabled:           true,
+
+	OfficialWebsiteBannerEnabled: true,
+	OfficialWebsiteBannerContent: "",
+	OfficialWebsiteBannerHref:    "",
+	OfficialWebsiteBannerIcon:    "",
 }
 
 // 全局实例

@@ -1895,6 +1895,40 @@ func TestStripeRecurringEmbeddedCheckoutAllowsEmptyURLAndReplaysClientSecretFrom
 	require.Empty(t, order.ProviderSessionURL)
 }
 
+func TestResolveStripeCheckoutPresentationSupportsElements(t *testing.T) {
+	originalPublishableKey := setting.StripePublishableKey
+	setting.StripePublishableKey = "pk_test_elements"
+	t.Cleanup(func() { setting.StripePublishableKey = originalPublishableKey })
+
+	presentation := ResolveStripeCheckoutPresentation(" elements ")
+
+	require.Equal(t, "elements", presentation.RequestedUIMode)
+	require.True(t, presentation.Elements)
+	require.False(t, presentation.Embedded)
+	require.True(t, presentation.UsesClientSecret())
+}
+
+func TestApplyStripeCheckoutPresentationUsesElementsMode(t *testing.T) {
+	params := &stripe.CheckoutSessionParams{
+		SuccessURL: stripe.String("https://example.com/success"),
+		CancelURL:  stripe.String("https://example.com/cancel"),
+	}
+	presentation := StripeCheckoutPresentation{
+		RequestedUIMode: "elements",
+		Elements:        true,
+	}
+
+	ApplyStripeCheckoutPresentation(params, presentation, "trade_elements")
+
+	require.NotNil(t, params.UIMode)
+	require.Equal(t, string(stripe.CheckoutSessionUIModeElements), *params.UIMode)
+	require.NotNil(t, params.ReturnURL)
+	require.Contains(t, *params.ReturnURL, "session_id={CHECKOUT_SESSION_ID}")
+	require.Contains(t, *params.ReturnURL, "trade_no=trade_elements")
+	require.Nil(t, params.SuccessURL)
+	require.Nil(t, params.CancelURL)
+}
+
 func TestStripeRecurringReplayRejectsSessionWithoutURLOrClientSecret(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	originalPublishableKey := setting.StripePublishableKey

@@ -28,6 +28,7 @@ import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { OfficialWebsiteSection } from './official-website-section'
 
 const SITE_SECTIONS = [
   {
@@ -78,6 +79,23 @@ const SITE_SECTIONS = [
         />
       )
     },
+  },
+  {
+    id: 'official-website',
+    titleKey: 'Official website content',
+    build: (settings: SiteSettings) => (
+      <OfficialWebsiteSection
+        defaultValues={{
+          enabled:
+            settings['console_setting.official_website_banner_enabled'] !==
+            false,
+          content:
+            settings['console_setting.official_website_banner_content'] ?? '',
+          href: settings['console_setting.official_website_banner_href'] ?? '',
+          icon: settings['console_setting.official_website_banner_icon'] ?? '',
+        }}
+      />
+    ),
   },
   {
     id: 'sidebar-modules',

@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ArrowRight, Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
@@ -20,6 +20,8 @@ import {
   withIdFallback,
 } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
+import { promoBannerCopyForLocale } from "@/lib/promo-banner";
+import { PROMPTS_PATH } from "@/lib/prompt-library-path";
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
   clearConsoleSessionHint,
@@ -151,72 +153,60 @@ const languagePanelLabelByLocale: Record<Locale, string> = withIdFallback({
   id: "Bahasa",
 });
 
-const promoBannerCopyByLocale: Record<
-  Locale,
-  { dismissLabel: string; linkLabel: string; message: string }
-> = withIdFallback({
-  en: {
-    dismissLabel: "Dismiss DeepSeek V4 announcement",
-    linkLabel: "Learn more →",
-    message:
-      "DeepSeek V4 is here. Join our Discord get $5 free credits.",
-  },
-  zh: {
-    dismissLabel: "关闭 DeepSeek V4 公告",
-    linkLabel: "了解更多 →",
-    message: "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
-  },
-  es: {
-    dismissLabel: "Cerrar anuncio de DeepSeek V4",
-    linkLabel: "Más información →",
-    message:
-      "DeepSeek V4 ya está aquí. Únete a nuestro Discord y recibe 5 USD en créditos gratis.",
-  },
-  fr: {
-    dismissLabel: "Fermer l’annonce DeepSeek V4",
-    linkLabel: "En savoir plus →",
-    message:
-      "DeepSeek V4 est arrivé. Rejoignez notre Discord et recevez 5 $ de crédits gratuits.",
-  },
-  pt: {
-    dismissLabel: "Fechar anúncio do DeepSeek V4",
-    linkLabel: "Saiba mais →",
-    message:
-      "O DeepSeek V4 chegou. Entre no nosso Discord e ganhe US$ 5 em créditos grátis.",
-  },
-  ru: {
-    dismissLabel: "Закрыть объявление DeepSeek V4",
-    linkLabel: "Узнать больше →",
-    message:
-      "DeepSeek V4 уже здесь. Присоединяйтесь к нашему Discord и получите 5 $ бесплатных кредитов.",
-  },
-  ja: {
-    dismissLabel: "DeepSeek V4 のお知らせを閉じる",
-    linkLabel: "詳細を見る →",
-    message:
-      "DeepSeek V4 が登場。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
-  },
-  vi: {
-    dismissLabel: "Đóng thông báo DeepSeek V4",
-    linkLabel: "Tìm hiểu thêm →",
-    message:
-      "DeepSeek V4 đã ra mắt. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
-  },
-  de: {
-    dismissLabel: "DeepSeek-V4-Ankündigung schließen",
-    linkLabel: "Mehr erfahren →",
-    message:
-      "DeepSeek V4 ist da. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
-  },
-  id: {
-    dismissLabel: "Tutup pengumuman DeepSeek V4",
-    linkLabel: "Pelajari lebih lanjut →",
-    message:
-      "DeepSeek V4 telah hadir. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
-  },
+const promptsNavLabelByLocale: Record<Locale, string> = withIdFallback({
+  en: "Prompts",
+  zh: "提示词",
+  es: "Prompts",
+  fr: "Prompts",
+  pt: "Prompts",
+  ru: "Prompt",
+  ja: "プロンプト",
+  vi: "Prompt",
+  de: "Prompts",
+  id: "Prompt",
 });
 
-const PROMO_BANNER_ARTICLE_PATH = "/blog/deepseek-v4-pro-vs-flash";
+const promoBannerCopyByLocale: Record<
+  Locale,
+  { dismissLabel: string; linkLabel: string }
+> = withIdFallback({
+  en: {
+    dismissLabel: "Dismiss website banner",
+    linkLabel: "Learn more →",
+  },
+  zh: {
+    dismissLabel: "关闭官网横幅",
+    linkLabel: "了解更多 →",
+  },
+  es: {
+    dismissLabel: "Cerrar el banner del sitio",
+    linkLabel: "Más información →",
+  },
+  fr: {
+    dismissLabel: "Fermer la bannière du site",
+    linkLabel: "En savoir plus →",
+  },
+  pt: {
+    dismissLabel: "Fechar o banner do site",
+    linkLabel: "Saiba mais →",
+  },
+  ru: {
+    dismissLabel: "Закрыть баннер сайта",
+    linkLabel: "Узнать больше →",
+  },
+  ja: {
+    dismissLabel: "サイトバナーを閉じる",
+    linkLabel: "詳細を見る →",
+  },
+  vi: {
+    dismissLabel: "Đóng biểu ngữ trang web",
+    linkLabel: "Tìm hiểu thêm →",
+  },
+  de: {
+    dismissLabel: "Website-Banner schließen",
+    linkLabel: "Mehr erfahren →",
+  },
+});
 
 type Props = {
   locale: Locale;
@@ -254,14 +244,21 @@ const mobilePrimaryActionClass =
   "flex min-h-12 items-center justify-center rounded-xl bg-[#070707] px-4 py-3 text-base font-bold text-white shadow-[0_14px_30px_-20px_rgba(11,11,15,.8)] transition hover:bg-[#17171B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] focus-visible:ring-offset-2";
 const mobileSecondaryActionClass =
   "flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
-const desktopNavTriggerClass =
-  "inline-flex h-10 shrink-0 select-none items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:scale-[0.985] min-[1120px]:gap-1.5 min-[1120px]:px-3 min-[1120px]:text-[14.5px] min-[1360px]:text-[15px]";
+const desktopNavControlBaseClass =
+  "inline-flex h-10 shrink-0 select-none items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:scale-[0.985] min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
+// Solid white pill on the purple banner — a real CTA affordance rather than an
+// inline underlined link. Below 700px it collapses to a circular arrow so the
+// message keeps the width it needs.
+const promoBannerCtaClass =
+  "inline-flex size-[26px] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-white text-[12px] leading-none font-bold text-[#4c1d95] transition duration-200 ease-out group-hover:bg-[#F3EDFF] min-[700px]:h-7 min-[700px]:w-auto min-[700px]:px-3 min-[700px]:text-[12.5px]";
+const desktopNavLinkClass = desktopNavControlBaseClass;
 const desktopNavDropdownTriggerClass =
-  `${desktopNavTriggerClass} cursor-pointer appearance-none border-0 bg-transparent`;
+  `${desktopNavControlBaseClass} cursor-pointer appearance-none border-0 bg-transparent`;
 const desktopNavDropdownItemClass =
   "flex min-h-10 origin-center items-center rounded-[10px] px-3 py-2 text-[14px] font-semibold leading-none text-[#0B0B0F] transition-[color,transform,background-color] duration-200 ease-out hover:translate-x-0.5 hover:bg-[#F7F2FF] hover:text-[#050505] focus-visible:bg-[#F7F2FF] focus-visible:text-[#050505] focus-visible:outline-none";
-const desktopNavIdleClass = "font-semibold text-[#0B0B0F]";
-const desktopNavActiveClass = "font-bold text-[#050505]";
+const desktopNavIdleClass = "text-[#0B0B0F] font-semibold";
+const desktopNavActiveClass =
+  "text-[#050505] font-bold";
 const desktopDropdownChevronClass =
   "size-3 shrink-0 text-current opacity-55 transition-all duration-200 ease-out group-hover/nav:rotate-180 group-hover/nav:opacity-75 group-focus-within/nav:rotate-180 group-focus-within/nav:opacity-75";
 const desktopSecondaryActionClass =
@@ -269,7 +266,7 @@ const desktopSecondaryActionClass =
 const desktopPrimaryActionClass =
   "inline-flex h-10 max-w-[10rem] items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] bg-[#070707] px-3 text-[13px] font-bold text-ellipsis text-white no-underline shadow-[0_10px_24px_-18px_rgba(11,11,15,.75)] transition hover:-translate-y-px hover:bg-[#17171B] min-[1180px]:h-11 min-[1180px]:max-w-[12rem] min-[1180px]:px-4 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
 const headerLogoClass =
-  "gap-2 [&_img]:!h-9 [&_img]:!w-9 [&_[data-flatkey-wordmark='true']]:!text-[28px] min-[1180px]:gap-[9px] min-[1180px]:[&_img]:!h-10 min-[1180px]:[&_img]:!w-10 min-[1180px]:[&_[data-flatkey-wordmark='true']]:!text-[32px] min-[1480px]:[&_img]:!h-11 min-[1480px]:[&_img]:!w-11 min-[1480px]:[&_[data-flatkey-wordmark='true']]:!text-[36px]";
+  "fk-site-header-logo";
 
 type SiteHeaderDesktopActionsProps = {
   accountHref: string;
@@ -326,51 +323,26 @@ function persistLanguagePreference(locale: Locale, cookieDomain?: string) {
 
 function HeaderLanguageMenu(props: {
   cookieDomain?: string;
-  locale: Locale;
   locales?: readonly Locale[];
+  locale: Locale;
   pathname: string;
   variant?: "dropdown" | "panel";
 }) {
-  const [open, setOpen] = useState(false);
   const menuId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
   const strippedPath = stripLocale(props.pathname);
-  const locales = props.locales ?? LOCALES;
+  const menuLocales = props.locales ?? LOCALES;
   const languageLinks = useMemo(
     () =>
-      locales.map((locale) => ({
+      menuLocales.map((locale) => ({
         code: locale,
         href: localizePath(strippedPath, locale),
         label: LOCALE_LABELS[locale],
       })),
-    [locales, strippedPath],
+    [menuLocales, strippedPath],
   );
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
 
   const handleLanguageClick = (locale: Locale) => {
     persistLanguagePreference(locale, props.cookieDomain);
-    setOpen(false);
   };
 
   if (props.variant === "panel") {
@@ -423,15 +395,14 @@ function HeaderLanguageMenu(props: {
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div className="group/language relative before:absolute before:top-full before:right-0 before:z-[69] before:h-3 before:w-[178px] before:bg-transparent before:content-['']">
       <button
         type="button"
-        className="inline-flex size-9 items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] aria-expanded:border-[#D8D1E2] aria-expanded:bg-[#F8F4FF] aria-expanded:text-[#0B0B0F] min-[1180px]:size-10"
+        className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border border-[#E7E4EC] bg-white text-[#45414C] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition-all duration-200 ease-out hover:-translate-y-px hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#0B0B0F] focus-visible:border-[#D8D1E2] focus-visible:bg-[#F8F4FF] focus-visible:text-[#0B0B0F] focus-visible:outline-none group-hover/language:-translate-y-px group-hover/language:border-[#D8D1E2] group-hover/language:bg-[#F8F4FF] group-hover/language:text-[#0B0B0F] min-[1180px]:size-10"
         aria-label="Change language"
         aria-haspopup="menu"
-        aria-expanded={open}
         aria-controls={menuId}
-        onClick={() => setOpen((value) => !value)}
+        onMouseDown={(event) => event.preventDefault()}
       >
         <Globe2 className="size-[17px] min-[1180px]:size-[18px]" aria-hidden="true" />
       </button>
@@ -439,21 +410,18 @@ function HeaderLanguageMenu(props: {
       <nav
         id={menuId}
         aria-label="Change language"
-        className={cn(
-          "absolute right-0 top-[calc(100%+10px)] z-[70] grid w-[178px] gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] shadow-[0_22px_60px_-26px_rgba(24,14,38,.38)] backdrop-blur-[18px] transition",
-          open
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-1 opacity-0",
-        )}
+        role="menu"
+        className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-[70] grid w-[178px] origin-top-right -translate-y-1 scale-[0.97] gap-0.5 rounded-[14px] border border-[#E7E4EC] bg-white/[.98] p-[7px] opacity-0 shadow-[0_22px_60px_-26px_rgba(24,14,38,.38)] backdrop-blur-[18px] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/language:pointer-events-auto group-hover/language:translate-y-0 group-hover/language:scale-100 group-hover/language:opacity-100 group-focus-within/language:pointer-events-auto group-focus-within/language:translate-y-0 group-focus-within/language:scale-100 group-focus-within/language:opacity-100"
       >
         {languageLinks.map((lang) => (
           <a
             key={lang.code}
-            className="flex min-h-10 items-center gap-2 rounded-[10px] px-3 py-2 text-sm font-semibold text-[#4A4650] transition hover:bg-[#F7F2FF] hover:text-[#0B0B0F]"
+            className="flex min-h-10 items-center gap-2 rounded-[10px] px-3 py-2 text-sm font-semibold text-[#4A4650] transition-all duration-200 ease-out hover:translate-x-1 hover:scale-[1.01] hover:bg-[#F7F2FF] hover:text-[#0B0B0F] focus-visible:bg-[#F7F2FF] focus-visible:text-[#0B0B0F] focus-visible:outline-none"
             href={lang.href}
             hrefLang={localeLanguageTag(lang.code)}
             lang={localeLanguageTag(lang.code)}
             aria-current={props.locale === lang.code ? "page" : undefined}
+            role="menuitem"
             onClick={() => handleLanguageClick(lang.code)}
           >
             <span>{lang.label}</span>
@@ -475,15 +443,17 @@ export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
   const toolsCopy = toolsLandingCopy[props.locale];
-  const { docsUrl } = useSiteConfig();
+  const { docsUrl, promoBanner } = useSiteConfig();
   const legacyLabels =
     legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels =
     navGroupLabelByLocale[props.locale] ?? navGroupLabelByLocale.en;
+  const promptsLabel =
+    promptsNavLabelByLocale[props.locale] ?? promptsNavLabelByLocale.en;
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
-  const [promoBannerVisible, setPromoBannerVisible] = useState(true);
+  const [promoBannerDismissed, setPromoBannerDismissed] = useState(false);
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleSignInUrl(props.locale);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
@@ -499,13 +469,18 @@ export function SiteHeader(props: Props) {
     : startFreeLabel;
   const promoBannerCopy =
     promoBannerCopyByLocale[props.locale] ?? promoBannerCopyByLocale.en;
-  const promoBannerHref = localizePath(
-    PROMO_BANNER_ARTICLE_PATH,
+  const promoBannerMessage = promoBannerCopyForLocale(
+    promoBanner.content,
     props.locale,
   );
-  const mobileMenuOffsetClass = promoBannerVisible
-    ? "top-[132px] max-h-[calc(100dvh-132px)] min-[700px]:top-[112px] min-[700px]:max-h-[calc(100dvh-112px)]"
-    : "top-[72px] max-h-[calc(100dvh-72px)]";
+  // A configured banner with an empty link still renders — it just stops being
+  // clickable, so operators can run a copy-only announcement.
+  const promoBannerHref = promoBanner.href.startsWith("/")
+    ? localizePath(promoBanner.href, props.locale)
+    : promoBanner.href;
+  const promoBannerVisible = promoBanner.enabled &&
+    !promoBannerDismissed &&
+    promoBannerMessage !== "";
 
   const productItems = useMemo<NavItem[]>(
     () => [
@@ -552,6 +527,7 @@ export function SiteHeader(props: Props) {
   );
   const topLevelItems = [
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
+    { href: PROMPTS_PATH, label: promptsLabel, publicPath: true },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
   ];
 
@@ -614,15 +590,15 @@ export function SiteHeader(props: Props) {
     const active =
       item.publicPath && currentPath === hrefPath && !item.href.includes("#");
     const className = cn(
-      compact ? desktopNavDropdownItemClass : desktopNavTriggerClass,
+      compact ? desktopNavDropdownItemClass : desktopNavLinkClass,
       active ? desktopNavActiveClass : desktopNavIdleClass,
     );
     const children = (
-      <>
-        <span className="min-w-0 overflow-hidden text-ellipsis">
-          {item.label}
-        </span>
-      </>
+      <span
+        className="min-w-0 overflow-hidden text-ellipsis"
+      >
+        {item.label}
+      </span>
     );
 
     return item.external ? (
@@ -632,6 +608,7 @@ export function SiteHeader(props: Props) {
         href={item.href}
         target="_blank"
         rel="noopener noreferrer"
+        role={compact ? "menuitem" : undefined}
       >
         {children}
       </a>
@@ -643,6 +620,7 @@ export function SiteHeader(props: Props) {
           item.publicPath ? localizePath(item.href, props.locale) : item.href
         }
         onClick={() => setMobileOpen(false)}
+        role={compact ? "menuitem" : undefined}
       >
         {children}
       </Link>
@@ -682,9 +660,7 @@ export function SiteHeader(props: Props) {
   const renderNavGroup = (label: string, items: NavItem[]) => {
     const active = items.some((item) => {
       const hrefPath = item.href.split("#")[0] || item.href;
-      return (
-        item.publicPath && currentPath === hrefPath && !item.href.includes("#")
-      );
+      return item.publicPath && currentPath === hrefPath && !item.href.includes("#");
     });
 
     return (
@@ -694,11 +670,14 @@ export function SiteHeader(props: Props) {
           aria-haspopup="menu"
           className={cn(
             desktopNavDropdownTriggerClass,
-            active ? desktopNavActiveClass : desktopNavIdleClass,
+            active && desktopNavActiveClass,
+            !active && desktopNavIdleClass,
           )}
           onMouseDown={(event) => event.preventDefault()}
         >
-          <span className="min-w-0 overflow-hidden text-ellipsis">{label}</span>
+          <span className="col-start-2 min-w-0 overflow-hidden text-ellipsis">
+            {label}
+          </span>
           <ChevronDown className={desktopDropdownChevronClass} aria-hidden="true" />
         </button>
         <div className="pointer-events-none absolute top-full left-1/2 z-[70] w-[220px] origin-top -translate-x-1/2 -translate-y-1 scale-[0.97] pt-[6px] opacity-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:scale-100 group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:scale-100 group-focus-within/nav:opacity-100">
@@ -739,41 +718,63 @@ export function SiteHeader(props: Props) {
   );
 
   const dismissPromoBanner = () => {
-    setPromoBannerVisible(false);
+    setPromoBannerDismissed(true);
   };
+
+  const promoBannerBody = (
+    <>
+      {promoBanner.icon && (
+        <span
+          className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/95 ring-1 ring-white/40 min-[700px]:size-5"
+          aria-hidden="true"
+        >
+          <Image
+            alt=""
+            src={promoBanner.icon}
+            width={16}
+            height={16}
+            unoptimized
+            className="size-3 min-[700px]:size-3.5"
+          />
+        </span>
+      )}
+      <span className="min-w-0 text-[13px] leading-snug font-semibold tracking-[-0.01em] text-white min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-none">
+        {promoBannerMessage}
+      </span>
+      {promoBannerHref && (
+        <span className={promoBannerCtaClass}>
+          <ArrowRight
+            className="size-3.5 min-[700px]:hidden"
+            aria-hidden="true"
+          />
+          <span className="hidden min-[700px]:inline">
+            {promoBannerCopy.linkLabel}
+          </span>
+        </span>
+      )}
+    </>
+  );
 
   return (
     <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
       {promoBannerVisible && (
-        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F]">
-          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
-            <Link
-              className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] no-underline min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate"
-              href={promoBannerHref}
-            >
-              <span
-                className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
-                aria-hidden="true"
+        <div className="bg-[linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)] text-white">
+          <div className="relative mx-auto flex min-h-11 w-full max-w-[var(--fk-site-frame-max-width)] items-center justify-center py-1.5 pr-14 pl-3 min-[700px]:h-11 min-[700px]:min-h-11 min-[700px]:overflow-hidden min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.25rem)] min-[700px]:pl-[var(--fk-site-gutter)]">
+            {promoBannerHref ? (
+              <Link
+                className="group flex min-w-0 items-center justify-center gap-2 no-underline min-[700px]:gap-2.5"
+                href={promoBannerHref}
               >
-                <Image
-                  alt=""
-                  src="/assets/logos/deepseek.svg"
-                  width={16}
-                  height={16}
-                  unoptimized
-                  className="size-[14px] min-[700px]:size-4"
-                />
+                {promoBannerBody}
+              </Link>
+            ) : (
+              <span className="flex min-w-0 items-center justify-center gap-2 min-[700px]:gap-2.5">
+                {promoBannerBody}
               </span>
-              <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
-                {promoBannerCopy.message}{" "}
-                <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
-                  {promoBannerCopy.linkLabel}
-                </span>
-              </span>
-            </Link>
+            )}
             <button
               type="button"
-              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
+              className="absolute top-1/2 right-2 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-white/70 transition hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 min-[700px]:right-[max(8px,calc(var(--fk-site-gutter)-0.5rem))]"
               aria-label={promoBannerCopy.dismissLabel}
               onClick={dismissPromoBanner}
             >
@@ -782,7 +783,7 @@ export function SiteHeader(props: Props) {
           </div>
         </div>
       )}
-      <nav className="relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-3 px-[var(--fk-site-gutter)] text-[#0B0B0F] min-[901px]:h-[76px] min-[1180px]:h-[84px] min-[1180px]:gap-5 min-[1480px]:h-[88px] min-[1480px]:gap-[30px]">
+      <nav className="relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-1.5 px-[var(--fk-site-gutter)] text-[#0B0B0F] min-[901px]:h-[76px] min-[1180px]:h-[84px] min-[1180px]:gap-2.5 min-[1480px]:h-[88px] min-[1480px]:gap-3">
         <Link
           href={localizePath("/", props.locale)}
           className="inline-flex shrink-0 items-center no-underline"
@@ -791,7 +792,7 @@ export function SiteHeader(props: Props) {
           <span className="sr-only">flatkey.ai</span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-0 min-[901px]:flex min-[1120px]:gap-0.5">
+        <div className="hidden min-w-0 shrink-0 items-center gap-2.5 ml-6 min-[901px]:flex min-[1180px]:gap-3 min-[1360px]:gap-3.5">
           {renderNavGroup(groupLabels.products, productItems)}
           {renderNavGroup(groupLabels.resources, resourceItems)}
           {topLevelItems.map((item) => renderNavLink(item))}
@@ -801,9 +802,9 @@ export function SiteHeader(props: Props) {
           {!props.hideLanguageSwitcher && (
             <HeaderLanguageMenu
               locale={props.locale}
-              locales={props.languageSwitcherLocales}
               pathname={props.pathname}
               cookieDomain={props.languageCookieDomain}
+              locales={props.languageSwitcherLocales}
             />
           )}
           <SiteHeaderDesktopActions
@@ -819,10 +820,10 @@ export function SiteHeader(props: Props) {
 
         <a
           className={cn(
-            "ml-auto h-10 max-w-[8.5rem] shrink-0 overflow-hidden whitespace-nowrap rounded-[9px] px-3 text-[13px] font-bold text-ellipsis no-underline min-[901px]:hidden",
+            "ml-auto inline-flex h-10 max-w-[6.25rem] shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] px-2.5 text-[12px] font-bold text-ellipsis no-underline min-[430px]:max-w-[8.5rem] min-[430px]:px-3 min-[430px]:text-[13px] min-[901px]:hidden",
             consoleSessionActive
-              ? "inline-flex items-center justify-center border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95]"
-              : "inline-flex items-center justify-center bg-[#070707] text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)]",
+              ? "border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)]"
+              : "bg-[#070707] text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)]",
           )}
           href={primaryActionHref}
           style={consoleSessionActive ? undefined : { color: "#fff" }}
@@ -855,7 +856,7 @@ export function SiteHeader(props: Props) {
       <div
         id={mobileMenuId}
         className={cn(
-          `fixed inset-x-0 z-40 overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden ${mobileMenuOffsetClass}`,
+          `absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-100%)] overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden`,
           mobileOpen
             ? "translate-y-0 opacity-100 shadow-[0_24px_70px_-42px_rgba(76,29,149,.52)]"
             : "pointer-events-none -translate-y-4 opacity-0 shadow-none",
@@ -887,9 +888,9 @@ export function SiteHeader(props: Props) {
           {!props.hideLanguageSwitcher && (
             <HeaderLanguageMenu
               locale={props.locale}
-              locales={props.languageSwitcherLocales}
               pathname={props.pathname}
               cookieDomain={props.languageCookieDomain}
+              locales={props.languageSwitcherLocales}
               variant="panel"
             />
           )}
