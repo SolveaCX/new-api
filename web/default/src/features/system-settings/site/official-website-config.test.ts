@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import * as z from 'zod'
 import {
   OFFICIAL_WEBSITE_LOCALES,
   parseBannerContent,
@@ -82,5 +83,48 @@ describe('banner save rules', () => {
     ).toBe(false)
     // An entirely empty form is fine — the website shows its default banner.
     expect(requiresEnglish({ enabled: true, content: {} })).toBe(false)
+  })
+})
+
+describe('banner form schema', () => {
+  // Regression: the form schema used `z.record(z.string(), z.string())`, which
+  // rejects locales the operator never typed into (they are `undefined` in the
+  // form state). Every language showed "Invalid input" and the whole form —
+  // including the on/off switch — could not be saved.
+  const contentSchema = z.record(z.string(), z.string().optional())
+
+  test('accepts untouched locales left as undefined', () => {
+    const untouched = Object.fromEntries(
+      OFFICIAL_WEBSITE_LOCALES.map((locale) => [locale, undefined])
+    )
+    expect(contentSchema.safeParse(untouched).success).toBe(true)
+  })
+
+  test('accepts a form seeded with empty strings for every locale', () => {
+    const seeded = Object.fromEntries(
+      OFFICIAL_WEBSITE_LOCALES.map((locale) => [locale, ''])
+    )
+    expect(contentSchema.safeParse(seeded).success).toBe(true)
+  })
+
+  test('accepts a partially filled form', () => {
+    expect(
+      contentSchema.safeParse({
+        en: 'Launch credits are live.',
+        zh: '上线额度已开放。',
+        ja: undefined,
+        de: '',
+      }).success
+    ).toBe(true)
+  })
+
+  test('seeding every locale keeps serialization free of blank entries', () => {
+    const seeded = Object.fromEntries(
+      OFFICIAL_WEBSITE_LOCALES.map((locale) => [locale, ''])
+    )
+    expect(serializeBannerContent({ ...seeded, en: 'Launch credits.' })).toBe(
+      '{"en":"Launch credits."}'
+    )
+    expect(serializeBannerContent(seeded)).toBe('')
   })
 })

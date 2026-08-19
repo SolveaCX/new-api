@@ -65,7 +65,10 @@ const bannerSchema = z.object({
   enabled: z.boolean(),
   href: z.string(),
   icon: z.string(),
-  content: z.record(z.string(), z.string()),
+  // Locales the operator never typed into stay `undefined` in the form state,
+  // so the values must be optional — a plain `z.string()` here rejects every
+  // untouched language and blocks the whole form, including the on/off switch.
+  content: z.record(z.string(), z.string().optional()),
 })
 
 type BannerFormValues = z.infer<typeof bannerSchema>
@@ -86,15 +89,19 @@ export function OfficialWebsiteSection({
   const updateOption = useUpdateOption()
   const iconFileInputRef = useRef<HTMLInputElement>(null)
 
-  const formDefaults = useMemo<BannerFormValues>(
-    () => ({
+  const formDefaults = useMemo<BannerFormValues>(() => {
+    const saved = parseBannerContent(defaultValues.content ?? '')
+    return {
       enabled: defaultValues.enabled,
       href: defaultValues.href ?? '',
       icon: defaultValues.icon ?? '',
-      content: parseBannerContent(defaultValues.content ?? ''),
-    }),
-    [defaultValues]
-  )
+      // Seed every locale so untouched textareas are controlled from the first
+      // render and validate as empty strings rather than `undefined`.
+      content: Object.fromEntries(
+        OFFICIAL_WEBSITE_LOCALES.map((locale) => [locale, saved[locale] ?? ''])
+      ),
+    }
+  }, [defaultValues])
 
   const bannerSchemaWithI18n = useMemo(
     () =>
@@ -120,11 +127,11 @@ export function OfficialWebsiteSection({
           ),
         icon: z.string(),
         content: z
-          .record(z.string(), z.string())
+          .record(z.string(), z.string().optional())
           .refine(
             (value) =>
               Object.values(value).every(
-                (copy) => copy.trim().length <= BANNER_CONTENT_MAX_LENGTH
+                (copy) => (copy ?? '').trim().length <= BANNER_CONTENT_MAX_LENGTH
               ),
             t('Banner text must be {{max}} characters or fewer', {
               max: BANNER_CONTENT_MAX_LENGTH,
@@ -138,7 +145,7 @@ export function OfficialWebsiteSection({
           (values) => {
             if (!values.enabled) return true
             const hasAnyCopy = Object.values(values.content).some(
-              (copy) => copy.trim().length > 0
+              (copy) => (copy ?? '').trim().length > 0
             )
             return !hasAnyCopy || (values.content.en ?? '').trim().length > 0
           },
