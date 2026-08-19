@@ -661,6 +661,15 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if oauthUser.Email != "" {
 		user.Email = oauthUser.Email
 		user.EmailDomain = emailDecision.Domain
+		// Only mark the address verified when the provider actually proved
+		// ownership (Google/GitHub verified emails, OIDC email_verified claim,
+		// Discord verified flag). Providers that pass an unverified address
+		// through (generic/OIDC without the claim, LinuxDO) leave the account
+		// unverified so it must confirm the email via the standard flow before
+		// creating or using tokens.
+		if oauthUser.EmailVerified {
+			user.EmailVerifiedAt = common.GetTimestamp()
+		}
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled

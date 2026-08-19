@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +27,40 @@ func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	maskedToken.Status = model.GetEffectiveTokenStatus(token, common.GetTimestamp())
 	return &maskedToken
 }
+
+// tokenCreationBlockedByEmailVerification reports whether the current user must
+// verify their email before creating tokens. Enforced only when the system has
+// email verification enabled AND the token_setting.require_email_verification
+// toggle is on. Users without an email address (root, internal accounts) and
+// admin/root roles are exempt. Fail-open: if the user cannot be loaded the
+// request is allowed through rather than locked out.
+func tokenCreationBlockedByEmailVerification(c *gin.Context) bool {
+	if !operation_setting.RequireEmailVerificationForTokens() {
+		return false
+	}
+	id := c.GetInt("id")
+	if id == 0 {
+		return false
+	}
+	if c.GetInt("role") >= common.RoleAdminUser {
+		return false
+	}
+	user, err := model.GetUserCache(id)
+	if err != nil || user == nil {
+		common.SysLog(fmt.Sprintf("token email-verification check: failed to load user %d: %v", id, err))
+		return false
+	}
+	if user.Email == "" || user.EmailVerifiedAt != 0 {
+		return false
+	}
+	return true
+}
+
+// errTokenEmailVerificationRequired is returned by buildTokenForInsert when the
+// current user must verify their email first. Callers translate it to the i18n
+// message; keeping it a sentinel lets every token-creation path (console form,
+// initial-token ensure, CLI device authorization) share one choke point.
+var errTokenEmailVerificationRequired = errors.New("email verification required before creating tokens")
 
 func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 	maskedTokens := make([]*model.Token, 0, len(tokens))
@@ -224,6 +259,12 @@ func validateTokenCreatePayload(c *gin.Context, token *model.Token) bool {
 }
 
 func buildTokenForInsert(c *gin.Context, token model.Token, key string) (model.Token, error) {
+	// Single choke point for all token-creation paths (console form,
+	// initial-token ensure, CLI device authorization): unverified users must
+	// verify their email first.
+	if tokenCreationBlockedByEmailVerification(c) {
+		return model.Token{}, errTokenEmailVerificationRequired
+	}
 	// PLG users cannot pick a group — force every token onto plg.
 	canUseGroups, err := userCanUseGroups(c.GetInt("id"))
 	if err != nil {
@@ -315,6 +356,10 @@ func AddToken(c *gin.Context) {
 	}
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
+		if errors.Is(err, errTokenEmailVerificationRequired) {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -360,6 +405,10 @@ func EnsureInitialToken(c *gin.Context) {
 
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
+		if errors.Is(err, errTokenEmailVerificationRequired) {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

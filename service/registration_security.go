@@ -39,6 +39,28 @@ func EvaluateRegistrationEmail(email string, cfg system_setting.RegistrationSecu
 		return RegistrationEmailDecision{}, ErrSubdomainEmailRegistrationRejected
 	}
 	trusted := cfg.IsTrustedDomain(domain)
+	if !trusted {
+		// DNS-level validation: MX presence, MX infrastructure fingerprint,
+		// placeholder A records and website reachability. Fail-open on resolver
+		// errors (see checkEmailDomainDNS).
+		if cfg.EnableEmailDomainDNSValidation {
+			dnsCheck := registrationEmailDNSChecker(domain)
+			if dnsCheck.DisposableMX || dnsCheck.PrivateARecord {
+				return RegistrationEmailDecision{}, ErrAutomatedRegistrationEmailRejected
+			}
+			if cfg.RejectEmailDomainWithoutMX && !dnsCheck.MXRecord {
+				return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
+			}
+			if cfg.RejectEmailDomainWithoutWebsite && !dnsCheck.WebsiteReachable && !dnsCheck.MajorProviderMX {
+				return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
+			}
+		}
+		// Static disposable-domain blocklist (temp-mail services, catch-all
+		// farms, typosquats). Suffix match, so subdomains are covered too.
+		if cfg.IsDisposableEmailDomain(domain) {
+			return RegistrationEmailDecision{}, ErrAutomatedRegistrationEmailRejected
+		}
+	}
 	if lookup != nil {
 		blocked, err := lookup(domain)
 		if err != nil {
