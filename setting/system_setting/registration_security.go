@@ -139,7 +139,8 @@ func (s RegistrationSecuritySettings) IsEmailBlacklisted(email string) bool {
 	for _, pattern := range s.EmailBlacklistPatterns {
 		matched, err := regexp.MatchString(pattern, email)
 		if err != nil {
-			return true
+			common.SysError(fmt.Sprintf("invalid registration email blacklist pattern %q: %s", pattern, err.Error()))
+			continue
 		}
 		if matched {
 			return true
