@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "申し訳ありません。コードの配布は終了しました",
     "You already claimed this offer": "このキャンペーンはすでに受け取り済みです",
     "Paid": "支払済み",
-    "Manually pass the email verification for this account": "このアカウントのメール確認を手動で承認する"
+    "Manually pass the email verification for this account": "このアカウントのメール確認を手動で承認する",
+    "Email Verified": "メール確認済み",
+    "Verified": "確認済み",
+    "Unverified": "未確認"
   }
 }

@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "Вы опоздали — все коды уже разобраны",
     "You already claimed this offer": "Вы уже получили это предложение",
     "Paid": "Оплачено",
-    "Manually pass the email verification for this account": "Вручную подтвердить электронную почту этой учетной записи"
+    "Manually pass the email verification for this account": "Вручную подтвердить электронную почту этой учетной записи",
+    "Email Verified": "Почта подтверждена",
+    "Verified": "Подтверждено",
+    "Unverified": "Не подтверждено"
   }
 }

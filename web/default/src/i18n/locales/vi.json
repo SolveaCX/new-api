@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "Bạn đến muộn — tất cả mã đã được nhận hết",
     "You already claimed this offer": "Bạn đã nhận ưu đãi này",
     "Paid": "Đã thanh toán",
-    "Manually pass the email verification for this account": "Phê duyệt thủ công xác minh email cho tài khoản này"
+    "Manually pass the email verification for this account": "Phê duyệt thủ công xác minh email cho tài khoản này",
+    "Email Verified": "Email đã xác minh",
+    "Verified": "Đã xác minh",
+    "Unverified": "Chưa xác minh"
   }
 }

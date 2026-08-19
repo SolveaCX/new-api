@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "Trop tard : tous les codes ont déjà été réclamés",
     "You already claimed this offer": "Vous avez déjà réclamé cette offre",
     "Paid": "Payé",
-    "Manually pass the email verification for this account": "Approuver manuellement la vérification de l'e-mail de ce compte"
+    "Manually pass the email verification for this account": "Approuver manuellement la vérification de l'e-mail de ce compte",
+    "Email Verified": "E-mail vérifié",
+    "Verified": "Vérifié",
+    "Unverified": "Non vérifié"
   }
 }

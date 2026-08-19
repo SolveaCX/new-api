@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "Too late — all codes have already been claimed",
     "You already claimed this offer": "You already claimed this offer",
     "Paid": "Paid",
-    "Manually pass the email verification for this account": "Manually pass the email verification for this account"
+    "Manually pass the email verification for this account": "Manually pass the email verification for this account",
+    "Email Verified": "Email Verified",
+    "Verified": "Verified",
+    "Unverified": "Unverified"
   }
 }

@@ -159,6 +159,31 @@ export function useUsersColumns(): ColumnDef<User>[] {
       meta: { label: t('Email') },
     },
     {
+      id: 'email_verified',
+      accessorFn: (user) => (user.email_verified_at || 0) > 0,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Email Verified')} />
+      ),
+      cell: ({ row }) => {
+        const verified = row.getValue('email_verified') as boolean
+        return verified ? (
+          <StatusBadge
+            label={t('Verified')}
+            variant='success'
+            copyable={false}
+          />
+        ) : (
+          <StatusBadge
+            label={t('Unverified')}
+            variant='neutral'
+            copyable={false}
+          />
+        )
+      },
+      enableSorting: false,
+      meta: { label: t('Email Verified'), mobileHidden: true },
+    },
+    {
       id: 'ip',
       accessorFn: (user) => user.registration_ip || user.last_login_ip || '',
       header: ({ column }) => (

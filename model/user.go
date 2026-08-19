@@ -367,7 +367,7 @@ func recallAudienceUserLikePattern(keyword string) string {
 	return "%" + escaped + "%"
 }
 
-func SearchUsers(keyword string, group string, role *int, status *int, language string, paid bool, startIdx int, num int) ([]*User, int64, error) {
+func SearchUsers(keyword string, group string, role *int, status *int, language string, paid bool, emailVerified *bool, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -414,6 +414,13 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 	}
 	if paid {
 		query = query.Where("id IN (SELECT user_id FROM top_ups WHERE status = ?)", common.TopUpStatusSuccess)
+	}
+	if emailVerified != nil {
+		if *emailVerified {
+			query = query.Where("email_verified_at > 0")
+		} else {
+			query = query.Where("email_verified_at = 0")
+		}
 	}
 	query = applyUserLanguageFilter(query, language)
 

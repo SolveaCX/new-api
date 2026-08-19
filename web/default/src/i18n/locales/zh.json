@@ -6669,6 +6669,9 @@
     "Too late — all codes have already been claimed": "来晚了，code已经发完了",
     "You already claimed this offer": "你已经领取过这个活动",
     "Paid": "已付费",
-    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证"
+    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证",
+    "Email Verified": "邮箱已验证",
+    "Verified": "已验证",
+    "Unverified": "未验证"
   }
 }
