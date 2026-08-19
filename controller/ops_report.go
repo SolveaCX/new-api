@@ -187,9 +187,13 @@ type opsRegisteredUserRow struct {
 }
 
 var (
-	opsReportCache   *opsReportData
-	opsReportCacheAt time.Time
-	opsReportMutex   sync.Mutex
+	opsReportCache *opsReportData
+	// opsReportAggsAt is the build time of the cohort aggregates the cached
+	// report was computed from. The report must never outlive those aggregates,
+	// so its freshness is measured from this timestamp rather than the report's
+	// own build time (opsReportAggsAt <= report build time by construction).
+	opsReportAggsAt time.Time
+	opsReportMutex  sync.Mutex
 
 	// Day-independent cohort aggregates (users + log/token stats + paid
 	// orders), cached separately from the windowed report so a days switch
@@ -218,18 +222,18 @@ func GetOpsReport(c *gin.Context) {
 	defer opsReportMutex.Unlock()
 	if opsReportCache != nil && opsReportCache.Days == days &&
 		opsReportCache.DauScope == dauScope &&
-		time.Since(opsReportCacheAt) < opsReportCacheTTL {
+		time.Since(opsReportAggsAt) < opsReportCacheTTL {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": opsReportCache})
 		return
 	}
 
-	report, err := buildOpsReport(days, dauScope)
+	report, aggsAt, err := buildOpsReport(days, dauScope)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	opsReportCache = report
-	opsReportCacheAt = time.Now()
+	opsReportAggsAt = aggsAt
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": report})
 }
 
@@ -364,25 +368,25 @@ func buildOpsAggs() (map[int]*opsUserAgg, error) {
 // of the report: GetOpsUserLogStats scans the whole logs history for the plg
 // cohort no matter which day range is selected, so caching it here keeps a
 // 7/30/60/90 switch from re-running that scan each time.
-func getOpsAggs() (map[int]*opsUserAgg, error) {
+func getOpsAggs() (map[int]*opsUserAgg, time.Time, error) {
 	opsAggsMutex.Lock()
 	defer opsAggsMutex.Unlock()
 	if opsAggsCache != nil && time.Since(opsAggsCacheAt) < opsReportCacheTTL {
-		return opsAggsCache, nil
+		return opsAggsCache, opsAggsCacheAt, nil
 	}
 	aggs, err := buildOpsAggs()
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	opsAggsCache = aggs
 	opsAggsCacheAt = time.Now()
-	return aggs, nil
+	return aggs, opsAggsCacheAt, nil
 }
 
-func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
-	aggs, err := getOpsAggs()
+func buildOpsReport(days int, dauScope string) (*opsReportData, time.Time, error) {
+	aggs, aggsAt, err := getOpsAggs()
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	// The DAU slice is keyed by user id; map iteration order is irrelevant for
 	// the IN clauses it feeds.
@@ -401,13 +405,13 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	if dauScope == "all" {
 		allDaily, err := model.GetOpsAllKeyDailyUsage(dayStarts)
 		if err != nil {
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		report.Dau = opsRollupDauDays(allDaily, dayStarts)
 	} else {
 		keyDaily, err := model.GetOpsKeyDailyUsage(ids, dayStarts)
 		if err != nil {
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		report.Dau = opsRollupDau(keyDaily, dayStarts)
 	}
@@ -422,7 +426,7 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	opsSyncAdsSpend()
 	adsDaily, err := model.GetOpsAdsSpendDaily(opsDay(startTs))
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	report.Daily = opsAttachAdsSpend(dailyRows, adsDaily)
 	report.WeeklyFunnel = opsRollupFunnel(aggs, func(a *opsUserAgg) string {
@@ -436,7 +440,7 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 	report.PaymentWeekly = opsRollupPayment(aggs)
 	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs)
 	report.RegisteredUsers = opsRegisteredUsers(aggs)
-	return report, nil
+	return report, aggsAt, nil
 }
 
 // opsAttachAdsSpend joins per-day ads totals onto the daily funnel rows by
