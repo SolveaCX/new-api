@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -69,5 +70,38 @@ func TestGetWebsiteModelUsageRequiresModel(t *testing.T) {
 	}
 	if payload.Success {
 		t.Fatal("expected success=false")
+	}
+}
+
+// The cache key carries the UTC date, so an entry cannot be served on a day it
+// was not computed for even if the TTL is somehow missed.
+func TestWebsiteModelUsageCacheKeyIsDayScoped(t *testing.T) {
+	day1 := time.Date(2026, 8, 19, 23, 59, 0, 0, time.UTC)
+	day2 := day1.Add(2 * time.Minute) // crosses into the next UTC day
+
+	if websiteModelUsageCacheKey("seedance-2.5", 30, day1) == websiteModelUsageCacheKey("seedance-2.5", 30, day2) {
+		t.Fatal("expected the cache key to change across a UTC day boundary")
+	}
+	// Different windows of the same model must not share an entry: a 7-day
+	// request would otherwise be served a 30-day series.
+	if websiteModelUsageCacheKey("seedance-2.5", 7, day1) == websiteModelUsageCacheKey("seedance-2.5", 30, day1) {
+		t.Fatal("expected the cache key to vary by day count")
+	}
+	if websiteModelUsageCacheKey("model-a", 30, day1) == websiteModelUsageCacheKey("model-b", 30, day1) {
+		t.Fatal("expected the cache key to vary by model")
+	}
+}
+
+// TTL runs to the next UTC midnight so one aggregation query serves the whole
+// day, with a floor so a request landing on the boundary still caches usefully.
+func TestWebsiteModelUsageCacheTTLExpiresAtUtcMidnight(t *testing.T) {
+	morning := time.Date(2026, 8, 19, 6, 0, 0, 0, time.UTC)
+	if got, want := websiteModelUsageCacheTTL(morning), 18*time.Hour; got != want {
+		t.Fatalf("expected TTL %v at 06:00 UTC, got %v", want, got)
+	}
+
+	nearMidnight := time.Date(2026, 8, 19, 23, 59, 30, 0, time.UTC)
+	if got := websiteModelUsageCacheTTL(nearMidnight); got != time.Minute {
+		t.Fatalf("expected the one-minute floor near midnight, got %v", got)
 	}
 }

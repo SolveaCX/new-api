@@ -2,9 +2,11 @@ package controller
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -27,6 +29,71 @@ const websiteMetricsKeyEnv = "WEBSITE_METRICS_KEY"
 // Bounds the scan: the website charts a month, and an unbounded range would let
 // a caller walk the whole table one request at a time.
 const websiteModelUsageMaxDays = 90
+
+// The series is bucketed by UTC day, so it only changes when the day rolls
+// over. Caching until the next UTC midnight means one aggregation query per
+// (model, days) per day no matter how much traffic the model pages take -- the
+// quota_data scan is the expensive part, and repeating it per request is what
+// would flood the database.
+//
+// The cache key carries the UTC date, so a stale entry cannot outlive its day
+// even if the TTL is missed.
+const websiteModelUsageCachePrefix = "website:model-usage:"
+
+// Redis is shared across nodes, so the cache is coherent in the multi-node
+// deployment. Without Redis every node keeps its own in-process copy: still one
+// query per node per day, which is the same bound, just multiplied by node
+// count.
+var websiteModelUsageLocalCache sync.Map // cacheKey -> websiteModelUsageResponse
+
+func websiteModelUsageCacheKey(modelName string, days int, now time.Time) string {
+	return fmt.Sprintf("%s%s:%d:%s", websiteModelUsageCachePrefix, modelName, days, now.UTC().Format("2006-01-02"))
+}
+
+// Seconds remaining until the next UTC midnight, floored at a minute so a
+// request landing on the boundary still caches for a usable window.
+func websiteModelUsageCacheTTL(now time.Time) time.Duration {
+	nextDay := now.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
+	ttl := nextDay.Sub(now.UTC())
+	if ttl < time.Minute {
+		return time.Minute
+	}
+	return ttl
+}
+
+func loadCachedWebsiteModelUsage(cacheKey string) (websiteModelUsageResponse, bool) {
+	if common.RedisEnabled {
+		raw, err := common.RedisGet(cacheKey)
+		if err == nil && raw != "" {
+			var cached websiteModelUsageResponse
+			if err := common.UnmarshalJsonStr(raw, &cached); err == nil {
+				return cached, true
+			}
+		}
+	}
+	if value, ok := websiteModelUsageLocalCache.Load(cacheKey); ok {
+		if cached, ok := value.(websiteModelUsageResponse); ok {
+			return cached, true
+		}
+	}
+	return websiteModelUsageResponse{}, false
+}
+
+func storeCachedWebsiteModelUsage(cacheKey string, payload websiteModelUsageResponse, ttl time.Duration) {
+	// Always keep the local copy: it serves the next request on this node even
+	// when Redis is down, and the day-scoped key keeps it from going stale.
+	websiteModelUsageLocalCache.Store(cacheKey, payload)
+	if !common.RedisEnabled {
+		return
+	}
+	encoded, err := common.Marshal(payload)
+	if err != nil {
+		return
+	}
+	if err := common.RedisSet(cacheKey, string(encoded), ttl); err != nil {
+		common.SysError("failed to cache website model usage: " + err.Error())
+	}
+}
 
 type websiteModelUsagePoint struct {
 	// Unix seconds at UTC day start.
@@ -76,9 +143,16 @@ func GetWebsiteModelUsage(c *gin.Context) {
 		days = websiteModelUsageMaxDays
 	}
 
+	now := time.Now()
+	cacheKey := websiteModelUsageCacheKey(modelName, days, now)
+	if cached, ok := loadCachedWebsiteModelUsage(cacheKey); ok {
+		writeWebsiteModelUsage(c, cached, now)
+		return
+	}
+
 	// quota_data rows are bucketed hourly; align the window to UTC day starts so
 	// the first and last buckets are whole days rather than partial ones.
-	endOfToday := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
+	endOfToday := now.UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
 	start := endOfToday.Add(-time.Duration(days) * 24 * time.Hour)
 
 	rows, err := model.GetModelDailyUsage(modelName, start.Unix(), endOfToday.Unix())
@@ -99,12 +173,22 @@ func GetWebsiteModelUsage(c *gin.Context) {
 	}
 	sort.Slice(points, func(i, j int) bool { return points[i].Date < points[j].Date })
 
-	c.Header("Cache-Control", "public, max-age=300, must-revalidate")
-	c.JSON(http.StatusOK, websiteModelUsageResponse{
+	payload := websiteModelUsageResponse{
 		Success: true,
 		Model:   modelName,
 		Days:    days,
 		Total:   total,
 		Points:  points,
-	})
+	}
+	storeCachedWebsiteModelUsage(cacheKey, payload, websiteModelUsageCacheTTL(now))
+	writeWebsiteModelUsage(c, payload, now)
+}
+
+// Downstream caches (the website's fetch, any CDN in front) expire on the same
+// UTC-day boundary as the server-side entry, so a client cannot hold a copy
+// past the point where the series has moved on.
+func writeWebsiteModelUsage(c *gin.Context, payload websiteModelUsageResponse, now time.Time) {
+	maxAge := int(websiteModelUsageCacheTTL(now).Seconds())
+	c.Header("Cache-Control", fmt.Sprintf("public, max-age=%d, must-revalidate", maxAge))
+	c.JSON(http.StatusOK, payload)
 }

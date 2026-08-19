@@ -615,17 +615,17 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelActivitySection
-          modelId={props.config.modelId}
-          usage={props.usage}
-          t={props.t}
-        />
-
         <ModelQuickStart
           config={props.config}
           locale={props.locale}
           runHref={runHref}
           onRunClick={props.onRunClick}
+          t={props.t}
+        />
+
+        <ModelActivitySection
+          modelId={props.config.modelId}
+          usage={props.usage}
           t={props.t}
         />
 
@@ -1311,14 +1311,14 @@ function ModelPageTabs(props: {
   const sectionIds = useMemo(
     () =>
       props.generator
-        ? ["workbench", "activity", "quick-start", "related", "readme", "faq"]
-        : ["activity", "quick-start", "related", "readme", "faq"],
+        ? ["workbench", "quick-start", "activity", "related", "readme", "faq"]
+        : ["quick-start", "activity", "related", "readme", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
     { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
+    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
     { id: "related", href: "#related", label: props.t("Similar"), icon: <Layers3 className="size-3.5" /> },
     { id: "readme", href: "#readme", label: props.t("README"), icon: <FileText className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
@@ -2609,23 +2609,13 @@ function ModelExamplesAndRelated(props: {
               <Link
                 key={model.href}
                 href={model.href}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-blue-500/35 dark:border-white/10 dark:bg-white/[0.03]"
+                className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-blue-500/45 hover:shadow-[0_18px_44px_-30px_rgba(37,99,235,.55)] dark:border-white/10 dark:bg-white/[0.03]"
               >
-                <div className="relative aspect-video bg-slate-950">
-                  <Image
-                    src={relatedVisualForModel(model.name, model.description)}
-                    alt=""
-                    fill
-                    sizes="(min-width: 1024px) 260px, 50vw"
-                    className="object-cover opacity-92 transition group-hover:scale-[1.02]"
-                  />
-                  {/* The visuals are shared per modality, so the model id has to
-                      sit on the thumbnail -- otherwise four cards read as four
-                      copies of the same clip. */}
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent px-3 pt-6 pb-2">
-                    <span className="block truncate font-mono text-[11px] font-bold text-white">{model.name}</span>
-                  </span>
-                </div>
+                <RelatedModelVisual
+                  modelName={model.name}
+                  description={model.description}
+                  label={model.name}
+                />
                 <div className="p-3">
                   <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
                     {model.sameProvider ? props.config.officialName : props.t("Model catalog")}
@@ -2757,9 +2747,9 @@ function buildRelatedModelsTitle(
   t: (key: string, vars?: Record<string, string>) => string
 ) {
   if (models.length > 0 && models.every((model) => model.sameProvider)) {
-    return t("More models from {{provider}}", { provider: config.officialName });
+    return t("More AI models from {{provider}}", { provider: config.officialName });
   }
-  return t("Keep exploring Flatkey");
+  return t("More {{kind}} models", { kind: relatedModelKindLabel(config, t) });
 }
 
 function relatedModelKindLabel(
@@ -3060,7 +3050,7 @@ function buildCatalogRelatedModels(
     return {
       title: sameProviderCount > liveRelated.length / 2
         ? t("More AI models from {{provider}}", { provider })
-        : t("Keep exploring Flatkey"),
+        : t("More {{kind}} models", { kind: relatedModelKindLabel(config, t) }),
       models: liveRelated,
     };
   }
@@ -3438,6 +3428,75 @@ function relatedVisualForModel(name: string, description: string) {
   if (/(video|seedance|kling|sora|veo|wan|runway|minimax)/.test(text)) return "/assets/model-pages/video-api-hero.png";
   if (/(image|imagen|banana|flux|ideogram|gpt-image|dall-e|qwen-image|recraft)/.test(text)) return "/assets/model-pages/image-api-hero.png";
   return "/assets/model-pages/text-api-hero.png";
+}
+
+// Models with a generated card clip in public/assets/model-cards/. Each clip
+// renders its own model id, so cards stay distinguishable; models without one
+// fall back to the shared per-modality still.
+//
+// Regenerate with: node scripts/build-related-model-videos.mjs
+const MODEL_CARD_CLIPS = new Set([
+  "seedance-2-5",
+  "minimax-h3",
+  "grok-imagine-video",
+  "grok-imagine-video-1-5",
+  "veo-3-1-generate-preview",
+  "veo-3-1-fast-generate-preview",
+  "sonilo-video-to-music",
+]);
+
+function modelCardSlug(modelName: string): string {
+  return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function modelCardClip(modelName: string): { poster: string; video: string } | null {
+  const slug = modelCardSlug(modelName);
+  if (!MODEL_CARD_CLIPS.has(slug)) return null;
+  return {
+    poster: `/assets/model-cards/${slug}.png`,
+    video: `/assets/model-cards/${slug}.mp4`,
+  };
+}
+
+// Card thumbnail: plays its clip on hover and pauses on leave. Autoplaying every
+// card at once would put a row of competing motion on the page, so playback is
+// tied to pointer intent; without a clip it stays a still.
+function RelatedModelVisual(props: { modelName: string; description: string; label: string }) {
+  const clip = modelCardClip(props.modelName);
+
+  return (
+    <div className="relative aspect-video overflow-hidden bg-slate-950">
+      {clip ? (
+        <video
+          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          poster={clip.poster}
+          preload="none"
+          muted
+          loop
+          playsInline
+          src={clip.video}
+          // Ignore the play() rejection that fires when the pointer leaves
+          // before the promise settles.
+          onMouseEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
+          onMouseLeave={(event) => {
+            event.currentTarget.pause();
+            event.currentTarget.currentTime = 0;
+          }}
+        />
+      ) : (
+        <Image
+          src={relatedVisualForModel(props.modelName, props.description)}
+          alt=""
+          fill
+          sizes="(min-width: 1024px) 260px, 50vw"
+          className="object-cover opacity-92 transition duration-300 group-hover:scale-[1.03]"
+        />
+      )}
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent px-3 pt-6 pb-2">
+        <span className="block truncate font-mono text-[11px] font-bold text-white">{props.label}</span>
+      </span>
+    </div>
+  );
 }
 
 function buildModelDescription(

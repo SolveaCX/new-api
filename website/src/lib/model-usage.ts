@@ -43,8 +43,11 @@ export async function fetchModelUsage(modelName: string, days = 30): Promise<Mod
 
     const response = await fetch(target, {
       headers: { accept: "application/json", "X-Website-Metrics-Key": key },
-      // Matches the endpoint's own cache header; the series only moves hourly.
-      next: { revalidate: 300 },
+      // The series is bucketed by UTC day and the endpoint caches until the
+      // next UTC midnight, so revalidating more often than daily would only
+      // re-fetch an identical payload. Kept slightly under 24h so a rebuild
+      // lands on the new day rather than a stale one.
+      next: { revalidate: 23 * 60 * 60 },
     });
     if (!response.ok) return null;
 

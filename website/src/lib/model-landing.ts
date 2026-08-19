@@ -748,6 +748,7 @@ export type ModelLandingKey =
   | "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control."
   | "Up to 50 assets"
   | "Video price"
+  | "More {{kind}} models"
   | "Start calling {{model}} in minutes"
   | "Pick an integration path — all four use the same account and model catalog."
   | "Model"
@@ -1213,6 +1214,7 @@ const en: Record<ModelLandingKey, string> = {
   "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
   "Up to 50 assets": "Up to 50 assets",
   "Video price": "Video price",
+  "More {{kind}} models": "More {{kind}} models",
   "Start calling {{model}} in minutes": "Start calling {{model}} in minutes",
   "Pick an integration path — all four use the same account and model catalog.": "Pick an integration path — all four use the same account and model catalog.",
   "Model": "Model",
@@ -1587,6 +1589,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "单次请求最多 50 个素材：图像、视频和音频，并支持首帧与首尾帧控制。",
     "Up to 50 assets": "最多 50 个素材",
     "Video price": "视频价格",
+    "More {{kind}} models": "更多{{kind}}模型",
     "Start calling {{model}} in minutes": "几分钟内开始调用 {{model}}",
     "Pick an integration path — all four use the same account and model catalog.": "选一条接入路径 —— 四种方式共用同一个账号和模型目录。",
     "Model": "模型",
@@ -1767,6 +1770,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hasta 50 assets por solicitud: imágenes, videos y audio, con control de primer fotograma y de primer/último fotograma.",
     "Up to 50 assets": "Hasta 50 assets",
     "Video price": "Precio de video",
+    "More {{kind}} models": "Más modelos de {{kind}}",
     "Start calling {{model}} in minutes": "Empieza a llamar a {{model}} en minutos",
     "Pick an integration path — all four use the same account and model catalog.": "Elige una vía de integración: las cuatro usan la misma cuenta y el mismo catálogo.",
     "Model": "Modelo",
@@ -1953,6 +1957,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Jusqu'à 50 assets par requête : images, vidéos et audio, avec contrôle de la première image et des première/dernière images.",
     "Up to 50 assets": "Jusqu'à 50 assets",
     "Video price": "Prix vidéo",
+    "More {{kind}} models": "Plus de modèles {{kind}}",
     "Start calling {{model}} in minutes": "Appelez {{model}} en quelques minutes",
     "Pick an integration path — all four use the same account and model catalog.": "Choisissez une voie d'intégration — les quatre utilisent le même compte et le même catalogue.",
     "Model": "Modèle",
@@ -2139,6 +2144,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Até 50 assets por requisição: imagens, vídeos e áudio, com controle de primeiro quadro e de primeiro/último quadro.",
     "Up to 50 assets": "Até 50 assets",
     "Video price": "Preço de vídeo",
+    "More {{kind}} models": "Mais modelos de {{kind}}",
     "Start calling {{model}} in minutes": "Comece a chamar {{model}} em minutos",
     "Pick an integration path — all four use the same account and model catalog.": "Escolha um caminho de integração — os quatro usam a mesma conta e o mesmo catálogo.",
     "Model": "Modelo",
@@ -2325,6 +2331,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "До 50 материалов на запрос: изображения, видео и аудио, с управлением первым кадром и первым/последним кадром.",
     "Up to 50 assets": "До 50 материалов",
     "Video price": "Цена видео",
+    "More {{kind}} models": "Другие модели {{kind}}",
     "Start calling {{model}} in minutes": "Начните вызывать {{model}} за считаные минуты",
     "Pick an integration path — all four use the same account and model catalog.": "Выберите способ интеграции — все четыре используют один аккаунт и один каталог.",
     "Model": "Модель",
@@ -2511,6 +2518,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "1 リクエストにつき最大 50 点の素材（画像・動画・音声）。先頭フレームと先頭／末尾フレームの指定にも対応します。",
     "Up to 50 assets": "最大 50 点の素材",
     "Video price": "動画料金",
+    "More {{kind}} models": "{{kind}} モデルをもっと見る",
     "Start calling {{model}} in minutes": "数分で {{model}} を呼び出す",
     "Pick an integration path — all four use the same account and model catalog.": "導入方法を選んでください。4 つとも同じアカウントとモデルカタログを使います。",
     "Model": "モデル",
@@ -2697,6 +2705,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Tối đa 50 tư liệu mỗi yêu cầu: hình ảnh, video và âm thanh, kèm điều khiển khung hình đầu và khung hình đầu/cuối.",
     "Up to 50 assets": "Tối đa 50 tư liệu",
     "Video price": "Giá video",
+    "More {{kind}} models": "Thêm mô hình {{kind}}",
     "Start calling {{model}} in minutes": "Gọi {{model}} chỉ trong vài phút",
     "Pick an integration path — all four use the same account and model catalog.": "Chọn một hướng tích hợp — cả bốn đều dùng chung tài khoản và danh mục mô hình.",
     "Model": "Mô hình",
@@ -2883,6 +2892,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Bis zu 50 Assets pro Anfrage: Bilder, Videos und Audio, inklusive Steuerung von erstem Frame und erstem/letztem Frame.",
     "Up to 50 assets": "Bis zu 50 Assets",
     "Video price": "Videopreis",
+    "More {{kind}} models": "Weitere {{kind}}-Modelle",
     "Start calling {{model}} in minutes": "In wenigen Minuten {{model}} aufrufen",
     "Pick an integration path — all four use the same account and model catalog.": "Wählen Sie einen Integrationsweg — alle vier nutzen dasselbe Konto und denselben Katalog.",
     "Model": "Modell",
@@ -3749,6 +3759,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hingga 50 aset per permintaan: gambar, video, dan audio, termasuk kontrol frame pertama dan frame pertama/terakhir.",
     "Up to 50 assets": "Hingga 50 aset",
     "Video price": "Harga video",
+    "More {{kind}} models": "Model {{kind}} lainnya",
     "Start calling {{model}} in minutes": "Mulai panggil {{model}} dalam hitungan menit",
     "Pick an integration path — all four use the same account and model catalog.": "Pilih jalur integrasi — keempatnya memakai akun dan katalog model yang sama.",
     "Model": "Model",
