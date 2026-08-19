@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  Bot,
+  Braces,
   ChevronDown,
   ChevronRight,
   Code2,
@@ -20,6 +22,8 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Terminal,
+  TerminalSquare,
   Timer,
   Trash2,
   Upload,
@@ -55,7 +59,7 @@ import {
   type ModelGeneratorField,
   type ModelLandingKey,
 } from "@/lib/model-landing";
-import { consoleUrl } from "@/lib/origins";
+import { consoleUrl, ROUTER_ORIGIN } from "@/lib/origins";
 import {
   formatGroupRequestPrice,
   formatGroupTokenPrice,
@@ -560,22 +564,6 @@ function FlatkeyModelDetailPage(props: {
           </section>
         ) : null}
 
-        <ModelExamplesAndRelated
-          config={props.config}
-          kind={pageKind}
-          examples={examples}
-          relatedModels={relatedModels.models}
-          relatedTitle={relatedModels.title}
-          t={props.t}
-        />
-
-        <ModelReadmeSections
-          config={props.config}
-          kind={pageKind}
-          profile={pageProfile}
-          t={props.t}
-        />
-
         <section id="health" className="relative z-10 border-y border-violet-500/10 bg-white/60 px-6 py-16 backdrop-blur-sm dark:bg-white/[0.02]">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
@@ -605,43 +593,38 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <section id="providers" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-16">
-          <div className="mx-auto max-w-7xl">
-            <FlatkeySectionHeading
-              eyebrow={props.t("Model catalog")}
-              title={props.t("Available catalog entries")}
-              description={props.t("Flatkey routes your request to available upstream channels for this model and keeps billing under one account.")}
-            />
-            <div className="mt-8 overflow-x-auto rounded-2xl border border-violet-500/16 bg-white/72 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
-              <table className="w-full min-w-[680px] border-collapse text-sm">
-                <thead>
-                  <tr className="text-muted-foreground/80 border-b border-violet-500/12 text-left text-[11px] font-bold tracking-[0.1em] uppercase">
-                    <th className="px-5 py-3.5">{props.t("Provider")}</th>
-                    <th className="px-5 py-3.5">{props.t("Model ID")}</th>
-                    <th className="px-5 py-3.5">{props.t("API")}</th>
-                    <th className="px-5 py-3.5">{props.t("Status")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {providerRows.map((row) => (
-                    <tr key={`${row.provider}-${row.modelId}`} className="border-b border-violet-500/8 last:border-b-0">
-                      <td className="px-5 py-4 font-medium">{row.provider}</td>
-                      <td className="px-5 py-4 font-mono text-[13px]">{row.modelId}</td>
-                      <td className="px-5 py-4 text-muted-foreground">{row.endpoint}</td>
-                      <td className="px-5 py-4">
-                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+        <ModelActivitySection
+          modelId={props.config.modelId}
+          rankings={props.rankings}
+          trend={healthTrend}
+          t={props.t}
+        />
 
-        <section id="faq" className="relative z-10 px-6 py-16">
+        <ModelQuickStart
+          config={props.config}
+          locale={props.locale}
+          runHref={runHref}
+          onRunClick={props.onRunClick}
+          t={props.t}
+        />
+
+        <ModelExamplesAndRelated
+          config={props.config}
+          kind={pageKind}
+          examples={examples}
+          relatedModels={relatedModels.models}
+          relatedTitle={relatedModels.title}
+          t={props.t}
+        />
+
+        <ModelReadmeSections
+          config={props.config}
+          kind={pageKind}
+          profile={pageProfile}
+          t={props.t}
+        />
+
+        <section id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-16">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
@@ -1305,14 +1288,19 @@ function ModelPageTabs(props: {
 }) {
   type ModelSectionTab = { id: string; href: string; label: string; icon: ReactNode };
   const sectionIds = useMemo(
-    () => (props.generator ? ["workbench", "related", "readme", "providers"] : ["related", "readme", "providers"]),
+    () =>
+      props.generator
+        ? ["workbench", "activity", "quick-start", "related", "readme", "faq"]
+        : ["activity", "quick-start", "related", "readme", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
+    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
+    { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
     { id: "related", href: "#related", label: props.t("Similar"), icon: <Layers3 className="size-3.5" /> },
     { id: "readme", href: "#readme", label: props.t("README"), icon: <FileText className="size-3.5" /> },
-    { id: "providers", href: "#providers", label: props.t("API"), icon: <Code2 className="size-3.5" /> },
+    { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
   const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
 
@@ -2190,6 +2178,158 @@ function GeneratedExamplesCarousel(props: {
   );
 }
 
+// Activity: where this model sits in Flatkey's own traffic. The console's usage
+// breakdown is behind auth, so this reads the public /api/rankings feed -- the
+// same source the rankings page uses -- and scopes it to this model plus its
+// nearest peers rather than showing the whole leaderboard.
+function ModelActivitySection(props: {
+  modelId: string;
+  rankings: RankingsData | null;
+  trend: HomeTrendPoint[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const rows = props.rankings?.models ?? [];
+  const own = findRankingRow(rows, props.modelId);
+  if (!own) return null;
+
+  // Peers are the neighbours in the ranking, so the share bars have a scale a
+  // reader can judge against instead of floating on their own.
+  const index = rows.indexOf(own);
+  const peers = rows.slice(Math.max(0, index - 2), Math.max(0, index - 2) + 5);
+  const peak = Math.max(...peers.map((row) => row.total_tokens), 1);
+
+  return (
+    <section id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-white px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Activity")}
+          title={props.t("Where {{model}} sits in Flatkey traffic", { model: props.modelId })}
+          description={props.t("Monthly token share from Flatkey rankings.")}
+        />
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
+          <div className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="grid gap-2.5">
+              {peers.map((row) => {
+                const isSelf = row === own;
+                return (
+                  <div key={row.model_name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-1 flex items-baseline gap-2">
+                        <span className={`truncate font-mono text-[12px] ${isSelf ? "font-bold text-blue-700 dark:text-blue-300" : "font-semibold text-[#5f6673] dark:text-white/62"}`}>
+                          {row.model_name}
+                        </span>
+                        <span className="shrink-0 text-[10px] font-bold text-[#98a2b3]">#{row.rank}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+                        <div
+                          className={`h-full rounded-full ${isSelf ? "bg-blue-500" : "bg-slate-400/70 dark:bg-white/24"}`}
+                          style={{ width: `${Math.max(4, (row.total_tokens / peak) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="shrink-0 font-mono text-[12px] font-semibold text-[#626b78] dark:text-white/58">
+                      {formatCallCount(displayRankingTokens(row.total_tokens))}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-3">
+            <FlatkeyMetricCard label={props.t("Rank")} value={`#${own.rank}`} />
+            <FlatkeyMetricCard
+              label={props.t("Monthly tokens")}
+              value={formatCallCount(displayRankingTokens(own.total_tokens))}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Quick Start is the console overview's integration section, reproduced on the
+// public page so the four entry points read identically before and after
+// sign-in. Copy is kept verbatim from
+// web/default/src/features/dashboard/components/overview/integration-cards.tsx.
+function ModelQuickStart(props: {
+  config: ModelConfig;
+  locale: Locale;
+  runHref: string;
+  onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const cards = [
+    {
+      icon: <TerminalSquare className="size-5" />,
+      title: props.t("API for developers"),
+      body: props.t("Call any model with an OpenAI-compatible API. Copy a ready-to-run example for your model and language."),
+    },
+    {
+      icon: <Braces className="size-5" />,
+      title: props.t("SDKs for developers"),
+      body: props.t("Use the OpenAI SDK you already know — with Flatkey as the gateway."),
+    },
+    {
+      icon: <Terminal className="size-5" />,
+      title: props.t("Flatkey CLI"),
+      body: props.t("Generate images and videos from your terminal. Let your AI assistant drive the workflow."),
+    },
+    {
+      icon: <Bot className="size-5" />,
+      title: props.t("Codex & Claude Code"),
+      body: props.t("Connect your coding agent with one command, then use Flatkey from your existing projects."),
+    },
+  ];
+
+  const snippet = [
+    `curl "${ROUTER_ORIGIN}/v1/videos" \\`,
+    '  -H "Content-Type: application/json" \\',
+    '  -H "Authorization: Bearer $FLATKEY_API_KEY" \\',
+    `  -d '{"model":"${props.config.modelId}","content":[{"type":"text","text":"..."}]}'`,
+  ].join("\n");
+
+  return (
+    <section id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold tracking-tight">{props.t("Choose how you'll use Flatkey")}</h2>
+          <p className="text-sm text-muted-foreground">{props.t("All four options use the same account and model catalog.")}</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {cards.map((card) => (
+            <div
+              key={card.title}
+              className="rounded-xl border border-slate-200 bg-white p-5 transition hover:border-violet-500/35 dark:border-white/10 dark:bg-white/[0.04]"
+            >
+              <span className="grid size-10 place-items-center rounded-lg bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                {card.icon}
+              </span>
+              <h3 className="mt-4 text-[15px] font-semibold text-[#20222a] dark:text-white/90">{card.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{card.body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] dark:border-white/10">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
+            <span className="font-mono text-[11px] font-semibold text-white/62">
+              {props.t("Ready-to-run example for {{model}}", { model: props.config.modelId })}
+            </span>
+            <a
+              href={props.runHref}
+              onClick={props.onRunClick}
+              className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/86 transition hover:bg-white/16"
+            >
+              {props.t("Open in console")}
+            </a>
+          </div>
+          <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6 text-white/82">{snippet}</pre>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ModelExamplesAndRelated(props: {
   config: ModelConfig;
   kind: ModelReadmeKind;
@@ -3063,20 +3203,35 @@ function buildModelDescription(
 }
 
 function buildModelFaq(config: ModelConfig, t: (key: string, vars?: Record<string, string>) => string) {
+  const model = config.displayName;
   return [
+    // Model questions first -- someone landing here is evaluating this model.
     {
-      question: t("What is {{model}}?", { model: config.displayName }),
+      question: t("What is {{model}}?", { model }),
       answer: buildModelDescription(config, null, t),
     },
     {
-      question: t("How much does {{model}} cost?", { model: config.displayName }),
+      question: t("How much does {{model}} cost?", { model }),
       answer: t("Use the pricing section above for current Flatkey prices from our pricing API."),
     },
-    {
-      question: t("Which providers serve {{model}}?", { model: config.displayName }),
-      answer: t("The providers section shows the upstream provider names available in our model catalog."),
-    },
     ...config.faq.map((item) => ({ question: t(item.question), answer: t(item.answer) })),
+    // Then the platform questions that decide whether they sign up at all.
+    {
+      question: t("Is the Flatkey API OpenAI-compatible?"),
+      answer: t("Yes. Point base_url at Flatkey and keep your existing OpenAI SDK, request shapes, and streaming code."),
+    },
+    {
+      question: t("How does billing work?"),
+      answer: t("One balance covers every model — text, image, video, and audio. You are charged per request against live catalog pricing, with usage analytics and a single invoice."),
+    },
+    {
+      question: t("Are there rate limits?"),
+      answer: t("Limits are per account and scale with your plan. Request routing spreads traffic across available upstream channels for the model."),
+    },
+    {
+      question: t("What happens to my prompts and generated files?"),
+      answer: t("Requests are relayed to the upstream provider for the model you choose. Generated media is served through Flatkey so your keys and the upstream endpoint stay private."),
+    },
   ];
 }
 
