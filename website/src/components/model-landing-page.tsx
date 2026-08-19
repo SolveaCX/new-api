@@ -65,6 +65,8 @@ import {
   getModelFamilyKey,
   getOfficialPriceUsd,
   isTokenBasedModel,
+  resolveModelDisplayPrice,
+  type DisplayPricingDimension,
   type PricingModel,
 } from "@/lib/pricing";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
@@ -131,9 +133,9 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
     { poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png" },
   ],
   video: [
-    { poster: "/assets/cli/ugc-ad-clips.png", video: "/assets/cli/ugc-ad-clips.mp4" },
-    { poster: "/assets/cli/product-reveal.png", video: "/assets/cli/product-reveal.mp4" },
-    { poster: "/assets/cli/localized-variants.png", video: "/assets/cli/localized-variants.mp4" },
+    { poster: "/assets/cli/flatkey-brand-ugc.png", video: "/assets/cli/flatkey-brand-ugc.mp4" },
+    { poster: "/assets/cli/flatkey-product-motion.png", video: "/assets/cli/flatkey-product-motion.mp4" },
+    { poster: "/assets/cli/flatkey-social-variants.png", video: "/assets/cli/flatkey-social-variants.mp4" },
   ],
   audio: [
     { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
@@ -266,8 +268,11 @@ function FlatkeyModelDetailPage(props: {
     modelName: props.config.displayName,
     vendorName: providerName,
     description: pageProfile.summary,
+    // Schema price follows the same display contract as the visible price row,
+    // so structured data never advertises a per-second model's calculation base
+    // as if it were a per-request price.
     inputPriceUsd: model
-      ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
+      ? resolveModelDisplayPrice(model, undefined, "plg", props.groupRatio)?.value ?? Number.NaN
       : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
@@ -342,69 +347,57 @@ function FlatkeyModelDetailPage(props: {
             </div>
 
             <div className="max-w-6xl">
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.58fr)] lg:items-start">
-                <div className="min-w-0">
-                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
-                    <span className="relative flex size-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                      <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
-                    </span>
-                    <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
-                  </div>
-
-                  <div className="mb-3 flex items-start gap-3">
-                    <HomeModelLogo
-                      iconKey={model?.icon ?? model?.vendor_icon}
-                      modelName={props.config.modelId}
-                      vendor={providerName}
-                      fallback={props.config.modelId.slice(0, 1)}
-                      surfaceSize={48}
-                      imageSize={30}
-                    />
-                    <div className="min-w-0">
-                      <h1 className="text-[clamp(2rem,4vw,3rem)] leading-[1.08] font-bold tracking-tight">
-                        {props.config.displayName} API
-                      </h1>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
-                        <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
-                          {props.config.modelId}
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
-                          className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
-                          aria-label={props.t("Copy model id")}
-                        >
-                          <Copy className="size-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="max-w-3xl text-[15px] leading-7 text-[#505764] dark:text-white/66">
-                    {pageProfile.summary}
-                  </p>
+              <div className="min-w-0">
+                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
+                  <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
+                  </span>
+                  <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
                 </div>
 
-                <div className="grid gap-2.5 text-xs lg:border-l lg:border-slate-200 lg:pl-5 dark:lg:border-white/10">
+                <div className="mb-3 flex items-start gap-3">
+                  <HomeModelLogo
+                    iconKey={model?.icon ?? model?.vendor_icon}
+                    modelName={props.config.modelId}
+                    vendor={providerName}
+                    fallback={props.config.modelId.slice(0, 1)}
+                    surfaceSize={48}
+                    imageSize={30}
+                  />
+                  <div className="min-w-0">
+                    <h1 className="text-[clamp(2rem,4vw,3rem)] leading-[1.08] font-bold tracking-tight">
+                      {props.config.displayName} API
+                    </h1>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
+                      <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
+                        {props.config.modelId}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
+                        className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
+                        aria-label={props.t("Copy model id")}
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="max-w-4xl text-[15px] leading-7 text-[#505764] dark:text-white/66">
+                  {pageProfile.summary}
+                </p>
+
+                {/* Model type, use cases, and capabilities read as continuations
+                    of the description, so they stay in the same column instead
+                    of competing with it from a sidebar. */}
+                <div
+                  data-model-hero-attributes="true"
+                  className="mt-4 grid max-w-4xl gap-2.5 text-xs"
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <ModelTypeChip label={props.t("Model Type")} value={pageProfile.kindLabel} active />
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white/72 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
-                    <div className="mb-1.5 flex items-center gap-1.5 font-bold text-blue-700">
-                      <Sparkles className="size-3.5" />
-                      {props.t("Use cases")}
-                    </div>
-                    <p className="leading-5 font-semibold text-[#4f5867] dark:text-white/66">
-                      {props.t(props.config.positioning)}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {props.config.useCases.slice(0, 3).map((useCase) => (
-                        <span key={useCase} className="inline-flex min-h-7 items-center rounded-md bg-slate-100 px-2 font-semibold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/66">
-                          {props.t(useCase)}
-                        </span>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
@@ -447,9 +440,9 @@ function FlatkeyModelDetailPage(props: {
                   description={props.t("Explore different use cases and parameter configurations")}
                 />
               </div>
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)] lg:items-start">
                 <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
-                  <PanelHeader title={props.t("Generator setup")} right={props.t("Use cases")} />
+                  <PanelHeader title={props.t("Input")} right={props.t("Use cases")} />
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
@@ -480,13 +473,18 @@ function FlatkeyModelDetailPage(props: {
                   </div>
                 </div>
 
-                <OutputPreview
-                  modelName={props.config.displayName}
-                  prompt={props.prompt}
-                  kind={generator.kind}
-                  images={examples}
-                  t={props.t}
-                />
+                <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
+                  <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
+                  <div className="mt-4">
+                    <OutputPreview
+                      modelName={props.config.displayName}
+                      prompt={props.prompt}
+                      kind={generator.kind}
+                      images={examples}
+                      t={props.t}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -1562,6 +1560,25 @@ function ModelReadmeFeature(props: { item: ModelReadmeCard }) {
   );
 }
 
+// Reference assets are grouped by media kind rather than pooled into one list,
+// so each kind shows its own upstream cap. Limits mirror the seedance contract
+// enforced in relay/channel/task/modelapiseedance (30 images / 10 videos /
+// 10 audio, 50 combined).
+const REFERENCE_MEDIA_KINDS = [
+  { key: "image", label: "Reference Images", accept: "image/jpeg,image/png,image/webp", max: 30 },
+  { key: "video", label: "Reference Videos", accept: "video/mp4,video/quicktime,video/webm", max: 10 },
+  { key: "audio", label: "Reference Audios", accept: "audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac", max: 10 },
+] as const;
+
+type ReferenceMediaKind = (typeof REFERENCE_MEDIA_KINDS)[number]["key"];
+
+function referenceDraftKind(type: string): ReferenceMediaKind | null {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return null;
+}
+
 function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
@@ -1580,28 +1597,25 @@ function MediaPromptEditor(props: {
       ? ["Video Music Bed", "Voiceover", "Podcast Intro", "Product Demo Sound"]
       : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
   const supportsReferenceMedia = props.generator.kind === "image" || props.generator.kind === "video";
-  const referenceLabel = props.generator.kind === "video" ? props.t("Reference media") : props.t("Reference Images");
-  const referenceHelp = props.generator.kind === "video"
-    ? props.t("Up to 10 images, videos, or audio files")
-    : props.t("Up to 10 reference images");
-  const uploadLabel = props.generator.kind === "video" ? props.t("Upload assets") : props.t("Upload reference");
-  const referenceAccept = props.generator.kind === "video" ? "image/*,video/*,audio/*" : "image/*";
-  const remainingReferenceSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
-  const isReferenceUploadDisabled = remainingReferenceSlots <= 0;
+  // Image models take reference images only; video models take all three kinds.
+  const referenceKinds = props.generator.kind === "video"
+    ? REFERENCE_MEDIA_KINDS
+    : REFERENCE_MEDIA_KINDS.filter((kind) => kind.key === "image");
+  const totalReferences = props.referenceImages.length;
 
-  const onReferenceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files ?? []);
+  const addReferenceFiles = (kind: ReferenceMediaKind, max: number, files: File[]) => {
     if (files.length === 0) return;
-    const remainingSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
-    const nextImages = files.slice(0, remainingSlots).map((file) => ({
+    const usedForKind = props.referenceImages.filter((item) => referenceDraftKind(item.type) === kind).length;
+    const remaining = Math.min(max - usedForKind, MAX_REFERENCE_MEDIA_FILES - totalReferences);
+    if (remaining <= 0) return;
+    const next = files.slice(0, remaining).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
       size: file.size,
-      type: file.type || "image",
+      type: file.type || "application/octet-stream",
       previewUrl: URL.createObjectURL(file),
     }));
-    props.onReferenceImagesChange([...props.referenceImages, ...nextImages]);
-    event.currentTarget.value = "";
+    props.onReferenceImagesChange([...props.referenceImages, ...next]);
   };
 
   const removeReferenceImage = (image: ReferenceImageDraft) => {
@@ -1642,6 +1656,27 @@ function MediaPromptEditor(props: {
       <div className="mt-2 text-right text-xs font-medium text-muted-foreground">
         {props.prompt.length} / 10000
       </div>
+
+      {supportsReferenceMedia ? (
+        <div className="mt-5 grid gap-3">
+          <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Reference media")}</div>
+          {referenceKinds.map((kind) => (
+            <ReferenceMediaSection
+              key={kind.key}
+              kind={kind.key}
+              label={props.t(kind.label)}
+              accept={kind.accept}
+              max={kind.max}
+              items={props.referenceImages.filter((item) => referenceDraftKind(item.type) === kind.key)}
+              totalUsed={totalReferences}
+              onAdd={(files) => addReferenceFiles(kind.key, kind.max, files)}
+              onRemove={removeReferenceImage}
+              t={props.t}
+            />
+          ))}
+        </div>
+      ) : null}
+
       <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-6">
         {fields.map((field) => (
           <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
@@ -1655,59 +1690,80 @@ function MediaPromptEditor(props: {
           </div>
         ))}
       </div>
-      {supportsReferenceMedia ? (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{referenceLabel}</div>
-              <div className="mt-1 text-xs font-medium text-[#7b8494] dark:text-white/48">
-                {referenceHelp} · {props.referenceImages.length}/{MAX_REFERENCE_MEDIA_FILES}
+    </>
+  );
+}
+
+function ReferenceMediaSection(props: {
+  kind: ReferenceMediaKind;
+  label: string;
+  accept: string;
+  max: number;
+  items: ReferenceImageDraft[];
+  totalUsed: number;
+  onAdd: (files: File[]) => void;
+  onRemove: (image: ReferenceImageDraft) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const isFull = props.items.length >= props.max || props.totalUsed >= MAX_REFERENCE_MEDIA_FILES;
+
+  return (
+    <div
+      data-reference-media-kind={props.kind}
+      data-reference-media-limit={props.max}
+      className="rounded-lg border border-slate-200 bg-[#fbfcff] p-3 dark:border-white/10 dark:bg-white/[0.03]"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-xs font-bold text-[#475467] dark:text-white/72">{props.label}</span>
+        <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/40">
+          {props.items.length}/{props.max}
+        </span>
+      </div>
+
+      {props.items.length > 0 ? (
+        <div className="mb-2 grid gap-2 sm:grid-cols-2">
+          {props.items.map((item) => (
+            <div key={item.id} className="grid grid-cols-[2.75rem_1fr_auto] items-center gap-2.5 rounded-lg border border-slate-200 bg-white/80 p-2 dark:border-white/10 dark:bg-white/[0.05]">
+              <ReferenceMediaThumb item={item} />
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-bold text-[#2c2d33] dark:text-white/84">{item.name}</div>
+                <div className="mt-0.5 text-[10px] font-medium text-[#8b8891] dark:text-white/44">{formatUploadedSize(item.size)}</div>
               </div>
+              <button
+                type="button"
+                onClick={() => props.onRemove(item)}
+                className="grid size-7 place-items-center rounded-lg text-[#706a74] hover:bg-blue-500/8 hover:text-blue-700 dark:text-white/54"
+                aria-label={props.t("Remove reference asset")}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
-            <label
-              data-reference-media-limit={MAX_REFERENCE_MEDIA_FILES}
-              className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition ${
-                isReferenceUploadDisabled
-                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
-                  : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-              }`}
-            >
-              <Upload className="size-3.5" />
-              {uploadLabel}
-              <input
-                type="file"
-                accept={referenceAccept}
-                multiple
-                disabled={isReferenceUploadDisabled}
-                className="sr-only"
-                onChange={onReferenceInputChange}
-              />
-            </label>
-          </div>
-          {props.referenceImages.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {props.referenceImages.map((image) => (
-                <div key={image.id} className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-3 rounded-xl border border-violet-500/12 bg-white/70 p-3">
-                  <ReferenceMediaThumb item={image} />
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-extrabold text-[#2c2d33]">{image.name}</div>
-                    <div className="mt-0.5 text-[10px] font-medium text-[#8b8891]">{referenceMediaKindLabel(image.type, props.t)} · {formatUploadedSize(image.size)}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeReferenceImage(image)}
-                    className="grid size-8 place-items-center rounded-lg text-[#706a74] hover:bg-violet-500/8 hover:text-violet-700"
-                    aria-label="Remove reference image"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
+          ))}
         </div>
       ) : null}
-    </>
+
+      <label
+        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+          isFull
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
+            : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+        }`}
+      >
+        <Upload className="size-3.5" />
+        {props.t("Upload from device")}
+        <input
+          type="file"
+          accept={props.accept}
+          multiple
+          disabled={isFull}
+          className="sr-only"
+          onChange={(event) => {
+            props.onAdd(Array.from(event.currentTarget.files ?? []));
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -1866,7 +1922,7 @@ function OutputPreview(props: {
     return (
       <div
         data-model-output-video="true"
-        className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
+        className="aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
       >
         <video
           className="aspect-video h-full w-full bg-[#10131a] object-cover"
@@ -2269,7 +2325,13 @@ function ModelHeroPricingRow(props: {
   const rows = props.rows.slice(0, 2);
   const primaryRow = rows[0];
   const savings = primaryRow ? formatSavings(primaryRow.flatkey, primaryRow.official) : "—";
+  // A model priced at the vendor's own rate (group ratio 1) would render a
+  // "0%" saving. Drop the column instead of advertising no discount.
+  const hasSavings = savings !== "—" && savings !== "0%";
   const hasRequests = props.requests !== "—";
+  const columns = hasSavings
+    ? "minmax(260px,1.45fr) minmax(160px,0.8fr) minmax(160px,0.8fr) minmax(130px,0.62fr) minmax(150px,0.72fr)"
+    : "minmax(260px,1.6fr) minmax(170px,0.9fr) minmax(170px,0.9fr) minmax(150px,0.8fr)";
 
   return (
     <div
@@ -2277,7 +2339,7 @@ function ModelHeroPricingRow(props: {
       title={props.note}
       className="mt-4 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
     >
-      <div className="grid min-w-[900px] grid-cols-[minmax(260px,1.45fr)_minmax(160px,0.8fr)_minmax(160px,0.8fr)_minmax(130px,0.62fr)_minmax(150px,0.72fr)]">
+      <div className="grid min-w-[900px]" style={{ gridTemplateColumns: columns }}>
         <div data-model-price-logo-cell="true" className="flex min-w-0 items-center gap-3 p-3">
           <HomeModelLogo
             iconKey={props.model?.icon ?? props.model?.vendor_icon}
@@ -2311,11 +2373,13 @@ function ModelHeroPricingRow(props: {
           valueClassName="text-[#68707c] line-through dark:text-white/54"
           emptyLabel={props.t("Pricing data unavailable")}
         />
-        <div className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
-          <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
-        </div>
+        {hasSavings ? (
+          <div data-model-savings-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
+            <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
+            <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
+            <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
+          </div>
+        ) : null}
         <div data-model-health-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
           <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Live model health")}</div>
           <div className="mt-2 flex items-center gap-2">
@@ -2422,6 +2486,10 @@ function buildCatalogProviderRows(config: ModelConfig, liveModels: PricingModel[
   }));
 }
 
+// Price rows share the /models directory's source of truth: the pricing API's
+// display_pricing contract (per-second, per-request, or token dimensions),
+// resolved via resolveModelDisplayPrice. Reading model_price directly would
+// print a per-second model's calculation base as a per-request price.
 function buildFlatkeyPriceRows(
   config: ModelConfig,
   model: PricingModel | null,
@@ -2444,39 +2512,37 @@ function buildFlatkeyPriceRows(
     };
   }
 
-  if (!isTokenBasedModel(model)) {
-    const official = getOfficialPriceUsd(model);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
-    return {
-      note,
-      rows: [
-        {
-          label: t("Request price"),
-          flatkey: `${formatUsdPrice(flatkey)} ${t("/ request")}`,
-          official: `${formatUsdPrice(official)} ${t("/ request")}`,
-          flatkeyPercent: pricePercent(flatkey, official),
-          officialPercent: 100,
-        },
-      ],
-    };
-  }
-
-  return (["input", "output"] as const).map((type) => {
-    const official = getOfficialPriceUsd(model, type);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
-    return {
-      label: type === "input" ? t("Input /M") : t("Output /M"),
-      flatkey: formatUsdPrice(flatkey),
-      official: formatUsdPrice(official),
-      flatkeyPercent: pricePercent(flatkey, official),
+  const rows = displayPriceDimensions(model).flatMap(([labelKey, dimension]) => {
+    const price = resolveModelDisplayPrice(model, dimension, "plg", groupRatio);
+    if (!price) return [];
+    const official = price.configured ?? price.value;
+    const unit = t(price.unit);
+    // "from" is templated rather than concatenated: zh/ja place the qualifier
+    // after the amount, so each locale owns the word order.
+    const withFrom = (amount: string) => (price.from ? t("from {{price}}", { price: amount }) : amount);
+    return [{
+      label: t(labelKey),
+      flatkey: withFrom(`${price.text} ${unit}`),
+      official: withFrom(`${formatUsdPrice(official)} ${unit}`),
+      flatkeyPercent: pricePercent(price.value, official),
       officialPercent: 100,
-    };
-  }).reduce<{ rows: FlatkeyPriceTableRow[]; note: string }>(
-    (result, row) => ({ ...result, rows: [...result.rows, row] }),
-    { rows: [], note }
-  );
+    }];
+  });
+
+  return { rows, note };
+}
+
+// Which price rows a model shows, keyed to how it bills. Per-second and
+// per-request models collapse to one row; token models expand to input/output.
+function displayPriceDimensions(model: PricingModel): Array<[string, DisplayPricingDimension]> {
+  const kind = model.display_pricing?.billing_kind;
+  if (kind === "per_second") return [["Video price", "second"]];
+  if (kind === "request") return [["Request price", "request"]];
+  if (!isTokenBasedModel(model)) return [["Request price", "request"]];
+  return [
+    ["Input /M", "input"],
+    ["Output /M", "output"],
+  ];
 }
 
 function buildCatalogRelatedModels(
@@ -2563,7 +2629,9 @@ function buildModelPageProfile(
     return {
       kindLabel: t("Text to Video"),
       modelTypes: [t("Image to Video"), t("Reference-guided Video"), t("Short-form Video")],
-      summary: t("{{model}} is a video generation model served through Flatkey for text-to-video, image-to-video, and production prompt testing. Use the form below to prepare the full request, including resolution, aspect ratio, duration, seed, audio, and reference metadata before opening the console.", { model }),
+      summary: config.summary
+        ? t(config.summary)
+        : t("{{model}} is a video generation model served through Flatkey for text-to-video, image-to-video, and production prompt testing. Use the form below to prepare the full request, including resolution, aspect ratio, duration, seed, audio, and reference metadata before opening the console.", { model }),
       playgroundDescription: t("Configure a real {{model}} video request here. The public page keeps generation disabled, then hands prompt, fields, and reference metadata to the console after sign-up or login.", { model }),
       heroImage: "/assets/model-pages/video-api-hero.png",
       waysTitle: t("Main ways to create with {{model}} API", { model }),
@@ -3150,7 +3218,7 @@ function buildInitialGeneratorValues(config: ModelConfig) {
   return Object.fromEntries((config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue]));
 }
 
-function buildGeneratorRequest(
+export function buildGeneratorRequest(
   config: ModelConfig,
   prompt: string,
   values: Record<string, string | number | boolean>,
@@ -3304,6 +3372,15 @@ function coerceGeneratorValue(field: ModelGeneratorField, raw: string) {
 
 function buildQuickPrompt(label: string, kind: "image" | "video" | "audio") {
   if (kind === "video") {
+    if (label === "UGC ad clips") {
+      return "Create a 9:16 Flatkey brand UGC ad: a creator opens with a quick product pain point, shows the Flatkey dashboard workflow on a laptop, then ends on a clean CTA card. Natural handheld energy, clear speech-friendly pacing, generated audio on.";
+    }
+    if (label === "Product motion") {
+      return "Create a 16:9 Flatkey product reveal: start on the logo mark, move into API routing cards and live price rows, then finish with a polished dashboard hero shot. Smooth camera push, crisp UI motion, subtle sound design, generated audio on.";
+    }
+    if (label === "Social video variants") {
+      return "Create a short Flatkey campaign variant for social: three quick scenes show model choice, price comparison, and successful video output. Bright product lighting, simple transitions, readable UI rhythm, generated audio on.";
+    }
     return `${label}: a concise commercial video shot with clear subject motion, realistic lighting, stable camera, and production-ready framing.`;
   }
   if (kind === "audio") {

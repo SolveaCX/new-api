@@ -40,6 +40,10 @@ export type ModelConfig = {
   estOfficial: string;
   examplePrompt: string;
   priceUnit: ModelLandingKey;
+  // Overrides the generic per-kind description on the model detail page. Set it
+  // when a model's capabilities differ enough from its family that the shared
+  // copy would be wrong (reference limits, frame control, audio behaviour).
+  summary?: ModelLandingKey;
   rows: ModelPriceRow[];
   seo: {
     title: string;
@@ -271,7 +275,7 @@ export const SEEDANCE_CONFIG: ModelConfig = {
   estFlatkey: "$0.23",
   estOfficial: "$0.35",
   examplePrompt:
-    "A cinematic drone shot flying over a neon-lit Tokyo street at night, rain reflections, 5 seconds.",
+    "Create a 9:16 Flatkey brand UGC ad: a creator compares official video-model pricing with Flatkey, shows the model page workbench, then ends on a clean generated clip preview with audio.",
   priceUnit: "/ second",
   rows: [
     { label: "Seedance video / sec", flatkey: "$0.047", official: "$0.07" },
@@ -287,6 +291,65 @@ export const SEEDANCE_CONFIG: ModelConfig = {
   positioning: "Best for product videos, ad creative, and image-to-video production",
   useCases: ["UGC ad clips", "Product motion", "Social video variants"],
   faq: [
+    {
+      question: "Does this use the same model id in my SDK?",
+      answer: "Yes. Keep your SDK and switch base_url plus api_key.",
+    },
+    {
+      question: "Can I control usage before scaling?",
+      answer: "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.",
+    },
+  ],
+};
+
+export const SEEDANCE_25_CONFIG: ModelConfig = {
+  slug: "seedance-2-5",
+  modelIds: ["seedance-2.5", "seedance-2-5"],
+  displayName: "Seedance 2.5",
+  modelId: "seedance-2.5",
+  // Field domains mirror the upstream contract enforced in
+  // relay/channel/task/modelapiseedance: 480p/720p only (no 1080p), duration
+  // 4-30s, and an "adaptive" aspect ratio. `frames` and `camera_fixed` are
+  // absent because this upstream ignores them; `seed` and `return_last_frame`
+  // are debugging-oriented and stay out of the public page.
+  generator: {
+    kind: "video",
+    endpoint: "/v1/videos",
+    storageKey: "flatkey:model-generator-draft:seedance-2-5",
+    fields: [
+      { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["16:9", "9:16", "1:1", "4:3", "3:4", "adaptive"] },
+      { name: "resolution", label: "Resolution", type: "select", defaultValue: "720p", options: ["480p", "720p"] },
+      { name: "duration", label: "Duration", type: "number", defaultValue: 5, min: 4, max: 30 },
+      { name: "generate_audio", label: "Generate audio", type: "boolean", defaultValue: true },
+    ],
+  },
+  officialName: "ByteDance",
+  officialPrice: "$0.084",
+  flatkeyPrice: "$0.0756",
+  estFlatkey: "$0.38",
+  estOfficial: "$0.42",
+  examplePrompt:
+    "Create a 16:9 Flatkey brand film: open on the Flatkey logo mark, push into a model catalog showing Seedance next to GPT and Claude, cut to live per-second pricing rows, then land on a generated video preview. Smooth camera moves, clean product lighting, subtle sound design.",
+  priceUnit: "/ second",
+  summary:
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.",
+  rows: [
+    { label: "Seedance video / sec", flatkey: "$0.0756", official: "$0.084" },
+    { label: "Reference video input", flatkey: "", value: "Up to 50 assets" },
+    { label: "Coverage", flatkey: "", value: "Seedance · Kling · Veo · Sora · GPT · Claude" },
+  ],
+  seo: {
+    title: "Seedance 2.5 API pricing and providers",
+    description:
+      "Seedance 2.5 API by ByteDance: multimodal video generation with up to 50 references, native audio, first/last-frame control, editing, and extension.",
+  },
+  positioning: "Best for long-form storytelling, multimodal reference generation, and video editing",
+  useCases: ["Long-form storytelling", "Reference-guided video", "Video editing and extension"],
+  faq: [
+    {
+      question: "What can I attach as a reference?",
+      answer: "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
+    },
     {
       question: "Does this use the same model id in my SDK?",
       answer: "Yes. Keep your SDK and switch base_url plus api_key.",
@@ -480,6 +543,7 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   [MINIMAX_H3_CONFIG.slug]: MINIMAX_H3_CONFIG,
   [QWEN_CONFIG.slug]: QWEN_CONFIG,
   [SEEDANCE_CONFIG.slug]: SEEDANCE_CONFIG,
+  [SEEDANCE_25_CONFIG.slug]: SEEDANCE_25_CONFIG,
   [SONILO_VIDEO_TO_MUSIC_CONFIG.slug]: SONILO_VIDEO_TO_MUSIC_CONFIG,
 };
 
@@ -676,6 +740,22 @@ export type ModelLandingKey =
   | "UGC ad clips"
   | "Yes. Keep your SDK and switch base_url plus api_key."
   | "Yes. Plan limits, usage analytics, and one invoice keep spend bounded."
+  | "Long-form storytelling"
+  | "Reference-guided video"
+  | "Video editing and extension"
+  | "Best for long-form storytelling, multimodal reference generation, and video editing"
+  | "What can I attach as a reference?"
+  | "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control."
+  | "Up to 50 assets"
+  | "Video price"
+  | "Reference Videos"
+  | "Reference Audios"
+  | "Input"
+  | "Output"
+  | "Preview"
+  | "Upload from device"
+  | "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output."
+  | "from {{price}}"
   | "50% off";
 
 export function getModelLandingConfig(slug: string): ModelConfig | null {
@@ -684,9 +764,18 @@ export function getModelLandingConfig(slug: string): ModelConfig | null {
 
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
   const normalized = normalizeModelId(modelId);
-  return getModelLandingConfigs().find((config) =>
-    config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
-  ) ?? null;
+  // Longest configured id wins. Ids are prefix-matched, so a broad entry like
+  // "seedance" would otherwise swallow every future "seedance-*" release and
+  // serve it the wrong model's copy, parameters, and SEO.
+  let best: { config: ModelConfig; length: number } | null = null;
+  for (const config of getModelLandingConfigs()) {
+    for (const configuredId of config.modelIds) {
+      if (!matchesModelId(normalized, configuredId)) continue;
+      const length = normalizeModelId(configuredId).length;
+      if (!best || length > best.length) best = { config, length };
+    }
+  }
+  return best?.config ?? null;
 }
 
 export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
@@ -1055,6 +1144,22 @@ const en: Record<ModelLandingKey, string> = {
   "UGC ad clips": "UGC ad clips",
   "Yes. Keep your SDK and switch base_url plus api_key.": "Yes. Keep your SDK and switch base_url plus api_key.",
   "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.",
+  "Long-form storytelling": "Long-form storytelling",
+  "Reference-guided video": "Reference-guided video",
+  "Video editing and extension": "Video editing and extension",
+  "Best for long-form storytelling, multimodal reference generation, and video editing": "Best for long-form storytelling, multimodal reference generation, and video editing",
+  "What can I attach as a reference?": "What can I attach as a reference?",
+  "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
+  "Up to 50 assets": "Up to 50 assets",
+  "Video price": "Video price",
+  "Reference Videos": "Reference Videos",
+  "Reference Audios": "Reference Audios",
+  "Input": "Input",
+  "Output": "Output",
+  "Preview": "Preview",
+  "Upload from device": "Upload from device",
+  "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.",
+  "from {{price}}": "from {{price}}",
   "50% off": "50% off",
 };
 
@@ -1352,6 +1457,19 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "UGC 广告短片",
     "Yes. Keep your SDK and switch base_url plus api_key.": "可以。保留现有 SDK，只切换 base_url 和 api_key。",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "可以。套餐上限、用量分析和统一账单让支出可控。",
+    "Long-form storytelling": "长篇故事叙述",
+    "Reference-guided video": "多模态参考生成",
+    "Video editing and extension": "视频编辑与扩展",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "适合长篇故事叙述、多模态参考素材生成和视频编辑",
+    "What can I attach as a reference?": "可以附加哪些参考素材？",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "单次请求最多 50 个素材：图像、视频和音频，并支持首帧与首尾帧控制。",
+    "Up to 50 assets": "最多 50 个素材",
+    "Video price": "视频价格",
+    "Reference Videos": "参考视频",
+    "Reference Audios": "参考音频",
+    "Upload from device": "本地上传",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 是字节跳动推出的多模态 AI 视频模型，能以文本、图像、视频、音频作为参考素材，生成具备极强多镜头一致性和原生音频的电影级连贯视频。它适用于长篇故事叙述、多模态参考生成、视频编辑与视频扩展，支持首帧与首尾帧控制、单次最多导入 50 个参考素材，以及可选的音频生成与多语言视听生成。",
+    "from {{price}}": "{{price}} 起",
     "50% off": "5 折",
   },
   es: {
@@ -1461,6 +1579,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "Clips publicitarios UGC",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Sí. Mantén tu SDK y cambia base_url más api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Sí. Los límites del plan, la analítica de uso y una única factura mantienen el gasto acotado.",
+    "Long-form storytelling": "Narrativa de formato largo",
+    "Reference-guided video": "Video guiado por referencias",
+    "Video editing and extension": "Edición y extensión de video",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Ideal para narrativa de formato largo, generación con referencias multimodales y edición de video",
+    "What can I attach as a reference?": "¿Qué puedo adjuntar como referencia?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hasta 50 assets por solicitud: imágenes, videos y audio, con control de primer fotograma y de primer/último fotograma.",
+    "Up to 50 assets": "Hasta 50 assets",
+    "Video price": "Precio de video",
+    "Reference Videos": "Videos de referencia",
+    "Reference Audios": "Audios de referencia",
+    "Input": "Entrada",
+    "Output": "Salida",
+    "Preview": "Vista previa",
+    "Upload from device": "Subir desde el dispositivo",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 es el modelo de video multimodal de ByteDance. Convierte referencias de texto, imagen, video y audio en clips cinematográficos y coherentes, con fuerte consistencia entre planos y audio nativo. Sirve para narrativa de formato largo, generación guiada por referencias, edición y extensión de video, con control de primer fotograma y de primer/último fotograma, hasta 50 referencias por solicitud, generación de audio opcional y salida audiovisual multilingüe.",
+    "from {{price}}": "desde {{price}}",
     "50% off": "50% de descuento",
   },
   fr: {
@@ -1570,6 +1704,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "Clips publicitaires UGC",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Oui. Gardez votre SDK et changez base_url ainsi que api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Oui. Les limites du plan, l'analyse d'usage et une facture unique gardent les dépenses maîtrisées.",
+    "Long-form storytelling": "Narration longue durée",
+    "Reference-guided video": "Vidéo guidée par références",
+    "Video editing and extension": "Montage et extension vidéo",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Idéal pour la narration longue durée, la génération guidée par références multimodales et le montage vidéo",
+    "What can I attach as a reference?": "Que puis-je joindre comme référence ?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Jusqu'à 50 assets par requête : images, vidéos et audio, avec contrôle de la première image et des première/dernière images.",
+    "Up to 50 assets": "Jusqu'à 50 assets",
+    "Video price": "Prix vidéo",
+    "Reference Videos": "Vidéos de référence",
+    "Reference Audios": "Audios de référence",
+    "Input": "Entrée",
+    "Output": "Sortie",
+    "Preview": "Aperçu",
+    "Upload from device": "Importer depuis l'appareil",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 est le modèle vidéo multimodal de ByteDance. Il transforme des références texte, image, vidéo et audio en clips cinématographiques et cohérents, avec une forte continuité entre les plans et un audio natif. Il convient à la narration longue durée, à la génération guidée par références, au montage et à l'extension vidéo, avec contrôle de la première image et des première/dernière images, jusqu'à 50 références par requête, génération audio optionnelle et sortie audiovisuelle multilingue.",
+    "from {{price}}": "à partir de {{price}}",
     "50% off": "50% de réduction",
   },
   pt: {
@@ -1679,6 +1829,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "Clipes de anúncio UGC",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Sim. Mantenha seu SDK e troque base_url e api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Sim. Limites do plano, análise de uso e uma única fatura mantêm o gasto sob controle.",
+    "Long-form storytelling": "Narrativa de formato longo",
+    "Reference-guided video": "Vídeo guiado por referências",
+    "Video editing and extension": "Edição e extensão de vídeo",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Ideal para narrativa de formato longo, geração com referências multimodais e edição de vídeo",
+    "What can I attach as a reference?": "O que posso anexar como referência?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Até 50 assets por requisição: imagens, vídeos e áudio, com controle de primeiro quadro e de primeiro/último quadro.",
+    "Up to 50 assets": "Até 50 assets",
+    "Video price": "Preço de vídeo",
+    "Reference Videos": "Vídeos de referência",
+    "Reference Audios": "Áudios de referência",
+    "Input": "Entrada",
+    "Output": "Saída",
+    "Preview": "Pré-visualização",
+    "Upload from device": "Enviar do dispositivo",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 é o modelo de vídeo multimodal da ByteDance. Ele transforma referências de texto, imagem, vídeo e áudio em clipes cinematográficos e coerentes, com forte consistência entre planos e áudio nativo. Serve para narrativa de formato longo, geração guiada por referências, edição e extensão de vídeo, com controle de primeiro quadro e de primeiro/último quadro, até 50 referências por requisição, geração de áudio opcional e saída audiovisual multilíngue.",
+    "from {{price}}": "a partir de {{price}}",
     "50% off": "50% de desconto",
   },
   ru: {
@@ -1788,6 +1954,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "UGC рекламные клипы",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Да. Оставьте SDK и смените base_url вместе с api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Да. Лимиты плана, аналитика использования и один счёт держат расходы под контролем.",
+    "Long-form storytelling": "Длинные истории",
+    "Reference-guided video": "Видео по референсам",
+    "Video editing and extension": "Монтаж и продление видео",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Подходит для длинных историй, генерации по мультимодальным референсам и монтажа видео",
+    "What can I attach as a reference?": "Что можно приложить как референс?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "До 50 материалов на запрос: изображения, видео и аудио, с управлением первым кадром и первым/последним кадром.",
+    "Up to 50 assets": "До 50 материалов",
+    "Video price": "Цена видео",
+    "Reference Videos": "Референсные видео",
+    "Reference Audios": "Референсные аудио",
+    "Input": "Ввод",
+    "Output": "Вывод",
+    "Preview": "Предпросмотр",
+    "Upload from device": "Загрузить с устройства",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 — мультимодальная видеомодель ByteDance. Она превращает текстовые, графические, видео- и аудиореференсы в кинематографичные связные ролики с высокой согласованностью между планами и нативным звуком. Подходит для длинных историй, генерации по референсам, монтажа и продления видео: управление первым кадром и первым/последним кадром, до 50 референсов на запрос, опциональная генерация звука и многоязычный аудиовизуальный вывод.",
+    "from {{price}}": "от {{price}}",
     "50% off": "скидка 50%",
   },
   ja: {
@@ -1897,6 +2079,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "UGC 広告クリップ",
     "Yes. Keep your SDK and switch base_url plus api_key.": "はい。SDK はそのまま、base_url と api_key だけ変更します。",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "はい。プラン上限・利用分析・一括請求で支出を抑えられます。",
+    "Long-form storytelling": "長編ストーリーテリング",
+    "Reference-guided video": "参照素材ベースの動画生成",
+    "Video editing and extension": "動画編集と延長",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "長編ストーリーテリング、マルチモーダル参照素材からの生成、動画編集に最適",
+    "What can I attach as a reference?": "参照素材として何を添付できますか？",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "1 リクエストにつき最大 50 点の素材（画像・動画・音声）。先頭フレームと先頭／末尾フレームの指定にも対応します。",
+    "Up to 50 assets": "最大 50 点の素材",
+    "Video price": "動画料金",
+    "Reference Videos": "参照動画",
+    "Reference Audios": "参照音声",
+    "Input": "入力",
+    "Output": "出力",
+    "Preview": "プレビュー",
+    "Upload from device": "端末からアップロード",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 は ByteDance のマルチモーダル動画生成モデルです。テキスト・画像・動画・音声の参照素材から、カット間の一貫性が高くネイティブ音声を伴う映画品質の動画を生成します。長編ストーリーテリング、参照素材ベースの生成、動画編集、動画の延長に対応し、先頭フレームと先頭／末尾フレームの指定、1 リクエストにつき最大 50 点の参照素材、任意の音声生成、多言語の視聴覚出力をサポートします。",
+    "from {{price}}": "{{price}} から",
     "50% off": "50% オフ",
   },
   vi: {
@@ -2006,6 +2204,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "Clip quảng cáo UGC",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Có. Giữ SDK, chỉ đổi base_url và api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Có. Hạn mức gói, phân tích mức dùng và một hóa đơn duy nhất giữ chi tiêu trong tầm kiểm soát.",
+    "Long-form storytelling": "Kể chuyện dài tập",
+    "Reference-guided video": "Video theo tư liệu tham chiếu",
+    "Video editing and extension": "Chỉnh sửa và kéo dài video",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Phù hợp cho kể chuyện dài tập, tạo video từ tư liệu tham chiếu đa phương thức và chỉnh sửa video",
+    "What can I attach as a reference?": "Có thể đính kèm gì làm tư liệu tham chiếu?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Tối đa 50 tư liệu mỗi yêu cầu: hình ảnh, video và âm thanh, kèm điều khiển khung hình đầu và khung hình đầu/cuối.",
+    "Up to 50 assets": "Tối đa 50 tư liệu",
+    "Video price": "Giá video",
+    "Reference Videos": "Video tham chiếu",
+    "Reference Audios": "Âm thanh tham chiếu",
+    "Input": "Đầu vào",
+    "Output": "Đầu ra",
+    "Preview": "Xem trước",
+    "Upload from device": "Tải lên từ thiết bị",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 là mô hình video đa phương thức của ByteDance. Nó biến tư liệu tham chiếu dạng văn bản, hình ảnh, video và âm thanh thành các đoạn phim điện ảnh mạch lạc, nhất quán giữa các cảnh quay và có âm thanh gốc. Phù hợp cho kể chuyện dài tập, tạo video theo tư liệu tham chiếu, chỉnh sửa và kéo dài video, kèm điều khiển khung hình đầu và khung hình đầu/cuối, tối đa 50 tư liệu mỗi yêu cầu, tùy chọn tạo âm thanh và đầu ra nghe nhìn đa ngôn ngữ.",
+    "from {{price}}": "từ {{price}}",
     "50% off": "giảm 50%",
   },
   de: {
@@ -2115,6 +2329,22 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "UGC ad clips": "UGC-Anzeigenclips",
     "Yes. Keep your SDK and switch base_url plus api_key.": "Ja. Behalte dein SDK und ändere base_url plus api_key.",
     "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.": "Ja. Planlimits, Nutzungsanalysen und eine Rechnung halten die Ausgaben im Rahmen.",
+    "Long-form storytelling": "Langformiges Storytelling",
+    "Reference-guided video": "Referenzgeführtes Video",
+    "Video editing and extension": "Videobearbeitung und -verlängerung",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Ideal für langformiges Storytelling, Generierung aus multimodalen Referenzen und Videobearbeitung",
+    "What can I attach as a reference?": "Was kann ich als Referenz anhängen?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Bis zu 50 Assets pro Anfrage: Bilder, Videos und Audio, inklusive Steuerung von erstem Frame und erstem/letztem Frame.",
+    "Up to 50 assets": "Bis zu 50 Assets",
+    "Video price": "Videopreis",
+    "Reference Videos": "Referenzvideos",
+    "Reference Audios": "Referenz-Audios",
+    "Input": "Eingabe",
+    "Output": "Ausgabe",
+    "Preview": "Vorschau",
+    "Upload from device": "Vom Gerät hochladen",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 ist das multimodale Videomodell von ByteDance. Es verwandelt Text-, Bild-, Video- und Audioreferenzen in kinoreife, zusammenhängende Clips mit starker Konsistenz über mehrere Einstellungen und nativem Ton. Geeignet für langformiges Storytelling, referenzgeführte Generierung, Videobearbeitung und -verlängerung — mit Steuerung von erstem Frame und erstem/letztem Frame, bis zu 50 Referenzen pro Anfrage, optionaler Audiogenerierung und mehrsprachiger audiovisueller Ausgabe.",
+    "from {{price}}": "ab {{price}}",
     "50% off": "50% Rabatt",
   },
 });
@@ -2141,6 +2371,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Video",
     Audio: "Audio",
     File: "File",
+    "Remove reference asset": "Remove reference asset",
     "{{model}} API implementation guide": "{{model}} API implementation guide",
     "Use this model page as a request blueprint. Edit parameters above when available, then continue into the console with the complete draft preserved.": "Use this model page as a request blueprint. Edit parameters above when available, then continue into the console with the complete draft preserved.",
   },
@@ -2163,6 +2394,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "视频",
     Audio: "音频",
     File: "文件",
+    "Remove reference asset": "删除参考素材",
     "{{model}} API implementation guide": "{{model}} API 接入指南",
     "Use this model page as a request blueprint. Edit parameters above when available, then continue into the console with the complete draft preserved.": "把这个模型页当作请求蓝图。可编辑的参数会先在这里配置好，然后带着完整草稿进入控制台。",
     "Key features of {{model}} API": "{{model}} API 核心能力",
@@ -2303,6 +2535,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Video",
     Audio: "Audio",
     File: "Archivo",
+    "Remove reference asset": "Eliminar asset de referencia",
     "Live catalog model": "Modelo activo del catálogo",
     "Catalog data unavailable": "Datos del catálogo no disponibles",
     Providers: "Proveedores",
@@ -2379,6 +2612,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Vidéo",
     Audio: "Audio",
     File: "Fichier",
+    "Remove reference asset": "Supprimer l'asset de référence",
     "Live catalog model": "Modèle actif du catalogue",
     "Catalog data unavailable": "Données du catalogue indisponibles",
     Providers: "Fournisseurs",
@@ -2455,6 +2689,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Vídeo",
     Audio: "Áudio",
     File: "Arquivo",
+    "Remove reference asset": "Remover asset de referência",
     "Live catalog model": "Modelo ativo do catálogo",
     "Catalog data unavailable": "Dados do catálogo indisponíveis",
     Providers: "Provedores",
@@ -2531,6 +2766,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Видео",
     Audio: "Аудио",
     File: "Файл",
+    "Remove reference asset": "Удалить референсный материал",
     "Live catalog model": "Активная модель каталога",
     "Catalog data unavailable": "Данные каталога недоступны",
     Providers: "Провайдеры",
@@ -2607,6 +2843,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "動画",
     Audio: "音声",
     File: "ファイル",
+    "Remove reference asset": "参照素材を削除",
     "Live catalog model": "ライブカタログモデル",
     "Catalog data unavailable": "カタログデータは利用できません",
     Providers: "プロバイダー",
@@ -2683,6 +2920,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Video",
     Audio: "Âm thanh",
     File: "Tệp",
+    "Remove reference asset": "Xóa asset tham chiếu",
     "Live catalog model": "Model trực tiếp trong danh mục",
     "Catalog data unavailable": "Chưa có dữ liệu danh mục",
     Providers: "Nhà cung cấp",
@@ -2759,6 +2997,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Video",
     Audio: "Audio",
     File: "Datei",
+    "Remove reference asset": "Referenz-Asset entfernen",
     "Live catalog model": "Live-Modell im Katalog",
     "Catalog data unavailable": "Katalogdaten nicht verfügbar",
     Providers: "Anbieter",
@@ -2835,6 +3074,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     Video: "Video",
     Audio: "Audio",
     File: "File",
+    "Remove reference asset": "Hapus asset referensi",
     "Live catalog model": "Model katalog live",
     "Catalog data unavailable": "Data katalog tidak tersedia",
     Providers: "Penyedia",
@@ -2894,6 +3134,22 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Use the pricing section above for current Flatkey prices from our pricing API.": "Gunakan bagian harga di atas untuk melihat harga Flatkey terbaru dari API harga kami.",
     "The providers section shows the upstream provider names available in our model catalog.": "Bagian penyedia menampilkan nama upstream yang tersedia di katalog model kami.",
     "/ request": "/ request",
+    "Long-form storytelling": "Penceritaan format panjang",
+    "Reference-guided video": "Video berpanduan referensi",
+    "Video editing and extension": "Penyuntingan dan perpanjangan video",
+    "Best for long-form storytelling, multimodal reference generation, and video editing": "Cocok untuk penceritaan format panjang, generasi dari referensi multimodal, dan penyuntingan video",
+    "What can I attach as a reference?": "Apa yang bisa dilampirkan sebagai referensi?",
+    "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hingga 50 aset per permintaan: gambar, video, dan audio, termasuk kontrol frame pertama dan frame pertama/terakhir.",
+    "Up to 50 assets": "Hingga 50 aset",
+    "Video price": "Harga video",
+    "Reference Videos": "Video referensi",
+    "Reference Audios": "Audio referensi",
+    "Input": "Masukan",
+    "Output": "Keluaran",
+    "Preview": "Pratinjau",
+    "Upload from device": "Unggah dari perangkat",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 adalah model video multimodal dari ByteDance. Model ini mengubah referensi teks, gambar, video, dan audio menjadi klip sinematik yang runtut, dengan konsistensi antar-shot yang kuat dan audio native. Cocok untuk penceritaan format panjang, generasi berpanduan referensi, penyuntingan dan perpanjangan video, dengan kontrol frame pertama dan frame pertama/terakhir, hingga 50 referensi per permintaan, generasi audio opsional, dan keluaran audiovisual multibahasa.",
+    "from {{price}}": "mulai {{price}}",
   },
 };
 
