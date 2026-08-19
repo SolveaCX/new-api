@@ -115,6 +115,65 @@ describe("SiteHeader promo banner", () => {
     expect(html).not.toContain(">Learn more →<");
   });
 
+  test("renders the CTA as a solid pill on the brand gradient, not an inline link", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider docsUrl={null}>
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    // Deep-purple gradient band with white copy, kept to a single slim row.
+    expect(html).toContain("linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)");
+    expect(html).toContain("font-semibold");
+    expect(html).not.toContain("flex-wrap");
+    // The CTA is a filled white pill, not the old underlined text link.
+    expect(html).toContain("rounded-full bg-white");
+    expect(html).toContain("text-[#4c1d95]");
+    expect(html).not.toContain("underline decoration-[#AAA7B0]");
+  });
+
+  test("anchors the mobile menu below the header instead of a hardcoded offset", () => {
+    // The banner grows to two lines on narrow screens, so a fixed pixel offset
+    // would drift. The menu tracks the header box itself.
+    for (const banner of [
+      undefined,
+      {
+        content: { en: "Hidden campaign" },
+        enabled: false,
+        href: "/hidden",
+        icon: "",
+      },
+    ]) {
+      const html = renderToStaticMarkup(
+        <SiteConfigProvider docsUrl={null} promoBanner={banner}>
+          <SiteHeader locale="en" pathname="/" />
+        </SiteConfigProvider>,
+      );
+
+      expect(html).toContain("absolute inset-x-0 top-full");
+      expect(html).not.toContain("top-[112px]");
+      expect(html).not.toContain("top-[136px]");
+    }
+  });
+
+  test("collapses the CTA to an arrow on mobile so the message keeps its width", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider docsUrl={null}>
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    // Circular arrow under 700px, labelled pill from 700px up.
+    expect(html).toContain("size-[26px]");
+    expect(html).toContain("min-[700px]:w-auto");
+    expect(html).toContain("lucide-arrow-right size-3.5 min-[700px]:hidden");
+    expect(html).toContain('class="hidden min-[700px]:inline"');
+    // Message wraps on mobile rather than being cut off, truncates on desktop.
+    expect(html).toContain("min-[700px]:truncate");
+    // Room reserved on the right so the CTA never collides with the dismiss button.
+    expect(html).toContain("pr-14");
+  });
+
   test("hides the promo banner when it is disabled by site settings", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider
@@ -132,7 +191,6 @@ describe("SiteHeader promo banner", () => {
 
     expect(html).not.toContain("Hidden campaign");
     expect(html).not.toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
-    expect(html).toContain("top-[72px] max-h-[calc(100dvh-72px)]");
   });
 
   test("hides the promo banner when the configured copy is empty", () => {
@@ -151,6 +209,5 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).not.toContain('aria-label="Dismiss website banner"');
-    expect(html).toContain("top-[72px] max-h-[calc(100dvh-72px)]");
   });
 });

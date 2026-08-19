@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
@@ -246,6 +246,11 @@ const mobileSecondaryActionClass =
   "flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const desktopNavControlBaseClass =
   "inline-flex h-10 shrink-0 select-none items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:scale-[0.985] min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
+// Solid white pill on the purple banner — a real CTA affordance rather than an
+// inline underlined link. Below 700px it collapses to a circular arrow so the
+// message keeps the width it needs.
+const promoBannerCtaClass =
+  "inline-flex size-[26px] shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-white text-[12px] leading-none font-bold text-[#4c1d95] transition duration-200 ease-out group-hover:bg-[#F3EDFF] min-[700px]:h-7 min-[700px]:w-auto min-[700px]:px-3 min-[700px]:text-[12.5px]";
 const desktopNavLinkClass = desktopNavControlBaseClass;
 const desktopNavDropdownTriggerClass =
   `${desktopNavControlBaseClass} cursor-pointer appearance-none border-0 bg-transparent`;
@@ -476,9 +481,6 @@ export function SiteHeader(props: Props) {
   const promoBannerVisible = promoBanner.enabled &&
     !promoBannerDismissed &&
     promoBannerMessage !== "";
-  const mobileMenuOffsetClass = promoBannerVisible
-    ? "top-[132px] max-h-[calc(100dvh-132px)] min-[700px]:top-[112px] min-[700px]:max-h-[calc(100dvh-112px)]"
-    : "top-[72px] max-h-[calc(100dvh-72px)]";
 
   const productItems = useMemo<NavItem[]>(
     () => [
@@ -723,7 +725,7 @@ export function SiteHeader(props: Props) {
     <>
       {promoBanner.icon && (
         <span
-          className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
+          className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/95 ring-1 ring-white/40 min-[700px]:size-5"
           aria-hidden="true"
         >
           <Image
@@ -732,44 +734,47 @@ export function SiteHeader(props: Props) {
             width={16}
             height={16}
             unoptimized
-            className="size-[14px] min-[700px]:size-4"
+            className="size-3 min-[700px]:size-3.5"
           />
         </span>
       )}
-      <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
+      <span className="min-w-0 text-[13px] leading-snug font-semibold tracking-[-0.01em] text-white min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-none">
         {promoBannerMessage}
-        {promoBannerHref && (
-          <>
-            {" "}
-            <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
-              {promoBannerCopy.linkLabel}
-            </span>
-          </>
-        )}
       </span>
+      {promoBannerHref && (
+        <span className={promoBannerCtaClass}>
+          <ArrowRight
+            className="size-3.5 min-[700px]:hidden"
+            aria-hidden="true"
+          />
+          <span className="hidden min-[700px]:inline">
+            {promoBannerCopy.linkLabel}
+          </span>
+        </span>
+      )}
     </>
   );
 
   return (
     <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
       {promoBannerVisible && (
-        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F]">
-          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
+        <div className="bg-[linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)] text-white">
+          <div className="relative mx-auto flex min-h-11 w-full max-w-[var(--fk-site-frame-max-width)] items-center justify-center py-1.5 pr-14 pl-3 min-[700px]:h-11 min-[700px]:min-h-11 min-[700px]:overflow-hidden min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.25rem)] min-[700px]:pl-[var(--fk-site-gutter)]">
             {promoBannerHref ? (
               <Link
-                className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] no-underline min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate"
+                className="group flex min-w-0 items-center justify-center gap-2 no-underline min-[700px]:gap-2.5"
                 href={promoBannerHref}
               >
                 {promoBannerBody}
               </Link>
             ) : (
-              <span className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate">
+              <span className="flex min-w-0 items-center justify-center gap-2 min-[700px]:gap-2.5">
                 {promoBannerBody}
               </span>
             )}
             <button
               type="button"
-              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
+              className="absolute top-1/2 right-2 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-white/70 transition hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 min-[700px]:right-[max(8px,calc(var(--fk-site-gutter)-0.5rem))]"
               aria-label={promoBannerCopy.dismissLabel}
               onClick={dismissPromoBanner}
             >
@@ -851,7 +856,7 @@ export function SiteHeader(props: Props) {
       <div
         id={mobileMenuId}
         className={cn(
-          `fixed inset-x-0 z-40 overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden ${mobileMenuOffsetClass}`,
+          `absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-100%)] overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden`,
           mobileOpen
             ? "translate-y-0 opacity-100 shadow-[0_24px_70px_-42px_rgba(76,29,149,.52)]"
             : "pointer-events-none -translate-y-4 opacity-0 shadow-none",
