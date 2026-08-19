@@ -80,7 +80,7 @@
 3. 实现确认按钮调用 `actions.confirm({ redirect: "always" })`。
 4. 用 repo-native Tailwind/CSS token 实现桌面双栏和移动单列布局。
 5. 增加 Currency Selector Element 的条件挂载位置。
-6. 保留关闭、错误、loading、disabled 状态与 hosted fallback。
+6. 保留关闭、错误、loading、disabled 状态；仅在响应明确携带安全 hosted fallback 时跳转，否则失败关闭，避免为同一订单创建第二个可支付 Session。
 
 ## 任务 5：补齐 i18n
 
@@ -128,4 +128,3 @@
 2. 进行代码审查，重点检查支付金额来源、重复提交、元素销毁、legacy 兼容与 i18n。
 3. 给出部署建议：Router 不需要；`newapi-console` 与 staging 需要。
 4. 按 Lore Commit Protocol 提交实现与验证证据。
-

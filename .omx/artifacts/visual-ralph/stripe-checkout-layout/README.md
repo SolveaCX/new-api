@@ -5,6 +5,9 @@
 - Scope/permission: local reference created for this Flatkey task and explicitly approved by the user with “照着这个干”.
 - Desktop reference: `reference-1440x900.png`
 - Mobile reference: `reference-390x844.png`
+- Desktop implementation: `actual-1440x900.png`
+- Mobile implementation: `actual-390x844.png`
+- Final visual verdict: 93/100, pass (iteration 2).
 - Target surface: authenticated console Stripe payment dialog shared by wallet top-ups and subscription purchases.
 - Seed/login assumptions: implementation preview requires an authenticated local console user and a Stripe test-mode Checkout Session client secret.
 - Interaction parity: close, responsive reflow, Stripe-rendered payment fields, dynamic order summary, confirm button, loading/error/disabled states.
@@ -18,3 +21,4 @@
 4. For the implementation, open the wallet Stripe dialog with a test-mode Checkout Session in the same viewports and save `actual-1440x900.png` and `actual-390x844.png`.
 5. Run the Visual Ralph verdict before every subsequent visual edit. Passing score: 90 or higher.
 
+The temporary Rsbuild screenshot harness was removed after capture; it is not part of the product implementation.

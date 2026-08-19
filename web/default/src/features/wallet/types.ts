@@ -37,7 +37,7 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
-/** Bonus summary shown in the embedded checkout banner (USD display mode only) */
+/** Bonus summary shown in the in-console checkout (USD display mode only) */
 export interface StripeTopupSummary {
   /** USD the buyer pays (top-up tier) */
   pay_amount: number
@@ -51,11 +51,11 @@ export interface StripeTopupSummary {
 export type StripePaymentResponse = ApiResponse<{
   /** Hosted checkout redirect link (hosted ui_mode) */
   pay_link?: string
-  /** Embedded Checkout session client secret (embedded ui_mode) */
+  /** Checkout Elements session client secret (elements ui_mode) */
   client_secret?: string
-  /** Stripe publishable key used to mount embedded Checkout */
+  /** Stripe publishable key used to mount Checkout Elements */
   publishable_key?: string
-  /** Bonus banner data for the embedded checkout dialog */
+  /** Bonus summary data for the in-console checkout dialog */
   topup_summary?: StripeTopupSummary
 }>
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
@@ -318,8 +318,8 @@ export interface PaymentRequest {
   success_url?: string
   /** Optional redirect URL after cancelled hosted checkout */
   cancel_url?: string
-  /** Checkout presentation: 'embedded' renders inside the console when the server supports it */
-  ui_mode?: 'embedded'
+  /** Checkout presentation: 'elements' renders inside the console when supported */
+  ui_mode?: 'elements'
   /** Whether Stripe should create a company invoice */
   invoice_requested?: boolean
   /** Company invoice profile snapshot */
@@ -333,8 +333,8 @@ export interface PaymentRequest {
 export interface PaymentOptions {
   invoiceRequested?: boolean
   invoiceProfile?: InvoiceProfile
-  /** Prefer embedded Stripe Checkout (falls back to hosted redirect when unavailable) */
-  preferEmbeddedCheckout?: boolean
+  /** Prefer Stripe Checkout Elements (falls back to hosted redirect when unavailable) */
+  preferElementsCheckout?: boolean
   /** Optional explicit Stripe checkout package currency override */
   stripeCurrency?: 'USD' | 'JPY' | 'BRL' | 'INR'
   /** One-time recall campaign claim, forwarded only to Stripe */

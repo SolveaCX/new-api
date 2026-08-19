@@ -29,7 +29,7 @@
 - 右栏订单摘要来自 Stripe Checkout Session 的格式化金额与行项目数据。
 - 确认按钮由 Flatkey 渲染，但确认动作调用 Stripe Checkout Elements 的 `confirm`。
 - 成功与需要跳转的支付继续使用现有 `return_url`，不改变回跳后的订单恢复逻辑。
-- Stripe SDK 或 Elements 初始化失败时，保留现有托管链接回退能力；无安全回退时关闭弹窗并展示错误。
+- Stripe SDK 或 Elements 初始化失败时，仅使用响应中明确提供并经过 URL 校验的托管链接回退；Stripe Elements Session 本身不生成托管 URL，因此无安全回退时关闭弹窗并展示错误，不创建第二个可支付 Session。
 
 ## 桌面布局
 
@@ -82,7 +82,7 @@
 - 产品名与描述：Stripe `lineItems[0]`。
 - 小计：`session.total.subtotal.amount`。
 - 折扣、税、附加费：仅在对应 minor-unit 金额非零时显示。
-- 应付总额与主金额：`session.total.total.amount`。
+- 主金额：首个行项目的小计（无行项目时使用 `session.total.subtotal.amount`）；应付总额：`session.total.total.amount`。这样手续费或税费仍只在明细和应付总额中体现。
 - 充值赠送信息继续使用服务端 `topup_summary`，且只在其 `show_amounts` 为真时展示。
 - 前端不做浮点金额运算。
 
@@ -109,4 +109,3 @@
 - 支付字段、币种、摘要和确认状态随 Stripe Session 更新。
 - 原有托管 Checkout、恢复订单、Webhook 和回跳查询参数行为不回归。
 - Go 定向测试、前端单测、typecheck、lint/build 与本地预览验证通过。
-
