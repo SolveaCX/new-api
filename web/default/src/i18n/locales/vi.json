@@ -6722,6 +6722,8 @@
     "Show website banner": "Hiển thị biểu ngữ trang web",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Biểu ngữ này hiển thị ở đầu mọi trang của trang web chính thức. Để trống toàn bộ nội dung sẽ hiển thị biểu ngữ mặc định có sẵn. Thay đổi sẽ đến với khách truy cập trong khoảng hai phút.",
     "Turn off to hide the banner across the whole official website.": "Tắt để ẩn biểu ngữ trên toàn bộ trang web chính thức.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Chấp nhận đường dẫn nội bộ bắt đầu bằng / (tự động bản địa hóa theo ngôn ngữ) hoặc liên kết ngoài https:// đầy đủ. Để trống nếu chỉ muốn hiển thị văn bản."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Chấp nhận đường dẫn nội bộ bắt đầu bằng / (tự động bản địa hóa theo ngôn ngữ) hoặc liên kết ngoài https:// đầy đủ. Để trống nếu chỉ muốn hiển thị văn bản.",
+    "Paid": "Đã thanh toán",
+    "Manually pass the email verification for this account": "Phê duyệt thủ công xác minh email cho tài khoản này"
   }
 }

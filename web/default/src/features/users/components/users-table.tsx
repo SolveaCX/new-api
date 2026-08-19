@@ -87,6 +87,7 @@ export function UsersTable() {
       { columnId: 'role', searchKey: 'role', type: 'array' },
       { columnId: 'language', searchKey: 'language', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'string' },
+      { columnId: 'paid', searchKey: 'paid', type: 'array' },
     ],
   })
   const statusFilter =
@@ -107,6 +108,11 @@ export function UsersTable() {
   const statusFilterValue = statusFilter[0] ?? ''
   const roleFilterValue = roleFilter[0] ?? ''
   const languageFilterValue = languageFilter[0] ?? ''
+  const paidFilter =
+    (columnFilters.find((filter) => filter.id === 'paid')?.value as
+      | string[]
+      | undefined) ?? []
+  const paidFilterValue = paidFilter[0] ?? ''
 
   const { data: groupsData } = useQuery({
     queryKey: ['assignable-user-groups'],
@@ -137,6 +143,7 @@ export function UsersTable() {
       roleFilterValue,
       languageFilterValue,
       groupFilter,
+      paidFilterValue,
       refreshTrigger,
     ],
     queryFn: async () => {
@@ -145,7 +152,8 @@ export function UsersTable() {
         Boolean(statusFilterValue) ||
         Boolean(roleFilterValue) ||
         Boolean(languageFilterValue) ||
-        Boolean(groupFilter)
+        Boolean(groupFilter) ||
+        Boolean(paidFilterValue)
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
@@ -160,6 +168,7 @@ export function UsersTable() {
               role: roleFilterValue,
               language: languageFilterValue,
               group: groupFilter,
+              paid: paidFilterValue === '1',
             })
           : await getUsers(params)
 
@@ -271,6 +280,12 @@ export function UsersTable() {
             columnId: 'language',
             title: t('Interface Language'),
             options: languageOptions,
+            singleSelect: true,
+          },
+          {
+            columnId: 'paid',
+            title: t('Payment'),
+            options: [{ label: t('Paid'), value: '1' }],
             singleSelect: true,
           },
         ],

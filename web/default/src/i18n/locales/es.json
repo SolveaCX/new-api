@@ -997,7 +997,7 @@
     "Confirm log file cleanup?": "Confirm log file cleanup?",
     "Confirm New Password": "Confirm New Password",
     "Confirm password": "Confirmar contraseña",
-    "Confirm Payment": "Confirmar pago",
+    "Confirm Payment": "Confirm Payment",
     "Close payment": "Cerrar pago",
     "Encrypted payment powered by Stripe": "Pago cifrado procesado por Stripe",
     "Loading payment form...": "Cargando el formulario de pago…",
@@ -6722,6 +6722,8 @@
     "Show website banner": "Mostrar el banner del sitio",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Este banner aparece en la parte superior de todas las páginas del sitio oficial. Deja todos los textos vacíos para mostrar el banner predeterminado integrado. Los cambios llegan a los visitantes en unos dos minutos.",
     "Turn off to hide the banner across the whole official website.": "Desactívalo para ocultar el banner en todo el sitio oficial.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Admite una ruta interna que empiece por / (se localiza automáticamente según el idioma) o un enlace externo https:// completo. Déjalo vacío para un banner solo de texto."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Admite una ruta interna que empiece por / (se localiza automáticamente según el idioma) o un enlace externo https:// completo. Déjalo vacío para un banner solo de texto.",
+    "Paid": "Pagado",
+    "Manually pass the email verification for this account": "Aprobar manualmente la verificación de correo de esta cuenta"
   }
 }

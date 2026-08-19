@@ -6722,6 +6722,8 @@
     "Show website banner": "Mostrar o banner do site",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Este banner aparece no topo de todas as páginas do site oficial. Deixe todos os textos vazios para exibir o banner padrão integrado. As alterações chegam aos visitantes em cerca de dois minutos.",
     "Turn off to hide the banner across the whole official website.": "Desative para ocultar o banner em todo o site oficial.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Aceita um caminho interno começando com / (localizado automaticamente por idioma) ou um link externo https:// completo. Deixe vazio para um banner apenas de texto."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Aceita um caminho interno começando com / (localizado automaticamente por idioma) ou um link externo https:// completo. Deixe vazio para um banner apenas de texto.",
+    "Paid": "Pago",
+    "Manually pass the email verification for this account": "Aprovar manualmente a verificação de e-mail desta conta"
   }
 }

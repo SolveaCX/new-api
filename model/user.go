@@ -67,6 +67,14 @@ type User struct {
 	NewUserBonusGiven       bool           `json:"new_user_bonus_given" gorm:"default:false;column:new_user_bonus_given"`
 	RegistrationIP          string         `json:"registration_ip,omitempty" gorm:"type:varchar(64);column:registration_ip;index"`
 	IsEnterprise            bool           `json:"is_enterprise" gorm:"default:false;column:is_enterprise"` // enterprise users retain the group concept; PLG (non-enterprise) users are forced to the plg group with groups hidden
+	// PaidAmount is the lifetime total of successful top-ups (USD) for this
+	// user. It is not persisted on the user row — FillPaidAmounts aggregates it
+	// from the top_ups table when listing users (admin console only).
+	PaidAmount float64 `json:"paid_amount,omitempty" gorm:"-"`
+	// SetEmailVerified is a control field for the admin UpdateUser endpoint.
+	// When non-nil it overrides EmailVerifiedAt (true → now, false → 0); when
+	// nil the existing value is left untouched. Never persisted.
+	SetEmailVerified *bool `json:"set_email_verified,omitempty" gorm:"-"`
 	StripeCardFingerprint   string         `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
 	CreatedAt               int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt             int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
@@ -225,7 +233,6 @@ func GetMaxUserId() int {
 }
 
 func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err error) {
-	// Start transaction
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -253,6 +260,10 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 	// Commit transaction
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
+	}
+
+	if err := FillPaidAmounts(users); err != nil {
+		common.SysError("failed to fill paid amounts for user list: " + err.Error())
 	}
 
 	return users, total, nil
@@ -349,7 +360,7 @@ func recallAudienceUserLikePattern(keyword string) string {
 	return "%" + escaped + "%"
 }
 
-func SearchUsers(keyword string, group string, role *int, status *int, language string, startIdx int, num int) ([]*User, int64, error) {
+func SearchUsers(keyword string, group string, role *int, status *int, language string, paid bool, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -394,6 +405,9 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 			query = query.Where("deleted_at IS NULL").Where("status = ?", *status)
 		}
 	}
+	if paid {
+		query = query.Where("id IN (SELECT user_id FROM top_ups WHERE status = ?)", common.TopUpStatusSuccess)
+	}
 	query = applyUserLanguageFilter(query, language)
 
 	// 获取总数
@@ -415,7 +429,44 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 		return nil, 0, err
 	}
 
+	if err := FillPaidAmounts(users); err != nil {
+		common.SysError("failed to fill paid amounts for user search: " + err.Error())
+	}
+
 	return users, total, nil
+}
+
+// FillPaidAmounts hydrates each user's PaidAmount with the lifetime total of
+// successful top-ups (USD). It runs one grouped query for the whole page rather
+// than N per-user queries. Read-only; safe under multi-node.
+func FillPaidAmounts(users []*User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.Id)
+	}
+	type paidRow struct {
+		UserId int     `gorm:"column:user_id"`
+		Total  float64 `gorm:"column:total"`
+	}
+	var rows []paidRow
+	if err := DB.Model(&TopUp{}).
+		Select("user_id, COALESCE(SUM(money), 0) AS total").
+		Where("user_id IN ? AND status = ?", ids, common.TopUpStatusSuccess).
+		Group("user_id").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	totals := make(map[int]float64, len(rows))
+	for _, r := range rows {
+		totals[r.UserId] = r.Total
+	}
+	for _, u := range users {
+		u.PaidAmount = totals[u.Id]
+	}
+	return nil
 }
 
 func applyUserLanguageFilter(query *gorm.DB, language string) *gorm.DB {

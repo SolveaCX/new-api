@@ -6722,6 +6722,8 @@
     "Show website banner": "Показывать баннер сайта",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Этот баннер отображается вверху каждой страницы официального сайта. Оставьте все тексты пустыми, чтобы показать встроенный баннер по умолчанию. Изменения дойдут до посетителей примерно за две минуты.",
     "Turn off to hide the banner across the whole official website.": "Выключите, чтобы скрыть баннер на всём официальном сайте.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Принимает внутренний путь, начинающийся с / (локализуется автоматически по языку), или полную внешнюю https://-ссылку. Оставьте пустым, чтобы баннер был без ссылки."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Принимает внутренний путь, начинающийся с / (локализуется автоматически по языку), или полную внешнюю https://-ссылку. Оставьте пустым, чтобы баннер был без ссылки.",
+    "Paid": "Оплачено",
+    "Manually pass the email verification for this account": "Вручную подтвердить электронную почту этой учетной записи"
   }
 }

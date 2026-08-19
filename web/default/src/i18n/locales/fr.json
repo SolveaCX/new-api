@@ -6722,6 +6722,8 @@
     "Show website banner": "Afficher la bannière du site",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Cette bannière apparaît en haut de chaque page du site officiel. Laissez tous les textes vides pour afficher la bannière par défaut intégrée. Les modifications sont visibles par les visiteurs en deux minutes environ.",
     "Turn off to hide the banner across the whole official website.": "Désactivez pour masquer la bannière sur tout le site officiel.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Accepte un chemin interne commençant par / (localisé automatiquement selon la langue) ou un lien externe https:// complet. Laissez vide pour une bannière sans lien."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Accepte un chemin interne commençant par / (localisé automatiquement selon la langue) ou un lien externe https:// complet. Laissez vide pour une bannière sans lien.",
+    "Paid": "Payé",
+    "Manually pass the email verification for this account": "Approuver manuellement la vérification de l'e-mail de ce compte"
   }
 }

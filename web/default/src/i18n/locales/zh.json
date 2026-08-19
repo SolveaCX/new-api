@@ -6722,6 +6722,8 @@
     "Show website banner": "显示官网横幅",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "该横幅显示在官网所有页面顶部。全部文案留空时会展示内置的默认横幅。修改后约两分钟内对访客生效。",
     "Turn off to hide the banner across the whole official website.": "关闭后，整个官网都不再显示横幅。",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "可填以 / 开头的站内路径（按语种自动本地化），也可填完整的外部 https:// 链接。留空则只展示文案，不可点击。"
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "可填以 / 开头的站内路径（按语种自动本地化），也可填完整的外部 https:// 链接。留空则只展示文案，不可点击。",
+    "Paid": "已付费",
+    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证"
   }
 }

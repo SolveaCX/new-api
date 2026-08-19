@@ -6722,6 +6722,8 @@
     "Show website banner": "Show website banner",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.",
     "Turn off to hide the banner across the whole official website.": "Turn off to hide the banner across the whole official website.",
-    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner."
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.",
+    "Paid": "Paid",
+    "Manually pass the email verification for this account": "Manually pass the email verification for this account"
   }
 }
