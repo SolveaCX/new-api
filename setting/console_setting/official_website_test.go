@@ -78,6 +78,10 @@ func TestValidateOfficialWebsiteBannerContentAcceptsLocaleMaps(t *testing.T) {
 		"{}",
 		// 只填了空白字符等同于未配置，官网回退到内置默认横幅。
 		`{"en":"   "}`,
+		// 缺英文不再由后端拦截：配置项逐条保存，后端读不到 enabled 的新值，
+		// 拦在这里会导致「关闭横幅后无法保存」。官网侧会整块回退到默认横幅。
+		`{"zh":"上线额度已开放。"}`,
+		`{"en":"   ","zh":"上线额度已开放。"}`,
 		`{"en":"Launch credits are live."}`,
 		`{"en":"Launch credits are live.","zh":"上线额度已开放。","ja":"クレジットを配布中。"}`,
 	} {
@@ -94,8 +98,6 @@ func TestValidateOfficialWebsiteBannerContentRejectsInvalidMaps(t *testing.T) {
 		`["Launch credits are live."]`,
 		`{"en":42}`,
 		`{"klingon":"nuqneH"}`,
-		`{"zh":"上线额度已开放。"}`,
-		`{"en":"   ","zh":"上线额度已开放。"}`,
 		`{"en":"<script>alert(1)</script>"}`,
 		tooLong,
 	} {

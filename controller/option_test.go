@@ -298,26 +298,32 @@ func TestUpdateOptionAcceptsPerLocaleOfficialWebsiteBannerContent(t *testing.T) 
 	}
 }
 
-func TestUpdateOptionRejectsOfficialWebsiteBannerContentWithoutEnglishFallback(t *testing.T) {
+func TestUpdateOptionAcceptsOfficialWebsiteBannerContentWithoutEnglishFallback(t *testing.T) {
+	// Options are saved one row at a time, so this handler cannot see the
+	// `enabled` value the operator is submitting alongside the copy. Rejecting
+	// here would make "switch the banner off" unsaveable whenever the copy is
+	// half-written. The website falls back to its built-in banner when the
+	// english copy is missing, so persisting it is safe.
 	db := setupOptionControllerTestDB(t)
+	const content = `{"zh":"上线额度已开放。"}`
 
 	ctx, recorder := newOptionRequestContext(t, map[string]any{
 		"key":   "console_setting.official_website_banner_content",
-		"value": `{"zh":"上线额度已开放。"}`,
+		"value": content,
 	})
 	UpdateOption(ctx)
 
 	response := decodeAPIResponse(t, recorder)
-	if response.Success {
-		t.Fatalf("expected banner content without english fallback to fail")
+	if !response.Success {
+		t.Fatalf("expected banner content without english fallback to save, got message: %s", response.Message)
 	}
 
-	var count int64
-	if err := db.Model(&model.Option{}).Where("key = ?", "console_setting.official_website_banner_content").Count(&count).Error; err != nil {
-		t.Fatalf("failed to count official website banner content option rows: %v", err)
+	var contentOption model.Option
+	if err := db.First(&contentOption, "key = ?", "console_setting.official_website_banner_content").Error; err != nil {
+		t.Fatalf("failed to load official website banner content option: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("expected rejected banner content not to persist, got %d rows", count)
+	if contentOption.Value != content {
+		t.Fatalf("unexpected official website banner content value: %q", contentOption.Value)
 	}
 }
 

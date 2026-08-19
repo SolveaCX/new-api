@@ -6695,8 +6695,8 @@
     "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG, JPEG, WebP, SVG o GIF, hasta {{max}} KB. Déjalo vacío para no mostrar ningún icono.",
     "Save banner": "Guardar banner",
     "Show website banner": "Mostrar el banner del sitio",
-    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "Las rutas internas que empiezan por / se localizan automáticamente. Déjalo vacío para un banner solo de texto.",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Este banner aparece en la parte superior de todas las páginas del sitio oficial. Deja todos los textos vacíos para mostrar el banner predeterminado integrado. Los cambios llegan a los visitantes en unos dos minutos.",
-    "Turn off to hide the banner across the whole official website.": "Desactívalo para ocultar el banner en todo el sitio oficial."
+    "Turn off to hide the banner across the whole official website.": "Desactívalo para ocultar el banner en todo el sitio oficial.",
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Admite una ruta interna que empiece por / (se localiza automáticamente según el idioma) o un enlace externo https:// completo. Déjalo vacío para un banner solo de texto."
   }
 }

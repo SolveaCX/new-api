@@ -129,19 +129,26 @@ export function OfficialWebsiteSection({
             t('Banner text must be {{max}} characters or fewer', {
               max: BANNER_CONTENT_MAX_LENGTH,
             })
-          )
-          .refine(
-            (value) => {
-              const hasAnyCopy = Object.values(value).some(
-                (copy) => copy.trim().length > 0
-              )
-              return !hasAnyCopy || (value.en ?? '').trim().length > 0
-            },
-            t(
-              'English text is required — other languages fall back to it when left empty'
-            )
           ),
-      }),
+      })
+        // The english-fallback rule only matters for a banner that actually
+        // renders. With the banner switched off, half-written copy must still
+        // be saveable — otherwise operators cannot turn the banner off.
+        .refine(
+          (values) => {
+            if (!values.enabled) return true
+            const hasAnyCopy = Object.values(values.content).some(
+              (copy) => copy.trim().length > 0
+            )
+            return !hasAnyCopy || (values.content.en ?? '').trim().length > 0
+          },
+          {
+            path: ['content'],
+            message: t(
+              'English text is required — other languages fall back to it when left empty'
+            ),
+          }
+        ),
     [t]
   )
 
@@ -264,11 +271,14 @@ export function OfficialWebsiteSection({
               <FormItem>
                 <FormLabel>{t('Banner link')}</FormLabel>
                 <FormControl>
-                  <Input placeholder='/blog/product-launch' {...field} />
+                  <Input
+                    placeholder='/blog/product-launch  ·  https://example.com/promo'
+                    {...field}
+                  />
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'Site paths starting with / are localized automatically. Leave empty for a text-only banner.'
+                    'Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.'
                   )}
                 </FormDescription>
                 <FormMessage />

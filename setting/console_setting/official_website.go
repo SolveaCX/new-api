@@ -107,7 +107,8 @@ func ValidateOfficialWebsiteBannerIcon(icon string) error {
 }
 
 // ValidateOfficialWebsiteBannerContent 校验按语种配置的横幅文案。
-// 允许留空（官网回退到内置默认横幅）；一旦配置了任意语种，就必须包含英文兜底文案。
+// 允许留空（官网回退到内置默认横幅）。只做语种白名单、长度与危险内容校验；
+// 「必须填英文」由控制台表单负责，原因见函数末尾的注释。
 func ValidateOfficialWebsiteBannerContent(content string) error {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -119,7 +120,6 @@ func ValidateOfficialWebsiteBannerContent(content string) error {
 		return err
 	}
 
-	nonEmpty := 0
 	for locale, text := range copies {
 		if !officialWebsiteLocales[locale] {
 			return fmt.Errorf("官网横幅文案包含不支持的语种：%s", locale)
@@ -128,7 +128,6 @@ func ValidateOfficialWebsiteBannerContent(content string) error {
 		if value == "" {
 			continue
 		}
-		nonEmpty++
 		if utf8.RuneCountInString(value) > officialWebsiteBannerContentMaxRunes {
 			return fmt.Errorf("%s 语种的官网横幅文案长度不能超过%d字符", locale, officialWebsiteBannerContentMaxRunes)
 		}
@@ -137,9 +136,11 @@ func ValidateOfficialWebsiteBannerContent(content string) error {
 		}
 	}
 
-	if nonEmpty > 0 && strings.TrimSpace(copies["en"]) == "" {
-		return fmt.Errorf("官网横幅文案必须填写英文（en），其它语种缺失时会回退到英文")
-	}
+	// 注意：这里不校验「必须填英文」。配置项是逐条保存的，保存文案时后端读不到
+	// 用户同一次提交里的 enabled 新值，一旦在这里拦截，用户就无法在关闭横幅的
+	// 情况下保存半成品文案。缺英文也不会造成损坏——官网侧
+	// normalizePromoBannerSettings 会整块回退到内置默认横幅。该约束由控制台表单
+	// 负责（它能读到完整表单状态，仅在横幅开启时要求英文）。
 	return nil
 }
 

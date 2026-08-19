@@ -6695,8 +6695,8 @@
     "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG、JPEG、WebP、SVG、GIF に対応、最大 {{max}} KB。空欄にするとアイコンは表示されません。",
     "Save banner": "バナーを保存",
     "Show website banner": "サイトバナーを表示",
-    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "/ で始まるサイト内パスは言語ごとに自動でローカライズされます。空欄にするとリンクなしのバナーになります。",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "このバナーは公式サイトの全ページ上部に表示されます。すべての文言を空欄にすると、組み込みの既定バナーが表示されます。変更は約 2 分で訪問者に反映されます。",
-    "Turn off to hide the banner across the whole official website.": "オフにすると、公式サイト全体でバナーが非表示になります。"
+    "Turn off to hide the banner across the whole official website.": "オフにすると、公式サイト全体でバナーが非表示になります。",
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "/ で始まるサイト内パス（言語ごとに自動でローカライズ）または完全な外部 https:// リンクを指定できます。空欄にするとリンクなしのバナーになります。"
   }
 }

@@ -6695,8 +6695,8 @@
     "PNG, JPEG, WebP, SVG, or GIF, up to {{max}} KB. Leave empty to show no icon.": "PNG, JPEG, WebP, SVG hoặc GIF, tối đa {{max}} KB. Để trống nếu không muốn hiển thị biểu tượng.",
     "Save banner": "Lưu biểu ngữ",
     "Show website banner": "Hiển thị biểu ngữ trang web",
-    "Site paths starting with / are localized automatically. Leave empty for a text-only banner.": "Đường dẫn nội bộ bắt đầu bằng / sẽ được bản địa hóa tự động. Để trống nếu chỉ muốn hiển thị văn bản.",
     "This banner appears at the top of every official website page. Leave all text empty to show the built-in default banner. Changes reach visitors within about two minutes.": "Biểu ngữ này hiển thị ở đầu mọi trang của trang web chính thức. Để trống toàn bộ nội dung sẽ hiển thị biểu ngữ mặc định có sẵn. Thay đổi sẽ đến với khách truy cập trong khoảng hai phút.",
-    "Turn off to hide the banner across the whole official website.": "Tắt để ẩn biểu ngữ trên toàn bộ trang web chính thức."
+    "Turn off to hide the banner across the whole official website.": "Tắt để ẩn biểu ngữ trên toàn bộ trang web chính thức.",
+    "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Chấp nhận đường dẫn nội bộ bắt đầu bằng / (tự động bản địa hóa theo ngôn ngữ) hoặc liên kết ngoài https:// đầy đủ. Để trống nếu chỉ muốn hiển thị văn bản."
   }
 }
