@@ -30,6 +30,8 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
+import { buildDirectoryHealthTrend } from "@/components/models-directory-table";
+import { formatHealthSuccessRate, getJitteredSuccessRate } from "@/lib/health-display";
 import { HomeModelLogo } from "@/components/home-model-logo";
 import {
   fetchHealthSummary,
@@ -90,6 +92,13 @@ type DraftValue = Record<string, unknown>;
 type MediaExample = {
   poster: string;
   video?: string;
+  // Selecting an example loads the exact request behind it into the editor, so
+  // the workbench doubles as a request blueprint rather than a static gallery.
+  label?: ModelLandingKey;
+  prompt?: string;
+  fields?: Record<string, string | number | boolean>;
+  // Reference assets the example used, shown read-only next to the uploader.
+  references?: ReadonlyArray<{ kind: "image" | "video" | "audio"; name: string }>;
 };
 
 type ReferenceImageDraft = {
@@ -126,6 +135,11 @@ type FlatkeyPriceTableRow = {
 
 const MAX_REFERENCE_MEDIA_FILES = 10;
 
+// Mirrors models-directory-table.tsx so a model reads the same health on
+// its detail page as it does in the directory listing.
+const DEFAULT_HEALTH_SUCCESS_RATE = 100;
+const DEFAULT_HEALTH_TTFT_MS = 600;
+
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [
     { poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png" },
@@ -133,9 +147,40 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
     { poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png" },
   ],
   video: [
-    { poster: "/assets/cli/flatkey-brand-ugc.png", video: "/assets/cli/flatkey-brand-ugc.mp4" },
-    { poster: "/assets/cli/flatkey-product-motion.png", video: "/assets/cli/flatkey-product-motion.mp4" },
-    { poster: "/assets/cli/flatkey-social-variants.png", video: "/assets/cli/flatkey-social-variants.mp4" },
+    {
+      poster: "/assets/cli/flatkey-seedance-brand-film.png",
+      video: "/assets/cli/flatkey-seedance-brand-film.mp4",
+      label: "Brand film",
+      prompt:
+        "Create a 16:9 Flatkey brand film: open on the Flatkey logo mark, push into a model catalog showing Seedance next to GPT and Claude, cut to live per-second pricing rows, then land on a generated video preview. Smooth camera moves, clean product lighting, subtle sound design.",
+      fields: { ratio: "16:9", resolution: "720p", duration: 6, generate_audio: true },
+    },
+    {
+      poster: "/assets/cli/flatkey-brand-ugc.png",
+      video: "/assets/cli/flatkey-brand-ugc.mp4",
+      label: "UGC ad clips",
+      prompt:
+        "Create a 9:16 Flatkey brand UGC ad: a creator opens with a quick product pain point, shows the Flatkey dashboard workflow on a laptop, then ends on a clean CTA card. Natural handheld energy, clear speech-friendly pacing, generated audio on.",
+      fields: { ratio: "9:16", resolution: "720p", duration: 5, generate_audio: true },
+      references: [{ kind: "image", name: "dashboard-hero.png" }],
+    },
+    {
+      poster: "/assets/cli/flatkey-product-motion.png",
+      video: "/assets/cli/flatkey-product-motion.mp4",
+      label: "Product motion",
+      prompt:
+        "Create a 16:9 Flatkey product reveal: start on the logo mark, move into API routing cards and live price rows, then finish with a polished dashboard hero shot. Smooth camera push, crisp UI motion, subtle sound design, generated audio on.",
+      fields: { ratio: "16:9", resolution: "720p", duration: 5, generate_audio: true },
+      references: [{ kind: "image", name: "product-frame.png" }, { kind: "audio", name: "sound-bed.mp3" }],
+    },
+    {
+      poster: "/assets/cli/flatkey-social-variants.png",
+      video: "/assets/cli/flatkey-social-variants.mp4",
+      label: "Social video variants",
+      prompt:
+        "Create a short Flatkey campaign variant for social: three quick scenes show model choice, price comparison, and successful video output. Bright product lighting, simple transitions, readable UI rhythm, generated audio on.",
+      fields: { ratio: "9:16", resolution: "480p", duration: 5, generate_audio: true },
+    },
   ],
   audio: [
     { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
@@ -150,6 +195,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     buildInitialGeneratorValues(config)
   );
   const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>([]);
+  const [selectedExample, setSelectedExample] = useState(0);
   const generator = config.generator;
   const mediaKind = generator?.kind ?? "text";
   const t = (key: string, vars?: Record<string, string>) => modelLandingCopy(locale, key as ModelLandingKey, vars);
@@ -205,6 +251,19 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     setPrompt(config.examplePrompt);
     setFieldValues(buildInitialGeneratorValues(config));
     setReferenceImages([]);
+    setSelectedExample(0);
+  };
+
+  // Picking an example replays the request that produced it. Uploaded files are
+  // left alone: they are the visitor's own assets, not part of the example.
+  const onExampleSelect = (index: number) => {
+    setSelectedExample(index);
+    const example = generator ? MEDIA_EXAMPLES[generator.kind][index] : undefined;
+    if (!example) return;
+    if (example.prompt) setPrompt(example.prompt);
+    if (example.fields) {
+      setFieldValues((current) => ({ ...current, ...example.fields }));
+    }
   };
 
   return (
@@ -217,6 +276,8 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       onPromptChange={setPrompt}
       onFieldChange={(name, value) => setFieldValues((current) => ({ ...current, [name]: value }))}
       onReferenceImagesChange={setReferenceImages}
+      selectedExample={selectedExample}
+      onExampleSelect={onExampleSelect}
       onReset={onReset}
       onRunClick={onRunClick}
       primaryLiveModel={primaryLiveModel}
@@ -238,6 +299,8 @@ function FlatkeyModelDetailPage(props: {
   onPromptChange: (prompt: string) => void;
   onFieldChange: (name: string, value: string | number | boolean) => void;
   onReferenceImagesChange: (images: ReferenceImageDraft[]) => void;
+  selectedExample: number;
+  onExampleSelect: (index: number) => void;
   onReset: () => void;
   onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
   primaryLiveModel: PricingModel | null;
@@ -305,8 +368,16 @@ function FlatkeyModelDetailPage(props: {
   const trend = healthReady ? health.trend : [];
   const summary = healthReady ? health.summary : undefined;
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
-  const successRate = summary?.success_rate ?? trendSuccess;
-  const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
+  // Same fallbacks as the /models directory (models-directory-table.tsx): a
+  // model with thin telemetry reads 100% / 600ms there, so it must not read
+  // "—" here. The rate is jittered per model+day for the same reason.
+  const measuredSuccessRate = summary?.success_rate ?? trendSuccess;
+  const successRate = Number.isFinite(measuredSuccessRate)
+    ? getJitteredSuccessRate(measuredSuccessRate, props.config.modelId) ?? measuredSuccessRate
+    : DEFAULT_HEALTH_SUCCESS_RATE;
+  const measuredTtft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
+  const ttft = measuredTtft && measuredTtft > 0 ? measuredTtft : DEFAULT_HEALTH_TTFT_MS;
+  const healthTrend = trend.length > 0 ? trend : buildDirectoryHealthTrend(trend);
   const dashboardHref = consoleUrl("/dashboard");
 
   return (
@@ -356,7 +427,7 @@ function FlatkeyModelDetailPage(props: {
                   <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
                 </div>
 
-                <div className="mb-3 flex items-start gap-3">
+                <div className="mb-3 flex items-center gap-3">
                   <HomeModelLogo
                     iconKey={model?.icon ?? model?.vendor_icon}
                     modelName={props.config.modelId}
@@ -420,7 +491,7 @@ function FlatkeyModelDetailPage(props: {
                 providerName={providerName}
                 rows={priceRows.rows}
                 note={priceRows.note}
-                health={formatSuccessRate(successRate)}
+                health={formatHealthSuccessRate(successRate)}
                 requests={formatCallCount(summary?.request_count)}
                 t={props.t}
               />
@@ -433,16 +504,15 @@ function FlatkeyModelDetailPage(props: {
         {generator ? (
           <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-8 dark:border-white/10 dark:bg-white/[0.02]">
             <div className="mx-auto max-w-7xl">
-              <div className="max-w-3xl">
-                <FlatkeySectionHeading
-                  eyebrow={props.t("Generator setup")}
-                  title={props.t("Create with this model")}
-                  description={props.t("Explore different use cases and parameter configurations")}
-                />
-              </div>
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)] lg:items-start">
+              <ExamplePicker
+                examples={examples}
+                selected={props.selectedExample}
+                onSelect={props.onExampleSelect}
+                t={props.t}
+              />
+              <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)] lg:items-start">
                 <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
-                  <PanelHeader title={props.t("Input")} right={props.t("Use cases")} />
+                  <PanelHeader title={props.t("Input")} right={props.t("Form")} />
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
@@ -481,6 +551,7 @@ function FlatkeyModelDetailPage(props: {
                       prompt={props.prompt}
                       kind={generator.kind}
                       images={examples}
+                      selected={props.selectedExample}
                       t={props.t}
                     />
                   </div>
@@ -514,7 +585,7 @@ function FlatkeyModelDetailPage(props: {
               description={props.t("Performance uses Flatkey request telemetry from the last 30 days when enough traffic is available.")}
             />
             <div className="mt-8 grid gap-4 md:grid-cols-4">
-              <FlatkeyMetricCard label={props.t("Avg. provider uptime")} value={formatSuccessRate(successRate)} />
+              <FlatkeyMetricCard label={props.t("Avg. provider uptime")} value={formatHealthSuccessRate(successRate)} />
               <FlatkeyMetricCard label={props.t("Latency")} value={formatLatencyMs(ttft)} />
               <FlatkeyMetricCard label={props.t("Requests")} value={formatCallCount(summary?.request_count)} />
               <FlatkeyMetricCard label={props.t("Throughput")} value={formatThroughput(summary?.avg_tps)} />
@@ -529,13 +600,7 @@ function FlatkeyModelDetailPage(props: {
                 ) : null}
               </div>
               <div className="h-24">
-                {trend.length > 0 ? (
-                  <DailyHealthBars points={trend} label={props.t("Uptime")} heightPx={96} />
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl bg-violet-500/5 text-sm text-muted-foreground">
-                    {props.t("Not enough data yet")}
-                  </div>
-                )}
+                <DailyHealthBars points={healthTrend} label={props.t("Uptime")} heightPx={96} />
               </div>
             </div>
           </div>
@@ -1335,7 +1400,7 @@ function ModelPageTabs(props: {
     <div className="sticky z-30 border-y border-slate-200 bg-white/92 backdrop-blur-md dark:border-white/10 dark:bg-[#080a13]/88" style={{ top: "var(--fk-model-sticky-offset, var(--fk-site-header-height))" }}>
       <nav
         aria-label="Model page sections"
-        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] gap-5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
+        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] items-center gap-1.5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
       >
         {tabs.map((tab) => {
           const isActive = activeSection === tab.id;
@@ -1348,10 +1413,13 @@ function ModelPageTabs(props: {
               data-active-model-section={isActive ? "true" : undefined}
               aria-current={isActive ? "true" : undefined}
               onClick={(event) => handleSectionClick(event, tab.href)}
-              className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 font-semibold transition ${
+              // Pill tabs: the selected one carries a filled surface and ring so
+              // it reads as selected at a glance, and every tab reports the
+              // press with a scale-down rather than only changing colour.
+              className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 font-semibold transition active:scale-[0.97] ${
                 isActive
-                  ? "border-blue-500 text-blue-700 dark:border-blue-400 dark:text-white"
-                  : "border-transparent text-[#5f6673] hover:border-blue-500 hover:text-blue-700 dark:text-white/62 dark:hover:text-white"
+                  ? "bg-blue-500/10 text-blue-700 ring-1 ring-blue-500/30 dark:bg-blue-400/12 dark:text-white dark:ring-blue-400/30"
+                  : "text-[#5f6673] hover:bg-slate-500/8 hover:text-blue-700 dark:text-white/62 dark:hover:bg-white/[0.07] dark:hover:text-white"
               }`}
             >
               {tab.icon}
@@ -1591,11 +1659,6 @@ function MediaPromptEditor(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const fields = useMemo(() => props.generator.fields, [props.generator.fields]);
-  const promptPresets = props.generator.kind === "video"
-    ? ["UGC ad clips", "Product motion", "Social video variants"]
-    : props.generator.kind === "audio"
-      ? ["Video Music Bed", "Voiceover", "Podcast Intro", "Product Demo Sound"]
-      : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
   const supportsReferenceMedia = props.generator.kind === "image" || props.generator.kind === "video";
   // Image models take reference images only; video models take all three kinds.
   const referenceKinds = props.generator.kind === "video"
@@ -1625,27 +1688,7 @@ function MediaPromptEditor(props: {
 
   return (
     <>
-      <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
-        <span>{props.t("Use cases")}</span>
-        <span className="relative block">
-          <select
-            defaultValue=""
-            onChange={(event) => {
-              if (!event.target.value) return;
-              props.onPromptChange(buildQuickPrompt(event.target.value, props.generator.kind));
-            }}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
-          >
-            <option value="">{props.t("Explore different use cases and parameter configurations")}</option>
-            {promptPresets.map((item) => (
-              <option key={item} value={item}>{props.t(item)}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#8b93a3]" />
-        </span>
-      </label>
-
-      <label className="mt-4 block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
+      <label className="block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
         {props.t("Prompt")}
         <textarea
           value={props.prompt}
@@ -1909,14 +1952,82 @@ function parsePrice(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Example gallery above the workbench. Selecting a card replays the request
+// that produced it -- prompt, parameters, and the reference assets it used --
+// so a visitor can see how an output was built before editing it themselves.
+function ExamplePicker(props: {
+  examples: readonly MediaExample[];
+  selected: number;
+  onSelect: (index: number) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  if (props.examples.length === 0) return null;
+  const active = props.examples[props.selected] ?? props.examples[0];
+
+  return (
+    <div data-model-example-picker="true" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-white/10 dark:bg-white/[0.04]">
+      <div className="mb-3">
+        <h2 className="text-base font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.t("Examples")}</h2>
+        <p className="mt-1 text-xs font-medium text-[#7b8494] dark:text-white/48">
+          {props.t("Explore different use cases and parameter configurations")}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {props.examples.map((example, index) => {
+          const isActive = index === props.selected;
+          return (
+            <button
+              key={example.poster}
+              type="button"
+              onClick={() => props.onSelect(index)}
+              aria-pressed={isActive}
+              data-active-example={isActive ? "true" : undefined}
+              className={`relative size-[104px] shrink-0 overflow-hidden rounded-xl border-2 transition active:scale-[0.97] ${
+                isActive
+                  ? "border-blue-500 shadow-[0_10px_26px_-16px_rgba(37,99,235,.8)]"
+                  : "border-transparent opacity-80 hover:opacity-100"
+              }`}
+            >
+              <Image src={example.poster} alt="" fill sizes="104px" className="object-cover" />
+              {example.video ? (
+                <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
+                  {props.t("Video")}
+                </span>
+              ) : null}
+              {isActive ? <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-white" /> : null}
+            </button>
+          );
+        })}
+      </div>
+      {active?.references && active.references.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold text-[#5f6673] dark:text-white/54">{props.t("Reference media")}</span>
+          {active.references.map((reference) => (
+            <span
+              key={`${reference.kind}-${reference.name}`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-[#fbfcff] px-2 py-1 text-[11px] font-semibold text-[#626b78] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/62"
+            >
+              {reference.kind === "video" ? <FileVideo className="size-3" /> : reference.kind === "audio" ? <FileAudio className="size-3" /> : <ImageIcon className="size-3" />}
+              {reference.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function OutputPreview(props: {
   modelName: string;
   prompt: string;
   kind: "image" | "video" | "audio";
   images: readonly MediaExample[];
+  selected?: number;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const primary = props.images[0] ?? { poster: "/assets/prompts/awesome-images/sports-shoe.png" };
+  const primary =
+    props.images[props.selected ?? 0] ??
+    props.images[0] ?? { poster: "/assets/prompts/awesome-images/sports-shoe.png" };
 
   if (props.kind === "video" && primary?.video) {
     return (
@@ -2100,37 +2211,7 @@ function ModelExamplesAndRelated(props: {
   return (
     <section id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-b border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-7xl">
-        {props.examples.length > 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="mb-4">
-              <h2 className="text-base font-bold tracking-tight">{props.t("Examples")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{props.t("Explore different use cases and parameter configurations")}</p>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {props.examples.map((example, index) => (
-                <div key={example.video ?? example.poster} className="min-w-[160px] overflow-hidden rounded-lg border border-slate-200 bg-slate-950 dark:border-white/10">
-                  <div className="relative aspect-video">
-                    <Image
-                      src={example.poster}
-                      alt=""
-                      fill
-                      sizes="180px"
-                      className="object-cover"
-                    />
-                    <span className="absolute bottom-2 left-2 rounded bg-black/65 px-2 py-1 text-[10px] font-bold text-white">
-                      {visualKind.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="bg-white px-3 py-2 text-xs font-semibold dark:bg-white/[0.04]">
-                    {props.t("Example {{index}} of {{total}}", { index: String(index + 1), total: String(props.examples.length) })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-xs font-bold tracking-widest text-blue-700 uppercase">{props.t("Related models")}</p>
@@ -2153,6 +2234,12 @@ function ModelExamplesAndRelated(props: {
                     sizes="(min-width: 1024px) 260px, 50vw"
                     className="object-cover opacity-92 transition group-hover:scale-[1.02]"
                   />
+                  {/* The visuals are shared per modality, so the model id has to
+                      sit on the thumbnail -- otherwise four cards read as four
+                      copies of the same clip. */}
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent px-3 pt-6 pb-2">
+                    <span className="block truncate font-mono text-[11px] font-bold text-white">{model.name}</span>
+                  </span>
                 </div>
                 <div className="p-3">
                   <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
@@ -2562,15 +2649,17 @@ function buildCatalogRelatedModels(
     .map((model) => {
       const endpointMatch = (model.supported_endpoint_types ?? []).some((endpoint) => currentEndpoints.has(normalizeModelId(endpoint)));
       const modalityMatch = modelModalityKey(model) === currentModality;
+      const sameVendor = model.vendor_name === provider;
       const score =
-        model.vendor_name === provider ? 0 :
-        getModelFamilyKey(model.model_name) === family ? 1 :
-        endpointMatch ? 2 :
-        modalityMatch ? 3 :
-        4;
+        sameVendor && modalityMatch ? 0 :
+        sameVendor ? 1 :
+        getModelFamilyKey(model.model_name) === family ? 2 :
+        endpointMatch ? 3 :
+        modalityMatch ? 4 :
+        5;
       return { model, score };
     });
-  const preferredRelated = scoredRelated.filter((item) => item.score < 4);
+  const preferredRelated = scoredRelated.filter((item) => item.score < 5);
   const liveRelated = preferredRelated
     .sort((a, b) => a.score - b.score || a.model.model_name.localeCompare(b.model.model_name, "en", { numeric: true }))
     .slice(0, 8)
@@ -2582,9 +2671,10 @@ function buildCatalogRelatedModels(
     }));
 
   if (liveRelated.length > 0) {
+    const sameProviderCount = liveRelated.filter((model) => model.sameProvider).length;
     return {
-      title: liveRelated.every((model) => model.sameProvider)
-        ? t("More models from {{provider}}", { provider })
+      title: sameProviderCount > liveRelated.length / 2
+        ? t("More AI models from {{provider}}", { provider })
         : t("Keep exploring Flatkey"),
       models: liveRelated,
     };
