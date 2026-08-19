@@ -261,7 +261,7 @@ const mobilePrimaryActionClass =
 const mobileSecondaryActionClass =
   "flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const desktopNavControlBaseClass =
-  "inline-flex h-10 shrink-0 items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:translate-y-0 min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
+  "inline-flex h-10 shrink-0 select-none items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:scale-[0.985] min-[1180px]:text-[14.5px] min-[1360px]:text-[15px]";
 const desktopNavLinkClass = desktopNavControlBaseClass;
 const desktopNavDropdownTriggerClass =
   `${desktopNavControlBaseClass} cursor-pointer appearance-none border-0 bg-transparent`;
@@ -673,7 +673,6 @@ export function SiteHeader(props: Props) {
           aria-haspopup="menu"
           className={cn(
             desktopNavDropdownTriggerClass,
-            "cursor-pointer select-none",
             active && desktopNavActiveClass,
             !active && desktopNavIdleClass,
           )}
