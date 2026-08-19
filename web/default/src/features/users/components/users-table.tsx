@@ -88,6 +88,7 @@ export function UsersTable() {
       { columnId: 'language', searchKey: 'language', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'string' },
       { columnId: 'paid', searchKey: 'paid', type: 'array' },
+      { columnId: 'email_verified', searchKey: 'email_verified', type: 'array' },
     ],
   })
   const statusFilter =
@@ -113,6 +114,17 @@ export function UsersTable() {
       | string[]
       | undefined) ?? []
   const paidFilterValue = paidFilter[0] ?? ''
+  const emailVerifiedFilter =
+    (columnFilters.find((filter) => filter.id === 'email_verified')?.value as
+      | string[]
+      | undefined) ?? []
+  const emailVerifiedFilterValue = emailVerifiedFilter[0] ?? ''
+  let emailVerifiedParam: boolean | undefined
+  if (emailVerifiedFilterValue === '1') {
+    emailVerifiedParam = true
+  } else if (emailVerifiedFilterValue === '0') {
+    emailVerifiedParam = false
+  }
 
   const { data: groupsData } = useQuery({
     queryKey: ['assignable-user-groups'],
@@ -144,6 +156,7 @@ export function UsersTable() {
       languageFilterValue,
       groupFilter,
       paidFilterValue,
+      emailVerifiedFilterValue,
       refreshTrigger,
     ],
     queryFn: async () => {
@@ -153,7 +166,8 @@ export function UsersTable() {
         Boolean(roleFilterValue) ||
         Boolean(languageFilterValue) ||
         Boolean(groupFilter) ||
-        Boolean(paidFilterValue)
+        Boolean(paidFilterValue) ||
+        Boolean(emailVerifiedFilterValue)
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
@@ -169,6 +183,7 @@ export function UsersTable() {
               language: languageFilterValue,
               group: groupFilter,
               paid: paidFilterValue === '1',
+              email_verified: emailVerifiedParam,
             })
           : await getUsers(params)
 
@@ -286,6 +301,15 @@ export function UsersTable() {
             columnId: 'paid',
             title: t('Payment'),
             options: [{ label: t('Paid'), value: '1' }],
+            singleSelect: true,
+          },
+          {
+            columnId: 'email_verified',
+            title: t('Email Verified'),
+            options: [
+              { label: t('Verified'), value: '1' },
+              { label: t('Unverified'), value: '0' },
+            ],
             singleSelect: true,
           },
         ],

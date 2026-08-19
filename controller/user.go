@@ -478,8 +478,16 @@ func SearchUsers(c *gin.Context) {
 	if paidStr := c.Query("paid"); paidStr == "1" || paidStr == "true" {
 		paid = true
 	}
+	var emailVerified *bool
+	if evStr := c.Query("email_verified"); evStr == "1" || evStr == "true" {
+		v := true
+		emailVerified = &v
+	} else if evStr == "0" || evStr == "false" {
+		v := false
+		emailVerified = &v
+	}
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, emailVerified, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return

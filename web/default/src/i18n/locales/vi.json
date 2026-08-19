@@ -6724,6 +6724,9 @@
     "Turn off to hide the banner across the whole official website.": "Tắt để ẩn biểu ngữ trên toàn bộ trang web chính thức.",
     "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Chấp nhận đường dẫn nội bộ bắt đầu bằng / (tự động bản địa hóa theo ngôn ngữ) hoặc liên kết ngoài https:// đầy đủ. Để trống nếu chỉ muốn hiển thị văn bản.",
     "Paid": "Đã thanh toán",
-    "Manually pass the email verification for this account": "Phê duyệt thủ công xác minh email cho tài khoản này"
+    "Manually pass the email verification for this account": "Phê duyệt thủ công xác minh email cho tài khoản này",
+    "Email Verified": "Email đã xác minh",
+    "Verified": "Đã xác minh",
+    "Unverified": "Chưa xác minh"
   }
 }

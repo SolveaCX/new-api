@@ -107,6 +107,7 @@ export interface SearchUsersParams {
   status?: string
   language?: string
   paid?: boolean
+  email_verified?: boolean
   p?: number
   page_size?: number
 }

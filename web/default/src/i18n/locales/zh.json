@@ -6724,6 +6724,9 @@
     "Turn off to hide the banner across the whole official website.": "关闭后，整个官网都不再显示横幅。",
     "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "可填以 / 开头的站内路径（按语种自动本地化），也可填完整的外部 https:// 链接。留空则只展示文案，不可点击。",
     "Paid": "已付费",
-    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证"
+    "Manually pass the email verification for this account": "手动通过该账号的邮箱验证",
+    "Email Verified": "邮箱已验证",
+    "Verified": "已验证",
+    "Unverified": "未验证"
   }
 }

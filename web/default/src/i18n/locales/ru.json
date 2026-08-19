@@ -6724,6 +6724,9 @@
     "Turn off to hide the banner across the whole official website.": "Выключите, чтобы скрыть баннер на всём официальном сайте.",
     "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Принимает внутренний путь, начинающийся с / (локализуется автоматически по языку), или полную внешнюю https://-ссылку. Оставьте пустым, чтобы баннер был без ссылки.",
     "Paid": "Оплачено",
-    "Manually pass the email verification for this account": "Вручную подтвердить электронную почту этой учетной записи"
+    "Manually pass the email verification for this account": "Вручную подтвердить электронную почту этой учетной записи",
+    "Email Verified": "Почта подтверждена",
+    "Verified": "Подтверждено",
+    "Unverified": "Не подтверждено"
   }
 }

@@ -6724,6 +6724,9 @@
     "Turn off to hide the banner across the whole official website.": "Desactívalo para ocultar el banner en todo el sitio oficial.",
     "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "Admite una ruta interna que empiece por / (se localiza automáticamente según el idioma) o un enlace externo https:// completo. Déjalo vacío para un banner solo de texto.",
     "Paid": "Pagado",
-    "Manually pass the email verification for this account": "Aprobar manualmente la verificación de correo de esta cuenta"
+    "Manually pass the email verification for this account": "Aprobar manualmente la verificación de correo de esta cuenta",
+    "Email Verified": "Correo verificado",
+    "Verified": "Verificado",
+    "Unverified": "Sin verificar"
   }
 }

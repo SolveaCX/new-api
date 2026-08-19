@@ -6724,6 +6724,9 @@
     "Turn off to hide the banner across the whole official website.": "オフにすると、公式サイト全体でバナーが非表示になります。",
     "Accepts a site path starting with / (localized automatically per language) or a full external https:// link. Leave empty for a text-only banner.": "/ で始まるサイト内パス（言語ごとに自動でローカライズ）または完全な外部 https:// リンクを指定できます。空欄にするとリンクなしのバナーになります。",
     "Paid": "支払済み",
-    "Manually pass the email verification for this account": "このアカウントのメール確認を手動で承認する"
+    "Manually pass the email verification for this account": "このアカウントのメール確認を手動で承認する",
+    "Email Verified": "メール確認済み",
+    "Verified": "確認済み",
+    "Unverified": "未確認"
   }
 }
