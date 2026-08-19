@@ -53,12 +53,17 @@ const (
 type opsFunnelRow struct {
 	Key           string  `json:"key"`
 	Registrations int     `json:"registrations"`
-	RealBrowse    int     `json:"real_browse"`
-	ManualKeys    int     `json:"manual_keys"`
-	KeyUsers      int     `json:"key_users"`
-	PayIntent     int     `json:"pay_intent"`
-	Paid          int     `json:"paid"`
-	PaidUSD       float64 `json:"paid_usd"`
+	// Activated mirrors the activate_success GA event: the user performed a
+	// real activation action (created a manual/CLI key, used an API key, or
+	// used the playground), bucketed by registration day like the rest of the
+	// funnel.
+	Activated   int     `json:"activated"`
+	RealBrowse  int     `json:"real_browse"`
+	ManualKeys  int     `json:"manual_keys"`
+	KeyUsers    int     `json:"key_users"`
+	PayIntent   int     `json:"pay_intent"`
+	Paid        int     `json:"paid"`
+	PaidUSD     float64 `json:"paid_usd"`
 	// CostUSD is the quota burned through the cohort's auto-provisioned keys
 	// (created < opsAutoTokenWindow after signup), i.e. signup-credit spend by
 	// users who never manually created a key — dominated by farm registrations.
@@ -185,6 +190,14 @@ var (
 	opsReportCache   *opsReportData
 	opsReportCacheAt time.Time
 	opsReportMutex   sync.Mutex
+
+	// Day-independent cohort aggregates (users + log/token stats + paid
+	// orders), cached separately from the windowed report so a days switch
+	// does not re-run the expensive logs-table scan. buildOpsReport's
+	// day-windowed slices (DAU, ads) are NOT part of this cache.
+	opsAggsCache   map[int]*opsUserAgg
+	opsAggsCacheAt time.Time
+	opsAggsMutex   sync.Mutex
 )
 
 // GetOpsReport handles GET /api/ops_report?days=N&dau_scope=plg|all (admin only).
@@ -267,7 +280,11 @@ func opsUserCountry(u *model.OpsPlgUser) string {
 	return "?"
 }
 
-func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
+// buildOpsAggs assembles the day-independent per-user cohort aggregates that
+// every funnel rollup reads: user metadata, log/token stats, and paid/refunded
+// orders. It is deliberately kept separate from the day-windowed slices (DAU,
+// ads) so it can be cached once regardless of the selected day range.
+func buildOpsAggs() (map[int]*opsUserAgg, error) {
 	users, err := model.GetOpsPlgUsers()
 	if err != nil {
 		return nil, err
@@ -338,6 +355,40 @@ func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
 		if t.Status == common.TopUpStatusRefunded {
 			a.refundedOrders = append(a.refundedOrders, t)
 		}
+	}
+	return aggs, nil
+}
+
+// getOpsAggs returns the cached day-independent cohort aggregates, recomputing
+// them at most once per opsReportCacheTTL per node. This is the expensive part
+// of the report: GetOpsUserLogStats scans the whole logs history for the plg
+// cohort no matter which day range is selected, so caching it here keeps a
+// 7/30/60/90 switch from re-running that scan each time.
+func getOpsAggs() (map[int]*opsUserAgg, error) {
+	opsAggsMutex.Lock()
+	defer opsAggsMutex.Unlock()
+	if opsAggsCache != nil && time.Since(opsAggsCacheAt) < opsReportCacheTTL {
+		return opsAggsCache, nil
+	}
+	aggs, err := buildOpsAggs()
+	if err != nil {
+		return nil, err
+	}
+	opsAggsCache = aggs
+	opsAggsCacheAt = time.Now()
+	return aggs, nil
+}
+
+func buildOpsReport(days int, dauScope string) (*opsReportData, error) {
+	aggs, err := getOpsAggs()
+	if err != nil {
+		return nil, err
+	}
+	// The DAU slice is keyed by user id; map iteration order is irrelevant for
+	// the IN clauses it feeds.
+	ids := make([]int, 0, len(aggs))
+	for id := range aggs {
+		ids = append(ids, id)
 	}
 
 	now := time.Now().Unix()
@@ -519,6 +570,22 @@ func (a *opsUserAgg) manualKey() bool {
 	return a.tokenStats != nil && a.tokenStats.ManualTokenCount > 0
 }
 
+// cliKey reports whether the user created a token through the CLI
+// device-authorization flow. CLI token creation fires activate_success too
+// (see cli_device_authorization.go), so it counts toward activation.
+func (a *opsUserAgg) cliKey() bool {
+	return a.tokenStats != nil && a.tokenStats.CliTokenCount > 0
+}
+
+// activated mirrors the activate_success GA event: the user took a real
+// activation action — created a manual or CLI key, made an API-key request, or
+// had a real playground browse. Auto-provisioned signup tokens and the
+// auto-fired onboarding request are deliberately excluded (they are not real
+// user actions).
+func (a *opsUserAgg) activated() bool {
+	return a.realBrowse() || a.manualKey() || a.usedKey() || a.cliKey()
+}
+
 // opsSubscriptionOrdersAsTopUps folds plg subscription orders into the
 // OpsTopUp shape so downstream aggregates treat plan purchases exactly like
 // top-ups. Balance-paid orders are excluded upstream (double counting).
@@ -637,6 +704,9 @@ func opsRollupFunnel(aggs map[int]*opsUserAgg, keyFn func(*opsUserAgg) string, s
 			groups[key] = row
 		}
 		row.Registrations++
+		if a.activated() {
+			row.Activated++
+		}
 		if a.realBrowse() {
 			row.RealBrowse++
 		}
@@ -765,6 +835,9 @@ func opsRollupKeywords(aggs map[int]*opsUserAgg, limit int) []opsKeywordRow {
 		}
 		acc.campaigns[a.campaign]++
 		acc.row.Registrations++
+		if a.activated() {
+			acc.row.Activated++
+		}
 		if a.realBrowse() {
 			acc.row.RealBrowse++
 		}
