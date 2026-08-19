@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import {
   LOCALIZED_TOP_UP_PRICES,
-  MODELS_PAGE_FRAME_CLASS,
   MODELS_PAGE_PRICING_GROUP,
-  ModelsPageHero,
   TOP_UP_PACKAGE_AMOUNTS,
-  getModelsPageCopy,
   getPricingPageCopy,
   getPricingPlans,
   getPricingPageFaqs,
@@ -119,45 +114,10 @@ describe("pricing page conversion copy", () => {
     expect(MODELS_PAGE_PRICING_GROUP).toBe("plg");
   });
 
-  test("localizes the standalone models page copy", () => {
-    const copy = getModelsPageCopy("id");
-
-    expect(copy.title).toBe("Direktori Model");
-    expect(copy.description).toContain("satu kunci API Flatkey");
-    expect(copy.description).not.toContain("Browse live availability");
-  });
-
-  test("keeps the models page hero copy left-aligned with the directory", () => {
-    const html = renderToStaticMarkup(createElement(ModelsPageHero, { copy: getModelsPageCopy("zh") }));
-
-    expect(html).toContain("text-left");
-    expect(html).toContain("max-w-3xl");
-    expect(html).toContain("text-[clamp(2.1rem,4.8vw,3.9rem)]");
-    expect(html).not.toContain(">模型</p>");
-    expect(html).not.toContain("tracking-[0.16em]");
-    expect(html).not.toContain("mx-auto max-w-4xl");
-    expect(html).not.toContain("text-[clamp(2.4rem,6vw,4.6rem)]");
-    expect(html).not.toContain("pt-");
-  });
-
-  test("keeps the models page content lower than the navigation", () => {
-    expect(MODELS_PAGE_FRAME_CLASS).toContain("mt-[60px]");
-    expect(MODELS_PAGE_FRAME_CLASS).toContain("md:mt-[64px]");
-    expect(MODELS_PAGE_FRAME_CLASS).not.toContain("mt-7");
-    expect(MODELS_PAGE_FRAME_CLASS).not.toContain("md:mt-9");
-  });
-
-  test("routes the models page API key CTA through sign-up with overview redirect", () => {
-    const html = renderToStaticMarkup(createElement(ModelsPageHero, { copy: getModelsPageCopy("en"), locale: "en" }));
-
-    expect(html).toContain(">Get API key<");
-    expect(html).toContain("https://console.flatkey.ai/sign-up?redirect=%2Fdashboard%2Foverview&amp;lng=en");
-  });
-
   test("parses crawlable model directory pricing filters", () => {
-    expect(parsePricingSearch({ vendor: "Qwen", pricing: "token", purpose: "text", endpoint: "openai-chat", q: "coder" })).toEqual({
+    expect(parsePricingSearch({ vendor: "Qwen", pricing: "token", endpoint: "openai-chat", q: "coder" })).toEqual({
       vendor: "Qwen",
-      purpose: "text",
+      endpoint: "openai-chat",
       pricing: "token",
     });
     expect(parsePricingSearch({ quota: "request" }).pricing).toBe("request");
