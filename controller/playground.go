@@ -56,7 +56,7 @@ func Playground(c *gin.Context) {
 	if operation_setting.RequireEmailVerificationForTokens() &&
 		userCache.Role < common.RoleAdminUser &&
 		userCache.Email != "" && userCache.EmailVerifiedAt == 0 {
-		newAPIError = types.NewError(errors.New(i18n.T(c, i18n.MsgUserEmailVerificationRequired)), types.ErrorCodeAccessDenied, types.ErrOptionWithSkipRetry())
+		newAPIError = types.NewError(errors.New(i18n.T(c, i18n.MsgUserEmailVerificationRequiredForAPI)), types.ErrorCodeAccessDenied, types.ErrOptionWithSkipRetry())
 		return
 	}
 

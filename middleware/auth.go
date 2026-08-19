@@ -503,7 +503,7 @@ func TokenAuth() func(c *gin.Context) {
 		if operation_setting.RequireEmailVerificationForTokens() &&
 			userCache.Role < common.RoleAdminUser &&
 			userCache.Email != "" && userCache.EmailVerifiedAt == 0 {
-			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgUserEmailVerificationRequired))
+			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgUserEmailVerificationRequiredForAPI))
 			return
 		}
 

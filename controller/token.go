@@ -357,7 +357,7 @@ func AddToken(c *gin.Context) {
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
 		if errors.Is(err, errTokenEmailVerificationRequired) {
-			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI)
 			return
 		}
 		common.ApiError(c, err)
@@ -406,7 +406,7 @@ func EnsureInitialToken(c *gin.Context) {
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
 		if errors.Is(err, errTokenEmailVerificationRequired) {
-			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI)
 			return
 		}
 		common.ApiError(c, err)
