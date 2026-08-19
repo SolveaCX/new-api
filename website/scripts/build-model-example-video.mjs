@@ -186,18 +186,16 @@ async function main() {
     process.stdout.write("\n");
 
     const mp4 = join(OUT_DIR, `${NAME}.mp4`);
-    // Silent AAC track: the <video> element is muted-autoplay, but keeping the
-    // stream layout identical to the other example clips avoids per-file
-    // special-casing in players.
+    // Video only (-an). A silent AAC track still makes players expose volume
+    // controls and, on some decoders, emit a click at loop boundaries; there is
+    // no audio to carry, so the stream is omitted entirely.
     await run("ffmpeg", [
       "-y", "-v", "error",
       "-framerate", String(FPS),
       "-i", join(work, "f%04d.png"),
-      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-      "-shortest",
-      "-c:v", "libx264", "-preset", "slow", "-crf", "30",
+      "-an",
+      "-c:v", "libx264", "-preset", "slow", "-crf", "28",
       "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-      "-c:a", "aac", "-b:a", "48k",
       mp4,
     ]);
 

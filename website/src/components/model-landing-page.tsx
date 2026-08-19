@@ -97,8 +97,10 @@ type MediaExample = {
   label?: ModelLandingKey;
   prompt?: string;
   fields?: Record<string, string | number | boolean>;
-  // Reference assets the example used, shown read-only next to the uploader.
-  references?: ReadonlyArray<{ kind: "image" | "video" | "audio"; name: string }>;
+  // Reference assets the example used. These load into the workbench's own
+  // reference list on selection, so the editor shows the complete request --
+  // not just its prompt and parameters.
+  references?: ReadonlyArray<{ kind: "image" | "video" | "audio"; name: string; url?: string }>;
 };
 
 type ReferenceImageDraft = {
@@ -107,6 +109,10 @@ type ReferenceImageDraft = {
   size: number;
   type: string;
   previewUrl: string;
+  // Set for assets that came from a selected example rather than a file the
+  // visitor picked. They are swapped out when the example changes, and their
+  // previewUrl is a static path, so it must not be passed to revokeObjectURL.
+  fromExample?: boolean;
 };
 
 type RelatedModelCard = {
@@ -155,32 +161,6 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
         "Create a 16:9 Flatkey brand film: open on the Flatkey logo mark, push into a model catalog showing Seedance next to GPT and Claude, cut to live per-second pricing rows, then land on a generated video preview. Smooth camera moves, clean product lighting, subtle sound design.",
       fields: { ratio: "16:9", resolution: "720p", duration: 6, generate_audio: true },
     },
-    {
-      poster: "/assets/cli/flatkey-brand-ugc.png",
-      video: "/assets/cli/flatkey-brand-ugc.mp4",
-      label: "UGC ad clips",
-      prompt:
-        "Create a 9:16 Flatkey brand UGC ad: a creator opens with a quick product pain point, shows the Flatkey dashboard workflow on a laptop, then ends on a clean CTA card. Natural handheld energy, clear speech-friendly pacing, generated audio on.",
-      fields: { ratio: "9:16", resolution: "720p", duration: 5, generate_audio: true },
-      references: [{ kind: "image", name: "dashboard-hero.png" }],
-    },
-    {
-      poster: "/assets/cli/flatkey-product-motion.png",
-      video: "/assets/cli/flatkey-product-motion.mp4",
-      label: "Product motion",
-      prompt:
-        "Create a 16:9 Flatkey product reveal: start on the logo mark, move into API routing cards and live price rows, then finish with a polished dashboard hero shot. Smooth camera push, crisp UI motion, subtle sound design, generated audio on.",
-      fields: { ratio: "16:9", resolution: "720p", duration: 5, generate_audio: true },
-      references: [{ kind: "image", name: "product-frame.png" }, { kind: "audio", name: "sound-bed.mp3" }],
-    },
-    {
-      poster: "/assets/cli/flatkey-social-variants.png",
-      video: "/assets/cli/flatkey-social-variants.mp4",
-      label: "Social video variants",
-      prompt:
-        "Create a short Flatkey campaign variant for social: three quick scenes show model choice, price comparison, and successful video output. Bright product lighting, simple transitions, readable UI rhythm, generated audio on.",
-      fields: { ratio: "9:16", resolution: "480p", duration: 5, generate_audio: true },
-    },
   ],
   audio: [
     { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
@@ -189,12 +169,28 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
+// Turns an example's declared references into editor drafts. MIME types are
+// synthesized from the declared kind so the existing per-kind grouping, icons,
+// and upstream caps apply to them unchanged.
+function exampleReferenceDrafts(example: MediaExample | undefined): ReferenceImageDraft[] {
+  return (example?.references ?? []).map((reference) => ({
+    id: `example:${reference.name}`,
+    name: reference.name,
+    size: 0,
+    type: `${reference.kind}/*`,
+    previewUrl: reference.url ?? "",
+    fromExample: true,
+  }));
+}
+
 export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null }: Props) {
   const [prompt, setPrompt] = useState(config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
-  const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>([]);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>(() =>
+    exampleReferenceDrafts(config.generator ? MEDIA_EXAMPLES[config.generator.kind][0] : undefined)
+  );
   const [selectedExample, setSelectedExample] = useState(0);
   const generator = config.generator;
   const mediaKind = generator?.kind ?? "text";
@@ -247,15 +243,18 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
   };
 
   const onReset = () => {
-    referenceImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    referenceImages.forEach((image) => {
+      if (!image.fromExample) URL.revokeObjectURL(image.previewUrl);
+    });
     setPrompt(config.examplePrompt);
     setFieldValues(buildInitialGeneratorValues(config));
     setReferenceImages([]);
     setSelectedExample(0);
   };
 
-  // Picking an example replays the request that produced it. Uploaded files are
-  // left alone: they are the visitor's own assets, not part of the example.
+  // Picking an example replays the whole request that produced it: prompt,
+  // parameters, and reference assets. Files the visitor uploaded themselves are
+  // kept; only the previous example's assets are swapped out.
   const onExampleSelect = (index: number) => {
     setSelectedExample(index);
     const example = generator ? MEDIA_EXAMPLES[generator.kind][index] : undefined;
@@ -264,6 +263,10 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     if (example.fields) {
       setFieldValues((current) => ({ ...current, ...example.fields }));
     }
+    setReferenceImages((current) => [
+      ...exampleReferenceDrafts(example),
+      ...current.filter((item) => !item.fromExample),
+    ]);
   };
 
   return (
@@ -424,7 +427,7 @@ function FlatkeyModelDetailPage(props: {
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
                     <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
                   </span>
-                  <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
+                  <span>{model ? pageProfile.kindLabel : props.t("Catalog data unavailable")}</span>
                 </div>
 
                 <div className="mb-3 flex items-center gap-3">
@@ -460,17 +463,13 @@ function FlatkeyModelDetailPage(props: {
                   {pageProfile.summary}
                 </p>
 
-                {/* Model type, use cases, and capabilities read as continuations
-                    of the description, so they stay in the same column instead
-                    of competing with it from a sidebar. */}
+                {/* Capabilities read as a continuation of the description, so
+                    they stay in the same column instead of competing with it
+                    from a sidebar. The modality moved up to the status pill. */}
                 <div
                   data-model-hero-attributes="true"
                   className="mt-4 grid max-w-4xl gap-2.5 text-xs"
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ModelTypeChip label={props.t("Model Type")} value={pageProfile.kindLabel} active />
-                  </div>
-
                   <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
                     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-blue-500/8 px-2 font-bold text-blue-700">
                       <Zap className="size-3.5" />
@@ -502,16 +501,16 @@ function FlatkeyModelDetailPage(props: {
         <ModelPageTabs t={props.t} generator={Boolean(generator)} />
 
         {generator ? (
-          <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-8 dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="mx-auto max-w-7xl">
+          <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
               <ExamplePicker
                 examples={examples}
                 selected={props.selectedExample}
                 onSelect={props.onExampleSelect}
                 t={props.t}
               />
-              <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)] lg:items-start">
-                <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="grid gap-6 p-5 lg:grid-cols-2 lg:items-start">
+                <div className="min-w-0">
                   <PanelHeader title={props.t("Input")} right={props.t("Form")} />
                   <MediaPromptEditor
                     generator={generator}
@@ -524,18 +523,18 @@ function FlatkeyModelDetailPage(props: {
                     onReferenceImagesChange={props.onReferenceImagesChange}
                     t={props.t}
                   />
-                  <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="mt-4 grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={props.onReset}
-                      className="inline-flex min-h-12 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-[#3f4652] transition hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+                      className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-[#3f4652] transition hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
                     >
                       {props.t("Reset")}
                     </button>
                     <a
                       href={runHref}
                       onClick={props.onRunClick}
-                      className="flatkey-hero-cta inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
+                      className="flatkey-hero-cta inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
                     >
                       <WandSparkles className="size-4" />
                       {props.t("Start generating")}
@@ -543,7 +542,7 @@ function FlatkeyModelDetailPage(props: {
                   </div>
                 </div>
 
-                <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
+                <div className="min-w-0">
                   <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
                   <div className="mt-4">
                     <OutputPreview
@@ -1682,27 +1681,27 @@ function MediaPromptEditor(props: {
   };
 
   const removeReferenceImage = (image: ReferenceImageDraft) => {
-    URL.revokeObjectURL(image.previewUrl);
+    if (!image.fromExample) URL.revokeObjectURL(image.previewUrl);
     props.onReferenceImagesChange(props.referenceImages.filter((item) => item.id !== image.id));
   };
 
   return (
     <>
-      <label className="block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
+      <label className="block text-xs font-semibold text-[#2c2d33] dark:text-white/88">
         {props.t("Prompt")}
         <textarea
           value={props.prompt}
           onChange={(event) => props.onPromptChange(event.target.value)}
-          className="mt-2 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="mt-1.5 min-h-[92px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3 font-mono text-[13px] leading-5 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       </label>
-      <div className="mt-2 text-right text-xs font-medium text-muted-foreground">
+      <div className="mt-1 text-right text-[11px] font-medium text-muted-foreground">
         {props.prompt.length} / 10000
       </div>
 
       {supportsReferenceMedia ? (
-        <div className="mt-5 grid gap-3">
-          <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Reference media")}</div>
+        <div className="mt-4 grid gap-2">
+          <div className="text-xs font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Reference media")}</div>
           {referenceKinds.map((kind) => (
             <ReferenceMediaSection
               key={kind.key}
@@ -1720,7 +1719,7 @@ function MediaPromptEditor(props: {
         </div>
       ) : null}
 
-      <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-6">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
         {fields.map((field) => (
           <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
             <GeneratorFieldControl
@@ -1754,11 +1753,11 @@ function ReferenceMediaSection(props: {
     <div
       data-reference-media-kind={props.kind}
       data-reference-media-limit={props.max}
-      className="rounded-lg border border-slate-200 bg-[#fbfcff] p-3 dark:border-white/10 dark:bg-white/[0.03]"
+      className="rounded-lg border border-slate-200 bg-[#fbfcff] p-2.5 dark:border-white/10 dark:bg-white/[0.03]"
     >
       <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-xs font-bold text-[#475467] dark:text-white/72">{props.label}</span>
-        <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/40">
+        <span className="text-[11px] font-bold text-[#475467] dark:text-white/72">{props.label}</span>
+        <span className="text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
           {props.items.length}/{props.max}
         </span>
       </div>
@@ -1766,11 +1765,13 @@ function ReferenceMediaSection(props: {
       {props.items.length > 0 ? (
         <div className="mb-2 grid gap-2 sm:grid-cols-2">
           {props.items.map((item) => (
-            <div key={item.id} className="grid grid-cols-[2.75rem_1fr_auto] items-center gap-2.5 rounded-lg border border-slate-200 bg-white/80 p-2 dark:border-white/10 dark:bg-white/[0.05]">
+            <div key={item.id} className="grid grid-cols-[2.25rem_1fr_auto] items-center gap-2 rounded-lg border border-slate-200 bg-white/80 p-1.5 dark:border-white/10 dark:bg-white/[0.05]">
               <ReferenceMediaThumb item={item} />
               <div className="min-w-0">
                 <div className="truncate text-[11px] font-bold text-[#2c2d33] dark:text-white/84">{item.name}</div>
-                <div className="mt-0.5 text-[10px] font-medium text-[#8b8891] dark:text-white/44">{formatUploadedSize(item.size)}</div>
+                <div className="mt-0.5 text-[10px] font-medium text-[#8b8891] dark:text-white/44">
+                  {item.fromExample ? props.t("From example") : formatUploadedSize(item.size)}
+                </div>
               </div>
               <button
                 type="button"
@@ -1820,14 +1821,14 @@ function GeneratorFieldControl(props: {
   const options = generatorFieldSelectOptions(props.field, props.t);
 
   return (
-    <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
       <span>{props.t(props.field.label)}</span>
       {options.length > 0 ? (
         <span className="relative block">
           <select
             value={String(props.value)}
             onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+            className="h-9 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
           >
             {options.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
@@ -1840,7 +1841,7 @@ function GeneratorFieldControl(props: {
           type="text"
           value={String(props.value)}
           onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-          className="h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       )}
       {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b93a3] normal-case">{props.t(props.field.help)}</span> : null}
@@ -1851,10 +1852,13 @@ function GeneratorFieldControl(props: {
 function ReferenceMediaThumb(props: {
   item: ReferenceImageDraft;
 }) {
-  if (props.item.type.startsWith("image/")) {
+  // Example assets keep a static poster path even for video/audio, so preview
+  // on "has a URL" rather than on the declared kind.
+  const showsPreview = props.item.previewUrl !== "" && !props.item.type.startsWith("audio/");
+  if (showsPreview) {
     return (
       <div className="relative aspect-square overflow-hidden rounded-lg bg-white">
-        <Image src={props.item.previewUrl} alt="" fill sizes="52px" className="object-cover" unoptimized />
+        <Image src={props.item.previewUrl} alt="" fill sizes="44px" className="object-cover" unoptimized />
       </div>
     );
   }
@@ -1962,17 +1966,16 @@ function ExamplePicker(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   if (props.examples.length === 0) return null;
-  const active = props.examples[props.selected] ?? props.examples[0];
 
   return (
-    <div data-model-example-picker="true" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-white/10 dark:bg-white/[0.04]">
+    <div data-model-example-picker="true" className="border-b border-slate-200 px-5 pt-4 pb-4 dark:border-white/10">
       <div className="mb-3">
-        <h2 className="text-base font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.t("Examples")}</h2>
-        <p className="mt-1 text-xs font-medium text-[#7b8494] dark:text-white/48">
+        <h2 className="text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.t("Examples")}</h2>
+        <p className="mt-0.5 text-[11px] font-medium text-[#7b8494] dark:text-white/48">
           {props.t("Explore different use cases and parameter configurations")}
         </p>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-2.5">
         {props.examples.map((example, index) => {
           const isActive = index === props.selected;
           return (
@@ -1982,13 +1985,13 @@ function ExamplePicker(props: {
               onClick={() => props.onSelect(index)}
               aria-pressed={isActive}
               data-active-example={isActive ? "true" : undefined}
-              className={`relative size-[104px] shrink-0 overflow-hidden rounded-xl border-2 transition active:scale-[0.97] ${
+              className={`relative size-[76px] shrink-0 overflow-hidden rounded-lg border-2 transition active:scale-[0.97] ${
                 isActive
                   ? "border-blue-500 shadow-[0_10px_26px_-16px_rgba(37,99,235,.8)]"
                   : "border-transparent opacity-80 hover:opacity-100"
               }`}
             >
-              <Image src={example.poster} alt="" fill sizes="104px" className="object-cover" />
+              <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
               {example.video ? (
                 <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
                   {props.t("Video")}
@@ -1999,20 +2002,6 @@ function ExamplePicker(props: {
           );
         })}
       </div>
-      {active?.references && active.references.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-bold text-[#5f6673] dark:text-white/54">{props.t("Reference media")}</span>
-          {active.references.map((reference) => (
-            <span
-              key={`${reference.kind}-${reference.name}`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-[#fbfcff] px-2 py-1 text-[11px] font-semibold text-[#626b78] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/62"
-            >
-              {reference.kind === "video" ? <FileVideo className="size-3" /> : reference.kind === "audio" ? <FileAudio className="size-3" /> : <ImageIcon className="size-3" />}
-              {reference.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -2040,6 +2029,7 @@ function OutputPreview(props: {
           autoPlay
           controls
           loop
+          muted
           playsInline
           poster={primary.poster}
           preload="metadata"
@@ -2058,6 +2048,7 @@ function OutputPreview(props: {
             autoPlay
             controls
             loop
+            muted
             playsInline
             poster={primary.poster}
             preload="metadata"
@@ -3173,9 +3164,9 @@ function RequestPreview(props: {
 
 function PanelHeader(props: { title: string; right: string }) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-3">
-      <h2 className="min-w-0 text-base font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.title}</h2>
-      <span className="shrink-0 rounded-full border border-violet-500/12 bg-violet-500/8 px-3 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300">
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="min-w-0 text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.title}</h2>
+      <span className="shrink-0 rounded-full border border-violet-500/12 bg-violet-500/8 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300">
         {props.right}
       </span>
     </div>

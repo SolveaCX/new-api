@@ -748,6 +748,7 @@ export type ModelLandingKey =
   | "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control."
   | "Up to 50 assets"
   | "Video price"
+  | "From example"
   | "More AI models from {{provider}}"
   | "Examples"
   | "Brand film"
@@ -1156,6 +1157,7 @@ const en: Record<ModelLandingKey, string> = {
   "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
   "Up to 50 assets": "Up to 50 assets",
   "Video price": "Video price",
+  "From example": "From example",
   "More AI models from {{provider}}": "More AI models from {{provider}}",
   "Examples": "Examples",
   "Brand film": "Brand film",
@@ -1473,6 +1475,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "单次请求最多 50 个素材：图像、视频和音频，并支持首帧与首尾帧控制。",
     "Up to 50 assets": "最多 50 个素材",
     "Video price": "视频价格",
+    "From example": "来自示例",
     "More AI models from {{provider}}": "{{provider}} 的更多 AI 模型",
     "Brand film": "品牌宣传片",
     "Reference Videos": "参考视频",
@@ -1597,6 +1600,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hasta 50 assets por solicitud: imágenes, videos y audio, con control de primer fotograma y de primer/último fotograma.",
     "Up to 50 assets": "Hasta 50 assets",
     "Video price": "Precio de video",
+    "From example": "Del ejemplo",
     "More AI models from {{provider}}": "Más modelos de IA de {{provider}}",
     "Examples": "Ejemplos",
     "Brand film": "Video de marca",
@@ -1726,6 +1730,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Jusqu'à 50 assets par requête : images, vidéos et audio, avec contrôle de la première image et des première/dernière images.",
     "Up to 50 assets": "Jusqu'à 50 assets",
     "Video price": "Prix vidéo",
+    "From example": "Issu de l'exemple",
     "More AI models from {{provider}}": "Plus de modèles IA de {{provider}}",
     "Examples": "Exemples",
     "Brand film": "Film de marque",
@@ -1855,6 +1860,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Até 50 assets por requisição: imagens, vídeos e áudio, com controle de primeiro quadro e de primeiro/último quadro.",
     "Up to 50 assets": "Até 50 assets",
     "Video price": "Preço de vídeo",
+    "From example": "Do exemplo",
     "More AI models from {{provider}}": "Mais modelos de IA da {{provider}}",
     "Examples": "Exemplos",
     "Brand film": "Vídeo de marca",
@@ -1984,6 +1990,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "До 50 материалов на запрос: изображения, видео и аудио, с управлением первым кадром и первым/последним кадром.",
     "Up to 50 assets": "До 50 материалов",
     "Video price": "Цена видео",
+    "From example": "Из примера",
     "More AI models from {{provider}}": "Другие ИИ-модели {{provider}}",
     "Examples": "Примеры",
     "Brand film": "Бренд-ролик",
@@ -2113,6 +2120,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "1 リクエストにつき最大 50 点の素材（画像・動画・音声）。先頭フレームと先頭／末尾フレームの指定にも対応します。",
     "Up to 50 assets": "最大 50 点の素材",
     "Video price": "動画料金",
+    "From example": "サンプルから",
     "More AI models from {{provider}}": "{{provider}} の他の AI モデル",
     "Examples": "サンプル",
     "Brand film": "ブランドフィルム",
@@ -2242,6 +2250,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Tối đa 50 tư liệu mỗi yêu cầu: hình ảnh, video và âm thanh, kèm điều khiển khung hình đầu và khung hình đầu/cuối.",
     "Up to 50 assets": "Tối đa 50 tư liệu",
     "Video price": "Giá video",
+    "From example": "Từ ví dụ",
     "More AI models from {{provider}}": "Thêm mô hình AI từ {{provider}}",
     "Examples": "Ví dụ",
     "Brand film": "Phim thương hiệu",
@@ -2371,6 +2380,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Bis zu 50 Assets pro Anfrage: Bilder, Videos und Audio, inklusive Steuerung von erstem Frame und erstem/letztem Frame.",
     "Up to 50 assets": "Bis zu 50 Assets",
     "Video price": "Videopreis",
+    "From example": "Aus Beispiel",
     "More AI models from {{provider}}": "Weitere KI-Modelle von {{provider}}",
     "Examples": "Beispiele",
     "Brand film": "Markenfilm",
@@ -3180,6 +3190,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hingga 50 aset per permintaan: gambar, video, dan audio, termasuk kontrol frame pertama dan frame pertama/terakhir.",
     "Up to 50 assets": "Hingga 50 aset",
     "Video price": "Harga video",
+    "From example": "Dari contoh",
     "More AI models from {{provider}}": "Model AI lain dari {{provider}}",
     "Examples": "Contoh",
     "Brand film": "Film brand",
