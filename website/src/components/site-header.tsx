@@ -245,6 +245,10 @@ const mobileMenuButtonClass =
   "inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition duration-200 ease-out hover:border-[#D8D1E2] hover:bg-[#F8F4FF] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] focus-visible:ring-offset-2 min-[901px]:hidden";
 const mobileMenuButtonOpenClass =
   "border-[#C9B8FF] bg-[#F3EDFF] text-[#6B46C1] shadow-[inset_0_0_0_1px_rgba(124,58,237,.18),0_12px_26px_-18px_rgba(76,29,149,.65)]";
+const mobilePrimaryActionClass =
+  "flex min-h-12 items-center justify-center rounded-xl bg-[#070707] px-4 py-3 text-base font-bold text-white shadow-[0_14px_30px_-20px_rgba(11,11,15,.8)] transition hover:bg-[#17171B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] focus-visible:ring-offset-2";
+const mobileSecondaryActionClass =
+  "flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const mobileNavRowClass =
   "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold text-[#0B0B0F] transition hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const mobileNavActiveClass = "bg-[#F3EDFF] text-[#6B46C1]";
@@ -286,9 +290,10 @@ export function SiteHeaderDesktopActions(
       </a>
       {props.consoleSessionActive ? (
         <a
-          className={desktopSecondaryActionClass}
+          className={desktopPrimaryActionClass}
           href={props.contactSalesHref}
           aria-label={props.contactSalesLabel}
+          style={{ color: "#fff" }}
         >
           <span>{props.contactSalesLabel}</span>
         </a>
@@ -807,9 +812,14 @@ export function SiteHeader(props: Props) {
         </div>
 
         <a
-          className="ml-auto inline-flex h-10 max-w-[8.5rem] shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] bg-[#070707] px-3 text-[13px] font-bold text-ellipsis text-white no-underline shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)] min-[901px]:hidden"
+          className={cn(
+            "ml-auto h-10 max-w-[8.5rem] shrink-0 overflow-hidden whitespace-nowrap rounded-[9px] px-3 text-[13px] font-bold text-ellipsis no-underline min-[901px]:hidden",
+            consoleSessionActive
+              ? "inline-flex items-center justify-center border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95]"
+              : "inline-flex items-center justify-center bg-[#070707] text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)]",
+          )}
           href={primaryActionHref}
-          style={{ color: "#fff" }}
+          style={consoleSessionActive ? undefined : { color: "#fff" }}
         >
           {primaryActionLabel}
         </a>
@@ -847,7 +857,7 @@ export function SiteHeader(props: Props) {
       >
         <div className="mb-3 grid gap-2">
           <a
-            className="flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none"
+            className={mobileSecondaryActionClass}
             href={accountHref}
             aria-label={accountLabel}
           >
@@ -855,9 +865,10 @@ export function SiteHeader(props: Props) {
           </a>
           {consoleSessionActive ? (
             <a
-              className="flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none"
+              className={mobilePrimaryActionClass}
               href={contactSalesHref}
               aria-label={copy.nav.contactSales}
+              style={{ color: "#fff" }}
             >
               <span>{copy.nav.contactSales}</span>
             </a>
