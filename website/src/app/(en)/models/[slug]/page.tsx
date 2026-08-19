@@ -8,6 +8,7 @@ import {
 } from "@/lib/model-landing";
 import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+import { fetchModelUsage } from "@/lib/model-usage";
 import { fetchRankingsData } from "@/lib/rankings-live";
 import { buildMetadata } from "@/lib/seo";
 import { getSkagLandingMetadataInput } from "@/lib/skag-landing";
@@ -61,6 +62,9 @@ export default async function Page(props: Props) {
     getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
     fetchRankingsData(),
   ]);
+  // Keyed, server-only: WEBSITE_METRICS_KEY must not reach the browser, so the
+  // series is resolved here and passed down as a prop.
+  const usage = await fetchModelUsage(config?.modelId ?? params.slug);
   const models = pricing.models.map((model) => ({
     ...model,
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
@@ -75,6 +79,7 @@ export default async function Page(props: Props) {
         allModels={models}
         groupRatio={pricing.groupRatio}
         rankings={rankings}
+        usage={usage}
       />
     );
   }
@@ -95,6 +100,7 @@ export default async function Page(props: Props) {
       allModels={models}
       groupRatio={pricing.groupRatio}
       rankings={rankings}
+      usage={usage}
     />
   );
 }

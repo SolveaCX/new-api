@@ -75,6 +75,7 @@ import {
   type DisplayPricingDimension,
   type PricingModel,
 } from "@/lib/pricing";
+import type { ModelUsage } from "@/lib/model-usage";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -85,6 +86,8 @@ type Props = {
   allModels?: PricingModel[];
   groupRatio?: Record<string, number>;
   rankings?: RankingsData | null;
+  /** Daily call counts, resolved server-side; null hides the Activity section. */
+  usage?: ModelUsage | null;
 };
 
 type GtagWindow = Window & {
@@ -187,7 +190,7 @@ function exampleReferenceDrafts(example: MediaExample | undefined): ReferenceIma
   }));
 }
 
-export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null }: Props) {
+export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null, usage = null }: Props) {
   const [prompt, setPrompt] = useState(config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
@@ -292,6 +295,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       allModels={allModels}
       groupRatio={groupRatio}
       rankings={rankings}
+      usage={usage}
       t={t}
     />
   );
@@ -315,6 +319,7 @@ function FlatkeyModelDetailPage(props: {
   allModels: PricingModel[];
   groupRatio: Record<string, number>;
   rankings: RankingsData | null;
+  usage: ModelUsage | null;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
@@ -598,8 +603,7 @@ function FlatkeyModelDetailPage(props: {
 
         <ModelActivitySection
           modelId={props.config.modelId}
-          rankings={props.rankings}
-          trend={healthTrend}
+          usage={props.usage}
           t={props.t}
         />
 
@@ -2181,74 +2185,69 @@ function GeneratedExamplesCarousel(props: {
   );
 }
 
-// Activity: where this model sits in Flatkey's own traffic. The console's usage
-// breakdown is behind auth, so this reads the public /api/rankings feed -- the
-// same source the rankings page uses -- and scopes it to this model plus its
-// nearest peers rather than showing the whole leaderboard.
+// Activity: this model's daily call volume, mirroring the console dashboard's
+// quota-distribution chart. The console reads /api/data, which is admin/user
+// scoped; the public page reads the keyed /api/website/model-usage feed, which
+// returns call counts only -- no quota, users, or channels.
+//
+// Renders nothing when there is no series: a chart of zeroes says less than no
+// section at all, and a model can be new, unused, or on a deployment with no
+// WEBSITE_METRICS_KEY configured.
 function ModelActivitySection(props: {
   modelId: string;
-  rankings: RankingsData | null;
-  trend: HomeTrendPoint[];
+  usage: ModelUsage | null;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const rows = props.rankings?.models ?? [];
-  const own = findRankingRow(rows, props.modelId);
-  if (!own) return null;
+  const points = props.usage?.points ?? [];
+  if (points.length === 0) return null;
 
-  // Peers are the neighbours in the ranking, so the share bars have a scale a
-  // reader can judge against instead of floating on their own.
-  const index = rows.indexOf(own);
-  const peers = rows.slice(Math.max(0, index - 2), Math.max(0, index - 2) + 5);
-  const peak = Math.max(...peers.map((row) => row.total_tokens), 1);
+  const peak = Math.max(...points.map((point) => point.count), 1);
+  const busiest = points.reduce((best, point) => (point.count > best.count ? point : best), points[0]);
+  const average = Math.round(points.reduce((sum, point) => sum + point.count, 0) / points.length);
 
   return (
-    <section id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-white px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]">
+    <section id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-white px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
           eyebrow={props.t("Activity")}
-          title={props.t("Where {{model}} sits in Flatkey traffic", { model: props.modelId })}
-          description={props.t("Monthly token share from Flatkey rankings.")}
+          title={props.t("Daily {{model}} requests on Flatkey", { model: props.modelId })}
+          description={props.t("Request volume routed through Flatkey over the last 30 days.")}
         />
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
+        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.4fr)] lg:items-start">
           <div className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]">
-            <div className="grid gap-2.5">
-              {peers.map((row) => {
-                const isSelf = row === own;
-                return (
-                  <div key={row.model_name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-                    <div className="min-w-0">
-                      <div className="mb-1 flex items-baseline gap-2">
-                        <span className={`truncate font-mono text-[12px] ${isSelf ? "font-bold text-blue-700 dark:text-blue-300" : "font-semibold text-[#5f6673] dark:text-white/62"}`}>
-                          {row.model_name}
-                        </span>
-                        <span className="shrink-0 text-[10px] font-bold text-[#98a2b3]">#{row.rank}</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-                        <div
-                          className={`h-full rounded-full ${isSelf ? "bg-blue-500" : "bg-slate-400/70 dark:bg-white/24"}`}
-                          style={{ width: `${Math.max(4, (row.total_tokens / peak) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <span className="shrink-0 font-mono text-[12px] font-semibold text-[#626b78] dark:text-white/58">
-                      {formatCallCount(displayRankingTokens(row.total_tokens))}
-                    </span>
-                  </div>
-                );
-              })}
+            <div className="flex h-32 items-end gap-[3px]">
+              {points.map((point) => (
+                <div
+                  key={point.date}
+                  title={`${formatUsageDate(point.date)} · ${formatCallCount(point.count)}`}
+                  className="min-w-0 flex-1 rounded-t-[2px] bg-gradient-to-t from-violet-500/70 to-violet-500 transition hover:from-violet-600 hover:to-violet-500"
+                  // Zero-count days still get a hairline so gaps in the series
+                  // read as "no traffic" rather than as missing bars.
+                  style={{ height: `${Math.max(2, (point.count / peak) * 100)}%` }}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between text-[10px] font-medium text-[#98a2b3]">
+              <span>{formatUsageDate(points[0].date)}</span>
+              <span>{formatUsageDate(points[points.length - 1].date)}</span>
             </div>
           </div>
-          <div className="grid gap-3">
-            <FlatkeyMetricCard label={props.t("Rank")} value={`#${own.rank}`} />
-            <FlatkeyMetricCard
-              label={props.t("Monthly tokens")}
-              value={formatCallCount(displayRankingTokens(own.total_tokens))}
-            />
+          <div className="grid gap-2.5">
+            <FlatkeyMetricCard label={props.t("Total requests")} value={formatCallCount(props.usage?.total)} />
+            <FlatkeyMetricCard label={props.t("Daily average")} value={formatCallCount(average)} />
+            <FlatkeyMetricCard label={props.t("Busiest day")} value={formatUsageDate(busiest.date)} />
           </div>
         </div>
       </div>
     </section>
   );
+}
+
+function formatUsageDate(unixSeconds: number): string {
+  // UTC to match the bucketing the API does; a local-time render would shift
+  // labels by a day for readers west of UTC.
+  const date = new Date(unixSeconds * 1000);
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
 }
 
 // Quick Start is the console overview's integration section, reproduced on the

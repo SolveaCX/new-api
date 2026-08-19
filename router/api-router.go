@@ -71,6 +71,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.GET("/website/pricing", controller.GetWebsitePricing)
 		apiRouter.GET("/website/pricing/v2", controller.GetWebsitePricingV2)
+		apiRouter.GET("/website/model-usage", controller.GetWebsiteModelUsage)
 		dataToolRoute := apiRouter.Group("/data-tools")
 		{
 			// Catalog browsing is available to an authenticated dashboard
@@ -85,6 +86,12 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			perfMetricsRoute.GET("/summary", controller.GetPerfMetricsSummary)
 			perfMetricsRoute.GET("", controller.GetPerfMetrics)
+		}
+		modelHandoffRoute := apiRouter.Group("/model-handoffs")
+		modelHandoffRoute.Use(middleware.CORS())
+		{
+			modelHandoffRoute.POST("", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateModelHandoffDraft)
+			modelHandoffRoute.GET("/:handoff_id", middleware.UserAuth(), controller.GetModelHandoffDraft)
 		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
