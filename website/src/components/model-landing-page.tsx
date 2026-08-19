@@ -24,13 +24,16 @@ import {
   Sparkles,
   Terminal,
   TerminalSquare,
+  Check,
   Timer,
   Trash2,
+  X,
   Upload,
   Video,
   WandSparkles,
   Zap,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
@@ -59,7 +62,7 @@ import {
   type ModelGeneratorField,
   type ModelLandingKey,
 } from "@/lib/model-landing";
-import { consoleUrl, ROUTER_ORIGIN } from "@/lib/origins";
+import { consoleUrl, SITE_ORIGIN } from "@/lib/origins";
 import {
   formatGroupRequestPrice,
   formatGroupTokenPrice,
@@ -75,6 +78,17 @@ import {
   type DisplayPricingDimension,
   type PricingModel,
 } from "@/lib/pricing";
+import {
+  buildAgentInstallCommand,
+  buildApiSnippet,
+  buildSdkSnippet,
+  detectAgentPlatform,
+  snippetKindForEndpoint,
+  CLI_INSTALL_COMMAND,
+  CLI_LOGIN_COMMAND,
+  type AgentPlatform,
+  type SnippetLanguage,
+} from "@/lib/model-snippets";
 import type { ModelUsage } from "@/lib/model-usage";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
@@ -2250,10 +2264,15 @@ function formatUsageDate(unixSeconds: number): string {
   return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
 }
 
-// Quick Start is the console overview's integration section, reproduced on the
-// public page so the four entry points read identically before and after
-// sign-in. Copy is kept verbatim from
-// web/default/src/features/dashboard/components/overview/integration-cards.tsx.
+// Quick Start reproduces the console overview's integration section: the same
+// four cards, each opening the same stepped dialog
+// (web/default/src/features/dashboard/components/overview/integration-dialog.tsx).
+//
+// Two differences, both because this is the public page: the model is fixed to
+// this page's model rather than picked from a dropdown, and there is no
+// signed-in key, so samples read $FLATKEY_API_KEY from the environment.
+type QuickStartId = "api" | "sdk" | "cli" | "agent";
+
 function ModelQuickStart(props: {
   config: ModelConfig;
   locale: Locale;
@@ -2261,76 +2280,309 @@ function ModelQuickStart(props: {
   onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const cards = [
+  const [openCard, setOpenCard] = useState<QuickStartId | null>(null);
+
+  const cards: Array<{ id: QuickStartId; icon: ReactNode; title: string; body: string }> = [
     {
+      id: "api",
       icon: <TerminalSquare className="size-5" />,
       title: props.t("API for developers"),
       body: props.t("Call any model with an OpenAI-compatible API. Copy a ready-to-run example for your model and language."),
     },
     {
+      id: "sdk",
       icon: <Braces className="size-5" />,
       title: props.t("SDKs for developers"),
       body: props.t("Use the OpenAI SDK you already know — with Flatkey as the gateway."),
     },
     {
+      id: "cli",
       icon: <Terminal className="size-5" />,
       title: props.t("Flatkey CLI"),
       body: props.t("Generate images and videos from your terminal. Let your AI assistant drive the workflow."),
     },
     {
+      id: "agent",
       icon: <Bot className="size-5" />,
       title: props.t("Codex & Claude Code"),
       body: props.t("Connect your coding agent with one command, then use Flatkey from your existing projects."),
     },
   ];
 
-  const snippet = [
-    `curl "${ROUTER_ORIGIN}/v1/videos" \\`,
-    '  -H "Content-Type: application/json" \\',
-    '  -H "Authorization: Bearer $FLATKEY_API_KEY" \\',
-    `  -d '{"model":"${props.config.modelId}","content":[{"type":"text","text":"..."}]}'`,
-  ].join("\n");
+  const active = cards.find((card) => card.id === openCard) ?? null;
 
   return (
     <section id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold tracking-tight">{props.t("Choose how you'll use Flatkey")}</h2>
-          <p className="text-sm text-muted-foreground">{props.t("All four options use the same account and model catalog.")}</p>
+          <h2 className="text-lg font-semibold tracking-tight">{props.t("Start calling {{model}} in minutes", { model: props.config.displayName })}</h2>
+          <p className="text-sm text-muted-foreground">{props.t("Pick an integration path — all four use the same account and model catalog.")}</p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {cards.map((card) => (
-            <div
-              key={card.title}
-              className="rounded-xl border border-slate-200 bg-white p-5 transition hover:border-violet-500/35 dark:border-white/10 dark:bg-white/[0.04]"
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => setOpenCard(card.id)}
+              className="rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-violet-500/35 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] active:scale-[0.995] dark:border-white/10 dark:bg-white/[0.04]"
             >
               <span className="grid size-10 place-items-center rounded-lg bg-violet-500/10 text-violet-700 dark:text-violet-300">
                 {card.icon}
               </span>
               <h3 className="mt-4 text-[15px] font-semibold text-[#20222a] dark:text-white/90">{card.title}</h3>
               <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{card.body}</p>
-            </div>
+            </button>
           ))}
         </div>
-        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] dark:border-white/10">
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
-            <span className="font-mono text-[11px] font-semibold text-white/62">
-              {props.t("Ready-to-run example for {{model}}", { model: props.config.modelId })}
-            </span>
-            <a
-              href={props.runHref}
-              onClick={props.onRunClick}
-              className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/86 transition hover:bg-white/16"
-            >
-              {props.t("Open in console")}
-            </a>
-          </div>
-          <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6 text-white/82">{snippet}</pre>
-        </div>
       </div>
+
+      {active ? (
+        <QuickStartDialog
+          card={active}
+          modelId={props.config.modelId}
+          endpoint={props.config.generator?.endpoint ?? "/v1/chat/completions"}
+          runHref={props.runHref}
+          onRunClick={props.onRunClick}
+          onClose={() => setOpenCard(null)}
+          t={props.t}
+        />
+      ) : null}
     </section>
   );
 }
+
+function QuickStartDialog(props: {
+  card: { id: QuickStartId; title: string; body: string };
+  modelId: string;
+  endpoint: string;
+  runHref: string;
+  onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onClose: () => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const [language, setLanguage] = useState<SnippetLanguage>("curl");
+  const [platform, setPlatform] = useState<AgentPlatform>(() =>
+    detectAgentPlatform(typeof navigator === "undefined" ? "" : navigator.userAgent)
+  );
+  const kind = snippetKindForEndpoint(props.endpoint);
+  const { onClose } = props;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    // The dialog scrolls internally; letting the page scroll behind it makes
+    // the backdrop feel detached.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  // The second step's label follows the model kind: a video model is an async
+  // two-call flow, not a single ready-to-run request, and saying so up front is
+  // what makes the numbered steps in the sample legible.
+  const stepTwoLabel =
+    kind === "video"
+      ? props.t("Step 2 · Submit a video task, then poll for the result")
+      : kind === "image"
+        ? props.t("Step 2 · Copy a ready-to-run image request")
+        : props.t("Step 2 · Copy a ready-to-run request");
+
+  const keyStep = (
+    <QuickStartStep label={props.t("Step 1 · Create an API key")}>
+      <a
+        href={consoleUrl("/dashboard/keys")}
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+      >
+        <KeyRound className="size-3.5" />
+        {props.t("Open the console")}
+      </a>
+    </QuickStartStep>
+  );
+
+  // Portal to <body>: rendering in place would nest the dialog inside the
+  // page's stacking contexts, where the sticky header (z-50) and the section
+  // tab bar (z-30) paint over it.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={props.card.title}
+      data-quick-start-dialog={props.card.id}
+      className="fk-quick-start-overlay fixed inset-0 z-[999] grid place-items-center overflow-y-auto bg-black/55 px-4 py-8 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="my-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#0d1017]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold tracking-tight">{props.card.title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{props.card.body}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={props.t("Close")}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-[#6b7280] transition hover:bg-slate-500/10 hover:text-[#111827] dark:text-white/54"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        {props.card.id === "api" || props.card.id === "sdk" ? (
+          <div className="mt-5 grid gap-4">
+            {keyStep}
+            <QuickStartStep label={props.card.id === "api" ? stepTwoLabel : props.t("Step 2 · Copy the SDK setup")}>
+              <QuickStartTabs
+                options={[
+                  { value: "curl", label: "cURL" },
+                  { value: "node", label: "Node.js" },
+                  { value: "python", label: "Python" },
+                ]}
+                value={language}
+                onChange={(value) => setLanguage(value as SnippetLanguage)}
+              />
+              {/* The model is this page's model — no picker, unlike the console
+                  dialog, where the reader has a whole catalog to choose from. */}
+              <div className="mt-2 text-[11px] font-semibold text-muted-foreground">
+                {props.t("Model")}: <span className="font-mono">{props.modelId}</span>
+              </div>
+              <CodeBlock
+                code={
+                  props.card.id === "api"
+                    ? buildApiSnippet(language, props.modelId, kind)
+                    : buildSdkSnippet(language, props.modelId, kind)
+                }
+                t={props.t}
+              />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        {props.card.id === "cli" ? (
+          <div className="mt-5 grid gap-4">
+            <QuickStartStep label={props.t("Step 1 · Install the CLI")} hint={props.t("Copy the command below and paste it into your terminal.")}>
+              <CodeBlock code={CLI_INSTALL_COMMAND} t={props.t} />
+            </QuickStartStep>
+            <QuickStartStep label={props.t("Step 2 · Sign in")} hint={props.t("Run this command in your terminal to connect your account.")}>
+              <CodeBlock code={CLI_LOGIN_COMMAND} t={props.t} />
+            </QuickStartStep>
+            <QuickStartStep label={props.t("Step 3 · Start creating")} hint={props.t("Tell your AI assistant what you want to make.")}>
+              <CodeBlock code={props.t('Use Flatkey CLI to generate a "beautiful sunrise" picture.')} t={props.t} />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        {props.card.id === "agent" ? (
+          <div className="mt-5 grid gap-4">
+            {keyStep}
+            <QuickStartStep
+              label={props.t("Step 2 · Install Flatkey for your system")}
+              hint={props.t("Paste the next line into your terminal to integrate Flatkey in seconds.")}
+            >
+              <QuickStartTabs
+                options={[
+                  { value: "mac", label: "macOS" },
+                  { value: "linux", label: "Linux" },
+                  { value: "windows", label: "Windows" },
+                ]}
+                value={platform}
+                onChange={(value) => setPlatform(value as AgentPlatform)}
+              />
+              <CodeBlock code={buildAgentInstallCommand(platform, SITE_ORIGIN)} t={props.t} />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <a
+            href={props.runHref}
+            onClick={props.onRunClick}
+            className="flatkey-hero-cta inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-[13px] font-semibold"
+          >
+            <WandSparkles className="size-4" />
+            {props.t("Open in console")}
+          </a>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function QuickStartStep(props: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-2">
+      <div className="text-sm font-semibold">{props.label}</div>
+      {props.hint ? <p className="text-sm leading-relaxed text-muted-foreground">{props.hint}</p> : null}
+      <div>{props.children}</div>
+    </div>
+  );
+}
+
+function QuickStartTabs(props: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg bg-slate-500/8 p-1 dark:bg-white/[0.06]">
+      {props.options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => props.onChange(option.value)}
+          aria-pressed={props.value === option.value}
+          className={`rounded-md px-3 py-1.5 text-[12px] font-semibold transition ${
+            props.value === option.value
+              ? "bg-white text-[#20222a] shadow-sm dark:bg-white/12 dark:text-white"
+              : "text-[#5f6673] hover:text-[#20222a] dark:text-white/58 dark:hover:text-white"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CodeBlock(props: { code: string; t: (key: string, vars?: Record<string, string>) => string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="group relative mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(props.code).then(
+            () => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1600);
+            },
+            () => undefined
+          );
+        }}
+        aria-label={props.t("Copy code")}
+        className="absolute top-2 right-2 z-1 grid size-7 place-items-center rounded-md bg-white/10 text-white/80 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/18"
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </button>
+      {/* Wrap instead of scrolling horizontally: the whole command should be
+          readable in place, and long curl lines otherwise hide their tail. */}
+      <pre className="rounded-xl border border-white/10 bg-[#10131a] p-4 pr-11 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-white/82">
+        {props.code}
+      </pre>
+    </div>
+  );
+}
+
 
 function ModelExamplesAndRelated(props: {
   config: ModelConfig;
@@ -2627,9 +2879,9 @@ function ModelHeroPriceCell(props: {
       <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
       <div className="mt-2 grid gap-1.5">
         {props.rows.length > 0 ? props.rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-2">
-            <div className="truncate text-[11px] font-semibold text-[#6a7280] dark:text-white/52">{row.label}</div>
-            <div className={`shrink-0 truncate font-mono text-sm font-bold ${props.valueClassName}`}>
+          <div key={row.label} className="grid min-w-0 gap-0.5">
+            <div className="text-[11px] font-semibold text-[#6a7280] dark:text-white/52">{row.label}</div>
+            <div className={`min-w-0 font-mono text-[13px] font-bold ${props.valueClassName}`}>
               {props.valueForRow(row)}
             </div>
           </div>
