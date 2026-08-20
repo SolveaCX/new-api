@@ -157,6 +157,66 @@ func TestStripeCheckoutRevisionActivateMovesPointerAndSupersedesExactlyOnce(t *t
 	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
 }
 
+func TestConvergePaidStripeCheckoutRevisionAllowsRevisionGap(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           90,
+		TradeNo:          "t-paid-gap",
+		GatewayTradeNo:   "cs_gap_old",
+		Status:           common.TopUpStatusSuccess,
+		CheckoutRevision: 1,
+	}).Error)
+	oldSessionID := "cs_gap_old"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderTopUp,
+		TradeNo:           "t-paid-gap",
+		Revision:          1,
+		UserId:            90,
+		RequestId:         "req-gap-original",
+		SelectionDigest:   "sha256:gap-original",
+		State:             StripeCheckoutRevisionStateActive,
+		DiscountSource:    "none",
+		ProviderSessionId: &oldSessionID,
+	}).Error)
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:       StripeCheckoutOrderTopUp,
+		TradeNo:         "t-paid-gap",
+		Revision:        2,
+		UserId:          90,
+		RequestId:       "req-gap-abandoned",
+		SelectionDigest: "sha256:gap-abandoned",
+		State:           StripeCheckoutRevisionStateAbandoned,
+		DiscountSource:  "manual",
+	}).Error)
+	candidateID := "cs_gap_paid"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderTopUp,
+		TradeNo:           "t-paid-gap",
+		Revision:          3,
+		UserId:            90,
+		RequestId:         "req-gap-paid",
+		SelectionDigest:   "sha256:gap-paid",
+		State:             StripeCheckoutRevisionStatePreparing,
+		DiscountSource:    "manual",
+		ProviderSessionId: &candidateID,
+	}).Error)
+	candidate, err := GetPreparingStripeCheckoutRevisionByProviderSession(StripeCheckoutOrderTopUp, "t-paid-gap", candidateID)
+	require.NoError(t, err)
+
+	active, err := ConvergePaidStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID:           candidate.Id,
+		ExpectedRevision:     1,
+		OldProviderSessionID: "cs_gap_old",
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 3, active.Revision)
+	require.Equal(t, StripeCheckoutRevisionStateActive, active.State)
+	var stored TopUp
+	require.NoError(t, DB.Where("trade_no = ?", "t-paid-gap").First(&stored).Error)
+	require.EqualValues(t, 3, stored.CheckoutRevision)
+	require.Equal(t, candidateID, stored.GatewayTradeNo)
+}
+
 func TestStripeCheckoutRevisionCandidateAttachmentExactReplaySucceeds(t *testing.T) {
 	setupStripeCheckoutRevisionTestDB(t)
 	require.NoError(t, DB.Create(&TopUp{

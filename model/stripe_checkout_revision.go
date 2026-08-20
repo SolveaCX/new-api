@@ -279,6 +279,73 @@ func ActivateStripeCheckoutRevision(input StripeCheckoutRevisionActivation) (*St
 	return &active, nil
 }
 
+// ConvergePaidStripeCheckoutRevision promotes a provider-confirmed paid
+// candidate after fulfillment won the race before normal activation could move
+// the local order pointer.
+func ConvergePaidStripeCheckoutRevision(input StripeCheckoutRevisionActivation) (*StripeCheckoutRevision, error) {
+	input.OldProviderSessionID = strings.TrimSpace(input.OldProviderSessionID)
+	if input.RevisionID <= 0 || input.ExpectedRevision < 0 {
+		return nil, fmt.Errorf("invalid Stripe checkout activation")
+	}
+
+	var active StripeCheckoutRevision
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var candidate StripeCheckoutRevision
+		if err := tx.First(&candidate, input.RevisionID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrStripeCheckoutRevisionConflict
+			}
+			return err
+		}
+		if candidate.State != StripeCheckoutRevisionStatePreparing ||
+			candidate.Revision <= input.ExpectedRevision ||
+			candidate.ProviderSessionId == nil || strings.TrimSpace(*candidate.ProviderSessionId) == "" {
+			return ErrStripeCheckoutRevisionConflict
+		}
+
+		newProviderSessionID := strings.TrimSpace(*candidate.ProviderSessionId)
+		result, err := convergePaidStripeCheckoutOrderPointer(tx, candidate, input.ExpectedRevision, input.OldProviderSessionID, newProviderSessionID)
+		if err != nil {
+			return err
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrStripeCheckoutRevisionConflict
+		}
+
+		if input.ExpectedRevision > 0 {
+			superseded := tx.Model(&StripeCheckoutRevision{}).
+				Where("order_type = ? AND trade_no = ? AND revision = ? AND state = ? AND provider_session_id = ?", candidate.OrderType, candidate.TradeNo, input.ExpectedRevision, StripeCheckoutRevisionStateActive, input.OldProviderSessionID).
+				Update("state", StripeCheckoutRevisionStateSuperseded)
+			if superseded.Error != nil {
+				return superseded.Error
+			}
+			if superseded.RowsAffected > 1 {
+				return ErrStripeCheckoutRevisionConflict
+			}
+		}
+		promoted := tx.Model(&StripeCheckoutRevision{}).
+			Where("id = ? AND state = ?", candidate.Id, StripeCheckoutRevisionStatePreparing).
+			Update("state", StripeCheckoutRevisionStateActive)
+		if promoted.Error != nil {
+			return promoted.Error
+		}
+		if promoted.RowsAffected != 1 {
+			return ErrStripeCheckoutRevisionConflict
+		}
+		if err := tx.First(&active, candidate.Id).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &active, nil
+}
+
 // AbandonStripeCheckoutRevision is called only after the caller has expired a
 // created candidate, or after candidate creation failed. Active and historical
 // rows cannot be abandoned.
@@ -344,6 +411,21 @@ func GetActiveStripeCheckoutRevision(orderType string, tradeNo string) (*StripeC
 	return &revision, nil
 }
 
+func GetPreparingStripeCheckoutRevisionByProviderSession(orderType string, tradeNo string, providerSessionID string) (*StripeCheckoutRevision, error) {
+	orderType = strings.TrimSpace(orderType)
+	tradeNo = strings.TrimSpace(tradeNo)
+	providerSessionID = strings.TrimSpace(providerSessionID)
+	if !validStripeCheckoutOrderType(orderType) || tradeNo == "" || providerSessionID == "" {
+		return nil, fmt.Errorf("invalid Stripe checkout revision lookup")
+	}
+	var revision StripeCheckoutRevision
+	if err := DB.Where("order_type = ? AND trade_no = ? AND state = ? AND provider_session_id = ?", orderType, tradeNo, StripeCheckoutRevisionStatePreparing, providerSessionID).
+		Order("revision DESC").First(&revision).Error; err != nil {
+		return nil, err
+	}
+	return &revision, nil
+}
+
 func lockStripeCheckoutOrder(tx *gorm.DB, orderType string, tradeNo string, userID int) (int64, error) {
 	switch orderType {
 	case StripeCheckoutOrderTopUp:
@@ -386,6 +468,25 @@ func activateStripeCheckoutOrderPointer(tx *gorm.DB, candidate StripeCheckoutRev
 	case StripeCheckoutOrderSubscription:
 		return tx.Model(&SubscriptionOrder{}).
 			Where("trade_no = ? AND user_id = ? AND status = ? AND checkout_revision = ? AND provider_session_id = ?", candidate.TradeNo, candidate.UserId, common.TopUpStatusPending, expectedRevision, oldProviderSessionID).
+			Updates(map[string]any{
+				"checkout_revision":    candidate.Revision,
+				"provider_session_id":  newProviderSessionID,
+				"provider_session_url": candidate.ProviderSessionURL,
+			}), nil
+	default:
+		return nil, fmt.Errorf("unsupported Stripe checkout order type %q", candidate.OrderType)
+	}
+}
+
+func convergePaidStripeCheckoutOrderPointer(tx *gorm.DB, candidate StripeCheckoutRevision, expectedRevision int64, oldProviderSessionID string, newProviderSessionID string) (*gorm.DB, error) {
+	switch candidate.OrderType {
+	case StripeCheckoutOrderTopUp:
+		return tx.Model(&TopUp{}).
+			Where("trade_no = ? AND user_id = ? AND status IN ? AND checkout_revision = ? AND gateway_trade_no IN ?", candidate.TradeNo, candidate.UserId, []string{common.TopUpStatusPending, common.TopUpStatusSuccess}, expectedRevision, []string{oldProviderSessionID, newProviderSessionID}).
+			Updates(map[string]any{"checkout_revision": candidate.Revision, "gateway_trade_no": newProviderSessionID}), nil
+	case StripeCheckoutOrderSubscription:
+		return tx.Model(&SubscriptionOrder{}).
+			Where("trade_no = ? AND user_id = ? AND status IN ? AND checkout_revision = ? AND provider_session_id IN ?", candidate.TradeNo, candidate.UserId, []string{common.TopUpStatusPending, common.TopUpStatusSuccess}, expectedRevision, []string{oldProviderSessionID, newProviderSessionID}).
 			Updates(map[string]any{
 				"checkout_revision":    candidate.Revision,
 				"provider_session_id":  newProviderSessionID,
