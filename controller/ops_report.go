@@ -370,10 +370,11 @@ func buildOpsAggs(includeDisabled bool) (map[int]*opsUserAgg, error) {
 }
 
 // getOpsAggs returns the cached day-independent cohort aggregates, recomputing
-// them at most once per opsReportCacheTTL per node. This is the expensive part
-// of the report: GetOpsUserLogStats scans the whole logs history for the plg
-// cohort no matter which day range is selected, so caching it here keeps a
-// 7/30/60/90 switch from re-running that scan each time.
+// them at most once per opsReportCacheTTL per node. The user-log aggregates
+// come from the ops_user_log_stats table (background-incremented) rather than
+// a live scan of the whole logs history, so a days switch never re-runs a
+// multi-minute logs scan; the cache here still avoids rebuilding the in-memory
+// funnel rollups on every 7/30/60/90 switch.
 func getOpsAggs(includeDisabled bool) (map[int]*opsUserAgg, time.Time, error) {
 	opsAggsMutex.Lock()
 	defer opsAggsMutex.Unlock()
