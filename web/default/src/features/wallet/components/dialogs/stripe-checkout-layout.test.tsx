@@ -16,11 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider } from 'react-i18next'
-import { StripeCheckoutLayout } from './stripe-checkout-layout'
+
+// The installed lucide-react CJS bundle does not expose LockKeyhole in this
+// test environment. Keep the layout test focused on DOM ordering by stubbing
+// the icon module locally instead of changing the production icon choice.
+mock.module('lucide-react', () => ({
+  Gift: () => null,
+  Loader2: () => null,
+  LockKeyhole: () => null,
+  ShieldCheck: () => null,
+}))
+
+const { StripeCheckoutLayout } = await import('./stripe-checkout-layout')
 
 const i18n = createInstance()
 await i18n.init({
