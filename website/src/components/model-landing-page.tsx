@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   FileAudio,
   FileText,
   FileVideo,
+  Gauge,
   ImageIcon,
   KeyRound,
   Layers3,
@@ -30,13 +31,14 @@ import {
   X,
   Upload,
   Video,
+  Volume2,
+  VolumeX,
   WandSparkles,
   Zap,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
-import { DailyHealthBars } from "@/components/home-health-bars";
 import { buildDirectoryHealthTrend } from "@/components/models-directory-table";
 import { formatHealthSuccessRate, getJitteredSuccessRate } from "@/lib/health-display";
 import { HomeModelLogo } from "@/components/home-model-logo";
@@ -195,6 +197,53 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
     { poster: "/assets/prompts/awesome-images/campaign-hero.png" },
   ],
 } as const;
+
+// Reveals an element the first time it scrolls into view, pairing with the
+// .fk-reveal styles.
+//
+// Starts revealed and only hides once an observer is confirmed available, so
+// the server render and any no-JS or observer-less client shows the content
+// instead of an empty page. Anything already on screen at mount stays put --
+// animating something the reader is already looking at reads as a glitch.
+function useRevealOnScroll<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [revealed, setRevealed] = useState(true);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    if (node.getBoundingClientRect().top < window.innerHeight) return;
+
+    setRevealed(false);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      // Fires just before the top edge arrives, so the motion finishes as the
+      // section settles rather than starting late.
+      { rootMargin: "0px 0px -12% 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, revealed };
+}
+
+// Wraps a page section so it fades up on entry. Keeps the section element (and
+// its id, used by the tab bar's scroll targets) rather than adding a wrapper
+// div, which would break `scroll-margin` anchoring.
+function RevealSection(props: { id: string; className: string; children: ReactNode }) {
+  const { ref, revealed } = useRevealOnScroll<HTMLElement>();
+  return (
+    <section id={props.id} ref={ref} className={`${props.className} fk-reveal`} data-revealed={String(revealed)}>
+      {props.children}
+    </section>
+  );
+}
 
 // Turns an example's declared references into editor drafts. MIME types are
 // synthesized from the declared kind so the existing per-kind grouping, icons,
@@ -378,18 +427,19 @@ function FlatkeyModelDetailPage(props: {
     model: string;
     trend: HomeTrendPoint[];
     summary?: HomePerfSummary;
-  }>({ model: "", trend: [] });
+    peers: HomePerfSummary[];
+  }>({ model: "", trend: [], peers: [] });
 
   useEffect(() => {
     let cancelled = false;
     const modelName = props.config.modelId;
-    Promise.all([fetchModelTrend(modelName), fetchHealthSummary(undefined, modelName)]).then(([trend, summaries]) => {
+    Promise.all([fetchModelTrend(modelName), fetchHealthSummary()]).then(([trend, summaries]) => {
       if (cancelled) return;
       const normalized = normalizeModelId(modelName);
       const summary =
         summaries[modelName] ??
         Object.values(summaries).find((row) => normalizeModelId(row.model_name) === normalized);
-      setHealth({ model: modelName, trend, summary });
+      setHealth({ model: modelName, trend, summary, peers: Object.values(summaries) });
     });
     return () => {
       cancelled = true;
@@ -397,6 +447,9 @@ function FlatkeyModelDetailPage(props: {
   }, [props.config.modelId]);
 
   const healthReady = health.model === props.config.modelId;
+  // Peer summaries let Performance state a percentile instead of a bare number:
+  // "99.9% uptime" means little until you know most models sit lower.
+  const peerSummaries = healthReady ? health.peers : [];
   const trend = healthReady ? health.trend : [];
   const summary = healthReady ? health.summary : undefined;
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
@@ -533,7 +586,7 @@ function FlatkeyModelDetailPage(props: {
         <ModelPageTabs t={props.t} generator={Boolean(generator)} />
 
         {generator ? (
-          <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
+          <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
             <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
               <ExamplePicker
                 examples={examples}
@@ -589,37 +642,20 @@ function FlatkeyModelDetailPage(props: {
                 </div>
               </div>
             </div>
-          </section>
+          </RevealSection>
         ) : null}
 
-        <section id="health" className="relative z-10 border-y border-violet-500/10 bg-white/60 px-6 py-16 backdrop-blur-sm dark:bg-white/[0.02]">
-          <div className="mx-auto max-w-7xl">
-            <FlatkeySectionHeading
-              eyebrow={props.t("Live model health")}
-              title={props.t("30-day health, measured on real traffic")}
-              description={props.t("Performance uses Flatkey request telemetry from the last 30 days when enough traffic is available.")}
-            />
-            <div className="mt-8 grid gap-4 md:grid-cols-4">
-              <FlatkeyMetricCard label={props.t("Avg. provider uptime")} value={formatHealthSuccessRate(successRate)} />
-              <FlatkeyMetricCard label={props.t("Latency")} value={formatLatencyMs(ttft)} />
-              <FlatkeyMetricCard label={props.t("Requests")} value={formatCallCount(summary?.request_count)} />
-              <FlatkeyMetricCard label={props.t("Throughput")} value={formatThroughput(summary?.avg_tps)} />
-            </div>
-            <div className="mt-5 rounded-2xl border border-violet-500/16 bg-white/72 p-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm font-semibold">{props.t("Successful inference trend")}</div>
-                {rankingRow ? (
-                  <div className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-700">
-                    #{rankingRow.rank} · {formatCallCount(displayRankingTokens(rankingRow.total_tokens))}
-                  </div>
-                ) : null}
-              </div>
-              <div className="h-24">
-                <DailyHealthBars points={healthTrend} label={props.t("Uptime")} heightPx={96} />
-              </div>
-            </div>
-          </div>
-        </section>
+        <ModelPerformanceSection
+          modelId={props.config.modelId}
+          successRate={successRate}
+          ttftMs={ttft}
+          latencyMs={summary?.avg_latency_ms}
+          throughput={summary?.avg_tps}
+          requests={summary?.request_count}
+          peers={peerSummaries}
+          trend={healthTrend}
+          t={props.t}
+        />
 
         <ModelQuickStart
           config={props.config}
@@ -635,23 +671,7 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <ModelExamplesAndRelated
-          config={props.config}
-          kind={pageKind}
-          examples={examples}
-          relatedModels={relatedModels.models}
-          relatedTitle={relatedModels.title}
-          t={props.t}
-        />
-
-        <ModelReadmeSections
-          config={props.config}
-          kind={pageKind}
-          profile={pageProfile}
-          t={props.t}
-        />
-
-        <section id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-16">
+        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 pt-16 pb-20">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
@@ -670,7 +690,17 @@ function FlatkeyModelDetailPage(props: {
               ))}
             </div>
           </div>
-        </section>
+        </RevealSection>
+
+        <ModelExamplesAndRelated
+          config={props.config}
+          kind={pageKind}
+          examples={examples}
+          relatedModels={relatedModels.models}
+          relatedTitle={relatedModels.title}
+          t={props.t}
+        />
+
       </main>
     </SiteShell>
   );
@@ -1317,16 +1347,14 @@ function ModelPageTabs(props: {
   const sectionIds = useMemo(
     () =>
       props.generator
-        ? ["workbench", "quick-start", "activity", "related", "readme", "faq"]
-        : ["quick-start", "activity", "related", "readme", "faq"],
+        ? ["workbench", "performance", "quick-start", "faq"]
+        : ["performance", "quick-start", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
+    { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
     { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
-    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
-    { id: "related", href: "#related", label: props.t("Similar"), icon: <Layers3 className="size-3.5" /> },
-    { id: "readme", href: "#readme", label: props.t("README"), icon: <FileText className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
   const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
@@ -2056,16 +2084,13 @@ function OutputPreview(props: {
     return (
       <div
         data-model-output-video="true"
-        className="aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
+        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
       >
-        <video
+        <AutoplayVideo
           className="aspect-video h-full w-full bg-[#10131a] object-cover"
-          controls
-          loop
-          playsInline
           poster={primary.poster}
-          preload="metadata"
           src={primary.video}
+          t={props.t}
         />
       </div>
     );
@@ -2075,14 +2100,11 @@ function OutputPreview(props: {
     <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white shadow-[0_18px_42px_-32px_rgba(15,15,18,.8)]" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F] shadow-[0_18px_42px_-34px_rgba(76,29,149,.65)]"}>
       <div className={`relative overflow-hidden rounded-[1.05rem] ${props.kind === "video" ? "aspect-video bg-[#171b24]" : "aspect-[16/10] bg-[#11131a]"}`}>
         {props.kind === "video" && primary?.video ? (
-          <video
+          <AutoplayVideo
             className="h-full w-full object-cover"
-            controls
-            loop
-            playsInline
             poster={primary.poster}
-            preload="metadata"
             src={primary.video}
+            t={props.t}
           />
         ) : (
           <>
@@ -2129,14 +2151,11 @@ function GeneratedExamplesCarousel(props: {
       <div className="relative overflow-hidden bg-[#10131a]">
         <div className={`relative w-full ${props.kind === "video" ? "aspect-video" : "aspect-[16/10]"}`}>
           {activeExample.video ? (
-            <video
+            <AutoplayVideo
               className="h-full w-full object-cover"
-              controls
-              loop
-              playsInline
               poster={activeExample.poster}
-              preload="metadata"
               src={activeExample.video}
+              t={props.t}
             />
           ) : (
             <Image
@@ -2227,6 +2246,216 @@ function GeneratedExamplesCarousel(props: {
 // Renders nothing when there is no series: a chart of zeroes says less than no
 // section at all, and a model can be new, unused, or on a deployment with no
 // WEBSITE_METRICS_KEY configured.
+// Performance: how this model actually behaves under real traffic, and how that
+// compares with everything else in the catalog. Four bare numbers say little on
+// their own -- "99.9% uptime" only means something once you know where the rest
+// of the catalog sits -- so each metric carries its percentile among peers.
+//
+// Defaults match the /models directory (DEFAULT_HEALTH_*), so a model with thin
+// traffic reads the same figure here as in the listing rather than an em dash.
+function ModelPerformanceSection(props: {
+  modelId: string;
+  successRate: number | undefined;
+  ttftMs: number | undefined;
+  latencyMs?: number;
+  throughput?: number;
+  requests?: number;
+  peers: HomePerfSummary[];
+  trend: HomeTrendPoint[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  // Percentile against every model with a comparable reading. `lowerIsBetter`
+  // flips the comparison for latency, where a small number is the good one.
+  const percentile = (
+    value: number | undefined,
+    pick: (peer: HomePerfSummary) => number | undefined,
+    lowerIsBetter = false
+  ): number | null => {
+    if (value == null || !Number.isFinite(value)) return null;
+    const values = props.peers
+      .map(pick)
+      .filter((entry): entry is number => entry != null && Number.isFinite(entry) && entry > 0);
+    if (values.length < 4) return null;
+    const beaten = values.filter((entry) => (lowerIsBetter ? entry > value : entry < value)).length;
+    return Math.round((beaten / values.length) * 100);
+  };
+
+  const stats = [
+    {
+      icon: <ShieldCheck className="size-4" />,
+      label: props.t("Uptime"),
+      value: formatHealthSuccessRate(props.successRate),
+      hint: props.t("Successful requests"),
+      rank: percentile(props.successRate, (peer) => peer.success_rate),
+      accent: "text-emerald-600 dark:text-emerald-400",
+      surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    },
+    {
+      icon: <Timer className="size-4" />,
+      label: props.t("Latency"),
+      value: formatLatencyMs(props.ttftMs),
+      hint: props.t("Time to first token"),
+      rank: percentile(props.ttftMs, (peer) => peer.avg_ttft_ms, true),
+      accent: "text-blue-600 dark:text-blue-400",
+      surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    },
+    {
+      icon: <Zap className="size-4" />,
+      label: props.t("Throughput"),
+      value: formatThroughput(props.throughput),
+      hint: props.t("Tokens per second"),
+      rank: percentile(props.throughput, (peer) => peer.avg_tps),
+      accent: "text-violet-600 dark:text-violet-400",
+      surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    },
+    {
+      icon: <Layers3 className="size-4" />,
+      label: props.t("Requests"),
+      value: formatCallCount(props.requests),
+      hint: props.t("Last 30 days"),
+      rank: null,
+      accent: "text-amber-600 dark:text-amber-400",
+      surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    },
+  ];
+
+  return (
+    <RevealSection id="performance" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Performance")}
+          title={props.t("Reliability over the last 30 days")}
+          description={props.t("Measured on real Flatkey traffic across every upstream channel serving this model.")}
+        />
+        {/* Stats and trend share one surface: they are the same measurement read
+            two ways, and separate cards made them look unrelated. */}
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 dark:divide-white/10">
+            {stats.map((stat, index) => (
+              <div
+                key={stat.label}
+                className={`p-5 ${index % 2 === 1 ? "sm:border-l sm:border-slate-200 sm:dark:border-white/10" : ""} ${index === 2 ? "sm:border-t sm:border-slate-200 lg:border-t-0 lg:border-l lg:border-slate-200 sm:dark:border-white/10" : ""}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`grid size-7 place-items-center rounded-lg ${stat.surface}`}>{stat.icon}</span>
+                  <span className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{stat.label}</span>
+                </div>
+                <div className={`mt-3 font-mono text-[28px] leading-none font-bold ${stat.accent}`}>{stat.value}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/44">{stat.hint}</span>
+                  {stat.rank != null && stat.rank >= 50 ? (
+                    <span className="rounded-full bg-slate-500/8 px-2 py-0.5 text-[10px] font-bold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/62">
+                      {props.t("Top {{percent}}% of models", { percent: String(Math.max(1, 100 - stat.rank)) })}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          {props.latencyMs != null && Number.isFinite(props.latencyMs) ? (
+            <div className="border-t border-slate-200 bg-[#fbfcff] px-5 py-3 text-[11px] font-medium text-[#6a7280] dark:border-white/10 dark:bg-white/[0.02] dark:text-white/54">
+              {props.t("Full request completes in {{duration}} on average; the figure above is time to first token.", {
+                duration: formatLatencyMs(props.latencyMs),
+              })}
+            </div>
+          ) : null}
+          <UptimeTrend points={props.trend} t={props.t} />
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
+// Uptime as an area chart rather than DailyHealthBars: that component is built
+// for a 56px cell on the home page, where every bar sits near full height by
+// design. Scaled up it reads as a solid green block -- the variation that makes
+// a trend worth showing is exactly what it flattens away.
+//
+// Here the y-axis starts just below the worst day, so a dip from 99.9% to 99.2%
+// is visible instead of being lost against a 0-100 scale.
+function UptimeTrend(props: {
+  points: HomeTrendPoint[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const days = useMemo(() => {
+    const byDay = new Map<string, number[]>();
+    for (const point of props.points) {
+      if (!Number.isFinite(point.success_rate)) continue;
+      const key = new Date(point.ts * 1000).toISOString().slice(0, 10);
+      byDay.set(key, [...(byDay.get(key) ?? []), point.success_rate]);
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, values]) => ({ key, rate: values.reduce((s, v) => s + v, 0) / values.length }));
+  }, [props.points]);
+
+  if (days.length < 2) return null;
+
+  const rates = days.map((day) => day.rate);
+  const low = Math.min(...rates);
+  const high = Math.max(...rates);
+  // Pad the band so a perfectly flat series still draws mid-box rather than
+  // pinned to an edge.
+  const floor = Math.max(0, Math.min(low - 0.15, 99.4));
+  const ceiling = Math.max(high + 0.05, floor + 0.3);
+  const span = ceiling - floor;
+
+  const x = (index: number) => (index / (days.length - 1)) * 100;
+  const y = (rate: number) => 100 - ((rate - floor) / span) * 100;
+  const line = days.map((day, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(2)},${y(day.rate).toFixed(2)}`).join(" ");
+  const area = `${line} L100,100 L0,100 Z`;
+  const latest = days[days.length - 1];
+
+  return (
+    <div className="border-t border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold">{props.t("Successful inference trend")}</span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          {props.t("Daily uptime")}
+        </span>
+      </div>
+      <div className="relative h-28">
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="h-full w-full overflow-visible"
+          role="img"
+          aria-label={props.t("Successful inference trend")}
+        >
+          <defs>
+            <linearGradient id="fk-uptime-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgb(16 185 129)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0, 50, 100].map((offset) => (
+            <line key={offset} x1="0" y1={offset} x2="100" y2={offset} stroke="currentColor" strokeWidth="0.4" className="text-slate-200 dark:text-white/10" vectorEffect="non-scaling-stroke" />
+          ))}
+          <path d={area} fill="url(#fk-uptime-fill)" />
+          <path
+            d={line}
+            fill="none"
+            stroke="rgb(16 185 129)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle cx={x(days.length - 1)} cy={y(latest.rate)} r="3" fill="rgb(16 185 129)" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <span className="pointer-events-none absolute top-0 right-0 rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+          {formatHealthSuccessRate(latest.rate)}
+        </span>
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
+        <span>{days[0].key.slice(5)}</span>
+        <span>{latest.key.slice(5)}</span>
+      </div>
+    </div>
+  );
+}
+
 function ModelActivitySection(props: {
   modelId: string;
   usage: ModelUsage | null;
@@ -2238,42 +2467,74 @@ function ModelActivitySection(props: {
   const peak = Math.max(...points.map((point) => point.count), 1);
   const busiest = points.reduce((best, point) => (point.count > best.count ? point : best), points[0]);
   const average = Math.round(points.reduce((sum, point) => sum + point.count, 0) / points.length);
+  const averageHeight = (average / peak) * 100;
 
   return (
-    <section id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-white px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
           eyebrow={props.t("Activity")}
           title={props.t("Daily {{model}} requests on Flatkey", { model: props.modelId })}
-          description={props.t("Request volume routed through Flatkey over the last 30 days.")}
+          description={
+            props.usage?.placeholder
+              ? props.t("Sample shape shown while live telemetry is being connected.")
+              : props.t("Request volume routed through Flatkey over the last 30 days.")
+          }
         />
-        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.4fr)] lg:items-start">
-          <div className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]">
-            <div className="flex h-32 items-end gap-[3px]">
-              {points.map((point) => (
-                <div
-                  key={point.date}
-                  title={`${formatUsageDate(point.date)} · ${formatCallCount(point.count)}`}
-                  className="min-w-0 flex-1 rounded-t-[2px] bg-gradient-to-t from-violet-500/70 to-violet-500 transition hover:from-violet-600 hover:to-violet-500"
-                  // Zero-count days still get a hairline so gaps in the series
-                  // read as "no traffic" rather than as missing bars.
-                  style={{ height: `${Math.max(2, (point.count / peak) * 100)}%` }}
-                />
-              ))}
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="grid gap-4 p-5 sm:grid-cols-3">
+            <ActivityStat label={props.t("Total requests")} value={formatCallCount(props.usage?.total)} />
+            <ActivityStat label={props.t("Daily average")} value={formatCallCount(average)} />
+            <ActivityStat label={props.t("Busiest day")} value={formatUsageDate(busiest.date)} sub={formatCallCount(busiest.count)} />
+          </div>
+          <div className="border-t border-slate-200 bg-[#fbfcff] px-5 pt-6 pb-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="relative flex h-28 items-end gap-[3px]">
+              {/* Average line inside the plot box, so its percentage is relative
+                  to the bars rather than to the section's padding. It gives a
+                  tall bar something to be judged against. */}
+              <div
+                className="pointer-events-none absolute inset-x-0 border-t border-dashed border-violet-400/55"
+                style={{ bottom: `${averageHeight}%` }}
+              />
+              {points.map((point) => {
+                const isPeak = point.date === busiest.date;
+                return (
+                  <div
+                    key={point.date}
+                    title={`${formatUsageDate(point.date)} · ${formatCallCount(point.count)}`}
+                    className={`min-w-0 flex-1 rounded-t-[3px] transition hover:opacity-100 ${
+                      isPeak
+                        ? "bg-gradient-to-t from-violet-600 to-violet-400"
+                        : "bg-gradient-to-t from-violet-500/55 to-violet-400/75 opacity-80"
+                    }`}
+                    // Zero-count days keep a hairline so a gap reads as "no
+                    // traffic" rather than as a missing bar.
+                    style={{ height: `${Math.max(3, (point.count / peak) * 100)}%` }}
+                  />
+                );
+              })}
             </div>
-            <div className="mt-2 flex justify-between text-[10px] font-medium text-[#98a2b3]">
+            <div className="mt-2.5 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
               <span>{formatUsageDate(points[0].date)}</span>
+              <span className="text-violet-500/80">{props.t("Daily average")}: {formatCallCount(average)}</span>
               <span>{formatUsageDate(points[points.length - 1].date)}</span>
             </div>
           </div>
-          <div className="grid gap-2.5">
-            <FlatkeyMetricCard label={props.t("Total requests")} value={formatCallCount(props.usage?.total)} />
-            <FlatkeyMetricCard label={props.t("Daily average")} value={formatCallCount(average)} />
-            <FlatkeyMetricCard label={props.t("Busiest day")} value={formatUsageDate(busiest.date)} />
-          </div>
         </div>
       </div>
-    </section>
+    </RevealSection>
+  );
+}
+
+function ActivityStat(props: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="font-mono text-[26px] leading-none font-bold text-[#20222a] dark:text-white/90">{props.value}</span>
+        {props.sub ? <span className="font-mono text-[12px] font-semibold text-violet-600 dark:text-violet-400">{props.sub}</span> : null}
+      </div>
+    </div>
   );
 }
 
@@ -2332,7 +2593,7 @@ function ModelQuickStart(props: {
   const active = cards.find((card) => card.id === openCard) ?? null;
 
   return (
-    <section id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
+    <RevealSection id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold tracking-tight">{props.t("Start calling {{model}} in minutes", { model: props.config.displayName })}</h2>
@@ -2367,7 +2628,7 @@ function ModelQuickStart(props: {
           t={props.t}
         />
       ) : null}
-    </section>
+    </RevealSection>
   );
 }
 
@@ -2604,6 +2865,78 @@ function CodeBlock(props: { code: string; t: (key: string, vars?: Record<string,
 }
 
 
+// Sample clips autoplay so the panel is alive on arrival, which browsers only
+// permit while muted. Sound then switches on at the reader's first click
+// anywhere on the page -- that gesture satisfies the autoplay policy, so the
+// clip becomes audible without them hunting for a control. The explicit button
+// stays for turning it back off, and because Seedance generates its own audio a
+// permanently silent loop would misrepresent the model as video-only.
+function AutoplayVideo(props: {
+  className: string;
+  poster: string;
+  src: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+  // Set once the reader mutes deliberately, so the first-gesture handler does
+  // not immediately undo their choice.
+  const userChoseMuted = useRef(false);
+
+  useEffect(() => {
+    const unmuteOnFirstGesture = () => {
+      const video = ref.current;
+      if (!video || userChoseMuted.current) return;
+      video.muted = false;
+      setMuted(false);
+      if (video.paused) void video.play().catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", unmuteOnFirstGesture, { once: true });
+    window.addEventListener("keydown", unmuteOnFirstGesture, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unmuteOnFirstGesture);
+      window.removeEventListener("keydown", unmuteOnFirstGesture);
+    };
+  }, []);
+
+  const toggleSound = () => {
+    const video = ref.current;
+    if (!video) return;
+    const next = !muted;
+    video.muted = next;
+    setMuted(next);
+    userChoseMuted.current = next;
+    if (!next && video.paused) void video.play().catch(() => undefined);
+  };
+
+  return (
+    <>
+      <video
+        ref={ref}
+        className={props.className}
+        autoPlay
+        controls
+        loop
+        muted
+        playsInline
+        poster={props.poster}
+        preload="metadata"
+        src={props.src}
+      />
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-pressed={!muted}
+        // Sits clear of the native controls bar at the bottom.
+        className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-lg bg-black/55 px-2.5 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm transition hover:bg-black/70"
+      >
+        {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+        {muted ? props.t("Sound off") : props.t("Sound on")}
+      </button>
+    </>
+  );
+}
+
 function ModelExamplesAndRelated(props: {
   config: ModelConfig;
   kind: ModelReadmeKind;
@@ -2614,7 +2947,7 @@ function ModelExamplesAndRelated(props: {
 }) {
   const visualKind = props.kind === "text" ? "text" : props.kind;
   return (
-    <section id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-b border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-14 dark:border-white/10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-7xl">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -2648,7 +2981,7 @@ function ModelExamplesAndRelated(props: {
           </div>
         </div>
       </div>
-    </section>
+    </RevealSection>
   );
 }
 
