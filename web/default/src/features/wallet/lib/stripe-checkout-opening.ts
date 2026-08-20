@@ -16,7 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { StripeTopupSummary } from '../types'
+import type {
+  StripeCheckoutDiscountState,
+  StripeTopupSummary,
+} from '../types'
 
 export type StripeCheckoutData = {
   client_secret?: string
@@ -25,6 +28,9 @@ export type StripeCheckoutData = {
   pay_link?: string
   checkout_url?: string
   hosted_invoice_url?: string
+  checkout_context?: string
+  checkout_revision?: number
+  discount_state?: StripeCheckoutDiscountState
   topup_summary?: StripeTopupSummary
 }
 
@@ -34,6 +40,10 @@ export type StripeCheckoutOpening =
       clientSecret: string
       publishableKey: string
       fallbackUrl?: string
+      checkoutContext?: string
+      checkoutRevision?: number
+      discountState?: StripeCheckoutDiscountState
+      summary?: StripeTopupSummary | null
     }
   | {
       kind: 'hosted'
@@ -70,6 +80,12 @@ export function normalizeCheckoutUrl(
 export function resolveStripeCheckoutOpening(
   data: StripeCheckoutData | null | undefined
 ): StripeCheckoutOpening | null {
+  const hasRevisionContract =
+    !!data?.checkout_context &&
+    typeof data.checkout_revision === 'number' &&
+    data.checkout_revision > 0 &&
+    !!data.discount_state
+
   if (data?.client_secret && data.publishable_key) {
     const fallbackUrl = normalizeCheckoutUrl(data.fallback_url)
     return {
@@ -77,6 +93,14 @@ export function resolveStripeCheckoutOpening(
       clientSecret: data.client_secret,
       publishableKey: data.publishable_key,
       ...(fallbackUrl ? { fallbackUrl } : {}),
+      ...(hasRevisionContract
+        ? {
+            checkoutContext: data.checkout_context,
+            checkoutRevision: data.checkout_revision,
+            discountState: data.discount_state,
+            summary: data.topup_summary ?? null,
+          }
+        : {}),
     }
   }
 

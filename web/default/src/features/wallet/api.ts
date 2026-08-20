@@ -41,6 +41,8 @@ import type {
   RequestInvoiceResponse,
   RefundableSubscriptionTermsResponse,
   RefundSubscriptionTermResponse,
+  StripeCheckoutDiscountRequest,
+  StripeCheckoutRevisionData,
 } from './types'
 
 // ============================================================================
@@ -109,6 +111,16 @@ export async function requestStripePayment(
 ): Promise<StripePaymentResponse> {
   const res = await api.post('/api/user/stripe/pay', request, {
     skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function updateStripeCheckoutDiscount(
+  request: StripeCheckoutDiscountRequest
+): Promise<ApiResponse<StripeCheckoutRevisionData>> {
+  const res = await api.post('/api/user/stripe/checkout/discount', request, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
   } as Record<string, unknown>)
   return res.data
 }
