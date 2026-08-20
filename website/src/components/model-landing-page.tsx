@@ -198,6 +198,91 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
+// Showcase: what the model produces across use cases, above the FAQ so the last
+// thing a reader sees before the questions is the output itself.
+//
+// Each entry is real generated media plus the prompt behind it. SHOWCASE_SCENES
+// is empty until those assets exist -- the section renders nothing rather than
+// standing in with placeholder art, because a fabricated "fight scene" still
+// implies the model produced it.
+type ShowcaseScene = {
+  /** Slug used for the asset paths under /assets/model-showcase/. */
+  id: string;
+  label: ModelLandingKey;
+  prompt: string;
+};
+
+// To populate: drop <id>.mp4 and <id>.png into website/public/assets/
+// model-showcase/, add the entry here, and add its `label` to the copy maps in
+// lib/model-landing.ts for all 10 locales.
+//
+//   { id: "action-sequence", label: "Action sequence", prompt: "..." },
+const SHOWCASE_SCENES: readonly ShowcaseScene[] = [];
+
+function ModelShowcase(props: {
+  modelName: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const [active, setActive] = useState(0);
+  if (SHOWCASE_SCENES.length === 0) return null;
+  const scene = SHOWCASE_SCENES[active] ?? SHOWCASE_SCENES[0];
+
+  return (
+    <RevealSection
+      id="showcase"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Showcase")}
+          title={props.t("What {{model}} produces", { model: props.modelName })}
+          description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
+        />
+        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] lg:items-start">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
+            <div className="relative aspect-video">
+              <AutoplayVideo
+                className="h-full w-full object-cover"
+                poster={`/assets/model-showcase/${scene.id}.png`}
+                src={`/assets/model-showcase/${scene.id}.mp4`}
+                t={props.t}
+              />
+            </div>
+            <p className="border-t border-white/10 px-4 py-3 font-mono text-[11px] leading-5 text-white/70">
+              {scene.prompt}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {SHOWCASE_SCENES.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActive(index)}
+                aria-pressed={index === active}
+                className={`flex items-center gap-3 rounded-xl border p-2.5 text-left transition ${
+                  index === active
+                    ? "border-violet-500/45 bg-violet-500/6 shadow-[0_12px_30px_-24px_rgba(124,58,237,.8)]"
+                    : "border-slate-200 bg-white hover:border-violet-500/25 dark:border-white/10 dark:bg-white/[0.04]"
+                }`}
+              >
+                <span className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-slate-950">
+                  <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="56px" className="object-cover" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-semibold text-[#20222a] dark:text-white/88">
+                    {props.t(item.label)}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{item.prompt}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
 // Reveals an element the first time it scrolls into view, pairing with the
 // .fk-reveal styles.
 //
@@ -671,7 +756,19 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 pt-16 pb-20">
+
+        <ModelExamplesAndRelated
+          config={props.config}
+          kind={pageKind}
+          examples={examples}
+          relatedModels={relatedModels.models}
+          relatedTitle={relatedModels.title}
+          t={props.t}
+        />
+
+        <ModelShowcase modelName={props.config.displayName} t={props.t} />
+
+        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
@@ -691,15 +788,6 @@ function FlatkeyModelDetailPage(props: {
             </div>
           </div>
         </RevealSection>
-
-        <ModelExamplesAndRelated
-          config={props.config}
-          kind={pageKind}
-          examples={examples}
-          relatedModels={relatedModels.models}
-          relatedTitle={relatedModels.title}
-          t={props.t}
-        />
 
       </main>
     </SiteShell>
@@ -2947,7 +3035,7 @@ function ModelExamplesAndRelated(props: {
 }) {
   const visualKind = props.kind === "text" ? "text" : props.kind;
   return (
-    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-14 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-7xl">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
