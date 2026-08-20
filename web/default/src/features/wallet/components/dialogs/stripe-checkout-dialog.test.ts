@@ -17,7 +17,36 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, mock, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { twMerge } from 'tailwind-merge'
 import { recoverStripeCheckoutMountFailure } from '../../lib/stripe-checkout-recovery'
+
+describe('StripeCheckoutDialog layout', () => {
+  test('overrides the shared desktop dialog max-width at the same breakpoint', () => {
+    const checkoutDialogSource = readFileSync(
+      new URL('./stripe-checkout-dialog.tsx', import.meta.url),
+      'utf8'
+    )
+    const sharedDialogSource = readFileSync(
+      new URL('../../../../components/ui/dialog.tsx', import.meta.url),
+      'utf8'
+    )
+    const sharedClasses = sharedDialogSource.match(
+      /className=\{cn\(\s*'([^']*sm:max-w-sm)'/
+    )?.[1]
+    const checkoutClasses = checkoutDialogSource.match(
+      /showCloseButton=\{false\}\s*className='([^']+)'/
+    )?.[1]
+
+    expect(sharedClasses).toBeDefined()
+    expect(checkoutClasses).toBeDefined()
+
+    const mergedClasses = twMerge(sharedClasses, checkoutClasses)
+
+    expect(mergedClasses).toContain('sm:max-w-[1120px]')
+    expect(mergedClasses).not.toContain('sm:max-w-sm')
+  })
+})
 
 describe('recoverStripeCheckoutMountFailure', () => {
   test('uses an explicitly supplied safe hosted fallback before closing', () => {

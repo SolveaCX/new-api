@@ -1,33 +1,28 @@
 {
-  "score": 93,
+  "score": 92,
   "verdict": "pass",
   "category_match": true,
   "differences": [
     {
-      "severity": "low",
-      "area": "desktop vertical position",
-      "detail": "The implementation is vertically centered slightly lower than the reference."
+      "severity": "resolved",
+      "area": "desktop dialog width",
+      "detail": "The breakpoint-level sm:max-w-sm conflict is removed; the checkout shell now retains sm:max-w-[1120px]."
+    },
+    {
+      "severity": "resolved",
+      "area": "desktop column layout",
+      "detail": "Restoring the approved shell width prevents the two checkout columns, amount, summary, CTA, and footer from overlapping."
     },
     {
       "severity": "low",
-      "area": "background tone",
-      "detail": "The implementation background is slightly cooler than the reference wash."
-    },
-    {
-      "severity": "low",
-      "area": "mobile page height usage",
-      "detail": "Dynamic Stripe fields make the implementation end slightly higher on mobile."
-    },
-    {
-      "severity": "low",
-      "area": "payment method card height",
-      "detail": "The Payment Element card height varies with Stripe's selected payment method."
+      "area": "verification",
+      "detail": "Fresh browser capture was blocked by URL policy, so this verdict uses visual root-cause matching plus deterministic class-merge evidence."
     }
   ],
   "suggestions": [
-    "Optionally nudge the desktop checkout shell upward.",
-    "Optionally tune the outer background toward the reference blue-gray.",
-    "Optionally reserve more Payment Element height when a stable visual weight is preferred."
+    "Keep the explicit sm:max-w-[1120px] because the shared DialogContent defines sm:max-w-sm at the same breakpoint.",
+    "Keep the class-merge regression test that verifies sm:max-w-sm is absent.",
+    "Capture one 1440px staging smoke screenshot when browser capture is available."
   ],
-  "reasoning": "The approved 1120px shell, desktop columns, responsive stacking, amount hierarchy, blue CTA, rounded surfaces, dividers, close control, and Stripe footer match the reference. Localized copy and Stripe-rendered payment fields are dynamic and were excluded from the visual mismatch score."
+  "reasoning": "The reported squeezed screenshot matches the shared responsive width constraint exactly. The hotfix overrides that constraint at the same breakpoint, and the regression test proves tailwind-merge retains sm:max-w-[1120px] while removing sm:max-w-sm. This restores the approved two-column design without changing payment behavior or mobile overrides."
 }
