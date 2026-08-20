@@ -20,6 +20,7 @@ var StripePriceId200 = ""
 var StripeTopUpPriceIds = ""
 var StripeUnitPrice = 8.0
 var StripeMinTopUp = 1
+var StripePromotionCodeEnabled = false
 
 // StripeTopUpPriceIDForAmount resolves the multi-currency Stripe Price ID for
 // a wallet top-up preset amount. The JSON map is the current source of truth;
