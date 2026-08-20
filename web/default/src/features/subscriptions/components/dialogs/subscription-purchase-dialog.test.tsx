@@ -276,14 +276,6 @@ mock.module('@/stores/system-config-store', () => ({
   },
 }))
 
-mock.module('@/lib/format', () => ({
-  formatNumber: (value: number | null | undefined) =>
-    value == null || Number.isNaN(value) ? '-' : String(value),
-  formatQuota: (value: number) => `$${(value / 500000).toFixed(2)}`,
-  formatTimestampToDate: (timestamp?: number) =>
-    timestamp ? new Date(timestamp * 1000).toISOString() : '-',
-}))
-
 mock.module('@/lib/analytics/gtag', () => ({
   getGAMeasurementIdentifiers: () => ({}),
 }))
