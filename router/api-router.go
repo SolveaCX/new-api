@@ -87,12 +87,6 @@ func SetApiRouter(router *gin.Engine) {
 			perfMetricsRoute.GET("/summary", controller.GetPerfMetricsSummary)
 			perfMetricsRoute.GET("", controller.GetPerfMetrics)
 		}
-		modelHandoffRoute := apiRouter.Group("/model-handoffs")
-		modelHandoffRoute.Use(middleware.CORS())
-		{
-			modelHandoffRoute.POST("", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateModelHandoffDraft)
-			modelHandoffRoute.GET("/:handoff_id", middleware.UserAuth(), controller.GetModelHandoffDraft)
-		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
 		apiRouter.POST("/registration/email-verification/exchange", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ExchangeRegistrationEmailVerification)
