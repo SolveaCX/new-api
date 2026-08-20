@@ -6751,7 +6751,7 @@
     "Lowest {{category}} price": "Минимальная цена: {{category}}",
     "Per 1M input tokens": "За 1 млн входных токенов",
     "Per 1M input tokens · some models bill per request": "За 1 млн входных токенов · некоторые модели тарифицируются за запрос",
-    "Boost": "Пополнить",
+    "Boost balance": "Пополнить баланс",
     "Boost your balance": "Увеличьте баланс",
     "Keep your balance ready whenever you need it": "Пусть баланса всегда хватает, когда он нужен",
     "Current available balance": "Текущий доступный баланс",

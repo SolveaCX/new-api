@@ -129,7 +129,7 @@ export function UsageMetrics() {
                     onClick={() => setBoostOpen(true)}
                   >
                     <Sparkles data-icon='inline-start' />
-                    {t('Boost')}
+                    {t('Boost balance')}
                   </Button>
                 ) : undefined
               }

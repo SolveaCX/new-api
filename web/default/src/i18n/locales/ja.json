@@ -6751,7 +6751,7 @@
     "Lowest {{category}} price": "{{category}}の最低価格",
     "Per 1M input tokens": "100万入力トークンあたり",
     "Per 1M input tokens · some models bill per request": "100万入力トークンあたり · 一部のモデルはリクエスト単位で課金",
-    "Boost": "追加",
+    "Boost balance": "残高を追加",
     "Boost your balance": "残高を増やす",
     "Keep your balance ready whenever you need it": "必要なときにいつでも足りる残高を",
     "Current available balance": "現在の利用可能残高",
