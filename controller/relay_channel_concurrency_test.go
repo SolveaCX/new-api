@@ -200,6 +200,59 @@ func TestProcessChannelErrorLogsActualChannelSnapshot(t *testing.T) {
 	require.EqualValues(t, actualChannel.ChannelType, other["channel_type"])
 }
 
+func TestProcessChannelErrorLogsOriginalBlockRunUpstreamError(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/blockrun-error-log.db"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}))
+
+	previousDB := model.DB
+	previousLogDB := model.LOG_DB
+	previousRedisEnabled := common.RedisEnabled
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	model.DB = db
+	model.LOG_DB = db
+	common.RedisEnabled = false
+	constant.ErrorLogEnabled = true
+	t.Cleanup(func() {
+		model.DB = previousDB
+		model.LOG_DB = previousLogDB
+		common.RedisEnabled = previousRedisEnabled
+		constant.ErrorLogEnabled = previousErrorLogEnabled
+	})
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set("id", 2)
+	c.Set("token_id", 7)
+	c.Set("token_name", "blockrun-token")
+	c.Set("original_model", "gpt-test")
+	c.Set("group", "default")
+
+	relaycommon.MarkBlockRunPaymentAttempt(c, dto.BlockRunPaymentChainBase, 164, "request=req-upstream")
+	upstream := types.NewErrorWithStatusCode(
+		errors.New("bad response status code 503, body: upstream overloaded"),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusServiceUnavailable,
+	)
+	normalized := normalizeBlockRunPaymentError(c, upstream)
+	require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, normalized.GetErrorCode())
+	require.Equal(t, http.StatusServiceUnavailable, normalized.StatusCode)
+
+	processChannelError(c, *types.NewChannelError(164, constant.ChannelTypeBlockRun, "blockrun", false, "", false), normalized)
+
+	var logEntry model.Log
+	require.NoError(t, db.Order("id DESC").First(&logEntry).Error)
+	require.Contains(t, logEntry.Content, "upstream overloaded")
+	require.Contains(t, logEntry.Content, "status_code=503")
+	other, err := common.StrToMap(logEntry.Other)
+	require.NoError(t, err)
+	require.Equal(t, string(types.ErrorCodeBadResponseStatusCode), other["error_code"])
+	require.EqualValues(t, http.StatusServiceUnavailable, other["status_code"])
+	require.Equal(t, string(types.ErrorCodeBlockRunSettlementUnknown), other["normalized_error_code"])
+	require.EqualValues(t, http.StatusServiceUnavailable, other["normalized_status_code"])
+}
+
 func TestProcessChannelErrorMarksRedisCooldownWithCanceledRequestContext(t *testing.T) {
 	mr := miniredis.RunT(t)
 	prevRDB := common.RDB
