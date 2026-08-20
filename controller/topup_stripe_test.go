@@ -411,6 +411,96 @@ func TestStripeCheckoutSessionRecallPromotionCode(t *testing.T) {
 	require.Equal(t, "84", params.Metadata["recall_recipient_id"])
 }
 
+func TestStripeCheckoutSessionRevision(t *testing.T) {
+	recall := &service.RecallCheckoutDiscount{
+		PromotionCodeID: "promo_recall_7",
+		CampaignID:      42,
+		RecipientID:     84,
+	}
+	tests := []struct {
+		name              string
+		selection         service.StripeCheckoutDiscountSelection
+		wantCoupon        string
+		wantPromotionCode string
+		wantRecall        bool
+	}{
+		{
+			name: "manual",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountManual,
+				PromotionCodeID: "promo_manual_7",
+				MaskedCode:      "MAN***-7",
+			},
+			wantPromotionCode: "promo_manual_7",
+		},
+		{
+			name: "invitation restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:   service.StripeCheckoutDiscountInvitation,
+				CouponID: "coupon_invitation_7",
+			},
+			wantCoupon: "coupon_invitation_7",
+		},
+		{
+			name: "recall restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountRecall,
+				PromotionCodeID: "promo_recall_7",
+			},
+			wantPromotionCode: "promo_recall_7",
+			wantRecall:        true,
+		},
+		{
+			name:      "none restore",
+			selection: service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			params := buildStripeCheckoutSessionParamsForRevision(
+				"trade_revision_7", "", "buyer@example.com", "price_123", 1, "USD",
+				"https://example.com/success", "https://example.com/cancel", false, false,
+				service.StripeCheckoutPresentation{}, "", 2, test.selection, recall,
+			)
+
+			require.Equal(t, "trade_revision_7", params.Metadata["trade_no"])
+			require.Equal(t, "2", params.Metadata["checkout_revision"])
+			require.Equal(t, string(test.selection.Source), params.Metadata["discount_selection"])
+			require.Equal(t, params.Metadata["trade_no"], params.PaymentIntentData.Metadata["trade_no"])
+			require.Equal(t, params.Metadata["checkout_revision"], params.PaymentIntentData.Metadata["checkout_revision"])
+			require.Equal(t, params.Metadata["discount_selection"], params.PaymentIntentData.Metadata["discount_selection"])
+			require.NotNil(t, params.IdempotencyKey)
+			require.Contains(t, *params.IdempotencyKey, ":rev:2:")
+			require.NotContains(t, *params.IdempotencyKey, "promo_manual_7")
+			require.NotContains(t, *params.IdempotencyKey, "MAN***-7")
+			if test.wantCoupon == "" && test.wantPromotionCode == "" {
+				require.Empty(t, params.Discounts)
+			} else {
+				require.Len(t, params.Discounts, 1)
+				if test.wantCoupon != "" {
+					require.NotNil(t, params.Discounts[0].Coupon)
+					require.Equal(t, test.wantCoupon, *params.Discounts[0].Coupon)
+				} else {
+					require.NotNil(t, params.Discounts[0].PromotionCode)
+					require.Equal(t, test.wantPromotionCode, *params.Discounts[0].PromotionCode)
+				}
+			}
+			if test.wantRecall {
+				require.Equal(t, "42", params.Metadata["recall_campaign_id"])
+				require.Equal(t, "84", params.Metadata["recall_recipient_id"])
+				require.Equal(t, "42", params.PaymentIntentData.Metadata["recall_campaign_id"])
+				require.Equal(t, "84", params.PaymentIntentData.Metadata["recall_recipient_id"])
+			} else {
+				require.NotContains(t, params.Metadata, "recall_campaign_id")
+				require.NotContains(t, params.Metadata, "recall_recipient_id")
+				require.NotContains(t, params.PaymentIntentData.Metadata, "recall_campaign_id")
+				require.NotContains(t, params.PaymentIntentData.Metadata, "recall_recipient_id")
+			}
+		})
+	}
+}
+
 func TestStripeCheckoutSessionNoClaimAppliesBestAccountRecallOffer(t *testing.T) {
 	backend := setupSubscriptionStripeRecordingBackend(t)
 	setupStripeFulfillmentTestDB(t)
@@ -471,7 +561,7 @@ func TestStripeCheckoutSessionNoClaimAppliesBestAccountRecallOffer(t *testing.T)
 	require.NotNil(t, params.IdempotencyKey)
 	var persisted model.TopUp
 	require.NoError(t, model.DB.Where("user_id = ?", userID).First(&persisted).Error)
-	require.Equal(t, "topup-stripe:"+persisted.TradeNo, *params.IdempotencyKey)
+	require.Contains(t, *params.IdempotencyKey, "topup-stripe:"+persisted.TradeNo+":rev:0:discount:")
 	require.Len(t, params.Discounts, 1)
 	require.Equal(t, "promo_topup_strong", *params.Discounts[0].PromotionCode)
 	require.Equal(t, fmt.Sprintf("%d", strongerCampaign.Id), params.Metadata["recall_campaign_id"])

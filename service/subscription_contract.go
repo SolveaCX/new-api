@@ -1529,6 +1529,7 @@ func stripeSubscriptionCheckoutInputFromOrder(order *model.SubscriptionOrder, us
 		DiscountAmountMinor:    order.SubscriptionDiscountAmountMinor,
 		DiscountCurrency:       strings.TrimSpace(order.PaymentCurrency),
 		DiscountReservationKey: strings.TrimSpace(order.SubscriptionDiscountReservationKey),
+		CheckoutRevision:       order.CheckoutRevision,
 	}
 	if input.DiscountKind == SubscriptionDiscountKindRecall && strings.TrimSpace(order.RecallPromotionCodeId) != "" {
 		input.RecallDiscount = &RecallCheckoutDiscount{
@@ -1536,6 +1537,14 @@ func stripeSubscriptionCheckoutInputFromOrder(order *model.SubscriptionOrder, us
 			CampaignID:      order.RecallCampaignId,
 			RecipientID:     order.RecallRecipientId,
 		}
+		input.DiscountSelection = StripeCheckoutDiscountSelection{
+			Source:          StripeCheckoutDiscountRecall,
+			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
+		}
+	} else if input.DiscountKind == SubscriptionDiscountKindInvitation {
+		input.DiscountSelection = StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountInvitation}
+	} else {
+		input.DiscountSelection = StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone}
 	}
 	return input, nil
 }

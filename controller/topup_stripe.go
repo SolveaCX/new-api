@@ -509,7 +509,8 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	// silently falls back to hosted Checkout when the key is unavailable.
 	presentation := service.ResolveStripeCheckoutPresentation(req.UIMode)
 
-	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, presentation, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), recallDiscount)
+	discountSelection := stripeCheckoutDiscountSelectionFromRecall(recallDiscount)
+	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, presentation, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), topUp.CheckoutRevision, discountSelection, recallDiscount)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusFailed)
@@ -2594,7 +2595,7 @@ func ensureStripeCustomerTaxID(ctx context.Context, customerId string, fields mo
 //   - cancelURL: custom URL to redirect when payment is canceled (empty for default)
 //
 // Returns the checkout session URL or an error if the session creation fails.
-func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSession, error) {
+func genStripeLink(referenceId string, customerId string, email string, checkout *stripeTopUpCheckout, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, fmt.Errorf("无效的Stripe API密钥")
 	}
@@ -2612,8 +2613,7 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 		cancelURL = consolePaymentReturnPath("/console/topup")
 	}
 
-	params := buildStripeCheckoutSessionParams(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, recall)
-	params.SetIdempotencyKey("topup-stripe:" + strings.TrimSpace(referenceId))
+	params := buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, checkoutRevision, discountSelection, recall)
 
 	result, err := session.New(params)
 	if err != nil {
@@ -2723,22 +2723,29 @@ func stripeCheckoutSubmitMessage(amount int64, bonusAmount int64) string {
 }
 
 func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
+	return buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, email, priceId, quantity, currency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, 0, stripeCheckoutDiscountSelectionFromRecall(recall), recall)
+}
+
+func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
+	discountSelection = service.NormalizeStripeCheckoutDiscountSelection(discountSelection)
+	metadata := map[string]string{
+		"trade_no":           strings.TrimSpace(referenceId),
+		"checkout_revision":  strconv.FormatInt(checkoutRevision, 10),
+		"discount_selection": string(discountSelection.Source),
+	}
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			buildStripeTopUpLineItem(priceId, quantity),
 		},
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Mode:     stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Metadata: metadata,
 	}
-	if recall != nil {
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{{
-			PromotionCode: stripe.String(recall.PromotionCodeID),
-		}}
-		params.Metadata = map[string]string{
-			"recall_campaign_id":  strconv.FormatInt(recall.CampaignID, 10),
-			"recall_recipient_id": strconv.FormatInt(recall.RecipientID, 10),
-		}
+	if discountSelection.Source == service.StripeCheckoutDiscountRecall && recall != nil {
+		metadata["recall_campaign_id"] = strconv.FormatInt(recall.CampaignID, 10)
+		metadata["recall_recipient_id"] = strconv.FormatInt(recall.RecipientID, 10)
 	}
+	service.ApplyStripeCheckoutDiscount(params, discountSelection)
 
 	if uiMode, ok := presentation.SessionUIMode(); ok {
 		// Client-rendered sessions reject success_url/cancel_url. return_url is still required
@@ -2766,11 +2773,9 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 	// so the charge is attributable to the product they bought.
 	params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
 		StatementDescriptorSuffix: stripe.String("FLATKEY"),
-		Metadata: map[string]string{
-			"trade_no": referenceId,
-			"source":   "new-api",
-		},
+		Metadata:                  copyStripeCheckoutMetadata(metadata),
 	}
+	params.PaymentIntentData.Metadata["source"] = "new-api"
 
 	// Ask issuers to run 3D Secure whenever the card is enrolled ("any"): card-testing
 	// bots holding stolen numbers can't pass the cardholder challenge, and liability for
@@ -2842,8 +2847,27 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 			}
 		}
 	}
+	params.SetIdempotencyKey(service.StripeCheckoutIdempotencyKey("topup-stripe:"+strings.TrimSpace(referenceId), checkoutRevision, discountSelection))
 
 	return params
+}
+
+func stripeCheckoutDiscountSelectionFromRecall(recall *service.RecallCheckoutDiscount) service.StripeCheckoutDiscountSelection {
+	if recall == nil || strings.TrimSpace(recall.PromotionCodeID) == "" {
+		return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
+	}
+	return service.StripeCheckoutDiscountSelection{
+		Source:          service.StripeCheckoutDiscountRecall,
+		PromotionCodeID: strings.TrimSpace(recall.PromotionCodeID),
+	}
+}
+
+func copyStripeCheckoutMetadata(metadata map[string]string) map[string]string {
+	copied := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		copied[key] = value
+	}
+	return copied
 }
 
 func buildStripeTopUpLineItem(priceId string, amount int64) *stripe.CheckoutSessionLineItemParams {
