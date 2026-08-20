@@ -41,6 +41,30 @@ func TestResolveManualPromotionReturnsCaseInsensitiveGlobalMatch(t *testing.T) {
 	}, got)
 }
 
+func TestResolveManualPromotionRejectsApproximateCodeMatch(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+	}{
+		{name: "prefix", code: "SAVE"},
+		{name: "suffix", code: "SAVE20EXTRA"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
+				promotions: []*stripe.PromotionCode{stripeCheckoutTestGlobalPromotion("promo_global", "SAVE20", 20)},
+			}}
+
+			_, err := resolver.ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
+				Code: test.code, CustomerID: "cus_7", ProductID: "prod_pro",
+				Currency: stripe.CurrencyUSD, Subtotal: 3000,
+			})
+
+			require.ErrorIs(t, err, ErrStripePromotionUnavailable)
+		})
+	}
+}
+
 func TestResolveManualPromotionPrefersCurrentCustomer(t *testing.T) {
 	resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
 		promotions: []*stripe.PromotionCode{
@@ -64,6 +88,22 @@ func TestResolveManualPromotionRejectsAmbiguousGlobalMatch(t *testing.T) {
 		promotions: []*stripe.PromotionCode{
 			stripeCheckoutTestGlobalPromotion("promo_global_1", "SAVE20", 20),
 			stripeCheckoutTestGlobalPromotion("promo_global_2", "save20", 25),
+		},
+	}}
+
+	_, err := resolver.ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
+		Code: "SAVE20", CustomerID: "cus_7", ProductID: "prod_pro",
+		Currency: stripe.CurrencyUSD, Subtotal: 3000,
+	})
+
+	require.ErrorIs(t, err, ErrStripePromotionAmbiguous)
+}
+
+func TestResolveManualPromotionRejectsAmbiguousCustomerMatch(t *testing.T) {
+	resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
+		promotions: []*stripe.PromotionCode{
+			stripeCheckoutTestCustomerPromotion("promo_customer_1", "SAVE20", "cus_7", 20),
+			stripeCheckoutTestCustomerPromotion("promo_customer_2", "save20", "cus_7", 25),
 		},
 	}}
 
@@ -157,6 +197,42 @@ func TestResolveManualPromotionAcceptsCurrencySpecificMinimum(t *testing.T) {
 	require.Equal(t, "promo_minimum", got.PromotionCodeID)
 }
 
+func TestResolveManualPromotionRejectsMissingCurrencyOption(t *testing.T) {
+	tests := []struct {
+		name            string
+		currencyOptions map[string]*stripe.PromotionCodeRestrictionsCurrencyOptions
+	}{
+		{
+			name: "checkout currency absent",
+			currencyOptions: map[string]*stripe.PromotionCodeRestrictionsCurrencyOptions{
+				"usd": {MinimumAmount: 2500},
+			},
+		},
+		{
+			name: "checkout currency option nil",
+			currencyOptions: map[string]*stripe.PromotionCodeRestrictionsCurrencyOptions{
+				"eur": nil,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			promotion := stripeCheckoutTestGlobalPromotion("promo_currency", "EURO20", 20)
+			promotion.Restrictions = &stripe.PromotionCodeRestrictions{CurrencyOptions: test.currencyOptions}
+			resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
+				promotions: []*stripe.PromotionCode{promotion},
+			}}
+
+			_, err := resolver.ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
+				Code: "EURO20", CustomerID: "cus_7", ProductID: "prod_pro",
+				Currency: stripe.CurrencyEUR, Subtotal: 3000,
+			})
+
+			require.ErrorIs(t, err, ErrStripePromotionUnavailable)
+		})
+	}
+}
+
 func TestResolveManualPromotionRejectsProductRestriction(t *testing.T) {
 	promotion := stripeCheckoutTestGlobalPromotion("promo_product", "PROONLY", 20)
 	promotion.Promotion.Coupon.AppliesTo = &stripe.CouponAppliesTo{Products: []string{"prod_other"}}
@@ -172,6 +248,22 @@ func TestResolveManualPromotionRejectsProductRestriction(t *testing.T) {
 	require.ErrorIs(t, err, ErrStripePromotionUnavailable)
 }
 
+func TestResolveManualPromotionAcceptsAllowedProduct(t *testing.T) {
+	promotion := stripeCheckoutTestGlobalPromotion("promo_product", "PROONLY", 20)
+	promotion.Promotion.Coupon.AppliesTo = &stripe.CouponAppliesTo{Products: []string{"prod_other", "prod_pro"}}
+	resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
+		promotions: []*stripe.PromotionCode{promotion},
+	}}
+
+	got, err := resolver.ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
+		Code: "PROONLY", CustomerID: "cus_7", ProductID: "prod_pro",
+		Currency: stripe.CurrencyUSD, Subtotal: 3000,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "promo_product", got.PromotionCodeID)
+}
+
 func TestResolveManualPromotionRejectsExpiredOrExhaustedPromotionAndCoupon(t *testing.T) {
 	now := time.Now().Unix()
 	tests := []struct {
@@ -179,9 +271,11 @@ func TestResolveManualPromotionRejectsExpiredOrExhaustedPromotionAndCoupon(t *te
 		mutate func(*stripe.PromotionCode)
 	}{
 		{name: "promotion expired", mutate: func(p *stripe.PromotionCode) { p.ExpiresAt = now - 1 }},
+		{name: "promotion expires now", mutate: func(p *stripe.PromotionCode) { p.ExpiresAt = now }},
 		{name: "promotion exhausted", mutate: func(p *stripe.PromotionCode) { p.MaxRedemptions, p.TimesRedeemed = 2, 2 }},
 		{name: "coupon invalid", mutate: func(p *stripe.PromotionCode) { p.Promotion.Coupon.Valid = false }},
 		{name: "coupon expired", mutate: func(p *stripe.PromotionCode) { p.Promotion.Coupon.RedeemBy = now - 1 }},
+		{name: "coupon redeem by now", mutate: func(p *stripe.PromotionCode) { p.Promotion.Coupon.RedeemBy = now }},
 		{name: "coupon exhausted", mutate: func(p *stripe.PromotionCode) {
 			p.Promotion.Coupon.MaxRedemptions, p.Promotion.Coupon.TimesRedeemed = 3, 3
 		}},
@@ -230,11 +324,16 @@ func TestStripeCheckoutPromotionListClientFiltersAndConsumesAllPages(t *testing.
 		require.Equal(t, "Bearer sk_test_promotion_resolver", r.Header.Get("Authorization"))
 		queries = append(queries, r.URL.RawQuery)
 		w.Header().Set("Content-Type", "application/json")
-		coupon := `"coupon_first"`
+		var expansions []string
 		for key, values := range r.URL.Query() {
-			if strings.HasPrefix(key, "expand") && len(values) == 1 && values[0] == "promotion.coupon" {
-				coupon = `{"id":"coupon_first","object":"coupon","percent_off":20,"valid":true}`
+			if strings.HasPrefix(key, "expand") {
+				expansions = append(expansions, values...)
 			}
+		}
+		require.Equal(t, []string{"data.promotion.coupon"}, expansions)
+		coupon := `"coupon_first"`
+		if len(expansions) == 1 && expansions[0] == "data.promotion.coupon" {
+			coupon = `{"id":"coupon_first","object":"coupon","percent_off":20,"valid":true}`
 		}
 		if r.URL.Query().Get("starting_after") == "promo_first" {
 			body := `{"object":"list","data":[{"id":"promo_second","object":"promotion_code","active":true,"code":"Save20","promotion":{"type":"coupon","coupon":` + strings.Replace(coupon, "coupon_first", "coupon_second", 1) + `}}],"has_more":false,"url":"/v1/promotion_codes"}`
@@ -275,7 +374,7 @@ func TestStripeCheckoutPromotionListClientFiltersAndConsumesAllPages(t *testing.
 	for _, rawQuery := range queries {
 		require.Contains(t, rawQuery, "active=true")
 		require.Contains(t, rawQuery, "code=Save20")
-		require.Contains(t, rawQuery, "expand")
+		require.Contains(t, rawQuery, "data.promotion.coupon")
 	}
 	require.True(t, strings.Contains(queries[1], "starting_after=promo_first"))
 }

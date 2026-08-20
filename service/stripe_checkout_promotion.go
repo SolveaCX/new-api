@@ -95,7 +95,7 @@ func (stripeCheckoutPromotionListClient) ListPromotionCodes(ctx context.Context,
 		Active: stripe.Bool(true),
 		Code:   stripe.String(strings.TrimSpace(code)),
 	}
-	params.AddExpand("promotion.coupon")
+	params.AddExpand("data.promotion.coupon")
 	params.Context = ctx
 	client := promotioncode.Client{B: stripe.GetBackend(stripe.APIBackend), Key: setting.StripeApiSecret}
 	iter := client.List(params)
@@ -142,7 +142,11 @@ func stripeCheckoutPromotionMeetsMinimum(restrictions *stripe.PromotionCodeRestr
 		return true
 	}
 	currencyCode := strings.ToLower(string(currency))
-	if option, ok := restrictions.CurrencyOptions[currencyCode]; ok && option != nil {
+	if len(restrictions.CurrencyOptions) > 0 {
+		option, ok := restrictions.CurrencyOptions[currencyCode]
+		if !ok || option == nil {
+			return false
+		}
 		return subtotal >= option.MinimumAmount
 	}
 	if restrictions.MinimumAmount == 0 {
