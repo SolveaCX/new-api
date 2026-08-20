@@ -69,6 +69,18 @@ func TestEvaluateMediaEligibility(t *testing.T) {
 			wantErr:    ErrMediaSubscriptionRequired,
 		},
 		{
+			name:       "numeric x_basic equivalent tier denies media",
+			snapshot:   `{"version":1,"tier":"2","monthly":{"status_code":200,"monthly_limit_cents":15000},"weekly":{"status_code":200}}`,
+			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
+		},
+		{
+			name:       "textual basic equivalent tier denies media",
+			snapshot:   `{"version":1,"tier":"basic","monthly":{"status_code":200,"monthly_limit_cents":15000},"weekly":{"status_code":200}}`,
+			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
+		},
+		{
 			name:       "positive monthly limit grants media",
 			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 200, MonthlyLimitCents: &limit}, Weekly: BillingWindowSnapshot{StatusCode: 503}}),
 			observedAt: now,
@@ -87,6 +99,12 @@ func TestEvaluateMediaEligibility(t *testing.T) {
 			name:       "partial weekly success with monthly failure grants media",
 			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 500}, Weekly: BillingWindowSnapshot{StatusCode: 200, UsagePercent: &usage}}),
 			observedAt: now,
+		},
+		{
+			name:       "paid-looking evidence on failed window does not grant media",
+			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 500, MonthlyLimitCents: &limit}, Weekly: BillingWindowSnapshot{StatusCode: 200}}),
+			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
 		},
 		{
 			name:       "monthly unauthorized denies even when weekly paid",
@@ -275,6 +293,25 @@ func TestProbeBillingFailsOnTransportError(t *testing.T) {
 
 	if _, err := ProbeBilling(context.Background(), doer, cred); err == nil {
 		t.Fatalf("transport failure must fail probe")
+	}
+}
+
+func TestProbeBillingTransportErrorDoesNotLeakSecret(t *testing.T) {
+	const secret = "secret-access-token-from-transport"
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("dial failed with %s", secret)
+	})
+
+	_, err := ProbeBilling(context.Background(), doer, cred)
+	if !errors.Is(err, ErrBillingProbeFailed) {
+		t.Fatalf("transport failure err = %v, want ErrBillingProbeFailed", err)
+	}
+	if !strings.Contains(err.Error(), "probe request failed") {
+		t.Fatalf("transport failure should return stable probe category, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("transport failure must not leak secret, got %q", err.Error())
 	}
 }
 

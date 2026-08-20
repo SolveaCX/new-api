@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -23,6 +22,7 @@ var (
 	ErrMediaSubscriptionRequired = errors.New("grok billing: media subscription required")
 	ErrBillingSnapshotInvalid    = errors.New("grok billing: snapshot invalid")
 	ErrBillingSnapshotStale      = errors.New("grok billing: snapshot stale")
+	ErrBillingProbeFailed        = errors.New("grok billing: probe request failed")
 )
 
 type BillingWindowSnapshot struct {
@@ -131,7 +131,7 @@ func probeBillingWindow(ctx context.Context, doer HTTPDoer, cred Credential, pat
 
 	resp, err := doer.Do(req)
 	if err != nil {
-		return billingWindowProbe{}, fmt.Errorf("grok billing: probe request failed: %w", err)
+		return billingWindowProbe{}, ErrBillingProbeFailed
 	}
 	if resp == nil || resp.Body == nil {
 		return billingWindowProbe{}, errors.New("grok billing: empty response")
@@ -220,7 +220,7 @@ func deriveUsedPercent(includedUsed *json.Number, monthlyLimit *int64) *float64 
 
 func isExplicitFree(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "free", "0", "x_basic":
+	case "free", "0", "2", "basic", "x_basic", "xai_basic":
 		return true
 	default:
 		return false
@@ -231,10 +231,13 @@ func hasAuthoritativePaidEvidence(snapshot BillingProbeSnapshot) bool {
 	if isCanonicalPaidBillingPlan(snapshot.Plan) {
 		return true
 	}
-	return windowHasPaidEvidence(snapshot.Monthly) || windowHasPaidEvidence(snapshot.Weekly)
+	return successfulWindowHasPaidEvidence(snapshot.Monthly) || successfulWindowHasPaidEvidence(snapshot.Weekly)
 }
 
-func windowHasPaidEvidence(window BillingWindowSnapshot) bool {
+func successfulWindowHasPaidEvidence(window BillingWindowSnapshot) bool {
+	if !isSuccessfulBillingStatus(window.StatusCode) {
+		return false
+	}
 	if window.UsagePercent != nil || window.UsedPercent != nil {
 		return true
 	}
