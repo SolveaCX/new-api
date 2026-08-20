@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  DollarSign,
   FileAudio,
   FileText,
   FileVideo,
@@ -178,8 +179,10 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   video: [
     {
       // Real Seedance output, each paired with the prompt and reference that
-      // produced it -- the workbench is a request blueprint, so every sample
-      // has to be a request that actually ran.
+      // produced it -- the workbench is a request blueprint, so every sample has
+      // to be a request that actually ran. These are deliberately different
+      // scenes from the showcase below, so the page shows eight distinct
+      // generations rather than five shown twice.
       poster: "/assets/model-examples/seedance-f1-wet-track.png",
       video: "/assets/model-examples/seedance-f1-wet-track.mp4",
       label: "Wet-track chase shot",
@@ -191,48 +194,31 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
       ],
     },
     {
-      poster: "/assets/model-showcase/coastal-landmark.png",
-      video: "/assets/model-showcase/coastal-landmark.mp4",
-      label: "Cinematic landscape",
+      poster: "/assets/model-examples/product-macro.png",
+      video: "/assets/model-examples/product-macro.mp4",
+      label: "Product macro",
       prompt:
-        "Aerial approach along a clifftop coast road at dusk, lighthouse on the headland, heavy surf breaking against layered rock, gulls crossing frame, soft overcast light, muted blue and ochre palette, slow drifting camera.",
+        "Slow macro dolly across a matte-black wireless earbud case on a concrete surface, lid opening to reveal the buds, controlled studio key light with a soft rim, dust motes in the beam, shallow depth of field, premium product cinematography, subtle mechanical click.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
       references: [
-        { kind: "image", name: "coastal-reference.png", url: "/assets/model-showcase/coastal-landmark.png" },
+        { kind: "image", name: "product-reference.png", url: "/assets/model-examples/product-macro-reference.png" },
       ],
     },
     {
-      poster: "/assets/model-showcase/creature-closeup.png",
-      video: "/assets/model-showcase/creature-closeup.mp4",
-      label: "Character and creature",
+      poster: "/assets/model-examples/food-motion.png",
+      video: "/assets/model-examples/food-motion.mp4",
+      label: "Food and beverage",
       prompt:
-        "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
+        "Overhead shot of espresso being poured into a glass of milk over ice, dark coffee blooming through the white in slow motion, condensation on the glass, warm cafe daylight, marble counter, appetising commercial food cinematography.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-      references: [
-        { kind: "image", name: "creature-reference.png", url: "/assets/model-showcase/creature-closeup.png" },
-      ],
     },
     {
-      poster: "/assets/model-showcase/romance-scene.png",
-      video: "/assets/model-showcase/romance-scene.mp4",
-      label: "Character performance",
+      poster: "/assets/model-examples/fashion-walk.png",
+      video: "/assets/model-examples/fashion-walk.mp4",
+      label: "Fashion film",
       prompt:
-        "A couple sitting close on a rain-streaked cafe window seat at dusk, warm interior light, she laughs and rests her head on his shoulder, shallow depth of field, film grain, intimate handheld framing, soft ambient room tone.",
+        "A model in a long camel coat walking toward camera down a wide city street at golden hour, coat moving with the stride, backlit rim light through the fabric, shallow depth of field with compressed background, editorial fashion film look.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-      references: [
-        { kind: "image", name: "cafe-reference.png", url: "/assets/model-showcase/romance-scene.png" },
-      ],
-    },
-    {
-      poster: "/assets/model-showcase/ugc-creator.png",
-      video: "/assets/model-showcase/ugc-creator.mp4",
-      label: "UGC and social",
-      prompt:
-        "Handheld selfie shot: a young creator in a bright apartment holds the camera at arm's length, talking to it with natural energy, gestures toward a laptop on the desk beside her, warm daylight from a window, slight camera shake, unpolished authentic UGC look.",
-      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-      references: [
-        { kind: "image", name: "creator-reference.png", url: "/assets/model-showcase/ugc-creator.png" },
-      ],
     },
   ],
   audio: [
@@ -259,6 +245,31 @@ type ShowcaseScene = {
 // To add a scene: drop <id>.mp4 and <id>.png into website/public/assets/
 // model-showcase/, add the entry here, and add its `label` to the copy maps in
 // lib/model-landing.ts for all 10 locales.
+// The capabilities the clips below demonstrate, stated as text. A gallery shows
+// what the model did; this says what it can do -- which is what a reader
+// comparing models, and a crawler indexing the page, can actually read.
+//
+// Sourced from the model's published capability set, the same one the page
+// description and the version comparison draw on.
+const SHOWCASE_CAPABILITIES: ReadonlyArray<{ title: ModelLandingKey; body: ModelLandingKey }> = [
+  {
+    title: "Text and image to video",
+    body: "Generate from a written scene, or drive it with reference images for a subject you have already designed.",
+  },
+  {
+    title: "Multi-shot consistency",
+    body: "Hold characters, wardrobe, and setting across cuts within a single generation.",
+  },
+  {
+    title: "Native audio",
+    body: "Ambient sound and speech are generated with the picture, in multiple languages.",
+  },
+  {
+    title: "Edit and extend",
+    body: "Continue an existing clip or revise one, with first-frame and first/last-frame control.",
+  },
+];
+
 const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
     id: "racing-chase",
@@ -384,6 +395,77 @@ function ModelVersionCompare(props: {
   );
 }
 
+// Why Flatkey: the page has shown what the model does and how to call it, but
+// never why to call it through here rather than direct from the vendor. Placed
+// after the version comparison, where a reader has decided on the model and the
+// open question becomes the gateway.
+//
+// Claims are tied to what the page already demonstrates -- the live price row,
+// the measured uptime section, the catalog of other models -- rather than
+// generic platform copy.
+function WhyFlatkey(props: {
+  modelName: string;
+  providerName: string;
+  savings: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const reasons = [
+    {
+      icon: <DollarSign className="size-4" />,
+      title: props.savings === "0%"
+        ? props.t("Vendor pricing, one balance")
+        : props.t("{{percent}} below list price", { percent: props.savings }),
+      body: props.t("The same upstream model, billed from one balance that also covers text, image, and audio models."),
+    },
+    {
+      icon: <Code2 className="size-4" />,
+      title: props.t("OpenAI-compatible from day one"),
+      body: props.t("Point base_url at Flatkey and keep your existing SDK, request shapes, and streaming code."),
+    },
+    {
+      icon: <Layers3 className="size-4" />,
+      title: props.t("Swap models without a new integration"),
+      body: props.t("Move between {{provider}} and every other model in the catalog by changing one string.", {
+        provider: props.providerName,
+      }),
+    },
+    {
+      icon: <ShieldCheck className="size-4" />,
+      title: props.t("Routing across upstream channels"),
+      body: props.t("Requests are spread across the channels serving this model, with 30-day uptime published above."),
+    },
+  ];
+
+  return (
+    <RevealSection
+      id="why-flatkey"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Why Flatkey")}
+          title={props.t("Why run {{model}} through Flatkey", { model: props.modelName })}
+          description={props.t("One key, one balance, and the same upstream model you would call directly.")}
+        />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {reasons.map((reason) => (
+            <div
+              key={reason.title}
+              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.03]"
+            >
+              <span className="grid size-9 place-items-center rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                {reason.icon}
+              </span>
+              <h3 className="mt-3.5 text-[15px] font-semibold text-[#20222a] dark:text-white/90">{reason.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{reason.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
 function ModelShowcase(props: {
   modelName: string;
   onUseScene: (scene: ShowcaseScene) => void;
@@ -401,9 +483,20 @@ function ModelShowcase(props: {
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
           eyebrow={props.t("Showcase")}
-          title={props.t("What {{model}} produces", { model: props.modelName })}
+          title={props.t("What {{model}} can do", { model: props.modelName })}
           description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
         />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {SHOWCASE_CAPABILITIES.map((capability) => (
+            <div
+              key={capability.title}
+              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]"
+            >
+              <h3 className="text-[13px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
+              <p className="mt-1.5 text-[12px] leading-5 text-muted-foreground">{props.t(capability.body)}</p>
+            </div>
+          ))}
+        </div>
         <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)] lg:items-stretch">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
             <div className="relative aspect-video">
@@ -460,7 +553,9 @@ function ModelShowcase(props: {
                   <span className="block text-[13px] font-semibold text-[#20222a] dark:text-white/88">
                     {props.t(item.label)}
                   </span>
-                  <span className="mt-1 line-clamp-2 block text-[11px] leading-4 text-muted-foreground">{item.prompt}</span>
+                  <span className="mt-1 line-clamp-1 block text-[11px] leading-4 text-muted-foreground" title={item.prompt}>
+                    {item.prompt}
+                  </span>
                 </span>
               </button>
             ))}
@@ -690,6 +785,9 @@ function FlatkeyModelDetailPage(props: {
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.groupRatio, props.t);
   const providerRows = buildCatalogProviderRows(props.config, props.liveModels, providerName);
   const priceRows = buildFlatkeyPriceRows(props.config, model, props.groupRatio, props.t);
+  const heroSavings = priceRows.rows[0]
+    ? formatSavings(priceRows.rows[0].flatkey, priceRows.rows[0].official)
+    : "0%";
   const generator = props.config.generator;
   const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
   const modelDescription = buildModelDescription(props.config, model, props.t);
@@ -709,6 +807,15 @@ function FlatkeyModelDetailPage(props: {
       : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
+    // Declare the showcase clips so they are eligible for video rich results;
+    // undeclared, five real generations were invisible to video search.
+    videos: SHOWCASE_SCENES.map((scene) => ({
+      name: `${props.config.displayName} — ${props.t(scene.label)}`,
+      description: scene.prompt,
+      contentPath: `/assets/model-showcase/${scene.id}.mp4`,
+      thumbnailPath: `/assets/model-showcase/${scene.id}.png`,
+      duration: "PT6S",
+    })),
   });
   const rankingRow = findRankingRow(props.rankings?.models ?? [], props.config.modelId);
 
@@ -879,6 +986,7 @@ function FlatkeyModelDetailPage(props: {
             <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
               <ExamplePicker
                 examples={examples}
+                modelName={props.config.displayName}
                 selected={props.selectedExample}
                 onSelect={props.onExampleSelect}
                 t={props.t}
@@ -934,6 +1042,32 @@ function FlatkeyModelDetailPage(props: {
           </RevealSection>
         ) : null}
 
+
+        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
+
+        {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
+          <ModelVersionCompare
+            modelName={props.config.displayName}
+            previousName="Seedance 2.0"
+            t={props.t}
+          />
+        ) : null}
+
+        <WhyFlatkey
+          modelName={props.config.displayName}
+          providerName={providerName}
+          savings={heroSavings}
+          t={props.t}
+        />
+
+        <ModelQuickStart
+          config={props.config}
+          locale={props.locale}
+          runHref={runHref}
+          onRunClick={props.onRunClick}
+          t={props.t}
+        />
+
         <ModelPerformanceSection
           modelId={props.config.modelId}
           successRate={successRate}
@@ -946,30 +1080,11 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <ModelQuickStart
-          config={props.config}
-          locale={props.locale}
-          runHref={runHref}
-          onRunClick={props.onRunClick}
-          t={props.t}
-        />
-
         <ModelActivitySection
           modelId={props.config.modelId}
           usage={props.usage}
           t={props.t}
         />
-
-
-        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
-
-        {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
-          <ModelVersionCompare
-            modelName={props.config.displayName}
-            previousName="Seedance 2.0"
-            t={props.t}
-          />
-        ) : null}
 
         <ModelExamplesAndRelated
           config={props.config}
@@ -984,8 +1099,8 @@ function FlatkeyModelDetailPage(props: {
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
-              title={props.t("Frequently asked questions")}
-              description={props.t("Use the pricing section above for current Flatkey prices from our pricing API.")}
+              title={props.t("{{model}} API — frequently asked questions", { model: props.config.displayName })}
+              description={props.t("Pricing, compatibility, limits, and how your prompts and generated files are handled.")}
             />
             <div className="mt-6 divide-y divide-violet-500/12 rounded-2xl border border-violet-500/16 bg-white/72 px-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
               {faqItems.map((item) => (
@@ -1647,14 +1762,16 @@ function ModelPageTabs(props: {
   const sectionIds = useMemo(
     () =>
       props.generator
-        ? ["workbench", "performance", "quick-start", "faq"]
-        : ["performance", "quick-start", "faq"],
+        ? ["workbench", "showcase", "why-flatkey", "quick-start", "performance", "faq"]
+        : ["showcase", "why-flatkey", "quick-start", "performance", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
+    { id: "showcase", href: "#showcase", label: props.t("Showcase"), icon: <Play className="size-3.5" /> },
+    { id: "why-flatkey", href: "#why-flatkey", label: props.t("Why Flatkey"), icon: <Sparkles className="size-3.5" /> },
     { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
+    { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
   const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
@@ -2323,6 +2440,7 @@ function parsePrice(value: string) {
 // so a visitor can see how an output was built before editing it themselves.
 function ExamplePicker(props: {
   examples: readonly MediaExample[];
+  modelName: string;
   selected: number;
   onSelect: (index: number) => void;
   t: (key: string, vars?: Record<string, string>) => string;
@@ -2332,7 +2450,9 @@ function ExamplePicker(props: {
   return (
     <div data-model-example-picker="true" className="border-b border-slate-200 px-5 pt-4 pb-4 dark:border-white/10">
       <div className="mb-3">
-        <h2 className="text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.t("Examples")}</h2>
+        <h2 className="text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">
+          {props.t("{{model}} prompt examples", { model: props.modelName })}
+        </h2>
         <p className="mt-0.5 text-[11px] font-medium text-[#7b8494] dark:text-white/48">
           {props.t("Explore different use cases and parameter configurations")}
         </p>
