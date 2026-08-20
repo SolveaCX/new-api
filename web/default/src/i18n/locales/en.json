@@ -6739,6 +6739,7 @@
     "No selected users can be verified": "No selected users can be verified",
     "Website": "Website",
     "Website (optional)": "Website (optional)",
-    "Honeypot": "Honeypot"
+    "Honeypot": "Honeypot",
+    "Include disabled users": "Include disabled users"
   }
 }

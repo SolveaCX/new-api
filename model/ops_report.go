@@ -99,22 +99,24 @@ type OpsTopUp struct {
 }
 
 // GetOpsPlgUsers returns every plg-group user (the self-serve population).
-// GetOpsPlgUsers returns the enabled PLG users — the daily report's only user
-// source, so registration/activation/paid statistics all share the same "valid
-// user" denominator. Disabled accounts (manually banned and honeypot-created)
-// are excluded: they are not real signups and would inflate the funnel.
-func GetOpsPlgUsers() ([]*OpsPlgUser, error) {
+// GetOpsPlgUsers returns the PLG users that back the daily report's funnel
+// metrics. When includeDisabled is false (the default reporting denominator),
+// disabled accounts — manually banned and honeypot-created — are excluded: they
+// are not real signups and would inflate registration/activation/paid counts.
+func GetOpsPlgUsers(includeDisabled bool) ([]*OpsPlgUser, error) {
 	var users []*OpsPlgUser
-	err := DB.Table("users").
+	query := DB.Table("users").
 		Select(`id, username, display_name, email, created_at, ads_attribution,
 			quota, used_quota, request_count, last_login_at, browser_lang,
 			last_login_ip, pay_country,
 			CASE WHEN google_id IS NOT NULL AND google_id <> '' THEN 'google'
 			     WHEN github_id IS NOT NULL AND github_id <> '' THEN 'github'
 			     ELSE 'email' END AS oauth_kind`).
-		Where(commonGroupCol+" = ?", "plg").
-		Where("status = ?", common.UserStatusEnabled).
-		Find(&users).Error
+		Where(commonGroupCol+" = ?", "plg")
+	if !includeDisabled {
+		query = query.Where("status = ?", common.UserStatusEnabled)
+	}
+	err := query.Find(&users).Error
 	return users, err
 }
 
