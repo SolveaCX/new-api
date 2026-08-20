@@ -125,10 +125,14 @@ export async function updateStripeCheckoutDiscount(
     } as Record<string, unknown>)
     return res.data
   } catch (error) {
-    const responseData = (error as {
-      response?: { data?: unknown }
-    })?.response?.data
-    if (isStripeCheckoutRevisionResponse(responseData)) {
+    const response = (error as {
+      response?: { status?: unknown; data?: unknown }
+    })?.response
+    const responseData = response?.data
+    if (
+      (response?.status === 400 || response?.status === 409) &&
+      isStripeCheckoutRevisionFailureResponse(responseData)
+    ) {
       return responseData
     }
     throw error
@@ -346,12 +350,24 @@ export async function completeOrder(
   return res.data
 }
 
-function isStripeCheckoutRevisionResponse(
+function isStripeCheckoutRevisionFailureResponse(
   value: unknown
 ): value is ApiResponse<StripeCheckoutRevisionData> {
   return Boolean(
     value &&
       typeof value === 'object' &&
-      ('success' in value || 'message' in value || 'data' in value)
+      (value as ApiResponse).success === false &&
+      isStripeCheckoutDiscountErrorMessage((value as ApiResponse).message)
+  )
+}
+
+function isStripeCheckoutDiscountErrorMessage(
+  message: unknown
+): message is string {
+  return (
+    message === 'promotion_code_invalid' ||
+    message === 'promotion_code_ineligible' ||
+    message === 'promotion_code_ambiguous' ||
+    message === 'checkout_revision_conflict'
   )
 }
