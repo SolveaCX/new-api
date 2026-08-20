@@ -175,24 +175,44 @@ func RecordStripeCheckoutCandidate(input StripeCheckoutRevisionCandidate) (*Stri
 		return nil, fmt.Errorf("invalid Stripe checkout candidate")
 	}
 	providerSessionID := strings.TrimSpace(*input.ProviderSessionID)
-	result := DB.Model(&StripeCheckoutRevision{}).
-		Where("id = ? AND state = ?", input.RevisionID, StripeCheckoutRevisionStatePreparing).
-		Updates(map[string]any{
-			"provider_session_id":  providerSessionID,
-			"provider_session_url": strings.TrimSpace(input.ProviderSessionURL),
-			"summary_payload":      input.SummaryPayload,
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return nil, ErrStripeCheckoutRevisionConflict
-	}
 	var stored StripeCheckoutRevision
-	if err := DB.First(&stored, input.RevisionID).Error; err != nil {
+	providerSessionURL := strings.TrimSpace(input.ProviderSessionURL)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		attached := tx.Model(&StripeCheckoutRevision{}).
+			Where("id = ? AND state = ? AND provider_session_id IS NULL", input.RevisionID, StripeCheckoutRevisionStatePreparing).
+			Updates(map[string]any{
+				"provider_session_id":  providerSessionID,
+				"provider_session_url": providerSessionURL,
+				"summary_payload":      input.SummaryPayload,
+			})
+		if attached.Error != nil {
+			return attached.Error
+		}
+
+		lookup := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", input.RevisionID).Limit(1).Find(&stored)
+		if lookup.Error != nil {
+			return lookup.Error
+		}
+		if lookup.RowsAffected != 1 {
+			return ErrStripeCheckoutRevisionConflict
+		}
+		if attached.RowsAffected == 1 || stripeCheckoutCandidateAttachmentMatches(stored, providerSessionID, providerSessionURL, input.SummaryPayload) {
+			return nil
+		}
+		return ErrStripeCheckoutRevisionConflict
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &stored, nil
+}
+
+func stripeCheckoutCandidateAttachmentMatches(stored StripeCheckoutRevision, providerSessionID string, providerSessionURL string, summaryPayload string) bool {
+	return stored.ProviderSessionId != nil &&
+		strings.TrimSpace(*stored.ProviderSessionId) == providerSessionID &&
+		stored.ProviderSessionURL == providerSessionURL &&
+		stored.SummaryPayload == summaryPayload
 }
 
 // ActivateStripeCheckoutRevision atomically advances the order pointer, retires
@@ -230,10 +250,14 @@ func ActivateStripeCheckoutRevision(input StripeCheckoutRevisionActivation) (*St
 			return ErrStripeCheckoutRevisionConflict
 		}
 
-		if err := tx.Model(&StripeCheckoutRevision{}).
+		superseded := tx.Model(&StripeCheckoutRevision{}).
 			Where("order_type = ? AND trade_no = ? AND revision = ? AND state = ?", candidate.OrderType, candidate.TradeNo, input.ExpectedRevision, StripeCheckoutRevisionStateActive).
-			Update("state", StripeCheckoutRevisionStateSuperseded).Error; err != nil {
-			return err
+			Update("state", StripeCheckoutRevisionStateSuperseded)
+		if superseded.Error != nil {
+			return superseded.Error
+		}
+		if input.ExpectedRevision > 0 && superseded.RowsAffected != 1 {
+			return ErrStripeCheckoutRevisionConflict
 		}
 		promoted := tx.Model(&StripeCheckoutRevision{}).
 			Where("id = ? AND state = ?", candidate.Id, StripeCheckoutRevisionStatePreparing).
