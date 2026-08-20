@@ -372,6 +372,7 @@ func orderedMigrationModels() []migrationModel {
 		{&TwoFABackupCode{}, "TwoFABackupCode"},
 		{&Checkin{}, "Checkin"},
 		{&SubscriptionOrder{}, "SubscriptionOrder"},
+		{&StripeCheckoutRevision{}, "StripeCheckoutRevision"},
 		{&UserSubscription{}, "UserSubscription"},
 		{&SubscriptionProviderBinding{}, "SubscriptionProviderBinding"},
 		{&PaymentWebhookEvent{}, "PaymentWebhookEvent"},
