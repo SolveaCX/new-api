@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRowsForModels } from "./home-models";
+import { buildHomeModelRows, buildRowsForModels, pickFlagshipModels } from "./home-models";
 import { getPricingData } from "./pricing";
 
 // The directory quotes a price against the official rate, so the two figures
@@ -59,5 +59,27 @@ describe("directory pricing", () => {
       .map((row) => `${row.name}: ${row.discounted} > ${row.official}`);
 
     expect(overcharged, `rows quoting above the official rate:\n  ${overcharged.join("\n  ")}`).toEqual([]);
+  }, 30_000);
+
+  test("the home table and flagship cards quote the billed rate too", async () => {
+    const pricing = await getPricingData(PRICING_GROUP);
+    if (pricing.models.length === 0) return;
+
+    const overrides = pricing.groupModelRatio[PRICING_GROUP] ?? {};
+    if (Object.keys(overrides).length === 0) return;
+
+    // Same defect, different code path: toHomeRow used the flat group ratio, so
+    // the home page advertised 36 models above their billed rate (gpt-5.6-sol
+    // quoted $4.50 against $1.50 charged).
+    for (const [label, rows] of [
+      ["home table", buildHomeModelRows(pricing)],
+      ["flagship cards", pickFlagshipModels(pricing)],
+    ] as const) {
+      const wrong = rows
+        .filter((row) => overrides[row.name] != null && row.officialUsd > 0)
+        .filter((row) => Math.abs(row.discountedUsd - row.officialUsd * overrides[row.name]) > 1e-6)
+        .map((row) => `${row.name}: ${row.discounted} vs $${(row.officialUsd * overrides[row.name]).toFixed(4)}`);
+      expect(wrong, `${label} quotes above the billed rate:\n  ${wrong.join("\n  ")}`).toEqual([]);
+    }
   }, 30_000);
 });
