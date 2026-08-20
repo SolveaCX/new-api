@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -56,7 +57,7 @@ func Playground(c *gin.Context) {
 	if operation_setting.RequireEmailVerificationForTokens() &&
 		userCache.Role < common.RoleAdminUser &&
 		userCache.Email != "" && userCache.EmailVerifiedAt == 0 {
-		newAPIError = types.NewError(errors.New(i18n.T(c, i18n.MsgUserEmailVerificationRequiredForAPI)), types.ErrorCodeAccessDenied, types.ErrOptionWithSkipRetry())
+		newAPIError = types.NewError(errors.New(i18n.T(c, i18n.MsgUserEmailVerificationRequiredForAPI, map[string]any{"ConsoleOrigin": system_setting.ResolveConsoleOrigin()})), types.ErrorCodeAccessDenied, types.ErrOptionWithSkipRetry())
 		return
 	}
 
