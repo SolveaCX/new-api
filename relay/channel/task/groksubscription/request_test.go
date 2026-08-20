@@ -337,27 +337,27 @@ func TestBuildUpstreamVideoRequestUsesActionSpecificLiteralPayloads(t *testing.T
 		{
 			name: "generate text emits normalized duration",
 			body: `{"model":"grok-imagine-video-1.5","prompt":"orbit"}`,
-			want: `{"model":"grok-imagine-video-1.5","action":"generate","prompt":"orbit","duration":5}`,
+			want: `{"model":"grok-imagine-video-1.5","prompt":"orbit","duration":5}`,
 		},
 		{
 			name: "generate image emits only generate fields",
 			body: `{"model":"grok-imagine-video-1.5","action":"generate","prompt":"move","duration":6,"aspect_ratio":"16:9","resolution":"1080p","image":{"url":"https://example.com/a.png?x=1&y=2"}}`,
-			want: `{"model":"grok-imagine-video-1.5","action":"generate","prompt":"move","duration":6,"aspect_ratio":"16:9","resolution":"1080p","image":{"url":"https://example.com/a.png?x=1&y=2"}}`,
+			want: `{"model":"grok-imagine-video-1.5","prompt":"move","duration":6,"aspect_ratio":"16:9","resolution":"1080p","image":{"url":"https://example.com/a.png?x=1&y=2"}}`,
 		},
 		{
 			name: "generate references emits reference arrays",
 			body: `{"model":"grok-imagine-video-1.5","prompt":"refs","duration":1,"aspect_ratio":"1:1","resolution":"720p","reference_images":[{"url":"https://example.com/a.jpg"}],"reference_audios":[{"voice_id":"voice-1"}]}`,
-			want: `{"model":"grok-imagine-video-1.5","action":"generate","prompt":"refs","duration":1,"aspect_ratio":"1:1","resolution":"720p","reference_images":[{"url":"https://example.com/a.jpg"}],"reference_audios":[{"voice_id":"voice-1"}]}`,
+			want: `{"model":"grok-imagine-video-1.5","prompt":"refs","duration":1,"aspect_ratio":"1:1","resolution":"720p","reference_images":[{"url":"https://example.com/a.jpg"}],"reference_audios":[{"voice_id":"voice-1"}]}`,
 		},
 		{
 			name: "edit omits generate and extend fields",
 			body: `{"model":"grok-imagine-video","action":"edit","prompt":"replace sky","video":{"url":"https://example.com/in.mp4"}}`,
-			want: `{"model":"grok-imagine-video","action":"edit","prompt":"replace sky","video":{"url":"https://example.com/in.mp4"}}`,
+			want: `{"model":"grok-imagine-video","prompt":"replace sky","video":{"url":"https://example.com/in.mp4"}}`,
 		},
 		{
 			name: "extend emits only video and normalized duration",
 			body: `{"model":"grok-imagine-video","action":"extend","prompt":"continue","video":{"url":"https://example.com/in.mp4"}}`,
-			want: `{"model":"grok-imagine-video","action":"extend","prompt":"continue","duration":6,"video":{"url":"https://example.com/in.mp4"}}`,
+			want: `{"model":"grok-imagine-video","prompt":"continue","duration":6,"video":{"url":"https://example.com/in.mp4"}}`,
 		},
 	}
 

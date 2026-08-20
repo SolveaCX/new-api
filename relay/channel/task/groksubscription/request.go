@@ -36,7 +36,6 @@ type VideoRequest struct {
 
 type upstreamVideoRequest struct {
 	Model           string           `json:"model"`
-	Action          string           `json:"action"`
 	Prompt          string           `json:"prompt"`
 	Duration        *int             `json:"duration,omitempty"`
 	AspectRatio     *string          `json:"aspect_ratio,omitempty"`
@@ -353,7 +352,6 @@ func stringValue(v *string) string {
 func buildUpstreamVideoRequest(req *VideoRequest) upstreamVideoRequest {
 	body := upstreamVideoRequest{
 		Model:  req.Model,
-		Action: req.Action,
 		Prompt: req.Prompt,
 	}
 	switch req.Action {
