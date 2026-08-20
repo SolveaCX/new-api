@@ -12,8 +12,8 @@ function hrefBeforeText(html: string, text: string): string {
 }
 
 describe("OnlineHomePage", () => {
-  const signupHref = "https://console.flatkey.ai/sign-up";
-  const keysHref = "https://console.flatkey.ai/sign-up?redirect=%2Fkeys";
+  const signupHref = "https://console.flatkey.ai/sign-up?lng=en";
+  const keysHref = "https://console.flatkey.ai/sign-up?redirect=%2Fkeys&lng=en";
 
   test("routes home auth CTAs to console signup when no session hint exists", async () => {
     const { OnlineHomePage } = await import("./online-home-page");
@@ -45,6 +45,8 @@ describe("OnlineHomePage", () => {
       await OnlineHomePage({ locale: "zh" }),
     );
 
-    expect(hrefBeforeText(html, "最高领取 40 美元免费额度")).toBe(keysHref);
+    expect(hrefBeforeText(html, "最高领取 40 美元免费额度")).toBe(
+      "https://console.flatkey.ai/sign-up?redirect=%2Fkeys&lng=zh",
+    );
   });
 });
