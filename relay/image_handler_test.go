@@ -2,13 +2,18 @@ package relay
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relay/channel/groksubscription"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -65,5 +70,56 @@ func TestLogImageRequestBodyForDebugRedactsGrokImageData(t *testing.T) {
 		bytes.Contains([]byte(got), []byte("data:image")) ||
 		bytes.Contains([]byte(got), []byte("example.com")) {
 		t.Fatalf("debug log leaked image payload: %s", got)
+	}
+}
+
+func TestImageHelperGrokPassThroughStillRunsConversionValidation(t *testing.T) {
+	cases := []struct {
+		name               string
+		globalPassThrough  bool
+		channelPassThrough bool
+	}{
+		{name: "global", globalPassThrough: true},
+		{name: "channel", channelPassThrough: true},
+	}
+
+	originalPassThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled
+	defer func() {
+		model_setting.GetGlobalSettings().PassThroughRequestEnabled = originalPassThrough
+	}()
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			model_setting.GetGlobalSettings().PassThroughRequestEnabled = tc.globalPassThrough
+
+			body := `{"model":"` + groksubscription.GrokImageModel + `","prompt":"cat","response_format":"json"}`
+			gin.SetMode(gin.TestMode)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set(string(constant.ContextKeyChannelType), constant.ChannelTypeGrokSubscription)
+			c.Set(string(constant.ContextKeyChannelSetting), dto.ChannelSettings{PassThroughBodyEnabled: tc.channelPassThrough})
+			c.Set(string(constant.ContextKeyOriginalModel), groksubscription.GrokImageModel)
+
+			info := relaycommon.GenRelayInfoImage(c, &dto.ImageRequest{
+				Model:          groksubscription.GrokImageModel,
+				Prompt:         "cat",
+				ResponseFormat: "json",
+			})
+
+			err := ImageHelper(c, info)
+			if err == nil {
+				t.Fatalf("expected conversion validation error")
+			}
+			if err.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", err.StatusCode)
+			}
+			if !strings.Contains(err.Error(), "response_format must be url or b64_json") {
+				t.Fatalf("error = %q, want Grok conversion validation", err.Error())
+			}
+			if !types.IsSkipRetryError(err) {
+				t.Fatalf("Grok conversion validation must skip retry")
+			}
+		})
 	}
 }

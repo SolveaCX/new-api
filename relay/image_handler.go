@@ -59,19 +59,13 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 
-	// codex 图像必须走 ConvertImageRequest 合成 Responses + image_generation body：
-	// 原始 OpenAI /v1/images body 与上游 /backend-api/codex/responses 结构不兼容，
-	// 直接透传会导致 info.IsStream 永不置位、上游 400，图像静默损坏。
-	// 因此对 codex 图像路径强制忽略 PassThrough（全局/渠道级），仅缩小到本 ApiType，
-	// 不影响其它渠道的透传行为。ImageHelper 仅在图像 relay mode 下被调用，故此处
-	// 判断 ApiType 即等价于「codex 渠道 + 图像模式」。
-	codexImagePath := info.ApiType == constant.APITypeCodex
+	forceImageConversion := shouldForceImageConversion(info)
 	tempURLSupportedImageChannel := info.ApiType == constant.APITypeCodex || info.ApiType == constant.APITypeBlockRun
 	if imageReq.TempUrl != nil && *imageReq.TempUrl && !tempURLSupportedImageChannel {
 		return types.NewErrorWithStatusCode(fmt.Errorf("temp_url is only supported for codex and blockrun image channels"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 
-	if !codexImagePath && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
+	if !forceImageConversion && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -84,9 +78,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			if apiErr, ok := err.(*types.NewAPIError); ok {
 				return apiErr
 			}
-			// codex 图像的 ConvertImageRequest 错误均为入参校验类（response_format /
-			// 模型前缀 / 缺少 image / mask 读取失败），属客户端输入错误，返回 400 而非 500。
-			if codexImagePath {
+			// Codex/Grok subscription image conversion errors are local request
+			// validation or paid-media gate decisions. Do not retry another channel
+			// or turn them into generic upstream 500s.
+			if forceImageConversion {
 				return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed)
@@ -222,6 +217,16 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+func shouldForceImageConversion(info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	// Codex images must synthesize a Responses image_generation request for the
+	// backend-api endpoint. Grok subscription images must run local validation,
+	// paid media gating, and OAuth/header isolation before any upstream call.
+	return info.ApiType == constant.APITypeCodex || info.ApiType == constant.APITypeGrokSubscription
 }
 
 func logImageRequestBodyForDebug(c *gin.Context, info *relaycommon.RelayInfo, jsonData []byte) {

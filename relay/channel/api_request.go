@@ -209,6 +209,9 @@ func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]s
 	if info == nil {
 		return headerOverride, nil
 	}
+	if info.ApiType == rootconstant.APITypeGrokSubscription {
+		return headerOverride, nil
+	}
 
 	headerOverrideSource := common.GetEffectiveHeaderOverride(info)
 

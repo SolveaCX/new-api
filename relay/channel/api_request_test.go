@@ -14,6 +14,7 @@ import (
 	rootconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -358,6 +359,89 @@ func TestDoApiRequestUsesGinRequestContext(t *testing.T) {
 		t.Fatal("upstream request should inherit the cancelled gin request context")
 	default:
 	}
+}
+
+func TestGrokSubscriptionHeaderOverrideDisabledForTextAndMedia(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+
+	for _, tc := range []struct {
+		name      string
+		relayMode int
+		wantAuth  string
+	}{
+		{name: "text", relayMode: relayconstant.RelayModeResponses, wantAuth: "Bearer text-oauth-token"},
+		{name: "media", relayMode: relayconstant.RelayModeImagesGenerations, wantAuth: "Bearer media-oauth-token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotHeader http.Header
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotHeader = r.Header.Clone()
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(upstream.Close)
+
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Request.Header.Set("Originator", "Codex CLI")
+
+			info := &relaycommon.RelayInfo{
+				RelayMode: tc.relayMode,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ApiType: rootconstant.APITypeGrokSubscription,
+					ApiKey:  `{"access_token":"credential-json-token","refresh_token":"refresh","expires_at":4102444800}`,
+					HeadersOverride: map[string]any{
+						"Authorization":       "Bearer override",
+						"X-Injected":          "{api_key}",
+						"Originator":          "{client_header:Originator}",
+						"X-Grok-Client-Id":    "override-client",
+						"X-XAI-Token-Auth":    "override-cli-auth",
+						"X-Request-Id":        "override-request",
+						"X-Upstream-Custom":   "custom",
+						"X-Codex-Cli-Header":  "codex",
+						"X-Grok-Cli-Identity": "cli",
+					},
+				},
+			}
+
+			resp, err := DoApiRequest(grokHeaderIsolationAdaptor{url: upstream.URL, auth: tc.wantAuth}, ctx, info, strings.NewReader(`{}`))
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, tc.wantAuth, gotHeader.Get("Authorization"))
+			for _, forbidden := range []string{
+				"Originator",
+				"X-Injected",
+				"X-Grok-Client-Id",
+				"X-XAI-Token-Auth",
+				"X-Request-Id",
+				"X-Upstream-Custom",
+				"X-Codex-Cli-Header",
+				"X-Grok-Cli-Identity",
+			} {
+				require.Empty(t, gotHeader.Get(forbidden), forbidden)
+			}
+		})
+	}
+}
+
+type grokHeaderIsolationAdaptor struct {
+	requestContextAdaptor
+	url  string
+	auth string
+}
+
+func (a grokHeaderIsolationAdaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	return a.url, nil
+}
+
+func (a grokHeaderIsolationAdaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
+	req.Set("Authorization", a.auth)
+	if info != nil && info.RelayMode == relayconstant.RelayModeImagesGenerations {
+		req.Set("Accept", "application/json")
+		req.Set("Content-Type", "application/json")
+	}
+	return nil
 }
 
 type requestContextAdaptor struct {
