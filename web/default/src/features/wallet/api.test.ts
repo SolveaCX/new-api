@@ -80,3 +80,51 @@ describe('refundable subscription term API', () => {
     )
   })
 })
+
+describe('stripe checkout discount API', () => {
+  test('posts discount mutations through the locked checkout route', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: true,
+      data: {
+        client_secret: 'cs_next',
+        publishable_key: 'pk_next',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+      },
+    }
+    const post = spyOn(api, 'post').mockResolvedValue({
+      data: response,
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'SAVE20',
+      })
+    ).resolves.toEqual(response)
+
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/stripe/checkout/discount',
+      {
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'SAVE20',
+      },
+      expect.objectContaining({
+        skipBusinessError: true,
+        skipErrorHandler: true,
+      })
+    )
+  })
+})

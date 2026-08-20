@@ -48,6 +48,44 @@ export interface StripeTopupSummary {
   /** Whether the amounts are meaningful to display (false in token display mode) */
   show_amounts: boolean
 }
+
+export type StripeCheckoutDiscountSource =
+  | 'none'
+  | 'invitation'
+  | 'recall'
+  | 'manual'
+
+export interface StripeCheckoutDiscountState {
+  source: StripeCheckoutDiscountSource
+  display_name?: string
+  promotion_code_masked?: string
+  replaced_source?: Exclude<StripeCheckoutDiscountSource, 'manual'>
+}
+
+export interface StripeCheckoutRevisionData {
+  client_secret?: string
+  publishable_key?: string
+  fallback_url?: string
+  checkout_context?: string
+  checkout_revision?: number
+  discount_state?: StripeCheckoutDiscountState
+  topup_summary?: StripeTopupSummary
+}
+
+export type StripeCheckoutDiscountRequest =
+  | {
+      checkout_context: string
+      expected_revision: number
+      request_id: string
+      action: 'apply'
+      promotion_code: string
+    }
+  | {
+      checkout_context: string
+      expected_revision: number
+      request_id: string
+      action: 'restore'
+    }
 export type StripePaymentResponse = ApiResponse<{
   /** Hosted checkout redirect link (hosted ui_mode) */
   pay_link?: string
@@ -55,6 +93,12 @@ export type StripePaymentResponse = ApiResponse<{
   client_secret?: string
   /** Stripe publishable key used to mount Checkout Elements */
   publishable_key?: string
+  /** Signed mutation context for discount updates */
+  checkout_context?: string
+  /** Current checkout revision */
+  checkout_revision?: number
+  /** Normalized discount state for the current revision */
+  discount_state?: StripeCheckoutDiscountState
   /** Bonus summary data for the in-console checkout dialog */
   topup_summary?: StripeTopupSummary
 }>
