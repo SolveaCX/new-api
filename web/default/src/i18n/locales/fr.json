@@ -6750,6 +6750,13 @@
     "Model catalog overview": "Aperçu du catalogue de modèles",
     "Lowest {{category}} price": "Prix {{category}} le plus bas",
     "Per 1M input tokens": "Par million de tokens d’entrée",
-    "Per 1M input tokens · some models bill per request": "Par million de tokens d’entrée · certains modèles sont facturés par requête"
+    "Per 1M input tokens · some models bill per request": "Par million de tokens d’entrée · certains modèles sont facturés par requête",
+    "Boost": "Augmenter",
+    "Boost your balance": "Augmentez votre solde",
+    "Keep your balance ready whenever you need it": "Gardez un solde disponible dès que vous en avez besoin",
+    "Current available balance": "Solde disponible actuel",
+    "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.": "Avec un solde suffisant, votre travail et vos appels d'API ne sont jamais interrompus. Rechargez maintenant ou invitez vos amis pour gagner des crédits de récompense et continuer à créer en maîtrisant vos coûts.",
+    "Quick top-up": "Recharge rapide",
+    "Earn credits": "Gagnez des crédits"
   }
 }
