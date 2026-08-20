@@ -175,7 +175,7 @@ func TestCreateStripeSubscriptionCheckoutAppliesInvitationCouponOnce(t *testing.
 	require.Equal(t, "usd", couponForm.Get("currency"))
 	require.Equal(t, string(stripe.CouponDurationOnce), couponForm.Get("duration"))
 	require.Equal(t, "Flatkey invitation package credit", couponForm.Get("name"))
-	require.Contains(t, couponIdempotency, "idem-invitation-subscription:invitation-coupon:rev:0:discount:")
+	require.Equal(t, "idem-invitation-subscription:invitation-coupon:rev:0", couponIdempotency)
 	require.Equal(t, "coupon_invitation_once", sessionForm.Get("discounts[0][coupon]"))
 	require.Empty(t, sessionForm.Get("discounts[1][coupon]"))
 	require.Empty(t, sessionForm.Get("allow_promotion_codes"))
@@ -323,6 +323,37 @@ func TestStripeSubscriptionCheckoutRevision(t *testing.T) {
 	require.Contains(t, idempotencyKey, ":rev:2:")
 	require.NotContains(t, idempotencyKey, "promo_manual_7")
 	require.NotContains(t, idempotencyKey, "MAN***-7")
+}
+
+func TestStripeSubscriptionCheckoutRejectsInvalidExplicitSelectionBeforeSessionCreation(t *testing.T) {
+	originalSecret := setting.StripeApiSecret
+	originalCreator := stripeSubscriptionSessionCreator
+	setting.StripeApiSecret = "sk_test_invalid_selection"
+	creatorCalled := false
+	stripeSubscriptionSessionCreator = func(context.Context, *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		creatorCalled = true
+		return nil, errors.New("unexpected session creation")
+	}
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		stripeSubscriptionSessionCreator = originalCreator
+	})
+
+	tests := []StripeCheckoutDiscountSelection{
+		{Source: "affiliate"},
+		{Source: StripeCheckoutDiscountInvitation},
+		{Source: StripeCheckoutDiscountManual},
+		{Source: StripeCheckoutDiscountRecall},
+	}
+	for _, selection := range tests {
+		_, err := createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
+			TradeNo:           "sub_invalid_selection",
+			PriceID:           "price_invalid_selection",
+			DiscountSelection: selection,
+		})
+		require.Error(t, err)
+	}
+	require.False(t, creatorCalled)
 }
 
 func TestPaymentAnalyticsEventForPaidRenewalUsesCurrentPlanID(t *testing.T) {

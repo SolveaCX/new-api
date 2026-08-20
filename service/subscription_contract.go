@@ -1542,7 +1542,7 @@ func stripeSubscriptionCheckoutInputFromOrder(order *model.SubscriptionOrder, us
 			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
 		}
 	} else if input.DiscountKind == SubscriptionDiscountKindInvitation {
-		input.DiscountSelection = StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountInvitation}
+		input.DiscountSelection = StripeCheckoutDiscountSelection{}
 	} else {
 		input.DiscountSelection = StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone}
 	}

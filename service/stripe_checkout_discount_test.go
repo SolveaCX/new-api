@@ -54,7 +54,7 @@ func TestApplyStripeCheckoutDiscountUsesExactlyOneExplicitSelection(t *testing.T
 				Discounts: []*stripe.CheckoutSessionDiscountParams{{Coupon: stripe.String("coupon_stale")}},
 			}
 
-			ApplyStripeCheckoutDiscount(params, test.selection)
+			require.NoError(t, ApplyStripeCheckoutDiscount(params, test.selection))
 
 			require.Len(t, params.Discounts, test.wantCount)
 			if test.wantCount == 0 {
@@ -73,6 +73,48 @@ func TestApplyStripeCheckoutDiscountUsesExactlyOneExplicitSelection(t *testing.T
 	}
 }
 
+func TestValidateStripeCheckoutDiscountSelectionRejectsInvalidSourceOrMissingID(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection StripeCheckoutDiscountSelection
+	}{
+		{
+			name:      "unknown source",
+			selection: StripeCheckoutDiscountSelection{Source: "affiliate"},
+		},
+		{
+			name:      "invitation missing coupon",
+			selection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountInvitation},
+		},
+		{
+			name:      "recall missing promotion code",
+			selection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountRecall},
+		},
+		{
+			name:      "manual missing promotion code",
+			selection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountManual},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ValidateStripeCheckoutDiscountSelection(test.selection)
+			require.Error(t, err)
+		})
+	}
+
+	normalized, err := ValidateStripeCheckoutDiscountSelection(StripeCheckoutDiscountSelection{
+		Source:          StripeCheckoutDiscountNone,
+		CouponID:        "coupon_stale",
+		PromotionCodeID: "promo_stale",
+	})
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutDiscountNone, normalized.Source)
+	require.Empty(t, normalized.CouponID)
+	require.Empty(t, normalized.PromotionCodeID)
+	require.Error(t, ApplyStripeCheckoutDiscount(nil, StripeCheckoutDiscountSelection{Source: "affiliate"}))
+}
+
 func TestStripeCheckoutIdempotencyKeyUsesRevisionAndHashedSelectionIdentity(t *testing.T) {
 	selection := StripeCheckoutDiscountSelection{
 		Source:          StripeCheckoutDiscountManual,
@@ -80,12 +122,19 @@ func TestStripeCheckoutIdempotencyKeyUsesRevisionAndHashedSelectionIdentity(t *t
 		MaskedCode:      "MAN***-7",
 	}
 
-	key := StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 2, selection)
+	key, err := StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 2, selection)
 
+	require.NoError(t, err)
 	require.Contains(t, key, "topup-stripe:trade_7:rev:2:")
 	require.NotContains(t, key, "promo_manual_secret_7")
 	require.NotContains(t, key, "MAN***-7")
-	require.Equal(t, key, StripeCheckoutIdempotencyKey(" topup-stripe:trade_7 ", 2, selection))
-	require.NotEqual(t, key, StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 3, selection))
-	require.NotEqual(t, key, StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 2, StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone}))
+	normalizedKey, err := StripeCheckoutIdempotencyKey(" topup-stripe:trade_7 ", 2, selection)
+	require.NoError(t, err)
+	nextRevisionKey, err := StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 3, selection)
+	require.NoError(t, err)
+	noneKey, err := StripeCheckoutIdempotencyKey("topup-stripe:trade_7", 2, StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone})
+	require.NoError(t, err)
+	require.Equal(t, key, normalizedKey)
+	require.NotEqual(t, key, nextRevisionKey)
+	require.NotEqual(t, key, noneKey)
 }

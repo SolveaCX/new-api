@@ -2613,7 +2613,10 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 		cancelURL = consolePaymentReturnPath("/console/topup")
 	}
 
-	params := buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, checkoutRevision, discountSelection, recall)
+	params, err := buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, strings.TrimSpace(email), checkout.PriceId, checkout.Quantity, checkout.PaymentCurrency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, checkoutRevision, discountSelection, recall)
+	if err != nil {
+		return nil, err
+	}
 
 	result, err := session.New(params)
 	if err != nil {
@@ -2723,11 +2726,15 @@ func stripeCheckoutSubmitMessage(amount int64, bonusAmount int64) string {
 }
 
 func buildStripeCheckoutSessionParams(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
-	return buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, email, priceId, quantity, currency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, 0, stripeCheckoutDiscountSelectionFromRecall(recall), recall)
+	params, _ := buildStripeCheckoutSessionParamsForRevision(referenceId, customerId, email, priceId, quantity, currency, successURL, cancelURL, invoiceRequested, saveCard, presentation, submitMessage, 0, stripeCheckoutDiscountSelectionFromRecall(recall), recall)
+	return params
 }
 
-func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, recall *service.RecallCheckoutDiscount) *stripe.CheckoutSessionParams {
-	discountSelection = service.NormalizeStripeCheckoutDiscountSelection(discountSelection)
+func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId string, email string, priceId string, quantity int64, currency string, successURL string, cancelURL string, invoiceRequested bool, saveCard bool, presentation service.StripeCheckoutPresentation, submitMessage string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, recall *service.RecallCheckoutDiscount) (*stripe.CheckoutSessionParams, error) {
+	discountSelection, err := service.ValidateStripeCheckoutDiscountSelection(discountSelection)
+	if err != nil {
+		return nil, err
+	}
 	metadata := map[string]string{
 		"trade_no":           strings.TrimSpace(referenceId),
 		"checkout_revision":  strconv.FormatInt(checkoutRevision, 10),
@@ -2745,7 +2752,9 @@ func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId 
 		metadata["recall_campaign_id"] = strconv.FormatInt(recall.CampaignID, 10)
 		metadata["recall_recipient_id"] = strconv.FormatInt(recall.RecipientID, 10)
 	}
-	service.ApplyStripeCheckoutDiscount(params, discountSelection)
+	if err := service.ApplyStripeCheckoutDiscount(params, discountSelection); err != nil {
+		return nil, err
+	}
 
 	if uiMode, ok := presentation.SessionUIMode(); ok {
 		// Client-rendered sessions reject success_url/cancel_url. return_url is still required
@@ -2847,9 +2856,13 @@ func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId 
 			}
 		}
 	}
-	params.SetIdempotencyKey(service.StripeCheckoutIdempotencyKey("topup-stripe:"+strings.TrimSpace(referenceId), checkoutRevision, discountSelection))
+	idempotencyKey, err := service.StripeCheckoutIdempotencyKey("topup-stripe:"+strings.TrimSpace(referenceId), checkoutRevision, discountSelection)
+	if err != nil {
+		return nil, err
+	}
+	params.SetIdempotencyKey(idempotencyKey)
 
-	return params
+	return params, nil
 }
 
 func stripeCheckoutDiscountSelectionFromRecall(recall *service.RecallCheckoutDiscount) service.StripeCheckoutDiscountSelection {

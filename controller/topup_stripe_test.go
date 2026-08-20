@@ -458,12 +458,13 @@ func TestStripeCheckoutSessionRevision(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			params := buildStripeCheckoutSessionParamsForRevision(
+			params, err := buildStripeCheckoutSessionParamsForRevision(
 				"trade_revision_7", "", "buyer@example.com", "price_123", 1, "USD",
 				"https://example.com/success", "https://example.com/cancel", false, false,
 				service.StripeCheckoutPresentation{}, "", 2, test.selection, recall,
 			)
 
+			require.NoError(t, err)
 			require.Equal(t, "trade_revision_7", params.Metadata["trade_no"])
 			require.Equal(t, "2", params.Metadata["checkout_revision"])
 			require.Equal(t, string(test.selection.Source), params.Metadata["discount_selection"])
@@ -498,6 +499,23 @@ func TestStripeCheckoutSessionRevision(t *testing.T) {
 				require.NotContains(t, params.PaymentIntentData.Metadata, "recall_recipient_id")
 			}
 		})
+	}
+}
+
+func TestStripeCheckoutSessionRevisionRejectsInvalidDiscountSelection(t *testing.T) {
+	tests := []service.StripeCheckoutDiscountSelection{
+		{Source: "affiliate"},
+		{Source: service.StripeCheckoutDiscountInvitation},
+		{Source: service.StripeCheckoutDiscountManual},
+		{Source: service.StripeCheckoutDiscountRecall},
+	}
+	for _, selection := range tests {
+		_, err := buildStripeCheckoutSessionParamsForRevision(
+			"trade_invalid_selection", "", "buyer@example.com", "price_123", 1, "USD",
+			"https://example.com/success", "https://example.com/cancel", false, false,
+			service.StripeCheckoutPresentation{}, "", 2, selection, nil,
+		)
+		require.Error(t, err)
 	}
 }
 
