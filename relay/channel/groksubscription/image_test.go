@@ -263,10 +263,24 @@ type multipartImagePart struct {
 	Data        []byte
 }
 
+type multipartTextPart struct {
+	Field string
+	Value string
+}
+
 func newMultipartImageContext(t *testing.T, parts []multipartImagePart) *gin.Context {
+	return newMultipartImageContextWithText(t, nil, parts)
+}
+
+func newMultipartImageContextWithText(t *testing.T, texts []multipartTextPart, parts []multipartImagePart) *gin.Context {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
+	for _, p := range texts {
+		if err := writer.WriteField(p.Field, p.Value); err != nil {
+			t.Fatalf("write field: %v", err)
+		}
+	}
 	for _, p := range parts {
 		h := make(textproto.MIMEHeader)
 		h.Set("Content-Disposition", `form-data; name="`+p.Field+`"; filename="`+p.Filename+`"`)
@@ -288,6 +302,89 @@ func newMultipartImageContext(t *testing.T, parts []multipartImagePart) *gin.Con
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
 	return c
+}
+
+func TestCollectGrokEditImagesMultipartRejectsMaskFile(t *testing.T) {
+	c := newMultipartImageContext(t, []multipartImagePart{
+		{Field: "image", Filename: "a.png", ContentType: "image/png", Data: []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}},
+		{Field: "mask", Filename: "mask.png", ContentType: "image/png", Data: []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}},
+	})
+	_, err := convertGrokImageRequest(c, imageInfo(relayconstant.RelayModeImagesEdits), dto.ImageRequest{
+		Model:  GrokImageModel,
+		Prompt: "masked",
+	})
+	if err == nil {
+		t.Fatalf("expected multipart mask file to be rejected")
+	}
+	var apiErr *types.NewAPIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest || !types.IsSkipRetryError(apiErr) {
+		t.Fatalf("mask file error = %#v, want skip-retry 400", err)
+	}
+}
+
+func TestCollectGrokEditImagesMultipartTextAndFilesDeterministic(t *testing.T) {
+	const textDataURI = "data:image/png;base64,VEVYVC1EQVRB"
+	c := newMultipartImageContextWithText(t,
+		[]multipartTextPart{
+			{Field: "image[2]", Value: textDataURI},
+			{Field: "image", Value: "https://example.com/a.png"},
+		},
+		[]multipartImagePart{
+			{Field: "image[]", Filename: "b.jpg", ContentType: "image/jpeg", Data: []byte{0xff, 0xd8, 0xff, 0xdb, 'b'}},
+		},
+	)
+	got, err := collectGrokEditImages(c, dto.ImageRequest{})
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	wantFile := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8, 0xff, 0xdb, 'b'})
+	want := []string{"https://example.com/a.png", wantFile, textDataURI}
+	for i := range want {
+		if got[i].ImageURL.URL != want[i] {
+			t.Fatalf("image[%d] = %q, want %q", i, got[i].ImageURL.URL, want[i])
+		}
+	}
+}
+
+func TestCollectGrokEditImagesMultipartTextOnlyAndRejectsInvalidText(t *testing.T) {
+	t.Run("text only", func(t *testing.T) {
+		c := newMultipartImageContextWithText(t, []multipartTextPart{
+			{Field: "image", Value: "https://example.com/a.png"},
+		}, nil)
+		got, err := collectGrokEditImages(c, dto.ImageRequest{})
+		if err != nil {
+			t.Fatalf("collect: %v", err)
+		}
+		if len(got) != 1 || got[0].ImageURL.URL != "https://example.com/a.png" {
+			t.Fatalf("images = %#v", got)
+		}
+	})
+	t.Run("http rejected", func(t *testing.T) {
+		c := newMultipartImageContextWithText(t, []multipartTextPart{
+			{Field: "image", Value: "http://example.com/a.png"},
+		}, nil)
+		if _, err := collectGrokEditImages(c, dto.ImageRequest{}); err == nil {
+			t.Fatalf("expected HTTP text image to be rejected")
+		}
+	})
+	t.Run("max three across text and files", func(t *testing.T) {
+		c := newMultipartImageContextWithText(t,
+			[]multipartTextPart{
+				{Field: "image", Value: "https://example.com/a.png"},
+				{Field: "image[]", Value: "https://example.com/b.png"},
+			},
+			[]multipartImagePart{
+				{Field: "image[2]", Filename: "c.png", ContentType: "image/png", Data: []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}},
+				{Field: "image[3]", Filename: "d.png", ContentType: "image/png", Data: []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}},
+			},
+		)
+		if _, err := collectGrokEditImages(c, dto.ImageRequest{}); err == nil {
+			t.Fatalf("expected combined text+file count above 3 to be rejected")
+		}
+	})
 }
 
 func TestAdaptorImageURLHeaderAndResponse(t *testing.T) {

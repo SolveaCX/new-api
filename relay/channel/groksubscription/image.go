@@ -266,37 +266,76 @@ func collectGrokMultipartEditImages(c *gin.Context) ([]xAIMediaInput, error) {
 		}
 		c.Request.MultipartForm = mf
 	}
-	if mf == nil || mf.File == nil {
-		return nil, errors.New("grok image: edit requires image file")
+	if mf == nil {
+		return nil, errors.New("grok image: edit requires image")
 	}
-	files := collectGrokMultipartFiles(mf, "image")
-	if len(files) == 0 {
-		return nil, errors.New("grok image: edit requires image file")
+	if len(collectGrokMultipartFiles(mf, "mask")) > 0 {
+		return nil, errors.New("grok image: mask is not supported")
 	}
-	if len(files) > maxGrokEditImages {
+	sources := collectGrokMultipartSources(mf, "image")
+	if len(sources) == 0 {
+		return nil, errors.New("grok image: edit requires image")
+	}
+	if len(sources) > maxGrokEditImages {
 		return nil, fmt.Errorf("grok image: edit accepts at most %d source images", maxGrokEditImages)
 	}
-	out := make([]xAIMediaInput, 0, len(files))
-	for i, fh := range files {
-		dataURI, err := grokMultipartFileToDataURI(fh)
+	out := make([]xAIMediaInput, 0, len(sources))
+	for i, source := range sources {
+		input, err := source.toMediaInput()
 		if err != nil {
-			return nil, fmt.Errorf("grok image: image file %d: %w", i, err)
-		}
-		input, err := newGrokMediaInput(dataURI)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("grok image: image %d: %w", i, err)
 		}
 		out = append(out, input)
 	}
 	return out, nil
 }
 
+type grokMultipartImageSource struct {
+	text string
+	file *multipart.FileHeader
+}
+
+func (s grokMultipartImageSource) toMediaInput() (xAIMediaInput, error) {
+	if s.file != nil {
+		dataURI, err := grokMultipartFileToDataURI(s.file)
+		if err != nil {
+			return xAIMediaInput{}, err
+		}
+		return newGrokMediaInput(dataURI)
+	}
+	return newGrokMediaInput(s.text)
+}
+
+func collectGrokMultipartSources(mf *multipart.Form, field string) []grokMultipartImageSource {
+	var out []grokMultipartImageSource
+	for _, name := range grokMultipartFieldOrder(mf, field) {
+		for _, value := range mf.Value[name] {
+			out = append(out, grokMultipartImageSource{text: value})
+		}
+		for _, file := range mf.File[name] {
+			out = append(out, grokMultipartImageSource{file: file})
+		}
+	}
+	return out
+}
+
 func collectGrokMultipartFiles(mf *multipart.Form, field string) []*multipart.FileHeader {
 	var out []*multipart.FileHeader
-	out = append(out, mf.File[field]...)
-	out = append(out, mf.File[field+"[]"]...)
+	for _, name := range grokMultipartFieldOrder(mf, field) {
+		out = append(out, mf.File[name]...)
+	}
+	return out
+}
+
+func grokMultipartFieldOrder(mf *multipart.Form, field string) []string {
+	names := []string{field, field + "[]"}
 	var bracket []string
 	for name := range mf.File {
+		if name != field+"[]" && strings.HasPrefix(name, field+"[") && strings.HasSuffix(name, "]") {
+			bracket = append(bracket, name)
+		}
+	}
+	for name := range mf.Value {
 		if name != field+"[]" && strings.HasPrefix(name, field+"[") && strings.HasSuffix(name, "]") {
 			bracket = append(bracket, name)
 		}
@@ -313,9 +352,11 @@ func collectGrokMultipartFiles(mf *multipart.Form, field string) []*multipart.Fi
 		return bracket[i] < bracket[j]
 	})
 	for _, name := range bracket {
-		out = append(out, mf.File[name]...)
+		if len(names) == 0 || names[len(names)-1] != name {
+			names = append(names, name)
+		}
 	}
-	return out
+	return names
 }
 
 func grokBracketIndex(field, name string) (int, bool) {
