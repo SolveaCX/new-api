@@ -6777,6 +6777,20 @@
     "Video generation timed out": "Время ожидания генерации видео истекло",
     "Generation was interrupted": "Генерация была прервана",
     "Your browser does not support video playback.": "Ваш браузер не поддерживает воспроизведение видео.",
-    "%": "%"
+    "%": "%",
+    "Promotion code": "Промокод",
+    "Enter promotion code": "Введите промокод",
+    "Apply": "Применить",
+    "Applying promotion code...": "Применяем промокод...",
+    "Promotion code applied.": "Промокод применён.",
+    "Promotion code applied. Previous discount replaced.": "Промокод применён. Предыдущая скидка заменена.",
+    "Remove promotion code": "Удалить промокод",
+    "Restoring previous discount...": "Восстанавливаем предыдущую скидку...",
+    "Previous discount restored.": "Предыдущая скидка восстановлена.",
+    "This promotion code is invalid.": "Этот промокод недействителен.",
+    "This promotion code is not eligible for this purchase.": "Этот промокод не подходит для этой покупки.",
+    "Multiple promotion codes match. Contact support.": "Найдено несколько промокодов. Обратитесь в поддержку.",
+    "Checkout changed in another request. The latest checkout was restored.": "Оплата изменилась в другом запросе. Восстановлена последняя версия оплаты.",
+    "Unable to update the checkout. Please try again.": "Не удалось обновить оплату. Попробуйте ещё раз."
   }
 }

@@ -148,6 +148,14 @@ export interface SubscriptionPayResponse {
     client_secret?: string
     publishable_key?: string
     fallback_url?: string
+    checkout_context?: string
+    checkout_revision?: number
+    discount_state?: {
+      source: 'none' | 'invitation' | 'recall' | 'manual'
+      display_name?: string
+      promotion_code_masked?: string
+      replaced_source?: 'none' | 'invitation' | 'recall'
+    }
     // Waffo Pancake / Creem hosted checkout URL.
     checkout_url?: string
     // Pancake-only: order metadata + self-service buyer session token,

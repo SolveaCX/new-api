@@ -6777,6 +6777,20 @@
     "Video generation timed out": "動画生成がタイムアウトしました",
     "Generation was interrupted": "生成が中断されました",
     "Your browser does not support video playback.": "お使いのブラウザーは動画再生に対応していません。",
-    "%": "%"
+    "%": "%",
+    "Promotion code": "プロモーションコード",
+    "Enter promotion code": "プロモーションコードを入力",
+    "Apply": "適用",
+    "Applying promotion code...": "プロモーションコードを適用中...",
+    "Promotion code applied.": "プロモーションコードを適用しました。",
+    "Promotion code applied. Previous discount replaced.": "プロモーションコードを適用しました。以前の割引は置き換えられました。",
+    "Remove promotion code": "プロモーションコードを削除",
+    "Restoring previous discount...": "以前の割引を復元中...",
+    "Previous discount restored.": "以前の割引を復元しました。",
+    "This promotion code is invalid.": "このプロモーションコードは無効です。",
+    "This promotion code is not eligible for this purchase.": "このプロモーションコードはこの購入には利用できません。",
+    "Multiple promotion codes match. Contact support.": "一致するプロモーションコードが複数あります。サポートに連絡してください。",
+    "Checkout changed in another request. The latest checkout was restored.": "別のリクエストでチェックアウトが変更されました。最新のチェックアウトを復元しました。",
+    "Unable to update the checkout. Please try again.": "チェックアウトを更新できません。もう一度お試しください。"
   }
 }

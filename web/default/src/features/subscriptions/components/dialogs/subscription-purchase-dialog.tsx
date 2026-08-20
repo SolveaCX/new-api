@@ -256,7 +256,10 @@ export function SubscriptionPurchaseDialog(props: Props) {
           clientSecret: opening.clientSecret,
           publishableKey: opening.publishableKey,
           fallbackUrl: opening.fallbackUrl,
-          summary: null,
+          checkoutContext: opening.checkoutContext,
+          checkoutRevision: opening.checkoutRevision,
+          discountState: opening.discountState,
+          summary: opening.summary ?? null,
           title: t('Confirm Payment'),
           description: plan.title,
         })

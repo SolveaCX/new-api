@@ -142,6 +142,18 @@ func subscriptionStripePayResponseData(result *service.PurchaseSubscriptionResul
 	if secret := strings.TrimSpace(result.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
 		data["client_secret"] = secret
 		data["publishable_key"] = strings.TrimSpace(setting.StripePublishableKey)
+		if setting.StripePromotionCodeEnabled && result.Order != nil && result.Order.CheckoutRevision > 0 {
+			if active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, result.Order.TradeNo); err == nil {
+				response, responseErr := stripeCheckoutRevisionResponse(service.StripeCheckoutPurchaseRecurringSubscription, active, &stripeCheckoutSessionSnapshot{
+					ID: result.Order.ProviderSessionId, URL: result.CheckoutURL, ClientSecret: secret,
+				})
+				if responseErr == nil {
+					data["checkout_context"] = response.CheckoutContext
+					data["checkout_revision"] = response.CheckoutRevision
+					data["discount_state"] = response.DiscountState
+				}
+			}
+		}
 		return data
 	}
 	if checkoutURL := strings.TrimSpace(result.CheckoutURL); checkoutURL != "" {
@@ -337,28 +349,129 @@ type oneTimePlanPaymentQuote struct {
 }
 
 type oneTimeStripeCheckoutSession struct {
-	ID           string
-	URL          string
-	ClientSecret string
+	ID            string
+	URL           string
+	ClientSecret  string
+	CustomerID    string
+	Status        string
+	PaymentStatus string
 }
 
 var stripeOneTimeCheckoutSessionCreator = createOneTimeStripeCheckoutSession
+var stripeOneTimeCheckoutSessionForRevisionCreator = createOneTimeStripeCheckoutSessionForRevision
 var stripeOneTimeCheckoutSessionGetter = getOneTimeStripeCheckoutSession
+var stripeOneTimeCheckoutSessionExpirer = expireOneTimeStripeCheckoutSession
 var stripeOneTimeRecallClient service.RecallStripeClient = service.NewStripeRecallClient()
+var stripeOneTimeCouponCreator = createOneTimeStripeCoupon
 
 func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
+	checkoutRevision := int64(0)
+	if order != nil {
+		checkoutRevision = order.CheckoutRevision
+	}
+	discountSelection := oneTimeStripeDiscountSelectionFromOrder(order)
+	if discountSelection.Source == service.StripeCheckoutDiscountInvitation && discountSelection.CouponID == "" {
+		coupon, err := createOneTimeInvitationCouponForCheckout(ctx, order, checkoutRevision)
+		if err != nil {
+			return nil, err
+		}
+		discountSelection.CouponID = strings.TrimSpace(coupon.ID)
+	}
+	presentation := service.StripeCheckoutPresentation{}
+	if len(presentations) > 0 {
+		presentation = presentations[0]
+	}
+	if setting.StripePromotionCodeEnabled && presentation.UsesClientSecret() && checkoutRevision == 0 {
+		purchase := stripeCheckoutPurchase{
+			Kind: service.StripeCheckoutPurchaseOneTimeSubscription, OrderType: model.StripeCheckoutOrderSubscription,
+			TradeNo: order.TradeNo, UserID: order.UserId, Currency: order.PaymentCurrency, SubtotalMinor: order.PaymentAmountMinor,
+			Order: order, User: user,
+		}
+		var created *oneTimeStripeCheckoutSession
+		snapshot, active, err := createInitialStripeCheckoutRevision(ctx, purchase, discountSelection, nil, func(revision int64) (*stripeCheckoutSessionSnapshot, error) {
+			var createErr error
+			created, createErr = stripeOneTimeCheckoutSessionForRevisionCreator(ctx, order, user, revision, discountSelection, presentations...)
+			return stripeCheckoutSnapshotFromOneTime(created), createErr
+		})
+		if err != nil {
+			return nil, err
+		}
+		order.CheckoutRevision = active.Revision
+		order.ProviderSessionId = stripeCheckoutRevisionSessionID(active)
+		order.ProviderSessionURL = active.ProviderSessionURL
+		if created == nil && snapshot != nil {
+			created = &oneTimeStripeCheckoutSession{
+				ID: snapshot.ID, URL: snapshot.URL, ClientSecret: snapshot.ClientSecret, CustomerID: snapshot.CustomerID,
+				Status: snapshot.Status, PaymentStatus: snapshot.PaymentStatus,
+			}
+		}
+		return created, nil
+	}
+	created, err := stripeOneTimeCheckoutSessionForRevisionCreator(ctx, order, user, checkoutRevision, discountSelection, presentations...)
+	if err != nil {
+		return nil, err
+	}
+	if err := persistOneTimeStripeCheckoutSession(order.TradeNo, created.ID, created.URL); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+func createOneTimeInvitationCouponForCheckout(ctx context.Context, order *model.SubscriptionOrder, checkoutRevision int64) (*stripe.Coupon, error) {
+	if order == nil || order.SubscriptionDiscountAmountMinor <= 0 {
+		return nil, errors.New("Stripe invitation discount amount is invalid")
+	}
+	currency := strings.ToLower(strings.TrimSpace(order.PaymentCurrency))
+	if currency == "" {
+		return nil, errors.New("Stripe invitation discount currency is required")
+	}
+	params := &stripe.CouponParams{
+		AmountOff: stripe.Int64(order.SubscriptionDiscountAmountMinor),
+		Currency:  stripe.String(currency),
+		Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+		Name:      stripe.String("Flatkey invitation package credit"),
+	}
+	params.SetIdempotencyKey(fmt.Sprintf("subscription-one-time:%s:invitation-coupon:rev:%d", strings.TrimSpace(order.TradeNo), checkoutRevision))
+	coupon, err := stripeOneTimeCouponCreator(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
+		return nil, errors.New("Stripe invitation coupon missing id")
+	}
+	return coupon, nil
+}
+
+func createOneTimeStripeCoupon(_ context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {
+	return stripecoupon.New(params)
+}
+
+func createOneTimeStripeCheckoutSessionForRevision(ctx context.Context, order *model.SubscriptionOrder, user *model.User, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, presentations ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, errors.New("invalid Stripe API key")
 	}
-	params, err := buildOneTimePlanCheckoutSessionParams(order, user, presentations...)
+	params, err := buildOneTimePlanCheckoutSessionParamsForRevision(order, user, checkoutRevision, discountSelection, presentations...)
 	if err != nil {
 		return nil, err
 	}
-	recallProductID, err := validateOneTimePlanRecallPromotionForCheckout(ctx, order)
+	discountSelection, err = service.ValidateStripeCheckoutDiscountSelection(discountSelection)
 	if err != nil {
 		return nil, err
 	}
-	applyOneTimeRecallScopedProduct(params, recallProductID)
+	var stableProductID string
+	switch discountSelection.Source {
+	case service.StripeCheckoutDiscountRecall:
+		stableProductID, err = validateOneTimePlanRecallPromotionForCheckout(ctx, order)
+		if err != nil {
+			return nil, err
+		}
+	case service.StripeCheckoutDiscountManual:
+		stableProductID, err = oneTimePlanStableStripeProductForCheckout(ctx, order)
+		if err != nil {
+			return nil, err
+		}
+	}
+	applyOneTimeStableProduct(params, stableProductID)
 	stripe.Key = setting.StripeApiSecret
 	created, err := session.New(params)
 	if err != nil {
@@ -378,10 +491,7 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 	} else if strings.TrimSpace(created.URL) == "" {
 		return nil, errors.New("Stripe checkout session missing url")
 	}
-	if err := persistOneTimeStripeCheckoutSession(order.TradeNo, created.ID, created.URL); err != nil {
-		return nil, err
-	}
-	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret)}, nil
+	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret), CustomerID: stripeCheckoutSessionCustomerID(created), Status: string(created.Status), PaymentStatus: string(created.PaymentStatus)}, nil
 }
 
 func getOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
@@ -397,9 +507,30 @@ func getOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*on
 		return nil, nil
 	}
 	return &oneTimeStripeCheckoutSession{
-		ID:           strings.TrimSpace(checkoutSession.ID),
-		URL:          strings.TrimSpace(checkoutSession.URL),
-		ClientSecret: strings.TrimSpace(checkoutSession.ClientSecret),
+		ID:            strings.TrimSpace(checkoutSession.ID),
+		URL:           strings.TrimSpace(checkoutSession.URL),
+		ClientSecret:  strings.TrimSpace(checkoutSession.ClientSecret),
+		CustomerID:    stripeCheckoutSessionCustomerID(checkoutSession),
+		Status:        string(checkoutSession.Status),
+		PaymentStatus: string(checkoutSession.PaymentStatus),
+	}, nil
+}
+
+func expireOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
+	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
+		return nil, errors.New("invalid Stripe API key")
+	}
+	stripe.Key = setting.StripeApiSecret
+	checkoutSession, err := session.Expire(strings.TrimSpace(sessionID), nil)
+	if err != nil {
+		return nil, err
+	}
+	if checkoutSession == nil {
+		return nil, nil
+	}
+	return &oneTimeStripeCheckoutSession{
+		ID: strings.TrimSpace(checkoutSession.ID), URL: strings.TrimSpace(checkoutSession.URL), ClientSecret: strings.TrimSpace(checkoutSession.ClientSecret),
+		CustomerID: stripeCheckoutSessionCustomerID(checkoutSession), Status: string(checkoutSession.Status), PaymentStatus: string(checkoutSession.PaymentStatus),
 	}, nil
 }
 
@@ -430,11 +561,23 @@ func persistOneTimeStripeCheckoutSession(tradeNo string, sessionID string, sessi
 }
 
 func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*stripe.CheckoutSessionParams, error) {
+	checkoutRevision := int64(0)
+	if order != nil {
+		checkoutRevision = order.CheckoutRevision
+	}
+	return buildOneTimePlanCheckoutSessionParamsForRevision(order, user, checkoutRevision, oneTimeStripeDiscountSelectionFromOrder(order), presentations...)
+}
+
+func buildOneTimePlanCheckoutSessionParamsForRevision(order *model.SubscriptionOrder, user *model.User, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, presentations ...service.StripeCheckoutPresentation) (*stripe.CheckoutSessionParams, error) {
 	if order == nil {
 		return nil, errors.New("subscription order is required")
 	}
 	if strings.TrimSpace(order.TradeNo) == "" {
 		return nil, errors.New("subscription order trade_no is required")
+	}
+	discountSelection, err := service.ValidateStripeCheckoutDiscountSelection(discountSelection)
+	if err != nil {
+		return nil, err
 	}
 	quote, err := oneTimePlanQuoteFromOrder(order)
 	if err != nil {
@@ -455,7 +598,7 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		return nil, err
 	}
 	productName, productDescription := oneTimePlanProductText(order)
-	metadata := oneTimePlanMetadata(order, method)
+	metadata := oneTimePlanMetadata(order, method, checkoutRevision, discountSelection)
 	expiresAt, err := oneTimePlanCheckoutExpiresAt(order)
 	if err != nil {
 		return nil, err
@@ -487,10 +630,8 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 			Metadata: metadata,
 		},
 	}
-	if order.RecallDiscountAmountMinor > 0 {
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId))},
-		}
+	if err := service.ApplyStripeCheckoutDiscount(params, discountSelection); err != nil {
+		return nil, err
 	}
 	if user != nil {
 		if strings.TrimSpace(user.StripeCustomer) != "" {
@@ -502,7 +643,11 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 	if len(presentations) > 0 {
 		service.ApplyStripeCheckoutPresentation(params, presentations[0], order.TradeNo)
 	}
-	params.SetIdempotencyKey("subscription-one-time:" + strings.TrimSpace(order.TradeNo))
+	idempotencyKey, err := service.StripeCheckoutIdempotencyKey("subscription-one-time:"+strings.TrimSpace(order.TradeNo), checkoutRevision, discountSelection)
+	if err != nil {
+		return nil, err
+	}
+	params.SetIdempotencyKey(idempotencyKey)
 	return params, nil
 }
 
@@ -527,11 +672,15 @@ func oneTimePlanQuoteFromOrder(order *model.SubscriptionOrder) (oneTimePlanPayme
 		return oneTimePlanPaymentQuote{}, errors.New("subscription order is required")
 	}
 	currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
-	if currency == "" || order.PaymentAmountMinor < 0 || order.RecallDiscountAmountMinor < 0 ||
-		order.PaymentAmountMinor > math.MaxInt64-order.RecallDiscountAmountMinor {
+	discountAmountMinor := order.RecallDiscountAmountMinor
+	if strings.TrimSpace(order.DiscountKind) == service.SubscriptionDiscountKindInvitation {
+		discountAmountMinor = order.SubscriptionDiscountAmountMinor
+	}
+	if currency == "" || order.PaymentAmountMinor < 0 || discountAmountMinor < 0 ||
+		order.PaymentAmountMinor > math.MaxInt64-discountAmountMinor {
 		return oneTimePlanPaymentQuote{}, errors.New("one-time subscription quote is unavailable")
 	}
-	checkoutAmountMinor := order.PaymentAmountMinor + order.RecallDiscountAmountMinor
+	checkoutAmountMinor := order.PaymentAmountMinor + discountAmountMinor
 	if checkoutAmountMinor <= 0 {
 		return oneTimePlanPaymentQuote{}, errors.New("one-time subscription quote is unavailable")
 	}
@@ -583,7 +732,7 @@ func isOneTimePlanStripeMethod(method string) bool {
 	}
 }
 
-func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[string]string {
+func oneTimePlanMetadata(order *model.SubscriptionOrder, method string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection) map[string]string {
 	metadata := map[string]string{
 		"trade_no":             strings.TrimSpace(order.TradeNo),
 		"user_id":              strconv.Itoa(order.UserId),
@@ -597,6 +746,8 @@ func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[stri
 		"newapi_trade_no":      strings.TrimSpace(order.TradeNo),
 		"newapi_user_id":       strconv.Itoa(order.UserId),
 		"newapi_plan_id":       strconv.Itoa(order.PlanId),
+		"checkout_revision":    strconv.FormatInt(checkoutRevision, 10),
+		"discount_selection":   string(discountSelection.Source),
 	}
 	if strings.TrimSpace(order.DiscountKind) != "" {
 		metadata["discount_kind"] = strings.TrimSpace(order.DiscountKind)
@@ -610,13 +761,35 @@ func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[stri
 	if order.SubscriptionDiscountAmountMinor > 0 {
 		metadata["subscription_discount_amount_minor"] = strconv.FormatInt(order.SubscriptionDiscountAmountMinor, 10)
 	}
-	if order.RecallDiscountAmountMinor > 0 {
+	if discountSelection.Source == service.StripeCheckoutDiscountRecall && order.RecallDiscountAmountMinor > 0 {
 		metadata["recall_campaign_id"] = strconv.FormatInt(order.RecallCampaignId, 10)
 		metadata["recall_recipient_id"] = strconv.FormatInt(order.RecallRecipientId, 10)
 		metadata["recall_promotion_code_id"] = strings.TrimSpace(order.RecallPromotionCodeId)
 		metadata["recall_discount_amount_minor"] = strconv.FormatInt(order.RecallDiscountAmountMinor, 10)
 	}
 	return metadata
+}
+
+func oneTimeStripeDiscountSelectionFromOrder(order *model.SubscriptionOrder) service.StripeCheckoutDiscountSelection {
+	if order == nil {
+		return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
+	}
+	if strings.TrimSpace(order.DiscountKind) == service.SubscriptionDiscountKindRecall && strings.TrimSpace(order.RecallPromotionCodeId) != "" {
+		return service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountRecall,
+			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
+		}
+	}
+	if strings.TrimSpace(order.DiscountKind) == service.SubscriptionDiscountKindInvitation {
+		return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountInvitation}
+	}
+	if order.RecallDiscountAmountMinor > 0 && strings.TrimSpace(order.RecallPromotionCodeId) != "" {
+		return service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountRecall,
+			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
+		}
+	}
+	return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
 }
 
 func validateOneTimePlanRecallAttributionTuple(order *model.SubscriptionOrder) error {
@@ -647,31 +820,17 @@ func validateOneTimePlanRecallPromotionForCheckout(ctx context.Context, order *m
 	if order.RecallDiscountAmountMinor <= 0 {
 		return "", nil
 	}
-	client := stripeOneTimeRecallClient
-	if client == nil {
-		client = service.NewStripeRecallClient()
-	}
 	quote, err := oneTimePlanQuoteFromOrder(order)
 	if err != nil {
 		return "", err
 	}
-	priceID, err := oneTimePlanStripePriceIDForRecallValidation(order)
+	productID, err := oneTimePlanStableStripeProductForCheckout(ctx, order)
 	if err != nil {
 		return "", err
 	}
-	price, err := client.GetPrice(ctx, priceID)
-	if err != nil {
-		return "", fmt.Errorf("validate one-time recall price: %w", err)
-	}
-	if price == nil || price.Deleted || !price.Active || strings.TrimSpace(price.ID) != priceID {
-		return "", errors.New("one-time recall Stripe price is unavailable")
-	}
-	productID := ""
-	if price.Product != nil {
-		productID = strings.TrimSpace(price.Product.ID)
-	}
-	if productID == "" {
-		return "", errors.New("one-time recall Stripe price product is unavailable")
+	client := stripeOneTimeRecallClient
+	if client == nil {
+		client = service.NewStripeRecallClient()
 	}
 	promotion, err := client.GetPromotionCode(ctx, strings.TrimSpace(order.RecallPromotionCodeId))
 	if err != nil {
@@ -731,7 +890,36 @@ func validateOneTimePlanRecallPromotionForCheckout(ctx context.Context, order *m
 	return productID, nil
 }
 
-func applyOneTimeRecallScopedProduct(params *stripe.CheckoutSessionParams, productID string) {
+func oneTimePlanStableStripeProductForCheckout(ctx context.Context, order *model.SubscriptionOrder) (string, error) {
+	if order == nil {
+		return "", errors.New("subscription order is required")
+	}
+	priceID, err := oneTimePlanStripePriceIDForCheckout(order)
+	if err != nil {
+		return "", err
+	}
+	client := stripeOneTimeRecallClient
+	if client == nil {
+		client = service.NewStripeRecallClient()
+	}
+	price, err := client.GetPrice(ctx, priceID)
+	if err != nil {
+		return "", fmt.Errorf("resolve one-time Stripe price product: %w", err)
+	}
+	if price == nil || price.Deleted || !price.Active || strings.TrimSpace(price.ID) != priceID {
+		return "", errors.New("one-time Stripe price is unavailable")
+	}
+	productID := ""
+	if price.Product != nil {
+		productID = strings.TrimSpace(price.Product.ID)
+	}
+	if productID == "" {
+		return "", errors.New("one-time Stripe price product is unavailable")
+	}
+	return productID, nil
+}
+
+func applyOneTimeStableProduct(params *stripe.CheckoutSessionParams, productID string) {
 	productID = strings.TrimSpace(productID)
 	if params == nil || productID == "" {
 		return
@@ -745,7 +933,7 @@ func applyOneTimeRecallScopedProduct(params *stripe.CheckoutSessionParams, produ
 	}
 }
 
-func oneTimePlanStripePriceIDForRecallValidation(order *model.SubscriptionOrder) (string, error) {
+func oneTimePlanStripePriceIDForCheckout(order *model.SubscriptionOrder) (string, error) {
 	snapshot := oneTimePlanSnapshotFromOrder(order)
 	if priceID := strings.TrimSpace(snapshot.StripePriceId); priceID != "" {
 		return priceID, nil

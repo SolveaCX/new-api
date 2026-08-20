@@ -34,8 +34,18 @@ import {
 } from '../../lib/stripe-checkout-elements'
 import { recoverStripeCheckoutMountFailure } from '../../lib/stripe-checkout-recovery'
 import { buildStripeCheckoutViewModel } from '../../lib/stripe-checkout-view-model'
-import type { StripeTopupSummary } from '../../types'
+import { updateStripeCheckoutDiscount } from '../../api'
+import type {
+  ApiResponse,
+  StripeCheckoutDiscountState,
+  StripeCheckoutRevisionData,
+  StripeTopupSummary,
+} from '../../types'
 import { StripeCheckoutLayout } from './stripe-checkout-layout'
+import {
+  StripePromotionCodeControl,
+  type StripePromotionCodeBusyAction,
+} from './stripe-promotion-code-control'
 
 export interface StripeCheckoutDialogSession {
   clientSecret: string
@@ -44,6 +54,9 @@ export interface StripeCheckoutDialogSession {
   title?: string
   description?: string
   fallbackUrl?: string
+  checkoutContext?: string
+  checkoutRevision?: number
+  discountState?: StripeCheckoutDiscountState
 }
 
 interface StripeCheckoutDialogProps {
@@ -89,15 +102,33 @@ function StripeCheckoutFrame(props: {
   const paymentContainerRef = useRef<HTMLDivElement | null>(null)
   const currencyContainerRef = useRef<HTMLDivElement | null>(null)
   const mountedRef = useRef<MountedStripeCheckoutElements | null>(null)
+  const requestGenerationRef = useRef(0)
+  const mutationInFlightRef = useRef(false)
+  const [current, setCurrent] = useState(() => props.session)
   const [checkoutSession, setCheckoutSession] =
     useState<StripeCheckoutSession | null>(null)
+  const [promotionCode, setPromotionCode] = useState('')
+  const [promotionMessage, setPromotionMessage] = useState<{
+    kind: 'success' | 'error'
+    text: string
+  } | null>(null)
   const [mounting, setMounting] = useState(true)
+  const [switching, setSwitching] = useState(false)
+  const [busyAction, setBusyAction] =
+    useState<StripePromotionCodeBusyAction>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const sessionClientSecret = props.session.clientSecret
-  const sessionPublishableKey = props.session.publishableKey
-  const sessionFallbackUrl = props.session.fallbackUrl
+  const sessionClientSecret = current.clientSecret
+  const sessionPublishableKey = current.publishableKey
+  const sessionFallbackUrl = current.fallbackUrl
   const onOpenChange = props.onOpenChange
+  const discountState = current.discountState ?? { source: 'none' as const }
+  const hasRevisionContract = Boolean(
+    current.checkoutContext &&
+      typeof current.checkoutRevision === 'number' &&
+      current.checkoutRevision > 0 &&
+      current.discountState
+  )
   const setPaymentContainer = useCallback((element: HTMLDivElement | null) => {
     paymentContainerRef.current = element
   }, [])
@@ -111,6 +142,8 @@ function StripeCheckoutFrame(props: {
 
     const mount = async () => {
       if (!paymentContainerRef.current) return
+      setMounting(true)
+      setCheckoutSession(null)
       try {
         mounted = await mountStripeCheckoutElements({
           clientSecret: sessionClientSecret,
@@ -126,8 +159,12 @@ function StripeCheckoutFrame(props: {
           return
         }
         mountedRef.current = mounted
+        setSwitching(false)
+        setBusyAction(null)
       } catch (_mountError) {
         if (cancelled) return
+        setSwitching(false)
+        setBusyAction(null)
         recoverStripeCheckoutMountFailure({
           fallbackUrl: sessionFallbackUrl,
           navigate: (url) => {
@@ -160,14 +197,14 @@ function StripeCheckoutFrame(props: {
   const viewModel = useMemo(
     () =>
       checkoutSession
-        ? buildStripeCheckoutViewModel(checkoutSession, props.session.summary)
+        ? buildStripeCheckoutViewModel(checkoutSession, current.summary)
         : null,
-    [checkoutSession, props.session.summary]
+    [checkoutSession, current.summary]
   )
 
   const handleConfirm = useCallback(async () => {
     const mounted = mountedRef.current
-    if (!mounted || submitting) return
+    if (!mounted || submitting || switching) return
     setSubmitting(true)
     setError(null)
     try {
@@ -185,7 +222,135 @@ function StripeCheckoutFrame(props: {
     } finally {
       setSubmitting(false)
     }
-  }, [submitting, t])
+  }, [submitting, switching, t])
+
+  const installRevision = useCallback(
+    (
+      data: StripeCheckoutRevisionData,
+      message: { kind: 'success' | 'error'; text: string }
+    ) => {
+      if (!isCompleteRevisionData(data)) {
+        setPromotionMessage({
+          kind: 'error',
+          text: t('Unable to update the checkout. Please try again.'),
+        })
+        setSwitching(false)
+        setBusyAction(null)
+        return
+      }
+      setSwitching(true)
+      setPromotionCode('')
+      setPromotionMessage(message)
+      setCurrent((previous) => ({
+        ...previous,
+        clientSecret: data.client_secret,
+        publishableKey: data.publishable_key,
+        fallbackUrl: data.fallback_url,
+        checkoutContext: data.checkout_context,
+        checkoutRevision: data.checkout_revision,
+        discountState: data.discount_state,
+        summary: data.topup_summary ?? null,
+      }))
+    },
+    [t]
+  )
+
+  const mutateDiscount = useCallback(
+    async (action: 'apply' | 'restore') => {
+      if (
+        !hasRevisionContract ||
+        !current.checkoutContext ||
+        !current.checkoutRevision ||
+        mutationInFlightRef.current
+      ) {
+        return
+      }
+      const trimmedCode = promotionCode.trim()
+      if (action === 'apply' && !trimmedCode) return
+
+      const generation = requestGenerationRef.current + 1
+      requestGenerationRef.current = generation
+      mutationInFlightRef.current = true
+      setSwitching(true)
+      setBusyAction(action)
+      setPromotionMessage({
+        kind: 'success',
+        text:
+          action === 'apply'
+            ? t('Applying promotion code...')
+            : t('Restoring previous discount...'),
+      })
+
+      try {
+        const response = await updateStripeCheckoutDiscount(
+          action === 'apply'
+            ? {
+                action: 'apply',
+                checkout_context: current.checkoutContext,
+                expected_revision: current.checkoutRevision,
+                promotion_code: trimmedCode,
+                request_id: createCheckoutMutationRequestId(),
+              }
+            : {
+                action: 'restore',
+                checkout_context: current.checkoutContext,
+                expected_revision: current.checkoutRevision,
+                request_id: createCheckoutMutationRequestId(),
+              }
+        )
+        if (generation !== requestGenerationRef.current) return
+
+        if (response.success && response.data) {
+          installRevision(response.data, {
+            kind: 'success',
+            text: getSuccessMessage(action, response.data.discount_state, t),
+          })
+          return
+        }
+
+        if (
+          response.message === 'checkout_revision_conflict' &&
+          response.data &&
+          isCompleteRevisionData(response.data)
+        ) {
+          installRevision(response.data, {
+            kind: 'error',
+            text: t(
+              'Checkout changed in another request. The latest checkout was restored.'
+            ),
+          })
+          return
+        }
+
+        setPromotionMessage({
+          kind: 'error',
+          text: getDiscountErrorMessage(response, t),
+        })
+        setSwitching(false)
+        setBusyAction(null)
+      } catch (_error) {
+        if (generation !== requestGenerationRef.current) return
+        setPromotionMessage({
+          kind: 'error',
+          text: t('Unable to update the checkout. Please try again.'),
+        })
+        setSwitching(false)
+        setBusyAction(null)
+      } finally {
+        if (generation === requestGenerationRef.current) {
+          mutationInFlightRef.current = false
+        }
+      }
+    },
+    [
+      current.checkoutContext,
+      current.checkoutRevision,
+      hasRevisionContract,
+      installRevision,
+      promotionCode,
+      t,
+    ]
+  )
 
   return (
     <StripeCheckoutLayout
@@ -196,9 +361,23 @@ function StripeCheckoutFrame(props: {
       onCurrencyContainer={setCurrencyContainer}
       showCurrencySelector={(checkoutSession?.currencyOptions?.length ?? 0) > 1}
       mounting={mounting}
-      submitting={submitting}
+      submitting={submitting || switching}
       error={error}
       onConfirm={() => void handleConfirm()}
+      promotionControl={
+        hasRevisionContract ? (
+          <StripePromotionCodeControl
+            value={promotionCode}
+            discountState={discountState}
+            busy={switching}
+            busyAction={busyAction}
+            message={promotionMessage}
+            onValueChange={setPromotionCode}
+            onApply={() => void mutateDiscount('apply')}
+            onRemove={() => void mutateDiscount('restore')}
+          />
+        ) : undefined
+      }
       closeControl={
         <DialogClose
           render={
@@ -214,4 +393,67 @@ function StripeCheckoutFrame(props: {
       }
     />
   )
+}
+
+function isCompleteRevisionData(
+  data: StripeCheckoutRevisionData
+): data is Required<
+  Pick<
+    StripeCheckoutRevisionData,
+    | 'client_secret'
+    | 'publishable_key'
+    | 'checkout_context'
+    | 'checkout_revision'
+    | 'discount_state'
+  >
+> &
+  StripeCheckoutRevisionData {
+  return Boolean(
+    data.client_secret &&
+      data.publishable_key &&
+      data.checkout_context &&
+      typeof data.checkout_revision === 'number' &&
+      data.checkout_revision > 0 &&
+      data.discount_state
+  )
+}
+
+function createCheckoutMutationRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function getSuccessMessage(
+  action: 'apply' | 'restore',
+  discountState: StripeCheckoutDiscountState | undefined,
+  t: (key: string) => string
+): string {
+  if (action === 'restore') return t('Previous discount restored.')
+  if (discountState?.source === 'manual' && discountState.replaced_source) {
+    return t('Promotion code applied. Previous discount replaced.')
+  }
+  return t('Promotion code applied.')
+}
+
+function getDiscountErrorMessage(
+  response: ApiResponse<StripeCheckoutRevisionData>,
+  t: (key: string) => string
+): string {
+  if (response.message === 'promotion_code_invalid') {
+    return t('This promotion code is invalid.')
+  }
+  if (response.message === 'promotion_code_ineligible') {
+    return t('This promotion code is not eligible for this purchase.')
+  }
+  if (response.message === 'promotion_code_ambiguous') {
+    return t('Multiple promotion codes match. Contact support.')
+  }
+  if (response.message === 'checkout_revision_conflict') {
+    return t(
+      'Checkout changed in another request. The latest checkout was restored.'
+    )
+  }
+  return t('Unable to update the checkout. Please try again.')
 }

@@ -6777,6 +6777,20 @@
     "Video generation timed out": "Quá thời gian tạo video",
     "Generation was interrupted": "Quá trình tạo đã bị gián đoạn",
     "Your browser does not support video playback.": "Trình duyệt của bạn không hỗ trợ phát video.",
-    "%": "%"
+    "%": "%",
+    "Promotion code": "Mã khuyến mãi",
+    "Enter promotion code": "Nhập mã khuyến mãi",
+    "Apply": "Áp dụng",
+    "Applying promotion code...": "Đang áp dụng mã khuyến mãi...",
+    "Promotion code applied.": "Đã áp dụng mã khuyến mãi.",
+    "Promotion code applied. Previous discount replaced.": "Đã áp dụng mã khuyến mãi. Ưu đãi trước đó đã được thay thế.",
+    "Remove promotion code": "Xóa mã khuyến mãi",
+    "Restoring previous discount...": "Đang khôi phục ưu đãi trước đó...",
+    "Previous discount restored.": "Đã khôi phục ưu đãi trước đó.",
+    "This promotion code is invalid.": "Mã khuyến mãi này không hợp lệ.",
+    "This promotion code is not eligible for this purchase.": "Mã khuyến mãi này không áp dụng cho giao dịch này.",
+    "Multiple promotion codes match. Contact support.": "Có nhiều mã khuyến mãi trùng khớp. Vui lòng liên hệ hỗ trợ.",
+    "Checkout changed in another request. The latest checkout was restored.": "Thanh toán đã thay đổi ở yêu cầu khác. Phiên thanh toán mới nhất đã được khôi phục.",
+    "Unable to update the checkout. Please try again.": "Không thể cập nhật thanh toán. Vui lòng thử lại."
   }
 }

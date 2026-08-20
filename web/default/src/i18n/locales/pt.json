@@ -6777,6 +6777,20 @@
     "Video generation timed out": "A geração de vídeo excedeu o tempo limite",
     "Generation was interrupted": "A geração foi interrompida",
     "Your browser does not support video playback.": "Seu navegador não oferece suporte à reprodução de vídeo.",
-    "%": "%"
+    "%": "%",
+    "Promotion code": "Código promocional",
+    "Enter promotion code": "Digite o código promocional",
+    "Apply": "Aplicar",
+    "Applying promotion code...": "Aplicando código promocional...",
+    "Promotion code applied.": "Código promocional aplicado.",
+    "Promotion code applied. Previous discount replaced.": "Código promocional aplicado. O desconto anterior foi substituído.",
+    "Remove promotion code": "Remover código promocional",
+    "Restoring previous discount...": "Restaurando desconto anterior...",
+    "Previous discount restored.": "Desconto anterior restaurado.",
+    "This promotion code is invalid.": "Este código promocional é inválido.",
+    "This promotion code is not eligible for this purchase.": "Este código promocional não é elegível para esta compra.",
+    "Multiple promotion codes match. Contact support.": "Vários códigos promocionais correspondem. Entre em contato com o suporte.",
+    "Checkout changed in another request. The latest checkout was restored.": "O checkout mudou em outra solicitação. O checkout mais recente foi restaurado.",
+    "Unable to update the checkout. Please try again.": "Não foi possível atualizar o checkout. Tente novamente."
   }
 }

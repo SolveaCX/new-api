@@ -6777,6 +6777,20 @@
     "Video generation timed out": "视频生成超时",
     "Generation was interrupted": "生成已中断",
     "Your browser does not support video playback.": "当前浏览器不支持视频播放。",
-    "%": "%"
+    "%": "%",
+    "Promotion code": "优惠码",
+    "Enter promotion code": "输入优惠码",
+    "Apply": "应用",
+    "Applying promotion code...": "正在应用优惠码...",
+    "Promotion code applied.": "优惠码已应用。",
+    "Promotion code applied. Previous discount replaced.": "优惠码已应用，原优惠已替换。",
+    "Remove promotion code": "移除优惠码",
+    "Restoring previous discount...": "正在恢复原优惠...",
+    "Previous discount restored.": "原优惠已恢复。",
+    "This promotion code is invalid.": "此优惠码无效。",
+    "This promotion code is not eligible for this purchase.": "此优惠码不适用于本次购买。",
+    "Multiple promotion codes match. Contact support.": "匹配到多个优惠码，请联系支持。",
+    "Checkout changed in another request. The latest checkout was restored.": "结账已在另一个请求中变更，已恢复最新结账。",
+    "Unable to update the checkout. Please try again.": "无法更新结账，请重试。"
   }
 }
