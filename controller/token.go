@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -357,7 +358,7 @@ func AddToken(c *gin.Context) {
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
 		if errors.Is(err, errTokenEmailVerificationRequired) {
-			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI)
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI, map[string]any{"ConsoleOrigin": system_setting.ResolveConsoleOrigin()})
 			return
 		}
 		common.ApiError(c, err)
@@ -406,7 +407,7 @@ func EnsureInitialToken(c *gin.Context) {
 	cleanToken, err := buildTokenForInsert(c, token, key)
 	if err != nil {
 		if errors.Is(err, errTokenEmailVerificationRequired) {
-			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI)
+			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequiredForAPI, map[string]any{"ConsoleOrigin": system_setting.ResolveConsoleOrigin()})
 			return
 		}
 		common.ApiError(c, err)
