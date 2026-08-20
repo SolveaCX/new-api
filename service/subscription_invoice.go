@@ -123,6 +123,12 @@ var stripeSubscriptionSessionCreator = createStripeSubscriptionSession
 var stripeCheckoutSessionGetter = getStripeCheckoutSessionForSubscription
 var stripeCheckoutSessionExpirer = expireStripeCheckoutSessionForSubscription
 
+var (
+	errStripeInitialCheckoutCompleted  = errors.New("Stripe checkout session already completed")
+	errStripeInitialCheckoutExpired    = errors.New("Stripe checkout session expired")
+	errStripeInitialCheckoutNotPayable = errors.New("Stripe checkout session is not payable")
+)
+
 func ResolveStripeCheckoutPresentation(uiMode string) StripeCheckoutPresentation {
 	requested := strings.ToLower(strings.TrimSpace(uiMode))
 	clientSecretAvailable := strings.TrimSpace(setting.StripePublishableKey) != ""
@@ -190,6 +196,14 @@ func ReplaceStripeSubscriptionCheckoutCreatorsForTest(
 		stripeSubscriptionCouponCreator = originalCouponCreator
 		stripeSubscriptionSessionCreator = originalSessionCreator
 	}
+}
+
+func IsStripeCheckoutDefinitiveSessionRejection(err error) bool {
+	if err == nil {
+		return false
+	}
+	var stripeErr *stripe.Error
+	return errors.As(err, &stripeErr) && stripeErr.Type == stripe.ErrorTypeInvalidRequest
 }
 
 func CreateStripeSubscriptionCheckout(ctx context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
@@ -351,15 +365,27 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 			if getErr != nil {
 				return nil, getErr
 			}
-			result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
-			if resultErr != nil {
-				return nil, resultErr
-			}
 			if initialRevision.State == model.StripeCheckoutRevisionStateActive {
+				result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
+				if resultErr != nil {
+					return nil, resultErr
+				}
 				return result, nil
 			}
 			if initialRevision.State != model.StripeCheckoutRevisionStatePreparing {
 				return nil, model.ErrStripeCheckoutRevisionConflict
+			}
+			if payableErr := validateStripeInitialSubscriptionCheckoutSession(created); payableErr != nil {
+				if errors.Is(payableErr, errStripeInitialCheckoutExpired) {
+					if abandonErr := model.AbandonStripeCheckoutRevision(initialRevision.Id); abandonErr != nil {
+						return nil, errors.Join(payableErr, abandonErr)
+					}
+				}
+				return nil, payableErr
+			}
+			result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
+			if resultErr != nil {
+				return nil, resultErr
 			}
 			active, activateErr := model.ActivateStripeCheckoutRevision(model.StripeCheckoutRevisionActivation{
 				RevisionID: initialRevision.Id, ExpectedRevision: 0, OldProviderSessionID: "",
@@ -426,7 +452,22 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	}
 	created, err := stripeSubscriptionSessionCreator(ctx, params)
 	if err != nil {
+		if initialRevision != nil && IsStripeCheckoutDefinitiveSessionRejection(err) {
+			if abandonErr := model.AbandonStripeCheckoutRevision(initialRevision.Id); abandonErr != nil {
+				return nil, errors.Join(err, abandonErr)
+			}
+		}
 		return nil, err
+	}
+	if initialRevision != nil {
+		if payableErr := validateStripeInitialSubscriptionCheckoutSession(created); payableErr != nil {
+			if errors.Is(payableErr, errStripeInitialCheckoutExpired) {
+				if abandonErr := model.AbandonStripeCheckoutRevision(initialRevision.Id); abandonErr != nil {
+					return nil, errors.Join(payableErr, abandonErr)
+				}
+			}
+			return nil, payableErr
+		}
 	}
 	result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
 	if resultErr != nil {
@@ -465,6 +506,22 @@ func stripeSubscriptionRevisionSessionID(revision *model.StripeCheckoutRevision)
 		return ""
 	}
 	return strings.TrimSpace(*revision.ProviderSessionId)
+}
+
+func validateStripeInitialSubscriptionCheckoutSession(created *stripe.CheckoutSession) error {
+	if created == nil {
+		return errStripeInitialCheckoutNotPayable
+	}
+	if created.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid || created.Status == stripe.CheckoutSessionStatusComplete {
+		return errStripeInitialCheckoutCompleted
+	}
+	if created.Status == stripe.CheckoutSessionStatusExpired {
+		return errStripeInitialCheckoutExpired
+	}
+	if created.Status != stripe.CheckoutSessionStatusOpen {
+		return errStripeInitialCheckoutNotPayable
+	}
+	return nil
 }
 
 func stripeSubscriptionCheckoutSessionResult(created *stripe.CheckoutSession, selection StripeCheckoutDiscountSelection, presentation StripeCheckoutPresentation) (*StripeSubscriptionCheckoutSession, error) {

@@ -388,7 +388,7 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 			Order: order, User: user,
 		}
 		var created *oneTimeStripeCheckoutSession
-		_, active, err := createInitialStripeCheckoutRevision(ctx, purchase, discountSelection, nil, func(revision int64) (*stripeCheckoutSessionSnapshot, error) {
+		snapshot, active, err := createInitialStripeCheckoutRevision(ctx, purchase, discountSelection, nil, func(revision int64) (*stripeCheckoutSessionSnapshot, error) {
 			var createErr error
 			created, createErr = stripeOneTimeCheckoutSessionForRevisionCreator(ctx, order, user, revision, discountSelection, presentations...)
 			return stripeCheckoutSnapshotFromOneTime(created), createErr
@@ -399,6 +399,12 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 		order.CheckoutRevision = active.Revision
 		order.ProviderSessionId = stripeCheckoutRevisionSessionID(active)
 		order.ProviderSessionURL = active.ProviderSessionURL
+		if created == nil && snapshot != nil {
+			created = &oneTimeStripeCheckoutSession{
+				ID: snapshot.ID, URL: snapshot.URL, ClientSecret: snapshot.ClientSecret, CustomerID: snapshot.CustomerID,
+				Status: snapshot.Status, PaymentStatus: snapshot.PaymentStatus,
+			}
+		}
 		return created, nil
 	}
 	created, err := stripeOneTimeCheckoutSessionForRevisionCreator(ctx, order, user, checkoutRevision, discountSelection, presentations...)
