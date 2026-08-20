@@ -250,6 +250,39 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	}
 	stripe.Key = setting.StripeApiSecret
 	selection := stripeSubscriptionCheckoutDiscountSelection(input)
+	if selection.Source == StripeCheckoutDiscountInvitation && selection.CouponID == "" {
+		if strings.TrimSpace(string(input.DiscountSelection.Source)) != "" {
+			return nil, errors.New("Stripe invitation discount coupon id is required")
+		}
+		if input.DiscountAmountMinor <= 0 {
+			return nil, errors.New("Stripe invitation discount amount is invalid")
+		}
+		currency := strings.ToLower(strings.TrimSpace(input.DiscountCurrency))
+		if currency == "" {
+			return nil, errors.New("Stripe invitation discount currency is required")
+		}
+		couponParams := &stripe.CouponParams{
+			AmountOff: stripe.Int64(input.DiscountAmountMinor),
+			Currency:  stripe.String(currency),
+			Duration:  stripe.String(string(stripe.CouponDurationOnce)),
+			Name:      stripe.String("Flatkey invitation package credit"),
+		}
+		if strings.TrimSpace(input.IdempotencyKey) != "" {
+			couponParams.SetIdempotencyKey(fmt.Sprintf("%s:invitation-coupon:rev:%d", strings.TrimSpace(input.IdempotencyKey), input.CheckoutRevision))
+		}
+		coupon, err := stripeSubscriptionCouponCreator(ctx, couponParams)
+		if err != nil {
+			return nil, err
+		}
+		if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
+			return nil, errors.New("Stripe invitation coupon missing id")
+		}
+		selection.CouponID = strings.TrimSpace(coupon.ID)
+	}
+	selection, err := ValidateStripeCheckoutDiscountSelection(selection)
+	if err != nil {
+		return nil, err
+	}
 	metadata := stripeSubscriptionAuthoritativeMetadata(input.TradeNo, input.UserID, input.PlanID, input.ContractID, input.ChangeIntentID)
 	metadata["checkout_revision"] = strconv.FormatInt(input.CheckoutRevision, 10)
 	metadata["discount_selection"] = string(selection.Source)
@@ -283,33 +316,9 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 			Metadata: metadata,
 		},
 	}
-	if selection.Source == StripeCheckoutDiscountInvitation && selection.CouponID == "" {
-		if input.DiscountAmountMinor <= 0 {
-			return nil, errors.New("Stripe invitation discount amount is invalid")
-		}
-		currency := strings.ToLower(strings.TrimSpace(input.DiscountCurrency))
-		if currency == "" {
-			return nil, errors.New("Stripe invitation discount currency is required")
-		}
-		couponParams := &stripe.CouponParams{
-			AmountOff: stripe.Int64(input.DiscountAmountMinor),
-			Currency:  stripe.String(currency),
-			Duration:  stripe.String(string(stripe.CouponDurationOnce)),
-			Name:      stripe.String("Flatkey invitation package credit"),
-		}
-		if strings.TrimSpace(input.IdempotencyKey) != "" {
-			couponParams.SetIdempotencyKey(StripeCheckoutIdempotencyKey(strings.TrimSpace(input.IdempotencyKey)+":invitation-coupon", input.CheckoutRevision, selection))
-		}
-		coupon, err := stripeSubscriptionCouponCreator(ctx, couponParams)
-		if err != nil {
-			return nil, err
-		}
-		if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
-			return nil, errors.New("Stripe invitation coupon missing id")
-		}
-		selection.CouponID = strings.TrimSpace(coupon.ID)
+	if err := ApplyStripeCheckoutDiscount(params, selection); err != nil {
+		return nil, err
 	}
-	ApplyStripeCheckoutDiscount(params, selection)
 	ApplyStripeCheckoutPresentation(params, input.Presentation, input.TradeNo)
 	if strings.TrimSpace(input.CustomerID) != "" {
 		params.Customer = stripe.String(strings.TrimSpace(input.CustomerID))
@@ -319,7 +328,11 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		}
 	}
 	if strings.TrimSpace(input.IdempotencyKey) != "" {
-		params.SetIdempotencyKey(StripeCheckoutIdempotencyKey(input.IdempotencyKey, input.CheckoutRevision, selection))
+		idempotencyKey, err := StripeCheckoutIdempotencyKey(input.IdempotencyKey, input.CheckoutRevision, selection)
+		if err != nil {
+			return nil, err
+		}
+		params.SetIdempotencyKey(idempotencyKey)
 	}
 	created, err := stripeSubscriptionSessionCreator(ctx, params)
 	if err != nil {

@@ -54,3 +54,42 @@ This report is included in the single Task 4 Lore commit; the resolved SHA is re
 ## Remaining Risk
 
 The revision-aware one-time and top-up entry points retain compatibility wrappers for existing initial checkout callers. Replacement orchestration must call the explicit `ForRevision` builders/creator (or the parameterized top-up creator) with its prepared target revision and canonical selection.
+
+## Review Fix Round 1
+
+Resolved four findings from the formal review:
+
+- One-time invitation orders now reconstruct Stripe's gross subtotal from the persisted net payment plus the canonical invitation discount. Invitation restore, manual replacement, and none restoration therefore apply at most one discount against gross.
+- The initial one-time invitation compatibility path creates its explicit Coupon idempotently before building against gross; it then persists the created Session as before.
+- `createOneTimeStripeCheckoutSessionForRevision` now creates a candidate without mutating the order's active Session pointer or checkout revision. The initial compatibility wrapper retains the persistence side effect.
+- Unknown discount sources and invitation/manual/recall selections missing their required Stripe ID are rejected before metadata, Session idempotency, or Session creation. `none` remains the only zero-discount selection.
+- One-time manual promotion candidates resolve the snapshot Stripe Price's stable Product and bind it to inline `price_data`; lookup failures stop before Checkout creation.
+
+Round 1 RED evidence:
+
+```powershell
+go test $controllerFiles -run "TestOneTimePlanInvitationReplacementBuildsDiscountAgainstGrossAmount" -count=1 -v
+# FAIL: invitation net 1300 was sent as subtotal instead of gross 2000.
+
+go test $controllerFiles -run "TestCreateOneTimePlanCheckout(ForRevisionDoesNotReplaceActiveOrderPointer|InitialWrapperPersistsActiveOrderPointer)" -count=1 -v
+# FAIL: candidate creation returned "Stripe checkout session mismatch"; initial wrapper passed.
+
+go test ./service/ -run "TestApplyStripeCheckoutDiscount|TestValidateStripeCheckoutDiscountSelection|TestStripeCheckoutIdempotencyKey" -count=1 -v
+# FAIL: validation/error-returning helper contracts were absent.
+
+go test $controllerFiles -run "TestCreateOneTimePlanManualRevision" -count=1 -v
+# FAIL: manual PriceData.Product was nil and Product lookup errors were ignored.
+
+go test $controllerFiles -run "TestOneTimePlanMetadataIncludesInvitationDiscountSnapshot|TestCreateOneTimePlanCheckoutInitialInvitationCreatesCouponAndPersists" -count=1 -v
+# FAIL: the compatibility path rejected the persisted invitation because no explicit Coupon had been created yet.
+```
+
+Round 1 GREEN evidence:
+
+```powershell
+go test ./service/ -run "TestApplyStripeCheckoutDiscount|TestValidateStripeCheckoutDiscountSelection|TestStripeCheckoutIdempotencyKey|TestCreateStripeSubscriptionCheckout|TestStripeSubscriptionCheckout|TestStripeRecurringChangePlan" -count=1
+# PASS
+
+go test $controllerFiles -run "TestStripeCheckoutSession|TestBuildOneTimePlanCheckout|TestOneTimePlanStripe|TestCreateOneTimePlan" -count=1
+# PASS
+```
