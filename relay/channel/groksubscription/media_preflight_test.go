@@ -140,6 +140,39 @@ func TestForceRefreshMediaCredentialRefreshesWithoutBillingProbe(t *testing.T) {
 	require.Equal(t, 1, tokenRefreshes)
 }
 
+func TestForceRefreshMediaCredentialWaiterDoesNotReturnStaleCredentialOrRefreshAgain(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 4000)
+	const now = int64(2000)
+	acquired, err := model.AcquireGrokRefreshLease(channelID, "slow-winner", now, 30)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	var sleeps, tokenRefreshes int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return now },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			tokenRefreshes++
+			return jsonResponse(http.StatusOK, `{"access_token":"duplicate-at","refresh_token":"duplicate-rt","token_type":"Bearer","expires_in":7200}`), nil
+		}),
+		Sleep: func(ctx context.Context, d time.Duration) error {
+			sleeps++
+			return nil
+		},
+	})
+	defer restore()
+
+	got, err := ForceRefreshMediaCredential(context.Background(), channelID)
+
+	require.ErrorIs(t, err, ErrRefreshConflict)
+	require.Empty(t, got.AccessToken)
+	require.Equal(t, 0, tokenRefreshes, "waiter must not run a duplicate forced refresh")
+	require.GreaterOrEqual(t, sleeps, int(mediaPreflightMaxWait/mediaPreflightWaitInterval))
+	cred, err := loadMediaCredential(context.Background(), channelID)
+	require.NoError(t, err)
+	require.Equal(t, "old-at", cred.AccessToken)
+}
+
 func TestEnsureMediaCredentialProbeFailurePreservesSnapshotAndReturnsUnavailable(t *testing.T) {
 	setupMediaPreflightTestDB(t)
 	now := int64(2000 + billingMaxEvidenceAge + 1)

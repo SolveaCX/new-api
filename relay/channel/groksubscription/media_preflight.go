@@ -89,11 +89,22 @@ func forceRefreshMediaCredential(ctx context.Context, channelID int, hooks Media
 	if channelID <= 0 {
 		return MediaCredential{}, errors.New("grok media preflight: invalid channel id")
 	}
+	startingCred, err := loadMediaCredential(ctx, channelID)
+	if err != nil {
+		return MediaCredential{}, err
+	}
 	for waited := time.Duration(0); ; waited += mediaPreflightWaitInterval {
 		hooks = normalizeMediaPreflightHooks(hooks)
 		now := hooks.Now(ctx)
 		if now <= 0 {
 			return MediaCredential{}, errors.New("grok media preflight: database time unavailable")
+		}
+		currentCred, err := loadMediaCredential(ctx, channelID)
+		if err != nil {
+			return MediaCredential{}, err
+		}
+		if currentCred != startingCred {
+			return MediaCredential{ChannelID: channelID, AccessToken: currentCred.AccessToken}, nil
 		}
 		owner := "media-force-refresh:" + common.GetUUID()
 		acquired, err := model.AcquireGrokRefreshLease(channelID, owner, now, mediaPreflightLeaseTTLSeconds)
@@ -114,11 +125,7 @@ func forceRefreshMediaCredential(ctx context.Context, channelID int, hooks Media
 			return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
 		}
 		if waited >= mediaPreflightMaxWait {
-			cred, err := loadMediaCredential(ctx, channelID)
-			if err != nil {
-				return MediaCredential{}, err
-			}
-			return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
+			return MediaCredential{}, ErrRefreshConflict
 		}
 		if err := hooks.Sleep(ctx, mediaPreflightWaitInterval); err != nil {
 			return MediaCredential{}, err

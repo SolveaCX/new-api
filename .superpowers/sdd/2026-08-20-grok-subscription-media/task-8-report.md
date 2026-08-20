@@ -12,6 +12,11 @@ Implemented Task 8 retry and polling safeguards for Grok Subscription media:
 - Generic and legacy polling bodies now include the origin `channel_id`.
 - Grok task polling ignores stored `baseURL`/`key`, uses the caller context and current DB credential, and retries exactly once after a 401 using a lease-safe forced refresh.
 
+## Review-Round Fixes
+
+- Sanitized Grok Subscription image `DoResponse` failures to the generic client-facing message `upstream image response was invalid` and marked them skip-retry.
+- Changed forced media refresh waiters to stop returning an unchanged stale credential after another lease owner is already refreshing; they now return the updated credential when it changes, otherwise `ErrRefreshConflict`.
+
 ## Files
 
 - `controller/relay.go`
@@ -80,6 +85,12 @@ ok github.com/QuantumNous/new-api/model 0.389s
 ```text
 go test ./relay/channel/groksubscription -run 'Test.*Force.*Refresh' -count=1
 ok github.com/QuantumNous/new-api/relay/channel/groksubscription 0.737s
+```
+
+```text
+go test ./relay ./relay/channel/groksubscription -run 'TestImageHelperGrokRetryDecisionSkipsMalformedDoResponse|TestForceRefreshMediaCredentialWaiterDoesNotReturnStaleCredentialOrRefreshAgain' -count=1
+ok github.com/QuantumNous/new-api/relay 2.096s
+ok github.com/QuantumNous/new-api/relay/channel/groksubscription 2.507s
 ```
 
 ```text

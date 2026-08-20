@@ -151,3 +151,31 @@ func TestImageHelperGrokStatusRetryDecisionSkipsPossibleSentResponses(t *testing
 		t.Fatal("Grok image 400 must keep existing error handling")
 	}
 }
+
+func TestImageHelperGrokRetryDecisionSkipsMalformedDoResponse(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGrokSubscription}}
+	upstreamErr := types.WithOpenAIError(types.OpenAIError{
+		Message:  `grok image response missing data: https://api.x.ai/user/private-image.png`,
+		Type:     "bad_response_body",
+		Param:    "https://api.x.ai/user/private-image.png",
+		Code:     "bad_response_body",
+		Metadata: []byte(`{"url":"https://api.x.ai/user/private-image.png"}`),
+	}, http.StatusInternalServerError)
+
+	got := sanitizeGrokImageDoResponseError(info, upstreamErr)
+
+	if !types.IsSkipRetryError(got) {
+		t.Fatal("malformed Grok image HTTP 200 response must skip retry")
+	}
+	if strings.Contains(got.SanitizationSurface(), "api.x.ai") {
+		t.Fatalf("sanitized error leaked upstream response data: %s", got.SanitizationSurface())
+	}
+	if got.ToOpenAIError().Message != "upstream image response was invalid" {
+		t.Fatalf("client message = %q, want sanitized DoResponse error", got.ToOpenAIError().Message)
+	}
+
+	other := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}
+	if types.IsSkipRetryError(sanitizeGrokImageDoResponseError(other, upstreamErr)) {
+		t.Fatal("unrelated image channels must keep existing malformed-response retry behavior")
+	}
+}

@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -155,6 +156,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
+		newAPIError = sanitizeGrokImageDoResponseError(info, newAPIError)
 		// BlockRun settlement is irreversible the moment a poll observes
 		// "completed". If cost signals were captured, the upstream has been (or
 		// will be) charged — a late client disconnect / body-write failure must
@@ -247,6 +249,18 @@ func shouldSkipRetryForGrokImagePostStatus(info *relaycommon.RelayInfo, statusCo
 	return statusCode == http.StatusUnauthorized ||
 		statusCode == http.StatusTooManyRequests ||
 		statusCode >= http.StatusInternalServerError
+}
+
+func sanitizeGrokImageDoResponseError(info *relaycommon.RelayInfo, err *types.NewAPIError) *types.NewAPIError {
+	if !isGrokSubscriptionImage(info) || err == nil {
+		return err
+	}
+	return types.NewOpenAIError(
+		errors.New("upstream image response was invalid"),
+		types.ErrorCodeBadResponseBody,
+		err.StatusCode,
+		types.ErrOptionWithSkipRetry(),
+	)
 }
 
 func isGrokSubscriptionImage(info *relaycommon.RelayInfo) bool {
