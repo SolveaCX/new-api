@@ -125,6 +125,40 @@ describe("filter semantics", () => {
     expect(result.map((row) => row.name).sort()).toEqual(["claude-opus-5", "gpt-4o-mini", "gpt-5.6-sol"]);
   });
 
+  test("the author comes from metadata, not the payload's placeholder vendor", () => {
+    // The payload has no vendor for these, so getVendorName yields "AI".
+    const row = buildDirectoryRow({ name: "macaron-v1-venti", vendor: "AI" }, NOW);
+    expect(row.author).toBe("Macaron");
+    expect(filterDirectoryRows([row], withFilters({ vendors: ["Macaron"] }))).toHaveLength(1);
+    expect(filterDirectoryRows([row], withFilters({ vendors: ["AI"] }))).toHaveLength(0);
+  });
+
+  test("providers is OR within itself and AND across groups", () => {
+    const rows = [
+      buildDirectoryRow({ name: "claude-opus-5", vendor: "Anthropic" }, NOW),
+      buildDirectoryRow({ name: "gpt-5.6-sol", vendor: "OpenAI" }, NOW),
+    ];
+    // Claude Platform on AWS serves the Claude model but not the GPT one.
+    const claudeOnly = filterDirectoryRows(rows, withFilters({ providers: ["Claude Platform on AWS"] }));
+    expect(claudeOnly.map((row) => row.name)).toEqual(["claude-opus-5"]);
+
+    // OR within the group: each option pulls in its own model.
+    const either = filterDirectoryRows(rows, withFilters({ providers: ["Claude Platform on AWS", "OpenAI"] }));
+    expect(either).toHaveLength(2);
+
+    // AND across groups: an author that does not serve on that platform yields none.
+    expect(
+      filterDirectoryRows(rows, withFilters({ providers: ["Claude Platform on AWS"], vendors: ["OpenAI"] }))
+    ).toHaveLength(0);
+  });
+
+  test("models with no documented providers drop out of that filter", () => {
+    const row = buildDirectoryRow({ name: "MiniMax-H3", vendor: "MiniMax" }, NOW);
+    expect(row.providers).toEqual([]);
+    expect(filterDirectoryRows([row], withFilters({ providers: ["Minimax"] }))).toHaveLength(0);
+    expect(filterDirectoryRows([row], EMPTY_DIRECTORY_FILTERS)).toHaveLength(1);
+  });
+
   test("model authors AND across other groups", () => {
     const result = filterDirectoryRows(SAMPLE, withFilters({ vendors: ["OpenAI"], inputPrice: ["lt-0.5"] }));
     expect(result.map((row) => row.name)).toEqual(["gpt-4o-mini"]);
@@ -250,6 +284,7 @@ describe("url round-trip", () => {
       inputPrice: ["lt-0.5"],
       outputPrice: ["10+"],
       vendors: ["OpenAI", "Anthropic"],
+      providers: ["Azure"],
       series: ["GPT", "Claude"],
       categories: ["Programming"],
       age: ["new"],
@@ -263,6 +298,7 @@ describe("url round-trip", () => {
     expect(parsed.inputPrice).toEqual(["lt-0.5"]);
     expect(parsed.outputPrice).toEqual(["10+"]);
     expect(parsed.vendors).toEqual(["OpenAI", "Anthropic"]);
+    expect(parsed.providers).toEqual(["Azure"]);
     expect(parsed.series).toEqual(["GPT", "Claude"]);
     expect(parsed.age).toEqual(["new"]);
     expect(parsed.distillable).toEqual([true]);

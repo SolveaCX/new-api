@@ -49,6 +49,7 @@ export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryF
     inputPrice: splitValues(params?.inputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
     outputPrice: splitValues(params?.outputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
     vendors: splitValues(params?.vendors),
+    providers: splitValues(params?.providers),
     series: splitValues(params?.series),
     categories: splitValues(params?.categories),
     age: splitValues(params?.age).filter((value): value is AgeBand => VALID_AGE_BANDS.has(value)),

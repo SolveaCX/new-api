@@ -144,7 +144,10 @@ export function buildRowsForModels(
       const directoryMeta = getModelMeta(model.model_name);
       return {
         name: model.model_name,
-        vendor,
+        // The metadata table is authoritative for the author: the payload
+        // leaves vendor_id empty for some models (Macaron, Veo, Gemma) and
+        // would otherwise fall back to the literal "AI".
+        vendor: directoryMeta?.vendor ?? vendor,
         official: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official),
         discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedPriceUsd(listed)),
         officialUsd: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.value : official,

@@ -3,7 +3,7 @@
 import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown, Filter, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ModelsDirectoryTable, PLACEHOLDER_VENDOR } from "@/components/models-directory-table";
+import { ModelsDirectoryTable } from "@/components/models-directory-table";
 import { ModelsFeaturedCarousel } from "@/components/models-featured-carousel";
 import { ModelsFilterSidebar, type FilterGroup } from "@/components/models-filter-sidebar";
 import { buildRowsForModels, type HomePricedModel } from "@/lib/home-models";
@@ -35,7 +35,9 @@ import {
   PRICE_BANDS,
   categoriesForModels,
   formatContextTokens,
+  providersForModels,
   seriesForModels,
+  vendorsForModels,
 } from "@/lib/model-directory-meta";
 import { directoryHref, parseDirectorySearch, toggleDirectoryFilter } from "@/lib/model-directory-url";
 import type { GroupModelRatio, PricingModel, PricingVendor } from "@/lib/pricing";
@@ -121,7 +123,7 @@ export function ModelsDirectory(props: Props) {
   );
 
   const groups = useMemo(
-    () => buildFilterGroups(props.locale, rows.map((row) => row.name), vendorsForRows(rows)),
+    () => buildFilterGroups(props.locale, rows.map((row) => row.name)),
     [props.locale, rows]
   );
   const featured = useMemo(() => buildFeaturedSlides(props.models.map((model) => model.model_name)), [props.models]);
@@ -320,24 +322,7 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
   };
 }
 
-/**
- * Vendors present in the live catalogue, most models first.
- *
- * `getVendorName` falls back to the literal "AI" for models the payload leaves
- * without a vendor (the Macaron models today). That placeholder is fine as a
- * table label but must not become a filter chip, so it is dropped here — those
- * models stay listed and searchable, they just have no author to filter by.
- */
-function vendorsForRows(rows: Array<{ vendor: string }>): string[] {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    if (!row.vendor || row.vendor === PLACEHOLDER_VENDOR) continue;
-    counts.set(row.vendor, (counts.get(row.vendor) ?? 0) + 1);
-  }
-  return [...counts.entries()].sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b)).map(([vendor]) => vendor);
-}
-
-function buildFilterGroups(locale: Locale, modelNames: string[], vendorNames: string[]): FilterGroup[] {
+function buildFilterGroups(locale: Locale, modelNames: string[]): FilterGroup[] {
   const copy = getDirectoryCopy(locale);
   return [
     {
@@ -371,9 +356,14 @@ function buildFilterGroups(locale: Locale, modelNames: string[], vendorNames: st
       key: "vendors",
       label: copy.groupVendors,
       defaultOpen: true,
-      // Model authors come straight from the live pricing payload, so this
-      // group needs no static metadata and never drifts from the catalogue.
-      options: vendorNames.map((value) => ({ value, label: value })),
+      options: vendorsForModels(modelNames).map((value) => ({ value, label: value })),
+    },
+    {
+      key: "providers",
+      label: copy.groupProviders,
+      // Where each model is officially served. Sourced from the metadata table
+      // because the pricing payload does not expose a routing map yet.
+      options: providersForModels(modelNames).map((value) => ({ value, label: value })),
     },
     {
       key: "series",
