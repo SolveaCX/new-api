@@ -3,7 +3,7 @@
 import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown, Filter, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ModelsDirectoryTable } from "@/components/models-directory-table";
+import { ModelsDirectoryTable, PLACEHOLDER_VENDOR } from "@/components/models-directory-table";
 import { ModelsFeaturedCarousel } from "@/components/models-featured-carousel";
 import { ModelsFilterSidebar, type FilterGroup } from "@/components/models-filter-sidebar";
 import { buildRowsForModels, type HomePricedModel } from "@/lib/home-models";
@@ -55,8 +55,6 @@ type Props = {
 
 const SEARCH_DEBOUNCE_MS = 160;
 const MAX_VISIBLE_ROWS = 200;
-/** getVendorName's fallback for models the payload leaves without a vendor. */
-const PLACEHOLDER_VENDOR = "AI";
 
 export function ModelsDirectory(props: Props) {
   const copy = getDirectoryCopy(props.locale);

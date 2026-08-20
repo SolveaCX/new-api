@@ -100,11 +100,19 @@ export function formatContextTokens(tokens: number | null | undefined): string |
   return `${Math.round(tokens / 1000)}K`;
 }
 
-/** Series inferred from the model name, for models missing from the table. */
+/**
+ * Series inferred from the model name, for models missing from the table.
+ *
+ * Some catalogue entries are namespaced as `vendor/model`
+ * (e.g. `bytedance/seedance-2.0-fast`). The patterns below anchor at the start
+ * of the name, so the namespace is stripped first — otherwise those rows infer
+ * no series at all and lose their sub-label.
+ */
 export function inferSeries(modelName: string): string | undefined {
   const name = modelName.toLowerCase();
+  const bare = name.includes("/") ? name.slice(name.lastIndexOf("/") + 1) : name;
   for (const [pattern, series] of SERIES_PATTERNS) {
-    if (pattern.test(name)) return series;
+    if (pattern.test(bare)) return series;
   }
   return undefined;
 }

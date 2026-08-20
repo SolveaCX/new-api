@@ -44,6 +44,12 @@ const DEFAULT_TTFT_MS = 600;
 const DEFAULT_HEALTH_SUCCESS_RATE = 100;
 const HEALTH_BAR_COUNT = 15;
 const DAY_SECONDS = 24 * 60 * 60;
+/**
+ * `getVendorName`'s fallback for models the pricing payload leaves without a
+ * vendor. It is a placeholder, not a real author, so neither the table label
+ * nor the model-authors filter should present it as one.
+ */
+export const PLACEHOLDER_VENDOR = "AI";
 
 // /models directory: every priced model as one row — official price struck
 // through vs the group-ratio price (the hero number), TTFT latency, and a
@@ -155,6 +161,7 @@ function DirectoryRow(props: {
   const healthTrend = buildDirectoryHealthTrend(trend);
   const contextLabel = formatContextTokens(row.contextTokens);
   const discount = discountPercent(row.officialUsd, row.discountedUsd);
+  const attribution = attributionLabel(row.vendor, row.series);
 
   return (
     <tr ref={ref} className="border-b border-[#F1EFF5] transition-colors last:border-b-0 hover:bg-[#FAF9FC] dark:border-white/[0.055] dark:hover:bg-white/[0.03]">
@@ -180,7 +187,7 @@ function DirectoryRow(props: {
                 {row.top10 ? <TopBadge rank={row.top10} /> : null}
               </span>
               <span className="text-muted-foreground/70 block truncate text-[11px]">
-                {row.series ? `${row.vendor} · ${row.series}` : row.vendor}
+                {attribution}
               </span>
             </span>
           </Link>
@@ -200,7 +207,7 @@ function DirectoryRow(props: {
                 {row.top10 ? <TopBadge rank={row.top10} /> : null}
               </span>
               <span className="text-muted-foreground/70 block truncate text-[11px]">
-                {row.series ? `${row.vendor} · ${row.series}` : row.vendor}
+                {attribution}
               </span>
             </span>
           </div>
@@ -241,9 +248,22 @@ function DirectoryRow(props: {
   );
 }
 
+/**
+ * Sub-label under the model name: "Vendor · Series".
+ *
+ * `getVendorName` falls back to the literal "AI" for models whose payload has
+ * no vendor, which reads as a fake author in the table. Treat that placeholder
+ * as absent: show the series alone, and the model name alone when neither is
+ * known, rather than attributing the model to "AI".
+ */
+export function attributionLabel(vendor: string | undefined, series: string | undefined): string {
+  const realVendor = vendor && vendor !== PLACEHOLDER_VENDOR ? vendor : undefined;
+  if (realVendor && series) return `${realVendor} · ${series}`;
+  return realVendor ?? series ?? "";
+}
+
 /** Popularity-board position, shown next to the model name. */
-function TopBadge(props: { rank: number }) {
-  return (
+function TopBadge(props: { rank: number }) {  return (
     <span className="shrink-0 rounded bg-amber-400/20 px-1.5 py-0.5 font-sans text-[9px] font-black tracking-wide text-amber-700 uppercase dark:bg-amber-300/15 dark:text-amber-300">
       TOP {props.rank}
     </span>

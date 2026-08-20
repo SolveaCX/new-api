@@ -233,6 +233,13 @@ describe("unknown models degrade gracefully", () => {
     expect(inferred.series).toBe("Claude");
     expect(filterDirectoryRows([inferred], withFilters({ series: ["Claude"] }))).toHaveLength(1);
   });
+
+  test("infer a series through a vendor/model namespace", () => {
+    // The catalogue serves some models as `vendor/model`; the series patterns
+    // anchor at the start, so the namespace has to be stripped first.
+    expect(buildDirectoryRow({ name: "bytedance/seedance-2.0-fast", vendor: "AI" }, NOW).series).toBe("Seedance");
+    expect(buildDirectoryRow({ name: "openai/gpt-9", vendor: "AI" }, NOW).series).toBe("GPT");
+  });
 });
 
 describe("url round-trip", () => {

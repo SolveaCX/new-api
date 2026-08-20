@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ModelsDirectoryTable, buildDirectoryHealthTrend } from "./models-directory-table";
+import { ModelsDirectoryTable, attributionLabel, buildDirectoryHealthTrend } from "./models-directory-table";
 import { getModelsDirectoryTableCopy } from "./pricing-explorer";
 
 describe("ModelsDirectoryTable", () => {
@@ -147,5 +147,28 @@ describe("ModelsDirectoryTable", () => {
     expect(html).toContain("/ 秒");
     expect(html).toContain("/ 次");
     expect(html).toContain("/ 1M tokens");
+  });
+});
+
+describe("attribution label", () => {
+  test("shows vendor and series together when both are known", () => {
+    expect(attributionLabel("Anthropic", "Claude")).toBe("Anthropic · Claude");
+  });
+
+  test("falls back to the series when the vendor is the AI placeholder", () => {
+    // getVendorName yields "AI" for models the payload leaves without a vendor;
+    // attributing the model to "AI" would invent an author that does not exist.
+    expect(attributionLabel("AI", "Seedance")).toBe("Seedance");
+    expect(attributionLabel("AI", undefined)).toBe("");
+  });
+
+  test("handles a missing vendor or series without stray separators", () => {
+    expect(attributionLabel(undefined, "Claude")).toBe("Claude");
+    expect(attributionLabel("Anthropic", undefined)).toBe("Anthropic");
+    expect(attributionLabel(undefined, undefined)).toBe("");
+  });
+
+  test("a vendor that merely contains AI is still a real vendor", () => {
+    expect(attributionLabel("Open AI Labs", "GPT")).toBe("Open AI Labs · GPT");
   });
 });
