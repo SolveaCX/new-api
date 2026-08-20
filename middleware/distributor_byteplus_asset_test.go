@@ -1042,7 +1042,7 @@ func TestAssetReferenceSeedanceProxyMaterializationBypassesSourceURLRewriteBranc
 
 	publicID := "ast_15615615615615615615615615615615"
 	asset := insertMiddlewareGeneralizedAsset(t, 7, publicID, "Image", model.AssetSourceStatusUnavailable, 0)
-	insertMiddlewareSeedanceProxyAssetBinding(t, asset.Id, 156, "https://asset-gateway.example.invalid", "grp_shared_aigc", apiKey, "seedance-proxy-upstream", model.AssetStatusActive)
+	insertMiddlewareSeedanceProxyAssetBinding(t, asset.Id, 156, "https://asset-gateway.example.invalid/v1", "grp_shared_aigc", apiKey, "seedance-proxy-upstream", model.AssetStatusActive)
 	model.InitChannelCache()
 
 	router := newBytePlusAssetDistributorRouter(func(c *gin.Context) {
