@@ -6682,6 +6682,13 @@
     "Website": "Trang web",
     "Website (optional)": "Trang web (tùy chọn)",
     "Honeypot": "Honeypot",
-    "Include disabled users": "Bao gồm người dùng bị vô hiệu hóa"
+    "Include disabled users": "Bao gồm người dùng bị vô hiệu hóa",
+    "Boost": "Tăng",
+    "Boost your balance": "Tăng số dư của bạn",
+    "Keep your balance ready whenever you need it": "Luôn sẵn số dư bất cứ khi nào bạn cần",
+    "Current available balance": "Số dư khả dụng hiện tại",
+    "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.": "Số dư dồi dào giúp công việc và các lệnh gọi API của bạn không bị gián đoạn. Hãy nạp tiền ngay, hoặc mời bạn bè để nhận tín dụng thưởng và tiếp tục xây dựng với chi phí trong tầm kiểm soát.",
+    "Quick top-up": "Nạp tiền nhanh",
+    "Earn credits": "Kiếm tín dụng"
   }
 }

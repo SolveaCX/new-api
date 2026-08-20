@@ -6682,6 +6682,13 @@
     "Website": "网站",
     "Website (optional)": "网站（选填）",
     "Honeypot": "蜜罐",
-    "Include disabled users": "包含禁用用户"
+    "Include disabled users": "包含禁用用户",
+    "Boost": "提升",
+    "Boost your balance": "提升余额",
+    "Keep your balance ready whenever you need it": "让余额随时够用",
+    "Current available balance": "当前可用余额",
+    "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.": "余额充足，创作和调用就不用被打断。现在提升可用额度，或邀请好友获得奖励额度，让后续使用更从容、成本更可控。",
+    "Quick top-up": "快速充值",
+    "Earn credits": "赚取额度"
   }
 }
