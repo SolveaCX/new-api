@@ -127,7 +127,7 @@ func TestBuildOneTimePlanCheckoutUsesPaymentModeAndRequestedMethod(t *testing.T)
 	require.NotNil(t, params.ClientReferenceID)
 	require.Equal(t, order.TradeNo, *params.ClientReferenceID)
 	require.NotNil(t, params.IdempotencyKey)
-	require.Equal(t, "subscription-one-time:"+order.TradeNo, *params.IdempotencyKey)
+	require.Contains(t, *params.IdempotencyKey, "subscription-one-time:"+order.TradeNo+":rev:0:discount:")
 	require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
 	require.Equal(t, "purchase", params.Metadata["purchase_intent"])
 	require.Equal(t, "2", params.Metadata["purchase_months"])
@@ -193,6 +193,95 @@ func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClai
 		require.NotContains(t, strings.ToLower(key), "claim")
 		require.NotContains(t, strings.ToLower(value), "claim")
 		require.NotContains(t, value, "FKSECRET234")
+	}
+}
+
+func TestOneTimePlanStripeRevision(t *testing.T) {
+	tests := []struct {
+		name              string
+		selection         service.StripeCheckoutDiscountSelection
+		wantCoupon        string
+		wantPromotionCode string
+		wantRecall        bool
+	}{
+		{
+			name: "manual",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountManual,
+				PromotionCodeID: "promo_manual_7",
+				MaskedCode:      "MAN***-7",
+			},
+			wantPromotionCode: "promo_manual_7",
+		},
+		{
+			name: "invitation restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:   service.StripeCheckoutDiscountInvitation,
+				CouponID: "coupon_invitation_7",
+			},
+			wantCoupon: "coupon_invitation_7",
+		},
+		{
+			name: "recall restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountRecall,
+				PromotionCodeID: "promo_recall_7",
+			},
+			wantPromotionCode: "promo_recall_7",
+			wantRecall:        true,
+		},
+		{
+			name:      "none restore",
+			selection: service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 280, 1)
+			order.RecallCampaignId = 41
+			order.RecallRecipientId = 82
+			order.RecallPromotionCodeId = "promo_recall_7"
+			order.RecallDiscountAmountMinor = 20
+
+			params, err := buildOneTimePlanCheckoutSessionParamsForRevision(
+				order,
+				&model.User{Id: 501, Email: "buyer@example.com"},
+				2,
+				test.selection,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
+			require.Equal(t, "2", params.Metadata["checkout_revision"])
+			require.Equal(t, string(test.selection.Source), params.Metadata["discount_selection"])
+			require.Equal(t, params.Metadata, params.PaymentIntentData.Metadata)
+			require.NotNil(t, params.IdempotencyKey)
+			require.Contains(t, *params.IdempotencyKey, ":rev:2:")
+			require.NotContains(t, *params.IdempotencyKey, "promo_manual_7")
+			require.NotContains(t, *params.IdempotencyKey, "MAN***-7")
+			if test.wantCoupon == "" && test.wantPromotionCode == "" {
+				require.Empty(t, params.Discounts)
+			} else {
+				require.Len(t, params.Discounts, 1)
+				if test.wantCoupon != "" {
+					require.NotNil(t, params.Discounts[0].Coupon)
+					require.Equal(t, test.wantCoupon, *params.Discounts[0].Coupon)
+				} else {
+					require.NotNil(t, params.Discounts[0].PromotionCode)
+					require.Equal(t, test.wantPromotionCode, *params.Discounts[0].PromotionCode)
+				}
+			}
+			if test.wantRecall {
+				require.Equal(t, "41", params.Metadata["recall_campaign_id"])
+				require.Equal(t, "82", params.Metadata["recall_recipient_id"])
+			} else {
+				require.NotContains(t, params.Metadata, "recall_campaign_id")
+				require.NotContains(t, params.Metadata, "recall_recipient_id")
+				require.NotContains(t, params.Metadata, "recall_promotion_code_id")
+				require.NotContains(t, params.Metadata, "recall_discount_amount_minor")
+			}
+		})
 	}
 }
 

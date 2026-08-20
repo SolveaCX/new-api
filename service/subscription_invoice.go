@@ -42,6 +42,8 @@ type StripeSubscriptionCheckoutInput struct {
 	DiscountCurrency       string
 	DiscountReservationKey string
 	RecallDiscount         *RecallCheckoutDiscount
+	CheckoutRevision       int64
+	DiscountSelection      StripeCheckoutDiscountSelection
 }
 
 type StripeSubscriptionCheckoutSession struct {
@@ -247,7 +249,10 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		return nil, errors.New("Stripe subscription price id is required")
 	}
 	stripe.Key = setting.StripeApiSecret
+	selection := stripeSubscriptionCheckoutDiscountSelection(input)
 	metadata := stripeSubscriptionAuthoritativeMetadata(input.TradeNo, input.UserID, input.PlanID, input.ContractID, input.ChangeIntentID)
+	metadata["checkout_revision"] = strconv.FormatInt(input.CheckoutRevision, 10)
+	metadata["discount_selection"] = string(selection.Source)
 	if strings.TrimSpace(input.DiscountKind) != "" {
 		metadata["discount_kind"] = strings.TrimSpace(input.DiscountKind)
 	}
@@ -257,7 +262,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	if input.DiscountAmountMinor > 0 {
 		metadata["subscription_discount_amount_minor"] = strconv.FormatInt(input.DiscountAmountMinor, 10)
 	}
-	if input.RecallDiscount != nil {
+	if selection.Source == StripeCheckoutDiscountRecall && input.RecallDiscount != nil {
 		metadata["recall_campaign_id"] = strconv.FormatInt(input.RecallDiscount.CampaignID, 10)
 		metadata["recall_recipient_id"] = strconv.FormatInt(input.RecallDiscount.RecipientID, 10)
 		metadata["recall_promotion_code_id"] = strings.TrimSpace(input.RecallDiscount.PromotionCodeID)
@@ -278,11 +283,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 			Metadata: metadata,
 		},
 	}
-	if input.RecallDiscount != nil && strings.TrimSpace(input.RecallDiscount.PromotionCodeID) != "" {
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{PromotionCode: stripe.String(strings.TrimSpace(input.RecallDiscount.PromotionCodeID))},
-		}
-	} else if strings.TrimSpace(input.DiscountKind) == SubscriptionDiscountKindInvitation {
+	if selection.Source == StripeCheckoutDiscountInvitation && selection.CouponID == "" {
 		if input.DiscountAmountMinor <= 0 {
 			return nil, errors.New("Stripe invitation discount amount is invalid")
 		}
@@ -297,7 +298,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 			Name:      stripe.String("Flatkey invitation package credit"),
 		}
 		if strings.TrimSpace(input.IdempotencyKey) != "" {
-			couponParams.SetIdempotencyKey(strings.TrimSpace(input.IdempotencyKey) + ":invitation-coupon")
+			couponParams.SetIdempotencyKey(StripeCheckoutIdempotencyKey(strings.TrimSpace(input.IdempotencyKey)+":invitation-coupon", input.CheckoutRevision, selection))
 		}
 		coupon, err := stripeSubscriptionCouponCreator(ctx, couponParams)
 		if err != nil {
@@ -306,10 +307,9 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		if coupon == nil || strings.TrimSpace(coupon.ID) == "" {
 			return nil, errors.New("Stripe invitation coupon missing id")
 		}
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{Coupon: stripe.String(strings.TrimSpace(coupon.ID))},
-		}
+		selection.CouponID = strings.TrimSpace(coupon.ID)
 	}
+	ApplyStripeCheckoutDiscount(params, selection)
 	ApplyStripeCheckoutPresentation(params, input.Presentation, input.TradeNo)
 	if strings.TrimSpace(input.CustomerID) != "" {
 		params.Customer = stripe.String(strings.TrimSpace(input.CustomerID))
@@ -319,7 +319,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		}
 	}
 	if strings.TrimSpace(input.IdempotencyKey) != "" {
-		params.SetIdempotencyKey(strings.TrimSpace(input.IdempotencyKey))
+		params.SetIdempotencyKey(StripeCheckoutIdempotencyKey(input.IdempotencyKey, input.CheckoutRevision, selection))
 	}
 	created, err := stripeSubscriptionSessionCreator(ctx, params)
 	if err != nil {
@@ -340,6 +340,22 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		URL:          strings.TrimSpace(created.URL),
 		ClientSecret: strings.TrimSpace(created.ClientSecret),
 	}, nil
+}
+
+func stripeSubscriptionCheckoutDiscountSelection(input StripeSubscriptionCheckoutInput) StripeCheckoutDiscountSelection {
+	if strings.TrimSpace(string(input.DiscountSelection.Source)) != "" {
+		return NormalizeStripeCheckoutDiscountSelection(input.DiscountSelection)
+	}
+	if input.RecallDiscount != nil && strings.TrimSpace(input.RecallDiscount.PromotionCodeID) != "" {
+		return NormalizeStripeCheckoutDiscountSelection(StripeCheckoutDiscountSelection{
+			Source:          StripeCheckoutDiscountRecall,
+			PromotionCodeID: input.RecallDiscount.PromotionCodeID,
+		})
+	}
+	if strings.TrimSpace(input.DiscountKind) == SubscriptionDiscountKindInvitation {
+		return StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountInvitation}
+	}
+	return StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone}
 }
 
 func createStripeSubscriptionCoupon(ctx context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {

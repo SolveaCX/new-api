@@ -347,18 +347,29 @@ var stripeOneTimeCheckoutSessionGetter = getOneTimeStripeCheckoutSession
 var stripeOneTimeRecallClient service.RecallStripeClient = service.NewStripeRecallClient()
 
 func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
+	checkoutRevision := int64(0)
+	if order != nil {
+		checkoutRevision = order.CheckoutRevision
+	}
+	return createOneTimeStripeCheckoutSessionForRevision(ctx, order, user, checkoutRevision, oneTimeStripeDiscountSelectionFromOrder(order), presentations...)
+}
+
+func createOneTimeStripeCheckoutSessionForRevision(ctx context.Context, order *model.SubscriptionOrder, user *model.User, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, presentations ...service.StripeCheckoutPresentation) (*oneTimeStripeCheckoutSession, error) {
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
 		return nil, errors.New("invalid Stripe API key")
 	}
-	params, err := buildOneTimePlanCheckoutSessionParams(order, user, presentations...)
+	params, err := buildOneTimePlanCheckoutSessionParamsForRevision(order, user, checkoutRevision, discountSelection, presentations...)
 	if err != nil {
 		return nil, err
 	}
-	recallProductID, err := validateOneTimePlanRecallPromotionForCheckout(ctx, order)
-	if err != nil {
-		return nil, err
+	discountSelection = service.NormalizeStripeCheckoutDiscountSelection(discountSelection)
+	if discountSelection.Source == service.StripeCheckoutDiscountRecall {
+		recallProductID, err := validateOneTimePlanRecallPromotionForCheckout(ctx, order)
+		if err != nil {
+			return nil, err
+		}
+		applyOneTimeRecallScopedProduct(params, recallProductID)
 	}
-	applyOneTimeRecallScopedProduct(params, recallProductID)
 	stripe.Key = setting.StripeApiSecret
 	created, err := session.New(params)
 	if err != nil {
@@ -430,6 +441,14 @@ func persistOneTimeStripeCheckoutSession(tradeNo string, sessionID string, sessi
 }
 
 func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user *model.User, presentations ...service.StripeCheckoutPresentation) (*stripe.CheckoutSessionParams, error) {
+	checkoutRevision := int64(0)
+	if order != nil {
+		checkoutRevision = order.CheckoutRevision
+	}
+	return buildOneTimePlanCheckoutSessionParamsForRevision(order, user, checkoutRevision, oneTimeStripeDiscountSelectionFromOrder(order), presentations...)
+}
+
+func buildOneTimePlanCheckoutSessionParamsForRevision(order *model.SubscriptionOrder, user *model.User, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection, presentations ...service.StripeCheckoutPresentation) (*stripe.CheckoutSessionParams, error) {
 	if order == nil {
 		return nil, errors.New("subscription order is required")
 	}
@@ -455,7 +474,8 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		return nil, err
 	}
 	productName, productDescription := oneTimePlanProductText(order)
-	metadata := oneTimePlanMetadata(order, method)
+	discountSelection = service.NormalizeStripeCheckoutDiscountSelection(discountSelection)
+	metadata := oneTimePlanMetadata(order, method, checkoutRevision, discountSelection)
 	expiresAt, err := oneTimePlanCheckoutExpiresAt(order)
 	if err != nil {
 		return nil, err
@@ -487,11 +507,7 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 			Metadata: metadata,
 		},
 	}
-	if order.RecallDiscountAmountMinor > 0 {
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId))},
-		}
-	}
+	service.ApplyStripeCheckoutDiscount(params, discountSelection)
 	if user != nil {
 		if strings.TrimSpace(user.StripeCustomer) != "" {
 			params.Customer = stripe.String(strings.TrimSpace(user.StripeCustomer))
@@ -502,7 +518,7 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 	if len(presentations) > 0 {
 		service.ApplyStripeCheckoutPresentation(params, presentations[0], order.TradeNo)
 	}
-	params.SetIdempotencyKey("subscription-one-time:" + strings.TrimSpace(order.TradeNo))
+	params.SetIdempotencyKey(service.StripeCheckoutIdempotencyKey("subscription-one-time:"+strings.TrimSpace(order.TradeNo), checkoutRevision, discountSelection))
 	return params, nil
 }
 
@@ -583,7 +599,7 @@ func isOneTimePlanStripeMethod(method string) bool {
 	}
 }
 
-func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[string]string {
+func oneTimePlanMetadata(order *model.SubscriptionOrder, method string, checkoutRevision int64, discountSelection service.StripeCheckoutDiscountSelection) map[string]string {
 	metadata := map[string]string{
 		"trade_no":             strings.TrimSpace(order.TradeNo),
 		"user_id":              strconv.Itoa(order.UserId),
@@ -597,6 +613,8 @@ func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[stri
 		"newapi_trade_no":      strings.TrimSpace(order.TradeNo),
 		"newapi_user_id":       strconv.Itoa(order.UserId),
 		"newapi_plan_id":       strconv.Itoa(order.PlanId),
+		"checkout_revision":    strconv.FormatInt(checkoutRevision, 10),
+		"discount_selection":   string(discountSelection.Source),
 	}
 	if strings.TrimSpace(order.DiscountKind) != "" {
 		metadata["discount_kind"] = strings.TrimSpace(order.DiscountKind)
@@ -610,13 +628,35 @@ func oneTimePlanMetadata(order *model.SubscriptionOrder, method string) map[stri
 	if order.SubscriptionDiscountAmountMinor > 0 {
 		metadata["subscription_discount_amount_minor"] = strconv.FormatInt(order.SubscriptionDiscountAmountMinor, 10)
 	}
-	if order.RecallDiscountAmountMinor > 0 {
+	if discountSelection.Source == service.StripeCheckoutDiscountRecall && order.RecallDiscountAmountMinor > 0 {
 		metadata["recall_campaign_id"] = strconv.FormatInt(order.RecallCampaignId, 10)
 		metadata["recall_recipient_id"] = strconv.FormatInt(order.RecallRecipientId, 10)
 		metadata["recall_promotion_code_id"] = strings.TrimSpace(order.RecallPromotionCodeId)
 		metadata["recall_discount_amount_minor"] = strconv.FormatInt(order.RecallDiscountAmountMinor, 10)
 	}
 	return metadata
+}
+
+func oneTimeStripeDiscountSelectionFromOrder(order *model.SubscriptionOrder) service.StripeCheckoutDiscountSelection {
+	if order == nil {
+		return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
+	}
+	if strings.TrimSpace(order.DiscountKind) == service.SubscriptionDiscountKindRecall && strings.TrimSpace(order.RecallPromotionCodeId) != "" {
+		return service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountRecall,
+			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
+		}
+	}
+	if strings.TrimSpace(order.DiscountKind) == service.SubscriptionDiscountKindInvitation {
+		return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountInvitation}
+	}
+	if order.RecallDiscountAmountMinor > 0 && strings.TrimSpace(order.RecallPromotionCodeId) != "" {
+		return service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountRecall,
+			PromotionCodeID: strings.TrimSpace(order.RecallPromotionCodeId),
+		}
+	}
+	return service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
 }
 
 func validateOneTimePlanRecallAttributionTuple(order *model.SubscriptionOrder) error {
