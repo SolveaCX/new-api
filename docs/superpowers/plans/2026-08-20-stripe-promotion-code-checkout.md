@@ -290,6 +290,8 @@ func TestStripeCheckoutRevisionPrepareIsIdempotentAndFenced(t *testing.T) {
 
 Add TestActivateStripeCheckoutRevisionMovesPointerExactlyOnce: seed preparing revision 2 with cs_new, activate once, assert TopUp.GatewayTradeNo=cs_new and CheckoutRevision=2, then assert second/stale activation conflicts.
 
+Add TestStripeCheckoutRevisionSkipsAbandonedRevision: abandon revision 2 while the active order remains revision 1, prepare a new request with expected revision 1, and assert the new row is revision 3 while the abandoned revision 2 remains immutable for audit.
+
 - [ ] **Step 2: Run the focused test**
 
 ~~~powershell
@@ -332,7 +334,7 @@ type StripeCheckoutRevision struct {
 }
 ~~~
 
-States are `preparing`, `active`, `superseded`, and `abandoned`. Prepare runs in DB.Transaction, locks the owning order row with clause.Locking{Strength:"UPDATE"}, checks owner/status/revision, replays an exact order+request-id+digest match, and inserts revision expected+1 in preparing state. Activate uses WHERE checkout_revision=expected AND current session=old session, updates the order pointer/revision, marks the previous active row superseded, and marks the candidate active in one transaction. Abandon updates only preparing rows after candidate expiration. Do not persist Stripe client secrets; an exact replay retrieves the active Session by ProviderSessionId and reads its current client secret.
+States are `preparing`, `active`, `superseded`, and `abandoned`. Prepare runs in DB.Transaction, locks the owning order row with clause.Locking{Strength:"UPDATE"}, checks owner/status/current active revision, replays an exact order+request-id+digest match, and inserts `max(existing revision)+1`. Revision numbers are monotonic but may have gaps after abandonment; an abandoned row is immutable audit history and must never block a later request whose expected active revision is still valid. Activate uses WHERE checkout_revision=expected AND current session=old session, updates the order pointer/revision, marks the previous active row superseded, and marks the candidate active in one transaction. Abandon updates only preparing rows after candidate expiration. Do not persist Stripe client secrets; an exact replay retrieves the active Session by ProviderSessionId and reads its current client secret.
 
 Revision `1` stores the canonical original selection and its signed server metadata. Restore always reconstructs from revision `1`, which is required for top-up recall because TopUp itself does not persist recall promotion identity.
 
