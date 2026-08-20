@@ -143,3 +143,73 @@ func TestEnsureMediaCredentialProbeFailurePreservesSnapshotAndReturnsUnavailable
 	require.Equal(t, "SuperGrok", st.BillingPlan)
 	require.Equal(t, model.GrokAuthStatusActive, st.AuthStatus)
 }
+
+func TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 5000)
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+				return jsonResponse(http.StatusOK, `{"monthlyLimit":15000}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+				return jsonResponse(http.StatusServiceUnavailable, `{}`), nil
+			default:
+				t.Fatalf("unexpected upstream request: %s", req.URL.String())
+				return nil, nil
+			}
+		}),
+	})
+	defer restore()
+
+	_, err := ensureMediaCredentialWithLease(context.Background(), channelID, true, "owner-that-does-not-own-lease", mediaPreflightHooks)
+
+	require.ErrorIs(t, err, ErrRefreshConflict)
+	st, err := model.GetGrokChannelState(channelID)
+	require.NoError(t, err)
+	require.Zero(t, st.BillingObservedAt)
+	var mediaCount int64
+	require.NoError(t, model.DB.Model(&model.Ability{}).Where("channel_id = ? AND model IN ?", channelID, model.GrokMediaAbilityModels()).Count(&mediaCount).Error)
+	require.Zero(t, mediaCount)
+}
+
+func TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 5000)
+	const now = int64(2000)
+	acquired, err := model.AcquireGrokRefreshLease(channelID, "winner", now, 30)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	var sleeps int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return now },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatalf("losing worker must reload winner evidence instead of probing, got %s", req.URL.String())
+			return nil, nil
+		}),
+		Sleep: func(ctx context.Context, d time.Duration) error {
+			sleeps++
+			wrote, err := model.SaveGrokBillingObservation(channelID, "winner", model.GrokBillingObservation{
+				ObservedAt:    now,
+				BillingPlan:   "SuperGrok",
+				QuotaSnapshot: `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200},"weekly":{"status_code":503}}`,
+			})
+			require.NoError(t, err)
+			require.True(t, wrote)
+			require.NoError(t, model.ReleaseGrokRefreshLease(channelID, "winner"))
+			return nil
+		},
+	})
+	defer restore()
+
+	got, err := EnsureMediaCredential(context.Background(), channelID, true)
+
+	require.NoError(t, err)
+	require.Equal(t, MediaCredential{ChannelID: channelID, AccessToken: "old-at"}, got)
+	require.Equal(t, 1, sleeps)
+	var mediaCount int64
+	require.NoError(t, model.DB.Model(&model.Ability{}).Where("channel_id = ? AND model IN ?", channelID, model.GrokMediaAbilityModels()).Count(&mediaCount).Error)
+	require.Equal(t, int64(3), mediaCount)
+}

@@ -65,3 +65,37 @@ GREEN:
 
 - The bounded losing-worker wait currently returns `ErrRefreshConflict` after the configured local wait expires. This is intentional for bounded behavior, but adapter retry policy should treat it as retryable.
 - Controller post-auth billing probes use the same injected HTTP doer as token exchange in tests and production integration. Existing tests were adjusted where they assumed every doer call was a token request.
+
+## Fix Round 1: Persisted Evidence Gate
+
+### Finding
+
+- `SaveGrokBillingObservation` can return `wrote=false` when the caller no longer owns the lease or the observation lost to newer persisted evidence. The previous preflight path evaluated the unsaved local observation and could sync media abilities from evidence that was never persisted.
+
+### RED Evidence
+
+- Added `TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe`.
+- Added `TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence`.
+- `go test ./relay/channel/groksubscription -run 'TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe|TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence' -count=1` failed as expected:
+  - `TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe` expected `ErrRefreshConflict`, got nil.
+
+### Fix
+
+- `ensureMediaCredentialWithLease` now checks the `wrote` result.
+- When `wrote=false`, it reloads `GrokChannelState` and syncs abilities only from persisted eligible/ineligible evidence.
+- If persisted evidence is missing, stale, or invalid after a rejected write, it returns `ErrRefreshConflict` without syncing abilities from the unsaved probe result.
+
+### GREEN Evidence
+
+- `go test ./relay/channel/groksubscription -run 'TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe|TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence' -count=1` -> pass.
+- `go test ./relay/channel/groksubscription -run 'TestEnsureMediaCredential|TestMediaPreflight' -count=1` -> pass.
+- `go test ./model -run 'TestGrok|TestSyncGrokMediaAbilities' -count=1` -> pass.
+- `go test ./controller -run 'TestGrok' -count=1` -> pass.
+- `git diff --check` -> pass.
+
+### Self-Review
+
+- Only `media_preflight.go`, `media_preflight_test.go`, and this report were changed.
+- Ability sync after `wrote=false` is now driven only by reloaded persisted evidence.
+- Losing worker behavior remains DB-lease-based, bounded, and reloads current state without a process-local correctness lock.
+- Probe failure behavior is unchanged and still preserves old state/auth.

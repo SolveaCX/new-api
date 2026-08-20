@@ -232,8 +232,15 @@ func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requireP
 		TierRaw:       snapshot.Tier,
 		QuotaSnapshot: string(snapshotJSON),
 	}
-	if _, err := model.SaveGrokBillingObservation(channelID, owner, observation); err != nil {
+	wrote, err := model.SaveGrokBillingObservation(channelID, owner, observation)
+	if err != nil {
 		return MediaCredential{}, err
+	}
+	if !wrote {
+		if err := syncGrokMediaAbilitiesFromPersistedEvidence(channelID, now); err != nil {
+			return MediaCredential{}, err
+		}
+		return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
 	}
 	if eligibilityErr := EvaluateMediaEligibility(observation.QuotaSnapshot, observation.ObservedAt, now); eligibilityErr != nil {
 		if errors.Is(eligibilityErr, ErrMediaSubscriptionRequired) {
@@ -247,6 +254,25 @@ func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requireP
 		return MediaCredential{}, err
 	}
 	return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
+}
+
+func syncGrokMediaAbilitiesFromPersistedEvidence(channelID int, now int64) error {
+	st, err := model.GetGrokChannelState(channelID)
+	if err != nil {
+		return ErrRefreshConflict
+	}
+	eligibilityErr := EvaluateMediaEligibility(st.QuotaSnapshot, st.BillingObservedAt, now)
+	switch {
+	case eligibilityErr == nil:
+		return model.SyncGrokMediaAbilities(channelID, true)
+	case errors.Is(eligibilityErr, ErrMediaSubscriptionRequired):
+		if err := model.SyncGrokMediaAbilities(channelID, false); err != nil {
+			return err
+		}
+		return ErrMediaSubscriptionRequired
+	default:
+		return ErrRefreshConflict
+	}
 }
 
 func RefreshMediaBillingStatus(ctx context.Context, channelID int) string {
