@@ -156,6 +156,7 @@ export const STATIC_I18N_KEYS = [
   'Contact Us',
   'Get {{bonus}} free',
   'Top up for {{amount}}',
+  'Coupon Applied from {{source}} {{percent}}% off',
   'No top-up packages available. Please contact administrator.',
   'Stripe top-up is not enabled. Please contact administrator.',
   'Plans & wallet',

@@ -65,6 +65,7 @@ const walletRechargeKeys = [
   'Contact Us',
   'Get {{bonus}} free',
   'Top up for {{amount}}',
+  'Coupon Applied from {{source}} {{percent}}% off',
   'No top-up packages available. Please contact administrator.',
   'Stripe top-up is not enabled. Please contact administrator.',
 ] as const
@@ -105,6 +106,7 @@ describe('wallet recharge i18n', () => {
       'Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price.',
       'Custom usage, routing, and invoicing',
       'For higher monthly usage, invoicing, team procurement, or custom routing discounts.',
+      'Coupon Applied from {{source}} {{percent}}% off',
     ] as const
 
     for (const [locale, translations] of Object.entries(localeTranslations)) {

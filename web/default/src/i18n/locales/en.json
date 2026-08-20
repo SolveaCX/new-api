@@ -3938,6 +3938,7 @@
     "Sandbox mode must use Paddle sandbox API keys, client-side tokens, products, and webhook endpoint secrets.": "Sandbox mode must use Paddle sandbox API keys, client-side tokens, products, and webhook endpoint secrets.",
     "Save": "Save",
     "Save {{amount}}": "Save {{amount}}",
+    "Coupon Applied from {{source}} {{percent}}% off": "Coupon Applied from {{source}} {{percent}}% off",
     "Save & Submit": "Save & Submit",
     "Save all settings": "Save all settings",
     "Save Backup Codes": "Save Backup Codes",

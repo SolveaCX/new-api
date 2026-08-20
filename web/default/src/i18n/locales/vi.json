@@ -3938,6 +3938,7 @@
     "Sandbox mode must use Paddle sandbox API keys, client-side tokens, products, and webhook endpoint secrets.": "Chế độ sandbox phải dùng API key, token phía client, sản phẩm và webhook endpoint secret của môi trường Paddle sandbox.",
     "Save": "Lưu",
     "Save {{amount}}": "Tiết kiệm {{amount}}",
+    "Coupon Applied from {{source}} {{percent}}% off": "Mã giảm giá từ {{source}} giảm {{percent}}%",
     "Save & Submit": "Lưu và gửi",
     "Save all settings": "Lưu tất cả cài đặt",
     "Save Backup Codes": "Lưu mã dự phòng",

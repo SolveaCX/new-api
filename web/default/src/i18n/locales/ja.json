@@ -3938,6 +3938,7 @@
     "Sandbox mode must use Paddle sandbox API keys, client-side tokens, products, and webhook endpoint secrets.": "サンドボックスモードでは、Paddle サンドボックス環境の API キー、クライアントサイドトークン、商品、Webhook エンドポイントシークレットを使用する必要があります。",
     "Save": "保存",
     "Save {{amount}}": "{{amount}}を節約",
+    "Coupon Applied from {{source}} {{percent}}% off": "{{source}} のクーポン適用 {{percent}}%オフ",
     "Save & Submit": "保存して送信",
     "Save all settings": "すべての設定を保存",
     "Save Backup Codes": "バックアップコードを保存",

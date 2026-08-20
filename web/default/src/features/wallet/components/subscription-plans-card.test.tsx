@@ -212,6 +212,26 @@ function renderWalletCardWithPreviewQuote(
   )
 }
 
+function renderWalletCardWithPreviewQuoteAndRecall(
+  quote: SubscriptionPaymentQuote,
+  previewPlan = plans[0]
+) {
+  return renderToStaticMarkup(
+    <I18nextProvider i18n={testI18n}>
+      <RecallClaimProvider view={subscriptionRecallClaim}>
+        <SubscriptionPlansCard
+          topupInfo={topupInfo}
+          initialPlans={[previewPlan]}
+          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialLoading={false}
+          initialPlanPreviewQuotes={{ [previewPlan.plan.id]: quote }}
+          userQuota={12345}
+        />
+      </RecallClaimProvider>
+    </I18nextProvider>
+  )
+}
+
 function rawSelfSubscriptionResponse(
   data: unknown
 ): SelfSubscriptionDataResponse {
@@ -1232,6 +1252,26 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('$4')
     expect(html).toContain('Save $6')
     expect(html).not.toContain('Save $5')
+  })
+
+  test('shows the applied Recall coupon source for a backend recall quote', () => {
+    const html = renderWalletCardWithPreviewQuoteAndRecall(
+      stripePaymentQuote({
+        unit_price: 10,
+        original_total: 10,
+        discount_kind: 'recall',
+        discount_amount: 2,
+        other_discount_kind: 'recall',
+        other_discount_amount: 2,
+        total: 8,
+      })
+    )
+
+    expect(html).toContain('Save $2')
+    expect(html).toContain('Coupon Applied from Come back offer 20% off')
+    expect(html.indexOf('Save $2')).toBeLessThan(
+      html.indexOf('Coupon Applied from Come back offer 20% off')
+    )
   })
 
   test('formats backend preview amounts in the quote currency', () => {

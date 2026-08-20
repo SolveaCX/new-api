@@ -20,8 +20,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Crown, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatQuota } from '@/lib/format'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
+import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -49,6 +49,7 @@ import type {
   StripeCheckoutOpenResult,
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
+import { selectBestRecallOffer } from '../lib/recall-claim'
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
@@ -64,7 +65,7 @@ import {
   resolveSubscriptionPlanDisplayPrice,
   resolveSubscriptionPlanGridCurrency,
 } from '../lib/subscription-plan-prices'
-import type { TopupInfo } from '../types'
+import type { RecallOfferView, TopupInfo } from '../types'
 import { CurrentPlanCard } from './current-plan-card'
 import { PlanPurchaseDialog } from './plan-purchase-dialog'
 
@@ -184,6 +185,20 @@ function getPlanCardDiscountPreview(
     originalTotal,
     total,
   }
+}
+
+function getRecallCouponSourceLabel(
+  offer: RecallOfferView | null | undefined,
+  t: Translate
+): string {
+  if (!offer || offer.discount.type !== 'percent') return ''
+  const source =
+    typeof offer.campaign_name === 'string' ? offer.campaign_name.trim() : ''
+  if (!source) return ''
+  return t('Coupon Applied from {{source}} {{percent}}% off', {
+    source,
+    percent: Number(offer.discount.percent_off || 0),
+  })
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -813,13 +828,30 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const discountPreview = getPlanCardDiscountPreview(
                 planPreviewQuotes[plan.id]
               )
+              const recallOffer = selectBestRecallOffer(
+                [
+                  ...recallClaim.offers,
+                  ...(recallClaim.view
+                    ? [{ ...recallClaim.view, issued_at: 0 } as RecallOfferView]
+                    : []),
+                ],
+                {
+                  purchaseKind: 'subscription',
+                  productId: plan.stripe_price_id || plan.id,
+                  amountMajor: Number(plan.price_amount || 0),
+                  currency: plan.currency || 'USD',
+                }
+              )
+              const recallCouponSourceLabel =
+                discountPreview?.discountKind === 'recall'
+                  ? getRecallCouponSourceLabel(recallOffer, t)
+                  : ''
               const configuredDisplayPrice =
                 resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
               const currency =
                 discountPreview?.currency || configuredDisplayPrice.currency
               const originalPrice = formatPlanPrice(
-                discountPreview?.originalTotal ??
-                  configuredDisplayPrice.amount,
+                discountPreview?.originalTotal ?? configuredDisplayPrice.amount,
                 currency
               )
               const displayPrice = discountPreview
@@ -898,13 +930,18 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       </span>
                     </div>
                     {discountPreview ? (
-                      <div className='mt-1 text-xs font-medium text-[#166534] dark:text-[#86efac]'>
-                        {t('Save {{amount}}', {
-                          amount: formatPlanPrice(
-                            discountPreview.discountAmount,
-                            discountPreview.currency
-                          ),
-                        })}
+                      <div className='mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-medium text-[#166534] dark:text-[#86efac]'>
+                        <span>
+                          {t('Save {{amount}}', {
+                            amount: formatPlanPrice(
+                              discountPreview.discountAmount,
+                              discountPreview.currency
+                            ),
+                          })}
+                        </span>
+                        {recallCouponSourceLabel ? (
+                          <span>{recallCouponSourceLabel}</span>
+                        ) : null}
                       </div>
                     ) : null}
 

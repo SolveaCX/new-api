@@ -3938,6 +3938,7 @@
     "Sandbox mode must use Paddle sandbox API keys, client-side tokens, products, and webhook endpoint secrets.": "沙盒模式必须使用 Paddle 沙盒环境的 API key、客户端 Token、产品和 webhook 端点密钥。",
     "Save": "保存",
     "Save {{amount}}": "节省 {{amount}}",
+    "Coupon Applied from {{source}} {{percent}}% off": "优惠券来自 {{source}}，{{percent}}% 折扣",
     "Save & Submit": "保存并提交",
     "Save all settings": "保存所有设置",
     "Save Backup Codes": "保存备份代码",
