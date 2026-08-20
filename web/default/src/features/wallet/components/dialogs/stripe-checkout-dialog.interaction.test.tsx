@@ -33,6 +33,7 @@ const discountRequests: unknown[] = []
 let latestPromotionControlProps:
   | {
       value: string
+      busyAction?: 'apply' | 'restore' | null
       onValueChange: (value: string) => void
       onApply: () => void
       onRemove: () => void
@@ -61,6 +62,9 @@ let discountResponse:
       }
     }
   | null = null
+let discountResponsePromise:
+  | Promise<typeof discountResponse>
+  | null = null
 
 function checkoutSession(): StripeCheckoutSession {
   return {
@@ -88,6 +92,7 @@ function checkoutSession(): StripeCheckoutSession {
 
 const updateStripeCheckoutDiscount = mock(async (request: unknown) => {
   discountRequests.push(request)
+  if (discountResponsePromise) return await discountResponsePromise
   return discountResponse
 })
 
@@ -160,6 +165,7 @@ mock.module('@/components/ui/dialog', () => ({
 mock.module('./stripe-promotion-code-control', () => ({
   StripePromotionCodeControl: (props: {
     value: string
+    busyAction?: 'apply' | 'restore' | null
     onValueChange: (value: string) => void
     onApply: () => void
     onRemove: () => void
@@ -167,6 +173,10 @@ mock.module('./stripe-promotion-code-control', () => ({
     latestPromotionControlProps = props
     return (
       <div data-slot='stripe-promotion-code-control'>
+        {props.busyAction === 'apply' ? 'Applying promotion code...' : null}
+        {props.busyAction === 'restore'
+          ? 'Restoring previous discount...'
+          : null}
         <button type='button' onClick={props.onApply}>
           Apply
         </button>
@@ -426,6 +436,19 @@ function renderDialog() {
   return { container, root }
 }
 
+function pendingDiscountResponse() {
+  let resolve!: (value: typeof discountResponse) => void
+  discountResponsePromise = new Promise<typeof discountResponse>((next) => {
+    resolve = next
+  })
+  return {
+    resolve: () => {
+      resolve(discountResponse)
+      discountResponsePromise = null
+    },
+  }
+}
+
 function dispose(root: Root) {
   React.act(() => {
     root.unmount()
@@ -453,6 +476,7 @@ beforeEach(() => {
       topup_summary: null,
     },
   }
+  discountResponsePromise = null
   latestSessionChange = undefined
   mountStripeCheckoutElements.mockClear()
   updateStripeCheckoutDiscount.mockClear()
@@ -464,6 +488,41 @@ afterAll(() => {
 })
 
 describe('StripeCheckoutDialog promotion code interactions', () => {
+  test('passes the active apply mutation as promotion control busy action', async () => {
+    const { root } = renderDialog()
+    const pending = pendingDiscountResponse()
+
+    try {
+      await React.act(async () => {
+        await Promise.resolve()
+        latestSessionChange?.(checkoutSession())
+        await Promise.resolve()
+      })
+
+      await React.act(async () => {
+        latestPromotionControlProps?.onValueChange('SAVE20')
+        await Promise.resolve()
+      })
+      React.act(() => {
+        latestPromotionControlProps?.onApply()
+      })
+
+      await React.act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(latestPromotionControlProps?.busyAction).toBe('apply')
+
+      await React.act(async () => {
+        pending.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    } finally {
+      dispose(root)
+    }
+  })
+
   test('submits a trimmed code and remounts Checkout Elements after success', async () => {
     const { container, root } = renderDialog()
 
@@ -474,7 +533,6 @@ describe('StripeCheckoutDialog promotion code interactions', () => {
         await Promise.resolve()
       })
 
-      expect(latestPromotionControlProps).toBeTruthy()
       await React.act(async () => {
         latestPromotionControlProps?.onValueChange('  SAVE20  ')
         await Promise.resolve()

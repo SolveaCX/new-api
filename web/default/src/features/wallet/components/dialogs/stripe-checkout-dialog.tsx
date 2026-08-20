@@ -42,7 +42,10 @@ import type {
   StripeTopupSummary,
 } from '../../types'
 import { StripeCheckoutLayout } from './stripe-checkout-layout'
-import { StripePromotionCodeControl } from './stripe-promotion-code-control'
+import {
+  StripePromotionCodeControl,
+  type StripePromotionCodeBusyAction,
+} from './stripe-promotion-code-control'
 
 export interface StripeCheckoutDialogSession {
   clientSecret: string
@@ -111,6 +114,8 @@ function StripeCheckoutFrame(props: {
   } | null>(null)
   const [mounting, setMounting] = useState(true)
   const [switching, setSwitching] = useState(false)
+  const [busyAction, setBusyAction] =
+    useState<StripePromotionCodeBusyAction>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sessionClientSecret = current.clientSecret
@@ -155,8 +160,11 @@ function StripeCheckoutFrame(props: {
         }
         mountedRef.current = mounted
         setSwitching(false)
+        setBusyAction(null)
       } catch (_mountError) {
         if (cancelled) return
+        setSwitching(false)
+        setBusyAction(null)
         recoverStripeCheckoutMountFailure({
           fallbackUrl: sessionFallbackUrl,
           navigate: (url) => {
@@ -226,6 +234,8 @@ function StripeCheckoutFrame(props: {
           kind: 'error',
           text: t('Unable to update the checkout. Please try again.'),
         })
+        setSwitching(false)
+        setBusyAction(null)
         return
       }
       setSwitching(true)
@@ -262,6 +272,7 @@ function StripeCheckoutFrame(props: {
       requestGenerationRef.current = generation
       mutationInFlightRef.current = true
       setSwitching(true)
+      setBusyAction(action)
       setPromotionMessage({
         kind: 'success',
         text:
@@ -316,6 +327,7 @@ function StripeCheckoutFrame(props: {
           text: getDiscountErrorMessage(response, t),
         })
         setSwitching(false)
+        setBusyAction(null)
       } catch (_error) {
         if (generation !== requestGenerationRef.current) return
         setPromotionMessage({
@@ -323,6 +335,7 @@ function StripeCheckoutFrame(props: {
           text: t('Unable to update the checkout. Please try again.'),
         })
         setSwitching(false)
+        setBusyAction(null)
       } finally {
         if (generation === requestGenerationRef.current) {
           mutationInFlightRef.current = false
@@ -357,6 +370,7 @@ function StripeCheckoutFrame(props: {
             value={promotionCode}
             discountState={discountState}
             busy={switching}
+            busyAction={busyAction}
             message={promotionMessage}
             onValueChange={setPromotionCode}
             onApply={() => void mutateDiscount('apply')}

@@ -20,10 +20,13 @@ import { Loader2, Tag, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { StripeCheckoutDiscountState } from '../../types'
 
+export type StripePromotionCodeBusyAction = 'apply' | 'restore' | null
+
 interface StripePromotionCodeControlProps {
   value: string
   discountState: StripeCheckoutDiscountState
   busy: boolean
+  busyAction?: StripePromotionCodeBusyAction
   message: { kind: 'success' | 'error'; text: string } | null
   onValueChange: (value: string) => void
   onApply: () => void
@@ -34,6 +37,7 @@ export function StripePromotionCodeControl({
   value,
   discountState,
   busy,
+  busyAction = null,
   message,
   onValueChange,
   onApply,
@@ -44,6 +48,8 @@ export function StripePromotionCodeControl({
   const manualCode =
     discountState.promotion_code_masked || discountState.display_name
   const canApply = value.trim().length > 0 && !busy
+  const applying = busy && busyAction === 'apply'
+  const restoring = busy && busyAction === 'restore'
 
   return (
     <section
@@ -81,12 +87,10 @@ export function StripePromotionCodeControl({
             disabled={!canApply}
             className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#20242a] px-4 text-sm font-bold whitespace-nowrap text-white transition hover:bg-[#111418] focus-visible:ring-4 focus-visible:ring-slate-200 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50'
           >
-            {busy && !hasManualDiscount ? (
+            {applying ? (
               <Loader2 aria-hidden='true' className='size-4 animate-spin' />
             ) : null}
-            {busy && !hasManualDiscount
-              ? t('Applying promotion code...')
-              : t('Apply')}
+            {applying ? t('Applying promotion code...') : t('Apply')}
           </button>
         </div>
       </form>
@@ -102,12 +106,14 @@ export function StripePromotionCodeControl({
             onClick={onRemove}
             className='inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-bold text-blue-800 transition hover:bg-blue-100 focus-visible:ring-4 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50'
           >
-            {busy ? (
+            {restoring ? (
               <Loader2 aria-hidden='true' className='size-4 animate-spin' />
             ) : (
               <X aria-hidden='true' className='size-4' />
             )}
-            {busy ? t('Restoring previous discount...') : t('Remove promotion code')}
+            {restoring
+              ? t('Restoring previous discount...')
+              : t('Remove promotion code')}
           </button>
         </div>
       ) : null}
