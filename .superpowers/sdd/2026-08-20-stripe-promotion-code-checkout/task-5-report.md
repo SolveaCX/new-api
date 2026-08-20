@@ -59,7 +59,7 @@ git diff --check
 Review findings were addressed in a follow-up TDD pass:
 
 - Fresh requests now accept the next monotonic ledger revision after abandoned gaps; exact replay is proven from request digest, row state, current order revision, and provider pointer rather than numeric adjacency.
-- The request digest is a domain-separated SHA-256 of the normalized action and case-normalized trimmed input. Raw buyer input is not persisted. Existing requests are looked up before promotion resolution, so exact apply replay does not call the resolver again and stale new requests conflict before resolution.
+- The request digest is a domain-separated, server-keyed HMAC of order identity, request identity, expected predecessor, normalized action, and case-normalized trimmed input. Raw buyer input is not persisted. Existing requests are looked up before promotion resolution, so exact apply replay does not call the resolver again and stale new requests conflict before resolution.
 - A preparing row without a provider Session ID re-enters the same revision-specific candidate creator and records the idempotently returned Session. A durable Record whose response was lost is detected and preserved; failed cleanup never abandons an unconfirmed candidate.
 - Activation conflicts now reload the order and active ledger row. Only a proven winner causes loser expiration/abandonment and a latest-revision conflict; no-winner conflicts remain preparing for exact retry.
 - Initial revision 1 converges from interruptions after Prepare, provider create, Record, and Activate for top-up, one-time subscription, and recurring subscription checkouts. Recurring invitation replay reads the persisted Coupon ID and does not call the Coupon or Session creator again.
@@ -67,3 +67,17 @@ Review findings were addressed in a follow-up TDD pass:
 - Completed top-up and subscription orders return `checkout_already_completed`; successful initial and replay envelopes use `message: success`.
 
 Fix-round RED was observed for the abandoned-gap expectation, missing Record recovery seam/customer identity, all shared initial interruption stages, and recurring durable-stage replay. The final focused controller, router, service, vet, and diff-check commands listed above all returned exit 0 after the fixes.
+
+## Fix round 2
+
+The second scoped review pass tightened provider ambiguity and terminal-state handling:
+
+- Activation CAS recovery now distinguishes the exact same active ledger row/Session from a different winner. The same candidate is returned as a successful replay and is never expired or abandoned.
+- Mutation request HMACs bind order type, trade number, request ID, expected predecessor revision, normalized action, and normalized code, preventing low-entropy offline digest comparison and request-ID reuse across predecessors.
+- Generic or transport candidate-creation errors leave the revision preparing for idempotent recovery; only typed Stripe invalid-request rejection is treated as definitive and abandoned.
+- Recovered candidates are activated only when the provider reports them open. Expired candidates are safely abandoned without touching the predecessor; completed/paid candidates report completion and remain non-active. The same rule is enforced for shared top-up/one-time revision 1 and recurring revision 1.
+- Invoice lookup is fail-closed in both purchase loading and candidate construction. Only an explicit invoice-not-found result falls back to the user customer; database failures stop before provider creation.
+- Only confirmed unavailable or ambiguous buyer promotion codes produce 400 responses. Canonical ledger, Price/Product, database, and provider lookup failures produce `checkout_replacement_failed` without exposing raw input.
+- One-time initial active replay reconstructs its response from the persisted provider Session snapshot, preserving the Session ID and client secret without another create.
+
+Round-2 RED was observed for same-candidate CAS cleanup, predecessor-unbound digesting, ambiguous create abandonment, recovered terminal candidate activation, invoice lookup fallback, dependency error mapping, and one-time active replay. The final focused controller file-list, router, related service tests, controller/service vet, and `git diff --check` all exited 0.
