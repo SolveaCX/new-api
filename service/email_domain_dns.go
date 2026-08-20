@@ -221,11 +221,19 @@ func safeEmailDomainDialContext(ctx context.Context, network, addr string) (net.
 		return nil, err
 	}
 	var dialer net.Dialer
+	var lastErr error
 	for _, ipa := range ips {
 		if isPlaceholderIP(ipa.IP) {
 			continue
 		}
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	return nil, errors.New("email domain resolves only to private/link-local addresses")
 }

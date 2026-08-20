@@ -288,6 +288,12 @@ func ensureDefaultUserToken(user *model.User) error {
 	if !constant.GenerateDefaultToken || user == nil || user.Id == 0 {
 		return nil
 	}
+	// Unverified accounts must not receive any token — including the initial
+	// one — when email verification is enforced. They verify first and then get
+	// the default token on the next login/ensure path.
+	if operation_setting.RequireEmailVerificationForTokens() && user.Email != "" && user.EmailVerifiedAt == 0 {
+		return nil
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.SysLog("failed to generate default token key: " + err.Error())
