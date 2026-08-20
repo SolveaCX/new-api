@@ -1207,6 +1207,47 @@ func TestOneTimePlanPaidWebhookReturnsPermanentErrorForValidationMismatch(t *tes
 	require.False(t, isRetryableStripeWebhookProcessingError(err))
 }
 
+func TestOneTimePlanPaidWebhookPromotesPaidCandidateBeforeActivate(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscriptionContract{}, &model.SubscriptionChangeIntent{}, &model.SubscriptionTermSegment{}))
+	insertStripeFulfillmentUser(t, 506)
+	insertStripeFulfillmentSubscriptionPlan(t, 906)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 906).Updates(map[string]any{"price_amount": 49, "total_amount": 4990, "currency": "BRL"}).Error)
+	contract := model.UserSubscriptionContract{UserId: 506, Status: model.SubscriptionContractStatusEnded, PaymentMode: model.SubscriptionPaymentModePrepaid}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		Id:          806,
+		ContractId:  contract.Id,
+		UserId:      506,
+		Kind:        model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode: model.SubscriptionPaymentModePrepaid,
+		Status:      model.SubscriptionChangeIntentStatusAwaitingPayment,
+		ToPlanId:    906,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("latest_change_intent_id", intent.Id).Error)
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.UserId = 506
+	order.PlanId = 906
+	order.TradeNo = "sub_one_time_paid_candidate"
+	order.ProviderSessionId = "cs_one_time_old"
+	order.CheckoutRevision = 1
+	order.ChangeIntentId = intent.Id
+	order.PlanSnapshot = `{"plan_id":906,"title":"Webhook plan","price_amount":49,"currency":"BRL","duration_unit":"month","duration_value":1,"total_amount":4990}`
+	order.ProviderPayload = "choice=" + order.PaymentMethod + ";months=1;contract_id=" + strconv.FormatInt(contract.Id, 10) + ";change_intent_id=" + strconv.FormatInt(intent.Id, 10)
+	require.NoError(t, model.DB.Create(order).Error)
+	seedStripeCheckoutRevisionPairForWebhook(t, model.StripeCheckoutOrderSubscription, order.TradeNo, order.UserId, "cs_one_time_old", "cs_one_time_candidate_paid", 2)
+	order.ProviderSessionId = "cs_one_time_candidate_paid"
+	event := stripe.Event{ID: "evt_one_time_paid_candidate", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: oneTimeStripePaidSessionObject(order)}}
+
+	require.NoError(t, handleStripeOneTimePlanPaid(context.Background(), event, order.TradeNo, "127.0.0.1"))
+	stored := model.GetSubscriptionOrderByTradeNo(order.TradeNo)
+	require.NotNil(t, stored)
+	require.Equal(t, common.TopUpStatusSuccess, stored.Status)
+	require.EqualValues(t, 2, stored.CheckoutRevision)
+	require.Equal(t, "cs_one_time_candidate_paid", stored.ProviderSessionId)
+}
+
 func TestOneTimePlanPaidWebhookDoesNotFulfillSupersededCheckout(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscriptionContract{}, &model.SubscriptionChangeIntent{}))

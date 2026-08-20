@@ -1629,6 +1629,73 @@ func TestStripeWebhookSubscriptionRecallAttributionAfterFulfillmentAndReplayRepa
 	require.Equal(t, int64(1), subscriptionCount, "subscription replay must not provision twice")
 }
 
+func TestStripeWebhookTopUpPromotesPaidCandidateBeforeActivate(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.RecallCampaign{}, &model.RecallRecipient{}, &model.RecallMessage{}, &model.RecallEvent{}))
+	insertStripeFulfillmentUser(t, 9301)
+	_, recipient := createStripeWebhookRecallRecipient(t, 9301, "promo_webhook_topup_paid_candidate")
+	topUp := &model.TopUp{
+		UserId: 9301, Amount: 10, Money: 10, PaymentCurrency: "USD", PaymentPriceId: "price_webhook",
+		PaymentAmountMinor: 1000, TradeNo: "trade_webhook_paid_candidate_topup", PaymentMethod: model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe, CreateTime: 1_700_000_100, Status: common.TopUpStatusPending,
+		CheckoutRevision: 1, GatewayTradeNo: "cs_topup_old",
+	}
+	require.NoError(t, topUp.Insert())
+	seedStripeCheckoutRevisionPairForWebhook(t, model.StripeCheckoutOrderTopUp, topUp.TradeNo, topUp.UserId, "cs_topup_old", "cs_topup_candidate_paid", 2)
+	originalContractFromEvent := stripeCheckoutPaymentContractFromEvent
+	stripeCheckoutPaymentContractFromEvent = func(stripe.Event) (stripeCheckoutPaymentContract, error) {
+		return stripeCheckoutPaymentContract{SessionId: "cs_topup_candidate_paid", PriceId: "price_webhook", Quantity: 1, Currency: "USD"}, nil
+	}
+	t.Cleanup(func() { stripeCheckoutPaymentContractFromEvent = originalContractFromEvent })
+	event := stripeRecallWebhookEvent("evt_webhook_paid_candidate_topup", "cs_topup_candidate_paid", topUp.TradeNo, 1000, 0, recipient, false)
+
+	require.NoError(t, fulfillOrder(context.Background(), event, topUp.TradeNo, "cus_webhook", "127.0.0.1"))
+	storedTopUp := model.GetTopUpByTradeNo(topUp.TradeNo)
+	require.NotNil(t, storedTopUp)
+	require.Equal(t, common.TopUpStatusSuccess, storedTopUp.Status)
+	require.EqualValues(t, 2, storedTopUp.CheckoutRevision)
+	require.Equal(t, "cs_topup_candidate_paid", storedTopUp.GatewayTradeNo)
+}
+
+func TestStripeWebhookRecurringPromotesPaidCandidateBeforeActivate(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.RecallCampaign{}, &model.RecallRecipient{}, &model.RecallMessage{}, &model.RecallEvent{}))
+	originalSnapshot := stripeSubscriptionSnapshotFromCheckoutSession
+	t.Cleanup(func() { stripeSubscriptionSnapshotFromCheckoutSession = originalSnapshot })
+	stripeSubscriptionSnapshotFromCheckoutSession = func(event stripe.Event, order *model.SubscriptionOrder) (model.ProviderSubscriptionSnapshot, error) {
+		return model.ProviderSubscriptionSnapshot{
+			ProviderSubscriptionId:  "sub_webhook_paid_candidate",
+			ProviderCustomerId:      "cus_subscription",
+			ProviderPriceId:         "price_webhook_subscription",
+			ProviderLatestInvoiceId: "in_webhook_paid_candidate",
+			ProviderStatus:          "active",
+			CurrentPeriodStart:      1_700_000_100,
+			CurrentPeriodEnd:        1_702_678_500,
+		}, nil
+	}
+	insertStripeFulfillmentUser(t, 9302)
+	plan := model.SubscriptionPlan{Id: 9303, Title: "Webhook plan", PriceAmount: 29, TotalAmount: 1000, Currency: "USD", DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, Enabled: true}
+	require.NoError(t, model.DB.Create(&plan).Error)
+	model.InvalidateSubscriptionPlanCache(plan.Id)
+	_, recipient := createStripeWebhookRecallRecipient(t, 9302, "promo_webhook_subscription_paid_candidate")
+	order := model.SubscriptionOrder{
+		UserId: 9302, PlanId: plan.Id, Money: 29, TradeNo: "trade_webhook_paid_candidate_subscription",
+		PaymentMethod: model.PaymentMethodStripe, PaymentProvider: model.PaymentProviderStripe,
+		Status: common.TopUpStatusPending, CreateTime: 1_700_000_100, CheckoutRevision: 1, ProviderSessionId: "cs_subscription_old",
+	}
+	require.NoError(t, order.Insert())
+	seedStripeCheckoutRevisionPairForWebhook(t, model.StripeCheckoutOrderSubscription, order.TradeNo, order.UserId, "cs_subscription_old", "cs_subscription_candidate_paid", 2)
+	event := stripeRecallWebhookEvent("evt_webhook_paid_candidate_subscription", "cs_subscription_candidate_paid", order.TradeNo, 2900, 0, recipient, false)
+	event.Data.Object["subscription"] = "sub_webhook_paid_candidate"
+
+	require.NoError(t, fulfillOrder(context.Background(), event, order.TradeNo, "cus_subscription", "127.0.0.1"))
+	storedOrder := model.GetSubscriptionOrderByTradeNo(order.TradeNo)
+	require.NotNil(t, storedOrder)
+	require.Equal(t, common.TopUpStatusSuccess, storedOrder.Status)
+	require.EqualValues(t, 2, storedOrder.CheckoutRevision)
+	require.Equal(t, "cs_subscription_candidate_paid", storedOrder.ProviderSessionId)
+}
+
 func createStripeWebhookRecallRecipient(t *testing.T, userID int, promotionCodeID string) (model.RecallCampaign, model.RecallRecipient) {
 	t.Helper()
 	campaign := model.RecallCampaign{
@@ -1644,6 +1711,32 @@ func createStripeWebhookRecallRecipient(t *testing.T, userID int, promotionCodeI
 	}
 	require.NoError(t, model.DB.Create(&recipient).Error)
 	return campaign, recipient
+}
+
+func seedStripeCheckoutRevisionPairForWebhook(t *testing.T, orderType string, tradeNo string, userID int, oldSessionID string, candidateSessionID string, candidateRevision int64) {
+	t.Helper()
+	require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{
+		OrderType:         orderType,
+		TradeNo:           tradeNo,
+		Revision:          1,
+		UserId:            userID,
+		RequestId:         "initial:" + tradeNo,
+		SelectionDigest:   "sha256:initial:" + tradeNo,
+		State:             model.StripeCheckoutRevisionStateActive,
+		DiscountSource:    string(service.StripeCheckoutDiscountNone),
+		ProviderSessionId: &oldSessionID,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{
+		OrderType:         orderType,
+		TradeNo:           tradeNo,
+		Revision:          candidateRevision,
+		UserId:            userID,
+		RequestId:         "candidate:" + tradeNo,
+		SelectionDigest:   "sha256:candidate:" + tradeNo,
+		State:             model.StripeCheckoutRevisionStatePreparing,
+		DiscountSource:    string(service.StripeCheckoutDiscountManual),
+		ProviderSessionId: &candidateSessionID,
+	}).Error)
 }
 
 func stripeRecallWebhookEvent(eventID string, sessionID string, tradeNo string, amountTotal int64, discountAmount int64, recipient model.RecallRecipient, unexpanded bool) stripe.Event {
@@ -2142,6 +2235,7 @@ func setupStripeFulfillmentTestDB(t *testing.T) {
 		&model.PaymentWebhookEvent{},
 		&model.RecallLifecycleEvent{},
 		&model.QuotaLifecycleState{},
+		&model.StripeCheckoutRevision{},
 	))
 }
 

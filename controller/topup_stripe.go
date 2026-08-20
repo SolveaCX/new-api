@@ -1045,6 +1045,16 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 		if snapshotErr != nil {
 			return snapshotErr
 		}
+		if checkoutSessionID := strings.TrimSpace(stripeEventObjectValue(event, "id")); checkoutSessionID != "" && !strings.EqualFold(strings.TrimSpace(order.ProviderSessionId), checkoutSessionID) {
+			if reconcileStripeCheckoutWinnerFromEvent(ctx, service.StripeCheckoutPurchaseRecurringSubscription, referenceId, checkoutSessionID) {
+				order = model.GetSubscriptionOrderByTradeNo(referenceId)
+				if order == nil {
+					return errors.New("Stripe subscription order did not reach successful state")
+				}
+			} else {
+				return permanentStripeWebhookProcessingError(fmt.Errorf("Stripe subscription checkout session mismatch: expected %s got %s", strings.TrimSpace(order.ProviderSessionId), checkoutSessionID))
+			}
+		}
 		if _, err := model.CompleteSubscriptionOrderWithProviderBinding(referenceId, common.GetJsonString(payload), model.PaymentProviderStripe, model.PaymentMethodStripe, snapshot); err == nil {
 			syncStripePaymentInvoice(ctx, event, referenceId, customerId)
 			attributeRecallAfterStripeFulfillment(ctx, event, referenceId, order.UserId)
@@ -1070,6 +1080,27 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 	}
 
 	if err := validateStripeTopUpPaymentContract(event, referenceId); err != nil {
+		sessionID := strings.TrimSpace(stripeEventObjectValue(event, "id"))
+		if reconcileStripeCheckoutWinnerFromEvent(ctx, service.StripeCheckoutPurchaseTopUp, referenceId, sessionID) {
+			if topUp := model.GetTopUpByTradeNo(referenceId); topUp != nil && topUp.PaymentProvider == model.PaymentProviderStripe {
+				if checkoutSessionID := strings.TrimSpace(stripeEventObjectValue(event, "id")); checkoutSessionID != "" {
+					_ = model.BackfillStripeCheckoutSessionID(referenceId, topUp.UserId, checkoutSessionID)
+				}
+				if recharged, rechargeErr := model.RechargeWithPaymentSnapshot(referenceId, customerId, callerIp, stripePaymentSnapshotFromEvent(event)); rechargeErr == nil {
+					topUp = model.GetTopUpByTradeNo(referenceId)
+					if topUp != nil && topUp.PaymentProvider == model.PaymentProviderStripe && topUp.Status == common.TopUpStatusSuccess {
+						if recharged {
+							backfillCardFingerprintFromTopUp(ctx, topUp, customerId, callerIp)
+						}
+						syncStripePaymentInvoice(ctx, event, referenceId, customerId)
+						attributeRecallAfterStripeFulfillment(ctx, event, referenceId, topUp.UserId)
+						snapshot := stripePaymentSnapshotFromEvent(event)
+						logger.LogInfo(ctx, fmt.Sprintf("Stripe 充值成功 trade_no=%s amount_total=%.2f currency=%s event_type=%s client_ip=%s", referenceId, snapshot.Money, snapshot.Currency, string(event.Type), callerIp))
+						return nil
+					}
+				}
+			}
+		}
 		logger.LogError(ctx, fmt.Sprintf("Stripe 鍏呭€煎叆璐︽牎楠屽け璐?trade_no=%s event_type=%s client_ip=%s error=%q", referenceId, string(event.Type), callerIp, err.Error()))
 		return err
 	}
@@ -1283,7 +1314,14 @@ func handleStripeOneTimePlanPaid(ctx context.Context, event stripe.Event, refere
 		return nil
 	}
 	if err := validateOneTimePlanStripeSessionEvent(event, order); err != nil {
-		return permanentStripeWebhookProcessingError(err)
+		if reconcileStripeCheckoutWinnerFromEvent(ctx, service.StripeCheckoutPurchaseOneTimeSubscription, referenceId, stripeEventObjectValue(event, "id")) {
+			order = model.GetSubscriptionOrderByTradeNo(referenceId)
+			if validateErr := validateOneTimePlanStripeSessionEvent(event, order); validateErr != nil {
+				return permanentStripeWebhookProcessingError(validateErr)
+			}
+		} else {
+			return permanentStripeWebhookProcessingError(err)
+		}
 	}
 	payload := oneTimePlanStripeProviderPayload(event)
 	_, err = fulfillOneTimeStripeSubscriptionPurchase(ctx, referenceId, payload)
@@ -1979,6 +2017,48 @@ func validateStripeTopUpPaymentContract(event stripe.Event, referenceId string) 
 	// Stripe amounts independently from our local top-up package value. The trusted
 	// contract is the Checkout session's price id and quantity.
 	return nil
+}
+
+func reconcileStripeCheckoutWinnerFromEvent(ctx context.Context, kind service.StripeCheckoutPurchaseKind, referenceId string, sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	orderType := stripeCheckoutOrderType(kind)
+	revision, err := model.GetPreparingStripeCheckoutRevisionByProviderSession(orderType, referenceId, sessionID)
+	if err != nil {
+		return false
+	}
+	expectedRevision := int64(0)
+	oldSessionID := ""
+	switch orderType {
+	case model.StripeCheckoutOrderTopUp:
+		topUp := model.GetTopUpByTradeNo(referenceId)
+		if topUp == nil || topUp.UserId != revision.UserId {
+			return false
+		}
+		expectedRevision = topUp.CheckoutRevision
+		oldSessionID = strings.TrimSpace(topUp.GatewayTradeNo)
+	case model.StripeCheckoutOrderSubscription:
+		order := model.GetSubscriptionOrderByTradeNo(referenceId)
+		if order == nil || order.UserId != revision.UserId {
+			return false
+		}
+		expectedRevision = order.CheckoutRevision
+		oldSessionID = strings.TrimSpace(order.ProviderSessionId)
+	default:
+		return false
+	}
+	if expectedRevision <= 0 || revision.Revision <= expectedRevision {
+		return false
+	}
+	active, activateErr := model.ConvergePaidStripeCheckoutRevision(model.StripeCheckoutRevisionActivation{
+		RevisionID: revision.Id, ExpectedRevision: expectedRevision, OldProviderSessionID: oldSessionID,
+	})
+	if activateErr != nil || active == nil {
+		return false
+	}
+	return stripeCheckoutRevisionSessionID(active) == sessionID
 }
 
 func modelPurchaseCanBeCorrectedToStripeSuccess(status string) bool {

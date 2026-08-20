@@ -457,6 +457,15 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 	})
 	if err != nil {
 		if errors.Is(err, model.ErrStripeCheckoutRevisionConflict) {
+			freshCandidate, freshErr := currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, stripeCheckoutRevisionSessionID(stored))
+			if freshErr == nil && stripeCheckoutSessionCompleted(freshCandidate) {
+				if _, convergeErr := model.ConvergePaidStripeCheckoutRevision(model.StripeCheckoutRevisionActivation{
+					RevisionID: stored.Id, ExpectedRevision: claims.Revision, OldProviderSessionID: purchase.OldSessionID,
+				}); convergeErr == nil {
+					writeStripeCheckoutDiscountError(c, http.StatusConflict, "checkout_already_completed", nil)
+					return
+				}
+			}
 			refreshed, refreshErr := currentStripeCheckoutDiscountRuntime.LoadPurchase(c.Request.Context(), claims)
 			if errors.Is(refreshErr, errStripeCheckoutAlreadyCompleted) {
 				if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
@@ -520,6 +529,10 @@ func reconcileStripeCheckoutDiscountReplay(c *gin.Context, claims service.Stripe
 		snapshot, err := currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, stripeCheckoutRevisionSessionID(revision))
 		if err != nil || snapshot == nil {
 			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
+			return
+		}
+		if stripeCheckoutSessionCompleted(snapshot) {
+			writeStripeCheckoutDiscountError(c, http.StatusConflict, "checkout_already_completed", nil)
 			return
 		}
 		response, err := stripeCheckoutRevisionResponse(claims.PurchaseKind, revision, snapshot)
