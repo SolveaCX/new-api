@@ -6751,6 +6751,20 @@
     "Model catalog overview": "Resumen del catálogo de modelos",
     "Lowest {{category}} price": "Precio más bajo de {{category}}",
     "Per 1M input tokens": "Por millón de tokens de entrada",
-    "Per 1M input tokens · some models bill per request": "Por millón de tokens de entrada · algunos modelos se cobran por solicitud"
+    "Per 1M input tokens · some models bill per request": "Por millón de tokens de entrada · algunos modelos se cobran por solicitud",
+    "Promotion code": "Código promocional",
+    "Enter promotion code": "Introduce el código promocional",
+    "Apply": "Aplicar",
+    "Applying promotion code...": "Aplicando código promocional...",
+    "Promotion code applied.": "Código promocional aplicado.",
+    "Promotion code applied. Previous discount replaced.": "Código promocional aplicado. Se reemplazó el descuento anterior.",
+    "Remove promotion code": "Eliminar código promocional",
+    "Restoring previous discount...": "Restaurando descuento anterior...",
+    "Previous discount restored.": "Descuento anterior restaurado.",
+    "This promotion code is invalid.": "Este código promocional no es válido.",
+    "This promotion code is not eligible for this purchase.": "Este código promocional no es apto para esta compra.",
+    "Multiple promotion codes match. Contact support.": "Varios códigos promocionales coinciden. Contacta con soporte.",
+    "Checkout changed in another request. The latest checkout was restored.": "El checkout cambió en otra solicitud. Se restauró el checkout más reciente.",
+    "Unable to update the checkout. Please try again.": "No se pudo actualizar el checkout. Inténtalo de nuevo."
   }
 }

@@ -87,6 +87,23 @@ const walletRefundKeys = [
   'Retrying...',
 ] as const
 
+const walletStripePromotionKeys = [
+  'Promotion code',
+  'Enter promotion code',
+  'Apply',
+  'Applying promotion code...',
+  'Promotion code applied.',
+  'Promotion code applied. Previous discount replaced.',
+  'Remove promotion code',
+  'Restoring previous discount...',
+  'Previous discount restored.',
+  'This promotion code is invalid.',
+  'This promotion code is not eligible for this purchase.',
+  'Multiple promotion codes match. Contact support.',
+  'Checkout changed in another request. The latest checkout was restored.',
+  'Unable to update the checkout. Please try again.',
+] as const
+
 describe('wallet recharge i18n', () => {
   test('defines wallet recharge package keys in every interface locale', () => {
     for (const [locale, translations] of Object.entries(localeTranslations)) {
@@ -150,6 +167,23 @@ describe('wallet recharge i18n', () => {
   test('defines translated refundable-term copy in every interface locale', () => {
     for (const [locale, translations] of Object.entries(localeTranslations)) {
       for (const key of walletRefundKeys) {
+        expect(
+          Object.prototype.hasOwnProperty.call(translations, key),
+          `${locale} is missing ${key}`
+        ).toBe(true)
+        if (locale !== 'en') {
+          expect(
+            translations[key],
+            `${locale} should translate ${key}`
+          ).not.toBe(key)
+        }
+      }
+    }
+  })
+
+  test('defines checkout promotion-code copy in every interface locale', () => {
+    for (const [locale, translations] of Object.entries(localeTranslations)) {
+      for (const key of walletStripePromotionKeys) {
         expect(
           Object.prototype.hasOwnProperty.call(translations, key),
           `${locale} is missing ${key}`

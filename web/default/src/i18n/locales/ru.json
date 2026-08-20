@@ -6751,6 +6751,20 @@
     "Model catalog overview": "Обзор каталога моделей",
     "Lowest {{category}} price": "Минимальная цена: {{category}}",
     "Per 1M input tokens": "За 1 млн входных токенов",
-    "Per 1M input tokens · some models bill per request": "За 1 млн входных токенов · некоторые модели тарифицируются за запрос"
+    "Per 1M input tokens · some models bill per request": "За 1 млн входных токенов · некоторые модели тарифицируются за запрос",
+    "Promotion code": "Промокод",
+    "Enter promotion code": "Введите промокод",
+    "Apply": "Применить",
+    "Applying promotion code...": "Применяем промокод...",
+    "Promotion code applied.": "Промокод применён.",
+    "Promotion code applied. Previous discount replaced.": "Промокод применён. Предыдущая скидка заменена.",
+    "Remove promotion code": "Удалить промокод",
+    "Restoring previous discount...": "Восстанавливаем предыдущую скидку...",
+    "Previous discount restored.": "Предыдущая скидка восстановлена.",
+    "This promotion code is invalid.": "Этот промокод недействителен.",
+    "This promotion code is not eligible for this purchase.": "Этот промокод не подходит для этой покупки.",
+    "Multiple promotion codes match. Contact support.": "Найдено несколько промокодов. Обратитесь в поддержку.",
+    "Checkout changed in another request. The latest checkout was restored.": "Оплата изменилась в другом запросе. Восстановлена последняя версия оплаты.",
+    "Unable to update the checkout. Please try again.": "Не удалось обновить оплату. Попробуйте ещё раз."
   }
 }
