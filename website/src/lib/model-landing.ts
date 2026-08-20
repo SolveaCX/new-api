@@ -757,6 +757,8 @@ export type ModelLandingKey =
   | "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control."
   | "Up to 50 assets"
   | "Video price"
+  | "Character performance"
+  | "UGC and social"
   | "High-speed action"
   | "Cinematic landscape"
   | "Character and creature"
@@ -1251,6 +1253,8 @@ const en: Record<ModelLandingKey, string> = {
   "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
   "Up to 50 assets": "Up to 50 assets",
   "Video price": "Video price",
+  "Character performance": "Character performance",
+  "UGC and social": "UGC and social",
   "High-speed action": "High-speed action",
   "Cinematic landscape": "Cinematic landscape",
   "Character and creature": "Character and creature",
@@ -1654,6 +1658,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "单次请求最多 50 个素材：图像、视频和音频，并支持首帧与首尾帧控制。",
     "Up to 50 assets": "最多 50 个素材",
     "Video price": "视频价格",
+    "Character performance": "人物表演",
+    "UGC and social": "UGC 与社媒",
     "High-speed action": "高速动作",
     "Cinematic landscape": "电影级风景",
     "Character and creature": "角色与生物",
@@ -1863,6 +1869,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hasta 50 assets por solicitud: imágenes, videos y audio, con control de primer fotograma y de primer/último fotograma.",
     "Up to 50 assets": "Hasta 50 assets",
     "Video price": "Precio de video",
+    "Character performance": "Interpretación de personajes",
+    "UGC and social": "UGC y redes sociales",
     "High-speed action": "Acción a alta velocidad",
     "Cinematic landscape": "Paisaje cinematográfico",
     "Character and creature": "Personajes y criaturas",
@@ -2078,6 +2086,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Jusqu'à 50 assets par requête : images, vidéos et audio, avec contrôle de la première image et des première/dernière images.",
     "Up to 50 assets": "Jusqu'à 50 assets",
     "Video price": "Prix vidéo",
+    "Character performance": "Jeu d'acteur",
+    "UGC and social": "UGC et réseaux sociaux",
     "High-speed action": "Action à grande vitesse",
     "Cinematic landscape": "Paysage cinématographique",
     "Character and creature": "Personnages et créatures",
@@ -2293,6 +2303,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Até 50 assets por requisição: imagens, vídeos e áudio, com controle de primeiro quadro e de primeiro/último quadro.",
     "Up to 50 assets": "Até 50 assets",
     "Video price": "Preço de vídeo",
+    "Character performance": "Atuação de personagens",
+    "UGC and social": "UGC e redes sociais",
     "High-speed action": "Ação em alta velocidade",
     "Cinematic landscape": "Paisagem cinematográfica",
     "Character and creature": "Personagens e criaturas",
@@ -2508,6 +2520,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "До 50 материалов на запрос: изображения, видео и аудио, с управлением первым кадром и первым/последним кадром.",
     "Up to 50 assets": "До 50 материалов",
     "Video price": "Цена видео",
+    "Character performance": "Актёрская игра",
+    "UGC and social": "UGC и соцсети",
     "High-speed action": "Скоростной экшен",
     "Cinematic landscape": "Кинематографичный пейзаж",
     "Character and creature": "Персонажи и существа",
@@ -2723,6 +2737,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "1 リクエストにつき最大 50 点の素材（画像・動画・音声）。先頭フレームと先頭／末尾フレームの指定にも対応します。",
     "Up to 50 assets": "最大 50 点の素材",
     "Video price": "動画料金",
+    "Character performance": "キャラクター演技",
+    "UGC and social": "UGC・ソーシャル",
     "High-speed action": "高速アクション",
     "Cinematic landscape": "シネマティックな風景",
     "Character and creature": "キャラクターとクリーチャー",
@@ -2938,6 +2954,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Tối đa 50 tư liệu mỗi yêu cầu: hình ảnh, video và âm thanh, kèm điều khiển khung hình đầu và khung hình đầu/cuối.",
     "Up to 50 assets": "Tối đa 50 tư liệu",
     "Video price": "Giá video",
+    "Character performance": "Diễn xuất nhân vật",
+    "UGC and social": "UGC và mạng xã hội",
     "High-speed action": "Hành động tốc độ cao",
     "Cinematic landscape": "Phong cảnh điện ảnh",
     "Character and creature": "Nhân vật và sinh vật",
@@ -3153,6 +3171,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Bis zu 50 Assets pro Anfrage: Bilder, Videos und Audio, inklusive Steuerung von erstem Frame und erstem/letztem Frame.",
     "Up to 50 assets": "Bis zu 50 Assets",
     "Video price": "Videopreis",
+    "Character performance": "Figurenspiel",
+    "UGC and social": "UGC und Social",
     "High-speed action": "Highspeed-Action",
     "Cinematic landscape": "Kinoreife Landschaft",
     "Character and creature": "Figuren und Kreaturen",
@@ -4048,6 +4068,8 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hingga 50 aset per permintaan: gambar, video, dan audio, termasuk kontrol frame pertama dan frame pertama/terakhir.",
     "Up to 50 assets": "Hingga 50 aset",
     "Video price": "Harga video",
+    "Character performance": "Akting karakter",
+    "UGC and social": "UGC dan sosial",
     "High-speed action": "Aksi berkecepatan tinggi",
     "Cinematic landscape": "Lanskap sinematik",
     "Character and creature": "Karakter dan makhluk",

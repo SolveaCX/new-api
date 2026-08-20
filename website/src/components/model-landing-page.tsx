@@ -234,6 +234,18 @@ const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
     prompt:
       "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
   },
+  {
+    id: "romance-scene",
+    label: "Character performance",
+    prompt:
+      "A couple sitting close on a rain-streaked cafe window seat at dusk, warm interior light, she laughs and rests her head on his shoulder, shallow depth of field, film grain, intimate handheld framing, soft ambient room tone.",
+  },
+  {
+    id: "ugc-creator",
+    label: "UGC and social",
+    prompt:
+      "Handheld selfie shot: a young creator in a bright apartment holds the camera at arm's length, talking to it with natural energy, gestures toward a laptop on the desk beside her, warm daylight from a window, slight camera shake, unpolished authentic UGC look.",
+  },
 ];
 
 function ModelShowcase(props: {
