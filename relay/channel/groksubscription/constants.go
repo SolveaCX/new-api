@@ -31,8 +31,10 @@ const (
 
 // CLI proxy base 与 responses 路径。
 const (
-	CLIProxyBase     = "https://cli-chat-proxy.grok.com"
-	CLIResponsesPath = "/v1/responses"
+	CLIProxyBase             = "https://cli-chat-proxy.grok.com"
+	CLIResponsesPath         = "/v1/responses"
+	BillingMonthlyPath       = "/billing"
+	BillingWeeklyCreditsPath = "/billing?format=credits"
 )
 
 // CLI identity headers（设计 §8.2）。仅发往 CLI proxy。
