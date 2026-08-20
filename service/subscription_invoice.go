@@ -273,7 +273,19 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	}
 	stripe.Key = setting.StripeApiSecret
 	selection := stripeSubscriptionCheckoutDiscountSelection(input)
-	if selection.Source == StripeCheckoutDiscountInvitation && selection.CouponID == "" {
+	initialMode := setting.StripePromotionCodeEnabled && input.Presentation.UsesClientSecret() && input.CheckoutRevision == 0
+	initialRequestID := "initial:recurring_subscription:" + strings.TrimSpace(input.TradeNo)
+	var initialRevision *model.StripeCheckoutRevision
+	if initialMode {
+		existing, lookupErr := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderSubscription, input.TradeNo, initialRequestID)
+		if lookupErr == nil {
+			initialRevision = existing
+			selection = stripeSubscriptionDiscountSelectionFromRevision(existing)
+		} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return nil, lookupErr
+		}
+	}
+	if initialRevision == nil && selection.Source == StripeCheckoutDiscountInvitation && selection.CouponID == "" {
 		if strings.TrimSpace(string(input.DiscountSelection.Source)) != "" {
 			return nil, errors.New("Stripe invitation discount coupon id is required")
 		}
@@ -306,17 +318,14 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	if err != nil {
 		return nil, err
 	}
-	var initialRevision *model.StripeCheckoutRevision
-	var initialSessionID string
-	initialActivated := false
-	if setting.StripePromotionCodeEnabled && input.Presentation.UsesClientSecret() && input.CheckoutRevision == 0 {
+	if initialMode && initialRevision == nil {
 		digest, digestErr := StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+strings.TrimSpace(input.TradeNo), 1, selection)
 		if digestErr != nil {
 			return nil, digestErr
 		}
 		prepared, replay, prepareErr := model.PrepareStripeCheckoutRevision(model.StripeCheckoutRevisionPrepare{
 			OrderType: model.StripeCheckoutOrderSubscription, TradeNo: input.TradeNo, UserID: input.UserID, ExpectedRevision: 0,
-			RequestID: "initial:recurring_subscription:" + strings.TrimSpace(input.TradeNo), SelectionDigest: digest,
+			RequestID: initialRequestID, SelectionDigest: digest,
 			DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
 			PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
 			Currency: input.Currency, SubtotalMinor: input.SubtotalMinor,
@@ -324,23 +333,45 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		if prepareErr != nil {
 			return nil, prepareErr
 		}
-		if prepared.Revision != 1 || replay {
+		if prepared.Revision != 1 {
 			return nil, model.ErrStripeCheckoutRevisionConflict
 		}
 		initialRevision = prepared
-		input.CheckoutRevision = prepared.Revision
-		defer func() {
-			if resultErr == nil || initialActivated || initialRevision == nil {
-				return
+		if replay {
+			selection = stripeSubscriptionDiscountSelectionFromRevision(prepared)
+		}
+	}
+	if initialRevision != nil {
+		if initialRevision.State == model.StripeCheckoutRevisionStateAbandoned {
+			return nil, model.ErrStripeCheckoutRevisionConflict
+		}
+		input.CheckoutRevision = initialRevision.Revision
+		if sessionID := stripeSubscriptionRevisionSessionID(initialRevision); sessionID != "" {
+			created, getErr := stripeCheckoutSessionGetter(ctx, sessionID)
+			if getErr != nil {
+				return nil, getErr
 			}
-			if initialSessionID != "" {
-				expired, expireErr := stripeCheckoutSessionExpirer(ctx, initialSessionID)
-				if expireErr != nil || (expired != nil && string(expired.Status) != "expired" && string(expired.Status) != "complete") {
-					return
-				}
+			result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
+			if resultErr != nil {
+				return nil, resultErr
 			}
-			_ = model.AbandonStripeCheckoutRevision(initialRevision.Id)
-		}()
+			if initialRevision.State == model.StripeCheckoutRevisionStateActive {
+				return result, nil
+			}
+			if initialRevision.State != model.StripeCheckoutRevisionStatePreparing {
+				return nil, model.ErrStripeCheckoutRevisionConflict
+			}
+			active, activateErr := model.ActivateStripeCheckoutRevision(model.StripeCheckoutRevisionActivation{
+				RevisionID: initialRevision.Id, ExpectedRevision: 0, OldProviderSessionID: "",
+			})
+			if activateErr != nil {
+				return nil, activateErr
+			}
+			if active.State != model.StripeCheckoutRevisionStateActive {
+				return nil, model.ErrStripeCheckoutRevisionConflict
+			}
+			return result, nil
+		}
 	}
 	metadata := stripeSubscriptionAuthoritativeMetadata(input.TradeNo, input.UserID, input.PlanID, input.ContractID, input.ChangeIntentID)
 	metadata["checkout_revision"] = strconv.FormatInt(input.CheckoutRevision, 10)
@@ -397,18 +428,12 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	if err != nil {
 		return nil, err
 	}
-	if created == nil || strings.TrimSpace(created.ID) == "" {
-		return nil, errors.New("Stripe checkout session missing id")
+	result, resultErr = stripeSubscriptionCheckoutSessionResult(created, selection, input.Presentation)
+	if resultErr != nil {
+		return nil, resultErr
 	}
-	if input.Presentation.UsesClientSecret() {
-		if strings.TrimSpace(created.ClientSecret) == "" {
-			return nil, errors.New("Stripe client checkout session missing client secret")
-		}
-	} else if strings.TrimSpace(created.URL) == "" {
-		return nil, errors.New("Stripe checkout session missing url")
-	}
-	initialSessionID = strings.TrimSpace(created.ID)
 	if initialRevision != nil {
+		initialSessionID := strings.TrimSpace(created.ID)
 		stored, recordErr := model.RecordStripeCheckoutCandidate(model.StripeCheckoutRevisionCandidate{
 			RevisionID: initialRevision.Id, ProviderSessionID: &initialSessionID, ProviderSessionURL: strings.TrimSpace(created.URL),
 		})
@@ -420,12 +445,41 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		}); activateErr != nil {
 			return nil, activateErr
 		}
-		initialActivated = true
+	}
+	return result, nil
+}
+
+func stripeSubscriptionDiscountSelectionFromRevision(revision *model.StripeCheckoutRevision) StripeCheckoutDiscountSelection {
+	if revision == nil {
+		return StripeCheckoutDiscountSelection{}
+	}
+	return StripeCheckoutDiscountSelection{
+		Source: StripeCheckoutDiscountSource(revision.DiscountSource), CouponID: revision.CouponId,
+		PromotionCodeID: revision.PromotionCodeId, MaskedCode: revision.PromotionCodeMask,
+		ReplacedSource: StripeCheckoutDiscountSource(revision.ReplacedSource),
+	}
+}
+
+func stripeSubscriptionRevisionSessionID(revision *model.StripeCheckoutRevision) string {
+	if revision == nil || revision.ProviderSessionId == nil {
+		return ""
+	}
+	return strings.TrimSpace(*revision.ProviderSessionId)
+}
+
+func stripeSubscriptionCheckoutSessionResult(created *stripe.CheckoutSession, selection StripeCheckoutDiscountSelection, presentation StripeCheckoutPresentation) (*StripeSubscriptionCheckoutSession, error) {
+	if created == nil || strings.TrimSpace(created.ID) == "" {
+		return nil, errors.New("Stripe checkout session missing id")
+	}
+	if presentation.UsesClientSecret() {
+		if strings.TrimSpace(created.ClientSecret) == "" {
+			return nil, errors.New("Stripe client checkout session missing client secret")
+		}
+	} else if strings.TrimSpace(created.URL) == "" {
+		return nil, errors.New("Stripe checkout session missing url")
 	}
 	return &StripeSubscriptionCheckoutSession{
-		ID:                strings.TrimSpace(created.ID),
-		URL:               strings.TrimSpace(created.URL),
-		ClientSecret:      strings.TrimSpace(created.ClientSecret),
+		ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret),
 		DiscountSelection: selection,
 	}, nil
 }
