@@ -68,7 +68,7 @@ func TestRegistrationSecurityAllowsEmailsOutsideAutomatedPattern(t *testing.T) {
 	}
 }
 
-func TestRegistrationSecurityActiveBlockOverridesTrustedDomain(t *testing.T) {
+func TestRegistrationSecurityTrustedDomainBypassesActiveBlock(t *testing.T) {
 	cfg := system_setting.RegistrationSecuritySettings{
 		DomainRiskEnabled:     true,
 		DomainRiskWindowHours: 24,
@@ -76,11 +76,15 @@ func TestRegistrationSecurityActiveBlockOverridesTrustedDomain(t *testing.T) {
 		TrustedEmailDomains:   []string{"trusted.example"},
 	}
 
-	_, err := EvaluateRegistrationEmail("user@trusted.example", cfg, func(string) (bool, error) {
+	// A trusted domain must not even consult the active-block lookup, so a
+	// customer whose domain was previously hammered can still register.
+	decision, err := EvaluateRegistrationEmail("user@trusted.example", cfg, func(string) (bool, error) {
+		t.Fatal("trusted domain must not query the active block")
 		return true, nil
 	})
 
-	require.ErrorIs(t, err, ErrRegistrationDomainUnavailable)
+	require.NoError(t, err)
+	require.False(t, decision.Policy.Enabled)
 }
 
 func TestRegistrationSecurityAllowsEmailLessRegistrationWithoutCounting(t *testing.T) {
