@@ -236,6 +236,60 @@ func TestStripeCheckoutRevisionCandidateAttachmentRejectsDifferentSession(t *tes
 	require.Equal(t, `{"total":800}`, stored.SummaryPayload)
 }
 
+func TestStripeCheckoutRevisionCandidateAttachmentRejectsSameSessionWithDifferentMetadata(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           18,
+		TradeNo:          "t-candidate-metadata-conflict",
+		GatewayTradeNo:   "cs_candidate_metadata_old",
+		Status:           common.TopUpStatusPending,
+		CheckoutRevision: 1,
+	}).Error)
+	prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+		OrderType:        StripeCheckoutOrderTopUp,
+		TradeNo:          "t-candidate-metadata-conflict",
+		UserID:           18,
+		ExpectedRevision: 1,
+		RequestID:        "req-candidate-metadata-conflict",
+		SelectionDigest:  "sha256:candidate-metadata-conflict",
+	})
+	require.NoError(t, err)
+
+	sessionID := "cs_candidate_metadata"
+	_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+		RevisionID:         prepared.Id,
+		ProviderSessionID:  &sessionID,
+		ProviderSessionURL: "https://checkout.example/candidate-metadata",
+		SummaryPayload:     `{"total":500}`,
+	})
+	require.NoError(t, err)
+
+	for _, fixture := range []struct {
+		name           string
+		url            string
+		summaryPayload string
+	}{
+		{name: "url", url: "https://checkout.example/different", summaryPayload: `{"total":500}`},
+		{name: "summary", url: "https://checkout.example/candidate-metadata", summaryPayload: `{"total":400}`},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			_, err := RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+				RevisionID:         prepared.Id,
+				ProviderSessionID:  &sessionID,
+				ProviderSessionURL: fixture.url,
+				SummaryPayload:     fixture.summaryPayload,
+			})
+			require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+		})
+	}
+
+	stored, err := GetStripeCheckoutRevisionByRequestID(StripeCheckoutOrderTopUp, "t-candidate-metadata-conflict", "req-candidate-metadata-conflict")
+	require.NoError(t, err)
+	require.Equal(t, "cs_candidate_metadata", *stored.ProviderSessionId)
+	require.Equal(t, "https://checkout.example/candidate-metadata", stored.ProviderSessionURL)
+	require.Equal(t, `{"total":500}`, stored.SummaryPayload)
+}
+
 func TestStripeCheckoutRevisionActivationRollsBackWithoutPriorActiveHistory(t *testing.T) {
 	setupStripeCheckoutRevisionTestDB(t)
 	require.NoError(t, DB.Create(&TopUp{
@@ -277,6 +331,102 @@ func TestStripeCheckoutRevisionActivationRollsBackWithoutPriorActiveHistory(t *t
 	require.NoError(t, err)
 	require.Equal(t, StripeCheckoutRevisionStatePreparing, stored.State)
 	require.Equal(t, "cs_missing_history_new", *stored.ProviderSessionId)
+}
+
+func TestStripeCheckoutRevisionActivationRollsBackWhenPriorActiveSessionMismatchesOrder(t *testing.T) {
+	for _, fixture := range []struct {
+		name      string
+		orderType string
+		tradeNo   string
+		userID    int
+	}{
+		{name: "topup", orderType: StripeCheckoutOrderTopUp, tradeNo: "t-active-session-mismatch", userID: 19},
+		{name: "subscription", orderType: StripeCheckoutOrderSubscription, tradeNo: "sub-active-session-mismatch", userID: 20},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			setupStripeCheckoutRevisionTestDB(t)
+			const orderSessionID = "cs_actual"
+			if fixture.orderType == StripeCheckoutOrderTopUp {
+				require.NoError(t, DB.Create(&TopUp{
+					UserId:           fixture.userID,
+					TradeNo:          fixture.tradeNo,
+					GatewayTradeNo:   orderSessionID,
+					Status:           common.TopUpStatusPending,
+					CheckoutRevision: 1,
+				}).Error)
+			} else {
+				require.NoError(t, DB.Create(&SubscriptionOrder{
+					UserId:             fixture.userID,
+					TradeNo:            fixture.tradeNo,
+					ProviderSessionId:  orderSessionID,
+					ProviderSessionURL: "https://checkout.example/actual",
+					Status:             common.TopUpStatusPending,
+					CheckoutRevision:   1,
+				}).Error)
+			}
+
+			ledgerSessionID := "cs_other"
+			priorActive := StripeCheckoutRevision{
+				OrderType:         fixture.orderType,
+				TradeNo:           fixture.tradeNo,
+				Revision:          1,
+				UserId:            fixture.userID,
+				RequestId:         "req-prior-" + fixture.name,
+				SelectionDigest:   "sha256:prior-" + fixture.name,
+				State:             StripeCheckoutRevisionStateActive,
+				DiscountSource:    "none",
+				ProviderSessionId: &ledgerSessionID,
+			}
+			require.NoError(t, DB.Create(&priorActive).Error)
+
+			prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+				OrderType:        fixture.orderType,
+				TradeNo:          fixture.tradeNo,
+				UserID:           fixture.userID,
+				ExpectedRevision: 1,
+				RequestID:        "req-candidate-" + fixture.name,
+				SelectionDigest:  "sha256:candidate-" + fixture.name,
+			})
+			require.NoError(t, err)
+			candidateSessionID := "cs_candidate_" + fixture.name
+			_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+				RevisionID:         prepared.Id,
+				ProviderSessionID:  &candidateSessionID,
+				ProviderSessionURL: "https://checkout.example/candidate-" + fixture.name,
+			})
+			require.NoError(t, err)
+
+			_, err = ActivateStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+				RevisionID:           prepared.Id,
+				ExpectedRevision:     1,
+				OldProviderSessionID: orderSessionID,
+			})
+			require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+
+			if fixture.orderType == StripeCheckoutOrderTopUp {
+				var order TopUp
+				require.NoError(t, DB.Where("trade_no = ?", fixture.tradeNo).First(&order).Error)
+				require.Equal(t, orderSessionID, order.GatewayTradeNo)
+				require.Equal(t, int64(1), order.CheckoutRevision)
+			} else {
+				var order SubscriptionOrder
+				require.NoError(t, DB.Where("trade_no = ?", fixture.tradeNo).First(&order).Error)
+				require.Equal(t, orderSessionID, order.ProviderSessionId)
+				require.Equal(t, "https://checkout.example/actual", order.ProviderSessionURL)
+				require.Equal(t, int64(1), order.CheckoutRevision)
+			}
+
+			var storedPrior StripeCheckoutRevision
+			require.NoError(t, DB.First(&storedPrior, priorActive.Id).Error)
+			require.Equal(t, StripeCheckoutRevisionStateActive, storedPrior.State)
+			require.Equal(t, ledgerSessionID, *storedPrior.ProviderSessionId)
+
+			storedCandidate, err := GetStripeCheckoutRevisionByRequestID(fixture.orderType, fixture.tradeNo, "req-candidate-"+fixture.name)
+			require.NoError(t, err)
+			require.Equal(t, StripeCheckoutRevisionStatePreparing, storedCandidate.State)
+			require.Equal(t, candidateSessionID, *storedCandidate.ProviderSessionId)
+		})
+	}
 }
 
 func TestStripeCheckoutRevisionActivationAllowsLegacyRevisionZeroWithoutPriorHistory(t *testing.T) {

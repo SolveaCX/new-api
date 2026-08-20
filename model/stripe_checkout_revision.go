@@ -251,7 +251,7 @@ func ActivateStripeCheckoutRevision(input StripeCheckoutRevisionActivation) (*St
 		}
 
 		superseded := tx.Model(&StripeCheckoutRevision{}).
-			Where("order_type = ? AND trade_no = ? AND revision = ? AND state = ?", candidate.OrderType, candidate.TradeNo, input.ExpectedRevision, StripeCheckoutRevisionStateActive).
+			Where("order_type = ? AND trade_no = ? AND revision = ? AND state = ? AND provider_session_id = ?", candidate.OrderType, candidate.TradeNo, input.ExpectedRevision, StripeCheckoutRevisionStateActive, input.OldProviderSessionID).
 			Update("state", StripeCheckoutRevisionStateSuperseded)
 		if superseded.Error != nil {
 			return superseded.Error
