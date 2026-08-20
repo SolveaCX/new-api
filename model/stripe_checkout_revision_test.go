@@ -156,6 +156,167 @@ func TestStripeCheckoutRevisionActivateMovesPointerAndSupersedesExactlyOnce(t *t
 	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
 }
 
+func TestStripeCheckoutRevisionCandidateAttachmentExactReplaySucceeds(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           14,
+		TradeNo:          "t-candidate-replay",
+		GatewayTradeNo:   "cs_candidate_old",
+		Status:           common.TopUpStatusPending,
+		CheckoutRevision: 1,
+	}).Error)
+	prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+		OrderType:        StripeCheckoutOrderTopUp,
+		TradeNo:          "t-candidate-replay",
+		UserID:           14,
+		ExpectedRevision: 1,
+		RequestID:        "req-candidate-replay",
+		SelectionDigest:  "sha256:candidate-replay",
+	})
+	require.NoError(t, err)
+
+	sessionID := "cs_candidate_replay"
+	input := StripeCheckoutRevisionCandidate{
+		RevisionID:         prepared.Id,
+		ProviderSessionID:  &sessionID,
+		ProviderSessionURL: "https://checkout.example/candidate-replay",
+		SummaryPayload:     `{"total":700}`,
+	}
+	first, err := RecordStripeCheckoutCandidate(input)
+	require.NoError(t, err)
+	second, err := RecordStripeCheckoutCandidate(input)
+	require.NoError(t, err)
+	require.Equal(t, first.Id, second.Id)
+	require.Equal(t, "cs_candidate_replay", *second.ProviderSessionId)
+	require.Equal(t, "https://checkout.example/candidate-replay", second.ProviderSessionURL)
+	require.Equal(t, `{"total":700}`, second.SummaryPayload)
+}
+
+func TestStripeCheckoutRevisionCandidateAttachmentRejectsDifferentSession(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           15,
+		TradeNo:          "t-candidate-conflict",
+		GatewayTradeNo:   "cs_candidate_conflict_old",
+		Status:           common.TopUpStatusPending,
+		CheckoutRevision: 1,
+	}).Error)
+	prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+		OrderType:        StripeCheckoutOrderTopUp,
+		TradeNo:          "t-candidate-conflict",
+		UserID:           15,
+		ExpectedRevision: 1,
+		RequestID:        "req-candidate-conflict",
+		SelectionDigest:  "sha256:candidate-conflict",
+	})
+	require.NoError(t, err)
+
+	firstSessionID := "cs_candidate_first"
+	_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+		RevisionID:         prepared.Id,
+		ProviderSessionID:  &firstSessionID,
+		ProviderSessionURL: "https://checkout.example/candidate-first",
+		SummaryPayload:     `{"total":800}`,
+	})
+	require.NoError(t, err)
+
+	secondSessionID := "cs_candidate_second"
+	_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+		RevisionID:         prepared.Id,
+		ProviderSessionID:  &secondSessionID,
+		ProviderSessionURL: "https://checkout.example/candidate-second",
+		SummaryPayload:     `{"total":600}`,
+	})
+	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+
+	stored, err := GetStripeCheckoutRevisionByRequestID(StripeCheckoutOrderTopUp, "t-candidate-conflict", "req-candidate-conflict")
+	require.NoError(t, err)
+	require.Equal(t, "cs_candidate_first", *stored.ProviderSessionId)
+	require.Equal(t, "https://checkout.example/candidate-first", stored.ProviderSessionURL)
+	require.Equal(t, `{"total":800}`, stored.SummaryPayload)
+}
+
+func TestStripeCheckoutRevisionActivationRollsBackWithoutPriorActiveHistory(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           16,
+		TradeNo:          "t-missing-active-history",
+		GatewayTradeNo:   "cs_missing_history_old",
+		Status:           common.TopUpStatusPending,
+		CheckoutRevision: 1,
+	}).Error)
+	prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+		OrderType:        StripeCheckoutOrderTopUp,
+		TradeNo:          "t-missing-active-history",
+		UserID:           16,
+		ExpectedRevision: 1,
+		RequestID:        "req-missing-active-history",
+		SelectionDigest:  "sha256:missing-active-history",
+	})
+	require.NoError(t, err)
+	newSessionID := "cs_missing_history_new"
+	_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+		RevisionID:        prepared.Id,
+		ProviderSessionID: &newSessionID,
+	})
+	require.NoError(t, err)
+
+	_, err = ActivateStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID:           prepared.Id,
+		ExpectedRevision:     1,
+		OldProviderSessionID: "cs_missing_history_old",
+	})
+	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+
+	var order TopUp
+	require.NoError(t, DB.Where("trade_no = ?", "t-missing-active-history").First(&order).Error)
+	require.Equal(t, "cs_missing_history_old", order.GatewayTradeNo)
+	require.Equal(t, int64(1), order.CheckoutRevision)
+
+	stored, err := GetStripeCheckoutRevisionByRequestID(StripeCheckoutOrderTopUp, "t-missing-active-history", "req-missing-active-history")
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutRevisionStatePreparing, stored.State)
+	require.Equal(t, "cs_missing_history_new", *stored.ProviderSessionId)
+}
+
+func TestStripeCheckoutRevisionActivationAllowsLegacyRevisionZeroWithoutPriorHistory(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           17,
+		TradeNo:          "t-legacy-no-history",
+		GatewayTradeNo:   "cs_legacy_old",
+		Status:           common.TopUpStatusPending,
+		CheckoutRevision: 0,
+	}).Error)
+	prepared, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
+		OrderType:        StripeCheckoutOrderTopUp,
+		TradeNo:          "t-legacy-no-history",
+		UserID:           17,
+		ExpectedRevision: 0,
+		RequestID:        "req-legacy-no-history",
+		SelectionDigest:  "sha256:legacy-no-history",
+	})
+	require.NoError(t, err)
+	newSessionID := "cs_legacy_new"
+	_, err = RecordStripeCheckoutCandidate(StripeCheckoutRevisionCandidate{
+		RevisionID:        prepared.Id,
+		ProviderSessionID: &newSessionID,
+	})
+	require.NoError(t, err)
+
+	_, err = ActivateStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID:           prepared.Id,
+		ExpectedRevision:     0,
+		OldProviderSessionID: "cs_legacy_old",
+	})
+	require.NoError(t, err)
+
+	var order TopUp
+	require.NoError(t, DB.Where("trade_no = ?", "t-legacy-no-history").First(&order).Error)
+	require.Equal(t, "cs_legacy_new", order.GatewayTradeNo)
+	require.Equal(t, int64(1), order.CheckoutRevision)
+}
+
 func TestStripeCheckoutRevisionSupportsSubscriptionPointerCAS(t *testing.T) {
 	setupStripeCheckoutRevisionTestDB(t)
 	require.NoError(t, DB.Create(&SubscriptionOrder{
@@ -164,6 +325,18 @@ func TestStripeCheckoutRevisionSupportsSubscriptionPointerCAS(t *testing.T) {
 		ProviderSessionId: "cs_sub_old",
 		Status:            common.TopUpStatusPending,
 		CheckoutRevision:  1,
+	}).Error)
+	oldSessionID := "cs_sub_old"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderSubscription,
+		TradeNo:           "sub-activate",
+		Revision:          1,
+		UserId:            10,
+		RequestId:         "req-sub-original",
+		SelectionDigest:   "sha256:sub-original",
+		State:             StripeCheckoutRevisionStateActive,
+		DiscountSource:    "none",
+		ProviderSessionId: &oldSessionID,
 	}).Error)
 
 	candidate, _, err := PrepareStripeCheckoutRevision(StripeCheckoutRevisionPrepare{
