@@ -212,12 +212,29 @@ type ShowcaseScene = {
   prompt: string;
 };
 
-// To populate: drop <id>.mp4 and <id>.png into website/public/assets/
+// To add a scene: drop <id>.mp4 and <id>.png into website/public/assets/
 // model-showcase/, add the entry here, and add its `label` to the copy maps in
 // lib/model-landing.ts for all 10 locales.
-//
-//   { id: "action-sequence", label: "Action sequence", prompt: "..." },
-const SHOWCASE_SCENES: readonly ShowcaseScene[] = [];
+const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
+  {
+    id: "racing-chase",
+    label: "High-speed action",
+    prompt:
+      "Low rear-chase shot of a formula car at speed on a wet forest circuit, tyres throwing spray, misty treeline and grandstands behind, heavy motion blur on the surrounding track, overcast light, blue-grey and deep green palette, cinematic realism.",
+  },
+  {
+    id: "coastal-landmark",
+    label: "Cinematic landscape",
+    prompt:
+      "Aerial approach along a clifftop coast road at dusk, lighthouse on the headland, heavy surf breaking against layered rock, gulls crossing frame, soft overcast light, muted blue and ochre palette, slow drifting camera.",
+  },
+  {
+    id: "creature-closeup",
+    label: "Character and creature",
+    prompt:
+      "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
+  },
+];
 
 function ModelShowcase(props: {
   modelName: string;
@@ -238,7 +255,7 @@ function ModelShowcase(props: {
           title={props.t("What {{model}} produces", { model: props.modelName })}
           description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
         />
-        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] lg:items-start">
+        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)] lg:items-stretch">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
             <div className="relative aspect-video">
               <AutoplayVideo
@@ -252,27 +269,29 @@ function ModelShowcase(props: {
               {scene.prompt}
             </p>
           </div>
-          <div className="grid gap-2">
+          {/* Rail height follows the player so the two columns stay level
+              whatever the scene count. */}
+          <div className="grid gap-2 lg:h-full lg:auto-rows-fr">
             {SHOWCASE_SCENES.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActive(index)}
                 aria-pressed={index === active}
-                className={`flex items-center gap-3 rounded-xl border p-2.5 text-left transition ${
+                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${
                   index === active
                     ? "border-violet-500/45 bg-violet-500/6 shadow-[0_12px_30px_-24px_rgba(124,58,237,.8)]"
                     : "border-slate-200 bg-white hover:border-violet-500/25 dark:border-white/10 dark:bg-white/[0.04]"
                 }`}
               >
-                <span className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-slate-950">
-                  <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="56px" className="object-cover" />
+                <span className="relative aspect-video w-20 shrink-0 overflow-hidden rounded-lg bg-slate-950">
+                  <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="80px" className="object-cover" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-semibold text-[#20222a] dark:text-white/88">
+                  <span className="block text-[13px] font-semibold text-[#20222a] dark:text-white/88">
                     {props.t(item.label)}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{item.prompt}</span>
+                  <span className="mt-1 line-clamp-2 block text-[11px] leading-4 text-muted-foreground">{item.prompt}</span>
                 </span>
               </button>
             ))}
