@@ -31,8 +31,9 @@ type emailDomainDNSCheckerFunc func(domain string) emailDomainDNSCheck
 var registrationEmailDNSChecker emailDomainDNSCheckerFunc = checkEmailDomainDNS
 
 const (
-	emailDomainDNSLookupTimeout = 3 * time.Second
-	emailDomainDNSCacheTTL      = 6 * time.Hour
+	emailDomainDNSLookupTimeout  = 3 * time.Second
+	emailDomainDNSCacheTTL       = 6 * time.Hour
+	emailDomainDNSMaxConcurrency = 64
 )
 
 type emailDomainDNSCacheEntry struct {
@@ -42,11 +43,19 @@ type emailDomainDNSCacheEntry struct {
 
 var emailDomainDNSCache sync.Map // domain (lowercase) -> emailDomainDNSCacheEntry
 
+// emailDomainDNSSem caps how many DNS probes may run concurrently. A flood of
+// registrations with fresh (uncached) domains would otherwise pile up blocked
+// goroutines and outbound sockets; hitting the cap fails open (skip the probe)
+// rather than queueing, since the probe is best-effort.
+var emailDomainDNSSem = make(chan struct{}, emailDomainDNSMaxConcurrency)
+
 // checkEmailDomainDNS inspects a normalized, lowercase email domain. It is
-// fail-open by design: on any resolver/network error it returns a "pass-everything"
-// result and logs, so a DNS outage can never lock out legitimate registrations.
-// Results are cached per node for emailDomainDNSCacheTTL (multi-node safe: the
-// check is read-only and deterministic; each node computing its own copy is fine).
+// fail-open by design: on any resolver/network error, or when the concurrency
+// cap is reached, it returns a "pass-everything" result and logs, so a DNS
+// outage or a probe flood can never lock out legitimate registrations.
+// Deterministic results (including NXDOMAIN / no-website) are cached per node
+// for emailDomainDNSCacheTTL; transient failures are not cached so they are
+// re-probed on the next attempt (multi-node safe: read-only, per-node cache).
 func checkEmailDomainDNS(domain string) emailDomainDNSCheck {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
@@ -58,12 +67,21 @@ func checkEmailDomainDNS(domain string) emailDomainDNSCheck {
 			return entry.check
 		}
 	}
-	check := probeEmailDomainDNS(domain)
-	emailDomainDNSCache.Store(domain, emailDomainDNSCacheEntry{at: time.Now(), check: check})
+	select {
+	case emailDomainDNSSem <- struct{}{}:
+		defer func() { <-emailDomainDNSSem }()
+	default:
+		common.SysLog("registration dns check: concurrency limit reached, skipping probe for " + domain)
+		return emailDomainDNSCheck{MXRecord: true, ARecord: true, WebsiteReachable: true}
+	}
+	check, cacheable := probeEmailDomainDNS(domain)
+	if cacheable {
+		emailDomainDNSCache.Store(domain, emailDomainDNSCacheEntry{at: time.Now(), check: check})
+	}
 	return check
 }
 
-func probeEmailDomainDNS(domain string) emailDomainDNSCheck {
+func probeEmailDomainDNS(domain string) (emailDomainDNSCheck, bool) {
 	check := emailDomainDNSCheck{}
 	ctx, cancel := context.WithTimeout(context.Background(), emailDomainDNSLookupTimeout)
 	defer cancel()
@@ -79,8 +97,9 @@ func probeEmailDomainDNS(domain string) emailDomainDNSCheck {
 		} else {
 			// Transient resolver/network failure (timeout, SERVFAIL, ...):
 			// fail open so a DNS hiccup never locks out legitimate registration.
+			// Not cached — a transient failure must be re-probed next time.
 			common.SysLog("registration dns check: transient LookupMX failure for " + domain + ": " + mxErr.Error())
-			return emailDomainDNSCheck{MXRecord: true, ARecord: true, WebsiteReachable: true}
+			return emailDomainDNSCheck{MXRecord: true, ARecord: true, WebsiteReachable: true}, false
 		}
 	} else {
 		check.MXRecord = len(mx) > 0 && strings.TrimSpace(mx[0].Host) != ""
@@ -113,7 +132,7 @@ func probeEmailDomainDNS(domain string) emailDomainDNSCheck {
 	// while every mainstream provider does. Pure best-effort signal; the probe
 	// itself is SSRF-hardened (see safeEmailDomainDialContext).
 	check.WebsiteReachable = emailDomainWebsiteReachable(domain)
-	return check
+	return check, true
 }
 
 // isDNSNotFound reports whether the error is a definitive "no such host / no
@@ -221,11 +240,19 @@ func safeEmailDomainDialContext(ctx context.Context, network, addr string) (net.
 		return nil, err
 	}
 	var dialer net.Dialer
+	var lastErr error
 	for _, ipa := range ips {
 		if isPlaceholderIP(ipa.IP) {
 			continue
 		}
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	return nil, errors.New("email domain resolves only to private/link-local addresses")
 }
