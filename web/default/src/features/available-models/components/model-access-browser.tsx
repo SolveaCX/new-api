@@ -197,34 +197,6 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
     <div className='flex min-w-0 flex-col gap-4'>
       <ModelCatalogSummaryStrip summary={summary} />
 
-      {fixedView && (
-        <Card size='sm'>
-          <CardHeader>
-            <CardTitle>{t('Current account scope')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className='text-muted-foreground text-sm' aria-live='polite'>
-              {t('{{count}} models available', { count: scopeModels.length })}
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button
-              size='sm'
-              className='w-full justify-between sm:w-auto'
-              render={<Link to='/keys' search={getCreateKeySearch()} />}
-            >
-              {t('Create API Key')}
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                strokeWidth={2}
-                data-icon='inline-end'
-                aria-hidden='true'
-              />
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
-
       {!fixedView && (
         <div className='flex flex-col gap-2 lg:hidden'>
           <NativeSelect

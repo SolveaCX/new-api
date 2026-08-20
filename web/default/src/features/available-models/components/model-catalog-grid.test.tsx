@@ -107,16 +107,16 @@ function renderGrid(options: {
 }
 
 describe('ModelCatalogGrid', () => {
-  test('renders both catalog actions for a Playground-capable model', () => {
+  test('offers the quick start action on every card', () => {
     const html = renderGrid({ models: [buildModel()] })
 
-    expect(html).toContain('Try it now')
     expect(html).toContain('Quick start')
   })
 
-  // Sending an embedding model to the Playground lands on a picker that
-  // silently swaps in a different model, which reads as a broken link.
-  test('hides the Playground action for a model the Playground cannot call', () => {
+  // Quick start explains how to call a model from your own code, which is the
+  // only route that fits embeddings, rerank and TTS — so it stays offered for
+  // model families the Playground could never run.
+  test('offers quick start for a model the Playground cannot call', () => {
     const html = renderGrid({
       models: [
         buildModel({
@@ -126,16 +126,14 @@ describe('ModelCatalogGrid', () => {
       ],
     })
 
-    expect(html).not.toContain('Try it now')
     expect(html).toContain('Quick start')
   })
 
-  test('hides the Playground action for a model upstreams dropped', () => {
+  test('offers quick start for a model upstreams dropped', () => {
     const html = renderGrid({
       models: [buildModel({ availability_status: 'official_unsupported' })],
     })
 
-    expect(html).not.toContain('Try it now')
     expect(html).toContain('Quick start')
   })
 
