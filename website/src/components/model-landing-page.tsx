@@ -999,7 +999,7 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelPageTabs t={props.t} generator={Boolean(generator)} />
+        <ModelPageTabs t={props.t} generator={Boolean(generator)} activity={(props.usage?.points.length ?? 0) > 0} />
 
         {generator ? (
           <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
@@ -1783,15 +1783,23 @@ export function animateScrollToTop(windowLike: SectionScrollWindow, targetTop: n
 
 function ModelPageTabs(props: {
   generator: boolean;
+  // Activity renders only for models with a measured usage series, so the tab
+  // has to follow it -- otherwise the subnav offers an anchor that is not on
+  // the page and the smooth-scroll handler jumps nowhere.
+  activity: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   type ModelSectionTab = { id: string; href: string; label: string; icon: ReactNode };
   const sectionIds = useMemo(
     () =>
-      props.generator
-        ? ["workbench", "performance", "activity", "quick-start", "faq"]
-        : ["performance", "activity", "quick-start", "faq"],
-    [props.generator]
+      [
+        ...(props.generator ? ["workbench"] : []),
+        "performance",
+        ...(props.activity ? ["activity"] : []),
+        "quick-start",
+        "faq",
+      ],
+    [props.generator, props.activity]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
@@ -3078,11 +3086,7 @@ function ModelActivitySection(props: {
         <FlatkeySectionHeading
           eyebrow={props.t("Activity")}
           title={props.t("Daily {{model}} requests on Flatkey", { model: props.modelId })}
-          description={
-            props.usage?.placeholder
-              ? props.t("Sample shape shown while live telemetry is being connected.")
-              : props.t("Request volume routed through Flatkey over the last 30 days.")
-          }
+          description={props.t("Request volume routed through Flatkey over the last 30 days.")}
         />
         <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
           <div className="grid gap-4 p-5 sm:grid-cols-3">

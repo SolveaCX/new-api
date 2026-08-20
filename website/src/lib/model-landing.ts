@@ -851,7 +851,6 @@ export type ModelLandingKey =
   | "Tokens per second"
   | "Last 30 days"
   | "Daily uptime"
-  | "Sample shape shown while live telemetry is being connected."
   | "Sound off"
   | "Sound on"
   | "Vertical short-form"
@@ -1424,7 +1423,6 @@ const en: Record<ModelLandingKey, string> = {
   "Tokens per second": "Tokens per second",
   "Last 30 days": "Last 30 days",
   "Daily uptime": "Daily uptime",
-  "Sample shape shown while live telemetry is being connected.": "Sample shape shown while live telemetry is being connected.",
   "Sound off": "Sound off",
   "Sound on": "Sound on",
   "Vertical short-form": "Vertical short-form",
@@ -1904,7 +1902,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "每秒 token 数",
     "Last 30 days": "最近 30 天",
     "Daily uptime": "每日可用率",
-    "Sample shape shown while live telemetry is being connected.": "实时遥测接入中，当前展示示例数据形态。",
     "Sound off": "已静音",
     "Sound on": "有声",
     "Vertical short-form": "短剧竖屏",
@@ -2192,7 +2189,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Tokens por segundo",
     "Last 30 days": "Últimos 30 días",
     "Daily uptime": "Disponibilidad diaria",
-    "Sample shape shown while live telemetry is being connected.": "Se muestra una forma de ejemplo mientras se conecta la telemetría en vivo.",
     "Sound off": "Sin sonido",
     "Sound on": "Con sonido",
     "Vertical short-form": "Vertical para social",
@@ -2486,7 +2482,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Tokens par seconde",
     "Last 30 days": "30 derniers jours",
     "Daily uptime": "Disponibilité quotidienne",
-    "Sample shape shown while live telemetry is being connected.": "Forme d'exemple affichée pendant la connexion de la télémétrie en direct.",
     "Sound off": "Son coupé",
     "Sound on": "Son activé",
     "Vertical short-form": "Vertical format court",
@@ -2780,7 +2775,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Tokens por segundo",
     "Last 30 days": "Últimos 30 dias",
     "Daily uptime": "Disponibilidade diária",
-    "Sample shape shown while live telemetry is being connected.": "Forma de exemplo exibida enquanto a telemetria ao vivo é conectada.",
     "Sound off": "Sem som",
     "Sound on": "Com som",
     "Vertical short-form": "Vertical para social",
@@ -3074,7 +3068,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Токенов в секунду",
     "Last 30 days": "Последние 30 дней",
     "Daily uptime": "Доступность по дням",
-    "Sample shape shown while live telemetry is being connected.": "Показан образец, пока подключается реальная телеметрия.",
     "Sound off": "Без звука",
     "Sound on": "Со звуком",
     "Vertical short-form": "Вертикальный формат",
@@ -3368,7 +3361,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "1 秒あたりのトークン数",
     "Last 30 days": "過去 30 日間",
     "Daily uptime": "日次稼働率",
-    "Sample shape shown while live telemetry is being connected.": "リアルタイム計測の接続中のため、サンプルの推移を表示しています。",
     "Sound off": "ミュート中",
     "Sound on": "音声オン",
     "Vertical short-form": "縦型ショート",
@@ -3662,7 +3654,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Token mỗi giây",
     "Last 30 days": "30 ngày qua",
     "Daily uptime": "Uptime hằng ngày",
-    "Sample shape shown while live telemetry is being connected.": "Hiển thị dạng dữ liệu mẫu trong khi kết nối telemetry thực.",
     "Sound off": "Đang tắt tiếng",
     "Sound on": "Đang bật tiếng",
     "Vertical short-form": "Dọc dạng ngắn",
@@ -3956,7 +3947,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Tokens per second": "Tokens pro Sekunde",
     "Last 30 days": "Letzte 30 Tage",
     "Daily uptime": "Tägliche Verfügbarkeit",
-    "Sample shape shown while live telemetry is being connected.": "Beispielverlauf, während die Live-Telemetrie angebunden wird.",
     "Sound off": "Ton aus",
     "Sound on": "Ton an",
     "Vertical short-form": "Hochformat für Shorts",
@@ -4929,7 +4919,6 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Tokens per second": "Token per detik",
     "Last 30 days": "30 hari terakhir",
     "Daily uptime": "Uptime harian",
-    "Sample shape shown while live telemetry is being connected.": "Menampilkan bentuk data contoh selagi telemetri langsung dihubungkan.",
     "Sound off": "Suara mati",
     "Sound on": "Suara nyala",
     "Vertical short-form": "Vertikal format pendek",

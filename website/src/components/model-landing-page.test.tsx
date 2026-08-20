@@ -651,3 +651,30 @@ describe("Performance metrics for async media models", () => {
     expect(showsTimeToFirstTokenFootnote({ kind: "text", latencyMs: 3000, ttftMs: undefined })).toBe(false);
   });
 });
+
+// The Activity section renders only when the model has measured traffic, so the
+// subnav must not advertise an anchor that is not on the page.
+describe("Activity section navigation", () => {
+  test("omits the Activity tab when the model has no usage series", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} usage={null} />
+    );
+
+    expect(html).not.toContain('<section id="activity"');
+    expect(html).not.toContain('href="#activity"');
+  });
+
+  test("keeps the Activity tab when the model has a measured usage series", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={SEEDANCE_CONFIG}
+        locale="en"
+        liveModels={[]}
+        usage={{ model: "seedance-2.5", total: 4, points: [{ date: 1787097600, count: 4 }] }}
+      />
+    );
+
+    expect(html).toContain('<section id="activity"');
+    expect(html).toContain('href="#activity"');
+  });
+});
