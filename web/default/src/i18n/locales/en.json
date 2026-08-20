@@ -6682,6 +6682,13 @@
     "Website": "Website",
     "Website (optional)": "Website (optional)",
     "Honeypot": "Honeypot",
-    "Include disabled users": "Include disabled users"
+    "Include disabled users": "Include disabled users",
+    "Boost": "Boost",
+    "Boost your balance": "Boost your balance",
+    "Keep your balance ready whenever you need it": "Keep your balance ready whenever you need it",
+    "Current available balance": "Current available balance",
+    "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.": "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.",
+    "Quick top-up": "Quick top-up",
+    "Earn credits": "Earn credits"
   }
 }

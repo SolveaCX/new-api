@@ -6682,6 +6682,13 @@
     "Website": "Site web",
     "Website (optional)": "Site web (facultatif)",
     "Honeypot": "Honeypot",
-    "Include disabled users": "Inclure les utilisateurs désactivés"
+    "Include disabled users": "Inclure les utilisateurs désactivés",
+    "Boost": "Augmenter",
+    "Boost your balance": "Augmentez votre solde",
+    "Keep your balance ready whenever you need it": "Gardez un solde disponible dès que vous en avez besoin",
+    "Current available balance": "Solde disponible actuel",
+    "A healthy balance keeps your work and API calls from being interrupted. Top up now, or invite friends to earn reward credits, so you can keep building with costs under control.": "Avec un solde suffisant, votre travail et vos appels d'API ne sont jamais interrompus. Rechargez maintenant ou invitez vos amis pour gagner des crédits de récompense et continuer à créer en maîtrisant vos coûts.",
+    "Quick top-up": "Recharge rapide",
+    "Earn credits": "Gagnez des crédits"
   }
 }
