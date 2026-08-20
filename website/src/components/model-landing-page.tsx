@@ -545,7 +545,7 @@ function ModelShowcase(props: {
                 type="button"
                 onClick={() => setActive(index)}
                 aria-pressed={index === active}
-                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${
+                className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition ${
                   index === active
                     ? "border-violet-500/45 bg-violet-500/6 shadow-[0_12px_30px_-24px_rgba(124,58,237,.8)]"
                     : "border-slate-200 bg-white hover:border-violet-500/25 dark:border-white/10 dark:bg-white/[0.04]"
@@ -558,10 +558,11 @@ function ModelShowcase(props: {
                   <span className="block text-[14px] font-semibold text-[#20222a] dark:text-white/88">
                     {props.t(item.label)}
                   </span>
-                  <span
-                    className="mt-1 block truncate text-[12px] leading-5 text-muted-foreground"
-                    title={item.prompt}
-                  >
+                  {/* Shown in full: seeing how an output was written is the
+                      point of the rail. min-w-0 on the button and this span is
+                      what keeps long prompts wrapping inside the column rather
+                      than widening it. */}
+                  <span className="mt-1 block text-[12px] leading-5 text-muted-foreground">
                     {item.prompt}
                   </span>
                 </span>
@@ -857,15 +858,22 @@ function FlatkeyModelDetailPage(props: {
   const trend = healthReady ? health.trend : [];
   const summary = healthReady ? health.summary : undefined;
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
-  // Same fallbacks as the /models directory (models-directory-table.tsx): a
-  // model with thin telemetry reads 100% / 600ms there, so it must not read
-  // "—" here. The rate is jittered per model+day for the same reason.
-  const measuredSuccessRate = summary?.success_rate ?? trendSuccess;
-  const successRate = Number.isFinite(measuredSuccessRate)
-    ? getJitteredSuccessRate(measuredSuccessRate, props.config.modelId) ?? measuredSuccessRate
-    : DEFAULT_HEALTH_SUCCESS_RATE;
-  const measuredTtft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
-  const ttft = measuredTtft && measuredTtft > 0 ? measuredTtft : DEFAULT_HEALTH_TTFT_MS;
+  // The telemetry feed reports 0 for metrics a model does not emit -- async
+  // video models report latency and request counts but no success rate, TTFT,
+  // or tokens/sec. A plain isFinite check accepted those zeros and the jitter
+  // turned them into plausible-looking figures, so the page showed "100%
+  // uptime" and "600ms" for a model that had reported neither.
+  //
+  // Treat 0 as absent and hand undefined onward; formatHealthSuccessRate and
+  // formatLatencyMs render an em dash, which is the honest answer.
+  const measured = (value: number | undefined) =>
+    value != null && Number.isFinite(value) && value > 0 ? value : undefined;
+  const measuredSuccessRate = measured(summary?.success_rate) ?? measured(trendSuccess);
+  const successRate =
+    measuredSuccessRate == null
+      ? undefined
+      : getJitteredSuccessRate(measuredSuccessRate, props.config.modelId) ?? measuredSuccessRate;
+  const ttft = measured(summary?.avg_ttft_ms) ?? measured(trendAvgTtftMs(trend));
   const healthTrend = trend.length > 0 ? trend : buildDirectoryHealthTrend(trend);
   const dashboardHref = consoleUrl("/dashboard");
 
@@ -1051,6 +1059,25 @@ function FlatkeyModelDetailPage(props: {
         ) : null}
 
 
+        <ModelPerformanceSection
+          modelId={props.config.modelId}
+          kind={pageKind}
+          successRate={successRate}
+          ttftMs={ttft}
+          latencyMs={summary?.avg_latency_ms}
+          throughput={summary?.avg_tps}
+          requests={summary?.request_count}
+          peers={peerSummaries}
+          trend={healthTrend}
+          t={props.t}
+        />
+
+        <ModelActivitySection
+          modelId={props.config.modelId}
+          usage={props.usage}
+          t={props.t}
+        />
+
         <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
 
         {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
@@ -1073,24 +1100,6 @@ function FlatkeyModelDetailPage(props: {
           locale={props.locale}
           runHref={runHref}
           onRunClick={props.onRunClick}
-          t={props.t}
-        />
-
-        <ModelPerformanceSection
-          modelId={props.config.modelId}
-          successRate={successRate}
-          ttftMs={ttft}
-          latencyMs={summary?.avg_latency_ms}
-          throughput={summary?.avg_tps}
-          requests={summary?.request_count}
-          peers={peerSummaries}
-          trend={healthTrend}
-          t={props.t}
-        />
-
-        <ModelActivitySection
-          modelId={props.config.modelId}
-          usage={props.usage}
           t={props.t}
         />
 
@@ -1770,14 +1779,15 @@ function ModelPageTabs(props: {
   const sectionIds = useMemo(
     () =>
       props.generator
-        ? ["workbench", "quick-start", "performance", "faq"]
-        : ["quick-start", "performance", "faq"],
+        ? ["workbench", "performance", "activity", "quick-start", "faq"]
+        : ["performance", "activity", "quick-start", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
     { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
+    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
+    { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
   const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
@@ -2686,6 +2696,7 @@ function ModelPerformanceSection(props: {
   latencyMs?: number;
   throughput?: number;
   requests?: number;
+  kind: ModelReadmeKind;
   peers: HomePerfSummary[];
   trend: HomeTrendPoint[];
   t: (key: string, vars?: Record<string, string>) => string;
@@ -2706,44 +2717,70 @@ function ModelPerformanceSection(props: {
     return Math.round((beaten / values.length) * 100);
   };
 
-  const stats = [
-    {
-      icon: <ShieldCheck className="size-4" />,
-      label: props.t("Uptime"),
-      value: formatHealthSuccessRate(props.successRate),
-      hint: props.t("Successful requests"),
-      rank: percentile(props.successRate, (peer) => peer.success_rate),
-      accent: "text-emerald-600 dark:text-emerald-400",
-      surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    },
-    {
-      icon: <Timer className="size-4" />,
-      label: props.t("Latency"),
-      value: formatLatencyMs(props.ttftMs),
-      hint: props.t("Time to first token"),
-      rank: percentile(props.ttftMs, (peer) => peer.avg_ttft_ms, true),
-      accent: "text-blue-600 dark:text-blue-400",
-      surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
-    },
-    {
-      icon: <Zap className="size-4" />,
-      label: props.t("Throughput"),
-      value: formatThroughput(props.throughput),
-      hint: props.t("Tokens per second"),
-      rank: percentile(props.throughput, (peer) => peer.avg_tps),
-      accent: "text-violet-600 dark:text-violet-400",
-      surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
-    },
-    {
-      icon: <Layers3 className="size-4" />,
-      label: props.t("Requests"),
-      value: formatCallCount(props.requests),
-      hint: props.t("Last 30 days"),
-      rank: null,
-      accent: "text-amber-600 dark:text-amber-400",
-      surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    },
-  ];
+  // Async video generation is a submit-then-poll flow with no token stream, so
+  // TTFT and tokens/sec are never reported for it. Showing those cells empty
+  // said less than not showing them: pick the metric set this model kind emits.
+  const isAsyncMedia = props.kind === "video" || props.kind === "audio";
+
+  const uptimeStat = {
+    icon: <ShieldCheck className="size-4" />,
+    label: props.t("Uptime"),
+    value: formatHealthSuccessRate(props.successRate),
+    hint: props.t("Successful requests"),
+    rank: percentile(props.successRate, (peer) => peer.success_rate),
+    accent: "text-emerald-600 dark:text-emerald-400",
+    surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  };
+  const requestsStat = {
+    icon: <Layers3 className="size-4" />,
+    label: props.t("Requests"),
+    value: formatCallCount(props.requests),
+    hint: props.t("Last 30 days"),
+    rank: null,
+    accent: "text-amber-600 dark:text-amber-400",
+    surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  };
+
+  const stats = isAsyncMedia
+    ? [
+        {
+          icon: <Timer className="size-4" />,
+          label: props.t("Generation time"),
+          value: formatLatencyMs(props.latencyMs),
+          hint: props.t("Average per request"),
+          rank: percentile(props.latencyMs, (peer) => peer.avg_latency_ms, true),
+          accent: "text-blue-600 dark:text-blue-400",
+          surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+        },
+        requestsStat,
+        uptimeStat,
+      ]
+    : [
+        uptimeStat,
+        {
+          icon: <Timer className="size-4" />,
+          label: props.t("Latency"),
+          value: formatLatencyMs(props.ttftMs),
+          hint: props.t("Time to first token"),
+          rank: percentile(props.ttftMs, (peer) => peer.avg_ttft_ms, true),
+          accent: "text-blue-600 dark:text-blue-400",
+          surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+        },
+        {
+          icon: <Zap className="size-4" />,
+          label: props.t("Throughput"),
+          value: formatThroughput(props.throughput),
+          hint: props.t("Tokens per second"),
+          rank: percentile(props.throughput, (peer) => peer.avg_tps),
+          accent: "text-violet-600 dark:text-violet-400",
+          surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+        },
+        requestsStat,
+      ];
+
+  // An uptime chart of nothing is noise; async media models do not report a
+  // success rate to trend.
+  const showTrend = props.successRate != null;
 
   return (
     <RevealSection id="performance" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
@@ -2756,7 +2793,7 @@ function ModelPerformanceSection(props: {
         {/* Stats and trend share one surface: they are the same measurement read
             two ways, and separate cards made them look unrelated. */}
         <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 dark:divide-white/10">
+          <div className={`grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 dark:divide-white/10 ${stats.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
             {stats.map((stat, index) => (
               <div
                 key={stat.label}
@@ -2785,7 +2822,7 @@ function ModelPerformanceSection(props: {
               })}
             </div>
           ) : null}
-          <UptimeTrend points={props.trend} t={props.t} />
+          {showTrend ? <UptimeTrend points={props.trend} t={props.t} /> : null}
         </div>
       </div>
     </RevealSection>
@@ -4601,12 +4638,12 @@ function buildRunHref(
 ) {
   void prompt;
   void draft;
+  // Straight to the playground rather than via /sign-up. The console redirects
+  // anonymous visitors to sign-in itself and returns them here afterwards, so
+  // routing everyone through signup only added a step for people already
+  // logged in -- the ones most likely to press this.
   const playgroundParams = buildPlaygroundEntryParams(config, locale);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 export function buildDraftFallbackRunHref(config: ModelConfig, locale: Locale, draft: DraftValue) {
@@ -4615,11 +4652,7 @@ export function buildDraftFallbackRunHref(config: ModelConfig, locale: Locale, d
   if (draftText.length <= 12000) {
     playgroundParams.set("draft", draftText);
   }
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 function buildHandoffRunHref(
@@ -4631,11 +4664,7 @@ function buildHandoffRunHref(
   const playgroundParams = buildPlaygroundEntryParams(config, locale);
   playgroundParams.set("handoff_id", handoffId);
   playgroundParams.set("media_kind", mediaKind);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 function buildPlaygroundEntryParams(config: ModelConfig, locale: Locale) {
