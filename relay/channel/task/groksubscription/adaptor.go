@@ -335,9 +335,12 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		if poll.Video == nil || strings.TrimSpace(poll.Video.URL) == "" {
 			return nil, fmt.Errorf("completed task response did not include a video url")
 		}
+		info.TaskID = strings.TrimSpace(poll.RequestID)
 		info.Status = string(model.TaskStatusSuccess)
 		info.Progress = taskcommon.ProgressComplete
 		info.Url = poll.Video.URL
+		info.Duration = poll.Video.Duration
+		info.Resolution = poll.Video.Resolution
 		if poll.Usage != nil {
 			info.CompletionTokens = poll.Usage.CompletionTokens
 			info.TotalTokens = poll.Usage.TotalTokens

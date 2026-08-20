@@ -691,7 +691,15 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		if task.FinishTime == 0 {
 			task.FinishTime = now
 		}
-		if strings.HasPrefix(taskResult.Url, "data:") {
+		if ch.Type == constant.ChannelTypeGrokSubscription {
+			task.PrivateData.GrokVideoResult = &model.GrokSubscriptionVideoResult{
+				URL:         strings.TrimSpace(taskResult.Url),
+				Duration:    taskResult.Duration,
+				Resolution:  strings.TrimSpace(taskResult.Resolution),
+				RefreshedAt: now,
+			}
+			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
+		} else if strings.HasPrefix(taskResult.Url, "data:") {
 			// data: URI (e.g. Vertex base64 encoded video) — keep in Data, not in ResultURL
 			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 		} else if returnSourceURL {
@@ -823,6 +831,9 @@ func redactVideoResponseForChannel(channelType int, body []byte) []byte {
 		return redactArchivedVideoResponseBody(redacted, false)
 	}
 	if channelType == constant.ChannelTypeModelAPISeedance {
+		return redactArchivedVideoResponseBody(redacted, true)
+	}
+	if channelType == constant.ChannelTypeGrokSubscription {
 		return redactArchivedVideoResponseBody(redacted, true)
 	}
 	return redacted

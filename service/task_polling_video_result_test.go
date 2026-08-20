@@ -115,6 +115,60 @@ func TestUpdateVideoSingleTaskGrokPollingPassesOriginChannelID(t *testing.T) {
 	require.Empty(t, adaptor.fetchKey, "Grok polling must not use the stored channel key as OAuth")
 }
 
+func TestUpdateVideoSingleTaskGrokVideoResultPersistsPrivateURLAndPublicProxy(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	sourceURL := "https://vidgen.x.ai/tmp/private.mp4?token=secret"
+	task := &model.Task{
+		TaskID:    "task_grok_private_video_result",
+		UserId:    901,
+		ChannelId: 11301,
+		Platform:  constant.TaskPlatform("113"),
+		Quota:     100,
+		Action:    constant.TaskActionGenerate,
+		Status:    model.TaskStatusSubmitted,
+		Progress:  "10%",
+		Data:      []byte(`{}`),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-grok-request",
+			BillingSource:  BillingSourceSubscription,
+			SubscriptionId: 33,
+			TokenId:        44,
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	ch := &model.Channel{Id: 11301, Type: constant.ChannelTypeGrokSubscription, Key: "stored-oauth-json", Status: common.ChannelStatusEnabled}
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: []byte(`{"request_id":"upstream-grok-request","status":"done","video":{"url":"https://vidgen.x.ai/tmp/private.mp4?token=secret","duration":6.5,"resolution":"1080p"}}`),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:     "upstream-grok-request",
+			Status:     model.TaskStatusSuccess,
+			Url:        sourceURL,
+			Progress:   "100%",
+			Duration:   6.5,
+			Resolution: "1080p",
+		},
+	}
+
+	err := updateVideoSingleTask(ctx, adaptor, ch, task.GetUpstreamTaskID(), map[string]*model.Task{task.GetUpstreamTaskID(): task})
+	require.NoError(t, err)
+
+	var stored model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&stored).Error)
+	require.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+	require.Equal(t, taskcommon.BuildProxyURL(task.TaskID), stored.PrivateData.ResultURL)
+	require.NotContains(t, stored.PrivateData.ResultURL, "vidgen.x.ai")
+	require.NotNil(t, stored.PrivateData.GrokVideoResult)
+	require.Equal(t, sourceURL, stored.PrivateData.GrokVideoResult.URL)
+	require.Equal(t, 6.5, stored.PrivateData.GrokVideoResult.Duration)
+	require.Equal(t, "1080p", stored.PrivateData.GrokVideoResult.Resolution)
+	require.NotContains(t, string(stored.Data), "vidgen.x.ai")
+	require.NotContains(t, string(stored.Data), "upstream-grok-request")
+	require.Empty(t, stored.PrivateData.Key)
+	require.Equal(t, 33, stored.PrivateData.SubscriptionId)
+	require.Equal(t, 44, stored.PrivateData.TokenId)
+}
+
 func TestUpdateVideoSingleTaskReturnSourceURLSkipsArchive(t *testing.T) {
 	truncate(t)
 	restoreArchiveHookForPollingTest(t)

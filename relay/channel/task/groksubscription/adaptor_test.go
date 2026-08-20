@@ -403,6 +403,26 @@ func TestConvertToOpenAIVideoUsesOnlyPublicTaskFields(t *testing.T) {
 	}
 }
 
+func TestParseTaskResultCarriesPrivateVideoMetadata(t *testing.T) {
+	body := []byte(`{
+		"request_id":"upstream-grok-request",
+		"status":"done",
+		"video":{"url":"https://vidgen.x.ai/private.mp4?token=secret","duration":6.5,"resolution":"1080p"},
+		"usage":{"completion_tokens":7,"total_tokens":9}
+	}`)
+
+	info, err := (&TaskAdaptor{}).ParseTaskResult(body)
+	if err != nil {
+		t.Fatalf("ParseTaskResult: %v", err)
+	}
+	if info.TaskID != "upstream-grok-request" {
+		t.Fatalf("TaskID = %q", info.TaskID)
+	}
+	if info.Url != "https://vidgen.x.ai/private.mp4?token=secret" || info.Duration != 6.5 || info.Resolution != "1080p" {
+		t.Fatalf("video metadata not carried: %+v", info)
+	}
+}
+
 func TestValidateRequestAndSetActionUsesLocalBadRequest(t *testing.T) {
 	c, info := newAdaptorTestContext(`{"model":"grok-imagine-video","action":"extend","prompt":"x"}`)
 	taskErr := (&TaskAdaptor{}).ValidateRequestAndSetAction(c, info)

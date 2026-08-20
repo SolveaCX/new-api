@@ -155,10 +155,11 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	Key            string       `json:"key,omitempty"`
-	UpstreamTaskID string       `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL      string       `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
-	VideoResult    *VideoResult `json:"video_result,omitempty"`
+	Key             string                       `json:"key,omitempty"`
+	UpstreamTaskID  string                       `json:"upstream_task_id,omitempty"` // 上游真实 task ID
+	ResultURL       string                       `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	VideoResult     *VideoResult                 `json:"video_result,omitempty"`
+	GrokVideoResult *GrokSubscriptionVideoResult `json:"grok_video_result,omitempty"`
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource     string              `json:"billing_source,omitempty"`  // "wallet" 或 "subscription"
 	SubscriptionId    int                 `json:"subscription_id,omitempty"` // 订阅 ID，用于订阅退款
@@ -168,6 +169,13 @@ type TaskPrivateData struct {
 	// 上游返回的 token 用量（轮询成功时落库），供两套查询接口统一回传 usage。
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
+type GrokSubscriptionVideoResult struct {
+	URL         string  `json:"url,omitempty"`
+	Duration    float64 `json:"duration,omitempty"`
+	Resolution  string  `json:"resolution,omitempty"`
+	RefreshedAt int64   `json:"refreshed_at,omitempty"`
 }
 
 type VideoResult struct {
@@ -567,7 +575,22 @@ func taskVideoResultEqual(a, b *VideoResult) bool {
 	return *a == *b
 }
 
+func grokVideoResultEqual(a, b *GrokSubscriptionVideoResult) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func cloneVideoResult(result *VideoResult) *VideoResult {
+	if result == nil {
+		return nil
+	}
+	clone := *result
+	return &clone
+}
+
+func CloneGrokSubscriptionVideoResult(result *GrokSubscriptionVideoResult) *GrokSubscriptionVideoResult {
 	if result == nil {
 		return nil
 	}
@@ -588,6 +611,39 @@ func (t *Task) Snapshot() taskSnapshot {
 		TotalTokens:      t.PrivateData.TotalTokens,
 		Data:             t.Data,
 	}
+}
+
+func UpdateGrokSubscriptionVideoResultCAS(taskID string, expectedUpstreamTaskID string, expectedPrior *GrokSubscriptionVideoResult, next *GrokSubscriptionVideoResult, now int64) (bool, error) {
+	updated := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var current Task
+		if err := tx.Where("task_id = ?", taskID).First(&current).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		if current.Status != TaskStatusSuccess ||
+			current.Platform != constant.TaskPlatform("113") ||
+			current.PrivateData.UpstreamTaskID != expectedUpstreamTaskID ||
+			!grokVideoResultEqual(current.PrivateData.GrokVideoResult, expectedPrior) {
+			return nil
+		}
+		privateData := current.PrivateData
+		privateData.GrokVideoResult = CloneGrokSubscriptionVideoResult(next)
+		result := tx.Model(&Task{}).
+			Where("id = ?", current.ID).
+			Updates(map[string]any{
+				"private_data": privateData,
+				"updated_at":   now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		updated = result.RowsAffected == 1
+		return nil
+	})
+	return updated, err
 }
 
 func (Task *Task) Update() error {
