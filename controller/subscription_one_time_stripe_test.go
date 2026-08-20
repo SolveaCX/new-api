@@ -878,6 +878,54 @@ func TestOneTimePlanWebhookRequiresCheckoutMetadata(t *testing.T) {
 	require.Contains(t, err.Error(), "metadata change_intent_id")
 }
 
+func TestOneTimePlanWebhookRejectsInvalidCheckoutAuthorityMetadata(t *testing.T) {
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.ProviderSessionId = "cs_expected"
+	order.CheckoutRevision = 2
+
+	testCases := []struct {
+		name   string
+		mutate func(map[string]interface{})
+		want   string
+	}{
+		{
+			name: "stale revision",
+			mutate: func(metadata map[string]interface{}) {
+				metadata["checkout_revision"] = "1"
+				metadata["discount_selection"] = string(service.StripeCheckoutDiscountManual)
+			},
+			want: "checkout revision",
+		},
+		{
+			name: "invalid selection",
+			mutate: func(metadata map[string]interface{}) {
+				metadata["checkout_revision"] = "2"
+				metadata["discount_selection"] = "affiliate"
+			},
+			want: "discount selection",
+		},
+		{
+			name: "missing selection",
+			mutate: func(metadata map[string]interface{}) {
+				metadata["checkout_revision"] = "2"
+			},
+			want: "discount selection",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			object := oneTimeStripePaidSessionObject(order)
+			metadata := object["metadata"].(map[string]interface{})
+			tc.mutate(metadata)
+
+			err := validateOneTimePlanStripeSessionEvent(stripe.Event{Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order)
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 func TestOneTimePlanWebhookRequiresRecallMetadataForDiscountedOrder(t *testing.T) {
 	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
 	order.ProviderSessionId = "cs_expected"
@@ -942,6 +990,54 @@ func TestOneTimePlanPaidWebhookDoesNotFulfillRecallMetadataMismatch(t *testing.T
 	require.Error(t, err)
 	require.False(t, isRetryableStripeWebhookProcessingError(err))
 	require.Zero(t, fulfillCalls)
+}
+
+func TestOneTimePlanPaidWebhookManualSelectionSkipsStaleRecallAttribution(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	insertStripeFulfillmentUser(t, 507)
+	insertStripeFulfillmentSubscriptionPlan(t, 907)
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.UserId = 507
+	order.PlanId = 907
+	order.TradeNo = "sub_one_time_manual_over_recall"
+	order.ProviderSessionId = "cs_one_time_manual_over_recall"
+	order.CheckoutRevision = 2
+	order.RecallCampaignId = 41
+	order.RecallRecipientId = 82
+	order.RecallPromotionCodeId = "promo_stale_recall"
+	order.RecallDiscountAmountMinor = 20
+	require.NoError(t, model.DB.Create(order).Error)
+	originalFulfill := fulfillOneTimeStripeSubscriptionPurchase
+	t.Cleanup(func() { fulfillOneTimeStripeSubscriptionPurchase = originalFulfill })
+	fulfillCalls := 0
+	fulfillOneTimeStripeSubscriptionPurchase = func(ctx context.Context, tradeNo string, providerPayload string) (*service.PurchaseSubscriptionResult, error) {
+		fulfillCalls++
+		return &service.PurchaseSubscriptionResult{}, nil
+	}
+	fetches := 0
+	runtime := service.GetRecallRuntime()
+	originalAttribution := runtime.Attribution
+	runtime.Attribution = service.NewRecallAttributionService(&oneTimeStripeRecallFakeClient{
+		getCheckoutSessionFn: func(context.Context, string, ...string) (*stripe.CheckoutSession, error) {
+			fetches++
+			return nil, errors.New("manual selection must not fetch recall session")
+		},
+	})
+	t.Cleanup(func() { runtime.Attribution = originalAttribution })
+	object := oneTimeStripePaidSessionObject(order)
+	metadata := object["metadata"].(map[string]interface{})
+	metadata["checkout_revision"] = "2"
+	metadata["discount_selection"] = string(service.StripeCheckoutDiscountManual)
+	delete(metadata, "recall_campaign_id")
+	delete(metadata, "recall_recipient_id")
+	delete(metadata, "recall_promotion_code_id")
+	delete(metadata, "recall_discount_amount_minor")
+
+	err := handleStripeOneTimePlanPaid(context.Background(), stripe.Event{ID: "evt_one_time_manual_over_recall", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order.TradeNo, "127.0.0.1")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, fulfillCalls)
+	require.Zero(t, fetches)
 }
 
 func TestOneTimePlanWebhookReplayFulfillsOnce(t *testing.T) {
@@ -1238,7 +1334,11 @@ func TestOneTimePlanPaidWebhookPromotesPaidCandidateBeforeActivate(t *testing.T)
 	require.NoError(t, model.DB.Create(order).Error)
 	seedStripeCheckoutRevisionPairForWebhook(t, model.StripeCheckoutOrderSubscription, order.TradeNo, order.UserId, "cs_one_time_old", "cs_one_time_candidate_paid", 2)
 	order.ProviderSessionId = "cs_one_time_candidate_paid"
-	event := stripe.Event{ID: "evt_one_time_paid_candidate", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: oneTimeStripePaidSessionObject(order)}}
+	order.CheckoutRevision = 2
+	object := oneTimeStripePaidSessionObject(order)
+	object["metadata"].(map[string]interface{})["checkout_revision"] = "2"
+	object["metadata"].(map[string]interface{})["discount_selection"] = string(service.StripeCheckoutDiscountManual)
+	event := stripe.Event{ID: "evt_one_time_paid_candidate", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}
 
 	require.NoError(t, handleStripeOneTimePlanPaid(context.Background(), event, order.TradeNo, "127.0.0.1"))
 	stored := model.GetSubscriptionOrderByTradeNo(order.TradeNo)

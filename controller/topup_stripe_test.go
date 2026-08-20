@@ -1373,6 +1373,69 @@ func TestValidateStripeTopUpPaymentContractAcceptsCorrectedFailureStatus(t *test
 	require.False(t, isRetryableStripeWebhookProcessingError(err))
 }
 
+func TestValidateStripeTopUpPaymentContractRejectsStaleCheckoutAuthorityMetadata(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalContractFromEvent := stripeCheckoutPaymentContractFromEvent
+	t.Cleanup(func() {
+		stripeCheckoutPaymentContractFromEvent = originalContractFromEvent
+	})
+
+	topUp := &model.TopUp{
+		UserId:             910,
+		Amount:             20,
+		Money:              20,
+		PaymentCurrency:    "USD",
+		PaymentPriceId:     "price_20",
+		PaymentAmountMinor: 2000,
+		TradeNo:            "ref_stripe_stale_authority",
+		GatewayTradeNo:     "cs_stale_authority_active",
+		CheckoutRevision:   2,
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		CreateTime:         time.Now().Unix(),
+		Status:             common.TopUpStatusPending,
+	}
+	require.NoError(t, model.DB.Create(topUp).Error)
+	activeSessionID := "cs_stale_authority_active"
+	require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{
+		OrderType:         model.StripeCheckoutOrderTopUp,
+		TradeNo:           topUp.TradeNo,
+		Revision:          2,
+		UserId:            topUp.UserId,
+		RequestId:         "active:" + topUp.TradeNo,
+		SelectionDigest:   "sha256:active:" + topUp.TradeNo,
+		State:             model.StripeCheckoutRevisionStateActive,
+		DiscountSource:    string(service.StripeCheckoutDiscountManual),
+		ProviderSessionId: &activeSessionID,
+	}).Error)
+	stripeCheckoutPaymentContractFromEvent = func(event stripe.Event) (stripeCheckoutPaymentContract, error) {
+		return stripeCheckoutPaymentContract{
+			SessionId: "cs_stale_authority_active",
+			PriceId:   "price_20",
+			Quantity:  1,
+			Currency:  "USD",
+		}, nil
+	}
+	event := stripe.Event{
+		Type: stripe.EventTypeCheckoutSessionCompleted,
+		Data: &stripe.EventData{Object: map[string]interface{}{
+			"id":                  "cs_stale_authority_active",
+			"client_reference_id": topUp.TradeNo,
+			"metadata": map[string]interface{}{
+				"trade_no":           topUp.TradeNo,
+				"checkout_revision":  "1",
+				"discount_selection": string(service.StripeCheckoutDiscountManual),
+			},
+		}},
+	}
+
+	err := validateStripeTopUpPaymentContract(event, topUp.TradeNo)
+
+	require.Error(t, err)
+	require.False(t, isRetryableStripeWebhookProcessingError(err))
+	require.Contains(t, err.Error(), "checkout revision")
+}
+
 func TestSessionCompletedFulfillsNoPaymentRequiredTopUpOnce(t *testing.T) {
 	setupStripeFulfillmentTestDB(t)
 	originalContractFromEvent := stripeCheckoutPaymentContractFromEvent
@@ -1584,6 +1647,11 @@ func TestStripeWebhookTopUpRecallAttributionAfterFulfillmentAndReplayRepair(t *t
 	runtime.Attribution = service.NewRecallAttributionService(client)
 	t.Cleanup(func() { runtime.Attribution = originalAttribution })
 	event := stripeRecallWebhookEvent("evt_webhook_topup", "cs_webhook_topup", "trade_webhook_topup", 900, 100, recipient, true)
+	event.Data.Object["metadata"] = map[string]interface{}{
+		"trade_no":           topUp.TradeNo,
+		"checkout_revision":  "0",
+		"discount_selection": string(service.StripeCheckoutDiscountRecall),
+	}
 
 	require.Error(t, fulfillOrder(context.Background(), event, topUp.TradeNo, "cus_webhook", "127.0.0.1"))
 	require.Zero(t, fetches, "attribution must not run when authoritative fulfillment fails")
@@ -1697,6 +1765,11 @@ func TestStripeWebhookTopUpPromotesPaidCandidateBeforeActivate(t *testing.T) {
 	}
 	t.Cleanup(func() { stripeCheckoutPaymentContractFromEvent = originalContractFromEvent })
 	event := stripeRecallWebhookEvent("evt_webhook_paid_candidate_topup", "cs_topup_candidate_paid", topUp.TradeNo, 1000, 0, recipient, false)
+	event.Data.Object["metadata"] = map[string]interface{}{
+		"trade_no":           topUp.TradeNo,
+		"checkout_revision":  "2",
+		"discount_selection": string(service.StripeCheckoutDiscountManual),
+	}
 
 	require.NoError(t, fulfillOrder(context.Background(), event, topUp.TradeNo, "cus_webhook", "127.0.0.1"))
 	storedTopUp := model.GetTopUpByTradeNo(topUp.TradeNo)
@@ -1796,8 +1869,8 @@ func stripeRecallWebhookEvent(eventID string, sessionID string, tradeNo string, 
 	raw := fmt.Sprintf(`{
 		"id":"%s","client_reference_id":"%s","amount_total":%d,"currency":"usd",
 		"discounts":%s,"total_details":{"amount_discount":%d},
-		"metadata":{"recall_campaign_id":"%d","recall_recipient_id":"%d"}
-	}`, sessionID, tradeNo, amountTotal, discounts, discountAmount, recipient.CampaignId, recipient.Id)
+		"metadata":{"trade_no":"%s","checkout_revision":"0","discount_selection":"%s","recall_campaign_id":"%d","recall_recipient_id":"%d"}
+	}`, sessionID, tradeNo, amountTotal, discounts, discountAmount, tradeNo, service.StripeCheckoutDiscountRecall, recipient.CampaignId, recipient.Id)
 	return stripe.Event{
 		ID: eventID,
 		Data: &stripe.EventData{

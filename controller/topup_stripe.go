@@ -1230,6 +1230,9 @@ func attributeRecallAfterStripeFulfillment(ctx context.Context, event stripe.Eve
 }
 
 func attributeRecallAfterStripeFulfillmentResult(ctx context.Context, event stripe.Event, tradeNo string, userID int) error {
+	if stripeCheckoutPaidDiscountSelectionSource(event) != service.StripeCheckoutDiscountRecall {
+		return nil
+	}
 	runtime := service.GetRecallRuntime()
 	if runtime == nil || runtime.Attribution == nil {
 		return nil
@@ -1418,6 +1421,10 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 	if err := validateOneTimePlanStripeSessionIdentity(event, order); err != nil {
 		return err
 	}
+	if err := validateStripeCheckoutAuthorityMetadata(event, order.CheckoutRevision, "Stripe one-time checkout"); err != nil {
+		return err
+	}
+	paidDiscountSource := stripeCheckoutPaidDiscountSelectionSource(event)
 	if err := validateOneTimePlanRecallAttributionTuple(order); err != nil {
 		return err
 	}
@@ -1476,11 +1483,14 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 	}
 	for _, item := range recallMetadata {
 		actual := strings.TrimSpace(stripeEventObjectValue(event, "metadata", item.key))
-		if order.RecallDiscountAmountMinor <= 0 {
+		if paidDiscountSource != service.StripeCheckoutDiscountRecall {
 			if actual != "" {
 				return fmt.Errorf("Stripe one-time checkout metadata %s is unexpected", item.key)
 			}
 			continue
+		}
+		if order.RecallDiscountAmountMinor <= 0 {
+			return fmt.Errorf("Stripe one-time checkout metadata %s is unexpected", item.key)
 		}
 		if actual == "" {
 			return fmt.Errorf("Stripe one-time checkout metadata %s is missing", item.key)
@@ -2032,6 +2042,9 @@ func validateStripeTopUpPaymentContract(event stripe.Event, referenceId string) 
 	if !modelPurchaseCanBeCorrectedToStripeSuccess(topUp.Status) {
 		return permanentStripeWebhookProcessingError(model.ErrTopUpStatusInvalid)
 	}
+	if err := validateStripeCheckoutAuthorityMetadata(event, topUp.CheckoutRevision, "Stripe top-up checkout"); err != nil {
+		return permanentStripeWebhookProcessingError(err)
+	}
 
 	expectedPriceId := strings.TrimSpace(topUp.PaymentPriceId)
 	if expectedPriceId == "" {
@@ -2062,6 +2075,38 @@ func validateStripeTopUpPaymentContract(event stripe.Event, referenceId string) 
 	// Stripe amounts independently from our local top-up package value. The trusted
 	// contract is the Checkout session's price id and quantity.
 	return nil
+}
+
+func validateStripeCheckoutAuthorityMetadata(event stripe.Event, expectedRevision int64, label string) error {
+	actualRevision := strings.TrimSpace(stripeEventObjectValue(event, "metadata", "checkout_revision"))
+	actualSource := strings.TrimSpace(stripeEventObjectValue(event, "metadata", "discount_selection"))
+	if actualRevision == "" && actualSource == "" && expectedRevision == 0 {
+		return nil
+	}
+	if actualRevision == "" {
+		return fmt.Errorf("%s metadata checkout_revision is missing", label)
+	}
+	revision, err := strconv.ParseInt(actualRevision, 10, 64)
+	if err != nil || revision < 0 {
+		return fmt.Errorf("%s metadata checkout revision is invalid", label)
+	}
+	if revision != expectedRevision {
+		return fmt.Errorf("%s metadata checkout revision mismatch: expected %d got %d", label, expectedRevision, revision)
+	}
+	if actualSource == "" {
+		return fmt.Errorf("%s metadata discount selection is missing", label)
+	}
+	source := stripeCheckoutPaidDiscountSelectionSource(event)
+	switch source {
+	case service.StripeCheckoutDiscountNone, service.StripeCheckoutDiscountInvitation, service.StripeCheckoutDiscountRecall, service.StripeCheckoutDiscountManual:
+		return nil
+	default:
+		return fmt.Errorf("%s metadata discount selection is invalid: %s", label, actualSource)
+	}
+}
+
+func stripeCheckoutPaidDiscountSelectionSource(event stripe.Event) service.StripeCheckoutDiscountSource {
+	return service.StripeCheckoutDiscountSource(strings.ToLower(strings.TrimSpace(stripeEventObjectValue(event, "metadata", "discount_selection"))))
 }
 
 func reconcileStripeCheckoutWinnerFromEvent(ctx context.Context, kind service.StripeCheckoutPurchaseKind, referenceId string, sessionID string) bool {

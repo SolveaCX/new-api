@@ -861,7 +861,12 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 			return err
 		}
 		if strings.TrimSpace(order.SubscriptionDiscountReservationKey) != "" {
-			if _, err := model.CommitSubscriptionDiscountTx(tx, order.SubscriptionDiscountReservationKey); err != nil {
+			if shouldCommitRecurringInvoiceInvitationDiscount(order, facts) {
+				_, err = model.CommitSubscriptionDiscountTx(tx, order.SubscriptionDiscountReservationKey)
+			} else {
+				_, err = model.ReleaseSubscriptionDiscountTx(tx, order.SubscriptionDiscountReservationKey)
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -888,6 +893,28 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 
 func (f paidInvoiceFacts) hasCompletePurchaseMetadata() bool {
 	return strings.TrimSpace(f.TradeNo) != "" && f.UserID > 0 && f.PlanID > 0 && f.ContractID > 0 && f.ChangeIntentID > 0
+}
+
+func shouldCommitRecurringInvoiceInvitationDiscount(order *model.SubscriptionOrder, facts paidInvoiceFacts) bool {
+	if order == nil || strings.TrimSpace(order.SubscriptionDiscountReservationKey) == "" {
+		return false
+	}
+	selection := strings.TrimSpace(facts.DiscountSelection)
+	if selection != "" {
+		return selection == string(StripeCheckoutDiscountInvitation)
+	}
+	return facts.CheckoutRevision == 0 && strings.TrimSpace(order.DiscountKind) == SubscriptionDiscountKindInvitation
+}
+
+func shouldAttributeRecurringInvoiceRecall(order *model.SubscriptionOrder, facts paidInvoiceFacts) bool {
+	if order == nil || strings.TrimSpace(order.DiscountKind) != SubscriptionDiscountKindRecall {
+		return false
+	}
+	selection := strings.TrimSpace(facts.DiscountSelection)
+	if selection != "" {
+		return selection == string(StripeCheckoutDiscountRecall)
+	}
+	return facts.CheckoutRevision == 0
 }
 
 func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
@@ -980,6 +1007,8 @@ type paidInvoiceFacts struct {
 	PlanID             int
 	ContractID         int64
 	ChangeIntentID     int64
+	CheckoutRevision   int64
+	DiscountSelection  string
 	AmountPaid         int64
 	Currency           string
 	Livemode           bool
@@ -1058,6 +1087,14 @@ func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (pa
 			return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata change_intent_id is invalid"))
 		}
 	}
+	checkoutRevision := int64(0)
+	if rawCheckoutRevision := strings.TrimSpace(metadata["checkout_revision"]); rawCheckoutRevision != "" {
+		checkoutRevision, err = strconv.ParseInt(rawCheckoutRevision, 10, 64)
+		if err != nil || checkoutRevision < 0 {
+			return paidInvoiceFacts{}, PermanentPaidInvoiceError(errors.New("Stripe subscription metadata checkout_revision is invalid"))
+		}
+	}
+	discountSelection := strings.TrimSpace(metadata["discount_selection"])
 	return paidInvoiceFacts{
 		InvoiceID:          commonFacts.InvoiceID,
 		SubscriptionID:     commonFacts.SubscriptionID,
@@ -1069,6 +1106,8 @@ func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (pa
 		PlanID:             planID,
 		ContractID:         contractID,
 		ChangeIntentID:     intentID,
+		CheckoutRevision:   checkoutRevision,
+		DiscountSelection:  discountSelection,
 		AmountPaid:         commonFacts.Amount,
 		Currency:           commonFacts.Currency,
 		Livemode:           commonFacts.Livemode,
@@ -1354,6 +1393,12 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 	if order.UserId != facts.UserID || order.PlanId != facts.PlanID || order.ChangeIntentId != 0 && order.ChangeIntentId != facts.ChangeIntentID {
 		return errors.New("local order ownership mismatch")
 	}
+	if facts.CheckoutRevision != order.CheckoutRevision {
+		return errors.New("Stripe invoice checkout revision mismatch")
+	}
+	if err := validateStripeCheckoutDiscountSourceMetadata(facts.DiscountSelection, order.CheckoutRevision); err != nil {
+		return err
+	}
 	if order.PaymentProvider != model.PaymentProviderStripe {
 		return errors.New("local order payment provider mismatch")
 	}
@@ -1410,8 +1455,24 @@ func validateLocalInvoiceFacts(facts paidInvoiceFacts, order *model.Subscription
 	return nil
 }
 
+func validateStripeCheckoutDiscountSourceMetadata(source string, checkoutRevision int64) error {
+	source = strings.ToLower(strings.TrimSpace(source))
+	if source == "" {
+		if checkoutRevision == 0 {
+			return nil
+		}
+		return errors.New("Stripe invoice discount selection is required")
+	}
+	switch StripeCheckoutDiscountSource(source) {
+	case StripeCheckoutDiscountNone, StripeCheckoutDiscountInvitation, StripeCheckoutDiscountRecall, StripeCheckoutDiscountManual:
+		return nil
+	default:
+		return fmt.Errorf("Stripe invoice discount selection is invalid: %s", source)
+	}
+}
+
 func recordRecurringInvoiceRecallConversionTx(tx *gorm.DB, order *model.SubscriptionOrder, facts paidInvoiceFacts, invoiceID string) error {
-	if order == nil || strings.TrimSpace(order.DiscountKind) != SubscriptionDiscountKindRecall ||
+	if order == nil || !shouldAttributeRecurringInvoiceRecall(order, facts) ||
 		order.RecallCampaignId <= 0 || order.RecallRecipientId <= 0 {
 		return nil
 	}
