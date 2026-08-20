@@ -177,17 +177,61 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
   video: [
     {
-      // Real Seedance 2.5 output, with the prompt and reference image that
-      // produced it -- the workbench is a request blueprint, so the sample has
-      // to be a request that actually ran.
+      // Real Seedance output, each paired with the prompt and reference that
+      // produced it -- the workbench is a request blueprint, so every sample
+      // has to be a request that actually ran.
       poster: "/assets/model-examples/seedance-f1-wet-track.png",
       video: "/assets/model-examples/seedance-f1-wet-track.mp4",
       label: "Wet-track chase shot",
       prompt:
         "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
-      fields: { ratio: "16:9", resolution: "720p", duration: 6, generate_audio: true },
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
       references: [
         { kind: "image", name: "f1-wet-track-reference.png", url: "/assets/model-examples/seedance-f1-reference.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-showcase/coastal-landmark.png",
+      video: "/assets/model-showcase/coastal-landmark.mp4",
+      label: "Cinematic landscape",
+      prompt:
+        "Aerial approach along a clifftop coast road at dusk, lighthouse on the headland, heavy surf breaking against layered rock, gulls crossing frame, soft overcast light, muted blue and ochre palette, slow drifting camera.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "coastal-reference.png", url: "/assets/model-showcase/coastal-landmark.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-showcase/creature-closeup.png",
+      video: "/assets/model-showcase/creature-closeup.mp4",
+      label: "Character and creature",
+      prompt:
+        "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "creature-reference.png", url: "/assets/model-showcase/creature-closeup.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-showcase/romance-scene.png",
+      video: "/assets/model-showcase/romance-scene.mp4",
+      label: "Character performance",
+      prompt:
+        "A couple sitting close on a rain-streaked cafe window seat at dusk, warm interior light, she laughs and rests her head on his shoulder, shallow depth of field, film grain, intimate handheld framing, soft ambient room tone.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "cafe-reference.png", url: "/assets/model-showcase/romance-scene.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-showcase/ugc-creator.png",
+      video: "/assets/model-showcase/ugc-creator.mp4",
+      label: "UGC and social",
+      prompt:
+        "Handheld selfie shot: a young creator in a bright apartment holds the camera at arm's length, talking to it with natural energy, gestures toward a laptop on the desk beside her, warm daylight from a window, slight camera shake, unpolished authentic UGC look.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "creator-reference.png", url: "/assets/model-showcase/ugc-creator.png" },
       ],
     },
   ],
@@ -248,8 +292,101 @@ const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   },
 ];
 
+// Version comparison: what changed from the previous generation. A reader who
+// already uses 2.0 needs this to decide whether to move, and it is the one thing
+// a general catalog page cannot tell them.
+//
+// Rows are capability facts, not benchmarks -- the 2.0 family is not in the
+// public pricing catalog, so nothing here is derived from live data and none of
+// it should be presented as measured.
+type VersionCompareRow = {
+  label: ModelLandingKey;
+  previous: ModelLandingKey;
+  current: ModelLandingKey;
+  /** Set when the newer generation is the clear improvement on this row. */
+  improved?: boolean;
+};
+
+const SEEDANCE_VERSION_ROWS: readonly VersionCompareRow[] = [
+  {
+    label: "Reference inputs",
+    previous: "Images only",
+    current: "Images, video, and audio — up to 50 per request",
+    improved: true,
+  },
+  {
+    label: "Frame control",
+    previous: "First frame",
+    current: "First frame and first/last frame",
+    improved: true,
+  },
+  {
+    label: "Shot consistency",
+    previous: "Single shot",
+    current: "Multi-shot with character continuity",
+    improved: true,
+  },
+  {
+    label: "Audio",
+    previous: "Optional generated audio",
+    current: "Native audio, multilingual",
+    improved: true,
+  },
+  {
+    label: "Editing",
+    previous: "Generate only",
+    current: "Generate, edit, and extend existing video",
+    improved: true,
+  },
+];
+
+function ModelVersionCompare(props: {
+  modelName: string;
+  previousName: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  return (
+    <RevealSection
+      id="versions"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Versions")}
+          title={props.t("{{model}} compared with {{previous}}", {
+            model: props.modelName,
+            previous: props.previousName,
+          })}
+          description={props.t("What changed from the previous generation, so you can tell whether it is worth switching.")}
+        />
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 bg-[#fbfcff] text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="px-4 py-3">{props.t("Capability")}</div>
+            <div className="px-4 py-3">{props.previousName}</div>
+            <div className="px-4 py-3 text-blue-700 dark:text-blue-300">{props.modelName}</div>
+          </div>
+          {SEEDANCE_VERSION_ROWS.map((row) => (
+            <div
+              key={row.label}
+              className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 text-[13px] last:border-b-0 dark:border-white/10"
+            >
+              <div className="px-4 py-3.5 font-semibold text-[#20222a] dark:text-white/88">{props.t(row.label)}</div>
+              <div className="px-4 py-3.5 text-muted-foreground">{props.t(row.previous)}</div>
+              <div className="flex items-start gap-2 px-4 py-3.5 font-medium text-[#20222a] dark:text-white/88">
+                {row.improved ? <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
+                <span>{props.t(row.current)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
 function ModelShowcase(props: {
   modelName: string;
+  onUseScene: (scene: ShowcaseScene) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const [active, setActive] = useState(0);
@@ -270,16 +407,36 @@ function ModelShowcase(props: {
         <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)] lg:items-stretch">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
             <div className="relative aspect-video">
-              <AutoplayVideo
+              <video
+                key={scene.id}
                 className="h-full w-full object-cover"
+                autoPlay
+                loop
+                muted
+                playsInline
                 poster={`/assets/model-showcase/${scene.id}.png`}
+                preload="metadata"
                 src={`/assets/model-showcase/${scene.id}.mp4`}
-                t={props.t}
               />
             </div>
-            <p className="border-t border-white/10 px-4 py-3 font-mono text-[11px] leading-5 text-white/70">
-              {scene.prompt}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3.5">
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-white">{props.t(scene.label)}</div>
+                <div className="mt-0.5 text-[11px] text-white/54">
+                  {props.t("Generated with {{model}} — load this prompt into the playground and edit it", {
+                    model: props.modelName,
+                  })}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => props.onUseScene(scene)}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white px-3.5 text-[12px] font-semibold text-[#10131a] transition hover:bg-white/88"
+              >
+                <WandSparkles className="size-3.5" />
+                {props.t("Make one like this")}
+              </button>
+            </div>
           </div>
           {/* Rail height follows the player so the two columns stay level
               whatever the scene count. */}
@@ -444,6 +601,20 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     setSelectedExample(0);
   };
 
+  // "Make one like this" from the showcase: the scene's prompt goes into the
+  // editor and the page scrolls there, so the click visibly lands somewhere.
+  // Reference assets are cleared -- they belonged to whichever workbench example
+  // was selected, not to this scene.
+  const onUseScene = (scene: ShowcaseScene) => {
+    setPrompt(scene.prompt);
+    setReferenceImages((current) => current.filter((item) => !item.fromExample));
+    const workbench = document.getElementById("workbench");
+    if (!workbench) return;
+    const scrollMargin = Number.parseFloat(window.getComputedStyle(workbench).scrollMarginTop || "");
+    const top = workbench.getBoundingClientRect().top + window.scrollY;
+    animateScrollToTop(window, Number.isFinite(scrollMargin) ? top - scrollMargin : top);
+  };
+
   // Picking an example replays the whole request that produced it: prompt,
   // parameters, and reference assets. Files the visitor uploaded themselves are
   // kept; only the previous example's assets are swapped out.
@@ -473,6 +644,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       onReferenceImagesChange={setReferenceImages}
       selectedExample={selectedExample}
       onExampleSelect={onExampleSelect}
+      onUseScene={onUseScene}
       onReset={onReset}
       onRunClick={onRunClick}
       primaryLiveModel={primaryLiveModel}
@@ -497,6 +669,7 @@ function FlatkeyModelDetailPage(props: {
   onReferenceImagesChange: (images: ReferenceImageDraft[]) => void;
   selectedExample: number;
   onExampleSelect: (index: number) => void;
+  onUseScene: (scene: ShowcaseScene) => void;
   onReset: () => void;
   onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
   primaryLiveModel: PricingModel | null;
@@ -788,6 +961,16 @@ function FlatkeyModelDetailPage(props: {
         />
 
 
+        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
+
+        {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
+          <ModelVersionCompare
+            modelName={props.config.displayName}
+            previousName="Seedance 2.0"
+            t={props.t}
+          />
+        ) : null}
+
         <ModelExamplesAndRelated
           config={props.config}
           kind={pageKind}
@@ -796,8 +979,6 @@ function FlatkeyModelDetailPage(props: {
           relatedTitle={relatedModels.title}
           t={props.t}
         />
-
-        <ModelShowcase modelName={props.config.displayName} t={props.t} />
 
         <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12">
           <div className="mx-auto max-w-7xl">
