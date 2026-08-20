@@ -47,9 +47,10 @@ type StripeSubscriptionCheckoutInput struct {
 }
 
 type StripeSubscriptionCheckoutSession struct {
-	ID           string
-	URL          string
-	ClientSecret string
+	ID                string
+	URL               string
+	ClientSecret      string
+	DiscountSelection StripeCheckoutDiscountSelection
 }
 
 type StripeCheckoutPresentation struct {
@@ -173,6 +174,28 @@ func ReplaceStripeCheckoutSessionAccessorsForTest(
 	}
 }
 
+func ReplaceStripeSubscriptionCheckoutCreatorsForTest(
+	couponCreator func(context.Context, *stripe.CouponParams) (*stripe.Coupon, error),
+	sessionCreator func(context.Context, *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error),
+) func() {
+	originalCouponCreator := stripeSubscriptionCouponCreator
+	originalSessionCreator := stripeSubscriptionSessionCreator
+	if couponCreator != nil {
+		stripeSubscriptionCouponCreator = couponCreator
+	}
+	if sessionCreator != nil {
+		stripeSubscriptionSessionCreator = sessionCreator
+	}
+	return func() {
+		stripeSubscriptionCouponCreator = originalCouponCreator
+		stripeSubscriptionSessionCreator = originalSessionCreator
+	}
+}
+
+func CreateStripeSubscriptionCheckout(ctx context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+	return createStripeSubscriptionCheckout(ctx, input)
+}
+
 func getStripeInvoiceForReconcile(ctx context.Context, invoiceID string) (*stripe.Invoice, error) {
 	if err := ensureStripeSecretForSubscription(); err != nil {
 		return nil, err
@@ -241,7 +264,7 @@ func getStripeSubscriptionForReconcile(ctx context.Context, subscriptionID strin
 	return stripesubscription.Get(strings.TrimSpace(subscriptionID), params)
 }
 
-func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscriptionCheckoutInput) (*StripeSubscriptionCheckoutSession, error) {
+func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscriptionCheckoutInput) (result *StripeSubscriptionCheckoutSession, resultErr error) {
 	if err := ensureStripeSecretForSubscription(); err != nil {
 		return nil, err
 	}
@@ -282,6 +305,42 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	selection, err := ValidateStripeCheckoutDiscountSelection(selection)
 	if err != nil {
 		return nil, err
+	}
+	var initialRevision *model.StripeCheckoutRevision
+	var initialSessionID string
+	initialActivated := false
+	if setting.StripePromotionCodeEnabled && input.Presentation.UsesClientSecret() && input.CheckoutRevision == 0 {
+		digest, digestErr := StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+strings.TrimSpace(input.TradeNo), 1, selection)
+		if digestErr != nil {
+			return nil, digestErr
+		}
+		prepared, replay, prepareErr := model.PrepareStripeCheckoutRevision(model.StripeCheckoutRevisionPrepare{
+			OrderType: model.StripeCheckoutOrderSubscription, TradeNo: input.TradeNo, UserID: input.UserID, ExpectedRevision: 0,
+			RequestID: "initial:recurring_subscription:" + strings.TrimSpace(input.TradeNo), SelectionDigest: digest,
+			DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
+			PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
+			Currency: input.Currency, SubtotalMinor: input.SubtotalMinor,
+		})
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		if prepared.Revision != 1 || replay {
+			return nil, model.ErrStripeCheckoutRevisionConflict
+		}
+		initialRevision = prepared
+		input.CheckoutRevision = prepared.Revision
+		defer func() {
+			if resultErr == nil || initialActivated || initialRevision == nil {
+				return
+			}
+			if initialSessionID != "" {
+				expired, expireErr := stripeCheckoutSessionExpirer(ctx, initialSessionID)
+				if expireErr != nil || (expired != nil && string(expired.Status) != "expired" && string(expired.Status) != "complete") {
+					return
+				}
+			}
+			_ = model.AbandonStripeCheckoutRevision(initialRevision.Id)
+		}()
 	}
 	metadata := stripeSubscriptionAuthoritativeMetadata(input.TradeNo, input.UserID, input.PlanID, input.ContractID, input.ChangeIntentID)
 	metadata["checkout_revision"] = strconv.FormatInt(input.CheckoutRevision, 10)
@@ -348,11 +407,79 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	} else if strings.TrimSpace(created.URL) == "" {
 		return nil, errors.New("Stripe checkout session missing url")
 	}
+	initialSessionID = strings.TrimSpace(created.ID)
+	if initialRevision != nil {
+		stored, recordErr := model.RecordStripeCheckoutCandidate(model.StripeCheckoutRevisionCandidate{
+			RevisionID: initialRevision.Id, ProviderSessionID: &initialSessionID, ProviderSessionURL: strings.TrimSpace(created.URL),
+		})
+		if recordErr != nil {
+			return nil, recordErr
+		}
+		if _, activateErr := model.ActivateStripeCheckoutRevision(model.StripeCheckoutRevisionActivation{
+			RevisionID: stored.Id, ExpectedRevision: 0, OldProviderSessionID: "",
+		}); activateErr != nil {
+			return nil, activateErr
+		}
+		initialActivated = true
+	}
 	return &StripeSubscriptionCheckoutSession{
-		ID:           strings.TrimSpace(created.ID),
-		URL:          strings.TrimSpace(created.URL),
-		ClientSecret: strings.TrimSpace(created.ClientSecret),
+		ID:                strings.TrimSpace(created.ID),
+		URL:               strings.TrimSpace(created.URL),
+		ClientSecret:      strings.TrimSpace(created.ClientSecret),
+		DiscountSelection: selection,
 	}, nil
+}
+
+type StripeSubscriptionCheckoutFacts struct {
+	PriceID       string
+	Currency      string
+	SubtotalMinor int64
+}
+
+func StripeSubscriptionCheckoutFactsFromOrder(order *model.SubscriptionOrder) (StripeSubscriptionCheckoutFacts, error) {
+	if order == nil {
+		return StripeSubscriptionCheckoutFacts{}, errors.New("Stripe subscription order is missing")
+	}
+	snapshot, err := recurringPlanSnapshotFromOrder(order)
+	if err != nil || !snapshot.Found || strings.TrimSpace(snapshot.Snapshot.StripePriceID) == "" {
+		return StripeSubscriptionCheckoutFacts{}, errors.New("Stripe checkout order snapshot is invalid")
+	}
+	currency := strings.ToUpper(strings.TrimSpace(snapshot.Snapshot.Currency))
+	subtotalMinor, err := stripeMinorUnitAmountForSubscription(snapshot.Snapshot.PriceAmount, currency)
+	if err != nil {
+		return StripeSubscriptionCheckoutFacts{}, err
+	}
+	return StripeSubscriptionCheckoutFacts{PriceID: strings.TrimSpace(snapshot.Snapshot.StripePriceID), Currency: currency, SubtotalMinor: subtotalMinor}, nil
+}
+
+func CreateStripeSubscriptionCheckoutCandidate(ctx context.Context, order *model.SubscriptionOrder, user *model.User, checkoutRevision int64, selection StripeCheckoutDiscountSelection) (*StripeSubscriptionCheckoutSession, error) {
+	if order == nil || user == nil {
+		return nil, errors.New("Stripe subscription checkout facts are incomplete")
+	}
+	facts, err := StripeSubscriptionCheckoutFactsFromOrder(order)
+	if err != nil {
+		return nil, err
+	}
+	input := StripeSubscriptionCheckoutInput{
+		TradeNo: strings.TrimSpace(order.TradeNo), UserID: order.UserId, PlanID: order.PlanId, ChangeIntentID: order.ChangeIntentId,
+		CustomerID: strings.TrimSpace(user.StripeCustomer), Email: strings.TrimSpace(user.Email), PriceID: facts.PriceID,
+		Currency: facts.Currency, SubtotalMinor: facts.SubtotalMinor, IdempotencyKey: "subscription-stripe:" + strings.TrimSpace(order.TradeNo),
+		Presentation: StripeCheckoutPresentation{RequestedUIMode: "elements", Elements: true}, DiscountKind: strings.TrimSpace(order.DiscountKind),
+		DiscountAmountMinor: order.SubscriptionDiscountAmountMinor, DiscountCurrency: strings.TrimSpace(order.PaymentCurrency),
+		DiscountReservationKey: strings.TrimSpace(order.SubscriptionDiscountReservationKey), CheckoutRevision: checkoutRevision, DiscountSelection: selection,
+	}
+	if selection.Source == StripeCheckoutDiscountRecall {
+		input.RecallDiscount = &RecallCheckoutDiscount{PromotionCodeID: selection.PromotionCodeID, CampaignID: order.RecallCampaignId, RecipientID: order.RecallRecipientId}
+	}
+	return stripeSubscriptionCheckoutCreator(ctx, input)
+}
+
+func GetStripeSubscriptionCheckoutSession(ctx context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+	return stripeCheckoutSessionGetter(ctx, strings.TrimSpace(sessionID))
+}
+
+func ExpireStripeSubscriptionCheckoutSession(ctx context.Context, sessionID string) (*stripe.CheckoutSession, error) {
+	return stripeCheckoutSessionExpirer(ctx, strings.TrimSpace(sessionID))
 }
 
 func stripeSubscriptionCheckoutDiscountSelection(input StripeSubscriptionCheckoutInput) StripeCheckoutDiscountSelection {
