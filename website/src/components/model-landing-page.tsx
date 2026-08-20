@@ -368,14 +368,25 @@ function ModelVersionCompare(props: {
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
-          eyebrow={props.t("Versions")}
-          title={props.t("{{model}} compared with {{previous}}", {
-            model: props.modelName,
+          eyebrow={props.t("Capabilities")}
+          title={props.t("What {{model}} can do", { model: props.modelName })}
+          description={props.t("Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.", {
             previous: props.previousName,
           })}
-          description={props.t("What changed from the previous generation, so you can tell whether it is worth switching.")}
         />
-        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {SHOWCASE_CAPABILITIES.map((capability) => (
+            <div
+              key={capability.title}
+              className="rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.04]"
+            >
+              <h3 className="text-[15px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
+              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{props.t(capability.body)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
           <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 bg-[#fbfcff] text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase dark:border-white/10 dark:bg-white/[0.02]">
             <div className="px-4 py-3">{props.t("Capability")}</div>
             <div className="px-4 py-3">{props.previousName}</div>
@@ -477,6 +488,7 @@ function ModelShowcase(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const [active, setActive] = useState(0);
+  const [copied, setCopied] = useState(false);
   if (SHOWCASE_SCENES.length === 0) return null;
   const scene = SHOWCASE_SCENES[active] ?? SHOWCASE_SCENES[0];
 
@@ -487,102 +499,93 @@ function ModelShowcase(props: {
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
-          eyebrow={props.t("Capabilities")}
-          title={props.t("What {{model}} can do", { model: props.modelName })}
-          description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
+          eyebrow={props.t("Prompt library")}
+          title={props.t("{{model}} prompts that work", { model: props.modelName })}
+          description={props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")}
         />
-        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {SHOWCASE_CAPABILITIES.map((capability) => (
-            <div
-              key={capability.title}
-              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.03]"
-            >
-              <h3 className="text-[15px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
-              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{props.t(capability.body)}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)] lg:items-stretch">
-          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
-            <div className="relative aspect-video shrink-0">
-              <video
-                key={scene.id}
-                className="h-full w-full object-cover"
-                autoPlay
-                loop
-                muted
-                playsInline
-                poster={`/assets/model-showcase/${scene.id}.png`}
-                preload="metadata"
-                src={`/assets/model-showcase/${scene.id}.mp4`}
-              />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3.5">
-              <div className="min-w-0">
-                <div className="text-[15px] font-semibold text-white">{props.t(scene.label)}</div>
-                <div className="mt-1 text-[12.5px] leading-5 text-white/62">
-                  {props.t("Generated with {{model}} — load this prompt into the playground and edit it", {
-                    model: props.modelName,
-                  })}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => props.onUseScene(scene)}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white px-4 text-[13px] font-semibold text-[#10131a] transition hover:bg-white/88"
-              >
-                <WandSparkles className="size-3.5" />
-                {props.t("Make one like this")}
-              </button>
-            </div>
+        {/* Player, then a thumbnail strip, then the selected prompt in full.
+            Stacking these beats the previous side rail: five prompts in a narrow
+            column were five walls of text, and the column outran the player. */}
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="relative aspect-video bg-[#10131a]">
+            <video
+              key={scene.id}
+              className="h-full w-full object-cover"
+              autoPlay
+              loop
+              muted
+              playsInline
+              poster={`/assets/model-showcase/${scene.id}.png`}
+              preload="metadata"
+              src={`/assets/model-showcase/${scene.id}.mp4`}
+            />
           </div>
-          {/* Both columns share the row height the player sets; the rail scrolls
-              inside it rather than running past the player's bottom edge.
-              min-h-0 is what lets a grid child shrink to its track. */}
-          <div className="grid content-start gap-2 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+
+          <div className="flex gap-2 overflow-x-auto border-b border-slate-200 p-3 dark:border-white/10">
             {SHOWCASE_SCENES.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActive(index)}
+                onClick={() => {
+                  setActive(index);
+                  setCopied(false);
+                }}
                 aria-pressed={index === active}
-                className={`fk-lift flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${
-                  index === active
-                    ? "border-violet-500/45 bg-violet-500/6 shadow-[0_12px_30px_-24px_rgba(124,58,237,.8)]"
-                    : "border-slate-200 bg-white hover:border-violet-500/25 dark:border-white/10 dark:bg-white/[0.04]"
+                className={`fk-lift relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg border-2 ${
+                  index === active ? "border-violet-500" : "border-transparent opacity-70 hover:opacity-100"
                 }`}
               >
-                <span className="relative aspect-video w-20 shrink-0 overflow-hidden rounded-lg bg-slate-950">
-                  <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="80px" className="object-cover" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[14px] font-semibold text-[#20222a] dark:text-white/88">
-                    {props.t(item.label)}
-                  </span>
-                  {/* Shown in full: seeing how an output was written is the
-                      point of the rail. min-w-0 on the button and this span is
-                      what keeps long prompts wrapping inside the column rather
-                      than widening it. */}
-                  <span className="mt-1 block text-[12px] leading-5 text-muted-foreground">
-                    {item.prompt}
-                  </span>
+                <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="128px" className="object-cover" />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1.5 text-left text-[11px] font-semibold text-white">
+                  {props.t(item.label)}
                 </span>
               </button>
             ))}
+          </div>
+
+          <div className="grid gap-3 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                {props.t("Prompt")}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(scene.prompt).then(
+                      () => {
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 1600);
+                      },
+                      () => undefined
+                    );
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+                >
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copied ? props.t("Copied") : props.t("Copy")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onUseScene(scene)}
+                  className="flatkey-hero-cta inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-semibold"
+                >
+                  <WandSparkles className="size-3.5" />
+                  {props.t("Make one like this")}
+                </button>
+              </div>
+            </div>
+            {/* Full width, so the prompt reads as prose instead of a narrow
+                column of wrapped fragments. */}
+            <p className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 font-mono text-[12.5px] leading-6 text-[#3f4652] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72">
+              {scene.prompt}
+            </p>
           </div>
         </div>
       </div>
     </RevealSection>
   );
 }
-
-// Reveals an element the first time it scrolls into view, pairing with the
-// .fk-reveal styles.
-//
-// Starts revealed and only hides once an observer is confirmed available, so
-// the server render and any no-JS or observer-less client shows the content
-// instead of an empty page. Anything already on screen at mount stays put --
-// animating something the reader is already looking at reads as a glitch.
 function useRevealOnScroll<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [revealed, setRevealed] = useState(true);
@@ -1085,8 +1088,6 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
-
         {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
           <ModelVersionCompare
             modelName={props.config.displayName}
@@ -1094,6 +1095,8 @@ function FlatkeyModelDetailPage(props: {
             t={props.t}
           />
         ) : null}
+
+        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
 
         <WhyFlatkey
           modelName={props.config.displayName}
@@ -3129,6 +3132,23 @@ function ModelQuickStart(props: {
             {props.t("Four ways in, all on the same key and the same model catalog. Pick one to see a runnable example.")}
           </p>
         </div>
+        {/* Server-rendered so the page ships code in its HTML. The dialog below
+            still carries all three languages interactively, but its content
+            only exists after a click, where a crawler never sees it. */}
+        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] dark:border-white/10">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
+            <span className="font-mono text-[11px] font-semibold text-white/62">cURL</span>
+            <span className="font-mono text-[11px] text-white/44">{props.config.modelId}</span>
+          </div>
+          <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6 text-white/82">
+            {buildApiSnippet(
+              "curl",
+              props.config.modelId,
+              snippetKindForEndpoint(props.config.generator?.endpoint ?? "/v1/chat/completions")
+            )}
+          </pre>
+        </div>
+
         <div className="fk-stagger mt-4 grid gap-3 sm:grid-cols-2">
           {cards.map((card) => (
             <button
@@ -4391,9 +4411,13 @@ function buildModelDescription(
 ) {
   if (model?.description) return model.description;
   if (config.generator) {
-    return t("{{model}} is available through Flatkey with live pricing, provider routing, generation examples, API handoff, and related model links.", {
-      model: config.displayName,
-    });
+    // Describe what the model produces, not what this page contains.
+    const kindCopy = {
+      video: "{{model}} is a video generation model for text-to-video and reference-guided clips, with resolution, aspect ratio, and duration control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+      image: "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+      audio: "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+    }[config.generator.kind];
+    return t(kindCopy, { model: config.displayName });
   }
   return t("{{model}} is a production text model for chat, coding, long-context reasoning, and tool-enabled workflows through Flatkey-compatible API access.", {
     model: config.modelId,
