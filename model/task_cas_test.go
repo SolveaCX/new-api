@@ -304,6 +304,60 @@ func TestUpdateGrokSubscriptionVideoResultCASGuardsAndPreservesPrivateFields(t *
 	require.Equal(t, next, reloaded.PrivateData.GrokVideoResult)
 }
 
+func TestUpdateGrokSubscriptionVideoResultCASDoesNotOverwriteConcurrentWinner(t *testing.T) {
+	truncateTables(t)
+
+	prior := &GrokSubscriptionVideoResult{URL: "https://old.example/video.mp4", RefreshedAt: 1}
+	winner := &GrokSubscriptionVideoResult{URL: "https://winner.example/video.mp4", RefreshedAt: 2}
+	loser := &GrokSubscriptionVideoResult{URL: "https://loser.example/video.mp4", RefreshedAt: 3}
+	task := &Task{
+		TaskID:    "task_grok_video_cas_race",
+		Status:    TaskStatusSuccess,
+		Platform:  constant.TaskPlatform("113"),
+		ChannelId: 11301,
+		PrivateData: TaskPrivateData{
+			UpstreamTaskID:  "upstream-grok-race",
+			ResultURL:       "https://flatkey.example/v1/videos/task_grok_video_cas_race/content",
+			GrokVideoResult: prior,
+			BillingSource:   "subscription",
+			SubscriptionId:  77,
+			VideoResult:     &VideoResult{Bucket: "archive", Object: "kept", Generation: 9},
+			TotalTokens:     11,
+		},
+	}
+	insertTask(t, task)
+
+	winnerPrivateData := task.PrivateData
+	winnerPrivateData.GrokVideoResult = winner
+	callbackName := "task9:grok_video_result_cas_race"
+	fired := false
+	require.NoError(t, DB.Callback().Update().Before("gorm:update").Register(callbackName, func(db *gorm.DB) {
+		if fired || db.Statement == nil || db.Statement.Schema == nil || db.Statement.Schema.Table != "tasks" {
+			return
+		}
+		fired = true
+		require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).Model(&Task{}).
+			Where("task_id = ?", task.TaskID).
+			Update("private_data", winnerPrivateData).Error)
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, DB.Callback().Update().Remove(callbackName))
+	})
+
+	won, err := UpdateGrokSubscriptionVideoResultCAS(task.TaskID, "upstream-grok-race", prior, loser, 99)
+	require.NoError(t, err)
+	require.False(t, won)
+	require.True(t, fired)
+
+	var reloaded Task
+	require.NoError(t, DB.Where("task_id = ?", task.TaskID).First(&reloaded).Error)
+	require.Equal(t, winner, reloaded.PrivateData.GrokVideoResult)
+	require.Equal(t, "subscription", reloaded.PrivateData.BillingSource)
+	require.Equal(t, 77, reloaded.PrivateData.SubscriptionId)
+	require.Equal(t, &VideoResult{Bucket: "archive", Object: "kept", Generation: 9}, reloaded.PrivateData.VideoResult)
+	require.Equal(t, 11, reloaded.PrivateData.TotalTokens)
+}
+
 func TestTaskPrivateDataVideoResultZeroValueSerializesStableShape(t *testing.T) {
 	privateData := TaskPrivateData{
 		VideoResult: &VideoResult{},

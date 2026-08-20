@@ -629,10 +629,14 @@ func UpdateGrokSubscriptionVideoResultCAS(taskID string, expectedUpstreamTaskID 
 			!grokVideoResultEqual(current.PrivateData.GrokVideoResult, expectedPrior) {
 			return nil
 		}
+		currentPrivateData, err := common.Marshal(current.PrivateData)
+		if err != nil {
+			return err
+		}
 		privateData := current.PrivateData
 		privateData.GrokVideoResult = CloneGrokSubscriptionVideoResult(next)
 		result := tx.Model(&Task{}).
-			Where("id = ?", current.ID).
+			Where("task_id = ? AND status = ? AND platform = ? AND private_data = ?", taskID, TaskStatusSuccess, constant.TaskPlatform("113"), currentPrivateData).
 			Updates(map[string]any{
 				"private_data": privateData,
 				"updated_at":   now,

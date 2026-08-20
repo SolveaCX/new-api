@@ -20,6 +20,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGrokSubscriptionVideoProxyFailureLogIsNeutral(t *testing.T) {
+	buf := &strings.Builder{}
+	common.LogWriterMu.Lock()
+	originalWriter := gin.DefaultErrorWriter
+	gin.DefaultErrorWriter = buf
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultErrorWriter = originalWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	logGrokSubscriptionProxyFailure(context.Background(), &model.Task{TaskID: "task_grok_log"}, &model.Channel{Id: 11301}, "refresh", 502)
+
+	logText := buf.String()
+	require.NotContains(t, logText, "Grok")
+	require.NotContains(t, logText, "x.ai")
+	require.Contains(t, logText, "phase=refresh")
+}
+
 func TestGrokSubscriptionVideoProxyInitialPrivateURLFetchSucceedsAndStripsHeaders(t *testing.T) {
 	restore := useVideoProxyDBForTest(t)
 	defer restore()

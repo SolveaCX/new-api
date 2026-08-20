@@ -462,6 +462,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	channelSetting := ch.GetSetting()
 	proxy := channelSetting.Proxy
 	returnSourceURL := ch.Type == constant.ChannelTypeTechMobiVideo && channelSetting.ReturnSourceURL
+	isGrokSubscriptionTask := ch.Type == constant.ChannelTypeGrokSubscription
 
 	task := taskM[taskId]
 	if task == nil {
@@ -507,7 +508,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		return fmt.Errorf("readAll failed for task %s: %w", task.TaskID, err)
 	}
 
-	if VideoResultChannelLabel(ch.Type) != "" {
+	if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 		logger.LogDebug(ctx, "updateVideoSingleTask response received: task_id=%s phase=fetched bytes=%d", task.TaskID, len(responseBody))
 	} else {
 		logger.LogDebug(ctx, "updateVideoSingleTask response: %s", responseBody)
@@ -519,7 +520,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	// try parse as New API response format
 	var responseItems dto.TaskResponse[model.Task]
 	if ch.Type != constant.ChannelTypeModelAPISeedance && common.Unmarshal(responseBody, &responseItems) == nil && responseItems.IsSuccess() {
-		if VideoResultChannelLabel(ch.Type) != "" {
+		if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 			logger.LogDebug(ctx, "updateVideoSingleTask parsed as new api response format: task_id=%s phase=parsed status=%s", task.TaskID, archivedVideoPollingStatus(string(responseItems.Data.Status)))
 		} else {
 			logger.LogDebug(ctx, "updateVideoSingleTask parsed as new api response format: %+v", responseItems)
@@ -540,7 +541,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	task.Data = redactVideoResponseForChannel(ch.Type, responseBody)
 
-	if VideoResultChannelLabel(ch.Type) != "" {
+	if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 		logger.LogDebug(ctx, "updateVideoSingleTask task result parsed: task_id=%s phase=parsed status=%s", task.TaskID, archivedVideoPollingStatus(taskResult.Status))
 	} else {
 		logger.LogDebug(ctx, "updateVideoSingleTask taskResult: %+v", taskResult)
@@ -563,7 +564,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 				taskResult = relaycommon.FailTaskInfo("upstream returned error")
 			} else {
 				// unknown error format, log original response
-				if VideoResultChannelLabel(ch.Type) != "" {
+				if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 					logger.LogError(ctx, fmt.Sprintf("Task %s returned empty status with unrecognized error format", task.TaskID))
 				} else {
 					logger.LogError(ctx, fmt.Sprintf("Task %s returned empty status with unrecognized error format, response: %s", task.TaskID, string(responseBody)))
@@ -717,7 +718,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		}
 		shouldSettle = true
 	case model.TaskStatusFailure:
-		if VideoResultChannelLabel(ch.Type) != "" {
+		if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 			logger.LogInfo(ctx, fmt.Sprintf("Archived video task failed: task_id=%s status=%s", task.TaskID, taskResult.Status))
 		} else {
 			logger.LogJson(ctx, fmt.Sprintf("Task %s failed", taskId), task)
@@ -728,7 +729,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			task.FinishTime = now
 		}
 		task.FailReason = taskResult.Reason
-		if VideoResultChannelLabel(ch.Type) != "" {
+		if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 			task.FailReason = sanitizeArchivedVideoLogText(ch.Type, task.FailReason)
 			logger.LogInfo(ctx, fmt.Sprintf("Task %s failed: status=%s", task.TaskID, task.Status))
 		} else {
@@ -739,7 +740,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			shouldRefund = true
 		}
 	default:
-		if VideoResultChannelLabel(ch.Type) != "" {
+		if VideoResultChannelLabel(ch.Type) != "" || isGrokSubscriptionTask {
 			return fmt.Errorf("unknown task status for task %s: phase=status status=%s", task.TaskID, archivedVideoPollingStatus(taskResult.Status))
 		}
 		return fmt.Errorf("unknown task status %s for task %s", taskResult.Status, task.TaskID)

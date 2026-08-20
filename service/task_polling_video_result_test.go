@@ -169,6 +169,53 @@ func TestUpdateVideoSingleTaskGrokVideoResultPersistsPrivateURLAndPublicProxy(t 
 	require.Equal(t, 44, stored.PrivateData.TokenId)
 }
 
+func TestUpdateVideoSingleTaskGrokSubscriptionDoesNotLogPrivateDetails(t *testing.T) {
+	truncate(t)
+	restoreArchiveHookForPollingTest(t)
+	logs := capturePollingLogs(t)
+	ctx := context.Background()
+
+	seedUser(t, 909, 1000)
+	seedToken(t, 919, 909, "sk-grok-log-leak", 500)
+	task := &model.Task{
+		TaskID:    "task_grok_log_leak",
+		UserId:    909,
+		ChannelId: 11301,
+		Platform:  constant.TaskPlatform("113"),
+		Quota:     100,
+		Action:    constant.TaskActionGenerate,
+		Status:    model.TaskStatusSubmitted,
+		Progress:  "50%",
+		Data:      []byte(`{"status":"processing"}`),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-grok-secret",
+			BillingSource:  BillingSourceWallet,
+			TokenId:        919,
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	ch := &model.Channel{Id: 11301, Type: constant.ChannelTypeGrokSubscription, Key: "stored-oauth-json", Status: common.ChannelStatusEnabled}
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: []byte(`{"request_id":"upstream-grok-secret","status":"done","video":{"url":"https://vidgen.x.ai/private.mp4?token=secret","duration":6.5,"resolution":"1080p"}}`),
+		taskResult: &relaycommon.TaskInfo{
+			TaskID:     "upstream-grok-secret",
+			Status:     model.TaskStatusSuccess,
+			Url:        "https://vidgen.x.ai/private.mp4?token=secret",
+			Progress:   "100%",
+			Duration:   6.5,
+			Resolution: "1080p",
+		},
+	}
+
+	require.NoError(t, updateVideoSingleTask(ctx, adaptor, ch, task.GetUpstreamTaskID(), map[string]*model.Task{task.GetUpstreamTaskID(): task}))
+
+	logText := logs.String()
+	require.NotContains(t, logText, "upstream-grok-secret")
+	require.NotContains(t, logText, "vidgen.x.ai")
+	require.NotContains(t, logText, "private.mp4")
+	require.NotContains(t, logText, "token=secret")
+}
+
 func TestUpdateVideoSingleTaskReturnSourceURLSkipsArchive(t *testing.T) {
 	truncate(t)
 	restoreArchiveHookForPollingTest(t)

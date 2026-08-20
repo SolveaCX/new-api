@@ -246,7 +246,7 @@ func logGrokSubscriptionProxyFailure(ctx context.Context, task *model.Task, chan
 	if channel != nil {
 		channelID = channel.Id
 	}
-	logger.LogWarn(ctx, fmt.Sprintf("Grok subscription video proxy failed: task_id=%s channel_id=%d phase=%s status=%d", taskID, channelID, phase, status))
+	logger.LogWarn(ctx, fmt.Sprintf("video content proxy failed: task_id=%s channel_id=%d phase=%s status=%d", taskID, channelID, phase, status))
 }
 
 func videoProxyGenericFailure(c *gin.Context) {
