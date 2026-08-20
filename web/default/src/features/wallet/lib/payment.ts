@@ -477,9 +477,19 @@ export function mergePresetAmounts(
 
 export function getLockedTopupAmountOptions(
   amountOptions: number[],
-  _stripeTopupEnabled: boolean
+  stripeTopupEnabled: boolean,
+  stripePriceIds?: Record<number, string>
 ): number[] {
-  return amountOptions.filter((amount) => Number.isFinite(amount) && amount > 0)
+  return amountOptions.filter((amount) => {
+    if (!Number.isFinite(amount) || amount <= 0) return false
+
+    if (stripeTopupEnabled && stripePriceIds) {
+      const priceId = stripePriceIds[amount]
+      return typeof priceId === 'string' && priceId.trim().length > 0
+    }
+
+    return true
+  })
 }
 
 export function getInitialPresetTopupAmount(

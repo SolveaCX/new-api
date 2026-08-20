@@ -242,7 +242,8 @@ export function useTopupInfo() {
 
       const lockedAmountOptions = getLockedTopupAmountOptions(
         processedData.amount_options,
-        processedData.enable_stripe_topup
+        processedData.enable_stripe_topup,
+        processedData.stripe_price_ids
       )
 
       if (lockedAmountOptions.length > 0) {

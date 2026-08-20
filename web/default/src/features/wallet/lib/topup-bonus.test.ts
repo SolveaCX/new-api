@@ -158,6 +158,15 @@ describe('top-up bonus preset metadata', () => {
     ])
   })
 
+  test('drops amount options without a Stripe Price ID', () => {
+    expect(
+      getLockedTopupAmountOptions([20, 50, 200], true, {
+        20: 'price_topup_20',
+        200: 'price_topup_200',
+      })
+    ).toEqual([20, 200])
+  })
+
   test('drops invalid locked top-up amount options', () => {
     expect(
       getLockedTopupAmountOptions([10, 0, -1, Number.NaN, 20], true)
