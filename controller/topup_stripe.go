@@ -40,6 +40,8 @@ import (
 
 var stripeAdaptor = &StripeAdaptor{}
 var stripeCheckoutSessionGetter = session.Get
+var stripeCheckoutSessionExpirer = session.Expire
+var stripeCheckoutSessionCreator = session.New
 
 // StripePayRequest represents a payment request for Stripe checkout.
 type StripePayRequest struct {
@@ -510,7 +512,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	presentation := service.ResolveStripeCheckoutPresentation(req.UIMode)
 
 	discountSelection := stripeCheckoutDiscountSelectionFromRecall(recallDiscount)
-	checkoutSession, err := genStripeLink(referenceId, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, req.SaveCard, presentation, stripeCheckoutSubmitMessage(normalizedAmount, bonusAmount), topUp.CheckoutRevision, discountSelection, recallDiscount)
+	checkoutSession, initialRevision, err := createStripeTopUpCheckoutSession(c.Request.Context(), topUp, user, checkoutCustomerId, checkoutEmail, checkout, req.SuccessURL, req.CancelURL, invoiceRequested, presentation, discountSelection, recallDiscount)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 创建 Checkout Session 失败 user_id=%d trade_no=%s amount=%d error=%q", id, referenceId, req.Amount, err.Error()))
 		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderStripe, common.TopUpStatusFailed)
@@ -522,7 +524,9 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	}
 	if checkoutSession != nil {
 		topUp.GatewayTradeNo = strings.TrimSpace(checkoutSession.ID)
-		if err := topUp.Update(); err != nil {
+		if initialRevision != nil {
+			topUp.CheckoutRevision = initialRevision.Revision
+		} else if err := topUp.Update(); err != nil {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe 更新充值订单支付网关信息失败 trade_no=%s session_id=%s error=%q", referenceId, checkoutSession.ID, err.Error()))
 		}
 	}
@@ -555,21 +559,26 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		// The in-console dialog renders its own bonus summary beside the Stripe form.
 		// Amounts are trustworthy only in USD display mode (token display amounts are
 		// huge and unreadable in a headline), mirroring stripeCheckoutSubmitMessage.
-		c.JSON(http.StatusOK, gin.H{
-			"message": "success",
-			"data": gin.H{
-				"client_secret":   checkoutSession.ClientSecret,
-				"publishable_key": setting.StripePublishableKey,
-				"topup_summary": gin.H{
-					"pay_amount":    normalizedAmount,
-					"bonus_amount":  bonusAmount,
-					"credit_amount": normalizedAmount + bonusAmount,
-					// Only surface USD amounts: the displayed "$" figures are USD, so a
-					// non-USD Checkout (JPY/BRL/INR/…) would misrepresent the charge.
-					"show_amounts": operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(checkout.PaymentCurrency, "USD"),
-				},
+		data := gin.H{
+			"client_secret":   checkoutSession.ClientSecret,
+			"publishable_key": setting.StripePublishableKey,
+			"topup_summary": StripeTopUpSummary{
+				PayAmount:    float64(normalizedAmount),
+				BonusAmount:  float64(bonusAmount),
+				CreditAmount: float64(normalizedAmount + bonusAmount),
+				// Only surface USD amounts: the displayed "$" figures are USD, so a
+				// non-USD Checkout (JPY/BRL/INR/…) would misrepresent the charge.
+				ShowAmounts: operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(checkout.PaymentCurrency, "USD"),
 			},
-		})
+		}
+		if initialRevision != nil {
+			if revisionResponse, responseErr := stripeCheckoutRevisionResponse(service.StripeCheckoutPurchaseTopUp, initialRevision, stripeCheckoutSnapshotFromStripe(checkoutSession)); responseErr == nil {
+				data["checkout_context"] = revisionResponse.CheckoutContext
+				data["checkout_revision"] = revisionResponse.CheckoutRevision
+				data["discount_state"] = revisionResponse.DiscountState
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "success", "data": data})
 		return
 	}
 
@@ -627,11 +636,20 @@ func ResumeStripeTopUpCheckout(c *gin.Context) {
 	if secret := strings.TrimSpace(checkoutSession.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
 		data["client_secret"] = secret
 		data["publishable_key"] = setting.StripePublishableKey
-		data["topup_summary"] = gin.H{
-			"pay_amount":    topUp.Amount,
-			"bonus_amount":  topUp.BonusAmount,
-			"credit_amount": topUp.Amount + topUp.BonusAmount,
-			"show_amounts":  operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(topUp.PaymentCurrency, "USD"),
+		data["topup_summary"] = StripeTopUpSummary{
+			PayAmount:    float64(topUp.Amount),
+			BonusAmount:  float64(topUp.BonusAmount),
+			CreditAmount: float64(topUp.Amount + topUp.BonusAmount),
+			ShowAmounts:  operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(topUp.PaymentCurrency, "USD"),
+		}
+		if setting.StripePromotionCodeEnabled && topUp.CheckoutRevision > 0 {
+			if active, activeErr := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderTopUp, topUp.TradeNo); activeErr == nil {
+				if response, responseErr := stripeCheckoutRevisionResponse(service.StripeCheckoutPurchaseTopUp, active, stripeCheckoutSnapshotFromStripe(checkoutSession)); responseErr == nil {
+					data["checkout_context"] = response.CheckoutContext
+					data["checkout_revision"] = response.CheckoutRevision
+					data["discount_state"] = response.DiscountState
+				}
+			}
 		}
 	} else if payLink := strings.TrimSpace(checkoutSession.URL); payLink != "" {
 		data["pay_link"] = payLink
@@ -2618,12 +2636,69 @@ func genStripeLink(referenceId string, customerId string, email string, checkout
 		return nil, err
 	}
 
-	result, err := session.New(params)
+	result, err := stripeCheckoutSessionCreator(params)
 	if err != nil {
 		return nil, err
 	}
 
 	return result, nil
+}
+
+func createStripeTopUpCheckoutSession(
+	ctx context.Context,
+	topUp *model.TopUp,
+	user *model.User,
+	customerID string,
+	email string,
+	checkout *stripeTopUpCheckout,
+	successURL string,
+	cancelURL string,
+	invoiceRequested bool,
+	presentation service.StripeCheckoutPresentation,
+	selection service.StripeCheckoutDiscountSelection,
+	recall *service.RecallCheckoutDiscount,
+) (*stripe.CheckoutSession, *model.StripeCheckoutRevision, error) {
+	if topUp == nil || user == nil || checkout == nil {
+		return nil, nil, errors.New("Stripe top-up checkout facts are incomplete")
+	}
+	create := func(revision int64) (*stripe.CheckoutSession, error) {
+		return genStripeLink(
+			topUp.TradeNo, strings.TrimSpace(customerID), strings.TrimSpace(email), checkout,
+			successURL, cancelURL, invoiceRequested, topUp.SaveCard, presentation,
+			stripeCheckoutSubmitMessage(topUp.Amount, topUp.BonusAmount), revision, selection, recall,
+		)
+	}
+	if !setting.StripePromotionCodeEnabled || !presentation.UsesClientSecret() {
+		created, err := create(topUp.CheckoutRevision)
+		return created, nil, err
+	}
+	purchase := stripeCheckoutPurchase{
+		Kind: service.StripeCheckoutPurchaseTopUp, OrderType: model.StripeCheckoutOrderTopUp,
+		TradeNo: topUp.TradeNo, UserID: topUp.UserId, Currency: topUp.PaymentCurrency,
+		SubtotalMinor: topUp.PaymentAmountMinor, TopUp: topUp, User: user,
+	}
+	if recall != nil {
+		if payload, payloadErr := common.Marshal(recall); payloadErr == nil {
+			purchase.DiscountPayload = string(payload)
+		}
+	}
+	summary := &StripeTopUpSummary{
+		PayAmount: float64(topUp.Amount), BonusAmount: float64(topUp.BonusAmount), CreditAmount: float64(topUp.Amount + topUp.BonusAmount),
+		ShowAmounts: operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens && strings.EqualFold(topUp.PaymentCurrency, "USD"),
+	}
+	var created *stripe.CheckoutSession
+	snapshot, active, err := createInitialStripeCheckoutRevision(ctx, purchase, selection, summary, func(revision int64) (*stripeCheckoutSessionSnapshot, error) {
+		var createErr error
+		created, createErr = create(revision)
+		return stripeCheckoutSnapshotFromStripe(created), createErr
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if created == nil && snapshot != nil {
+		created = &stripe.CheckoutSession{ID: snapshot.ID, URL: snapshot.URL, ClientSecret: snapshot.ClientSecret}
+	}
+	return created, active, nil
 }
 
 func validateStripeRedirectURL(c *gin.Context, rawURL string) error {
