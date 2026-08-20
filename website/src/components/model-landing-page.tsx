@@ -2755,6 +2755,138 @@ function GeneratedExamplesCarousel(props: {
 //
 // Defaults match the /models directory (DEFAULT_HEALTH_*), so a model with thin
 // traffic reads the same figure here as in the listing rather than an em dash.
+// Async video/audio generation is a submit-then-poll flow: the relay call
+// returns a task id and the finished file is fetched later. `avg_latency_ms`
+// therefore measures how fast the task was *accepted*, not how long the clip
+// took to render -- seedance-2.5 reads 838ms while the generation itself runs
+// for tens of seconds.
+//
+// Two consequences, both of which the page used to get wrong:
+//   1. The cell must say so. It was labelled "Generation time / Average per
+//      request", which reads as the render duration.
+//   2. It cannot be ranked. Streaming models report end-to-end inference in the
+//      same field, so a percentile put a submit-ack against full completions
+//      and reported "Top 14% of models" for a number that measures nothing
+//      comparable.
+function isAsyncMediaKind(kind: ModelReadmeKind): boolean {
+  return kind === "video" || kind === "audio";
+}
+
+type PerformanceStat = {
+  key: string;
+  label: string;
+  value: string;
+  hint: string;
+  rank: number | null;
+  accent: string;
+  surface: string;
+};
+
+export function buildPerformanceStats(input: {
+  kind: ModelReadmeKind;
+  successRate: number | undefined;
+  ttftMs: number | undefined;
+  latencyMs?: number;
+  throughput?: number;
+  requests?: number;
+  peers: HomePerfSummary[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}): PerformanceStat[] {
+  // Percentile against every model with a comparable reading. `lowerIsBetter`
+  // flips the comparison for latency, where a small number is the good one.
+  const percentile = (
+    value: number | undefined,
+    pick: (peer: HomePerfSummary) => number | undefined,
+    lowerIsBetter = false
+  ): number | null => {
+    if (value == null || !Number.isFinite(value)) return null;
+    const values = input.peers
+      .map(pick)
+      .filter((entry): entry is number => entry != null && Number.isFinite(entry) && entry > 0);
+    if (values.length < 4) return null;
+    const beaten = values.filter((entry) => (lowerIsBetter ? entry > value : entry < value)).length;
+    return Math.round((beaten / values.length) * 100);
+  };
+
+  const uptimeStat: PerformanceStat = {
+    key: "uptime",
+    label: input.t("Uptime"),
+    value: formatHealthSuccessRate(input.successRate),
+    hint: input.t("Successful requests"),
+    rank: percentile(input.successRate, (peer) => peer.success_rate),
+    accent: "text-emerald-600 dark:text-emerald-400",
+    surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  };
+  const requestsStat: PerformanceStat = {
+    key: "requests",
+    label: input.t("Requests"),
+    value: formatCallCount(input.requests),
+    hint: input.t("Last 30 days"),
+    rank: null,
+    accent: "text-amber-600 dark:text-amber-400",
+    surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  };
+
+  if (isAsyncMediaKind(input.kind)) {
+    return [
+      {
+        key: "submit-latency",
+        label: input.t("Submit latency"),
+        value: formatLatencyMs(input.latencyMs),
+        hint: input.t("Task accepted; generation continues asynchronously"),
+        // Deliberately unranked -- see the note above isAsyncMediaKind.
+        rank: null,
+        accent: "text-blue-600 dark:text-blue-400",
+        surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+      },
+      requestsStat,
+      uptimeStat,
+    ];
+  }
+
+  return [
+    uptimeStat,
+    {
+      key: "latency",
+      label: input.t("Latency"),
+      value: formatLatencyMs(input.ttftMs),
+      hint: input.t("Time to first token"),
+      rank: percentile(input.ttftMs, (peer) => peer.avg_ttft_ms, true),
+      accent: "text-blue-600 dark:text-blue-400",
+      surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    },
+    {
+      key: "throughput",
+      label: input.t("Throughput"),
+      value: formatThroughput(input.throughput),
+      hint: input.t("Tokens per second"),
+      rank: percentile(input.throughput, (peer) => peer.avg_tps),
+      accent: "text-violet-600 dark:text-violet-400",
+      surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    },
+    requestsStat,
+  ];
+}
+
+/**
+ * Whether the "full request completes in X; the figure above is time to first
+ * token" footnote applies.
+ *
+ * It only makes sense when the cell above really is a TTFT reading. Async media
+ * models have no token stream, and their cell already shows the same
+ * avg_latency_ms the footnote would restate -- so it printed the number twice
+ * and called it two different things.
+ */
+export function showsTimeToFirstTokenFootnote(input: {
+  kind: ModelReadmeKind;
+  latencyMs?: number;
+  ttftMs?: number;
+}): boolean {
+  if (isAsyncMediaKind(input.kind)) return false;
+  if (input.ttftMs == null || !Number.isFinite(input.ttftMs)) return false;
+  return input.latencyMs != null && Number.isFinite(input.latencyMs);
+}
+
 function ModelPerformanceSection(props: {
   modelId: string;
   successRate: number | undefined;
@@ -2767,82 +2899,24 @@ function ModelPerformanceSection(props: {
   trend: HomeTrendPoint[];
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  // Percentile against every model with a comparable reading. `lowerIsBetter`
-  // flips the comparison for latency, where a small number is the good one.
-  const percentile = (
-    value: number | undefined,
-    pick: (peer: HomePerfSummary) => number | undefined,
-    lowerIsBetter = false
-  ): number | null => {
-    if (value == null || !Number.isFinite(value)) return null;
-    const values = props.peers
-      .map(pick)
-      .filter((entry): entry is number => entry != null && Number.isFinite(entry) && entry > 0);
-    if (values.length < 4) return null;
-    const beaten = values.filter((entry) => (lowerIsBetter ? entry > value : entry < value)).length;
-    return Math.round((beaten / values.length) * 100);
-  };
+  const stats = buildPerformanceStats({
+    kind: props.kind,
+    successRate: props.successRate,
+    ttftMs: props.ttftMs,
+    latencyMs: props.latencyMs,
+    throughput: props.throughput,
+    requests: props.requests,
+    peers: props.peers,
+    t: props.t,
+  });
 
-  // Async video generation is a submit-then-poll flow with no token stream, so
-  // TTFT and tokens/sec are never reported for it. Showing those cells empty
-  // said less than not showing them: pick the metric set this model kind emits.
-  const isAsyncMedia = props.kind === "video" || props.kind === "audio";
-
-  const uptimeStat = {
-    icon: <ShieldCheck className="size-4" />,
-    label: props.t("Uptime"),
-    value: formatHealthSuccessRate(props.successRate),
-    hint: props.t("Successful requests"),
-    rank: percentile(props.successRate, (peer) => peer.success_rate),
-    accent: "text-emerald-600 dark:text-emerald-400",
-    surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  const STAT_ICONS: Record<string, ReactNode> = {
+    uptime: <ShieldCheck className="size-4" />,
+    requests: <Layers3 className="size-4" />,
+    "submit-latency": <Timer className="size-4" />,
+    latency: <Timer className="size-4" />,
+    throughput: <Zap className="size-4" />,
   };
-  const requestsStat = {
-    icon: <Layers3 className="size-4" />,
-    label: props.t("Requests"),
-    value: formatCallCount(props.requests),
-    hint: props.t("Last 30 days"),
-    rank: null,
-    accent: "text-amber-600 dark:text-amber-400",
-    surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  };
-
-  const stats = isAsyncMedia
-    ? [
-        {
-          icon: <Timer className="size-4" />,
-          label: props.t("Generation time"),
-          value: formatLatencyMs(props.latencyMs),
-          hint: props.t("Average per request"),
-          rank: percentile(props.latencyMs, (peer) => peer.avg_latency_ms, true),
-          accent: "text-blue-600 dark:text-blue-400",
-          surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
-        },
-        requestsStat,
-        uptimeStat,
-      ]
-    : [
-        uptimeStat,
-        {
-          icon: <Timer className="size-4" />,
-          label: props.t("Latency"),
-          value: formatLatencyMs(props.ttftMs),
-          hint: props.t("Time to first token"),
-          rank: percentile(props.ttftMs, (peer) => peer.avg_ttft_ms, true),
-          accent: "text-blue-600 dark:text-blue-400",
-          surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
-        },
-        {
-          icon: <Zap className="size-4" />,
-          label: props.t("Throughput"),
-          value: formatThroughput(props.throughput),
-          hint: props.t("Tokens per second"),
-          rank: percentile(props.throughput, (peer) => peer.avg_tps),
-          accent: "text-violet-600 dark:text-violet-400",
-          surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
-        },
-        requestsStat,
-      ];
 
   // An uptime chart of nothing is noise; async media models do not report a
   // success rate to trend.
@@ -2866,7 +2940,7 @@ function ModelPerformanceSection(props: {
                 className={`p-5 ${index % 2 === 1 ? "sm:border-l sm:border-slate-200 sm:dark:border-white/10" : ""} ${index === 2 ? "sm:border-t sm:border-slate-200 lg:border-t-0 lg:border-l lg:border-slate-200 sm:dark:border-white/10" : ""}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className={`grid size-7 place-items-center rounded-lg ${stat.surface}`}>{stat.icon}</span>
+                  <span className={`grid size-7 place-items-center rounded-lg ${stat.surface}`}>{STAT_ICONS[stat.key]}</span>
                   <span className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{stat.label}</span>
                 </div>
                 <div className={`mt-3 font-mono text-[28px] leading-none font-bold ${stat.accent}`}>{stat.value}</div>
@@ -2881,7 +2955,7 @@ function ModelPerformanceSection(props: {
               </div>
             ))}
           </div>
-          {props.latencyMs != null && Number.isFinite(props.latencyMs) ? (
+          {showsTimeToFirstTokenFootnote({ kind: props.kind, latencyMs: props.latencyMs, ttftMs: props.ttftMs }) ? (
             <div className="border-t border-slate-200 bg-[#fbfcff] px-5 py-3 text-[11px] font-medium text-[#6a7280] dark:border-white/10 dark:bg-white/[0.02] dark:text-white/54">
               {props.t("Full request completes in {{duration}} on average; the figure above is time to first token.", {
                 duration: formatLatencyMs(props.latencyMs),

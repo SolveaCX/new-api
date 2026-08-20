@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ModelLandingPage, animateScrollToTop, buildDraftFallbackRunHref } from "./model-landing-page";
+import {
+  ModelLandingPage,
+  animateScrollToTop,
+  buildDraftFallbackRunHref,
+  buildPerformanceStats,
+  showsTimeToFirstTokenFootnote,
+} from "./model-landing-page";
 import {
   GPT_CONFIG,
   GPT_IMAGE_2_CONFIG,
@@ -563,5 +569,85 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('type="application/ld+json"');
     expect(html).toContain('"url":"https://flatkey.ai/models/gpt-api"');
     expect(html).not.toContain('id="workbench"');
+  });
+});
+
+// Async video/audio models are submit-then-poll: the relay call returns a task
+// id in well under a second, and the clip is fetched later. The relay-side
+// avg_latency_ms therefore measures submit-ack time, not generation time.
+describe("Performance metrics for async media models", () => {
+  const identity = (key: string, vars?: Record<string, string>) =>
+    vars ? key.replace(/\{\{(\w+)\}\}/g, (_, name) => vars[name] ?? "") : key;
+
+  const peers = [
+    { model_name: "a", avg_latency_ms: 4000, avg_ttft_ms: 1000, success_rate: 99.9, avg_tps: 40 },
+    { model_name: "b", avg_latency_ms: 5000, avg_ttft_ms: 2000, success_rate: 99.8, avg_tps: 35 },
+    { model_name: "c", avg_latency_ms: 6000, avg_ttft_ms: 3000, success_rate: 99.7, avg_tps: 30 },
+    { model_name: "d", avg_latency_ms: 7000, avg_ttft_ms: 4000, success_rate: 99.6, avg_tps: 25 },
+  ];
+
+  test("labels async media latency as submit time, not generation time", () => {
+    const stats = buildPerformanceStats({
+      kind: "video",
+      successRate: undefined,
+      ttftMs: undefined,
+      latencyMs: 838,
+      throughput: undefined,
+      requests: 6,
+      peers,
+      t: identity,
+    });
+
+    const latencyStat = stats.find((stat) => stat.value === "838ms");
+    expect(latencyStat).toBeDefined();
+    expect(latencyStat!.label).toBe("Submit latency");
+    expect(latencyStat!.hint).toBe("Task accepted; generation continues asynchronously");
+    expect(stats.some((stat) => stat.label === "Generation time")).toBe(false);
+  });
+
+  test("does not rank async media submit latency against streaming model latency", () => {
+    const stats = buildPerformanceStats({
+      kind: "video",
+      successRate: undefined,
+      ttftMs: undefined,
+      latencyMs: 838,
+      throughput: undefined,
+      requests: 6,
+      peers,
+      t: identity,
+    });
+
+    const latencyStat = stats.find((stat) => stat.value === "838ms");
+    expect(latencyStat!.rank).toBeNull();
+  });
+
+  test("still ranks streaming model latency against peers", () => {
+    const stats = buildPerformanceStats({
+      kind: "text",
+      successRate: 99.9,
+      ttftMs: 500,
+      latencyMs: 3000,
+      throughput: 50,
+      requests: 1000,
+      peers,
+      t: identity,
+    });
+
+    const latencyStat = stats.find((stat) => stat.label === "Latency");
+    expect(latencyStat!.value).toBe("500ms");
+    expect(latencyStat!.rank).toBe(100);
+  });
+
+  test("hides the time-to-first-token footnote for async media models", () => {
+    expect(showsTimeToFirstTokenFootnote({ kind: "video", latencyMs: 838, ttftMs: undefined })).toBe(false);
+    expect(showsTimeToFirstTokenFootnote({ kind: "audio", latencyMs: 838, ttftMs: undefined })).toBe(false);
+  });
+
+  test("keeps the time-to-first-token footnote for streaming models that report both", () => {
+    expect(showsTimeToFirstTokenFootnote({ kind: "text", latencyMs: 3000, ttftMs: 500 })).toBe(true);
+  });
+
+  test("drops the footnote when a streaming model reports no time to first token", () => {
+    expect(showsTimeToFirstTokenFootnote({ kind: "text", latencyMs: 3000, ttftMs: undefined })).toBe(false);
   });
 });
