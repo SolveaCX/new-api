@@ -284,3 +284,53 @@ func TestLegacyOAuthEmailLessRegistrationDoesNotCount(t *testing.T) {
 	require.NoError(t, db.Model(&model.RegistrationDomainState{}).Count(&states).Error)
 	require.Zero(t, states)
 }
+
+func TestRegisterHoneypotSilentlyDropsBot(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	withRegistrationSecurityConfig(t, map[string]string{})
+
+	body, err := common.Marshal(map[string]any{
+		"username": "honeypot-bot",
+		"password": "password123",
+		"website":  "http://spam.example.com",
+	})
+	require.NoError(t, err)
+	recorder := performRegisterRequest(t, body)
+
+	var payload struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success, "honeypot must reply success to the bot so it cannot learn the trap")
+
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "honeypot-bot").Count(&count).Error)
+	require.Zero(t, count, "honeypot request must not create a user")
+}
+
+func TestRegisterWithoutHoneypotStillCreatesUser(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	configureRegistrationEndpointTest(t)
+	withRegistrationSecurityConfig(t, map[string]string{
+		"registration_security.domain_risk_enabled": "false",
+	})
+
+	body, err := common.Marshal(map[string]any{
+		"username": "normal-human",
+		"password": "password123",
+	})
+	require.NoError(t, err)
+	recorder := performRegisterRequest(t, body)
+
+	var payload struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+
+	var count int64
+	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "normal-human").Count(&count).Error)
+	require.Equal(t, int64(1), count)
+}
