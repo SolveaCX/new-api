@@ -1,18 +1,22 @@
 package groksubscription
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	grokmedia "github.com/QuantumNous/new-api/relay/channel/groksubscription"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -228,6 +232,142 @@ func TestParseTaskResultMapsDocumentedStatesAndRejectsUnknown(t *testing.T) {
 func TestParseTaskResultRequiresVideoURLOnDone(t *testing.T) {
 	if _, err := (&TaskAdaptor{}).ParseTaskResult([]byte(`{"status":"done","video":{}}`)); err == nil {
 		t.Fatal("done without video URL must fail")
+	}
+}
+
+func TestFetchTaskUsesCurrentCredentialAndIgnoresStoredKeyAndBaseURL(t *testing.T) {
+	service.InitHttpClient()
+	var credentialCalls atomic.Int32
+	restoreCredential := setPollingCredentialForTest(func(ctx context.Context, channelID int, requirePaid bool) (grokmedia.MediaCredential, error) {
+		credentialCalls.Add(1)
+		if channelID != 27 || requirePaid {
+			t.Fatalf("credential call channel=%d requirePaid=%v, want 27 false", channelID, requirePaid)
+		}
+		return grokmedia.MediaCredential{ChannelID: channelID, AccessToken: "current-token"}, nil
+	}, nil)
+	defer restoreCredential()
+
+	var gotPath, gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"pending"}`))
+	}))
+	defer server.Close()
+	restoreBase := setAPIBaseForTest(server.URL)
+	defer restoreBase()
+
+	resp, err := (&TaskAdaptor{}).FetchTaskWithContext(context.Background(), "https://ignored.example", "stored-oauth-json", map[string]any{
+		"task_id":    "request/id with space",
+		"channel_id": 27,
+	}, "")
+	if err != nil {
+		t.Fatalf("FetchTaskWithContext: %v", err)
+	}
+	_ = resp.Body.Close()
+	if gotPath != "/v1/videos/request%2Fid%20with%20space" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotAuth != "Bearer current-token" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+	if credentialCalls.Load() != 1 {
+		t.Fatalf("credential calls = %d, want 1", credentialCalls.Load())
+	}
+}
+
+func TestFetchTask401ForcesOneRefreshAndRetriesSameChannelAndRequest(t *testing.T) {
+	service.InitHttpClient()
+	var credentialCalls atomic.Int32
+	var refreshCalls atomic.Int32
+	restoreCredential := setPollingCredentialForTest(func(ctx context.Context, channelID int, requirePaid bool) (grokmedia.MediaCredential, error) {
+		call := credentialCalls.Add(1)
+		token := "first-token"
+		if call > 1 {
+			token = "refreshed-token"
+		}
+		return grokmedia.MediaCredential{ChannelID: channelID, AccessToken: token}, nil
+	}, func(ctx context.Context, channelID int) (grokmedia.MediaCredential, error) {
+		refreshCalls.Add(1)
+		if channelID != 27 {
+			t.Fatalf("refresh channel = %d, want 27", channelID)
+		}
+		return grokmedia.MediaCredential{ChannelID: channelID, AccessToken: "refreshed-token"}, nil
+	})
+	defer restoreCredential()
+
+	var paths []string
+	var auths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.EscapedPath())
+		auths = append(auths, r.Header.Get("Authorization"))
+		if len(paths) == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"expired"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"pending"}`))
+	}))
+	defer server.Close()
+	restoreBase := setAPIBaseForTest(server.URL)
+	defer restoreBase()
+
+	resp, err := (&TaskAdaptor{}).FetchTaskWithContext(context.Background(), "https://ignored.example", "stored", map[string]any{
+		"task_id":    "same-request",
+		"channel_id": 27,
+	}, "")
+	if err != nil {
+		t.Fatalf("FetchTaskWithContext: %v", err)
+	}
+	_ = resp.Body.Close()
+	if len(paths) != 2 {
+		t.Fatalf("requests = %d, want 2", len(paths))
+	}
+	if paths[0] != "/v1/videos/same-request" || paths[1] != paths[0] {
+		t.Fatalf("paths = %#v", paths)
+	}
+	if auths[0] != "Bearer first-token" || auths[1] != "Bearer refreshed-token" {
+		t.Fatalf("auths = %#v", auths)
+	}
+	if refreshCalls.Load() != 1 {
+		t.Fatalf("refresh calls = %d, want 1", refreshCalls.Load())
+	}
+}
+
+func TestFetchTaskSecond401StopsAfterOneRefresh(t *testing.T) {
+	service.InitHttpClient()
+	restoreCredential := setPollingCredentialForTest(func(ctx context.Context, channelID int, requirePaid bool) (grokmedia.MediaCredential, error) {
+		return grokmedia.MediaCredential{ChannelID: channelID, AccessToken: "token"}, nil
+	}, func(ctx context.Context, channelID int) (grokmedia.MediaCredential, error) {
+		return grokmedia.MediaCredential{ChannelID: channelID, AccessToken: "refreshed-token"}, nil
+	})
+	defer restoreCredential()
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"expired again"}`))
+	}))
+	defer server.Close()
+	restoreBase := setAPIBaseForTest(server.URL)
+	defer restoreBase()
+
+	resp, err := (&TaskAdaptor{}).FetchTaskWithContext(context.Background(), "", "", map[string]any{
+		"task_id":    "same-request",
+		"channel_id": 27,
+	}, "")
+	if err != nil {
+		t.Fatalf("FetchTaskWithContext: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	if hits.Load() != 2 {
+		t.Fatalf("hits = %d, want first + one retry", hits.Load())
 	}
 }
 

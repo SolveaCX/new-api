@@ -117,6 +117,29 @@ func TestEnsureMediaCredentialReadDoesNotDenyStaleBilling(t *testing.T) {
 	require.Equal(t, "old-at", got.AccessToken)
 }
 
+func TestForceRefreshMediaCredentialRefreshesWithoutBillingProbe(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 4000)
+	var tokenRefreshes int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != OAuthToken {
+				t.Fatalf("forced polling refresh must not probe billing, got %s", req.URL.String())
+			}
+			tokenRefreshes++
+			return jsonResponse(http.StatusOK, `{"access_token":"forced-at","refresh_token":"forced-rt","token_type":"Bearer","expires_in":7200}`), nil
+		}),
+	})
+	defer restore()
+
+	got, err := ForceRefreshMediaCredential(context.Background(), channelID)
+
+	require.NoError(t, err)
+	require.Equal(t, MediaCredential{ChannelID: channelID, AccessToken: "forced-at"}, got)
+	require.Equal(t, 1, tokenRefreshes)
+}
+
 func TestEnsureMediaCredentialProbeFailurePreservesSnapshotAndReturnsUnavailable(t *testing.T) {
 	setupMediaPreflightTestDB(t)
 	now := int64(2000 + billingMaxEvidenceAge + 1)

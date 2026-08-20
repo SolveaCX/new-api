@@ -279,10 +279,7 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	properties := Properties{}
 	privateData := TaskPrivateData{}
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
-		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeTechMobiVideo ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeModelAPISeedance {
+		if TaskChannelTypePersistsPollingKey(relayInfo.ChannelMeta.ChannelType) {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		if relayInfo.UpstreamModelName != "" {
@@ -315,6 +312,20 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		PrivateData:       privateData,
 	}
 	return t
+}
+
+func TaskChannelTypePersistsPollingKey(channelType int) bool {
+	switch channelType {
+	case constant.ChannelTypeGemini,
+		constant.ChannelTypeVertexAi,
+		constant.ChannelTypeTechMobiVideo,
+		constant.ChannelTypeModelAPISeedance:
+		return true
+	case constant.ChannelTypeGrokSubscription:
+		return false
+	default:
+		return false
+	}
 }
 
 func TaskGetAllUserTask(userId int, startIdx int, num int, queryParams SyncTaskQueryParams) []*Task {

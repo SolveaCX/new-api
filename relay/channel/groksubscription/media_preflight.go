@@ -78,6 +78,54 @@ func EnsureMediaCredential(ctx context.Context, channelID int, requirePaid bool)
 	return ensureMediaCredential(ctx, channelID, requirePaid, mediaPreflightHooks)
 }
 
+func ForceRefreshMediaCredential(ctx context.Context, channelID int) (MediaCredential, error) {
+	return forceRefreshMediaCredential(ctx, channelID, mediaPreflightHooks)
+}
+
+func forceRefreshMediaCredential(ctx context.Context, channelID int, hooks MediaPreflightHooks) (MediaCredential, error) {
+	if ctx == nil {
+		return MediaCredential{}, errors.New("grok media preflight: context is nil")
+	}
+	if channelID <= 0 {
+		return MediaCredential{}, errors.New("grok media preflight: invalid channel id")
+	}
+	for waited := time.Duration(0); ; waited += mediaPreflightWaitInterval {
+		hooks = normalizeMediaPreflightHooks(hooks)
+		now := hooks.Now(ctx)
+		if now <= 0 {
+			return MediaCredential{}, errors.New("grok media preflight: database time unavailable")
+		}
+		owner := "media-force-refresh:" + common.GetUUID()
+		acquired, err := model.AcquireGrokRefreshLease(channelID, owner, now, mediaPreflightLeaseTTLSeconds)
+		if err != nil {
+			return MediaCredential{}, err
+		}
+		if acquired {
+			defer func() { _ = model.ReleaseGrokRefreshLease(channelID, owner) }()
+			refresher := NewRefresher(newMediaCredentialStore(), hooks.HTTPDoer, func() int64 { return now })
+			cred, err := refresher.Refresh(ctx, channelID)
+			if err != nil {
+				if mediaRefreshShouldMarkNeedsReauth(err) {
+					_ = markGrokAuthStatus(channelID, model.GrokAuthStatusNeedsReauth, false, err.Error())
+				}
+				return MediaCredential{}, err
+			}
+			_ = markGrokAuthStatus(channelID, model.GrokAuthStatusActive, true, "")
+			return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
+		}
+		if waited >= mediaPreflightMaxWait {
+			cred, err := loadMediaCredential(ctx, channelID)
+			if err != nil {
+				return MediaCredential{}, err
+			}
+			return MediaCredential{ChannelID: channelID, AccessToken: cred.AccessToken}, nil
+		}
+		if err := hooks.Sleep(ctx, mediaPreflightWaitInterval); err != nil {
+			return MediaCredential{}, err
+		}
+	}
+}
+
 func ensureMediaCredential(ctx context.Context, channelID int, requirePaid bool, hooks MediaPreflightHooks) (MediaCredential, error) {
 	if ctx == nil {
 		return MediaCredential{}, errors.New("grok media preflight: context is nil")

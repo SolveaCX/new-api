@@ -81,6 +81,40 @@ func TestUpdateVideoSingleTaskArchivePersistsMetadataBeforeSuccessSettlement(t *
 	require.NotContains(t, string(stored.Data), "video.mp4?token=secret")
 }
 
+func TestUpdateVideoSingleTaskGrokPollingPassesOriginChannelID(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	task := &model.Task{
+		TaskID:    "task_grok_polling_channel",
+		UserId:    901,
+		ChannelId: 11301,
+		Platform:  constant.TaskPlatform("113"),
+		Quota:     100,
+		Action:    constant.TaskActionGenerate,
+		Status:    model.TaskStatusSubmitted,
+		Progress:  "10%",
+		Data:      []byte(`{}`),
+		PrivateData: model.TaskPrivateData{
+			UpstreamTaskID: "upstream-grok-request",
+		},
+	}
+	require.NoError(t, model.DB.Create(task).Error)
+	ch := &model.Channel{Id: 11301, Type: constant.ChannelTypeGrokSubscription, Key: "stored-oauth-json", Status: common.ChannelStatusEnabled}
+	adaptor := &fakeVideoPollingAdaptor{
+		responseBody: []byte(`{"status":"pending"}`),
+		taskResult:   &relaycommon.TaskInfo{Status: model.TaskStatusQueued, Progress: "20%"},
+	}
+
+	err := updateVideoSingleTask(ctx, adaptor, ch, task.GetUpstreamTaskID(), map[string]*model.Task{task.GetUpstreamTaskID(): task})
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"task_id":    "upstream-grok-request",
+		"action":     constant.TaskActionGenerate,
+		"channel_id": 11301,
+	}, adaptor.fetchBody)
+	require.Empty(t, adaptor.fetchKey, "Grok polling must not use the stored channel key as OAuth")
+}
+
 func TestUpdateVideoSingleTaskReturnSourceURLSkipsArchive(t *testing.T) {
 	truncate(t)
 	restoreArchiveHookForPollingTest(t)
@@ -1352,6 +1386,10 @@ type fakeVideoPollingAdaptor struct {
 	body             io.ReadCloser
 	fetchCtx         context.Context
 	fetchUsedContext bool
+	fetchBaseURL     string
+	fetchKey         string
+	fetchBody        map[string]any
+	fetchProxy       string
 }
 
 func (a *fakeVideoPollingAdaptor) Init(*relaycommon.RelayInfo) {}
@@ -1374,6 +1412,10 @@ func (a *fakeVideoPollingAdaptor) FetchTask(string, string, map[string]any, stri
 func (a *fakeVideoPollingAdaptor) FetchTaskWithContext(ctx context.Context, baseURL string, key string, body map[string]any, proxy string) (*http.Response, error) {
 	a.fetchCtx = ctx
 	a.fetchUsedContext = true
+	a.fetchBaseURL = baseURL
+	a.fetchKey = key
+	a.fetchBody = body
+	a.fetchProxy = proxy
 	return a.FetchTask(baseURL, key, body, proxy)
 }
 

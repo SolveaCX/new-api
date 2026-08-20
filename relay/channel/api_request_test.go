@@ -13,6 +13,7 @@ import (
 
 	rootconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
@@ -20,6 +21,35 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTaskRequestDefinitelyNotSentMarkerWrapsPreSendErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	_, err := DoTaskApiRequest(taskPreSendErrorAdaptor{urlErr: errors.New("bad url")}, ctx, info, nil)
+	require.Error(t, err)
+	require.True(t, IsDefinitelyNotSent(err), "BuildRequestURL error happens before request send")
+
+	_, err = DoTaskApiRequest(taskPreSendErrorAdaptor{url: "https://example.invalid", headerErr: errors.New("no credential")}, ctx, info, nil)
+	require.Error(t, err)
+	require.True(t, IsDefinitelyNotSent(err), "BuildRequestHeader error happens before request send")
+}
+
+func TestTaskRequestDoRequestErrorsAreNotMarkedDefinitelyNotSent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	baseRequest := httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	requestContext, cancel := context.WithCancel(baseRequest.Context())
+	cancel()
+	ctx.Request = baseRequest.WithContext(requestContext)
+
+	_, err := DoTaskApiRequest(taskPreSendErrorAdaptor{url: "https://example.invalid"}, ctx, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}, nil)
+	require.Error(t, err)
+	require.False(t, IsDefinitelyNotSent(err), "doRequest errors are ambiguous for POST replay")
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()
@@ -503,5 +533,51 @@ func (a requestContextAdaptor) ConvertClaudeRequest(c *gin.Context, info *relayc
 }
 
 func (a requestContextAdaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
+	return nil, nil
+}
+
+type taskPreSendErrorAdaptor struct {
+	url       string
+	urlErr    error
+	headerErr error
+}
+
+func (a taskPreSendErrorAdaptor) Init(info *relaycommon.RelayInfo) {}
+func (a taskPreSendErrorAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskError {
+	return nil
+}
+func (a taskPreSendErrorAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+	return nil
+}
+func (a taskPreSendErrorAdaptor) AdjustBillingOnSubmit(info *relaycommon.RelayInfo, taskData []byte) map[string]float64 {
+	return nil
+}
+func (a taskPreSendErrorAdaptor) AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int {
+	return 0
+}
+func (a taskPreSendErrorAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if a.urlErr != nil {
+		return "", a.urlErr
+	}
+	return a.url, nil
+}
+func (a taskPreSendErrorAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
+	return a.headerErr
+}
+func (a taskPreSendErrorAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
+	return nil, nil
+}
+func (a taskPreSendErrorAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
+	return DoTaskApiRequest(a, c, info, requestBody)
+}
+func (a taskPreSendErrorAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (string, []byte, *dto.TaskError) {
+	return "", nil, nil
+}
+func (a taskPreSendErrorAdaptor) GetModelList() []string { return nil }
+func (a taskPreSendErrorAdaptor) GetChannelName() string { return "task-pre-send-error" }
+func (a taskPreSendErrorAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy string) (*http.Response, error) {
+	return nil, nil
+}
+func (a taskPreSendErrorAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
 	return nil, nil
 }

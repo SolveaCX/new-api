@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,10 +26,11 @@ import (
 )
 
 const (
-	apiBase             = "https://api.x.ai"
 	channelName         = "grok_subscription_video"
 	sanitizedSubmitData = `{}`
 )
+
+var apiBase = "https://api.x.ai"
 
 type TaskAdaptor struct {
 	taskcommon.BaseBilling
@@ -50,10 +52,34 @@ var getMediaCredentialForRequest mediaCredentialFunc = func(c *gin.Context, info
 	return credential.AccessToken, nil
 }
 
+var ensurePollingCredential = grokmedia.EnsureMediaCredential
+var forceRefreshPollingCredential = grokmedia.ForceRefreshMediaCredential
+
 func setMediaCredentialForTest(fn mediaCredentialFunc) func() {
 	original := getMediaCredentialForRequest
 	getMediaCredentialForRequest = fn
 	return func() { getMediaCredentialForRequest = original }
+}
+
+func setPollingCredentialForTest(ensure func(context.Context, int, bool) (grokmedia.MediaCredential, error), refresh func(context.Context, int) (grokmedia.MediaCredential, error)) func() {
+	originalEnsure := ensurePollingCredential
+	originalRefresh := forceRefreshPollingCredential
+	if ensure != nil {
+		ensurePollingCredential = ensure
+	}
+	if refresh != nil {
+		forceRefreshPollingCredential = refresh
+	}
+	return func() {
+		ensurePollingCredential = originalEnsure
+		forceRefreshPollingCredential = originalRefresh
+	}
+}
+
+func setAPIBaseForTest(base string) func() {
+	original := apiBase
+	apiBase = strings.TrimRight(base, "/")
+	return func() { apiBase = original }
 }
 
 type submitResponse struct {
@@ -230,7 +256,14 @@ func writeClientEnvelope(c *gin.Context, info *relaycommon.RelayInfo) {
 	c.JSON(http.StatusOK, ov)
 }
 
-func (a *TaskAdaptor) FetchTask(_ string, _ string, body map[string]any, proxy string) (*http.Response, error) {
+func (a *TaskAdaptor) FetchTask(baseURL string, key string, body map[string]any, proxy string) (*http.Response, error) {
+	return a.FetchTaskWithContext(context.Background(), baseURL, key, body, proxy)
+}
+
+func (a *TaskAdaptor) FetchTaskWithContext(ctx context.Context, _ string, _ string, body map[string]any, proxy string) (*http.Response, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	taskID, _ := body["task_id"].(string)
 	if strings.TrimSpace(taskID) == "" {
 		return nil, fmt.Errorf("invalid task_id")
@@ -239,20 +272,36 @@ func (a *TaskAdaptor) FetchTask(_ string, _ string, body map[string]any, proxy s
 	if channelID <= 0 {
 		return nil, fmt.Errorf("invalid channel_id")
 	}
-	credential, err := grokmedia.EnsureMediaCredential(context.Background(), channelID, false)
+	credential, err := ensurePollingCredential(ctx, channelID, false)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodGet, apiBase+"/v1/videos/"+taskID, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+credential.AccessToken)
 	client, err := service.GetHttpClientWithProxy(proxy)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
+	resp, err := fetchTaskWithCredential(ctx, client, taskID, credential.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	credential, err = forceRefreshPollingCredential(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	return fetchTaskWithCredential(ctx, client, taskID, credential.AccessToken)
+}
+
+func fetchTaskWithCredential(ctx context.Context, client *http.Client, taskID string, accessToken string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiBase+"/v1/videos/"+url.PathEscape(strings.TrimSpace(taskID)), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 	return client.Do(req)
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -127,6 +128,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		if c.Writer.Written() {
 			return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError, types.ErrOptionWithSkipRetry())
 		}
+		if shouldSkipRetryForGrokImagePostError(info, err) {
+			return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError, types.ErrOptionWithSkipRetry())
+		}
 		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 	}
 	var httpResp *http.Response
@@ -141,6 +145,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 				// reset status code 重置状态码
 				service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+				if shouldSkipRetryForGrokImagePostStatus(info, httpResp.StatusCode) {
+					newAPIError = types.NewError(newAPIError, types.ErrorCodeBadResponseStatusCode, types.ErrOptionWithSkipRetry())
+				}
 				return newAPIError
 			}
 		}
@@ -227,6 +234,23 @@ func shouldForceImageConversion(info *relaycommon.RelayInfo) bool {
 	// backend-api endpoint. Grok subscription images must run local validation,
 	// paid media gating, and OAuth/header isolation before any upstream call.
 	return info.ApiType == constant.APITypeCodex || info.ApiType == constant.APITypeGrokSubscription
+}
+
+func shouldSkipRetryForGrokImagePostError(info *relaycommon.RelayInfo, err error) bool {
+	return isGrokSubscriptionImage(info) && err != nil && !relaychannel.IsDefinitelyNotSent(err)
+}
+
+func shouldSkipRetryForGrokImagePostStatus(info *relaycommon.RelayInfo, statusCode int) bool {
+	if !isGrokSubscriptionImage(info) {
+		return false
+	}
+	return statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusTooManyRequests ||
+		statusCode >= http.StatusInternalServerError
+}
+
+func isGrokSubscriptionImage(info *relaycommon.RelayInfo) bool {
+	return info != nil && info.ApiType == constant.APITypeGrokSubscription
 }
 
 func logImageRequestBodyForDebug(c *gin.Context, info *relaycommon.RelayInfo, jsonData []byte) {

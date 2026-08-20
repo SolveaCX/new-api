@@ -477,6 +477,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if privateData.Key != "" {
 		key = privateData.Key
 	}
+	if ch.Type == constant.ChannelTypeGrokSubscription {
+		key = ""
+	}
 	upstreamTaskID := task.GetUpstreamTaskID()
 	pollingCtx := ctx
 	var cancelPolling context.CancelFunc
@@ -485,8 +488,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		defer cancelPolling()
 	}
 	resp, err := FetchTaskWithContext(pollingCtx, adaptor, baseURL, key, map[string]any{
-		"task_id": upstreamTaskID,
-		"action":  task.Action,
+		"task_id":    upstreamTaskID,
+		"action":     task.Action,
+		"channel_id": ch.Id,
 	}, proxy)
 	if err != nil {
 		if VideoResultChannelLabel(ch.Type) != "" {

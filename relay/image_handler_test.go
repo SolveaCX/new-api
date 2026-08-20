@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/groksubscription"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -121,5 +123,31 @@ func TestImageHelperGrokPassThroughStillRunsConversionValidation(t *testing.T) {
 				t.Fatalf("Grok conversion validation must skip retry")
 			}
 		})
+	}
+}
+
+func TestImageHelperGrokRetryDecisionUsesDefinitePreSendMarker(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGrokSubscription}}
+	if shouldSkipRetryForGrokImagePostError(info, relaychannel.MarkDefinitelyNotSent(errors.New("header failed"))) {
+		t.Fatal("definite pre-send Grok image failure must remain retryable")
+	}
+	if !shouldSkipRetryForGrokImagePostError(info, errors.New("connection reset after post began")) {
+		t.Fatal("possible-send Grok image transport failure must skip retry")
+	}
+	other := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}
+	if shouldSkipRetryForGrokImagePostError(other, errors.New("ordinary image channel transport failure")) {
+		t.Fatal("unrelated image channels must keep existing retry behavior")
+	}
+}
+
+func TestImageHelperGrokStatusRetryDecisionSkipsPossibleSentResponses(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGrokSubscription}}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable} {
+		if !shouldSkipRetryForGrokImagePostStatus(info, status) {
+			t.Fatalf("Grok image status %d after POST response must skip retry", status)
+		}
+	}
+	if shouldSkipRetryForGrokImagePostStatus(info, http.StatusBadRequest) {
+		t.Fatal("Grok image 400 must keep existing error handling")
 	}
 }
