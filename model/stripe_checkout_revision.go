@@ -313,6 +313,37 @@ func GetStripeCheckoutRevisionByRequestID(orderType string, tradeNo string, requ
 	return &revision, nil
 }
 
+// GetStripeCheckoutRevision returns one exact ledger revision regardless of
+// whether it is preparing, active, superseded, or abandoned.
+func GetStripeCheckoutRevision(orderType string, tradeNo string, revisionNumber int64) (*StripeCheckoutRevision, error) {
+	orderType = strings.TrimSpace(orderType)
+	tradeNo = strings.TrimSpace(tradeNo)
+	if !validStripeCheckoutOrderType(orderType) || tradeNo == "" || revisionNumber <= 0 {
+		return nil, fmt.Errorf("invalid Stripe checkout revision lookup")
+	}
+	var revision StripeCheckoutRevision
+	if err := DB.Where("order_type = ? AND trade_no = ? AND revision = ?", orderType, tradeNo, revisionNumber).
+		First(&revision).Error; err != nil {
+		return nil, err
+	}
+	return &revision, nil
+}
+
+// GetActiveStripeCheckoutRevision returns only the current active ledger row.
+func GetActiveStripeCheckoutRevision(orderType string, tradeNo string) (*StripeCheckoutRevision, error) {
+	orderType = strings.TrimSpace(orderType)
+	tradeNo = strings.TrimSpace(tradeNo)
+	if !validStripeCheckoutOrderType(orderType) || tradeNo == "" {
+		return nil, fmt.Errorf("invalid Stripe checkout revision lookup")
+	}
+	var revision StripeCheckoutRevision
+	if err := DB.Where("order_type = ? AND trade_no = ? AND state = ?", orderType, tradeNo, StripeCheckoutRevisionStateActive).
+		Order("revision DESC").First(&revision).Error; err != nil {
+		return nil, err
+	}
+	return &revision, nil
+}
+
 func lockStripeCheckoutOrder(tx *gorm.DB, orderType string, tradeNo string, userID int) (int64, error) {
 	switch orderType {
 	case StripeCheckoutOrderTopUp:

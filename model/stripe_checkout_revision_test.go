@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestStripeCheckoutRevisionPrepareIsIdempotentAndFenced(t *testing.T) {
@@ -598,6 +599,196 @@ func TestStripeCheckoutRevisionSkipsAbandonedRevision(t *testing.T) {
 	require.Equal(t, int64(2), immutable.Revision)
 	require.Equal(t, "sha256:abandoned", immutable.SelectionDigest)
 	require.Equal(t, StripeCheckoutRevisionStateAbandoned, immutable.State)
+}
+
+func TestGetStripeCheckoutRevisionReturnsExactRevisionAcrossStatesAndOrderTypes(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	revisions := []StripeCheckoutRevision{
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "shared-ledger-trade",
+			Revision:        1,
+			UserId:          21,
+			RequestId:       "req-exact-topup",
+			SelectionDigest: "sha256:exact-topup",
+			State:           StripeCheckoutRevisionStateSuperseded,
+			DiscountSource:  "none",
+			SummaryPayload:  `{"kind":"topup"}`,
+		},
+		{
+			OrderType:       StripeCheckoutOrderSubscription,
+			TradeNo:         "shared-ledger-trade",
+			Revision:        1,
+			UserId:          22,
+			RequestId:       "req-exact-subscription",
+			SelectionDigest: "sha256:exact-subscription",
+			State:           StripeCheckoutRevisionStateAbandoned,
+			DiscountSource:  "manual",
+			SummaryPayload:  `{"kind":"subscription"}`,
+		},
+	}
+	require.NoError(t, DB.Create(&revisions).Error)
+
+	topUp, err := GetStripeCheckoutRevision(" topup ", " shared-ledger-trade ", 1)
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutOrderTopUp, topUp.OrderType)
+	require.Equal(t, StripeCheckoutRevisionStateSuperseded, topUp.State)
+	require.Equal(t, `{"kind":"topup"}`, topUp.SummaryPayload)
+
+	subscription, err := GetStripeCheckoutRevision(StripeCheckoutOrderSubscription, "shared-ledger-trade", 1)
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutOrderSubscription, subscription.OrderType)
+	require.Equal(t, StripeCheckoutRevisionStateAbandoned, subscription.State)
+	require.Equal(t, `{"kind":"subscription"}`, subscription.SummaryPayload)
+}
+
+func TestGetStripeCheckoutRevisionPreservesNotFoundAndValidatesInput(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+
+	_, err := GetStripeCheckoutRevision(StripeCheckoutOrderTopUp, "missing-exact-revision", 1)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	for _, fixture := range []struct {
+		name      string
+		orderType string
+		tradeNo   string
+		revision  int64
+	}{
+		{name: "unsupported order type", orderType: "invoice", tradeNo: "trade", revision: 1},
+		{name: "blank trade number", orderType: StripeCheckoutOrderTopUp, tradeNo: "  ", revision: 1},
+		{name: "zero revision", orderType: StripeCheckoutOrderTopUp, tradeNo: "trade", revision: 0},
+		{name: "negative revision", orderType: StripeCheckoutOrderTopUp, tradeNo: "trade", revision: -1},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			_, err := GetStripeCheckoutRevision(fixture.orderType, fixture.tradeNo, fixture.revision)
+			require.Error(t, err)
+			require.NotErrorIs(t, err, gorm.ErrRecordNotFound)
+		})
+	}
+}
+
+func TestGetActiveStripeCheckoutRevisionReturnsOnlyCurrentActiveByOrderType(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	revisions := []StripeCheckoutRevision{
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "shared-active-trade",
+			Revision:        1,
+			UserId:          23,
+			RequestId:       "req-active-topup-old",
+			SelectionDigest: "sha256:active-topup-old",
+			State:           StripeCheckoutRevisionStateSuperseded,
+			DiscountSource:  "none",
+		},
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "shared-active-trade",
+			Revision:        2,
+			UserId:          23,
+			RequestId:       "req-active-topup-current",
+			SelectionDigest: "sha256:active-topup-current",
+			State:           StripeCheckoutRevisionStateActive,
+			DiscountSource:  "manual",
+		},
+		{
+			OrderType:       StripeCheckoutOrderSubscription,
+			TradeNo:         "shared-active-trade",
+			Revision:        1,
+			UserId:          24,
+			RequestId:       "req-active-subscription-old",
+			SelectionDigest: "sha256:active-subscription-old",
+			State:           StripeCheckoutRevisionStateAbandoned,
+			DiscountSource:  "none",
+		},
+		{
+			OrderType:       StripeCheckoutOrderSubscription,
+			TradeNo:         "shared-active-trade",
+			Revision:        2,
+			UserId:          24,
+			RequestId:       "req-active-subscription-current",
+			SelectionDigest: "sha256:active-subscription-current",
+			State:           StripeCheckoutRevisionStateActive,
+			DiscountSource:  "recall",
+		},
+	}
+	require.NoError(t, DB.Create(&revisions).Error)
+
+	topUp, err := GetActiveStripeCheckoutRevision(" topup ", " shared-active-trade ")
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutOrderTopUp, topUp.OrderType)
+	require.Equal(t, int64(2), topUp.Revision)
+	require.Equal(t, StripeCheckoutRevisionStateActive, topUp.State)
+
+	subscription, err := GetActiveStripeCheckoutRevision(StripeCheckoutOrderSubscription, "shared-active-trade")
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutOrderSubscription, subscription.OrderType)
+	require.Equal(t, int64(2), subscription.Revision)
+	require.Equal(t, StripeCheckoutRevisionStateActive, subscription.State)
+}
+
+func TestGetActiveStripeCheckoutRevisionExcludesNonActiveAndPreservesNotFound(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	revisions := []StripeCheckoutRevision{
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "non-active-only",
+			Revision:        1,
+			UserId:          25,
+			RequestId:       "req-non-active-superseded",
+			SelectionDigest: "sha256:non-active-superseded",
+			State:           StripeCheckoutRevisionStateSuperseded,
+			DiscountSource:  "none",
+		},
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "non-active-only",
+			Revision:        2,
+			UserId:          25,
+			RequestId:       "req-non-active-abandoned",
+			SelectionDigest: "sha256:non-active-abandoned",
+			State:           StripeCheckoutRevisionStateAbandoned,
+			DiscountSource:  "manual",
+		},
+		{
+			OrderType:       StripeCheckoutOrderTopUp,
+			TradeNo:         "non-active-only",
+			Revision:        3,
+			UserId:          25,
+			RequestId:       "req-non-active-preparing",
+			SelectionDigest: "sha256:non-active-preparing",
+			State:           StripeCheckoutRevisionStatePreparing,
+			DiscountSource:  "manual",
+		},
+	}
+	require.NoError(t, DB.Create(&revisions).Error)
+
+	_, err := GetActiveStripeCheckoutRevision(StripeCheckoutOrderTopUp, "non-active-only")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	_, err = GetActiveStripeCheckoutRevision(StripeCheckoutOrderSubscription, "non-active-only")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+
+	_, err = GetActiveStripeCheckoutRevision(StripeCheckoutOrderTopUp, "missing-active-revision")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestGetActiveStripeCheckoutRevisionValidatesInput(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+
+	for _, fixture := range []struct {
+		name      string
+		orderType string
+		tradeNo   string
+	}{
+		{name: "unsupported order type", orderType: "invoice", tradeNo: "trade"},
+		{name: "blank trade number", orderType: StripeCheckoutOrderTopUp, tradeNo: "  "},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			_, err := GetActiveStripeCheckoutRevision(fixture.orderType, fixture.tradeNo)
+			require.Error(t, err)
+			require.NotErrorIs(t, err, gorm.ErrRecordNotFound)
+		})
+	}
 }
 
 func setupStripeCheckoutRevisionTestDB(t *testing.T) {
