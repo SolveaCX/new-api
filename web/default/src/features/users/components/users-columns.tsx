@@ -180,6 +180,10 @@ export function useUsersColumns(): ColumnDef<User>[] {
           />
         )
       },
+      filterFn: (row, id, value) => {
+        const values = Array.isArray(value) ? value : [value]
+        return values.includes(row.getValue(id) ? '1' : '0')
+      },
       enableSorting: false,
       meta: { label: t('Email Verified'), mobileHidden: true },
     },
@@ -354,6 +358,11 @@ export function useUsersColumns(): ColumnDef<User>[] {
         ) : (
           <span className='text-muted-foreground text-sm'>-</span>
         )
+      },
+      filterFn: (row, id, value) => {
+        const values = Array.isArray(value) ? value : [value]
+        const amount = row.getValue(id) as number | undefined
+        return values.includes(amount && amount > 0 ? '1' : '0')
       },
       meta: { label: t('Paid Amount'), mobileHidden: true },
     },
