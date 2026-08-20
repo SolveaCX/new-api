@@ -112,6 +112,7 @@ export type PricingSearch = {
   q?: string;
   vendor?: string;
   endpoint?: string;
+  purpose?: string;
   pricing?: string;
   quota?: string;
 };
@@ -258,8 +259,36 @@ export function sortPricingModelsBySeries(models: PricingModel[]): PricingModel[
   });
 }
 
+const VENDOR_BY_MODEL_NAME: Array<[RegExp, string]> = [
+  [/^(gpt|o[1-9]|dall-e|sora|codex|text-embedding|whisper|tts)/i, "OpenAI"],
+  [/^claude/i, "Anthropic"],
+  [/^(gemini|imagen|veo|gemma)/i, "Google"],
+  [/^(seedance|seedream|doubao|bytedance)/i, "ByteDance"],
+  [/^deepseek/i, "DeepSeek"],
+  [/^(qwen|qwq)/i, "Qwen"],
+  [/^(glm|chatglm)/i, "Z.ai"],
+  [/^(kimi|moonshot)/i, "Moonshot"],
+  [/^grok/i, "xAI"],
+  [/^minimax/i, "MiniMax"],
+  [/^(llama|meta)/i, "Meta"],
+  [/^mistral/i, "Mistral"],
+  [/^sonilo/i, "Sonilo"],
+];
+
+/**
+ * Vendor for a model, preferring the catalog's own value.
+ *
+ * The pricing payload leaves vendor_id unresolved for some models (veo-3.1 has
+ * no vendor entry today), and the previous fallback was the literal "AI" --
+ * which rendered as "More AI models from AI" and "AI · $1" on the cards. Model
+ * names carry the vendor reliably, so infer from the name before giving up.
+ */
 export function getVendorName(model: PricingModel, vendors: PricingVendor[]): string {
-  return model.vendor_name ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.name ?? "AI";
+  const known = model.vendor_name ?? vendors.find((vendor) => vendor.id === model.vendor_id)?.name;
+  if (known) return known;
+  const inferred = VENDOR_BY_MODEL_NAME.find(([pattern]) => pattern.test(model.model_name))?.[1];
+  // Last resort names the catalog rather than asserting a vendor we do not know.
+  return inferred ?? "Flatkey catalog";
 }
 
 export function getTopVendors(models: PricingModel[], limit = 10): string[] {
