@@ -4,10 +4,12 @@ import {
   getBestGroupRatio,
   getOfficialPriceUsd,
   getVendorName,
+  buildEffectiveGroupRatio,
   isTokenBasedModel,
   parseTags,
   resolveModelDisplayPrice,
   sortPricingModelsBySeries,
+  type GroupModelRatio,
   type PricingData,
   type PricingModel,
 } from "./pricing";
@@ -117,22 +119,27 @@ export function buildHomeModelRows(data: PricingData): HomePricedModel[] {
 export function buildRowsForModels(
   models: PricingModel[],
   vendors: PricingData["vendors"],
-  groupRatio: Record<string, number>
+  groupRatio: Record<string, number>,
+  groupModelRatio: GroupModelRatio = {}
 ): HomePricedModel[] {
   return models
     .filter((model) => getOfficialPriceUsd(model) > 0 || resolveModelDisplayPrice(model, undefined, "plg", groupRatio) != null)
     .map((model) => {
       const official = getOfficialPriceUsd(model);
-      const listed = official * getBestGroupRatio(model, groupRatio);
+      // Per-model overrides in group_model_ratio beat the flat group ratio
+      // during billing, so the quoted price has to apply them too — otherwise a
+      // model priced below its group is advertised higher than it is charged.
+      const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, groupModelRatio);
+      const listed = official * getBestGroupRatio(model, effectiveGroupRatio);
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
-      const displayPrice = resolveModelDisplayPrice(model, undefined, "plg", groupRatio);
+      const displayPrice = resolveModelDisplayPrice(model, undefined, "plg", effectiveGroupRatio);
       const officialDisplayPrice = displayPrice
-        ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", groupRatio)
+        ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio)
         : null;
-      const inputPrice = resolveModelDisplayPrice(model, "input", "plg", groupRatio);
-      const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", groupRatio) : null;
-      const outputPrice = resolveModelDisplayPrice(model, "output", "plg", groupRatio);
-      const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", groupRatio) : null;
+      const inputPrice = resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio);
+      const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", effectiveGroupRatio) : null;
+      const outputPrice = resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio);
+      const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", effectiveGroupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
       const directoryMeta = getModelMeta(model.model_name);
       return {

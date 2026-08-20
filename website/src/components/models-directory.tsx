@@ -38,7 +38,7 @@ import {
   seriesForModels,
 } from "@/lib/model-directory-meta";
 import { directoryHref, parseDirectorySearch, toggleDirectoryFilter } from "@/lib/model-directory-url";
-import type { PricingModel, PricingVendor } from "@/lib/pricing";
+import type { GroupModelRatio, PricingModel, PricingVendor } from "@/lib/pricing";
 
 // The /models directory: a featured carousel, a faceted filter sidebar, and the
 // pricing table. All pricing, latency and health figures come from the live API
@@ -50,6 +50,7 @@ type Props = {
   models: PricingModel[];
   vendors: PricingVendor[];
   groupRatio: Record<string, number>;
+  groupModelRatio?: GroupModelRatio;
   initialSearch?: Record<string, string | string[] | undefined>;
 };
 
@@ -86,8 +87,8 @@ export function ModelsDirectory(props: Props) {
   }, []);
 
   const priced = useMemo(
-    () => buildRowsForModels(props.models, props.vendors, props.groupRatio),
-    [props.models, props.vendors, props.groupRatio]
+    () => buildRowsForModels(props.models, props.vendors, props.groupRatio, props.groupModelRatio),
+    [props.models, props.vendors, props.groupRatio, props.groupModelRatio]
   );
   const pricedByName = useMemo(() => new Map(priced.map((row) => [row.name, row])), [priced]);
 

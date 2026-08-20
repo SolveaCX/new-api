@@ -958,7 +958,7 @@ export async function ModelsPage(props: PricingPageProps) {
   // Structured data is built server-side from the same payload the table
   // renders, so the ItemList never describes models the page does not show.
   // Capped because a 90-entry graph adds weight for no ranking benefit.
-  const schemaRows = buildRowsForModels(allModels.slice(0, SCHEMA_ITEM_LIMIT), pricing.vendors, pricing.groupRatio);
+  const schemaRows = buildRowsForModels(allModels.slice(0, SCHEMA_ITEM_LIMIT), pricing.vendors, pricing.groupRatio, pricing.groupModelRatio);
   const directorySchema = buildModelsDirectorySchema({
     locale: props.locale,
     title: copy.modelsDirectory,
@@ -997,6 +997,7 @@ export async function ModelsPage(props: PricingPageProps) {
             models={allModels}
             vendors={pricing.vendors}
             groupRatio={pricing.groupRatio}
+            groupModelRatio={pricing.groupModelRatio}
             initialSearch={props.searchParams}
           />
 
