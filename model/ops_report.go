@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // opsDayBucketExpr builds a portable SQL expression that maps created_at (epoch
@@ -97,6 +99,10 @@ type OpsTopUp struct {
 }
 
 // GetOpsPlgUsers returns every plg-group user (the self-serve population).
+// GetOpsPlgUsers returns the enabled PLG users — the daily report's only user
+// source, so registration/activation/paid statistics all share the same "valid
+// user" denominator. Disabled accounts (manually banned and honeypot-created)
+// are excluded: they are not real signups and would inflate the funnel.
 func GetOpsPlgUsers() ([]*OpsPlgUser, error) {
 	var users []*OpsPlgUser
 	err := DB.Table("users").
@@ -107,6 +113,7 @@ func GetOpsPlgUsers() ([]*OpsPlgUser, error) {
 			     WHEN github_id IS NOT NULL AND github_id <> '' THEN 'github'
 			     ELSE 'email' END AS oauth_kind`).
 		Where(commonGroupCol+" = ?", "plg").
+		Where("status = ?", common.UserStatusEnabled).
 		Find(&users).Error
 	return users, err
 }
