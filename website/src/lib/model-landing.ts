@@ -307,18 +307,25 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   modelIds: ["seedance-2.5", "seedance-2-5"],
   displayName: "Seedance 2.5",
   modelId: "seedance-2.5",
-  // Field domains mirror the upstream contract enforced in
-  // relay/channel/task/modelapiseedance: 480p/720p only (no 1080p), duration
-  // 4-30s, and an "adaptive" aspect ratio. `frames` and `camera_fixed` are
-  // absent because this upstream ignores them; `seed` and `return_last_frame`
-  // are debugging-oriented and stay out of the public page.
+  // These are Seedance 2.5's published capabilities, which is what a visitor
+  // evaluating the model needs to see.
+  //
+  // They intentionally do NOT match relay/channel/task/modelapiseedance, whose
+  // supportedModelAPIResolutions still allows only 480p/720p. Do not "fix" this
+  // page to match that list: the divergence is deliberate, and the adaptor is
+  // the side that lags. A 1080p call routed through that channel is rejected
+  // upstream with "unsupported resolution" until the adaptor is updated.
+  //
+  // duration is 4-30s. `frames` and `camera_fixed` are absent because this
+  // upstream ignores them; `seed` and `return_last_frame` are
+  // debugging-oriented and stay out of the public page.
   generator: {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:seedance-2-5",
     fields: [
-      { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["16:9", "9:16", "1:1", "4:3", "3:4", "adaptive"] },
-      { name: "resolution", label: "Resolution", type: "select", defaultValue: "720p", options: ["480p", "720p"] },
+      { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["9:16", "16:9", "21:9", "1:1", "3:4", "4:3", "adaptive"] },
+      { name: "resolution", label: "Resolution", type: "select", defaultValue: "1080p", options: ["720p", "1080p"] },
       { name: "duration", label: "Duration", type: "number", defaultValue: 5, min: 4, max: 30 },
       { name: "generate_audio", label: "Generate audio", type: "boolean", defaultValue: true },
     ],
@@ -328,8 +335,10 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   flatkeyPrice: "$0.0756",
   estFlatkey: "$0.38",
   estOfficial: "$0.42",
+  // Matches the first workbench example (the real wet-track clip), so the editor
+  // opens showing the request that produced the video on screen.
   examplePrompt:
-    "Create a 16:9 Flatkey brand film: open on the Flatkey logo mark, push into a model catalog showing Seedance next to GPT and Claude, cut to live per-second pricing rows, then land on a generated video preview. Smooth camera moves, clean product lighting, subtle sound design.",
+    "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
   priceUnit: "/ second",
   summary:
     "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.",
@@ -748,7 +757,18 @@ export type ModelLandingKey =
   | "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control."
   | "Up to 50 assets"
   | "Video price"
-  | "More {{kind}} models"
+  | "Vertical short-form"
+  | "Widescreen"
+  | "Cinemascope"
+  | "Square"
+  | "Portrait"
+  | "Landscape"
+  | "Match reference"
+  | "Wet-track chase shot"
+  | "Other video generation models"
+  | "Other audio models"
+  | "Other image generation models"
+  | "Other models worth comparing"
   | "Start calling {{model}} in minutes"
   | "Pick an integration path — all four use the same account and model catalog."
   | "Model"
@@ -808,7 +828,6 @@ export type ModelLandingKey =
   | "From example"
   | "More AI models from {{provider}}"
   | "Examples"
-  | "Brand film"
   | "Form"
   | "Reference Videos"
   | "Reference Audios"
@@ -1214,7 +1233,18 @@ const en: Record<ModelLandingKey, string> = {
   "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.",
   "Up to 50 assets": "Up to 50 assets",
   "Video price": "Video price",
-  "More {{kind}} models": "More {{kind}} models",
+  "Vertical short-form": "Vertical short-form",
+  "Widescreen": "Widescreen",
+  "Cinemascope": "Cinemascope",
+  "Square": "Square",
+  "Portrait": "Portrait",
+  "Landscape": "Landscape",
+  "Match reference": "Match reference",
+  "Wet-track chase shot": "Wet-track chase shot",
+  "Other video generation models": "Other video generation models",
+  "Other audio models": "Other audio models",
+  "Other image generation models": "Other image generation models",
+  "Other models worth comparing": "Other models worth comparing",
   "Start calling {{model}} in minutes": "Start calling {{model}} in minutes",
   "Pick an integration path — all four use the same account and model catalog.": "Pick an integration path — all four use the same account and model catalog.",
   "Model": "Model",
@@ -1274,7 +1304,6 @@ const en: Record<ModelLandingKey, string> = {
   "From example": "From example",
   "More AI models from {{provider}}": "More AI models from {{provider}}",
   "Examples": "Examples",
-  "Brand film": "Brand film",
   "Form": "Form",
   "Reference Videos": "Reference Videos",
   "Reference Audios": "Reference Audios",
@@ -1589,7 +1618,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "单次请求最多 50 个素材：图像、视频和音频，并支持首帧与首尾帧控制。",
     "Up to 50 assets": "最多 50 个素材",
     "Video price": "视频价格",
-    "More {{kind}} models": "更多{{kind}}模型",
+    "Vertical short-form": "短剧竖屏",
+    "Widescreen": "横屏",
+    "Cinemascope": "宽银幕",
+    "Square": "方形",
+    "Portrait": "竖版",
+    "Landscape": "横版",
+    "Match reference": "跟随参考素材",
+    "Wet-track chase shot": "雨天赛道跟拍",
+    "Other video generation models": "其他视频生成模型",
+    "Other audio models": "其他音频模型",
+    "Other image generation models": "其他图像生成模型",
+    "Other models worth comparing": "其他值得对比的模型",
     "Start calling {{model}} in minutes": "几分钟内开始调用 {{model}}",
     "Pick an integration path — all four use the same account and model catalog.": "选一条接入路径 —— 四种方式共用同一个账号和模型目录。",
     "Model": "模型",
@@ -1647,7 +1687,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Use the model id below, or continue from this page with your draft preserved.": "使用下方的模型 ID，或从本页带着草稿继续。",
     "From example": "来自示例",
     "More AI models from {{provider}}": "{{provider}} 的更多 AI 模型",
-    "Brand film": "品牌宣传片",
     "Reference Videos": "参考视频",
     "Reference Audios": "参考音频",
     "Upload from device": "本地上传",
@@ -1770,7 +1809,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hasta 50 assets por solicitud: imágenes, videos y audio, con control de primer fotograma y de primer/último fotograma.",
     "Up to 50 assets": "Hasta 50 assets",
     "Video price": "Precio de video",
-    "More {{kind}} models": "Más modelos de {{kind}}",
+    "Vertical short-form": "Vertical para social",
+    "Widescreen": "Panorámico",
+    "Cinemascope": "Cinemascope",
+    "Square": "Cuadrado",
+    "Portrait": "Retrato",
+    "Landscape": "Horizontal",
+    "Match reference": "Igual que la referencia",
+    "Wet-track chase shot": "Plano de persecución en pista mojada",
+    "Other video generation models": "Otros modelos de generación de video",
+    "Other audio models": "Otros modelos de audio",
+    "Other image generation models": "Otros modelos de generación de imagen",
+    "Other models worth comparing": "Otros modelos que vale la pena comparar",
     "Start calling {{model}} in minutes": "Empieza a llamar a {{model}} en minutos",
     "Pick an integration path — all four use the same account and model catalog.": "Elige una vía de integración: las cuatro usan la misma cuenta y el mismo catálogo.",
     "Model": "Modelo",
@@ -1830,7 +1880,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Del ejemplo",
     "More AI models from {{provider}}": "Más modelos de IA de {{provider}}",
     "Examples": "Ejemplos",
-    "Brand film": "Video de marca",
     "Form": "Formulario",
     "Reference Videos": "Videos de referencia",
     "Reference Audios": "Audios de referencia",
@@ -1957,7 +2006,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Jusqu'à 50 assets par requête : images, vidéos et audio, avec contrôle de la première image et des première/dernière images.",
     "Up to 50 assets": "Jusqu'à 50 assets",
     "Video price": "Prix vidéo",
-    "More {{kind}} models": "Plus de modèles {{kind}}",
+    "Vertical short-form": "Vertical format court",
+    "Widescreen": "Panoramique",
+    "Cinemascope": "Cinémascope",
+    "Square": "Carré",
+    "Portrait": "Portrait",
+    "Landscape": "Paysage",
+    "Match reference": "Comme la référence",
+    "Wet-track chase shot": "Plan de poursuite sur piste mouillée",
+    "Other video generation models": "Autres modèles de génération vidéo",
+    "Other audio models": "Autres modèles audio",
+    "Other image generation models": "Autres modèles de génération d'images",
+    "Other models worth comparing": "Autres modèles à comparer",
     "Start calling {{model}} in minutes": "Appelez {{model}} en quelques minutes",
     "Pick an integration path — all four use the same account and model catalog.": "Choisissez une voie d'intégration — les quatre utilisent le même compte et le même catalogue.",
     "Model": "Modèle",
@@ -2017,7 +2077,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Issu de l'exemple",
     "More AI models from {{provider}}": "Plus de modèles IA de {{provider}}",
     "Examples": "Exemples",
-    "Brand film": "Film de marque",
     "Form": "Formulaire",
     "Reference Videos": "Vidéos de référence",
     "Reference Audios": "Audios de référence",
@@ -2144,7 +2203,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Até 50 assets por requisição: imagens, vídeos e áudio, com controle de primeiro quadro e de primeiro/último quadro.",
     "Up to 50 assets": "Até 50 assets",
     "Video price": "Preço de vídeo",
-    "More {{kind}} models": "Mais modelos de {{kind}}",
+    "Vertical short-form": "Vertical para social",
+    "Widescreen": "Widescreen",
+    "Cinemascope": "Cinemascope",
+    "Square": "Quadrado",
+    "Portrait": "Retrato",
+    "Landscape": "Paisagem",
+    "Match reference": "Igual à referência",
+    "Wet-track chase shot": "Plano de perseguição em pista molhada",
+    "Other video generation models": "Outros modelos de geração de vídeo",
+    "Other audio models": "Outros modelos de áudio",
+    "Other image generation models": "Outros modelos de geração de imagem",
+    "Other models worth comparing": "Outros modelos que vale comparar",
     "Start calling {{model}} in minutes": "Comece a chamar {{model}} em minutos",
     "Pick an integration path — all four use the same account and model catalog.": "Escolha um caminho de integração — os quatro usam a mesma conta e o mesmo catálogo.",
     "Model": "Modelo",
@@ -2204,7 +2274,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Do exemplo",
     "More AI models from {{provider}}": "Mais modelos de IA da {{provider}}",
     "Examples": "Exemplos",
-    "Brand film": "Vídeo de marca",
     "Form": "Formulário",
     "Reference Videos": "Vídeos de referência",
     "Reference Audios": "Áudios de referência",
@@ -2331,7 +2400,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "До 50 материалов на запрос: изображения, видео и аудио, с управлением первым кадром и первым/последним кадром.",
     "Up to 50 assets": "До 50 материалов",
     "Video price": "Цена видео",
-    "More {{kind}} models": "Другие модели {{kind}}",
+    "Vertical short-form": "Вертикальный формат",
+    "Widescreen": "Широкий экран",
+    "Cinemascope": "Синемаскоп",
+    "Square": "Квадрат",
+    "Portrait": "Портрет",
+    "Landscape": "Альбомный",
+    "Match reference": "Как у референса",
+    "Wet-track chase shot": "Съёмка преследования на мокрой трассе",
+    "Other video generation models": "Другие модели генерации видео",
+    "Other audio models": "Другие аудиомодели",
+    "Other image generation models": "Другие модели генерации изображений",
+    "Other models worth comparing": "Другие модели для сравнения",
     "Start calling {{model}} in minutes": "Начните вызывать {{model}} за считаные минуты",
     "Pick an integration path — all four use the same account and model catalog.": "Выберите способ интеграции — все четыре используют один аккаунт и один каталог.",
     "Model": "Модель",
@@ -2391,7 +2471,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Из примера",
     "More AI models from {{provider}}": "Другие ИИ-модели {{provider}}",
     "Examples": "Примеры",
-    "Brand film": "Бренд-ролик",
     "Form": "Форма",
     "Reference Videos": "Референсные видео",
     "Reference Audios": "Референсные аудио",
@@ -2518,7 +2597,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "1 リクエストにつき最大 50 点の素材（画像・動画・音声）。先頭フレームと先頭／末尾フレームの指定にも対応します。",
     "Up to 50 assets": "最大 50 点の素材",
     "Video price": "動画料金",
-    "More {{kind}} models": "{{kind}} モデルをもっと見る",
+    "Vertical short-form": "縦型ショート",
+    "Widescreen": "ワイド",
+    "Cinemascope": "シネスコ",
+    "Square": "正方形",
+    "Portrait": "縦長",
+    "Landscape": "横長",
+    "Match reference": "参照素材に合わせる",
+    "Wet-track chase shot": "ウェット路面の追走ショット",
+    "Other video generation models": "ほかの動画生成モデル",
+    "Other audio models": "ほかの音声モデル",
+    "Other image generation models": "ほかの画像生成モデル",
+    "Other models worth comparing": "比較したいほかのモデル",
     "Start calling {{model}} in minutes": "数分で {{model}} を呼び出す",
     "Pick an integration path — all four use the same account and model catalog.": "導入方法を選んでください。4 つとも同じアカウントとモデルカタログを使います。",
     "Model": "モデル",
@@ -2578,7 +2668,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "サンプルから",
     "More AI models from {{provider}}": "{{provider}} の他の AI モデル",
     "Examples": "サンプル",
-    "Brand film": "ブランドフィルム",
     "Form": "フォーム",
     "Reference Videos": "参照動画",
     "Reference Audios": "参照音声",
@@ -2705,7 +2794,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Tối đa 50 tư liệu mỗi yêu cầu: hình ảnh, video và âm thanh, kèm điều khiển khung hình đầu và khung hình đầu/cuối.",
     "Up to 50 assets": "Tối đa 50 tư liệu",
     "Video price": "Giá video",
-    "More {{kind}} models": "Thêm mô hình {{kind}}",
+    "Vertical short-form": "Dọc dạng ngắn",
+    "Widescreen": "Màn ảnh rộng",
+    "Cinemascope": "Cinemascope",
+    "Square": "Vuông",
+    "Portrait": "Dọc",
+    "Landscape": "Ngang",
+    "Match reference": "Theo tư liệu tham chiếu",
+    "Wet-track chase shot": "Cảnh bám đuôi trên đường đua ướt",
+    "Other video generation models": "Các mô hình tạo video khác",
+    "Other audio models": "Các mô hình âm thanh khác",
+    "Other image generation models": "Các mô hình tạo ảnh khác",
+    "Other models worth comparing": "Các mô hình khác đáng so sánh",
     "Start calling {{model}} in minutes": "Gọi {{model}} chỉ trong vài phút",
     "Pick an integration path — all four use the same account and model catalog.": "Chọn một hướng tích hợp — cả bốn đều dùng chung tài khoản và danh mục mô hình.",
     "Model": "Mô hình",
@@ -2765,7 +2865,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Từ ví dụ",
     "More AI models from {{provider}}": "Thêm mô hình AI từ {{provider}}",
     "Examples": "Ví dụ",
-    "Brand film": "Phim thương hiệu",
     "Form": "Biểu mẫu",
     "Reference Videos": "Video tham chiếu",
     "Reference Audios": "Âm thanh tham chiếu",
@@ -2892,7 +2991,18 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Bis zu 50 Assets pro Anfrage: Bilder, Videos und Audio, inklusive Steuerung von erstem Frame und erstem/letztem Frame.",
     "Up to 50 assets": "Bis zu 50 Assets",
     "Video price": "Videopreis",
-    "More {{kind}} models": "Weitere {{kind}}-Modelle",
+    "Vertical short-form": "Hochformat für Shorts",
+    "Widescreen": "Breitbild",
+    "Cinemascope": "Cinemascope",
+    "Square": "Quadratisch",
+    "Portrait": "Hochformat",
+    "Landscape": "Querformat",
+    "Match reference": "Wie die Referenz",
+    "Wet-track chase shot": "Verfolgungsaufnahme auf nasser Strecke",
+    "Other video generation models": "Weitere Videogenerierungsmodelle",
+    "Other audio models": "Weitere Audiomodelle",
+    "Other image generation models": "Weitere Bildgenerierungsmodelle",
+    "Other models worth comparing": "Weitere Modelle zum Vergleichen",
     "Start calling {{model}} in minutes": "In wenigen Minuten {{model}} aufrufen",
     "Pick an integration path — all four use the same account and model catalog.": "Wählen Sie einen Integrationsweg — alle vier nutzen dasselbe Konto und denselben Katalog.",
     "Model": "Modell",
@@ -2952,7 +3062,6 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "From example": "Aus Beispiel",
     "More AI models from {{provider}}": "Weitere KI-Modelle von {{provider}}",
     "Examples": "Beispiele",
-    "Brand film": "Markenfilm",
     "Form": "Formular",
     "Reference Videos": "Referenzvideos",
     "Reference Audios": "Referenz-Audios",
@@ -3759,7 +3868,18 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Up to 50 assets per request: images, videos, and audio, including first-frame and first/last-frame control.": "Hingga 50 aset per permintaan: gambar, video, dan audio, termasuk kontrol frame pertama dan frame pertama/terakhir.",
     "Up to 50 assets": "Hingga 50 aset",
     "Video price": "Harga video",
-    "More {{kind}} models": "Model {{kind}} lainnya",
+    "Vertical short-form": "Vertikal format pendek",
+    "Widescreen": "Layar lebar",
+    "Cinemascope": "Cinemascope",
+    "Square": "Persegi",
+    "Portrait": "Potret",
+    "Landscape": "Lanskap",
+    "Match reference": "Ikuti referensi",
+    "Wet-track chase shot": "Bidikan kejaran di lintasan basah",
+    "Other video generation models": "Model generasi video lainnya",
+    "Other audio models": "Model audio lainnya",
+    "Other image generation models": "Model generasi gambar lainnya",
+    "Other models worth comparing": "Model lain yang layak dibandingkan",
     "Start calling {{model}} in minutes": "Mulai panggil {{model}} dalam hitungan menit",
     "Pick an integration path — all four use the same account and model catalog.": "Pilih jalur integrasi — keempatnya memakai akun dan katalog model yang sama.",
     "Model": "Model",
@@ -3819,7 +3939,6 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "From example": "Dari contoh",
     "More AI models from {{provider}}": "Model AI lain dari {{provider}}",
     "Examples": "Contoh",
-    "Brand film": "Film brand",
     "Form": "Formulir",
     "Reference Videos": "Video referensi",
     "Reference Audios": "Audio referensi",

@@ -175,12 +175,18 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
   video: [
     {
-      poster: "/assets/cli/flatkey-seedance-brand-film.png",
-      video: "/assets/cli/flatkey-seedance-brand-film.mp4",
-      label: "Brand film",
+      // Real Seedance 2.5 output, with the prompt and reference image that
+      // produced it -- the workbench is a request blueprint, so the sample has
+      // to be a request that actually ran.
+      poster: "/assets/model-examples/seedance-f1-wet-track.png",
+      video: "/assets/model-examples/seedance-f1-wet-track.mp4",
+      label: "Wet-track chase shot",
       prompt:
-        "Create a 16:9 Flatkey brand film: open on the Flatkey logo mark, push into a model catalog showing Seedance next to GPT and Claude, cut to live per-second pricing rows, then land on a generated video preview. Smooth camera moves, clean product lighting, subtle sound design.",
+        "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
       fields: { ratio: "16:9", resolution: "720p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "f1-wet-track-reference.png", url: "/assets/model-examples/seedance-f1-reference.png" },
+      ],
     },
   ],
   audio: [
@@ -1892,6 +1898,16 @@ function referenceMediaKindLabel(type: string, t: (key: string, vars?: Record<st
   return t("File");
 }
 
+const ASPECT_RATIO_LABELS: Record<string, string> = {
+  "9:16": "Vertical short-form",
+  "16:9": "Widescreen",
+  "21:9": "Cinemascope",
+  "1:1": "Square",
+  "3:4": "Portrait",
+  "4:3": "Landscape",
+  adaptive: "Match reference",
+};
+
 function generatorFieldSelectOptions(
   field: ModelGeneratorField,
   t: (key: string, vars?: Record<string, string>) => string
@@ -1904,6 +1920,15 @@ function generatorFieldSelectOptions(
   }
 
   if (field.options && field.options.length > 0) {
+    // Aspect ratios carry the format they are for. "9:16" alone tells a reader
+    // the arithmetic but not that it is the short-drama vertical format.
+    if (field.name === "ratio") {
+      return field.options.map((option) => {
+        const value = String(option);
+        const description = ASPECT_RATIO_LABELS[value];
+        return { value, label: description ? `${value} · ${t(description)}` : value };
+      });
+    }
     return field.options.map((option) => ({ value: String(option), label: String(option) }));
   }
 
@@ -2035,10 +2060,8 @@ function OutputPreview(props: {
       >
         <video
           className="aspect-video h-full w-full bg-[#10131a] object-cover"
-          autoPlay
           controls
           loop
-          muted
           playsInline
           poster={primary.poster}
           preload="metadata"
@@ -2054,10 +2077,8 @@ function OutputPreview(props: {
         {props.kind === "video" && primary?.video ? (
           <video
             className="h-full w-full object-cover"
-            autoPlay
             controls
             loop
-            muted
             playsInline
             poster={primary.poster}
             preload="metadata"
@@ -2110,7 +2131,6 @@ function GeneratedExamplesCarousel(props: {
           {activeExample.video ? (
             <video
               className="h-full w-full object-cover"
-              autoPlay
               controls
               loop
               playsInline
@@ -2749,7 +2769,19 @@ function buildRelatedModelsTitle(
   if (models.length > 0 && models.every((model) => model.sameProvider)) {
     return t("More AI models from {{provider}}", { provider: config.officialName });
   }
-  return t("More {{kind}} models", { kind: relatedModelKindLabel(config, t) });
+  return relatedModelsFallbackTitle(config, t);
+}
+
+// One phrase per modality rather than a "More {{kind}} models" template: the
+// interpolated form reads badly once the label is itself a noun phrase.
+function relatedModelsFallbackTitle(
+  config: ModelConfig,
+  t: (key: string, vars?: Record<string, string>) => string
+) {
+  if (config.generator?.kind === "video") return t("Other video generation models");
+  if (config.generator?.kind === "audio") return t("Other audio models");
+  if (config.generator?.kind === "image") return t("Other image generation models");
+  return t("Other models worth comparing");
 }
 
 function relatedModelKindLabel(
@@ -2792,8 +2824,8 @@ function ModelHeroPricingRow(props: {
   const hasSavings = savings !== "—" && savings !== "0%";
   const hasRequests = props.requests !== "—";
   const columns = hasSavings
-    ? "minmax(260px,1.45fr) minmax(160px,0.8fr) minmax(160px,0.8fr) minmax(130px,0.62fr) minmax(150px,0.72fr)"
-    : "minmax(260px,1.6fr) minmax(170px,0.9fr) minmax(170px,0.9fr) minmax(150px,0.8fr)";
+    ? "minmax(260px,1.5fr) minmax(170px,0.9fr) minmax(170px,0.9fr) minmax(140px,0.7fr)"
+    : "minmax(260px,1.7fr) minmax(180px,1fr) minmax(180px,1fr)";
 
   return (
     <div
@@ -2842,16 +2874,6 @@ function ModelHeroPricingRow(props: {
             <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
           </div>
         ) : null}
-        <div data-model-health-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Live model health")}</div>
-          <div className="mt-2 flex items-center gap-2">
-            <span className={`size-2 rounded-full ${props.health === "—" ? "bg-slate-300" : "bg-emerald-500"}`} />
-            <span className="font-mono text-lg font-bold">{props.health}</span>
-          </div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
-            {hasRequests ? `${props.t("Requests")}: ${props.requests}` : props.t("Not enough data yet")}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -3050,7 +3072,7 @@ function buildCatalogRelatedModels(
     return {
       title: sameProviderCount > liveRelated.length / 2
         ? t("More AI models from {{provider}}", { provider })
-        : t("More {{kind}} models", { kind: relatedModelKindLabel(config, t) }),
+        : relatedModelsFallbackTitle(config, t),
       models: liveRelated,
     };
   }
