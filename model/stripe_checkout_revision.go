@@ -322,7 +322,7 @@ func ConvergePaidStripeCheckoutRevision(input StripeCheckoutRevisionActivation) 
 			if superseded.Error != nil {
 				return superseded.Error
 			}
-			if superseded.RowsAffected > 1 {
+			if superseded.RowsAffected != 1 {
 				return ErrStripeCheckoutRevisionConflict
 			}
 		}

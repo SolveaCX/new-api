@@ -217,6 +217,119 @@ func TestConvergePaidStripeCheckoutRevisionAllowsRevisionGap(t *testing.T) {
 	require.Equal(t, candidateID, stored.GatewayTradeNo)
 }
 
+func TestConvergePaidStripeCheckoutRevisionRequiresPredecessorForExpectedRevision(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           91,
+		TradeNo:          "t-paid-missing-prev",
+		GatewayTradeNo:   "cs_missing_prev_old",
+		Status:           common.TopUpStatusSuccess,
+		CheckoutRevision: 1,
+	}).Error)
+	candidateSessionID := "cs_missing_prev_paid"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderTopUp,
+		TradeNo:           "t-paid-missing-prev",
+		Revision:          2,
+		UserId:            91,
+		RequestId:         "req-missing-prev",
+		SelectionDigest:   "sha256:missing-prev",
+		State:             StripeCheckoutRevisionStatePreparing,
+		DiscountSource:    "manual",
+		ProviderSessionId: &candidateSessionID,
+	}).Error)
+	candidate, err := GetPreparingStripeCheckoutRevisionByProviderSession(StripeCheckoutOrderTopUp, "t-paid-missing-prev", candidateSessionID)
+	require.NoError(t, err)
+
+	active, err := ConvergePaidStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID:           candidate.Id,
+		ExpectedRevision:     1,
+		OldProviderSessionID: "cs_missing_prev_old",
+	})
+	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+	require.Nil(t, active)
+
+	var stored TopUp
+	require.NoError(t, DB.Where("trade_no = ?", "t-paid-missing-prev").First(&stored).Error)
+	require.EqualValues(t, 1, stored.CheckoutRevision)
+	require.Equal(t, "cs_missing_prev_old", stored.GatewayTradeNo)
+
+	var candidateRow StripeCheckoutRevision
+	require.NoError(t, DB.First(&candidateRow, candidate.Id).Error)
+	require.Equal(t, StripeCheckoutRevisionStatePreparing, candidateRow.State)
+
+	var activeCount int64
+	require.NoError(t, DB.Model(&StripeCheckoutRevision{}).
+		Where("order_type = ? AND trade_no = ? AND state = ?", StripeCheckoutOrderTopUp, "t-paid-missing-prev", StripeCheckoutRevisionStateActive).
+		Count(&activeCount).Error)
+	require.Zero(t, activeCount)
+}
+
+func TestConvergePaidStripeCheckoutRevisionRequiresMatchingPredecessorSession(t *testing.T) {
+	setupStripeCheckoutRevisionTestDB(t)
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:           92,
+		TradeNo:          "t-paid-wrong-prev",
+		GatewayTradeNo:   "cs_wrong_prev_old",
+		Status:           common.TopUpStatusSuccess,
+		CheckoutRevision: 1,
+	}).Error)
+	otherSessionID := "cs_other_prev"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderTopUp,
+		TradeNo:           "t-paid-wrong-prev",
+		Revision:          1,
+		UserId:            92,
+		RequestId:         "req-wrong-prev-original",
+		SelectionDigest:   "sha256:wrong-prev-original",
+		State:             StripeCheckoutRevisionStateActive,
+		DiscountSource:    "recall",
+		ProviderSessionId: &otherSessionID,
+	}).Error)
+	candidateSessionID := "cs_wrong_prev_paid"
+	require.NoError(t, DB.Create(&StripeCheckoutRevision{
+		OrderType:         StripeCheckoutOrderTopUp,
+		TradeNo:           "t-paid-wrong-prev",
+		Revision:          2,
+		UserId:            92,
+		RequestId:         "req-wrong-prev",
+		SelectionDigest:   "sha256:wrong-prev",
+		State:             StripeCheckoutRevisionStatePreparing,
+		DiscountSource:    "manual",
+		ProviderSessionId: &candidateSessionID,
+	}).Error)
+	candidate, err := GetPreparingStripeCheckoutRevisionByProviderSession(StripeCheckoutOrderTopUp, "t-paid-wrong-prev", candidateSessionID)
+	require.NoError(t, err)
+
+	active, err := ConvergePaidStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID:           candidate.Id,
+		ExpectedRevision:     1,
+		OldProviderSessionID: "cs_wrong_prev_old",
+	})
+	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+	require.Nil(t, active)
+
+	var stored TopUp
+	require.NoError(t, DB.Where("trade_no = ?", "t-paid-wrong-prev").First(&stored).Error)
+	require.EqualValues(t, 1, stored.CheckoutRevision)
+	require.Equal(t, "cs_wrong_prev_old", stored.GatewayTradeNo)
+
+	var original StripeCheckoutRevision
+	require.NoError(t, DB.Where("order_type = ? AND trade_no = ? AND revision = ?", StripeCheckoutOrderTopUp, "t-paid-wrong-prev", 1).First(&original).Error)
+	require.Equal(t, StripeCheckoutRevisionStateActive, original.State)
+	require.Equal(t, otherSessionID, *original.ProviderSessionId)
+
+	var candidateRow StripeCheckoutRevision
+	require.NoError(t, DB.First(&candidateRow, candidate.Id).Error)
+	require.Equal(t, StripeCheckoutRevisionStatePreparing, candidateRow.State)
+
+	var activeCount int64
+	require.NoError(t, DB.Model(&StripeCheckoutRevision{}).
+		Where("order_type = ? AND trade_no = ? AND state = ?", StripeCheckoutOrderTopUp, "t-paid-wrong-prev", StripeCheckoutRevisionStateActive).
+		Count(&activeCount).Error)
+	require.EqualValues(t, 1, activeCount)
+}
+
 func TestStripeCheckoutRevisionCandidateAttachmentExactReplaySucceeds(t *testing.T) {
 	setupStripeCheckoutRevisionTestDB(t)
 	require.NoError(t, DB.Create(&TopUp{
