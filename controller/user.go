@@ -1487,6 +1487,11 @@ func EmailBind(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// The initial token was skipped at registration for unverified accounts;
+	// re-issue it now that the email is verified so onboarding completes.
+	if err := ensureDefaultUserToken(&user); err != nil {
+		common.SysLog("failed to ensure default token after email verification: " + err.Error())
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

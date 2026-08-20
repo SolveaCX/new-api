@@ -31,9 +31,10 @@ type emailDomainDNSCheckerFunc func(domain string) emailDomainDNSCheck
 var registrationEmailDNSChecker emailDomainDNSCheckerFunc = checkEmailDomainDNS
 
 const (
-	emailDomainDNSLookupTimeout  = 3 * time.Second
-	emailDomainDNSCacheTTL       = 6 * time.Hour
-	emailDomainDNSMaxConcurrency = 64
+	emailDomainDNSLookupTimeout   = 3 * time.Second
+	emailDomainDNSCacheTTL        = 6 * time.Hour
+	emailDomainDNSMaxConcurrency  = 64
+	emailDomainDNSSemWaitTimeout  = time.Second
 )
 
 type emailDomainDNSCacheEntry struct {
@@ -67,10 +68,16 @@ func checkEmailDomainDNS(domain string) emailDomainDNSCheck {
 			return entry.check
 		}
 	}
+	// Concurrency cap: briefly wait for a probe slot instead of failing open
+	// immediately, so a flood of fresh-domain registrations cannot push the
+	// system past the cap and make every subsequent request skip validation.
+	// Only after the short wait times out do we degrade to fail-open.
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), emailDomainDNSSemWaitTimeout)
+	defer waitCancel()
 	select {
 	case emailDomainDNSSem <- struct{}{}:
 		defer func() { <-emailDomainDNSSem }()
-	default:
+	case <-waitCtx.Done():
 		common.SysLog("registration dns check: concurrency limit reached, skipping probe for " + domain)
 		return emailDomainDNSCheck{MXRecord: true, ARecord: true, WebsiteReachable: true}
 	}
