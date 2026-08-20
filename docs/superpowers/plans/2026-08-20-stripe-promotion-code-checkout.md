@@ -531,6 +531,8 @@ git commit -m "Build revisioned Stripe Sessions with one explicit discount" -m "
 
 **Files:**
 - Create: controller/stripe_checkout_discount.go
+- Modify: model/stripe_checkout_revision.go
+- Modify: model/stripe_checkout_revision_test.go
 - Modify: router/api-router.go
 - Modify: controller/topup_stripe.go
 - Modify: controller/subscription_payment_stripe.go
@@ -544,6 +546,10 @@ git commit -m "Build revisioned Stripe Sessions with one explicit discount" -m "
 **Interfaces:**
 - Consumes: signed context, expected revision, request ID, apply/restore.
 - Produces: StripeCheckoutRevisionResponse using the locked envelope.
+
+- [ ] **Step 0: Add ledger read APIs required by restore and conflict responses**
+
+Add model-layer read-only getters for an exact revision and the current active revision by `(order_type, trade_no)`. They must not return superseded or abandoned rows as active, and missing rows must preserve `gorm.ErrRecordNotFound`. Cover revision 1, current active, excluded terminal states, and not-found behavior. Controllers must not query `model.DB` directly.
 
 - [ ] **Step 1: Write failing endpoint tests**
 
