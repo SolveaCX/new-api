@@ -55,6 +55,8 @@ type Props = {
 
 const SEARCH_DEBOUNCE_MS = 160;
 const MAX_VISIBLE_ROWS = 200;
+/** getVendorName's fallback for models the payload leaves without a vendor. */
+const PLACEHOLDER_VENDOR = "AI";
 
 export function ModelsDirectory(props: Props) {
   const copy = getDirectoryCopy(props.locale);
@@ -100,6 +102,9 @@ export function ModelsDirectory(props: Props) {
           vendor: row.vendor,
           inputUsd: parseUsd(row.input) ?? row.discountedUsd,
           outputUsd: parseUsd(row.output),
+          // Official rate drives the discount sort; both sides come from the
+          // live payload so a reprice re-sorts on the next render.
+          officialUsd: parseUsd(row.inputOfficial) ?? row.officialUsd,
           endpointTypes: row.endpointTypes,
         })
       ),
@@ -117,7 +122,7 @@ export function ModelsDirectory(props: Props) {
   );
 
   const groups = useMemo(
-    () => buildFilterGroups(props.locale, rows.map((row) => row.name)),
+    () => buildFilterGroups(props.locale, rows.map((row) => row.name), vendorsForRows(rows)),
     [props.locale, rows]
   );
   const featured = useMemo(() => buildFeaturedSlides(props.models.map((model) => model.model_name)), [props.models]);
@@ -316,7 +321,24 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
   };
 }
 
-function buildFilterGroups(locale: Locale, modelNames: string[]): FilterGroup[] {
+/**
+ * Vendors present in the live catalogue, most models first.
+ *
+ * `getVendorName` falls back to the literal "AI" for models the payload leaves
+ * without a vendor (the Macaron models today). That placeholder is fine as a
+ * table label but must not become a filter chip, so it is dropped here — those
+ * models stay listed and searchable, they just have no author to filter by.
+ */
+function vendorsForRows(rows: Array<{ vendor: string }>): string[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.vendor || row.vendor === PLACEHOLDER_VENDOR) continue;
+    counts.set(row.vendor, (counts.get(row.vendor) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b)).map(([vendor]) => vendor);
+}
+
+function buildFilterGroups(locale: Locale, modelNames: string[], vendorNames: string[]): FilterGroup[] {
   const copy = getDirectoryCopy(locale);
   return [
     {
@@ -347,9 +369,16 @@ function buildFilterGroups(locale: Locale, modelNames: string[]): FilterGroup[] 
       options: PRICE_BANDS.map((band) => ({ value: band.id, label: priceBandLabel(band) })),
     },
     {
+      key: "vendors",
+      label: copy.groupVendors,
+      defaultOpen: true,
+      // Model authors come straight from the live pricing payload, so this
+      // group needs no static metadata and never drifts from the catalogue.
+      options: vendorNames.map((value) => ({ value, label: value })),
+    },
+    {
       key: "series",
       label: copy.groupSeries,
-      defaultOpen: true,
       options: seriesForModels(modelNames).map((value) => ({ value, label: value })),
     },
     {

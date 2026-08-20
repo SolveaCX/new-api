@@ -24,6 +24,7 @@ export type DirectoryFilterKey =
   | "context"
   | "inputPrice"
   | "outputPrice"
+  | "vendors"
   | "series"
   | "categories"
   | "age"
@@ -34,12 +35,18 @@ export type DirectoryFilters = {
   context: number[];
   inputPrice: PriceBandId[];
   outputPrice: PriceBandId[];
+  /** Model authors — who built the model, from the live pricing payload. */
+  vendors: string[];
   series: string[];
   categories: string[];
   age: AgeBand[];
   distillable: boolean[];
   q?: string;
-  /** Retained so existing ?vendor= links from the sitemap keep working. */
+  /**
+   * Legacy single-vendor param. The sitemap and older inbound links still use
+   * ?vendor=<name>, so it keeps narrowing results alongside the `vendors`
+   * group rather than being folded into it.
+   */
   vendor?: string;
 };
 
@@ -48,6 +55,7 @@ export const EMPTY_DIRECTORY_FILTERS: DirectoryFilters = {
   context: [],
   inputPrice: [],
   outputPrice: [],
+  vendors: [],
   series: [],
   categories: [],
   age: [],
@@ -59,6 +67,7 @@ export const DIRECTORY_FILTER_KEYS: DirectoryFilterKey[] = [
   "context",
   "inputPrice",
   "outputPrice",
+  "vendors",
   "series",
   "categories",
   "age",
@@ -84,6 +93,11 @@ export type DirectoryRow = {
   rank: number;
   top10?: number;
   releasedAt?: string | null;
+  /**
+   * Saving against the official rate, 0–1. Undefined when there is nothing to
+   * compare against, which sorts last rather than reading as "no discount".
+   */
+  saving?: number;
 };
 
 export type DirectoryRowInput = {
@@ -91,6 +105,8 @@ export type DirectoryRowInput = {
   vendor: string;
   inputUsd?: number;
   outputUsd?: number;
+  /** Official (pre-discount) input rate, for the discount sort. */
+  officialUsd?: number;
   endpointTypes?: string[];
 };
 
@@ -114,7 +130,21 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
     rank: meta?.rank ?? Number.MAX_SAFE_INTEGER,
     top10: meta?.top10,
     releasedAt: meta?.releasedAt,
+    saving: savingRatio(input.officialUsd, input.inputUsd),
   };
+}
+
+/**
+ * Fraction saved against the official rate. Computed from live prices, so a
+ * repriced model re-sorts itself. Returns undefined when either side is
+ * missing or the "discount" is not a real saving.
+ */
+export function savingRatio(officialUsd: number | undefined, ourUsd: number | undefined): number | undefined {
+  if (officialUsd == null || ourUsd == null) return undefined;
+  if (!Number.isFinite(officialUsd) || !Number.isFinite(ourUsd)) return undefined;
+  if (officialUsd <= 0 || ourUsd < 0) return undefined;
+  const saving = 1 - ourUsd / officialUsd;
+  return saving >= 0 ? saving : undefined;
 }
 
 function matchesGroup(row: DirectoryRow, key: DirectoryFilterKey, filters: DirectoryFilters): boolean {
@@ -136,6 +166,10 @@ function matchesGroup(row: DirectoryRow, key: DirectoryFilterKey, filters: Direc
     case "outputPrice": {
       const selected = filters.outputPrice;
       return selected.length === 0 || (row.outputBand != null && selected.includes(row.outputBand));
+    }
+    case "vendors": {
+      const selected = filters.vendors;
+      return selected.length === 0 || selected.includes(row.vendor);
     }
     case "series": {
       const selected = filters.series;
@@ -205,9 +239,9 @@ export function hasActiveFilters(filters: DirectoryFilters): boolean {
   return DIRECTORY_FILTER_KEYS.some((key) => (filters[key] as unknown[]).length > 0);
 }
 
-export type DirectorySort = "rank" | "newest" | "ctxDesc" | "name";
+export type DirectorySort = "rank" | "newest" | "discount" | "ctxDesc" | "name";
 
-export const DIRECTORY_SORTS: DirectorySort[] = ["rank", "newest", "ctxDesc", "name"];
+export const DIRECTORY_SORTS: DirectorySort[] = ["rank", "newest", "discount", "ctxDesc", "name"];
 
 const AGE_ORDER: AgeBand[] = ["new", "1-3m", "3-6m", "6-12m", "12m+"];
 
@@ -234,6 +268,10 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
       return sorted.sort((a, b) => (b.contextTokens ?? 0) - (a.contextTokens ?? 0) || byPopularity(a, b));
     case "newest":
       return sorted.sort((a, b) => ageIndex(a.age) - ageIndex(b.age) || byPopularity(a, b));
+    // Biggest saving first. A row with no comparable price sorts last rather
+    // than mixing in with genuine 0% discounts.
+    case "discount":
+      return sorted.sort((a, b) => (b.saving ?? -1) - (a.saving ?? -1) || byPopularity(a, b));
     case "rank":
     default:
       return sorted.sort(byPopularity);

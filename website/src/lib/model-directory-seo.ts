@@ -63,6 +63,18 @@ export function buildDirectorySeo(locale: Locale, params?: DirectorySearchParams
     };
   }
 
+  // One model author picked in the sidebar. Same page as ?vendor=<name>, so it
+  // canonicalizes to that form rather than competing with it as a second URL.
+  if (!hasQuery && !hasVendor && activeGroups === 1 && parsed.vendors.length === 1) {
+    const vendor = parsed.vendors[0];
+    return {
+      title: copy.seoSeriesTitle.replace("{{series}}", vendor),
+      description: copy.seoSeriesDescription.replace("{{series}}", vendor),
+      canonicalQuery: `vendor=${encodeURIComponent(vendor)}`,
+      noIndex: false,
+    };
+  }
+
   // Everything else: still renders, but points at the canonical directory.
   return { title: copy.seoTitle, description: copy.seoDescription, canonicalQuery: "", noIndex: true };
 }
@@ -73,6 +85,7 @@ function countActiveGroups(parsed: ReturnType<typeof parseDirectorySearch>): num
     parsed.context,
     parsed.inputPrice,
     parsed.outputPrice,
+    parsed.vendors,
     parsed.series,
     parsed.categories,
     parsed.age,

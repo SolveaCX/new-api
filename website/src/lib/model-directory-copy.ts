@@ -32,6 +32,7 @@ export type DirectoryCopy = {
   groupContext: string;
   groupInputPrice: string;
   groupOutputPrice: string;
+  groupVendors: string;
   groupSeries: string;
   groupCategories: string;
   groupAge: string;
@@ -75,6 +76,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Context Length",
     groupInputPrice: "Input Pricing",
     groupOutputPrice: "Output Pricing",
+    groupVendors: "Model Authors",
     groupSeries: "Series",
     groupCategories: "Categories",
     groupAge: "Model Age",
@@ -113,6 +115,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "上下文长度",
     groupInputPrice: "输入价格",
     groupOutputPrice: "输出价格",
+    groupVendors: "模型作者",
     groupSeries: "模型系列",
     groupCategories: "适用场景",
     groupAge: "发布时间",
@@ -149,6 +152,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Longitud de contexto",
     groupInputPrice: "Precio de entrada",
     groupOutputPrice: "Precio de salida",
+    groupVendors: "Autores del modelo",
     groupSeries: "Serie",
     groupCategories: "Categorías",
     groupAge: "Antigüedad del modelo",
@@ -187,6 +191,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Longueur de contexte",
     groupInputPrice: "Prix en entrée",
     groupOutputPrice: "Prix en sortie",
+    groupVendors: "Auteurs du modèle",
     groupSeries: "Série",
     groupCategories: "Catégories",
     groupAge: "Ancienneté du modèle",
@@ -223,6 +228,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Tamanho do contexto",
     groupInputPrice: "Preço de entrada",
     groupOutputPrice: "Preço de saída",
+    groupVendors: "Autores do modelo",
     groupSeries: "Série",
     groupCategories: "Categorias",
     groupAge: "Idade do modelo",
@@ -259,6 +265,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Длина контекста",
     groupInputPrice: "Цена за ввод",
     groupOutputPrice: "Цена за вывод",
+    groupVendors: "Авторы моделей",
     groupSeries: "Серия",
     groupCategories: "Категории",
     groupAge: "Возраст модели",
@@ -295,6 +302,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "コンテキスト長",
     groupInputPrice: "入力料金",
     groupOutputPrice: "出力料金",
+    groupVendors: "モデル提供元",
     groupSeries: "シリーズ",
     groupCategories: "カテゴリ",
     groupAge: "モデルの新しさ",
@@ -331,6 +339,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Độ dài ngữ cảnh",
     groupInputPrice: "Giá đầu vào",
     groupOutputPrice: "Giá đầu ra",
+    groupVendors: "Đơn vị phát triển",
     groupSeries: "Dòng mô hình",
     groupCategories: "Danh mục",
     groupAge: "Thời điểm ra mắt",
@@ -367,6 +376,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Kontextlänge",
     groupInputPrice: "Eingabepreis",
     groupOutputPrice: "Ausgabepreis",
+    groupVendors: "Modell-Anbieter",
     groupSeries: "Serie",
     groupCategories: "Kategorien",
     groupAge: "Modellalter",
@@ -403,6 +413,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupContext: "Panjang konteks",
     groupInputPrice: "Harga masukan",
     groupOutputPrice: "Harga keluaran",
+    groupVendors: "Pembuat model",
     groupSeries: "Seri",
     groupCategories: "Kategori",
     groupAge: "Usia model",
@@ -443,16 +454,16 @@ export const AGE_BAND_LABELS: Record<Locale, Record<AgeBand, string>> = {
 };
 
 export const SORT_LABELS: Record<Locale, Record<DirectorySort, string>> = {
-  en: { rank: "Most Popular", newest: "Newest", ctxDesc: "Longest context", name: "Name A–Z" },
-  zh: { rank: "最受欢迎", newest: "最新发布", ctxDesc: "上下文最长", name: "名称 A–Z" },
-  es: { rank: "Más populares", newest: "Más recientes", ctxDesc: "Mayor contexto", name: "Nombre A–Z" },
-  fr: { rank: "Les plus populaires", newest: "Les plus récents", ctxDesc: "Contexte le plus long", name: "Nom A–Z" },
-  pt: { rank: "Mais populares", newest: "Mais recentes", ctxDesc: "Maior contexto", name: "Nome A–Z" },
-  ru: { rank: "Популярные", newest: "Новые", ctxDesc: "Наибольший контекст", name: "Название А–Я" },
-  ja: { rank: "人気順", newest: "新着順", ctxDesc: "コンテキストが長い順", name: "名前 A–Z" },
-  vi: { rank: "Phổ biến nhất", newest: "Mới nhất", ctxDesc: "Ngữ cảnh dài nhất", name: "Tên A–Z" },
-  de: { rank: "Beliebteste", newest: "Neueste", ctxDesc: "Längster Kontext", name: "Name A–Z" },
-  id: { rank: "Paling populer", newest: "Terbaru", ctxDesc: "Konteks terpanjang", name: "Nama A–Z" },
+  en: { rank: "Most Popular", newest: "Newest", discount: "Biggest discount", ctxDesc: "Longest context", name: "Name A–Z" },
+  zh: { rank: "最受欢迎", newest: "最新发布", discount: "折扣最大", ctxDesc: "上下文最长", name: "名称 A–Z" },
+  es: { rank: "Más populares", newest: "Más recientes", discount: "Mayor descuento", ctxDesc: "Mayor contexto", name: "Nombre A–Z" },
+  fr: { rank: "Les plus populaires", newest: "Les plus récents", discount: "Remise la plus forte", ctxDesc: "Contexte le plus long", name: "Nom A–Z" },
+  pt: { rank: "Mais populares", newest: "Mais recentes", discount: "Maior desconto", ctxDesc: "Maior contexto", name: "Nome A–Z" },
+  ru: { rank: "Популярные", newest: "Новые", discount: "Наибольшая скидка", ctxDesc: "Наибольший контекст", name: "Название А–Я" },
+  ja: { rank: "人気順", newest: "新着順", discount: "割引率が高い順", ctxDesc: "コンテキストが長い順", name: "名前 A–Z" },
+  vi: { rank: "Phổ biến nhất", newest: "Mới nhất", discount: "Giảm giá nhiều nhất", ctxDesc: "Ngữ cảnh dài nhất", name: "Tên A–Z" },
+  de: { rank: "Beliebteste", newest: "Neueste", discount: "Größter Rabatt", ctxDesc: "Längster Kontext", name: "Name A–Z" },
+  id: { rank: "Paling populer", newest: "Terbaru", discount: "Diskon terbesar", ctxDesc: "Konteks terpanjang", name: "Nama A–Z" },
 };
 
 // Use-case categories come from the metadata table as English keys; these are

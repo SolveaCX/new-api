@@ -18,7 +18,7 @@ import { AGE_BANDS, CONTEXT_BUCKETS, MODALITIES, PRICE_BANDS, type AgeBand, type
 
 const DEFAULT_SORT: DirectorySort = "rank";
 
-const VALID_SORTS = new Set<string>(["rank", "newest", "ctxDesc", "name"]);
+const VALID_SORTS = new Set<string>(["rank", "newest", "discount", "ctxDesc", "name"]);
 const VALID_MODALITIES = new Set<string>(MODALITIES);
 const VALID_CONTEXT = new Set<number>(CONTEXT_BUCKETS);
 const VALID_PRICE_BANDS = new Set<string>(PRICE_BANDS.map((band) => band.id));
@@ -48,6 +48,7 @@ export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryF
       .filter((value) => VALID_CONTEXT.has(value)),
     inputPrice: splitValues(params?.inputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
     outputPrice: splitValues(params?.outputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
+    vendors: splitValues(params?.vendors),
     series: splitValues(params?.series),
     categories: splitValues(params?.categories),
     age: splitValues(params?.age).filter((value): value is AgeBand => VALID_AGE_BANDS.has(value)),

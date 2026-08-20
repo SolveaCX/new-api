@@ -14,7 +14,9 @@ import { directoryHref, directorySearchQuery, parseDirectorySearch, toggleDirect
 
 const NOW = new Date("2026-08-19T00:00:00Z");
 
-function rows(names: Array<{ name: string; vendor: string; inputUsd?: number; outputUsd?: number }>) {
+function rows(
+  names: Array<{ name: string; vendor: string; inputUsd?: number; outputUsd?: number; officialUsd?: number }>
+) {
   return names.map((input) => buildDirectoryRow(input, NOW));
 }
 
@@ -117,6 +119,23 @@ describe("filter semantics", () => {
     expect(filterDirectoryRows(SAMPLE, withFilters({ vendor: "OpenAI" }))).toHaveLength(2);
     expect(filterDirectoryRows(SAMPLE, withFilters({ vendor: "all" }))).toHaveLength(SAMPLE.length);
   });
+
+  test("the model-authors group is OR within itself", () => {
+    const result = filterDirectoryRows(SAMPLE, withFilters({ vendors: ["OpenAI", "Anthropic"] }));
+    expect(result.map((row) => row.name).sort()).toEqual(["claude-opus-5", "gpt-4o-mini", "gpt-5.6-sol"]);
+  });
+
+  test("model authors AND across other groups", () => {
+    const result = filterDirectoryRows(SAMPLE, withFilters({ vendors: ["OpenAI"], inputPrice: ["lt-0.5"] }));
+    expect(result.map((row) => row.name)).toEqual(["gpt-4o-mini"]);
+  });
+
+  test("the legacy single-vendor param narrows alongside the group", () => {
+    // ?vendor=Google plus a group selection that excludes Google yields nothing,
+    // rather than one silently overriding the other.
+    expect(filterDirectoryRows(SAMPLE, withFilters({ vendor: "Google", vendors: ["OpenAI"] }))).toHaveLength(0);
+    expect(filterDirectoryRows(SAMPLE, withFilters({ vendor: "OpenAI", vendors: ["OpenAI"] }))).toHaveLength(2);
+  });
 });
 
 describe("facet counts", () => {
@@ -155,6 +174,44 @@ describe("sorting", () => {
   test("name sorts alphabetically", () => {
     expect(sortDirectoryRows(SAMPLE, "name")[0].name).toBe("claude-opus-5");
   });
+
+  test("biggest discount first, computed from live prices", () => {
+    const priced = rows([
+      { name: "gpt-5.6-sol", vendor: "OpenAI", officialUsd: 5, inputUsd: 1.5 }, // 70%
+      { name: "claude-opus-5", vendor: "Anthropic", officialUsd: 5, inputUsd: 4.5 }, // 10%
+      { name: "deepseek-v4-pro", vendor: "DeepSeek", officialUsd: 1.32, inputUsd: 1.122 }, // 15%
+    ]);
+    expect(sortDirectoryRows(priced, "discount").map((row) => row.name)).toEqual([
+      "gpt-5.6-sol",
+      "deepseek-v4-pro",
+      "claude-opus-5",
+    ]);
+  });
+
+  test("rows with no comparable price sort last, not as a 0% discount", () => {
+    const mixed = rows([
+      { name: "claude-opus-5", vendor: "Anthropic", officialUsd: 5, inputUsd: 5 }, // real 0%
+      { name: "seedance-2.5", vendor: "ByteDance", inputUsd: 0.14 }, // no official price
+      { name: "gpt-5.6-sol", vendor: "OpenAI", officialUsd: 5, inputUsd: 4 }, // 20%
+    ]);
+    const sorted = sortDirectoryRows(mixed, "discount").map((row) => row.name);
+    expect(sorted[0]).toBe("gpt-5.6-sol");
+    expect(sorted[sorted.length - 1]).toBe("seedance-2.5");
+  });
+
+  test("a reprice changes the discount order without touching metadata", () => {
+    const before = rows([
+      { name: "gpt-4o-mini", vendor: "OpenAI", officialUsd: 1, inputUsd: 0.9 }, // 10%
+      { name: "claude-opus-5", vendor: "Anthropic", officialUsd: 1, inputUsd: 0.5 }, // 50%
+    ]);
+    expect(sortDirectoryRows(before, "discount")[0].name).toBe("claude-opus-5");
+
+    const after = rows([
+      { name: "gpt-4o-mini", vendor: "OpenAI", officialUsd: 1, inputUsd: 0.1 }, // now 90%
+      { name: "claude-opus-5", vendor: "Anthropic", officialUsd: 1, inputUsd: 0.5 },
+    ]);
+    expect(sortDirectoryRows(after, "discount")[0].name).toBe("gpt-4o-mini");
+  });
 });
 
 describe("unknown models degrade gracefully", () => {
@@ -185,6 +242,7 @@ describe("url round-trip", () => {
       context: [1048576],
       inputPrice: ["lt-0.5"],
       outputPrice: ["10+"],
+      vendors: ["OpenAI", "Anthropic"],
       series: ["GPT", "Claude"],
       categories: ["Programming"],
       age: ["new"],
@@ -197,6 +255,7 @@ describe("url round-trip", () => {
     expect(parsed.context).toEqual([1048576]);
     expect(parsed.inputPrice).toEqual(["lt-0.5"]);
     expect(parsed.outputPrice).toEqual(["10+"]);
+    expect(parsed.vendors).toEqual(["OpenAI", "Anthropic"]);
     expect(parsed.series).toEqual(["GPT", "Claude"]);
     expect(parsed.age).toEqual(["new"]);
     expect(parsed.distillable).toEqual([true]);

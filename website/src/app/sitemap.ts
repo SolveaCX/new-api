@@ -54,7 +54,8 @@ function queryEntry(
   }));
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {  const [localizedPosts, categories, pricing] = await Promise.all([
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const [localizedPosts, categories, pricing] = await Promise.all([
     Promise.all(LOCALES.map(async (locale) => ({ locale, posts: await getAllBlogPosts(locale) }))),
     getBlogCategories(),
     getPricingData(),

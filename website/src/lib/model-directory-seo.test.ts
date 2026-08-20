@@ -32,6 +32,20 @@ describe("directory SEO policy", () => {
     expect(seo.title).toContain("OpenAI");
   });
 
+  test("one model author from the sidebar canonicalizes to the ?vendor= form", () => {
+    const seo = buildDirectorySeo("en", { vendors: "Anthropic" });
+    expect(seo.noIndex).toBe(false);
+    // Same page as ?vendor=Anthropic, so it must not compete as a second URL.
+    expect(seo.canonicalQuery).toBe("vendor=Anthropic");
+    expect(seo.title).toContain("Anthropic");
+  });
+
+  test("several model authors are noindex like any multi-select", () => {
+    const seo = buildDirectorySeo("en", { vendors: "OpenAI,Anthropic" });
+    expect(seo.noIndex).toBe(true);
+    expect(seo.canonicalQuery).toBe("");
+  });
+
   test("multi-select and cross-group combinations are noindex", () => {
     for (const params of [
       { series: "Claude,GPT" },
