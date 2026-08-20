@@ -6672,6 +6672,11 @@
     "Manually pass the email verification for this account": "Aprobar manualmente la verificación de correo de esta cuenta",
     "Email Verified": "Correo verificado",
     "Verified": "Verificado",
-    "Unverified": "Sin verificar"
+    "Unverified": "Sin verificar",
+    "Verify email of selected users": "Verificar el correo de los usuarios seleccionados",
+    "Verify Selected Users?": "¿Verificar los usuarios seleccionados?",
+    "This will pass email verification for {{count}} selected user(s). Deleted users will be skipped.": "Se aprobará la verificación de correo de {{count}} usuario(s) seleccionado(s). Se omitirán los usuarios eliminados.",
+    "Successfully verified {{count}} user(s)": "Se verificaron {{count}} usuario(s) correctamente",
+    "No selected users can be verified": "No hay usuarios seleccionados que se puedan verificar"
   }
 }

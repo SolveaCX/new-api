@@ -1280,6 +1280,25 @@ type ManageRequest struct {
 	Mode   string `json:"mode"`
 }
 
+// BatchVerifyEmail marks a set of users' email as verified in one request.
+// Admin-only; read the ids from the JSON body. Used by the users table's bulk
+// action bar so admins can pass email verification for many accounts at once.
+func BatchVerifyEmail(c *gin.Context) {
+	var req struct {
+		Ids []int `json:"ids"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil || len(req.Ids) == 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	affected, err := model.BatchVerifyEmails(req.Ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"affected": affected})
+}
+
 // ManageUser Only admin user can do this
 func ManageUser(c *gin.Context) {
 	var req ManageRequest

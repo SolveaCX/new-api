@@ -1459,6 +1459,27 @@ func UpdateUserPayCountry(id int, country string) {
 	}
 }
 
+// BatchVerifyEmails marks the given users' email as verified in one UPDATE.
+// Returns the number of affected rows. Invalidates each user's cache so the
+// change is visible immediately. Safe under multi-node (DB row update).
+func BatchVerifyEmails(ids []int) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Model(&User{}).
+		Where("id IN ?", ids).
+		Update("email_verified_at", common.GetTimestamp())
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	for _, id := range ids {
+		if err := InvalidateUserCache(id); err != nil {
+			common.SysError("failed to invalidate batch-verified user cache: " + err.Error())
+		}
+	}
+	return result.RowsAffected, nil
+}
+
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
 	if common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
