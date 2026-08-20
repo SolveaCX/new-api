@@ -60,14 +60,17 @@ func EvaluateRegistrationEmail(email string, cfg system_setting.RegistrationSecu
 		if cfg.IsDisposableEmailDomain(domain) {
 			return RegistrationEmailDecision{}, ErrAutomatedRegistrationEmailRejected
 		}
-	}
-	if lookup != nil {
-		blocked, err := lookup(domain)
-		if err != nil {
-			return RegistrationEmailDecision{}, err
-		}
-		if blocked {
-			return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
+		// Active (velocity-triggered) domain block. Trusted domains are exempt —
+		// an enterprise customer must be able to register even if its domain was
+		// previously hammered by abusers.
+		if lookup != nil {
+			blocked, err := lookup(domain)
+			if err != nil {
+				return RegistrationEmailDecision{}, err
+			}
+			if blocked {
+				return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
+			}
 		}
 	}
 	return RegistrationEmailDecision{
