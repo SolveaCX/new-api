@@ -61,6 +61,7 @@ func TestUpdateStripeCheckoutDiscountApplyTransitionsCandidateInOrder(t *testing
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
 	require.True(t, envelope.Success)
+	require.Equal(t, "success", stripeCheckoutMessage(t, recorder))
 	require.Equal(t, "cs_new_secret", envelope.Data.ClientSecret)
 	require.EqualValues(t, 2, envelope.Data.CheckoutRevision)
 	require.Equal(t, service.StripeCheckoutDiscountManual, envelope.Data.DiscountState.Source)
@@ -228,6 +229,73 @@ func TestUpdateStripeCheckoutDiscountExactReplayReturnsPersistedCandidateWithout
 	require.NoError(t, common.Unmarshal(second.Body.Bytes(), &envelope))
 	require.EqualValues(t, 2, envelope.Data.CheckoutRevision)
 	require.Equal(t, "cs_replay_secret", envelope.Data.ClientSecret)
+	require.Equal(t, "success", stripeCheckoutMessage(t, second))
+}
+
+func TestUpdateStripeCheckoutDiscountExactApplyReplaySkipsResolverAndRejectsDifferentPayload(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountInvitation)
+	resolveCalls := 0
+	createCalls := 0
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		ResolvePromotion: func(context.Context, service.StripeCheckoutPromotionQuery) (service.StripeCheckoutResolvedPromotion, error) {
+			resolveCalls++
+			if resolveCalls > 1 {
+				return service.StripeCheckoutResolvedPromotion{}, service.ErrStripePromotionUnavailable
+			}
+			return service.StripeCheckoutResolvedPromotion{PromotionCodeID: "promo_replay", MaskedCode: "SAVE20"}, nil
+		},
+		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			createCalls++
+			return &stripeCheckoutSessionSnapshot{ID: "cs_apply_replay", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+	request := stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-apply-replay", Action: "apply", PromotionCode: " Save20 "}
+
+	require.Equal(t, http.StatusOK, fixture.post(t, request).Code)
+	require.Equal(t, http.StatusOK, fixture.post(t, request).Code)
+	different := request
+	different.PromotionCode = "OTHER"
+	recorder := fixture.post(t, different)
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	require.Equal(t, "checkout_revision_conflict", stripeCheckoutErrorCode(t, recorder))
+	require.Equal(t, 1, resolveCalls)
+	require.Equal(t, 1, createCalls)
+	require.NotContains(t, recorder.Body.String(), "OTHER")
+}
+
+func TestUpdateStripeCheckoutDiscountStaleNewApplyConflictsBeforeResolver(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	resolveCalls := 0
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		ResolvePromotion: func(context.Context, service.StripeCheckoutPromotionQuery) (service.StripeCheckoutResolvedPromotion, error) {
+			resolveCalls++
+			return service.StripeCheckoutResolvedPromotion{}, service.ErrStripePromotionUnavailable
+		},
+		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: "cs_stale_winner", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+	require.Equal(t, http.StatusOK, fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-stale-winner", Action: "restore"}).Code)
+
+	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-stale-invalid", Action: "apply", PromotionCode: "INVALID-RAW-CODE"})
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	require.Equal(t, "checkout_revision_conflict", stripeCheckoutErrorCode(t, recorder))
+	require.Zero(t, resolveCalls)
+	require.NotContains(t, recorder.Body.String(), "INVALID-RAW-CODE")
 }
 
 func TestUpdateStripeCheckoutDiscountNewRequestAtStaleRevisionReturnsLatest(t *testing.T) {
@@ -293,31 +361,88 @@ func TestUpdateStripeCheckoutDiscountPaymentWinsExpirationRace(t *testing.T) {
 	require.Equal(t, model.StripeCheckoutRevisionStateAbandoned, revision.State)
 }
 
-func TestUpdateStripeCheckoutDiscountActivationCASLossExpiresAndAbandonsCandidate(t *testing.T) {
+func TestUpdateStripeCheckoutDiscountActivationConflictWithoutWinnerKeepsCandidateForRetry(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	createCalls := 0
+	activateCalls := 0
+	oldExpired := false
+	candidateExpired := false
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			createCalls++
+			return &stripeCheckoutSessionSnapshot{ID: "cs_cas_loser", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			if sessionID == "cs_old" && oldExpired {
+				return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+			}
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			if sessionID == "cs_old" {
+				oldExpired = true
+			} else {
+				candidateExpired = true
+			}
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+		ActivateRevision: func(input model.StripeCheckoutRevisionActivation) (*model.StripeCheckoutRevision, error) {
+			activateCalls++
+			if activateCalls == 1 {
+				return nil, model.ErrStripeCheckoutRevisionConflict
+			}
+			return model.ActivateStripeCheckoutRevision(input)
+		},
+	})
+	t.Cleanup(restore)
+	request := stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-cas-no-winner", Action: "restore"}
+
+	first := fixture.post(t, request)
+	require.Equal(t, http.StatusInternalServerError, first.Code)
+	revision, err := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderTopUp, fixture.tradeNo, request.RequestID)
+	require.NoError(t, err)
+	require.Equal(t, model.StripeCheckoutRevisionStatePreparing, revision.State)
+	require.False(t, candidateExpired)
+
+	second := fixture.post(t, request)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, 2, activateCalls)
+}
+
+func TestUpdateStripeCheckoutDiscountActivationConflictWithRealWinnerCleansLoser(t *testing.T) {
 	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
 	expired := make([]string, 0, 2)
 	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
 		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
-			return &stripeCheckoutSessionSnapshot{ID: "cs_cas_loser", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+			return &stripeCheckoutSessionSnapshot{ID: "cs_real_loser", ClientSecret: "loser_secret", Status: "open", PaymentStatus: "unpaid"}, nil
 		},
 		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
-			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "open", PaymentStatus: "unpaid"}, nil
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: sessionID + "_secret", Status: "open", PaymentStatus: "unpaid"}, nil
 		},
 		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
 			expired = append(expired, sessionID)
 			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
 		},
 		ActivateRevision: func(model.StripeCheckoutRevisionActivation) (*model.StripeCheckoutRevision, error) {
+			winnerID := "cs_real_winner"
+			require.NoError(t, model.DB.Model(&model.StripeCheckoutRevision{}).Where("order_type = ? AND trade_no = ? AND revision = ?", model.StripeCheckoutOrderTopUp, fixture.tradeNo, 1).Update("state", model.StripeCheckoutRevisionStateSuperseded).Error)
+			require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{
+				OrderType: model.StripeCheckoutOrderTopUp, TradeNo: fixture.tradeNo, Revision: 3, UserId: fixture.userID,
+				RequestId: "req-real-winner", SelectionDigest: "winner", State: model.StripeCheckoutRevisionStateActive,
+				DiscountSource: string(service.StripeCheckoutDiscountNone), ProviderSessionId: &winnerID,
+			}).Error)
+			require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", fixture.tradeNo).Updates(map[string]any{"checkout_revision": 3, "gateway_trade_no": winnerID}).Error)
 			return nil, model.ErrStripeCheckoutRevisionConflict
 		},
 	})
 	t.Cleanup(restore)
 
-	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-cas-loss", Action: "restore"})
-	require.Equal(t, http.StatusConflict, recorder.Code)
+	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-real-loser", Action: "restore"})
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
 	require.Equal(t, "checkout_revision_conflict", stripeCheckoutErrorCode(t, recorder))
-	require.Equal(t, []string{"cs_old", "cs_cas_loser"}, expired)
-	revision, err := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderTopUp, fixture.tradeNo, "req-cas-loss")
+	require.Equal(t, []string{"cs_old", "cs_real_loser"}, expired)
+	revision, err := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderTopUp, fixture.tradeNo, "req-real-loser")
 	require.NoError(t, err)
 	require.Equal(t, model.StripeCheckoutRevisionStateAbandoned, revision.State)
 }
@@ -375,7 +500,7 @@ func TestUpdateStripeCheckoutDiscountTransientActivationRetryPromotesRecordedCan
 	require.EqualValues(t, 2, active.Revision)
 }
 
-func TestUpdateStripeCheckoutDiscountRejectsRevisionGapBeforeCreatingCandidate(t *testing.T) {
+func TestUpdateStripeCheckoutDiscountAbandonedGapActivatesFreshMonotonicRevisionAndReplays(t *testing.T) {
 	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
 	createCalls := 0
 	abandonedSession := "cs_abandoned"
@@ -385,17 +510,206 @@ func TestUpdateStripeCheckoutDiscountRejectsRevisionGapBeforeCreatingCandidate(t
 		DiscountSource: string(service.StripeCheckoutDiscountNone), ProviderSessionId: &abandonedSession,
 	}).Error)
 	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		CreateCandidate: func(_ context.Context, _ stripeCheckoutPurchase, revision int64, _ service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			createCalls++
+			require.EqualValues(t, 3, revision)
+			return &stripeCheckoutSessionSnapshot{ID: "cs_after_gap", ClientSecret: "gap_secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "gap_secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+	request := stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-after-gap", Action: "restore"}
+
+	first := fixture.post(t, request)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	require.Equal(t, http.StatusOK, fixture.post(t, request).Code)
+	require.Equal(t, 1, createCalls)
+	active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderTopUp, fixture.tradeNo)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, active.Revision)
+	var preparing int64
+	require.NoError(t, model.DB.Model(&model.StripeCheckoutRevision{}).Where("order_type = ? AND trade_no = ? AND state = ?", model.StripeCheckoutOrderTopUp, fixture.tradeNo, model.StripeCheckoutRevisionStatePreparing).Count(&preparing).Error)
+	require.Zero(t, preparing)
+}
+
+func TestUpdateStripeCheckoutDiscountRecordInterruptionReplaysAttachedCandidate(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	createCalls := 0
+	recordCalls := 0
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
 		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
 			createCalls++
-			return nil, errors.New("must not create")
+			return &stripeCheckoutSessionSnapshot{ID: "cs_record_interrupted", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		RecordCandidate: func(input model.StripeCheckoutRevisionCandidate) (*model.StripeCheckoutRevision, error) {
+			recordCalls++
+			stored, err := model.RecordStripeCheckoutCandidate(input)
+			if recordCalls == 1 && err == nil {
+				return nil, errors.New("response lost after durable record")
+			}
+			return stored, err
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+	request := stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-record-interrupted", Action: "restore"}
+
+	first := fixture.post(t, request)
+	require.Equal(t, http.StatusInternalServerError, first.Code)
+	row, err := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderTopUp, fixture.tradeNo, request.RequestID)
+	require.NoError(t, err)
+	require.Equal(t, model.StripeCheckoutRevisionStatePreparing, row.State)
+	require.Equal(t, "cs_record_interrupted", stripeCheckoutRevisionSessionID(row))
+
+	second := fixture.post(t, request)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	require.Equal(t, 1, createCalls)
+	require.Equal(t, 1, recordCalls)
+}
+
+func TestUpdateStripeCheckoutDiscountRecordAndCleanupFailureLeavesRecoverablePreparing(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	createCalls := 0
+	recordCalls := 0
+	cleanupCalls := 0
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			createCalls++
+			return &stripeCheckoutSessionSnapshot{ID: "cs_record_cleanup", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		RecordCandidate: func(input model.StripeCheckoutRevisionCandidate) (*model.StripeCheckoutRevision, error) {
+			recordCalls++
+			if recordCalls == 1 {
+				return nil, errors.New("record unavailable")
+			}
+			return model.RecordStripeCheckoutCandidate(input)
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			if sessionID == "cs_record_cleanup" && cleanupCalls == 0 {
+				cleanupCalls++
+				return nil, errors.New("expire unavailable")
+			}
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+	request := stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-record-cleanup", Action: "restore"}
+
+	first := fixture.post(t, request)
+	require.Equal(t, http.StatusInternalServerError, first.Code)
+	row, err := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderTopUp, fixture.tradeNo, request.RequestID)
+	require.NoError(t, err)
+	require.Equal(t, model.StripeCheckoutRevisionStatePreparing, row.State)
+	require.Empty(t, stripeCheckoutRevisionSessionID(row))
+
+	second := fixture.post(t, request)
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	require.Equal(t, 2, createCalls)
+	require.Equal(t, 2, recordCalls)
+}
+
+func TestUpdateStripeCheckoutDiscountUsesInvoiceStripeCustomerForTopUp(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", fixture.userID).Update("stripe_customer", "").Error)
+	require.NoError(t, model.DB.Create(&model.PaymentInvoice{
+		TradeNo: fixture.tradeNo, UserId: fixture.userID, OrderType: model.PaymentOrderTypeTopUp,
+		PaymentProvider: model.PaymentProviderStripe, InvoiceRequested: true, StripeCustomerId: "cus_invoice_checkout",
+	}).Error)
+	resolverCustomer := ""
+	builderCustomer := ""
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		ResolvePromotion: func(_ context.Context, query service.StripeCheckoutPromotionQuery) (service.StripeCheckoutResolvedPromotion, error) {
+			resolverCustomer = query.CustomerID
+			return service.StripeCheckoutResolvedPromotion{PromotionCodeID: "promo_invoice", MaskedCode: "INVOICE"}, nil
+		},
+		CreateCandidate: func(_ context.Context, purchase stripeCheckoutPurchase, _ int64, _ service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			builderCustomer = purchase.CustomerID
+			return &stripeCheckoutSessionSnapshot{ID: "cs_invoice_customer", ClientSecret: "secret", CustomerID: purchase.CustomerID, Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, CustomerID: "cus_invoice_checkout", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
 		},
 	})
 	t.Cleanup(restore)
 
-	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-after-gap", Action: "restore"})
-	require.Equal(t, http.StatusConflict, recorder.Code)
-	require.Equal(t, "checkout_revision_conflict", stripeCheckoutErrorCode(t, recorder))
-	require.Zero(t, createCalls)
+	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-invoice-customer", Action: "apply", PromotionCode: "INVOICE"})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, "cus_invoice_checkout", resolverCustomer)
+	require.Equal(t, "cus_invoice_checkout", builderCustomer)
+}
+
+func TestUpdateStripeCheckoutDiscountRejectsInvoiceCustomerMismatch(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	require.NoError(t, model.DB.Create(&model.PaymentInvoice{
+		TradeNo: fixture.tradeNo, UserId: fixture.userID, OrderType: model.PaymentOrderTypeTopUp,
+		PaymentProvider: model.PaymentProviderStripe, InvoiceRequested: true, StripeCustomerId: "cus_invoice_expected",
+	}).Error)
+	expiredCandidate := false
+	restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+		CreateCandidate: func(context.Context, stripeCheckoutPurchase, int64, service.StripeCheckoutDiscountSelection) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: "cs_customer_mismatch", ClientSecret: "secret", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, CustomerID: "cus_different", Status: "open", PaymentStatus: "unpaid"}, nil
+		},
+		ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+			if sessionID == "cs_customer_mismatch" {
+				expiredCandidate = true
+			}
+			return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+		},
+	})
+	t.Cleanup(restore)
+
+	recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: fixture.context, ExpectedRevision: 1, RequestID: "req-customer-mismatch", Action: "restore"})
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, "checkout_context_invalid", stripeCheckoutErrorCode(t, recorder))
+	require.True(t, expiredCandidate)
+	active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderTopUp, fixture.tradeNo)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, active.Revision)
+}
+
+func TestUpdateStripeCheckoutDiscountCompletedOrdersReturnCompletedConflict(t *testing.T) {
+	for _, kind := range []service.StripeCheckoutPurchaseKind{service.StripeCheckoutPurchaseTopUp, service.StripeCheckoutPurchaseOneTimeSubscription} {
+		t.Run(string(kind), func(t *testing.T) {
+			fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+			tradeNo := fixture.tradeNo
+			if kind == service.StripeCheckoutPurchaseTopUp {
+				require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", tradeNo).Update("status", common.TopUpStatusSuccess).Error)
+			} else {
+				tradeNo = "trade-completed-subscription"
+				require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+					UserId: fixture.userID, TradeNo: tradeNo, Status: common.TopUpStatusSuccess,
+					PaymentProvider: model.PaymentProviderStripe, PaymentMethod: model.PaymentMethodStripe,
+					CheckoutRevision: 1, ProviderSessionId: "cs_completed_subscription",
+				}).Error)
+			}
+			contextToken, err := service.SignStripeCheckoutContext(service.StripeCheckoutContextClaims{
+				UserID: fixture.userID, PurchaseKind: kind, TradeNo: tradeNo, Revision: 1, ExpiresAt: time.Now().Add(time.Hour).Unix(),
+			})
+			require.NoError(t, err)
+			recorder := fixture.post(t, stripeCheckoutDiscountRequest{CheckoutContext: contextToken, ExpectedRevision: 1, RequestID: "req-completed-" + string(kind), Action: "restore"})
+			require.Equal(t, http.StatusConflict, recorder.Code)
+			require.Equal(t, "checkout_already_completed", stripeCheckoutErrorCode(t, recorder))
+		})
+	}
 }
 
 func TestCreateInitialStripeCheckoutRevisionActivatesTopUpAndOneTime(t *testing.T) {
@@ -434,6 +748,87 @@ func TestCreateInitialStripeCheckoutRevisionActivatesTopUpAndOneTime(t *testing.
 	}
 }
 
+func TestCreateInitialStripeCheckoutRevisionRecoversEveryInterruptedStage(t *testing.T) {
+	stages := []string{"prepare", "create", "record", "activate"}
+	for _, kind := range []service.StripeCheckoutPurchaseKind{service.StripeCheckoutPurchaseTopUp, service.StripeCheckoutPurchaseOneTimeSubscription} {
+		for _, stage := range stages {
+			t.Run(string(kind)+"/"+stage, func(t *testing.T) {
+				fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+				require.NoError(t, model.DB.Where("order_type = ? AND trade_no = ?", model.StripeCheckoutOrderTopUp, fixture.tradeNo).Delete(&model.StripeCheckoutRevision{}).Error)
+				purchase := stripeCheckoutPurchase{Kind: kind, TradeNo: fixture.tradeNo, UserID: fixture.userID, Currency: "USD", SubtotalMinor: 2000}
+				if kind == service.StripeCheckoutPurchaseTopUp {
+					purchase.OrderType = model.StripeCheckoutOrderTopUp
+					require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", fixture.tradeNo).Updates(map[string]any{"checkout_revision": 0, "gateway_trade_no": ""}).Error)
+				} else {
+					purchase.OrderType = model.StripeCheckoutOrderSubscription
+					purchase.TradeNo = "initial-recovery-" + stage
+					require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+						UserId: fixture.userID, TradeNo: purchase.TradeNo, Status: common.TopUpStatusPending,
+						PaymentProvider: model.PaymentProviderStripe, PaymentMethod: model.PaymentMethodStripe,
+					}).Error)
+				}
+				failed := false
+				expireCalls := 0
+				restore := replaceStripeCheckoutDiscountRuntimeForTest(stripeCheckoutDiscountRuntime{
+					PrepareRevision: func(input model.StripeCheckoutRevisionPrepare) (*model.StripeCheckoutRevision, bool, error) {
+						row, replay, err := model.PrepareStripeCheckoutRevision(input)
+						if stage == "prepare" && !failed && err == nil {
+							failed = true
+							return nil, false, errors.New("interrupted after prepare")
+						}
+						return row, replay, err
+					},
+					RecordCandidate: func(input model.StripeCheckoutRevisionCandidate) (*model.StripeCheckoutRevision, error) {
+						row, err := model.RecordStripeCheckoutCandidate(input)
+						if stage == "record" && !failed && err == nil {
+							failed = true
+							return nil, errors.New("interrupted after record")
+						}
+						return row, err
+					},
+					ActivateRevision: func(input model.StripeCheckoutRevisionActivation) (*model.StripeCheckoutRevision, error) {
+						row, err := model.ActivateStripeCheckoutRevision(input)
+						if stage == "activate" && !failed && err == nil {
+							failed = true
+							return nil, errors.New("interrupted after activate")
+						}
+						return row, err
+					},
+					GetSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+						return &stripeCheckoutSessionSnapshot{ID: sessionID, ClientSecret: "initial_secret", Status: "open", PaymentStatus: "unpaid"}, nil
+					},
+					ExpireSession: func(_ context.Context, _ service.StripeCheckoutPurchaseKind, sessionID string) (*stripeCheckoutSessionSnapshot, error) {
+						expireCalls++
+						return &stripeCheckoutSessionSnapshot{ID: sessionID, Status: "expired", PaymentStatus: "unpaid"}, nil
+					},
+				})
+				t.Cleanup(restore)
+				providerSessions := map[string]struct{}{}
+				create := func(int64) (*stripeCheckoutSessionSnapshot, error) {
+					providerSessions["cs_initial_recovery"] = struct{}{}
+					if stage == "create" && !failed {
+						failed = true
+						return nil, errors.New("interrupted after provider create")
+					}
+					return &stripeCheckoutSessionSnapshot{ID: "cs_initial_recovery", ClientSecret: "initial_secret", Status: "open", PaymentStatus: "unpaid"}, nil
+				}
+
+				_, _, firstErr := createInitialStripeCheckoutRevision(context.Background(), purchase, service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}, nil, create)
+				require.Error(t, firstErr)
+				created, active, secondErr := createInitialStripeCheckoutRevision(context.Background(), purchase, service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}, nil, create)
+				require.NoError(t, secondErr)
+				require.Equal(t, "cs_initial_recovery", created.ID)
+				require.EqualValues(t, 1, active.Revision)
+				require.Len(t, providerSessions, 1)
+				require.Zero(t, expireCalls)
+				var activeCount int64
+				require.NoError(t, model.DB.Model(&model.StripeCheckoutRevision{}).Where("order_type = ? AND trade_no = ? AND state = ?", purchase.OrderType, purchase.TradeNo, model.StripeCheckoutRevisionStateActive).Count(&activeCount).Error)
+				require.EqualValues(t, 1, activeCount)
+			})
+		}
+	}
+}
+
 func TestStripeRecurringInitialRevisionPersistsResolvedInvitationCoupon(t *testing.T) {
 	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
 	tradeNo := "trade-recurring-initial"
@@ -451,11 +846,15 @@ func TestStripeRecurringInitialRevisionPersistsResolvedInvitationCoupon(t *testi
 		setting.StripeApiSecret = originalSecret
 		setting.StripePublishableKey = originalPublishable
 	})
+	couponCalls := 0
+	sessionCalls := 0
 	restore := service.ReplaceStripeSubscriptionCheckoutCreatorsForTest(
 		func(context.Context, *stripe.CouponParams) (*stripe.Coupon, error) {
+			couponCalls++
 			return &stripe.Coupon{ID: "coupon_resolved_initial"}, nil
 		},
 		func(_ context.Context, params *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+			sessionCalls++
 			require.Equal(t, "1", params.Metadata["checkout_revision"])
 			require.Len(t, params.Discounts, 1)
 			require.Equal(t, "coupon_resolved_initial", *params.Discounts[0].Coupon)
@@ -463,12 +862,20 @@ func TestStripeRecurringInitialRevisionPersistsResolvedInvitationCoupon(t *testi
 		},
 	)
 	t.Cleanup(restore)
+	restoreAccessors := service.ReplaceStripeCheckoutSessionAccessorsForTest(
+		func(context.Context, string) (*stripe.CheckoutSession, error) {
+			return &stripe.CheckoutSession{ID: "cs_recurring_initial", ClientSecret: "cs_recurring_initial_secret", Status: stripe.CheckoutSessionStatusOpen, PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid}, nil
+		},
+		nil,
+	)
+	t.Cleanup(restoreAccessors)
 
-	created, err := service.CreateStripeSubscriptionCheckout(context.Background(), service.StripeSubscriptionCheckoutInput{
+	input := service.StripeSubscriptionCheckoutInput{
 		TradeNo: tradeNo, UserID: fixture.userID, PlanID: 77, PriceID: "price_recurring", Currency: "USD", SubtotalMinor: 2000,
 		IdempotencyKey: "subscription-stripe:" + tradeNo, Presentation: service.StripeCheckoutPresentation{RequestedUIMode: "elements", Elements: true},
 		DiscountKind: service.SubscriptionDiscountKindInvitation, DiscountAmountMinor: 500, DiscountCurrency: "USD", CheckoutRevision: 0,
-	})
+	}
+	created, err := service.CreateStripeSubscriptionCheckout(context.Background(), input)
 	require.NoError(t, err)
 	require.Equal(t, "coupon_resolved_initial", created.DiscountSelection.CouponID)
 	active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, tradeNo)
@@ -476,6 +883,85 @@ func TestStripeRecurringInitialRevisionPersistsResolvedInvitationCoupon(t *testi
 	require.EqualValues(t, 1, active.Revision)
 	require.Equal(t, "coupon_resolved_initial", active.CouponId)
 	require.Equal(t, "cs_recurring_initial", stripeCheckoutRevisionSessionID(active))
+	replayed, err := service.CreateStripeSubscriptionCheckout(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, replayed.ID)
+	require.Equal(t, 1, couponCalls)
+	require.Equal(t, 1, sessionCalls)
+}
+
+func TestStripeRecurringInitialRevisionRecoversEveryDurableStage(t *testing.T) {
+	for _, stage := range []string{"prepare", "create", "record", "activate"} {
+		t.Run(stage, func(t *testing.T) {
+			fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+			tradeNo := "trade-recurring-recovery-" + stage
+			order := &model.SubscriptionOrder{
+				UserId: fixture.userID, TradeNo: tradeNo, PlanId: 77, Status: common.TopUpStatusPending,
+				PaymentProvider: model.PaymentProviderStripe, PaymentMethod: model.PaymentMethodStripe,
+				PaymentCurrency: "USD", PaymentAmountMinor: 2000,
+			}
+			require.NoError(t, model.DB.Create(order).Error)
+			selection := service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
+			digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+tradeNo, 1, selection)
+			require.NoError(t, err)
+			providerID := "cs_recurring_recovery"
+			state := model.StripeCheckoutRevisionStatePreparing
+			var attached *string
+			if stage == "record" || stage == "activate" {
+				attached = &providerID
+			}
+			if stage == "activate" {
+				state = model.StripeCheckoutRevisionStateActive
+				order.CheckoutRevision = 1
+				order.ProviderSessionId = providerID
+				require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("trade_no = ?", tradeNo).Updates(map[string]any{"checkout_revision": 1, "provider_session_id": providerID}).Error)
+			}
+			require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{
+				OrderType: model.StripeCheckoutOrderSubscription, TradeNo: tradeNo, Revision: 1, UserId: fixture.userID,
+				RequestId: "initial:recurring_subscription:" + tradeNo, SelectionDigest: digest, State: state,
+				DiscountSource: string(service.StripeCheckoutDiscountNone), Currency: "USD", SubtotalMinor: 2000,
+				ProviderSessionId: attached,
+			}).Error)
+			originalSecret := setting.StripeApiSecret
+			setting.StripeApiSecret = "sk_test_recurring_recovery"
+			t.Cleanup(func() { setting.StripeApiSecret = originalSecret })
+			providerSessions := map[string]struct{}{}
+			createCalls := 0
+			restoreCreators := service.ReplaceStripeSubscriptionCheckoutCreatorsForTest(nil, func(context.Context, *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+				createCalls++
+				providerSessions[providerID] = struct{}{}
+				return &stripe.CheckoutSession{ID: providerID, ClientSecret: "recurring_secret", Status: stripe.CheckoutSessionStatusOpen, PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid}, nil
+			})
+			t.Cleanup(restoreCreators)
+			restoreAccessors := service.ReplaceStripeCheckoutSessionAccessorsForTest(
+				func(context.Context, string) (*stripe.CheckoutSession, error) {
+					providerSessions[providerID] = struct{}{}
+					return &stripe.CheckoutSession{ID: providerID, ClientSecret: "recurring_secret", Status: stripe.CheckoutSessionStatusOpen, PaymentStatus: stripe.CheckoutSessionPaymentStatusUnpaid}, nil
+				},
+				func(context.Context, string) (*stripe.CheckoutSession, error) {
+					return nil, errors.New("must not expire recoverable initial session")
+				},
+			)
+			t.Cleanup(restoreAccessors)
+
+			created, err := service.CreateStripeSubscriptionCheckout(context.Background(), service.StripeSubscriptionCheckoutInput{
+				TradeNo: tradeNo, UserID: fixture.userID, PlanID: 77, PriceID: "price_recurring", Currency: "USD", SubtotalMinor: 2000,
+				IdempotencyKey: "subscription-stripe:" + tradeNo, Presentation: service.StripeCheckoutPresentation{RequestedUIMode: "elements", Elements: true},
+				CheckoutRevision: 0, DiscountSelection: selection,
+			})
+			require.NoError(t, err)
+			require.Equal(t, providerID, created.ID)
+			require.Len(t, providerSessions, 1)
+			if stage == "record" || stage == "activate" {
+				require.Zero(t, createCalls)
+			} else {
+				require.Equal(t, 1, createCalls)
+			}
+			active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, tradeNo)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, active.Revision)
+		})
+	}
 }
 
 func TestCreateStripeTopUpCheckoutSessionInitializesRevisionOneWhenFeatureEnabled(t *testing.T) {
@@ -622,7 +1108,7 @@ func newStripeCheckoutDiscountFixture(t *testing.T, source service.StripeCheckou
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.SubscriptionOrder{}, &model.StripeCheckoutRevision{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.SubscriptionOrder{}, &model.StripeCheckoutRevision{}, &model.PaymentInvoice{}))
 	setting.StripePromotionCodeEnabled = true
 	stripePriceGetter = func(string, *stripe.PriceParams) (*stripe.Price, error) {
 		return &stripe.Price{ID: "price_topup", Product: &stripe.Product{ID: "prod_topup"}}, nil
@@ -692,4 +1178,13 @@ func stripeCheckoutErrorCode(t *testing.T, recorder *httptest.ResponseRecorder) 
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
 	return envelope.ErrorCode
+}
+
+func stripeCheckoutMessage(t *testing.T, recorder *httptest.ResponseRecorder) string {
+	t.Helper()
+	var envelope struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &envelope))
+	return envelope.Message
 }

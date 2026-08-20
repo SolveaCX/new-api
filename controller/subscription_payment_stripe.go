@@ -352,6 +352,7 @@ type oneTimeStripeCheckoutSession struct {
 	ID            string
 	URL           string
 	ClientSecret  string
+	CustomerID    string
 	Status        string
 	PaymentStatus string
 }
@@ -484,7 +485,7 @@ func createOneTimeStripeCheckoutSessionForRevision(ctx context.Context, order *m
 	} else if strings.TrimSpace(created.URL) == "" {
 		return nil, errors.New("Stripe checkout session missing url")
 	}
-	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret), Status: string(created.Status), PaymentStatus: string(created.PaymentStatus)}, nil
+	return &oneTimeStripeCheckoutSession{ID: strings.TrimSpace(created.ID), URL: strings.TrimSpace(created.URL), ClientSecret: strings.TrimSpace(created.ClientSecret), CustomerID: stripeCheckoutSessionCustomerID(created), Status: string(created.Status), PaymentStatus: string(created.PaymentStatus)}, nil
 }
 
 func getOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*oneTimeStripeCheckoutSession, error) {
@@ -503,6 +504,7 @@ func getOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (*on
 		ID:            strings.TrimSpace(checkoutSession.ID),
 		URL:           strings.TrimSpace(checkoutSession.URL),
 		ClientSecret:  strings.TrimSpace(checkoutSession.ClientSecret),
+		CustomerID:    stripeCheckoutSessionCustomerID(checkoutSession),
 		Status:        string(checkoutSession.Status),
 		PaymentStatus: string(checkoutSession.PaymentStatus),
 	}, nil
@@ -522,7 +524,7 @@ func expireOneTimeStripeCheckoutSession(ctx context.Context, sessionID string) (
 	}
 	return &oneTimeStripeCheckoutSession{
 		ID: strings.TrimSpace(checkoutSession.ID), URL: strings.TrimSpace(checkoutSession.URL), ClientSecret: strings.TrimSpace(checkoutSession.ClientSecret),
-		Status: string(checkoutSession.Status), PaymentStatus: string(checkoutSession.PaymentStatus),
+		CustomerID: stripeCheckoutSessionCustomerID(checkoutSession), Status: string(checkoutSession.Status), PaymentStatus: string(checkoutSession.PaymentStatus),
 	}, nil
 }
 
