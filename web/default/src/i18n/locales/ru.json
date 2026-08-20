@@ -6746,6 +6746,11 @@
     "Model type": "Тип модели",
     "Dynamic pricing": "Динамическая тарификация",
     "Not callable": "Недоступна для вызова",
-    "Price depends on request size and options.": "Цена зависит от размера запроса и выбранных параметров."
+    "Price depends on request size and options.": "Цена зависит от размера запроса и выбранных параметров.",
+    "Available models": "Доступные модели",
+    "Model catalog overview": "Обзор каталога моделей",
+    "Lowest {{category}} price": "Минимальная цена: {{category}}",
+    "Per 1M input tokens": "За 1 млн входных токенов",
+    "Per 1M input tokens · some models bill per request": "За 1 млн входных токенов · некоторые модели тарифицируются за запрос"
   }
 }

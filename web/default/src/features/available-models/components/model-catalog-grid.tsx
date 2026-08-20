@@ -144,10 +144,6 @@ export function ModelCatalogGrid({
       <div className='flex flex-col gap-3'>
         <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
           {visibleModels.map((model) => {
-            const hasExclusiveRatio = Object.prototype.hasOwnProperty.call(
-              modelRatios,
-              model.id
-            )
             const ratio = resolveCatalogPriceRatio({
               modelId: model.id,
               modelRatios,
@@ -159,10 +155,6 @@ export function ModelCatalogGrid({
                 key={model.id}
                 model={model}
                 price={resolveCatalogPrice(priceIndex.get(model.id), { ratio })}
-                exclusiveRatio={
-                  hasExclusiveRatio ? modelRatios[model.id] : null
-                }
-                defaultRatio={defaultRatio}
               />
             )
           })}

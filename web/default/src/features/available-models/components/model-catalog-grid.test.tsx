@@ -150,7 +150,9 @@ describe('ModelCatalogGrid', () => {
     expect(html).toContain('$0.6')
   })
 
-  test('scales displayed prices by an exclusive model ratio', () => {
+  // The ratio itself is an internal billing concept and is never shown; only
+  // its effect on the displayed price reaches the user.
+  test('scales displayed prices by an exclusive model ratio without naming it', () => {
     const html = renderGrid({
       models: [buildModel()],
       pricing: [buildPricingModel()],
@@ -159,7 +161,8 @@ describe('ModelCatalogGrid', () => {
     })
 
     expect(html).toContain('$0.3')
-    expect(html).toContain('Exclusive ratio 2×')
+    expect(html).not.toContain('Exclusive ratio')
+    expect(html).not.toContain('×')
   })
 
   test('renders no price panel when the model has no pricing row', () => {
@@ -182,6 +185,28 @@ describe('ModelCatalogGrid', () => {
 
     expect(html).toContain('Dynamic pricing')
     expect(html).not.toContain('Per 1M tokens')
+  })
+
+  // The category badge already says "Video"; repeating it as an endpoint badge
+  // read as a duplicate, and calling the endpoint "not specified" when one was
+  // in fact declared read as missing data.
+  test('does not repeat the category as an endpoint badge', () => {
+    const html = renderGrid({
+      models: [
+        buildModel({ id: 'seedance-2.0', supported_endpoint_types: ['video'] }),
+      ],
+    })
+
+    expect(html.match(/>Video</g)).toHaveLength(1)
+    expect(html).not.toContain('Endpoint not specified')
+  })
+
+  test('flags a genuinely untagged model as endpoint-unspecified', () => {
+    const html = renderGrid({
+      models: [buildModel({ supported_endpoint_types: [] })],
+    })
+
+    expect(html).toContain('Endpoint not specified')
   })
 
   test('labels the model category alongside its endpoints', () => {

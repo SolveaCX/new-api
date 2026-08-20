@@ -47,6 +47,7 @@ import {
   getModelPlaygroundLink,
   getModelQuickstartLink,
 } from '../lib/model-catalog-actions'
+import { resolveModelBrand } from '../lib/model-catalog-brand'
 import type { CatalogPrice } from '../lib/model-catalog-price'
 import {
   getModelCategory,
@@ -57,8 +58,6 @@ import type { ModelAccessModel } from '../types'
 export type ModelCatalogCardProps = {
   model: ModelAccessModel
   price: CatalogPrice
-  exclusiveRatio: number | null
-  defaultRatio: number | null
 }
 
 /** Unit prices are small; four significant decimals keep them readable. */
@@ -71,13 +70,21 @@ function formatUnitPrice(amountUSD: number): string {
 function PriceRow(props: { label: string; value: string }) {
   return (
     <div className='flex items-baseline justify-between gap-3'>
-      <span className='text-muted-foreground text-[11px] font-semibold tracking-wide uppercase'>
+      <span className='text-muted-foreground text-xs font-semibold tracking-wide uppercase'>
         {props.label}
       </span>
-      <span className='min-w-0 truncate font-mono text-sm font-semibold tabular-nums'>
+      <span className='min-w-0 truncate font-mono text-lg font-bold tabular-nums'>
         {props.value}
       </span>
     </div>
+  )
+}
+
+function PriceKicker(props: { children: string }) {
+  return (
+    <span className='text-muted-foreground text-[11px] font-bold tracking-[0.08em] uppercase'>
+      {props.children}
+    </span>
   )
 }
 
@@ -89,12 +96,10 @@ function ModelPricePanel(props: { price: CatalogPrice }) {
 
   if (price.kind === 'dynamic') {
     return (
-      <div className='mt-auto flex flex-col gap-1.5 border-t pt-3'>
-        <span className='text-muted-foreground text-[11px] font-semibold tracking-wide uppercase'>
-          {t('Billing')}
-        </span>
-        <p className='text-sm font-medium'>{t('Dynamic pricing')}</p>
-        <p className='text-muted-foreground text-xs'>
+      <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
+        <PriceKicker>{t('Billing')}</PriceKicker>
+        <p className='text-base font-semibold'>{t('Dynamic pricing')}</p>
+        <p className='text-muted-foreground text-xs leading-relaxed'>
           {t('Price depends on request size and options.')}
         </p>
       </div>
@@ -103,23 +108,16 @@ function ModelPricePanel(props: { price: CatalogPrice }) {
 
   if (price.kind === 'request') {
     return (
-      <div className='mt-auto flex flex-col gap-1.5 border-t pt-3'>
-        <span className='text-muted-foreground text-[11px] font-semibold tracking-wide uppercase'>
-          {t('Per request')}
-        </span>
-        <PriceRow
-          label={t('Price')}
-          value={formatUnitPrice(price.priceUSD)}
-        />
+      <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
+        <PriceKicker>{t('Per request')}</PriceKicker>
+        <PriceRow label={t('Price')} value={formatUnitPrice(price.priceUSD)} />
       </div>
     )
   }
 
   return (
-    <div className='mt-auto flex flex-col gap-1.5 border-t pt-3'>
-      <span className='text-muted-foreground text-[11px] font-semibold tracking-wide uppercase'>
-        {t('Per 1M tokens')}
-      </span>
+    <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
+      <PriceKicker>{t('Per 1M tokens')}</PriceKicker>
       <PriceRow label={t('Input')} value={formatUnitPrice(price.inputUSD)} />
       {price.outputUSD !== null && (
         <PriceRow
@@ -131,12 +129,7 @@ function ModelPricePanel(props: { price: CatalogPrice }) {
   )
 }
 
-export function ModelCatalogCard({
-  model,
-  price,
-  exclusiveRatio,
-  defaultRatio,
-}: ModelCatalogCardProps) {
+export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
   const { t } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
   const availability = getModelAvailabilityConfig(t)
@@ -146,64 +139,41 @@ export function ModelCatalogCard({
     availability[normalizeModelAvailabilityStatus(model.availability_status)] ||
     availability.unknown_failure
   const category = getModelCategory(model)
+  const categoryLabel = getModelCategoryLabel(category, t)
+  const brand = resolveModelBrand(model)
+  // The category badge already leads the row, so an endpoint that resolves to
+  // the same word ("Video" for a video endpoint) is dropped rather than shown
+  // twice side by side.
   const endpointLabels = Array.from(
     new Set(
       model.supported_endpoint_types.map((endpoint) =>
         getModelEndpointLabel(endpoint, t)
       )
     )
-  )
+  ).filter((label) => label !== categoryLabel)
   const playable = canOpenModelInPlayground(model)
-
-  const exclusiveRatioLabel =
-    exclusiveRatio === null
-      ? ''
-      : t('Exclusive ratio {{ratio}}×', { ratio: exclusiveRatio })
-  let exclusiveRatioDescription = ''
-  if (exclusiveRatio !== null && officiallyUnsupported) {
-    exclusiveRatioDescription =
-      defaultRatio === null
-        ? t(
-            'If this model becomes callable again, it will use the exclusive ratio {{ratio}}×, overriding the default ratio; the two are not multiplied.',
-            { ratio: exclusiveRatio }
-          )
-        : t(
-            'If this model becomes callable again, it will use the exclusive ratio {{ratio}}×, overriding the default ratio {{defaultRatio}}×; the two are not multiplied.',
-            { ratio: exclusiveRatio, defaultRatio }
-          )
-  } else if (exclusiveRatio !== null) {
-    exclusiveRatioDescription =
-      defaultRatio === null
-        ? t(
-            'This exclusive ratio overrides the default ratio; the two are not multiplied.'
-          )
-        : t(
-            'This exclusive ratio overrides the default ratio {{defaultRatio}}×; the two are not multiplied.',
-            { defaultRatio }
-          )
-  }
 
   return (
     <article
       className={cn(
-        'bg-card ring-foreground/10 flex min-w-0 flex-col gap-3 rounded-xl p-4 ring-1 transition-shadow',
-        'hover:ring-foreground/20 hover:shadow-md',
+        'bg-card ring-foreground/10 flex min-w-0 flex-col gap-4 rounded-2xl p-5 ring-1 transition-all sm:p-6',
+        'hover:ring-foreground/20 hover:-translate-y-0.5 hover:shadow-lg',
         officiallyUnsupported && 'ring-destructive/40 bg-destructive/5'
       )}
     >
-      <div className='flex min-w-0 items-start gap-3'>
-        <span className='bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg'>
-          {getLobeIcon(model.vendor?.icon, 20)}
+      <div className='flex min-w-0 items-start gap-3.5'>
+        <span className='bg-muted/70 ring-foreground/5 flex size-12 shrink-0 items-center justify-center rounded-xl ring-1'>
+          {getLobeIcon(brand.icon, 26)}
         </span>
         <div className='min-w-0 flex-1'>
           <h3
-            className='truncate text-[15px] leading-tight font-semibold'
+            className='truncate text-lg leading-tight font-bold'
             title={model.id}
           >
             {model.id}
           </h3>
-          <p className='text-muted-foreground mt-0.5 truncate text-xs'>
-            {model.vendor?.name ?? t('Unknown')}
+          <p className='text-muted-foreground mt-1 truncate text-sm font-medium'>
+            {brand.name ?? t('Unknown')}
           </p>
         </div>
         {officiallyUnsupported ? (
@@ -231,19 +201,19 @@ export function ModelCatalogCard({
           render={
             <button
               type='button'
-              className='bg-muted/60 hover:bg-muted focus-visible:ring-ring flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none'
+              className='bg-muted/60 hover:bg-muted focus-visible:ring-ring flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none'
               aria-label={t('Copy to clipboard')}
               onClick={() => void copyToClipboard(model.id)}
             />
           }
         >
-          <span className='min-w-0 flex-1 truncate font-mono text-xs'>
+          <span className='text-muted-foreground min-w-0 flex-1 truncate font-mono text-sm'>
             {model.id}
           </span>
           <HugeiconsIcon
             icon={Copy01Icon}
             strokeWidth={2}
-            className='size-3.5 shrink-0'
+            className='size-4 shrink-0'
             aria-hidden='true'
           />
         </TooltipTrigger>
@@ -251,58 +221,38 @@ export function ModelCatalogCard({
       </Tooltip>
 
       {model.description && (
-        <p className='text-muted-foreground line-clamp-2 text-xs leading-relaxed'>
+        <p className='text-muted-foreground line-clamp-2 text-sm leading-relaxed'>
           {model.description}
         </p>
       )}
 
       {officiallyUnsupported && (
-        <p className='text-destructive text-xs font-medium'>
+        <p className='text-destructive text-sm font-medium'>
           {t(
             'This model cannot be called because upstreams no longer support it.'
           )}
         </p>
       )}
 
-      <div className='flex flex-wrap gap-1.5'>
-        <Badge variant='secondary'>
-          {getModelCategoryLabel(category, t)}
-        </Badge>
-        {exclusiveRatio !== null && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Badge
-                  variant='outline'
-                  className='border-warning bg-warning text-warning-foreground font-semibold'
-                  tabIndex={0}
-                  aria-label={`${exclusiveRatioLabel}. ${exclusiveRatioDescription}`}
-                />
-              }
-            >
-              {exclusiveRatioLabel}
-            </TooltipTrigger>
-            <TooltipContent>{exclusiveRatioDescription}</TooltipContent>
-          </Tooltip>
-        )}
-        {endpointLabels.length > 0 ? (
-          endpointLabels.map((endpoint) => (
-            <Badge key={endpoint} variant='outline'>
-              {endpoint}
-            </Badge>
-          ))
-        ) : (
+      <div className='flex flex-wrap gap-2'>
+        <Badge variant='secondary'>{categoryLabel}</Badge>
+        {endpointLabels.map((endpoint) => (
+          <Badge key={endpoint} variant='outline'>
+            {endpoint}
+          </Badge>
+        ))}
+        {model.supported_endpoint_types.length === 0 && (
           <Badge variant='outline'>{t('Endpoint not specified')}</Badge>
         )}
       </div>
 
       <ModelPricePanel price={price} />
 
-      <div className='flex flex-wrap gap-2 border-t pt-3'>
+      <div className='flex flex-wrap gap-2 border-t pt-4'>
         {playable && (
           <Button
-            size='sm'
-            className='flex-1'
+            size='lg'
+            className='min-w-0 flex-1'
             render={<Link {...getModelPlaygroundLink(model.id)} />}
           >
             <HugeiconsIcon
@@ -315,9 +265,9 @@ export function ModelCatalogCard({
           </Button>
         )}
         <Button
-          size='sm'
+          size='lg'
           variant='outline'
-          className='flex-1'
+          className='min-w-0 flex-1'
           render={<Link {...getModelQuickstartLink(model.id)} />}
         >
           <HugeiconsIcon

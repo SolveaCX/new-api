@@ -6746,6 +6746,11 @@
     "Model type": "模型类型",
     "Dynamic pricing": "动态计费",
     "Not callable": "不可调用",
-    "Price depends on request size and options.": "价格取决于请求大小与所选参数。"
+    "Price depends on request size and options.": "价格取决于请求大小与所选参数。",
+    "Available models": "可用模型",
+    "Model catalog overview": "模型目录概览",
+    "Lowest {{category}} price": "最低{{category}}价格",
+    "Per 1M input tokens": "每 100 万输入 tokens",
+    "Per 1M input tokens · some models bill per request": "每 100 万输入 tokens · 部分模型按次计费"
   }
 }
