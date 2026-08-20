@@ -21,7 +21,6 @@ import {
   Alert02Icon,
   Copy01Icon,
   FlashIcon,
-  PlayIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
@@ -42,11 +41,7 @@ import {
   getModelEndpointLabel,
   normalizeModelAvailabilityStatus,
 } from '../lib/model-access-browser'
-import {
-  canOpenModelInPlayground,
-  getModelPlaygroundLink,
-  getModelQuickstartLink,
-} from '../lib/model-catalog-actions'
+import { getModelQuickstartLink } from '../lib/model-catalog-actions'
 import { resolveModelBrand } from '../lib/model-catalog-brand'
 import type { CatalogPrice } from '../lib/model-catalog-price'
 import {
@@ -151,7 +146,6 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
       )
     )
   ).filter((label) => label !== categoryLabel)
-  const playable = canOpenModelInPlayground(model)
 
   return (
     <article
@@ -248,25 +242,9 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
 
       <ModelPricePanel price={price} />
 
-      <div className='flex flex-wrap gap-2 border-t pt-4'>
-        {playable && (
-          <Button
-            size='lg'
-            className='min-w-0 flex-1'
-            render={<Link {...getModelPlaygroundLink(model.id)} />}
-          >
-            <HugeiconsIcon
-              icon={PlayIcon}
-              strokeWidth={2}
-              data-icon='inline-start'
-              aria-hidden='true'
-            />
-            {t('Try it now')}
-          </Button>
-        )}
+      <div className='flex border-t pt-4'>
         <Button
           size='lg'
-          variant='outline'
           className='min-w-0 flex-1'
           render={<Link {...getModelQuickstartLink(model.id)} />}
         >
