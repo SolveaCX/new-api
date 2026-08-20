@@ -1,6 +1,9 @@
 package groksubscription
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +22,20 @@ func newVideoTestContext(body string) (*gin.Context, *relaycommon.RelayInfo) {
 	c.Request.Header.Set("Content-Type", "application/json")
 	return c, &relaycommon.RelayInfo{}
 }
+
+type noBytesBodyStorage struct {
+	*bytes.Reader
+}
+
+func (s *noBytesBodyStorage) Close() error { return nil }
+
+func (s *noBytesBodyStorage) Bytes() ([]byte, error) {
+	return nil, fmt.Errorf("Bytes must not be called")
+}
+
+func (s *noBytesBodyStorage) Size() int64 { return int64(s.Len()) }
+
+func (s *noBytesBodyStorage) IsDisk() bool { return true }
 
 func ptrStringValue(p *string) string {
 	if p == nil {
@@ -262,6 +279,10 @@ func TestValidateVideoRequestRejectsInvalidMatrix(t *testing.T) {
 		{"extend rejects resolution", `{"model":"grok-imagine-video","action":"extend","prompt":"x","duration":2,"resolution":"480p","video":{"url":"https://example.com/in.mp4"}}`},
 		{"http image rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","image":{"url":"http://example.com/a.png"}}`},
 		{"http video rejected", `{"model":"grok-imagine-video","action":"extend","prompt":"x","video":{"url":"http://example.com/in.mp4"}}`},
+		{"whitespace wrapped https image rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","image":{"url":" https://example.com/a.png "}}`},
+		{"whitespace wrapped image data uri rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","image":{"url":" data:image/png;base64,QUJD "}}`},
+		{"whitespace wrapped https video rejected", `{"model":"grok-imagine-video","action":"extend","prompt":"x","video":{"url":" https://example.com/in.mp4 "}}`},
+		{"whitespace wrapped video data uri rejected", `{"model":"grok-imagine-video","action":"extend","prompt":"x","video":{"url":" data:video/mp4;base64,QUJD "}}`},
 		{"empty image object rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","image":{}}`},
 		{"empty reference voice rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","reference_audios":[{"voice_id":" "}]}`},
 		{"malformed image data uri rejected", `{"model":"grok-imagine-video-1.5","prompt":"x","image":{"url":"data:image/gif;base64,AAAA"}}`},
@@ -280,6 +301,30 @@ func TestValidateVideoRequestRejectsInvalidMatrix(t *testing.T) {
 				t.Fatalf("validateVideoRequest accepted invalid body: %s", tc.body)
 			}
 		})
+	}
+}
+
+func TestDecodeVideoRequestStreamsBodyStorageAndKeepsBodyReusable(t *testing.T) {
+	body := []byte(`{"model":"grok-imagine-video-1.5","prompt":"stream","image":{"url":"https://example.com/a.png"}}`)
+	c, info := newVideoTestContext("")
+	storage := &noBytesBodyStorage{Reader: bytes.NewReader(body)}
+	c.Set(common.KeyBodyStorage, storage)
+	c.Request.Body = io.NopCloser(storage)
+
+	req, err := validateVideoRequest(c, info)
+	if err != nil {
+		t.Fatalf("validateVideoRequest: %v", err)
+	}
+	if req.Image == nil || req.Image.URL != "https://example.com/a.png" {
+		t.Fatalf("image = %+v", req.Image)
+	}
+
+	var again VideoRequest
+	if err := common.UnmarshalBodyReusable(c, &again); err != nil {
+		t.Fatalf("body was not reusable after strict decode: %v", err)
+	}
+	if again.Model != ModelGrokImagineVideo15 || again.Prompt != "stream" {
+		t.Fatalf("redecoded body = %+v", again)
 	}
 }
 

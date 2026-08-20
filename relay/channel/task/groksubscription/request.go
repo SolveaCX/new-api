@@ -1,7 +1,6 @@
 package groksubscription
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -82,17 +81,14 @@ func decodeVideoRequest(c *gin.Context) (*VideoRequest, error) {
 	if _, err := storage.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	body, err := storage.Bytes()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := storage.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-	c.Request.Body = io.NopCloser(storage)
 
 	var req VideoRequest
-	if err := common.DecodeJsonDisallowUnknownFields(bytes.NewReader(body), &req); err != nil {
+	err = common.DecodeJsonDisallowUnknownFields(storage, &req)
+	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil && err == nil {
+		err = seekErr
+	}
+	c.Request.Body = io.NopCloser(storage)
+	if err != nil {
 		return nil, err
 	}
 	return &req, nil
@@ -280,6 +276,9 @@ func validateMediaURL(raw, mediaKind string, allowedDataMIMEs map[string]struct{
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return fmt.Errorf("%s url is required", mediaKind)
+	}
+	if raw != trimmed {
+		return fmt.Errorf("%s url must not include leading or trailing whitespace", mediaKind)
 	}
 	if strings.HasPrefix(trimmed, "data:") {
 		return validateDataURI(trimmed, mediaKind, allowedDataMIMEs)
