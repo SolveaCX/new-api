@@ -44,12 +44,18 @@ import {
   getModelAccessUnavailableScopeModels,
   getModelVendorFilterCounts,
   getModelVendorFilters,
+  getVisibleVendorFilters,
   isFixedModelAccessView,
   reconcileModelVendorFilterState,
   resolveModelAccessScope,
   UNLABELLED_MODEL_VENDOR,
   type ModelVendorFilter,
 } from '../lib/model-access-browser'
+import {
+  resolveCatalogPrice,
+  resolveCatalogPriceRatio,
+} from '../lib/model-catalog-price'
+import { getModelCatalogSummary } from '../lib/model-catalog-summary'
 import {
   ALL_MODEL_CATEGORIES,
   filterModelsByCategory,
@@ -60,6 +66,7 @@ import {
 import { useModelCatalogPrices } from '../hooks/use-model-catalog-prices'
 import type { UserModelAccess } from '../types'
 import { ModelCatalogGrid } from './model-catalog-grid'
+import { ModelCatalogSummaryStrip } from './model-catalog-summary-strip'
 import { ModelAccessScopeRail } from './model-access-scope-rail'
 
 type ModelAccessBrowserProps = {
@@ -118,6 +125,11 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
     () => getModelVendorFilterCounts(filterModelsByCategory(scopeModels, category)),
     [category, scopeModels]
   )
+  const visibleVendorFilters = getVisibleVendorFilters(
+    vendorFilters,
+    vendorCounts,
+    activeVendor
+  )
 
   // A category that vanished with the scope must not keep filtering silently.
   const activeCategory = categoryFilters.some(
@@ -152,6 +164,25 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
     ? t('View models and compatible endpoints available to your account.')
     : t('View models supported by each access group and compatible endpoint.')
 
+  // The summary describes the whole scope, not the active filters: it is the
+  // page's "what do I have" answer and should not shrink as the user narrows.
+  const summary = useMemo(
+    () =>
+      getModelCatalogSummary(
+        scopeModels.map((model) => ({
+          model,
+          price: resolveCatalogPrice(priceIndex.get(model.id), {
+            ratio: resolveCatalogPriceRatio({
+              modelId: model.id,
+              modelRatios: ratioContext.modelRatios,
+              defaultRatio: ratioContext.defaultRatio,
+            }),
+          }),
+        }))
+      ),
+    [priceIndex, ratioContext.defaultRatio, ratioContext.modelRatios, scopeModels]
+  )
+
   const clearFilters = () => {
     setQuery('')
     setCategory(ALL_MODEL_CATEGORIES)
@@ -163,7 +194,9 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
   }
 
   const catalog = (
-    <div className='flex min-w-0 flex-col gap-3'>
+    <div className='flex min-w-0 flex-col gap-4'>
+      <ModelCatalogSummaryStrip summary={summary} />
+
       {fixedView && (
         <Card size='sm'>
           <CardHeader>
@@ -339,7 +372,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
                 }
               }}
             >
-              {vendorFilters.map((option) => (
+              {visibleVendorFilters.map((option) => (
                 <ToggleGroupItem key={option.value} value={option.value}>
                   {option.value === ALL_MODEL_VENDORS
                     ? t('All')
@@ -398,7 +431,7 @@ export function ModelAccessBrowser({ access }: ModelAccessBrowserProps) {
   )
 
   return (
-    <div className='mx-auto flex w-full max-w-7xl flex-col gap-4'>
+    <div className='flex w-full min-w-0 flex-col gap-4'>
       <p className='text-muted-foreground max-w-3xl text-sm'>{description}</p>
       {fixedView ? (
         catalog

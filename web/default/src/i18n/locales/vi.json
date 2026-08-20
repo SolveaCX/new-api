@@ -6688,6 +6688,11 @@
     "Model type": "Loại mô hình",
     "Dynamic pricing": "Định giá động",
     "Not callable": "Không thể gọi",
-    "Price depends on request size and options.": "Giá phụ thuộc vào kích thước yêu cầu và các tùy chọn."
+    "Price depends on request size and options.": "Giá phụ thuộc vào kích thước yêu cầu và các tùy chọn.",
+    "Available models": "Mô hình khả dụng",
+    "Model catalog overview": "Tổng quan danh mục mô hình",
+    "Lowest {{category}} price": "Giá {{category}} thấp nhất",
+    "Per 1M input tokens": "Mỗi 1 triệu token đầu vào",
+    "Per 1M input tokens · some models bill per request": "Mỗi 1 triệu token đầu vào · một số mô hình tính phí theo lượt gọi"
   }
 }

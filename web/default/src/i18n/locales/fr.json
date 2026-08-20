@@ -6688,6 +6688,11 @@
     "Model type": "Type de modèle",
     "Dynamic pricing": "Tarification dynamique",
     "Not callable": "Non appelable",
-    "Price depends on request size and options.": "Le prix dépend de la taille de la requête et des options choisies."
+    "Price depends on request size and options.": "Le prix dépend de la taille de la requête et des options choisies.",
+    "Available models": "Modèles disponibles",
+    "Model catalog overview": "Aperçu du catalogue de modèles",
+    "Lowest {{category}} price": "Prix {{category}} le plus bas",
+    "Per 1M input tokens": "Par million de tokens d’entrée",
+    "Per 1M input tokens · some models bill per request": "Par million de tokens d’entrée · certains modèles sont facturés par requête"
   }
 }

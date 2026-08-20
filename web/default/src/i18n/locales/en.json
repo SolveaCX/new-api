@@ -6688,6 +6688,11 @@
     "Model type": "Model type",
     "Dynamic pricing": "Dynamic pricing",
     "Not callable": "Not callable",
-    "Price depends on request size and options.": "Price depends on request size and options."
+    "Price depends on request size and options.": "Price depends on request size and options.",
+    "Available models": "Available models",
+    "Model catalog overview": "Model catalog overview",
+    "Lowest {{category}} price": "Lowest {{category}} price",
+    "Per 1M input tokens": "Per 1M input tokens",
+    "Per 1M input tokens · some models bill per request": "Per 1M input tokens · some models bill per request"
   }
 }

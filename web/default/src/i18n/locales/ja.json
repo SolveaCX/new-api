@@ -6688,6 +6688,11 @@
     "Model type": "モデルタイプ",
     "Dynamic pricing": "動的課金",
     "Not callable": "呼び出し不可",
-    "Price depends on request size and options.": "価格はリクエストのサイズとオプションによって変わります。"
+    "Price depends on request size and options.": "価格はリクエストのサイズとオプションによって変わります。",
+    "Available models": "利用可能なモデル",
+    "Model catalog overview": "モデルカタログの概要",
+    "Lowest {{category}} price": "{{category}}の最低価格",
+    "Per 1M input tokens": "100万入力トークンあたり",
+    "Per 1M input tokens · some models bill per request": "100万入力トークンあたり · 一部のモデルはリクエスト単位で課金"
   }
 }
