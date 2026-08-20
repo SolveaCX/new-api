@@ -38,12 +38,13 @@ All commands exited 0 on 2026-08-20:
 ```powershell
 # All production controller .go files plus owned/required helper tests;
 # excludes the known baseline customer_usage_reconciliation_test.go failure.
-go test <controller-production-file-list> <owned-and-required-helper-tests> -run 'TestUpdateStripeCheckoutDiscount|TestCreateInitialStripeCheckoutRevision|TestStripeRecurringInitialRevision|TestCreateStripeTopUpCheckoutSession|TestCreateOneTimeStripeCheckoutSessionInitializes|TestSubscriptionSelfPurchase.*Revision|TestSubscriptionSelfPurchaseResponseIncludesClientSecret' -count=1 -v
+go test <controller-production-file-list> <owned-and-required-helper-tests> -run 'TestUpdateStripeCheckoutDiscount|TestStripeCheckoutDiscountRequestDigest|TestStripeCheckoutDefinitiveSessionRejection|TestCreateStripeCheckoutCandidateInvoice|TestCreateInitialStripeCheckoutRevision|TestStripeRecurringInitialRevision|TestCreateStripeTopUpCheckoutSession|TestCreateOneTimeStripeCheckoutSession|TestSubscriptionSelfPurchase.*Revision|TestSubscriptionSelfPurchaseResponseIncludesClientSecret' -count=1 -v
 
 go test ./router/ -run 'TestStripeCheckoutDiscountRoute|TestSubscriptionRoutes' -count=1 -v
 go test ./service/ -run 'TestCreateStripeSubscriptionCheckout|TestStripeSubscriptionCheckout|TestStripeRecurringChangePlan' -count=1 -v
 go vet <controller-production-file-list> <owned-and-required-helper-tests>
 go vet ./service/
+go vet ./router/
 git diff --check
 ```
 
@@ -81,3 +82,15 @@ The second scoped review pass tightened provider ambiguity and terminal-state ha
 - One-time initial active replay reconstructs its response from the persisted provider Session snapshot, preserving the Session ID and client secret without another create.
 
 Round-2 RED was observed for same-candidate CAS cleanup, predecessor-unbound digesting, ambiguous create abandonment, recovered terminal candidate activation, invoice lookup fallback, dependency error mapping, and one-time active replay. The final focused controller file-list, router, related service tests, controller/service vet, and `git diff --check` all exited 0.
+
+## Fix round 3
+
+The third scoped review pass made provider state authoritative across creation and recovery:
+
+- Every mutation or initial candidate creation that returns a Session ID is immediately re-read through the provider getter before Record or Activate. An ambiguous lookup keeps the ledger row preparing; an expired Session is safely abandoned and never becomes the order pointer.
+- A recovered paid/complete candidate now runs the predecessor payment fence and activation CAS. If the predecessor did not win, the paid candidate becomes the authoritative active revision before the API returns `checkout_already_completed`, allowing later fulfillment to follow the correct pointer. If the predecessor is also paid, the established predecessor wins.
+- Exact stale replay for a preparing loser now proves the different active winner, reloads the loser, and retries cleanup. Open losers are expired and abandoned; already-expired losers are abandoned without another provider expiration; cleanup ambiguity remains recoverable.
+- Recurring candidate creation no longer invents `open`/`unpaid` state. The coordinator or initial lifecycle always uses the provider's retrieved status and payment status.
+- Definitive Stripe rejection classification is restricted to discount/promotion/coupon parameters or an explicit promotion/coupon code allowlist. Price, customer, URL, line-item, generic invalid-parameter, transport, and API failures stay preparing and map to the redacted replacement failure.
+
+Round-3 RED was observed for missing provider GET after create, activation of stale expired snapshots, paid candidates stranded in preparing, stale loser cleanup response loss, recurring hardcoded status, and broad `invalid_request_error` abandonment. The final controller production file-list with owned/required tests, router tests, related service tests, controller/router/service vet, and `git diff --check` all exited 0 on 2026-08-20.

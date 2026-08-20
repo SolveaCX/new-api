@@ -333,6 +333,14 @@ func driveStripeCheckoutPreparedRevision(c *gin.Context, claims service.StripeCh
 			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 			return
 		}
+		createdCandidate := candidate
+		candidateID := strings.TrimSpace(createdCandidate.ID)
+		candidate, err = currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, candidateID)
+		if err != nil || candidate == nil || strings.TrimSpace(candidate.ID) != candidateID {
+			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
+			return
+		}
+		mergeStripeCheckoutCandidatePresentation(candidate, createdCandidate)
 		candidate.ID = strings.TrimSpace(candidate.ID)
 		if !validateStripeCheckoutCandidateForActivation(c, revision, candidate) {
 			return
@@ -362,10 +370,6 @@ func driveStripeCheckoutPreparedRevision(c *gin.Context, claims service.StripeCh
 }
 
 func validateStripeCheckoutCandidateForActivation(c *gin.Context, revision *model.StripeCheckoutRevision, candidate *stripeCheckoutSessionSnapshot) bool {
-	if stripeCheckoutSessionCompleted(candidate) {
-		writeStripeCheckoutDiscountError(c, http.StatusConflict, "checkout_already_completed", nil)
-		return false
-	}
 	if stripeCheckoutSessionExpired(candidate) {
 		if err := currentStripeCheckoutDiscountRuntime.AbandonRevision(revision.Id); err != nil {
 			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
@@ -374,21 +378,37 @@ func validateStripeCheckoutCandidateForActivation(c *gin.Context, revision *mode
 		writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 		return false
 	}
-	if candidate == nil || !strings.EqualFold(strings.TrimSpace(candidate.Status), "open") {
+	if candidate == nil || (!strings.EqualFold(strings.TrimSpace(candidate.Status), "open") && !stripeCheckoutSessionCompleted(candidate)) {
 		writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 		return false
 	}
 	return true
 }
 
+func mergeStripeCheckoutCandidatePresentation(candidate *stripeCheckoutSessionSnapshot, created *stripeCheckoutSessionSnapshot) {
+	if candidate == nil || created == nil {
+		return
+	}
+	if strings.TrimSpace(candidate.URL) == "" {
+		candidate.URL = created.URL
+	}
+	if strings.TrimSpace(candidate.ClientSecret) == "" {
+		candidate.ClientSecret = created.ClientSecret
+	}
+	if strings.TrimSpace(candidate.CustomerID) == "" {
+		candidate.CustomerID = created.CustomerID
+	}
+}
+
 func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.StripeCheckoutContextClaims, purchase stripeCheckoutPurchase, stored *model.StripeCheckoutRevision, candidate *stripeCheckoutSessionSnapshot) {
+	candidateCompleted := stripeCheckoutSessionCompleted(candidate)
 	oldSession, err := currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, purchase.OldSessionID)
 	if err != nil || oldSession == nil {
 		writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 		return
 	}
 	if purchase.RequireCustomer && !strings.EqualFold(purchase.CustomerID, oldSession.CustomerID) {
-		if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+		if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 			return
 		}
@@ -396,7 +416,7 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 		return
 	}
 	if stripeCheckoutSessionCompleted(oldSession) {
-		if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+		if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 			writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 			return
 		}
@@ -408,7 +428,7 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 		if expireErr != nil {
 			refreshed, getErr := currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, purchase.OldSessionID)
 			if getErr == nil && stripeCheckoutSessionCompleted(refreshed) {
-				if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+				if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 					writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 					return
 				}
@@ -420,7 +440,7 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 				return
 			}
 		} else if stripeCheckoutSessionCompleted(expired) {
-			if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+			if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 				writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 				return
 			}
@@ -439,7 +459,7 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 		if errors.Is(err, model.ErrStripeCheckoutRevisionConflict) {
 			refreshed, refreshErr := currentStripeCheckoutDiscountRuntime.LoadPurchase(c.Request.Context(), claims)
 			if errors.Is(refreshErr, errStripeCheckoutAlreadyCompleted) {
-				if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+				if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 					writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 					return
 				}
@@ -453,6 +473,10 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 			winner, winnerErr := model.GetActiveStripeCheckoutRevision(purchase.OrderType, purchase.TradeNo)
 			if winnerErr == nil && winner.Id == stored.Id && winner.Revision == stored.Revision &&
 				stripeCheckoutRevisionSessionID(winner) == candidate.ID && refreshed.Revision == winner.Revision && refreshed.OldSessionID == candidate.ID {
+				if candidateCompleted {
+					writeStripeCheckoutDiscountError(c, http.StatusConflict, "checkout_already_completed", nil)
+					return
+				}
 				response, responseErr := stripeCheckoutRevisionResponse(claims.PurchaseKind, winner, candidate)
 				if responseErr != nil {
 					writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
@@ -463,7 +487,7 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 			}
 			if winnerErr == nil && refreshed.Revision > claims.Revision && winner.Revision == refreshed.Revision &&
 				stripeCheckoutRevisionSessionID(winner) == refreshed.OldSessionID {
-				if cleanupErr := expireAndAbandonStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate.ID); cleanupErr != nil {
+				if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, stored, candidate); cleanupErr != nil {
 					writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
 					return
 				}
@@ -472,6 +496,10 @@ func finishStripeCheckoutDiscountTransition(c *gin.Context, claims service.Strip
 			}
 		}
 		writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
+		return
+	}
+	if candidateCompleted {
+		writeStripeCheckoutDiscountError(c, http.StatusConflict, "checkout_already_completed", nil)
 		return
 	}
 	response, err := stripeCheckoutRevisionResponse(claims.PurchaseKind, active, candidate)
@@ -502,6 +530,24 @@ func reconcileStripeCheckoutDiscountReplay(c *gin.Context, claims service.Stripe
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "success", "data": response})
 	case model.StripeCheckoutRevisionStatePreparing:
 		if purchase.Revision != claims.Revision {
+			if purchase.Revision > claims.Revision {
+				winner, winnerErr := model.GetActiveStripeCheckoutRevision(purchase.OrderType, purchase.TradeNo)
+				if winnerErr == nil && winner.Id != revision.Id && winner.Revision == purchase.Revision &&
+					stripeCheckoutRevisionSessionID(winner) == purchase.OldSessionID {
+					candidateID := stripeCheckoutRevisionSessionID(revision)
+					candidate, getErr := currentStripeCheckoutDiscountRuntime.GetSession(c.Request.Context(), purchase.Kind, candidateID)
+					if getErr != nil || candidate == nil || strings.TrimSpace(candidate.ID) != candidateID {
+						writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
+						return
+					}
+					if cleanupErr := discardStripeCheckoutCandidate(c.Request.Context(), purchase.Kind, revision, candidate); cleanupErr != nil {
+						writeStripeCheckoutDiscountError(c, http.StatusInternalServerError, "checkout_replacement_failed", nil)
+						return
+					}
+					writeStripeCheckoutConflict(c, claims)
+					return
+				}
+			}
 			writeStripeCheckoutConflict(c, claims)
 			return
 		}
@@ -635,6 +681,20 @@ func expireAndAbandonStripeCheckoutCandidate(ctx context.Context, kind service.S
 	return nil
 }
 
+func discardStripeCheckoutCandidate(ctx context.Context, kind service.StripeCheckoutPurchaseKind, revision *model.StripeCheckoutRevision, candidate *stripeCheckoutSessionSnapshot) error {
+	if stripeCheckoutSessionCompleted(candidate) || stripeCheckoutSessionExpired(candidate) {
+		if revision == nil {
+			return nil
+		}
+		return currentStripeCheckoutDiscountRuntime.AbandonRevision(revision.Id)
+	}
+	sessionID := ""
+	if candidate != nil {
+		sessionID = candidate.ID
+	}
+	return expireAndAbandonStripeCheckoutCandidate(ctx, kind, revision, sessionID)
+}
+
 func createInitialStripeCheckoutRevision(
 	ctx context.Context,
 	purchase stripeCheckoutPurchase,
@@ -667,6 +727,9 @@ func createInitialStripeCheckoutRevision(
 		switch prepared.State {
 		case model.StripeCheckoutRevisionStateActive:
 			snapshot, getErr := currentStripeCheckoutDiscountRuntime.GetSession(ctx, purchase.Kind, stripeCheckoutRevisionSessionID(prepared))
+			if getErr == nil && stripeCheckoutSessionCompleted(snapshot) {
+				return snapshot, prepared, errStripeCheckoutAlreadyCompleted
+			}
 			return snapshot, prepared, getErr
 		case model.StripeCheckoutRevisionStatePreparing:
 			// Continue below using the durable revision and provider idempotency key.
@@ -679,6 +742,13 @@ func createInitialStripeCheckoutRevision(
 		candidate, err = currentStripeCheckoutDiscountRuntime.GetSession(ctx, purchase.Kind, candidateID)
 	} else {
 		candidate, err = create(prepared.Revision)
+		if err == nil && candidate != nil && strings.TrimSpace(candidate.ID) != "" {
+			candidateID := strings.TrimSpace(candidate.ID)
+			candidate, err = currentStripeCheckoutDiscountRuntime.GetSession(ctx, purchase.Kind, candidateID)
+			if err == nil && (candidate == nil || strings.TrimSpace(candidate.ID) != candidateID) {
+				err = errors.New("Stripe checkout candidate lookup did not match created Session")
+			}
+		}
 	}
 	if err != nil || candidate == nil || strings.TrimSpace(candidate.ID) == "" {
 		if service.IsStripeCheckoutDefinitiveSessionRejection(err) {
@@ -692,16 +762,13 @@ func createInitialStripeCheckoutRevision(
 		return nil, nil, err
 	}
 	candidate.ID = strings.TrimSpace(candidate.ID)
-	if stripeCheckoutSessionCompleted(candidate) {
-		return nil, nil, errStripeCheckoutAlreadyCompleted
-	}
 	if stripeCheckoutSessionExpired(candidate) {
 		if abandonErr := currentStripeCheckoutDiscountRuntime.AbandonRevision(prepared.Id); abandonErr != nil {
 			return nil, nil, abandonErr
 		}
 		return nil, nil, errors.New("Stripe checkout candidate is expired")
 	}
-	if !strings.EqualFold(strings.TrimSpace(candidate.Status), "open") {
+	if !strings.EqualFold(strings.TrimSpace(candidate.Status), "open") && !stripeCheckoutSessionCompleted(candidate) {
 		return nil, nil, errors.New("Stripe checkout candidate is not payable")
 	}
 	stored := prepared
@@ -726,6 +793,9 @@ func createInitialStripeCheckoutRevision(
 	})
 	if err != nil {
 		return nil, nil, err
+	}
+	if stripeCheckoutSessionCompleted(candidate) {
+		return candidate, active, errStripeCheckoutAlreadyCompleted
 	}
 	return candidate, active, nil
 }
@@ -894,7 +964,7 @@ func createStripeCheckoutCandidate(ctx context.Context, purchase stripeCheckoutP
 		if err != nil {
 			return nil, err
 		}
-		return &stripeCheckoutSessionSnapshot{ID: created.ID, URL: created.URL, ClientSecret: created.ClientSecret, Status: "open", PaymentStatus: "unpaid"}, nil
+		return &stripeCheckoutSessionSnapshot{ID: created.ID, URL: created.URL, ClientSecret: created.ClientSecret}, nil
 	case service.StripeCheckoutPurchaseOneTimeSubscription:
 		created, err := createOneTimeStripeCheckoutSessionForRevision(
 			ctx, purchase.Order, purchase.User, revision, selection,
