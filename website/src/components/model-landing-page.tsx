@@ -452,7 +452,7 @@ function WhyFlatkey(props: {
           title={props.t("Why run {{model}} through Flatkey", { model: props.modelName })}
           description={props.t("One key, one balance, and the same upstream model you would call directly.")}
         />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2">
           {reasons.map((reason) => (
             <div
               key={reason.title}
@@ -491,7 +491,7 @@ function ModelShowcase(props: {
           title={props.t("What {{model}} can do", { model: props.modelName })}
           description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
         />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {SHOWCASE_CAPABILITIES.map((capability) => (
             <div
               key={capability.title}
@@ -503,8 +503,8 @@ function ModelShowcase(props: {
           ))}
         </div>
         <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)] lg:items-stretch">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
-            <div className="relative aspect-video">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-[#10131a] shadow-[0_20px_50px_-42px_rgba(24,14,38,0.5)] dark:border-white/10">
+            <div className="relative aspect-video shrink-0">
               <video
                 key={scene.id}
                 className="h-full w-full object-cover"
@@ -536,16 +536,17 @@ function ModelShowcase(props: {
               </button>
             </div>
           </div>
-          {/* Rail height follows the player so the two columns stay level
-              whatever the scene count. */}
-          <div className="grid gap-2 lg:h-full lg:auto-rows-fr">
+          {/* Both columns share the row height the player sets; the rail scrolls
+              inside it rather than running past the player's bottom edge.
+              min-h-0 is what lets a grid child shrink to its track. */}
+          <div className="grid content-start gap-2 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             {SHOWCASE_SCENES.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActive(index)}
                 aria-pressed={index === active}
-                className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition ${
+                className={`fk-lift flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left ${
                   index === active
                     ? "border-violet-500/45 bg-violet-500/6 shadow-[0_12px_30px_-24px_rgba(124,58,237,.8)]"
                     : "border-slate-200 bg-white hover:border-violet-500/25 dark:border-white/10 dark:bg-white/[0.04]"
@@ -1052,6 +1053,12 @@ function FlatkeyModelDetailPage(props: {
                       t={props.t}
                     />
                   </div>
+                  <OutputRequestSummary
+                    config={props.config}
+                    fieldValues={props.fieldValues}
+                    referenceCount={props.referenceImages.length}
+                    t={props.t}
+                  />
                 </div>
               </div>
             </div>
@@ -2504,6 +2511,62 @@ function ExamplePicker(props: {
   );
 }
 
+// What the editor on the left will actually send, shown under the preview. The
+// output panel otherwise held only the player and ended well short of the input
+// column, leaving an empty block; this is the information a reader wants there
+// anyway -- the endpoint, the settings, and where the result comes back.
+function OutputRequestSummary(props: {
+  config: ModelConfig;
+  fieldValues: Record<string, string | number | boolean>;
+  referenceCount: number;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const generator = props.config.generator;
+  if (!generator) return null;
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: props.t("Endpoint"), value: `POST ${generator.endpoint}` },
+    { label: props.t("Model ID"), value: props.config.modelId },
+    ...generator.fields.map((field) => ({
+      label: props.t(field.label),
+      value: formatFieldValue(props.fieldValues[field.name] ?? field.defaultValue, props.t),
+    })),
+    {
+      label: props.t("Reference media"),
+      value: props.referenceCount > 0 ? String(props.referenceCount) : props.t("None"),
+    },
+  ];
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="mb-3 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+        {props.t("Request summary")}
+      </div>
+      <dl className="grid gap-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between gap-3 text-[12px]">
+            <dt className="shrink-0 text-muted-foreground">{row.label}</dt>
+            <dd className="min-w-0 truncate text-right font-mono font-semibold text-[#20222a] dark:text-white/84">
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-5 text-muted-foreground dark:border-white/10">
+        {props.t("Video generation is asynchronous: the call returns a task id, and the finished file is fetched from the task endpoint.")}
+      </p>
+    </div>
+  );
+}
+
+function formatFieldValue(
+  value: string | number | boolean,
+  t: (key: string, vars?: Record<string, string>) => string
+): string {
+  if (typeof value === "boolean") return value ? t("On") : t("Off");
+  return String(value);
+}
+
 function OutputPreview(props: {
   modelName: string;
   prompt: string;
@@ -3066,13 +3129,13 @@ function ModelQuickStart(props: {
             {props.t("Four ways in, all on the same key and the same model catalog. Pick one to see a runnable example.")}
           </p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="fk-stagger mt-4 grid gap-3 sm:grid-cols-2">
           {cards.map((card) => (
             <button
               key={card.id}
               type="button"
               onClick={() => setOpenCard(card.id)}
-              className="rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-violet-500/35 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] active:scale-[0.995] dark:border-white/10 dark:bg-white/[0.04]"
+              className="fk-lift rounded-xl border border-slate-200 bg-white p-5 text-left hover:border-violet-500/35 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] dark:border-white/10 dark:bg-white/[0.04]"
             >
               <span className="grid size-10 place-items-center rounded-lg bg-violet-500/10 text-violet-700 dark:text-violet-300">
                 {card.icon}
@@ -3424,12 +3487,12 @@ function ModelExamplesAndRelated(props: {
             </div>
             <span className="text-xs font-semibold text-muted-foreground">{props.t("Swipe or scroll to compare")}</span>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="fk-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {props.relatedModels.slice(0, 8).map((model) => (
               <Link
                 key={model.href}
                 href={model.href}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-blue-500/45 hover:shadow-[0_18px_44px_-30px_rgba(37,99,235,.55)] dark:border-white/10 dark:bg-white/[0.03]"
+                className="fk-lift group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm hover:border-blue-500/45 hover:shadow-[0_18px_44px_-30px_rgba(37,99,235,.55)] dark:border-white/10 dark:bg-white/[0.03]"
               >
                 <RelatedModelVisual
                   modelName={model.name}
