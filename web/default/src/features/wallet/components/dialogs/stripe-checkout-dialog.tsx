@@ -61,7 +61,7 @@ export function StripeCheckoutDialog(props: StripeCheckoutDialogProps) {
     <Dialog open={Boolean(props.session)} onOpenChange={props.onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className='max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1120px] gap-0 overflow-y-auto rounded-[24px] p-0 ring-1 ring-[#dfe3e8] max-[520px]:top-0 max-[520px]:left-0 max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-screen max-[520px]:max-w-none max-[520px]:translate-x-0 max-[520px]:translate-y-0 max-[520px]:rounded-none'
+        className='max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1120px] gap-0 overflow-y-auto rounded-[24px] p-0 ring-1 ring-[#dfe3e8] sm:max-w-[1120px] max-[520px]:top-0 max-[520px]:left-0 max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-screen max-[520px]:max-w-none max-[520px]:translate-x-0 max-[520px]:translate-y-0 max-[520px]:rounded-none'
       >
         <DialogTitle className='sr-only'>{title}</DialogTitle>
         <DialogDescription className='sr-only'>{description}</DialogDescription>
