@@ -127,4 +127,64 @@ describe('stripe checkout discount API', () => {
       })
     )
   })
+
+  test('returns a rejected invalid promotion-code envelope', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: false,
+      message: 'promotion_code_invalid',
+    }
+    spyOn(api, 'post').mockRejectedValue({
+      response: { status: 400, data: response },
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'BADCODE',
+      })
+    ).resolves.toEqual(response)
+  })
+
+  test('returns a rejected checkout conflict envelope with latest revision data', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: false,
+      message: 'checkout_revision_conflict',
+      data: {
+        client_secret: 'cs_latest',
+        publishable_key: 'pk_latest',
+        fallback_url: 'https://checkout.example.test/latest',
+        checkout_context: 'ctx-latest',
+        checkout_revision: 3,
+        discount_state: { source: 'invitation', display_name: 'Invite' },
+        topup_summary: null,
+      },
+    }
+    spyOn(api, 'post').mockRejectedValue({
+      response: { status: 409, data: response },
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 2,
+        request_id: 'request-2',
+        action: 'restore',
+      })
+    ).resolves.toEqual(response)
+  })
 })

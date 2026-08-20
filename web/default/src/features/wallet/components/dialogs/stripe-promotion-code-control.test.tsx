@@ -16,12 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, mock, test } from 'bun:test'
+import { afterAll, describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider } from 'react-i18next'
 
-mock.restore()
 mock.module('lucide-react', () => ({
   Loader2: () => null,
   Tag: () => null,
@@ -47,6 +46,10 @@ await i18n.init({
       },
     },
   },
+})
+
+afterAll(() => {
+  mock.restore()
 })
 
 function renderPromotionControl(

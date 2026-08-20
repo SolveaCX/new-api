@@ -118,11 +118,21 @@ export async function requestStripePayment(
 export async function updateStripeCheckoutDiscount(
   request: StripeCheckoutDiscountRequest
 ): Promise<ApiResponse<StripeCheckoutRevisionData>> {
-  const res = await api.post('/api/user/stripe/checkout/discount', request, {
-    skipBusinessError: true,
-    skipErrorHandler: true,
-  } as Record<string, unknown>)
-  return res.data
+  try {
+    const res = await api.post('/api/user/stripe/checkout/discount', request, {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    } as Record<string, unknown>)
+    return res.data
+  } catch (error) {
+    const responseData = (error as {
+      response?: { data?: unknown }
+    })?.response?.data
+    if (isStripeCheckoutRevisionResponse(responseData)) {
+      return responseData
+    }
+    throw error
+  }
 }
 
 /** Reopen the existing Stripe session for a pending top-up. */
@@ -334,4 +344,14 @@ export async function completeOrder(
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/topup/complete', request)
   return res.data
+}
+
+function isStripeCheckoutRevisionResponse(
+  value: unknown
+): value is ApiResponse<StripeCheckoutRevisionData> {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      ('success' in value || 'message' in value || 'data' in value)
+  )
 }

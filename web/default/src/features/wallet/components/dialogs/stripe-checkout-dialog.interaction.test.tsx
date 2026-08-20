@@ -22,6 +22,11 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import type { StripeCheckoutSession } from '@stripe/stripe-js'
+import type {
+  ApiResponse,
+  StripeCheckoutDiscountState,
+  StripeCheckoutRevisionData,
+} from '../../types'
 
 type MountedRecord = {
   clientSecret: string
@@ -34,6 +39,7 @@ let latestPromotionControlProps:
   | {
       value: string
       busyAction?: 'apply' | 'restore' | null
+      message: { kind: 'success' | 'error'; text: string } | null
       onValueChange: (value: string) => void
       onApply: () => void
       onRemove: () => void
@@ -44,23 +50,7 @@ let latestSessionChange:
   | ((session: StripeCheckoutSession) => void)
   | undefined
 let discountResponse:
-  | {
-      success: boolean
-      data: {
-        client_secret: string
-        publishable_key: string
-        fallback_url: string
-        checkout_context: string
-        checkout_revision: number
-        discount_state: {
-          source: 'manual'
-          display_name: string
-          promotion_code_masked: string
-          replaced_source: 'invitation'
-        }
-        topup_summary: null
-      }
-    }
+  | ApiResponse<StripeCheckoutRevisionData>
   | null = null
 let discountResponsePromise:
   | Promise<typeof discountResponse>
@@ -166,6 +156,7 @@ mock.module('./stripe-promotion-code-control', () => ({
   StripePromotionCodeControl: (props: {
     value: string
     busyAction?: 'apply' | 'restore' | null
+    message: { kind: 'success' | 'error'; text: string } | null
     onValueChange: (value: string) => void
     onApply: () => void
     onRemove: () => void
@@ -177,6 +168,7 @@ mock.module('./stripe-promotion-code-control', () => ({
         {props.busyAction === 'restore'
           ? 'Restoring previous discount...'
           : null}
+        {props.message?.text}
         <button type='button' onClick={props.onApply}>
           Apply
         </button>
@@ -195,9 +187,12 @@ await testI18n.use(initReactI18next).init({
       translation: {
         Apply: 'Apply',
         Continue: 'Continue',
+        'Checkout changed in another request. The latest checkout was restored.':
+          'Checkout changed in another request. The latest checkout was restored.',
         'Promotion code': 'Promotion code',
         'Promotion code applied. Previous discount replaced.':
           'Promotion code applied. Previous discount replaced.',
+        'This promotion code is invalid.': 'This promotion code is invalid.',
       },
     },
   },
@@ -449,6 +444,26 @@ function pendingDiscountResponse() {
   }
 }
 
+function successfulManualRevision(
+  overrides: Partial<StripeCheckoutRevisionData> = {}
+): StripeCheckoutRevisionData {
+  return {
+    client_secret: 'cs_next',
+    publishable_key: 'pk_next',
+    fallback_url: 'https://checkout.example.test/next',
+    checkout_context: 'ctx-2',
+    checkout_revision: 2,
+    discount_state: {
+      source: 'manual',
+      display_name: 'SAVE20',
+      promotion_code_masked: 'SAVE20',
+      replaced_source: 'invitation',
+    } as StripeCheckoutDiscountState,
+    topup_summary: null,
+    ...overrides,
+  }
+}
+
 function dispose(root: Root) {
   React.act(() => {
     root.unmount()
@@ -461,20 +476,7 @@ beforeEach(() => {
   latestPromotionControlProps = undefined
   discountResponse = {
     success: true,
-    data: {
-      client_secret: 'cs_next',
-      publishable_key: 'pk_next',
-      fallback_url: 'https://checkout.example.test/next',
-      checkout_context: 'ctx-2',
-      checkout_revision: 2,
-      discount_state: {
-        source: 'manual',
-        display_name: 'SAVE20',
-        promotion_code_masked: 'SAVE20',
-        replaced_source: 'invitation',
-      },
-      topup_summary: null,
-    },
+    data: successfulManualRevision(),
   }
   discountResponsePromise = null
   latestSessionChange = undefined
@@ -557,6 +559,93 @@ describe('StripeCheckoutDialog promotion code interactions', () => {
         'cs_next',
       ])
       expect(mountedRecords[0]?.destroy).toHaveBeenCalledTimes(1)
+    } finally {
+      dispose(root)
+    }
+  })
+
+  test('keeps the current mount and shows the invalid promotion-code message', async () => {
+    const { root } = renderDialog()
+    discountResponse = {
+      success: false,
+      message: 'promotion_code_invalid',
+    }
+
+    try {
+      await React.act(async () => {
+        await Promise.resolve()
+        latestSessionChange?.(checkoutSession())
+        await Promise.resolve()
+      })
+
+      await React.act(async () => {
+        latestPromotionControlProps?.onValueChange('BADCODE')
+        await Promise.resolve()
+      })
+      await React.act(async () => {
+        latestPromotionControlProps?.onApply()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(mountedRecords.map((record) => record.clientSecret)).toEqual([
+        'cs_initial',
+      ])
+      expect(mountedRecords[0]?.destroy).toHaveBeenCalledTimes(0)
+      expect(latestPromotionControlProps?.message).toEqual({
+        kind: 'error',
+        text: 'This promotion code is invalid.',
+      })
+      expect(latestPromotionControlProps?.busyAction).toBe(null)
+    } finally {
+      dispose(root)
+    }
+  })
+
+  test('remounts the latest checkout revision returned by a conflict envelope', async () => {
+    const { root } = renderDialog()
+    discountResponse = {
+      success: false,
+      message: 'checkout_revision_conflict',
+      data: successfulManualRevision({
+        client_secret: 'cs_latest',
+        publishable_key: 'pk_latest',
+        fallback_url: 'https://checkout.example.test/latest',
+        checkout_context: 'ctx-latest',
+        checkout_revision: 3,
+        discount_state: {
+          source: 'invitation',
+          display_name: 'Invite',
+        },
+      }),
+    }
+
+    try {
+      await React.act(async () => {
+        await Promise.resolve()
+        latestSessionChange?.(checkoutSession())
+        await Promise.resolve()
+      })
+
+      await React.act(async () => {
+        latestPromotionControlProps?.onValueChange('SAVE20')
+        await Promise.resolve()
+      })
+      await React.act(async () => {
+        latestPromotionControlProps?.onApply()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(mountedRecords.map((record) => record.clientSecret)).toEqual([
+        'cs_initial',
+        'cs_latest',
+      ])
+      expect(mountedRecords[0]?.destroy).toHaveBeenCalledTimes(1)
+      expect(latestPromotionControlProps?.message).toEqual({
+        kind: 'error',
+        text: 'Checkout changed in another request. The latest checkout was restored.',
+      })
     } finally {
       dispose(root)
     }
