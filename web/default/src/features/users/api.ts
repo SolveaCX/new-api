@@ -125,6 +125,16 @@ export async function manageUser(
 }
 
 /**
+ * Batch-mark users' email as verified (admin bulk action).
+ */
+export async function batchVerifyEmails(
+  ids: number[]
+): Promise<ApiResponse<{ affected: number }>> {
+  const res = await api.post('/api/user/batch_verify_email', { ids })
+  return res.data
+}
+
+/**
  * Adjust user quota atomically (add/subtract/override)
  */
 export async function adjustUserQuota(
