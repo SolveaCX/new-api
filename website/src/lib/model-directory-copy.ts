@@ -33,6 +33,7 @@ export type DirectoryCopy = {
   groupInputPrice: string;
   groupOutputPrice: string;
   groupVendors: string;
+  groupProviders: string;
   groupSeries: string;
   groupCategories: string;
   groupAge: string;
@@ -77,6 +78,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Input Pricing",
     groupOutputPrice: "Output Pricing",
     groupVendors: "Model Authors",
+    groupProviders: "Providers",
     groupSeries: "Series",
     groupCategories: "Categories",
     groupAge: "Model Age",
@@ -116,6 +118,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "输入价格",
     groupOutputPrice: "输出价格",
     groupVendors: "模型作者",
+    groupProviders: "服务平台",
     groupSeries: "模型系列",
     groupCategories: "适用场景",
     groupAge: "发布时间",
@@ -153,6 +156,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Precio de entrada",
     groupOutputPrice: "Precio de salida",
     groupVendors: "Autores del modelo",
+    groupProviders: "Proveedores",
     groupSeries: "Serie",
     groupCategories: "Categorías",
     groupAge: "Antigüedad del modelo",
@@ -192,6 +196,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Prix en entrée",
     groupOutputPrice: "Prix en sortie",
     groupVendors: "Auteurs du modèle",
+    groupProviders: "Fournisseurs",
     groupSeries: "Série",
     groupCategories: "Catégories",
     groupAge: "Ancienneté du modèle",
@@ -229,6 +234,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Preço de entrada",
     groupOutputPrice: "Preço de saída",
     groupVendors: "Autores do modelo",
+    groupProviders: "Provedores",
     groupSeries: "Série",
     groupCategories: "Categorias",
     groupAge: "Idade do modelo",
@@ -266,6 +272,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Цена за ввод",
     groupOutputPrice: "Цена за вывод",
     groupVendors: "Авторы моделей",
+    groupProviders: "Провайдеры",
     groupSeries: "Серия",
     groupCategories: "Категории",
     groupAge: "Возраст модели",
@@ -303,6 +310,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "入力料金",
     groupOutputPrice: "出力料金",
     groupVendors: "モデル提供元",
+    groupProviders: "提供プラットフォーム",
     groupSeries: "シリーズ",
     groupCategories: "カテゴリ",
     groupAge: "モデルの新しさ",
@@ -340,6 +348,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Giá đầu vào",
     groupOutputPrice: "Giá đầu ra",
     groupVendors: "Đơn vị phát triển",
+    groupProviders: "Nền tảng cung cấp",
     groupSeries: "Dòng mô hình",
     groupCategories: "Danh mục",
     groupAge: "Thời điểm ra mắt",
@@ -377,6 +386,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Eingabepreis",
     groupOutputPrice: "Ausgabepreis",
     groupVendors: "Modell-Anbieter",
+    groupProviders: "Anbieter",
     groupSeries: "Serie",
     groupCategories: "Kategorien",
     groupAge: "Modellalter",
@@ -414,6 +424,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     groupInputPrice: "Harga masukan",
     groupOutputPrice: "Harga keluaran",
     groupVendors: "Pembuat model",
+    groupProviders: "Platform penyedia",
     groupSeries: "Seri",
     groupCategories: "Kategori",
     groupAge: "Usia model",

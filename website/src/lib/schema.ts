@@ -161,6 +161,15 @@ export function buildBlogArticleSchema(input: BlogArticleSchemaInput): JsonLdGra
   ]);
 }
 
+export type ModelSchemaVideo = {
+  name: string;
+  description: string;
+  contentPath: string;
+  thumbnailPath: string;
+  /** ISO 8601 duration, e.g. PT6S. */
+  duration?: string;
+};
+
 type ModelSchemaInput = {
   locale: Locale;
   modelName: string;
@@ -171,6 +180,10 @@ type ModelSchemaInput = {
   // Localized page path, e.g. "/zh/models/gpt-4o-mini".
   pagePath: string;
   faq: Array<{ q: string; a: string }>;
+  /** Sample generations shown on the page, declared for video rich results. */
+  videos?: ModelSchemaVideo[];
+  /** ISO date used as the videos' uploadDate; defaults to today. */
+  publishedAt?: string;
 };
 
 export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
@@ -180,6 +193,19 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
   // or missing price would serialize to null / an invalid price and hand search
   // engines a broken price signal.
   const validPrice = Number.isFinite(input.inputPriceUsd) && input.inputPriceUsd >= 0;
+  const videoNodes = (input.videos ?? []).map((video) => ({
+    "@type": "VideoObject" as const,
+    name: video.name,
+    description: video.description,
+    contentUrl: absoluteUrl(video.contentPath),
+    thumbnailUrl: absoluteUrl(video.thumbnailPath),
+    embedUrl: pageUrl,
+    // uploadDate is required for video rich results. These are page assets with
+    // no independent publish date, so the page's own date stands in.
+    uploadDate: input.publishedAt ?? new Date().toISOString().slice(0, 10),
+    ...(video.duration ? { duration: video.duration } : {}),
+  }));
+
   return graph([
     websiteSchema(),
     {
@@ -214,6 +240,7 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
         acceptedAnswer: { "@type": "Answer", text: item.a },
       })),
     },
+    ...videoNodes,
     breadcrumbSchema([
       { name: "Models", item: modelsUrl },
       { name: input.modelName, item: pageUrl },

@@ -14,6 +14,17 @@ export type Modality = "text" | "image" | "file" | "audio" | "video";
 
 export type ModelDirectoryMeta = {
   series: string;
+  /**
+   * Who built the model. Sourced here rather than from the pricing payload so
+   * the label is stable — the payload leaves vendor_id empty for some models
+   * (Macaron, Veo, Gemma), which would otherwise fall back to a placeholder.
+   */
+  vendor: string;
+  /**
+   * Where the model is officially served (author API plus the clouds it ships
+   * to). Empty for models whose availability is not documented.
+   */
+  providers: string[];
   modalities: Modality[];
   /** null for image / video / TTS / music models with no token context window. */
   contextTokens: number | null;
@@ -147,6 +158,26 @@ export function seriesForModels(modelNames: string[]): string[] {
     if (current == null || rank < current) bestRank.set(series, rank);
   }
   return [...bestRank.entries()].sort(([, a], [, b]) => a - b).map(([series]) => series);
+}
+
+/** Model authors present in the live catalogue, most models first. */
+export function vendorsForModels(modelNames: string[]): string[] {
+  return countedValues(modelNames, (meta) => (meta.vendor ? [meta.vendor] : []));
+}
+
+/** Serving providers present in the live catalogue, most models first. */
+export function providersForModels(modelNames: string[]): string[] {
+  return countedValues(modelNames, (meta) => meta.providers ?? []);
+}
+
+function countedValues(modelNames: string[], pick: (meta: ModelDirectoryMeta) => string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const name of modelNames) {
+    const meta = getModelMeta(name);
+    if (!meta) continue;
+    for (const value of pick(meta)) counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b)).map(([value]) => value);
 }
 
 /** Categories present in the live catalogue, most common first. */

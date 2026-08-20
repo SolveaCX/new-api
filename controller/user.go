@@ -339,6 +339,14 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	// Honeypot: bots auto-fill the hidden "website" field. Instead of blocking
+	// the request (which would teach the bot about the trap), let the
+	// registration complete normally but immediately disable the account — the
+	// bot sees a "successful" signup and then has to debug why it cannot log in.
+	honeypotTriggered := strings.TrimSpace(user.Website) != ""
+	if honeypotTriggered {
+		common.SysLog("registration honeypot triggered from " + c.ClientIP())
+	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
@@ -388,6 +396,13 @@ func Register(c *gin.Context) {
 		Role:            common.RoleCommonUser, // 明确设置角色为普通用户
 		AdsAttribution:  sanitizeAdsAttribution(user.AdsAttribution),
 		EmailVerifiedAt: user.EmailVerifiedAt,
+	}
+	// Honeypot accounts: the registration completes (so the bot sees success),
+	// but the account is created already disabled and can never be used. The
+	// flag lets admins spot honeypot-created accounts in the users table.
+	if honeypotTriggered {
+		cleanUser.Status = common.UserStatusDisabled
+		cleanUser.IsHoneypot = true
 	}
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
@@ -1488,9 +1503,13 @@ func EmailBind(c *gin.Context) {
 		return
 	}
 	// The initial token was skipped at registration for unverified accounts;
-	// re-issue it now that the email is verified so onboarding completes.
+	// re-issue it now that the email is verified so onboarding completes. Fail
+	// loudly (rather than silently) so the client can surface a retry instead of
+	// leaving the user "verified but without a token".
 	if err := ensureDefaultUserToken(&user); err != nil {
 		common.SysLog("failed to ensure default token after email verification: " + err.Error())
+		common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

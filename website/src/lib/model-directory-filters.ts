@@ -25,6 +25,7 @@ export type DirectoryFilterKey =
   | "inputPrice"
   | "outputPrice"
   | "vendors"
+  | "providers"
   | "series"
   | "categories"
   | "age"
@@ -35,8 +36,10 @@ export type DirectoryFilters = {
   context: number[];
   inputPrice: PriceBandId[];
   outputPrice: PriceBandId[];
-  /** Model authors — who built the model, from the live pricing payload. */
+  /** Model authors — who built the model. */
   vendors: string[];
+  /** Where the model is officially served (author API plus the clouds). */
+  providers: string[];
   series: string[];
   categories: string[];
   age: AgeBand[];
@@ -56,6 +59,7 @@ export const EMPTY_DIRECTORY_FILTERS: DirectoryFilters = {
   inputPrice: [],
   outputPrice: [],
   vendors: [],
+  providers: [],
   series: [],
   categories: [],
   age: [],
@@ -68,6 +72,7 @@ export const DIRECTORY_FILTER_KEYS: DirectoryFilterKey[] = [
   "inputPrice",
   "outputPrice",
   "vendors",
+  "providers",
   "series",
   "categories",
   "age",
@@ -83,6 +88,9 @@ export type DirectoryRow = {
   vendor: string;
   searchText: string;
   series?: string;
+  /** Author from the metadata table; falls back to the payload's vendor. */
+  author: string;
+  providers: string[];
   modalities: Modality[];
   contextTokens: number | null;
   categories: string[];
@@ -116,10 +124,12 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
   return {
     name: input.name,
     vendor: input.vendor,
-    searchText: [input.name, input.vendor, series ?? "", ...(meta?.categories ?? []), ...(input.endpointTypes ?? [])]
+    searchText: [input.name, input.vendor, meta?.vendor ?? "", series ?? "", ...(meta?.categories ?? []), ...(input.endpointTypes ?? [])]
       .join(" ")
       .toLowerCase(),
     series,
+    author: meta?.vendor ?? input.vendor,
+    providers: meta?.providers ?? [],
     modalities: meta?.modalities ?? [],
     contextTokens: meta?.contextTokens ?? null,
     categories: meta?.categories ?? [],
@@ -169,7 +179,11 @@ function matchesGroup(row: DirectoryRow, key: DirectoryFilterKey, filters: Direc
     }
     case "vendors": {
       const selected = filters.vendors;
-      return selected.length === 0 || selected.includes(row.vendor);
+      return selected.length === 0 || selected.includes(row.author);
+    }
+    case "providers": {
+      const selected = filters.providers;
+      return selected.length === 0 || selected.some((value) => row.providers.includes(value));
     }
     case "series": {
       const selected = filters.series;

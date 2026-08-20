@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // opsDayBucketExpr builds a portable SQL expression that maps created_at (epoch
@@ -63,6 +65,10 @@ type OpsUserTokenStats struct {
 	UserId           int   `json:"user_id"`
 	ManualTokenCount int   `json:"manual_token_count"`
 	FirstManualAt    int64 `json:"first_manual_at"`
+	// CliTokenCount counts tokens created via the CLI device-authorization flow
+	// (source = 'cli'); those fire the activate_success event too, so they must
+	// count as activation regardless of when they were created.
+	CliTokenCount int `json:"cli_token_count"`
 	// AutoKeyUsedQuota is the quota burned through auto-provisioned tokens
 	// (created within the auto window of signup) — the ops cost of giving
 	// signup credit to bot/farm registrations that never create a manual key.
@@ -93,17 +99,24 @@ type OpsTopUp struct {
 }
 
 // GetOpsPlgUsers returns every plg-group user (the self-serve population).
-func GetOpsPlgUsers() ([]*OpsPlgUser, error) {
+// GetOpsPlgUsers returns the PLG users that back the daily report's funnel
+// metrics. When includeDisabled is false (the default reporting denominator),
+// disabled accounts — manually banned and honeypot-created — are excluded: they
+// are not real signups and would inflate registration/activation/paid counts.
+func GetOpsPlgUsers(includeDisabled bool) ([]*OpsPlgUser, error) {
 	var users []*OpsPlgUser
-	err := DB.Table("users").
+	query := DB.Table("users").
 		Select(`id, username, display_name, email, created_at, ads_attribution,
 			quota, used_quota, request_count, last_login_at, browser_lang,
 			last_login_ip, pay_country,
 			CASE WHEN google_id IS NOT NULL AND google_id <> '' THEN 'google'
 			     WHEN github_id IS NOT NULL AND github_id <> '' THEN 'github'
 			     ELSE 'email' END AS oauth_kind`).
-		Where(commonGroupCol+" = ?", "plg").
-		Find(&users).Error
+		Where(commonGroupCol+" = ?", "plg")
+	if !includeDisabled {
+		query = query.Where("status = ?", common.UserStatusEnabled)
+	}
+	err := query.Find(&users).Error
 	return users, err
 }
 
@@ -223,6 +236,7 @@ func GetOpsUserTokenStats(autoWindowSec int64) ([]*OpsUserTokenStats, error) {
 		SELECT t.user_id,
 		       COALESCE(SUM(CASE WHEN t.created_time - u.created_at >= ? THEN 1 ELSE 0 END), 0) AS manual_token_count,
 		       COALESCE(MIN(CASE WHEN t.created_time - u.created_at >= ? THEN t.created_time END), 0) AS first_manual_at,
+		       COALESCE(SUM(CASE WHEN t.source = 'cli' THEN 1 ELSE 0 END), 0) AS cli_token_count,
 		       COALESCE(SUM(CASE WHEN t.created_time - u.created_at < ? THEN t.used_quota ELSE 0 END), 0) AS auto_key_used_quota
 		FROM tokens t
 		INNER JOIN users u ON u.id = t.user_id

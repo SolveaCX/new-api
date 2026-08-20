@@ -820,6 +820,66 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
   animation: landing-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Scroll-triggered variant of the above. The element holds its pre-state until
+   [data-revealed="true"] is set, so sections below the fold animate when the
+   reader reaches them rather than while they are still off screen.
+   No-JS and pre-hydration render the visible state, so content is never
+   trapped behind an observer that never runs. */
+.fk-reveal {
+  opacity: 1;
+  transform: none;
+}
+
+.fk-reveal[data-revealed="false"] {
+  opacity: 0;
+  transform: translateY(22px);
+}
+
+/* Interactive surfaces: a card that only changes border colour on hover does not
+   read as pressable. These give lift on hover and a small give on press, which
+   is what tells a pointer the thing is a control. */
+.fk-lift {
+  transition:
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.18s ease;
+  will-change: transform;
+}
+
+.fk-lift:hover {
+  transform: translateY(-2px);
+}
+
+.fk-lift:active {
+  transform: translateY(0) scale(0.995);
+  transition-duration: 0.08s;
+}
+
+/* Staggered reveal for grids: children arrive in sequence rather than as one
+   block, which reads as the section assembling instead of blinking in. */
+.fk-reveal[data-revealed="true"] .fk-stagger > * {
+  animation: landing-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fk-reveal[data-revealed="false"] .fk-stagger > * {
+  opacity: 0;
+}
+
+.fk-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.fk-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.fk-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.fk-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.fk-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.fk-stagger > *:nth-child(n + 6) { animation-delay: 300ms; }
+
+.fk-reveal[data-revealed="true"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .home-model-marquee-track {
   animation: home-model-marquee 26s linear infinite;
   will-change: transform;
@@ -1207,6 +1267,14 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .fk-reveal,
+  .fk-reveal[data-revealed="false"],
+  .fk-lift,
+  .fk-lift:hover,
+  .fk-lift:active,
+  .fk-stagger > *,
+  .fk-reveal[data-revealed="true"] .fk-stagger > *,
+  .fk-reveal[data-revealed="false"] .fk-stagger > *,
   .landing-animate-fade-up,
   .home-model-marquee-track,
   .fk-page-loading,
@@ -1216,5 +1284,6 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+    transition: none !important;
   }
 }

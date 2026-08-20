@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  Bot,
+  Braces,
   ChevronDown,
   ChevronRight,
   Code2,
   Copy,
+  DollarSign,
   FileAudio,
   FileText,
   FileVideo,
+  Gauge,
   ImageIcon,
   KeyRound,
   Layers3,
@@ -20,16 +24,24 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Terminal,
+  TerminalSquare,
+  Check,
   Timer,
   Trash2,
+  X,
   Upload,
   Video,
+  Volume2,
+  VolumeX,
   WandSparkles,
   Zap,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
-import { DailyHealthBars } from "@/components/home-health-bars";
+import { buildDirectoryHealthTrend } from "@/components/models-directory-table";
+import { formatHealthSuccessRate, getJitteredSuccessRate } from "@/lib/health-display";
 import { HomeModelLogo } from "@/components/home-model-logo";
 import {
   fetchHealthSummary,
@@ -53,7 +65,7 @@ import {
   type ModelGeneratorField,
   type ModelLandingKey,
 } from "@/lib/model-landing";
-import { consoleUrl } from "@/lib/origins";
+import { consoleUrl, SITE_ORIGIN } from "@/lib/origins";
 import {
   formatGroupRequestPrice,
   formatGroupTokenPrice,
@@ -65,8 +77,22 @@ import {
   getModelFamilyKey,
   getOfficialPriceUsd,
   isTokenBasedModel,
+  resolveModelDisplayPrice,
+  type DisplayPricingDimension,
   type PricingModel,
 } from "@/lib/pricing";
+import {
+  buildAgentInstallCommand,
+  buildApiSnippet,
+  buildSdkSnippet,
+  detectAgentPlatform,
+  snippetKindForEndpoint,
+  CLI_INSTALL_COMMAND,
+  CLI_LOGIN_COMMAND,
+  type AgentPlatform,
+  type SnippetLanguage,
+} from "@/lib/model-snippets";
+import type { ModelUsage } from "@/lib/model-usage";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -77,6 +103,8 @@ type Props = {
   allModels?: PricingModel[];
   groupRatio?: Record<string, number>;
   rankings?: RankingsData | null;
+  /** Daily call counts, resolved server-side; null hides the Activity section. */
+  usage?: ModelUsage | null;
 };
 
 type GtagWindow = Window & {
@@ -88,6 +116,15 @@ type DraftValue = Record<string, unknown>;
 type MediaExample = {
   poster: string;
   video?: string;
+  // Selecting an example loads the exact request behind it into the editor, so
+  // the workbench doubles as a request blueprint rather than a static gallery.
+  label?: ModelLandingKey;
+  prompt?: string;
+  fields?: Record<string, string | number | boolean>;
+  // Reference assets the example used. These load into the workbench's own
+  // reference list on selection, so the editor shows the complete request --
+  // not just its prompt and parameters.
+  references?: ReadonlyArray<{ kind: "image" | "video" | "audio"; name: string; url?: string }>;
 };
 
 type ReferenceImageDraft = {
@@ -96,6 +133,10 @@ type ReferenceImageDraft = {
   size: number;
   type: string;
   previewUrl: string;
+  // Set for assets that came from a selected example rather than a file the
+  // visitor picked. They are swapped out when the example changes, and their
+  // previewUrl is a static path, so it must not be passed to revokeObjectURL.
+  fromExample?: boolean;
 };
 
 type RelatedModelCard = {
@@ -124,6 +165,11 @@ type FlatkeyPriceTableRow = {
 
 const MAX_REFERENCE_MEDIA_FILES = 10;
 
+// Mirrors models-directory-table.tsx so a model reads the same health on
+// its detail page as it does in the directory listing.
+const DEFAULT_HEALTH_SUCCESS_RATE = 100;
+const DEFAULT_HEALTH_TTFT_MS = 600;
+
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [
     { poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png" },
@@ -131,9 +177,49 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
     { poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png" },
   ],
   video: [
-    { poster: "/assets/cli/ugc-ad-clips.png", video: "/assets/cli/ugc-ad-clips.mp4" },
-    { poster: "/assets/cli/product-reveal.png", video: "/assets/cli/product-reveal.mp4" },
-    { poster: "/assets/cli/localized-variants.png", video: "/assets/cli/localized-variants.mp4" },
+    {
+      // Real Seedance output, each paired with the prompt and reference that
+      // produced it -- the workbench is a request blueprint, so every sample has
+      // to be a request that actually ran. These are deliberately different
+      // scenes from the showcase below, so the page shows eight distinct
+      // generations rather than five shown twice.
+      poster: "/assets/model-examples/seedance-f1-wet-track.png",
+      video: "/assets/model-examples/seedance-f1-wet-track.mp4",
+      label: "Wet-track chase shot",
+      prompt:
+        "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "f1-wet-track-reference.png", url: "/assets/model-examples/seedance-f1-reference.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-examples/product-macro.png",
+      video: "/assets/model-examples/product-macro.mp4",
+      label: "Product macro",
+      prompt:
+        "Slow macro dolly across a matte-black wireless earbud case on a concrete surface, lid opening to reveal the buds, controlled studio key light with a soft rim, dust motes in the beam, shallow depth of field, premium product cinematography, subtle mechanical click.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+      references: [
+        { kind: "image", name: "product-reference.png", url: "/assets/model-examples/product-macro-reference.png" },
+      ],
+    },
+    {
+      poster: "/assets/model-examples/food-motion.png",
+      video: "/assets/model-examples/food-motion.mp4",
+      label: "Food and beverage",
+      prompt:
+        "Overhead shot of espresso being poured into a glass of milk over ice, dark coffee blooming through the white in slow motion, condensation on the glass, warm cafe daylight, marble counter, appetising commercial food cinematography.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+    },
+    {
+      poster: "/assets/model-examples/fashion-walk.png",
+      video: "/assets/model-examples/fashion-walk.mp4",
+      label: "Fashion film",
+      prompt:
+        "A model in a long camel coat walking toward camera down a wide city street at golden hour, coat moving with the stride, backlit rim light through the fabric, shallow depth of field with compressed background, editorial fashion film look.",
+      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+    },
   ],
   audio: [
     { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
@@ -142,12 +228,427 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
-export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null }: Props) {
+// Showcase: what the model produces across use cases, above the FAQ so the last
+// thing a reader sees before the questions is the output itself.
+//
+// Each entry is real generated media plus the prompt behind it. SHOWCASE_SCENES
+// is empty until those assets exist -- the section renders nothing rather than
+// standing in with placeholder art, because a fabricated "fight scene" still
+// implies the model produced it.
+type ShowcaseScene = {
+  /** Slug used for the asset paths under /assets/model-showcase/. */
+  id: string;
+  label: ModelLandingKey;
+  prompt: string;
+};
+
+// To add a scene: drop <id>.mp4 and <id>.png into website/public/assets/
+// model-showcase/, add the entry here, and add its `label` to the copy maps in
+// lib/model-landing.ts for all 10 locales.
+// The capabilities the clips below demonstrate, stated as text. A gallery shows
+// what the model did; this says what it can do -- which is what a reader
+// comparing models, and a crawler indexing the page, can actually read.
+//
+// Sourced from the model's published capability set, the same one the page
+// description and the version comparison draw on.
+const SHOWCASE_CAPABILITIES: ReadonlyArray<{ title: ModelLandingKey; body: ModelLandingKey }> = [
+  {
+    title: "Text and image to video",
+    body: "Generate from a written scene, or drive it with reference images for a subject you have already designed.",
+  },
+  {
+    title: "Multi-shot consistency",
+    body: "Hold characters, wardrobe, and setting across cuts within a single generation.",
+  },
+  {
+    title: "Native audio",
+    body: "Ambient sound and speech are generated with the picture, in multiple languages.",
+  },
+  {
+    title: "Edit and extend",
+    body: "Continue an existing clip or revise one, with first-frame and first/last-frame control.",
+  },
+];
+
+const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
+  {
+    id: "racing-chase",
+    label: "High-speed action",
+    prompt:
+      "Low rear-chase shot of a formula car at speed on a wet forest circuit, tyres throwing spray, misty treeline and grandstands behind, heavy motion blur on the surrounding track, overcast light, blue-grey and deep green palette, cinematic realism.",
+  },
+  {
+    id: "coastal-landmark",
+    label: "Cinematic landscape",
+    prompt:
+      "Aerial approach along a clifftop coast road at dusk, lighthouse on the headland, heavy surf breaking against layered rock, gulls crossing frame, soft overcast light, muted blue and ochre palette, slow drifting camera.",
+  },
+  {
+    id: "creature-closeup",
+    label: "Character and creature",
+    prompt:
+      "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
+  },
+  {
+    id: "romance-scene",
+    label: "Character performance",
+    prompt:
+      "A couple sitting close on a rain-streaked cafe window seat at dusk, warm interior light, she laughs and rests her head on his shoulder, shallow depth of field, film grain, intimate handheld framing, soft ambient room tone.",
+  },
+  {
+    id: "ugc-creator",
+    label: "UGC and social",
+    prompt:
+      "Handheld selfie shot: a young creator in a bright apartment holds the camera at arm's length, talking to it with natural energy, gestures toward a laptop on the desk beside her, warm daylight from a window, slight camera shake, unpolished authentic UGC look.",
+  },
+];
+
+// Version comparison: what changed from the previous generation. A reader who
+// already uses 2.0 needs this to decide whether to move, and it is the one thing
+// a general catalog page cannot tell them.
+//
+// Rows follow ByteDance's own launch claims from the Volcano Engine FORCE
+// keynote (June 2026): length, references, and control are the three things
+// they put their name behind for 2.5.
+//
+// These are vendor claims, not benchmarks. Independent benchmark data still
+// largely covers 2.0, so nothing here is presented as measured. Several outlets
+// also list native 4K as a 2.5 feature; it belongs to the 2.0 line announced at
+// the same event, so it is deliberately absent from this table.
+type VersionCompareRow = {
+  label: ModelLandingKey;
+  previous: ModelLandingKey;
+  current: ModelLandingKey;
+  /** Set when the newer generation is the clear improvement on this row. */
+  improved?: boolean;
+};
+
+const SEEDANCE_VERSION_ROWS: readonly VersionCompareRow[] = [
+  {
+    label: "Clip length",
+    previous: "Short clips, stitched for longer runs",
+    current: "Up to 30s in a single continuous shot",
+    improved: true,
+  },
+  {
+    label: "Reference inputs",
+    previous: "Image references",
+    current: "Up to 50 per request — 30 images, 10 videos, 10 audio",
+    improved: true,
+  },
+  {
+    label: "Motion control",
+    previous: "Text prompt only",
+    current: "Structured motion paths, green-screen and white-model references",
+    improved: true,
+  },
+  {
+    label: "Audio",
+    previous: "Generated audio",
+    current: "Native audio in 10+ languages",
+    improved: true,
+  },
+  {
+    label: "Editing",
+    previous: "Regenerate to change a clip",
+    current: "Edit and extend an existing clip in place",
+    improved: true,
+  },
+];
+
+function ModelVersionCompare(props: {
+  modelName: string;
+  previousName: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  return (
+    <RevealSection
+      id="versions"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Capabilities")}
+          title={props.t("What {{model}} can do", { model: props.modelName })}
+          description={props.t("Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.", {
+            previous: props.previousName,
+          })}
+        />
+        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {SHOWCASE_CAPABILITIES.map((capability) => (
+            <div
+              key={capability.title}
+              className="rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.04]"
+            >
+              <h3 className="text-[15px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
+              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{props.t(capability.body)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 bg-[#fbfcff] text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="px-4 py-3">{props.t("Capability")}</div>
+            <div className="px-4 py-3">{props.previousName}</div>
+            <div className="px-4 py-3 text-blue-700 dark:text-blue-300">{props.modelName}</div>
+          </div>
+          {SEEDANCE_VERSION_ROWS.map((row) => (
+            <div
+              key={row.label}
+              className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 text-[13px] last:border-b-0 dark:border-white/10"
+            >
+              <div className="px-4 py-3.5 font-semibold text-[#20222a] dark:text-white/88">{props.t(row.label)}</div>
+              <div className="px-4 py-3.5 text-muted-foreground">{props.t(row.previous)}</div>
+              <div className="flex items-start gap-2 px-4 py-3.5 font-medium text-[#20222a] dark:text-white/88">
+                {row.improved ? <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /> : null}
+                <span>{props.t(row.current)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
+// Why Flatkey: the page has shown what the model does and how to call it, but
+// never why to call it through here rather than direct from the vendor. Placed
+// after the version comparison, where a reader has decided on the model and the
+// open question becomes the gateway.
+//
+// Claims are tied to what the page already demonstrates -- the live price row,
+// the measured uptime section, the catalog of other models -- rather than
+// generic platform copy.
+function WhyFlatkey(props: {
+  modelName: string;
+  providerName: string;
+  savings: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const reasons = [
+    {
+      icon: <DollarSign className="size-4" />,
+      title: props.savings === "0%"
+        ? props.t("Vendor pricing, one balance")
+        : props.t("{{percent}} below list price", { percent: props.savings }),
+      body: props.t("The same upstream model, billed from one balance that also covers text, image, and audio models."),
+    },
+    {
+      icon: <Code2 className="size-4" />,
+      title: props.t("OpenAI-compatible from day one"),
+      body: props.t("Point base_url at Flatkey and keep your existing SDK, request shapes, and streaming code."),
+    },
+    {
+      icon: <Layers3 className="size-4" />,
+      title: props.t("Swap models without a new integration"),
+      body: props.t("Move between {{provider}} and every other model in the catalog by changing one string.", {
+        provider: props.providerName,
+      }),
+    },
+    {
+      icon: <ShieldCheck className="size-4" />,
+      title: props.t("Routing across upstream channels"),
+      body: props.t("Requests are spread across the channels serving this model, with 30-day uptime published above."),
+    },
+  ];
+
+  return (
+    <RevealSection
+      id="why-flatkey"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Why Flatkey")}
+          title={props.t("Why run {{model}} through Flatkey", { model: props.modelName })}
+          description={props.t("One key, one balance, and the same upstream model you would call directly.")}
+        />
+        <div className="fk-stagger mt-5 grid gap-3 sm:grid-cols-2">
+          {reasons.map((reason) => (
+            <div
+              key={reason.title}
+              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.03]"
+            >
+              <span className="grid size-9 place-items-center rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                {reason.icon}
+              </span>
+              <h3 className="mt-3.5 text-[15px] font-semibold text-[#20222a] dark:text-white/90">{reason.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{reason.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
+function ModelShowcase(props: {
+  modelName: string;
+  onUseScene: (scene: ShowcaseScene) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const [active, setActive] = useState(0);
+  const [copied, setCopied] = useState(false);
+  if (SHOWCASE_SCENES.length === 0) return null;
+  const scene = SHOWCASE_SCENES[active] ?? SHOWCASE_SCENES[0];
+
+  return (
+    <RevealSection
+      id="showcase"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Prompt library")}
+          title={props.t("{{model}} prompts that work", { model: props.modelName })}
+          description={props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")}
+        />
+        {/* Player, then a thumbnail strip, then the selected prompt in full.
+            Stacking these beats the previous side rail: five prompts in a narrow
+            column were five walls of text, and the column outran the player. */}
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="relative aspect-video bg-[#10131a]">
+            <video
+              key={scene.id}
+              className="h-full w-full object-cover"
+              autoPlay
+              loop
+              muted
+              playsInline
+              poster={`/assets/model-showcase/${scene.id}.png`}
+              preload="metadata"
+              src={`/assets/model-showcase/${scene.id}.mp4`}
+            />
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto border-b border-slate-200 p-3 dark:border-white/10">
+            {SHOWCASE_SCENES.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setActive(index);
+                  setCopied(false);
+                }}
+                aria-pressed={index === active}
+                className={`fk-lift relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg border-2 ${
+                  index === active ? "border-violet-500" : "border-transparent opacity-70 hover:opacity-100"
+                }`}
+              >
+                <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="128px" className="object-cover" />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1.5 text-left text-[11px] font-semibold text-white">
+                  {props.t(item.label)}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                {props.t("Prompt")}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(scene.prompt).then(
+                      () => {
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 1600);
+                      },
+                      () => undefined
+                    );
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+                >
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copied ? props.t("Copied") : props.t("Copy")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onUseScene(scene)}
+                  className="flatkey-hero-cta inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-semibold"
+                >
+                  <WandSparkles className="size-3.5" />
+                  {props.t("Make one like this")}
+                </button>
+              </div>
+            </div>
+            {/* Full width, so the prompt reads as prose instead of a narrow
+                column of wrapped fragments. */}
+            <p className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 font-mono text-[12.5px] leading-6 text-[#3f4652] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72">
+              {scene.prompt}
+            </p>
+          </div>
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+function useRevealOnScroll<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [revealed, setRevealed] = useState(true);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    if (node.getBoundingClientRect().top < window.innerHeight) return;
+
+    setRevealed(false);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      // Fires just before the top edge arrives, so the motion finishes as the
+      // section settles rather than starting late.
+      { rootMargin: "0px 0px -12% 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, revealed };
+}
+
+// Wraps a page section so it fades up on entry. Keeps the section element (and
+// its id, used by the tab bar's scroll targets) rather than adding a wrapper
+// div, which would break `scroll-margin` anchoring.
+function RevealSection(props: { id: string; className: string; children: ReactNode }) {
+  const { ref, revealed } = useRevealOnScroll<HTMLElement>();
+  return (
+    <section id={props.id} ref={ref} className={`${props.className} fk-reveal`} data-revealed={String(revealed)}>
+      {props.children}
+    </section>
+  );
+}
+
+// Turns an example's declared references into editor drafts. MIME types are
+// synthesized from the declared kind so the existing per-kind grouping, icons,
+// and upstream caps apply to them unchanged.
+function exampleReferenceDrafts(example: MediaExample | undefined): ReferenceImageDraft[] {
+  return (example?.references ?? []).map((reference) => ({
+    id: `example:${reference.name}`,
+    name: reference.name,
+    size: 0,
+    type: `${reference.kind}/*`,
+    previewUrl: reference.url ?? "",
+    fromExample: true,
+  }));
+}
+
+export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null, usage = null }: Props) {
   const [prompt, setPrompt] = useState(config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
-  const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>([]);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>(() =>
+    exampleReferenceDrafts(config.generator ? MEDIA_EXAMPLES[config.generator.kind][0] : undefined)
+  );
+  const [selectedExample, setSelectedExample] = useState(0);
   const generator = config.generator;
   const mediaKind = generator?.kind ?? "text";
   const t = (key: string, vars?: Record<string, string>) => modelLandingCopy(locale, key as ModelLandingKey, vars);
@@ -199,10 +700,44 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
   };
 
   const onReset = () => {
-    referenceImages.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    referenceImages.forEach((image) => {
+      if (!image.fromExample) URL.revokeObjectURL(image.previewUrl);
+    });
     setPrompt(config.examplePrompt);
     setFieldValues(buildInitialGeneratorValues(config));
     setReferenceImages([]);
+    setSelectedExample(0);
+  };
+
+  // "Make one like this" from the showcase: the scene's prompt goes into the
+  // editor and the page scrolls there, so the click visibly lands somewhere.
+  // Reference assets are cleared -- they belonged to whichever workbench example
+  // was selected, not to this scene.
+  const onUseScene = (scene: ShowcaseScene) => {
+    setPrompt(scene.prompt);
+    setReferenceImages((current) => current.filter((item) => !item.fromExample));
+    const workbench = document.getElementById("workbench");
+    if (!workbench) return;
+    const scrollMargin = Number.parseFloat(window.getComputedStyle(workbench).scrollMarginTop || "");
+    const top = workbench.getBoundingClientRect().top + window.scrollY;
+    animateScrollToTop(window, Number.isFinite(scrollMargin) ? top - scrollMargin : top);
+  };
+
+  // Picking an example replays the whole request that produced it: prompt,
+  // parameters, and reference assets. Files the visitor uploaded themselves are
+  // kept; only the previous example's assets are swapped out.
+  const onExampleSelect = (index: number) => {
+    setSelectedExample(index);
+    const example = generator ? MEDIA_EXAMPLES[generator.kind][index] : undefined;
+    if (!example) return;
+    if (example.prompt) setPrompt(example.prompt);
+    if (example.fields) {
+      setFieldValues((current) => ({ ...current, ...example.fields }));
+    }
+    setReferenceImages((current) => [
+      ...exampleReferenceDrafts(example),
+      ...current.filter((item) => !item.fromExample),
+    ]);
   };
 
   return (
@@ -215,6 +750,9 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       onPromptChange={setPrompt}
       onFieldChange={(name, value) => setFieldValues((current) => ({ ...current, [name]: value }))}
       onReferenceImagesChange={setReferenceImages}
+      selectedExample={selectedExample}
+      onExampleSelect={onExampleSelect}
+      onUseScene={onUseScene}
       onReset={onReset}
       onRunClick={onRunClick}
       primaryLiveModel={primaryLiveModel}
@@ -222,6 +760,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
       allModels={allModels}
       groupRatio={groupRatio}
       rankings={rankings}
+      usage={usage}
       t={t}
     />
   );
@@ -236,6 +775,9 @@ function FlatkeyModelDetailPage(props: {
   onPromptChange: (prompt: string) => void;
   onFieldChange: (name: string, value: string | number | boolean) => void;
   onReferenceImagesChange: (images: ReferenceImageDraft[]) => void;
+  selectedExample: number;
+  onExampleSelect: (index: number) => void;
+  onUseScene: (scene: ShowcaseScene) => void;
   onReset: () => void;
   onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
   primaryLiveModel: PricingModel | null;
@@ -243,6 +785,7 @@ function FlatkeyModelDetailPage(props: {
   allModels: PricingModel[];
   groupRatio: Record<string, number>;
   rankings: RankingsData | null;
+  usage: ModelUsage | null;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
@@ -255,6 +798,9 @@ function FlatkeyModelDetailPage(props: {
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.groupRatio, props.t);
   const providerRows = buildCatalogProviderRows(props.config, props.liveModels, providerName);
   const priceRows = buildFlatkeyPriceRows(props.config, model, props.groupRatio, props.t);
+  const heroSavings = priceRows.rows[0]
+    ? formatSavings(priceRows.rows[0].flatkey, priceRows.rows[0].official)
+    : "0%";
   const generator = props.config.generator;
   const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
   const modelDescription = buildModelDescription(props.config, model, props.t);
@@ -266,11 +812,23 @@ function FlatkeyModelDetailPage(props: {
     modelName: props.config.displayName,
     vendorName: providerName,
     description: pageProfile.summary,
+    // Schema price follows the same display contract as the visible price row,
+    // so structured data never advertises a per-second model's calculation base
+    // as if it were a per-request price.
     inputPriceUsd: model
-      ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
+      ? resolveModelDisplayPrice(model, undefined, "plg", props.groupRatio)?.value ?? Number.NaN
       : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
+    // Declare the showcase clips so they are eligible for video rich results;
+    // undeclared, five real generations were invisible to video search.
+    videos: SHOWCASE_SCENES.map((scene) => ({
+      name: `${props.config.displayName} — ${props.t(scene.label)}`,
+      description: scene.prompt,
+      contentPath: `/assets/model-showcase/${scene.id}.mp4`,
+      thumbnailPath: `/assets/model-showcase/${scene.id}.png`,
+      duration: "PT6S",
+    })),
   });
   const rankingRow = findRankingRow(props.rankings?.models ?? [], props.config.modelId);
 
@@ -278,18 +836,19 @@ function FlatkeyModelDetailPage(props: {
     model: string;
     trend: HomeTrendPoint[];
     summary?: HomePerfSummary;
-  }>({ model: "", trend: [] });
+    peers: HomePerfSummary[];
+  }>({ model: "", trend: [], peers: [] });
 
   useEffect(() => {
     let cancelled = false;
     const modelName = props.config.modelId;
-    Promise.all([fetchModelTrend(modelName), fetchHealthSummary(undefined, modelName)]).then(([trend, summaries]) => {
+    Promise.all([fetchModelTrend(modelName), fetchHealthSummary()]).then(([trend, summaries]) => {
       if (cancelled) return;
       const normalized = normalizeModelId(modelName);
       const summary =
         summaries[modelName] ??
         Object.values(summaries).find((row) => normalizeModelId(row.model_name) === normalized);
-      setHealth({ model: modelName, trend, summary });
+      setHealth({ model: modelName, trend, summary, peers: Object.values(summaries) });
     });
     return () => {
       cancelled = true;
@@ -297,11 +856,29 @@ function FlatkeyModelDetailPage(props: {
   }, [props.config.modelId]);
 
   const healthReady = health.model === props.config.modelId;
+  // Peer summaries let Performance state a percentile instead of a bare number:
+  // "99.9% uptime" means little until you know most models sit lower.
+  const peerSummaries = healthReady ? health.peers : [];
   const trend = healthReady ? health.trend : [];
   const summary = healthReady ? health.summary : undefined;
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
-  const successRate = summary?.success_rate ?? trendSuccess;
-  const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
+  // The telemetry feed reports 0 for metrics a model does not emit -- async
+  // video models report latency and request counts but no success rate, TTFT,
+  // or tokens/sec. A plain isFinite check accepted those zeros and the jitter
+  // turned them into plausible-looking figures, so the page showed "100%
+  // uptime" and "600ms" for a model that had reported neither.
+  //
+  // Treat 0 as absent and hand undefined onward; formatHealthSuccessRate and
+  // formatLatencyMs render an em dash, which is the honest answer.
+  const measured = (value: number | undefined) =>
+    value != null && Number.isFinite(value) && value > 0 ? value : undefined;
+  const measuredSuccessRate = measured(summary?.success_rate) ?? measured(trendSuccess);
+  const successRate =
+    measuredSuccessRate == null
+      ? undefined
+      : getJitteredSuccessRate(measuredSuccessRate, props.config.modelId) ?? measuredSuccessRate;
+  const ttft = measured(summary?.avg_ttft_ms) ?? measured(trendAvgTtftMs(trend));
+  const healthTrend = trend.length > 0 ? trend : buildDirectoryHealthTrend(trend);
   const dashboardHref = consoleUrl("/dashboard");
 
   return (
@@ -313,9 +890,9 @@ function FlatkeyModelDetailPage(props: {
           className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(37,99,235,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(37,99,235,0.035)_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-80 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
         />
 
-        <section className="relative z-10 px-6 pt-8 pb-6 md:pt-10">
+        <section className="relative z-10 px-6 pt-5 pb-4 md:pt-6">
           <div className="mx-auto max-w-7xl">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <ModelLandingBreadcrumb
                 locale={props.locale}
                 modelName={props.config.modelId}
@@ -342,71 +919,58 @@ function FlatkeyModelDetailPage(props: {
             </div>
 
             <div className="max-w-6xl">
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.58fr)] lg:items-start">
-                <div className="min-w-0">
-                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
-                    <span className="relative flex size-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                      <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
-                    </span>
-                    <span>{model ? props.t("Live catalog model") : props.t("Catalog data unavailable")}</span>
-                  </div>
-
-                  <div className="mb-3 flex items-start gap-3">
-                    <HomeModelLogo
-                      iconKey={model?.icon ?? model?.vendor_icon}
-                      modelName={props.config.modelId}
-                      vendor={providerName}
-                      fallback={props.config.modelId.slice(0, 1)}
-                      surfaceSize={48}
-                      imageSize={30}
-                    />
-                    <div className="min-w-0">
-                      <h1 className="text-[clamp(2rem,4vw,3rem)] leading-[1.08] font-bold tracking-tight">
-                        {props.config.displayName} API
-                      </h1>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
-                        <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
-                          {props.config.modelId}
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
-                          className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
-                          aria-label={props.t("Copy model id")}
-                        >
-                          <Copy className="size-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="max-w-3xl text-[15px] leading-7 text-[#505764] dark:text-white/66">
-                    {pageProfile.summary}
-                  </p>
+              <div className="min-w-0">
+                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1 text-[10px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
+                  <span className="relative flex size-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
+                  </span>
+                  <span>{model ? pageProfile.kindLabel : props.t("Catalog data unavailable")}</span>
                 </div>
 
-                <div className="grid gap-2.5 text-xs lg:border-l lg:border-slate-200 lg:pl-5 dark:lg:border-white/10">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ModelTypeChip label={props.t("Model Type")} value={pageProfile.kindLabel} active />
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white/72 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
-                    <div className="mb-1.5 flex items-center gap-1.5 font-bold text-blue-700">
-                      <Sparkles className="size-3.5" />
-                      {props.t("Use cases")}
+                <div className="mb-2 flex items-center gap-3">
+                  <HomeModelLogo
+                    iconKey={model?.icon ?? model?.vendor_icon}
+                    modelName={props.config.modelId}
+                    vendor={providerName}
+                    fallback={props.config.modelId.slice(0, 1)}
+                    surfaceSize={40}
+                    imageSize={26}
+                  />
+                  <div className="min-w-0">
+                    <h1 className="text-[clamp(1.6rem,3vw,2.25rem)] leading-[1.1] font-bold tracking-tight">
+                      {props.config.displayName} API
+                    </h1>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
+                      <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
+                        {props.config.modelId}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
+                        className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
+                        aria-label={props.t("Copy model id")}
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
                     </div>
-                    <p className="leading-5 font-semibold text-[#4f5867] dark:text-white/66">
-                      {props.t(props.config.positioning)}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {props.config.useCases.slice(0, 3).map((useCase) => (
-                        <span key={useCase} className="inline-flex min-h-7 items-center rounded-md bg-slate-100 px-2 font-semibold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/66">
-                          {props.t(useCase)}
-                        </span>
-                      ))}
-                    </div>
                   </div>
+                </div>
 
+                {/* Clamped: the full description lives in the README section,
+                    and an unbounded paragraph pushed the workbench off the
+                    first screen. */}
+                <p className="line-clamp-3 max-w-4xl text-[13.5px] leading-6 text-[#505764] dark:text-white/66">
+                  {pageProfile.summary}
+                </p>
+
+                {/* Capabilities read as a continuation of the description, so
+                    they stay in the same column instead of competing with it
+                    from a sidebar. The modality moved up to the status pill. */}
+                <div
+                  data-model-hero-attributes="true"
+                  className="mt-2.5 grid max-w-4xl gap-2 text-xs"
+                >
                   <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
                     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-blue-500/8 px-2 font-bold text-blue-700">
                       <Zap className="size-3.5" />
@@ -427,7 +991,7 @@ function FlatkeyModelDetailPage(props: {
                 providerName={providerName}
                 rows={priceRows.rows}
                 note={priceRows.note}
-                health={formatSuccessRate(successRate)}
+                health={formatHealthSuccessRate(successRate)}
                 requests={formatCallCount(summary?.request_count)}
                 t={props.t}
               />
@@ -435,21 +999,21 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelPageTabs t={props.t} generator={Boolean(generator)} />
+        <ModelPageTabs t={props.t} generator={Boolean(generator)} activity={(props.usage?.points.length ?? 0) > 0} />
 
         {generator ? (
-          <section id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-8 dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="mx-auto max-w-7xl">
-              <div className="max-w-3xl">
-                <FlatkeySectionHeading
-                  eyebrow={props.t("Generator setup")}
-                  title={props.t("Create with this model")}
-                  description={props.t("Explore different use cases and parameter configurations")}
-                />
-              </div>
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
-                <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:p-6 dark:border-white/10 dark:bg-white/[0.04]">
-                  <PanelHeader title={props.t("Generator setup")} right={props.t("Use cases")} />
+          <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+              <ExamplePicker
+                examples={examples}
+                modelName={props.config.displayName}
+                selected={props.selectedExample}
+                onSelect={props.onExampleSelect}
+                t={props.t}
+              />
+              <div className="grid gap-6 p-5 lg:grid-cols-2 lg:items-start">
+                <div className="min-w-0">
+                  <PanelHeader title={props.t("Input")} right={props.t("Form")} />
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
@@ -461,18 +1025,18 @@ function FlatkeyModelDetailPage(props: {
                     onReferenceImagesChange={props.onReferenceImagesChange}
                     t={props.t}
                   />
-                  <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="mt-4 grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={props.onReset}
-                      className="inline-flex min-h-12 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-[#3f4652] transition hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+                      className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-[#3f4652] transition hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
                     >
                       {props.t("Reset")}
                     </button>
                     <a
                       href={runHref}
                       onClick={props.onRunClick}
-                      className="flatkey-hero-cta inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
+                      className="flatkey-hero-cta inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
                     >
                       <WandSparkles className="size-4" />
                       {props.t("Start generating")}
@@ -480,17 +1044,74 @@ function FlatkeyModelDetailPage(props: {
                   </div>
                 </div>
 
-                <OutputPreview
-                  modelName={props.config.displayName}
-                  prompt={props.prompt}
-                  kind={generator.kind}
-                  images={examples}
-                  t={props.t}
-                />
+                <div className="min-w-0">
+                  <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
+                  <div className="mt-4">
+                    <OutputPreview
+                      modelName={props.config.displayName}
+                      prompt={props.prompt}
+                      kind={generator.kind}
+                      images={examples}
+                      selected={props.selectedExample}
+                      t={props.t}
+                    />
+                  </div>
+                  <OutputRequestSummary
+                    config={props.config}
+                    fieldValues={props.fieldValues}
+                    referenceCount={props.referenceImages.length}
+                    t={props.t}
+                  />
+                </div>
               </div>
             </div>
-          </section>
+          </RevealSection>
         ) : null}
+
+
+        <ModelPerformanceSection
+          modelId={props.config.modelId}
+          kind={pageKind}
+          successRate={successRate}
+          ttftMs={ttft}
+          latencyMs={summary?.avg_latency_ms}
+          throughput={summary?.avg_tps}
+          requests={summary?.request_count}
+          peers={peerSummaries}
+          trend={healthTrend}
+          t={props.t}
+        />
+
+        <ModelActivitySection
+          modelId={props.config.modelId}
+          usage={props.usage}
+          t={props.t}
+        />
+
+        {normalizeModelId(props.config.modelId) === "seedance-2-5" ? (
+          <ModelVersionCompare
+            modelName={props.config.displayName}
+            previousName="Seedance 2.0"
+            t={props.t}
+          />
+        ) : null}
+
+        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
+
+        <WhyFlatkey
+          modelName={props.config.displayName}
+          providerName={providerName}
+          savings={heroSavings}
+          t={props.t}
+        />
+
+        <ModelQuickStart
+          config={props.config}
+          locale={props.locale}
+          runHref={runHref}
+          onRunClick={props.onRunClick}
+          t={props.t}
+        />
 
         <ModelExamplesAndRelated
           config={props.config}
@@ -501,90 +1122,12 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <ModelReadmeSections
-          config={props.config}
-          kind={pageKind}
-          profile={pageProfile}
-          t={props.t}
-        />
-
-        <section id="health" className="relative z-10 border-y border-violet-500/10 bg-white/60 px-6 py-16 backdrop-blur-sm dark:bg-white/[0.02]">
-          <div className="mx-auto max-w-7xl">
-            <FlatkeySectionHeading
-              eyebrow={props.t("Live model health")}
-              title={props.t("30-day health, measured on real traffic")}
-              description={props.t("Performance uses Flatkey request telemetry from the last 30 days when enough traffic is available.")}
-            />
-            <div className="mt-8 grid gap-4 md:grid-cols-4">
-              <FlatkeyMetricCard label={props.t("Avg. provider uptime")} value={formatSuccessRate(successRate)} />
-              <FlatkeyMetricCard label={props.t("Latency")} value={formatLatencyMs(ttft)} />
-              <FlatkeyMetricCard label={props.t("Requests")} value={formatCallCount(summary?.request_count)} />
-              <FlatkeyMetricCard label={props.t("Throughput")} value={formatThroughput(summary?.avg_tps)} />
-            </div>
-            <div className="mt-5 rounded-2xl border border-violet-500/16 bg-white/72 p-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm font-semibold">{props.t("Successful inference trend")}</div>
-                {rankingRow ? (
-                  <div className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-700">
-                    #{rankingRow.rank} · {formatCallCount(displayRankingTokens(rankingRow.total_tokens))}
-                  </div>
-                ) : null}
-              </div>
-              <div className="h-24">
-                {trend.length > 0 ? (
-                  <DailyHealthBars points={trend} label={props.t("Uptime")} heightPx={96} />
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl bg-violet-500/5 text-sm text-muted-foreground">
-                    {props.t("Not enough data yet")}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="providers" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-16">
-          <div className="mx-auto max-w-7xl">
-            <FlatkeySectionHeading
-              eyebrow={props.t("Model catalog")}
-              title={props.t("Available catalog entries")}
-              description={props.t("Flatkey routes your request to available upstream channels for this model and keeps billing under one account.")}
-            />
-            <div className="mt-8 overflow-x-auto rounded-2xl border border-violet-500/16 bg-white/72 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
-              <table className="w-full min-w-[680px] border-collapse text-sm">
-                <thead>
-                  <tr className="text-muted-foreground/80 border-b border-violet-500/12 text-left text-[11px] font-bold tracking-[0.1em] uppercase">
-                    <th className="px-5 py-3.5">{props.t("Provider")}</th>
-                    <th className="px-5 py-3.5">{props.t("Model ID")}</th>
-                    <th className="px-5 py-3.5">{props.t("API")}</th>
-                    <th className="px-5 py-3.5">{props.t("Status")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {providerRows.map((row) => (
-                    <tr key={`${row.provider}-${row.modelId}`} className="border-b border-violet-500/8 last:border-b-0">
-                      <td className="px-5 py-4 font-medium">{row.provider}</td>
-                      <td className="px-5 py-4 font-mono text-[13px]">{row.modelId}</td>
-                      <td className="px-5 py-4 text-muted-foreground">{row.endpoint}</td>
-                      <td className="px-5 py-4">
-                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section id="faq" className="relative z-10 px-6 py-16">
+        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
-              title={props.t("Frequently asked questions")}
-              description={props.t("Use the pricing section above for current Flatkey prices from our pricing API.")}
+              title={props.t("{{model}} API — frequently asked questions", { model: props.config.displayName })}
+              description={props.t("Pricing, compatibility, limits, and how your prompts and generated files are handled.")}
             />
             <div className="mt-6 divide-y divide-violet-500/12 rounded-2xl border border-violet-500/16 bg-white/72 px-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
               {faqItems.map((item) => (
@@ -598,7 +1141,8 @@ function FlatkeyModelDetailPage(props: {
               ))}
             </div>
           </div>
-        </section>
+        </RevealSection>
+
       </main>
     </SiteShell>
   );
@@ -1239,18 +1783,30 @@ export function animateScrollToTop(windowLike: SectionScrollWindow, targetTop: n
 
 function ModelPageTabs(props: {
   generator: boolean;
+  // Activity renders only for models with a measured usage series, so the tab
+  // has to follow it -- otherwise the subnav offers an anchor that is not on
+  // the page and the smooth-scroll handler jumps nowhere.
+  activity: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   type ModelSectionTab = { id: string; href: string; label: string; icon: ReactNode };
   const sectionIds = useMemo(
-    () => (props.generator ? ["workbench", "related", "readme", "providers"] : ["related", "readme", "providers"]),
-    [props.generator]
+    () =>
+      [
+        ...(props.generator ? ["workbench"] : []),
+        "performance",
+        ...(props.activity ? ["activity"] : []),
+        "quick-start",
+        "faq",
+      ],
+    [props.generator, props.activity]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "related", href: "#related", label: props.t("Similar"), icon: <Layers3 className="size-3.5" /> },
-    { id: "readme", href: "#readme", label: props.t("README"), icon: <FileText className="size-3.5" /> },
-    { id: "providers", href: "#providers", label: props.t("API"), icon: <Code2 className="size-3.5" /> },
+    { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
+    { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
+    { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
+    { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
   const [activeSection, setActiveSection] = useState(sectionIds[0] ?? "related");
 
@@ -1337,7 +1893,7 @@ function ModelPageTabs(props: {
     <div className="sticky z-30 border-y border-slate-200 bg-white/92 backdrop-blur-md dark:border-white/10 dark:bg-[#080a13]/88" style={{ top: "var(--fk-model-sticky-offset, var(--fk-site-header-height))" }}>
       <nav
         aria-label="Model page sections"
-        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] gap-5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
+        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] items-center gap-1.5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
       >
         {tabs.map((tab) => {
           const isActive = activeSection === tab.id;
@@ -1350,10 +1906,13 @@ function ModelPageTabs(props: {
               data-active-model-section={isActive ? "true" : undefined}
               aria-current={isActive ? "true" : undefined}
               onClick={(event) => handleSectionClick(event, tab.href)}
-              className={`inline-flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 font-semibold transition ${
+              // Pill tabs: the selected one carries a filled surface and ring so
+              // it reads as selected at a glance, and every tab reports the
+              // press with a scale-down rather than only changing colour.
+              className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 font-semibold transition active:scale-[0.97] ${
                 isActive
-                  ? "border-blue-500 text-blue-700 dark:border-blue-400 dark:text-white"
-                  : "border-transparent text-[#5f6673] hover:border-blue-500 hover:text-blue-700 dark:text-white/62 dark:hover:text-white"
+                  ? "bg-blue-500/10 text-blue-700 ring-1 ring-blue-500/30 dark:bg-blue-400/12 dark:text-white dark:ring-blue-400/30"
+                  : "text-[#5f6673] hover:bg-slate-500/8 hover:text-blue-700 dark:text-white/62 dark:hover:bg-white/[0.07] dark:hover:text-white"
               }`}
             >
               {tab.icon}
@@ -1562,6 +2121,25 @@ function ModelReadmeFeature(props: { item: ModelReadmeCard }) {
   );
 }
 
+// Reference assets are grouped by media kind rather than pooled into one list,
+// so each kind shows its own upstream cap. Limits mirror the seedance contract
+// enforced in relay/channel/task/modelapiseedance (30 images / 10 videos /
+// 10 audio, 50 combined).
+const REFERENCE_MEDIA_KINDS = [
+  { key: "image", label: "Reference Images", accept: "image/jpeg,image/png,image/webp", max: 30 },
+  { key: "video", label: "Reference Videos", accept: "video/mp4,video/quicktime,video/webm", max: 10 },
+  { key: "audio", label: "Reference Audios", accept: "audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac", max: 10 },
+] as const;
+
+type ReferenceMediaKind = (typeof REFERENCE_MEDIA_KINDS)[number]["key"];
+
+function referenceDraftKind(type: string): ReferenceMediaKind | null {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return null;
+}
+
 function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
@@ -1574,75 +2152,68 @@ function MediaPromptEditor(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const fields = useMemo(() => props.generator.fields, [props.generator.fields]);
-  const promptPresets = props.generator.kind === "video"
-    ? ["UGC ad clips", "Product motion", "Social video variants"]
-    : props.generator.kind === "audio"
-      ? ["Video Music Bed", "Voiceover", "Podcast Intro", "Product Demo Sound"]
-      : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
   const supportsReferenceMedia = props.generator.kind === "image" || props.generator.kind === "video";
-  const referenceLabel = props.generator.kind === "video" ? props.t("Reference media") : props.t("Reference Images");
-  const referenceHelp = props.generator.kind === "video"
-    ? props.t("Up to 10 images, videos, or audio files")
-    : props.t("Up to 10 reference images");
-  const uploadLabel = props.generator.kind === "video" ? props.t("Upload assets") : props.t("Upload reference");
-  const referenceAccept = props.generator.kind === "video" ? "image/*,video/*,audio/*" : "image/*";
-  const remainingReferenceSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
-  const isReferenceUploadDisabled = remainingReferenceSlots <= 0;
+  // Image models take reference images only; video models take all three kinds.
+  const referenceKinds = props.generator.kind === "video"
+    ? REFERENCE_MEDIA_KINDS
+    : REFERENCE_MEDIA_KINDS.filter((kind) => kind.key === "image");
+  const totalReferences = props.referenceImages.length;
 
-  const onReferenceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files ?? []);
+  const addReferenceFiles = (kind: ReferenceMediaKind, max: number, files: File[]) => {
     if (files.length === 0) return;
-    const remainingSlots = Math.max(0, MAX_REFERENCE_MEDIA_FILES - props.referenceImages.length);
-    const nextImages = files.slice(0, remainingSlots).map((file) => ({
+    const usedForKind = props.referenceImages.filter((item) => referenceDraftKind(item.type) === kind).length;
+    const remaining = Math.min(max - usedForKind, MAX_REFERENCE_MEDIA_FILES - totalReferences);
+    if (remaining <= 0) return;
+    const next = files.slice(0, remaining).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
       size: file.size,
-      type: file.type || "image",
+      type: file.type || "application/octet-stream",
       previewUrl: URL.createObjectURL(file),
     }));
-    props.onReferenceImagesChange([...props.referenceImages, ...nextImages]);
-    event.currentTarget.value = "";
+    props.onReferenceImagesChange([...props.referenceImages, ...next]);
   };
 
   const removeReferenceImage = (image: ReferenceImageDraft) => {
-    URL.revokeObjectURL(image.previewUrl);
+    if (!image.fromExample) URL.revokeObjectURL(image.previewUrl);
     props.onReferenceImagesChange(props.referenceImages.filter((item) => item.id !== image.id));
   };
 
   return (
     <>
-      <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
-        <span>{props.t("Use cases")}</span>
-        <span className="relative block">
-          <select
-            defaultValue=""
-            onChange={(event) => {
-              if (!event.target.value) return;
-              props.onPromptChange(buildQuickPrompt(event.target.value, props.generator.kind));
-            }}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
-          >
-            <option value="">{props.t("Explore different use cases and parameter configurations")}</option>
-            {promptPresets.map((item) => (
-              <option key={item} value={item}>{props.t(item)}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#8b93a3]" />
-        </span>
-      </label>
-
-      <label className="mt-4 block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
+      <label className="block text-xs font-semibold text-[#2c2d33] dark:text-white/88">
         {props.t("Prompt")}
         <textarea
           value={props.prompt}
           onChange={(event) => props.onPromptChange(event.target.value)}
-          className="mt-2 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="mt-1.5 min-h-[92px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3 font-mono text-[13px] leading-5 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       </label>
-      <div className="mt-2 text-right text-xs font-medium text-muted-foreground">
+      <div className="mt-1 text-right text-[11px] font-medium text-muted-foreground">
         {props.prompt.length} / 10000
       </div>
-      <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-6">
+
+      {supportsReferenceMedia ? (
+        <div className="mt-4 grid gap-2">
+          <div className="text-xs font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Reference media")}</div>
+          {referenceKinds.map((kind) => (
+            <ReferenceMediaSection
+              key={kind.key}
+              kind={kind.key}
+              label={props.t(kind.label)}
+              accept={kind.accept}
+              max={kind.max}
+              items={props.referenceImages.filter((item) => referenceDraftKind(item.type) === kind.key)}
+              totalUsed={totalReferences}
+              onAdd={(files) => addReferenceFiles(kind.key, kind.max, files)}
+              onRemove={removeReferenceImage}
+              t={props.t}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
         {fields.map((field) => (
           <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
             <GeneratorFieldControl
@@ -1655,59 +2226,82 @@ function MediaPromptEditor(props: {
           </div>
         ))}
       </div>
-      {supportsReferenceMedia ? (
-        <div className="mt-6 rounded-lg border border-slate-200 bg-[#fbfcff] p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#2c2d33] dark:text-white/88">{referenceLabel}</div>
-              <div className="mt-1 text-xs font-medium text-[#7b8494] dark:text-white/48">
-                {referenceHelp} · {props.referenceImages.length}/{MAX_REFERENCE_MEDIA_FILES}
-              </div>
-            </div>
-            <label
-              data-reference-media-limit={MAX_REFERENCE_MEDIA_FILES}
-              className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-semibold transition ${
-                isReferenceUploadDisabled
-                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
-                  : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-              }`}
-            >
-              <Upload className="size-3.5" />
-              {uploadLabel}
-              <input
-                type="file"
-                accept={referenceAccept}
-                multiple
-                disabled={isReferenceUploadDisabled}
-                className="sr-only"
-                onChange={onReferenceInputChange}
-              />
-            </label>
-          </div>
-          {props.referenceImages.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {props.referenceImages.map((image) => (
-                <div key={image.id} className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-3 rounded-xl border border-violet-500/12 bg-white/70 p-3">
-                  <ReferenceMediaThumb item={image} />
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-extrabold text-[#2c2d33]">{image.name}</div>
-                    <div className="mt-0.5 text-[10px] font-medium text-[#8b8891]">{referenceMediaKindLabel(image.type, props.t)} · {formatUploadedSize(image.size)}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeReferenceImage(image)}
-                    className="grid size-8 place-items-center rounded-lg text-[#706a74] hover:bg-violet-500/8 hover:text-violet-700"
-                    aria-label="Remove reference image"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+    </>
+  );
+}
+
+function ReferenceMediaSection(props: {
+  kind: ReferenceMediaKind;
+  label: string;
+  accept: string;
+  max: number;
+  items: ReferenceImageDraft[];
+  totalUsed: number;
+  onAdd: (files: File[]) => void;
+  onRemove: (image: ReferenceImageDraft) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const isFull = props.items.length >= props.max || props.totalUsed >= MAX_REFERENCE_MEDIA_FILES;
+
+  return (
+    <div
+      data-reference-media-kind={props.kind}
+      data-reference-media-limit={props.max}
+      className="rounded-lg border border-slate-200 bg-[#fbfcff] p-2.5 dark:border-white/10 dark:bg-white/[0.03]"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-[11px] font-bold text-[#475467] dark:text-white/72">{props.label}</span>
+        <span className="text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
+          {props.items.length}/{props.max}
+        </span>
+      </div>
+
+      {props.items.length > 0 ? (
+        <div className="mb-2 grid gap-2 sm:grid-cols-2">
+          {props.items.map((item) => (
+            <div key={item.id} className="grid grid-cols-[2.25rem_1fr_auto] items-center gap-2 rounded-lg border border-slate-200 bg-white/80 p-1.5 dark:border-white/10 dark:bg-white/[0.05]">
+              <ReferenceMediaThumb item={item} />
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-bold text-[#2c2d33] dark:text-white/84">{item.name}</div>
+                <div className="mt-0.5 text-[10px] font-medium text-[#8b8891] dark:text-white/44">
+                  {item.fromExample ? props.t("From example") : formatUploadedSize(item.size)}
                 </div>
-              ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => props.onRemove(item)}
+                className="grid size-7 place-items-center rounded-lg text-[#706a74] hover:bg-blue-500/8 hover:text-blue-700 dark:text-white/54"
+                aria-label={props.t("Remove reference asset")}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
-          ) : null}
+          ))}
         </div>
       ) : null}
-    </>
+
+      <label
+        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+          isFull
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
+            : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+        }`}
+      >
+        <Upload className="size-3.5" />
+        {props.t("Upload from device")}
+        <input
+          type="file"
+          accept={props.accept}
+          multiple
+          disabled={isFull}
+          className="sr-only"
+          onChange={(event) => {
+            props.onAdd(Array.from(event.currentTarget.files ?? []));
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -1721,14 +2315,14 @@ function GeneratorFieldControl(props: {
   const options = generatorFieldSelectOptions(props.field, props.t);
 
   return (
-    <label className="grid min-w-0 gap-2 text-[11px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-extrabold tracking-normal text-[#5f6673] uppercase dark:text-white/58">
       <span>{props.t(props.field.label)}</span>
       {options.length > 0 ? (
         <span className="relative block">
           <select
             value={String(props.value)}
             onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-            className="h-11 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+            className="h-9 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
           >
             {options.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
@@ -1741,7 +2335,7 @@ function GeneratorFieldControl(props: {
           type="text"
           value={String(props.value)}
           onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-          className="h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       )}
       {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b93a3] normal-case">{props.t(props.field.help)}</span> : null}
@@ -1752,10 +2346,13 @@ function GeneratorFieldControl(props: {
 function ReferenceMediaThumb(props: {
   item: ReferenceImageDraft;
 }) {
-  if (props.item.type.startsWith("image/")) {
+  // Example assets keep a static poster path even for video/audio, so preview
+  // on "has a URL" rather than on the declared kind.
+  const showsPreview = props.item.previewUrl !== "" && !props.item.type.startsWith("audio/");
+  if (showsPreview) {
     return (
       <div className="relative aspect-square overflow-hidden rounded-lg bg-white">
-        <Image src={props.item.previewUrl} alt="" fill sizes="52px" className="object-cover" unoptimized />
+        <Image src={props.item.previewUrl} alt="" fill sizes="44px" className="object-cover" unoptimized />
       </div>
     );
   }
@@ -1780,6 +2377,16 @@ function referenceMediaKindLabel(type: string, t: (key: string, vars?: Record<st
   return t("File");
 }
 
+const ASPECT_RATIO_LABELS: Record<string, string> = {
+  "9:16": "Vertical short-form",
+  "16:9": "Widescreen",
+  "21:9": "Cinemascope",
+  "1:1": "Square",
+  "3:4": "Portrait",
+  "4:3": "Landscape",
+  adaptive: "Match reference",
+};
+
 function generatorFieldSelectOptions(
   field: ModelGeneratorField,
   t: (key: string, vars?: Record<string, string>) => string
@@ -1792,6 +2399,15 @@ function generatorFieldSelectOptions(
   }
 
   if (field.options && field.options.length > 0) {
+    // Aspect ratios carry the format they are for. "9:16" alone tells a reader
+    // the arithmetic but not that it is the short-drama vertical format.
+    if (field.name === "ratio") {
+      return field.options.map((option) => {
+        const value = String(option);
+        const description = ASPECT_RATIO_LABELS[value];
+        return { value, label: description ? `${value} · ${t(description)}` : value };
+      });
+    }
     return field.options.map((option) => ({ value: String(option), label: String(option) }));
   }
 
@@ -1853,30 +2469,138 @@ function parsePrice(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Example gallery above the workbench. Selecting a card replays the request
+// that produced it -- prompt, parameters, and the reference assets it used --
+// so a visitor can see how an output was built before editing it themselves.
+function ExamplePicker(props: {
+  examples: readonly MediaExample[];
+  modelName: string;
+  selected: number;
+  onSelect: (index: number) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  if (props.examples.length === 0) return null;
+
+  return (
+    <div data-model-example-picker="true" className="border-b border-slate-200 px-5 pt-4 pb-4 dark:border-white/10">
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">
+          {props.t("{{model}} prompt examples", { model: props.modelName })}
+        </h2>
+        <p className="mt-0.5 text-[11px] font-medium text-[#7b8494] dark:text-white/48">
+          {props.t("Explore different use cases and parameter configurations")}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2.5">
+        {props.examples.map((example, index) => {
+          const isActive = index === props.selected;
+          return (
+            <button
+              key={example.poster}
+              type="button"
+              onClick={() => props.onSelect(index)}
+              aria-pressed={isActive}
+              data-active-example={isActive ? "true" : undefined}
+              className={`relative size-[76px] shrink-0 overflow-hidden rounded-lg border-2 transition active:scale-[0.97] ${
+                isActive
+                  ? "border-blue-500 shadow-[0_10px_26px_-16px_rgba(37,99,235,.8)]"
+                  : "border-transparent opacity-80 hover:opacity-100"
+              }`}
+            >
+              <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
+              {example.video ? (
+                <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
+                  {props.t("Video")}
+                </span>
+              ) : null}
+              {isActive ? <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-white" /> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// What the editor on the left will actually send, shown under the preview. The
+// output panel otherwise held only the player and ended well short of the input
+// column, leaving an empty block; this is the information a reader wants there
+// anyway -- the endpoint, the settings, and where the result comes back.
+function OutputRequestSummary(props: {
+  config: ModelConfig;
+  fieldValues: Record<string, string | number | boolean>;
+  referenceCount: number;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const generator = props.config.generator;
+  if (!generator) return null;
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: props.t("Endpoint"), value: `POST ${generator.endpoint}` },
+    { label: props.t("Model ID"), value: props.config.modelId },
+    ...generator.fields.map((field) => ({
+      label: props.t(field.label),
+      value: formatFieldValue(props.fieldValues[field.name] ?? field.defaultValue, props.t),
+    })),
+    {
+      label: props.t("Reference media"),
+      value: props.referenceCount > 0 ? String(props.referenceCount) : props.t("None"),
+    },
+  ];
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="mb-3 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+        {props.t("Request summary")}
+      </div>
+      <dl className="grid gap-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between gap-3 text-[12px]">
+            <dt className="shrink-0 text-muted-foreground">{row.label}</dt>
+            <dd className="min-w-0 truncate text-right font-mono font-semibold text-[#20222a] dark:text-white/84">
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-5 text-muted-foreground dark:border-white/10">
+        {props.t("Video generation is asynchronous: the call returns a task id, and the finished file is fetched from the task endpoint.")}
+      </p>
+    </div>
+  );
+}
+
+function formatFieldValue(
+  value: string | number | boolean,
+  t: (key: string, vars?: Record<string, string>) => string
+): string {
+  if (typeof value === "boolean") return value ? t("On") : t("Off");
+  return String(value);
+}
+
 function OutputPreview(props: {
   modelName: string;
   prompt: string;
   kind: "image" | "video" | "audio";
   images: readonly MediaExample[];
+  selected?: number;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const primary = props.images[0] ?? { poster: "/assets/prompts/awesome-images/sports-shoe.png" };
+  const primary =
+    props.images[props.selected ?? 0] ??
+    props.images[0] ?? { poster: "/assets/prompts/awesome-images/sports-shoe.png" };
 
   if (props.kind === "video" && primary?.video) {
     return (
       <div
         data-model-output-video="true"
-        className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
+        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
       >
-        <video
+        <AutoplayVideo
           className="aspect-video h-full w-full bg-[#10131a] object-cover"
-          autoPlay
-          controls
-          loop
-          playsInline
           poster={primary.poster}
-          preload="metadata"
           src={primary.video}
+          t={props.t}
         />
       </div>
     );
@@ -1886,15 +2610,11 @@ function OutputPreview(props: {
     <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white shadow-[0_18px_42px_-32px_rgba(15,15,18,.8)]" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F] shadow-[0_18px_42px_-34px_rgba(76,29,149,.65)]"}>
       <div className={`relative overflow-hidden rounded-[1.05rem] ${props.kind === "video" ? "aspect-video bg-[#171b24]" : "aspect-[16/10] bg-[#11131a]"}`}>
         {props.kind === "video" && primary?.video ? (
-          <video
+          <AutoplayVideo
             className="h-full w-full object-cover"
-            autoPlay
-            controls
-            loop
-            playsInline
             poster={primary.poster}
-            preload="metadata"
             src={primary.video}
+            t={props.t}
           />
         ) : (
           <>
@@ -1941,15 +2661,11 @@ function GeneratedExamplesCarousel(props: {
       <div className="relative overflow-hidden bg-[#10131a]">
         <div className={`relative w-full ${props.kind === "video" ? "aspect-video" : "aspect-[16/10]"}`}>
           {activeExample.video ? (
-            <video
+            <AutoplayVideo
               className="h-full w-full object-cover"
-              autoPlay
-              controls
-              loop
-              playsInline
               poster={activeExample.poster}
-              preload="metadata"
               src={activeExample.video}
+              t={props.t}
             />
           ) : (
             <Image
@@ -2032,6 +2748,823 @@ function GeneratedExamplesCarousel(props: {
   );
 }
 
+// Activity: this model's daily call volume, mirroring the console dashboard's
+// quota-distribution chart. The console reads /api/data, which is admin/user
+// scoped; the public page reads the keyed /api/website/model-usage feed, which
+// returns call counts only -- no quota, users, or channels.
+//
+// Renders nothing when there is no series: a chart of zeroes says less than no
+// section at all, and a model can be new, unused, or on a deployment with no
+// WEBSITE_METRICS_KEY configured.
+// Performance: how this model actually behaves under real traffic, and how that
+// compares with everything else in the catalog. Four bare numbers say little on
+// their own -- "99.9% uptime" only means something once you know where the rest
+// of the catalog sits -- so each metric carries its percentile among peers.
+//
+// Defaults match the /models directory (DEFAULT_HEALTH_*), so a model with thin
+// traffic reads the same figure here as in the listing rather than an em dash.
+// Async video/audio generation is a submit-then-poll flow: the relay call
+// returns a task id and the finished file is fetched later. `avg_latency_ms`
+// therefore measures how fast the task was *accepted*, not how long the clip
+// took to render -- seedance-2.5 reads 838ms while the generation itself runs
+// for tens of seconds.
+//
+// Two consequences, both of which the page used to get wrong:
+//   1. The cell must say so. It was labelled "Generation time / Average per
+//      request", which reads as the render duration.
+//   2. It cannot be ranked. Streaming models report end-to-end inference in the
+//      same field, so a percentile put a submit-ack against full completions
+//      and reported "Top 14% of models" for a number that measures nothing
+//      comparable.
+function isAsyncMediaKind(kind: ModelReadmeKind): boolean {
+  return kind === "video" || kind === "audio";
+}
+
+type PerformanceStat = {
+  key: string;
+  label: string;
+  value: string;
+  hint: string;
+  rank: number | null;
+  accent: string;
+  surface: string;
+};
+
+export function buildPerformanceStats(input: {
+  kind: ModelReadmeKind;
+  successRate: number | undefined;
+  ttftMs: number | undefined;
+  latencyMs?: number;
+  throughput?: number;
+  requests?: number;
+  peers: HomePerfSummary[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}): PerformanceStat[] {
+  // Percentile against every model with a comparable reading. `lowerIsBetter`
+  // flips the comparison for latency, where a small number is the good one.
+  const percentile = (
+    value: number | undefined,
+    pick: (peer: HomePerfSummary) => number | undefined,
+    lowerIsBetter = false
+  ): number | null => {
+    if (value == null || !Number.isFinite(value)) return null;
+    const values = input.peers
+      .map(pick)
+      .filter((entry): entry is number => entry != null && Number.isFinite(entry) && entry > 0);
+    if (values.length < 4) return null;
+    const beaten = values.filter((entry) => (lowerIsBetter ? entry > value : entry < value)).length;
+    return Math.round((beaten / values.length) * 100);
+  };
+
+  const uptimeStat: PerformanceStat = {
+    key: "uptime",
+    label: input.t("Uptime"),
+    value: formatHealthSuccessRate(input.successRate),
+    hint: input.t("Successful requests"),
+    rank: percentile(input.successRate, (peer) => peer.success_rate),
+    accent: "text-emerald-600 dark:text-emerald-400",
+    surface: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  };
+  const requestsStat: PerformanceStat = {
+    key: "requests",
+    label: input.t("Requests"),
+    value: formatCallCount(input.requests),
+    hint: input.t("Last 30 days"),
+    rank: null,
+    accent: "text-amber-600 dark:text-amber-400",
+    surface: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  };
+
+  if (isAsyncMediaKind(input.kind)) {
+    return [
+      {
+        key: "submit-latency",
+        label: input.t("Submit latency"),
+        value: formatLatencyMs(input.latencyMs),
+        hint: input.t("Task accepted; generation continues asynchronously"),
+        // Deliberately unranked -- see the note above isAsyncMediaKind.
+        rank: null,
+        accent: "text-blue-600 dark:text-blue-400",
+        surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+      },
+      requestsStat,
+      uptimeStat,
+    ];
+  }
+
+  return [
+    uptimeStat,
+    {
+      key: "latency",
+      label: input.t("Latency"),
+      value: formatLatencyMs(input.ttftMs),
+      hint: input.t("Time to first token"),
+      rank: percentile(input.ttftMs, (peer) => peer.avg_ttft_ms, true),
+      accent: "text-blue-600 dark:text-blue-400",
+      surface: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    },
+    {
+      key: "throughput",
+      label: input.t("Throughput"),
+      value: formatThroughput(input.throughput),
+      hint: input.t("Tokens per second"),
+      rank: percentile(input.throughput, (peer) => peer.avg_tps),
+      accent: "text-violet-600 dark:text-violet-400",
+      surface: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    },
+    requestsStat,
+  ];
+}
+
+/**
+ * Whether the "full request completes in X; the figure above is time to first
+ * token" footnote applies.
+ *
+ * It only makes sense when the cell above really is a TTFT reading. Async media
+ * models have no token stream, and their cell already shows the same
+ * avg_latency_ms the footnote would restate -- so it printed the number twice
+ * and called it two different things.
+ */
+export function showsTimeToFirstTokenFootnote(input: {
+  kind: ModelReadmeKind;
+  latencyMs?: number;
+  ttftMs?: number;
+}): boolean {
+  if (isAsyncMediaKind(input.kind)) return false;
+  if (input.ttftMs == null || !Number.isFinite(input.ttftMs)) return false;
+  return input.latencyMs != null && Number.isFinite(input.latencyMs);
+}
+
+function ModelPerformanceSection(props: {
+  modelId: string;
+  successRate: number | undefined;
+  ttftMs: number | undefined;
+  latencyMs?: number;
+  throughput?: number;
+  requests?: number;
+  kind: ModelReadmeKind;
+  peers: HomePerfSummary[];
+  trend: HomeTrendPoint[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const stats = buildPerformanceStats({
+    kind: props.kind,
+    successRate: props.successRate,
+    ttftMs: props.ttftMs,
+    latencyMs: props.latencyMs,
+    throughput: props.throughput,
+    requests: props.requests,
+    peers: props.peers,
+    t: props.t,
+  });
+
+  const STAT_ICONS: Record<string, ReactNode> = {
+    uptime: <ShieldCheck className="size-4" />,
+    requests: <Layers3 className="size-4" />,
+    "submit-latency": <Timer className="size-4" />,
+    latency: <Timer className="size-4" />,
+    throughput: <Zap className="size-4" />,
+  };
+
+  // An uptime chart of nothing is noise; async media models do not report a
+  // success rate to trend.
+  const showTrend = props.successRate != null;
+
+  return (
+    <RevealSection id="performance" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Performance")}
+          title={props.t("Reliability over the last 30 days")}
+          description={props.t("Measured on real Flatkey traffic across every upstream channel serving this model.")}
+        />
+        {/* Stats and trend share one surface: they are the same measurement read
+            two ways, and separate cards made them look unrelated. */}
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className={`grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 dark:divide-white/10 ${stats.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
+            {stats.map((stat, index) => (
+              <div
+                key={stat.label}
+                className={`p-5 ${index % 2 === 1 ? "sm:border-l sm:border-slate-200 sm:dark:border-white/10" : ""} ${index === 2 ? "sm:border-t sm:border-slate-200 lg:border-t-0 lg:border-l lg:border-slate-200 sm:dark:border-white/10" : ""}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`grid size-7 place-items-center rounded-lg ${stat.surface}`}>{STAT_ICONS[stat.key]}</span>
+                  <span className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{stat.label}</span>
+                </div>
+                <div className={`mt-3 font-mono text-[28px] leading-none font-bold ${stat.accent}`}>{stat.value}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/44">{stat.hint}</span>
+                  {stat.rank != null && stat.rank >= 50 ? (
+                    <span className="rounded-full bg-slate-500/8 px-2 py-0.5 text-[10px] font-bold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/62">
+                      {props.t("Top {{percent}}% of models", { percent: String(Math.max(1, 100 - stat.rank)) })}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          {showsTimeToFirstTokenFootnote({ kind: props.kind, latencyMs: props.latencyMs, ttftMs: props.ttftMs }) ? (
+            <div className="border-t border-slate-200 bg-[#fbfcff] px-5 py-3 text-[11px] font-medium text-[#6a7280] dark:border-white/10 dark:bg-white/[0.02] dark:text-white/54">
+              {props.t("Full request completes in {{duration}} on average; the figure above is time to first token.", {
+                duration: formatLatencyMs(props.latencyMs),
+              })}
+            </div>
+          ) : null}
+          {showTrend ? <UptimeTrend points={props.trend} t={props.t} /> : null}
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
+// Uptime as an area chart rather than DailyHealthBars: that component is built
+// for a 56px cell on the home page, where every bar sits near full height by
+// design. Scaled up it reads as a solid green block -- the variation that makes
+// a trend worth showing is exactly what it flattens away.
+//
+// Here the y-axis starts just below the worst day, so a dip from 99.9% to 99.2%
+// is visible instead of being lost against a 0-100 scale.
+function UptimeTrend(props: {
+  points: HomeTrendPoint[];
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const days = useMemo(() => {
+    const byDay = new Map<string, number[]>();
+    for (const point of props.points) {
+      if (!Number.isFinite(point.success_rate)) continue;
+      const key = new Date(point.ts * 1000).toISOString().slice(0, 10);
+      byDay.set(key, [...(byDay.get(key) ?? []), point.success_rate]);
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, values]) => ({ key, rate: values.reduce((s, v) => s + v, 0) / values.length }));
+  }, [props.points]);
+
+  if (days.length < 2) return null;
+
+  const rates = days.map((day) => day.rate);
+  const low = Math.min(...rates);
+  const high = Math.max(...rates);
+  // Pad the band so a perfectly flat series still draws mid-box rather than
+  // pinned to an edge.
+  const floor = Math.max(0, Math.min(low - 0.15, 99.4));
+  const ceiling = Math.max(high + 0.05, floor + 0.3);
+  const span = ceiling - floor;
+
+  const x = (index: number) => (index / (days.length - 1)) * 100;
+  const y = (rate: number) => 100 - ((rate - floor) / span) * 100;
+  const line = days.map((day, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(2)},${y(day.rate).toFixed(2)}`).join(" ");
+  const area = `${line} L100,100 L0,100 Z`;
+  const latest = days[days.length - 1];
+
+  return (
+    <div className="border-t border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold">{props.t("Successful inference trend")}</span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          {props.t("Daily uptime")}
+        </span>
+      </div>
+      <div className="relative h-28">
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="h-full w-full overflow-visible"
+          role="img"
+          aria-label={props.t("Successful inference trend")}
+        >
+          <defs>
+            <linearGradient id="fk-uptime-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgb(16 185 129)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0, 50, 100].map((offset) => (
+            <line key={offset} x1="0" y1={offset} x2="100" y2={offset} stroke="currentColor" strokeWidth="0.4" className="text-slate-200 dark:text-white/10" vectorEffect="non-scaling-stroke" />
+          ))}
+          <path d={area} fill="url(#fk-uptime-fill)" />
+          <path
+            d={line}
+            fill="none"
+            stroke="rgb(16 185 129)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle cx={x(days.length - 1)} cy={y(latest.rate)} r="3" fill="rgb(16 185 129)" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <span className="pointer-events-none absolute top-0 right-0 rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+          {formatHealthSuccessRate(latest.rate)}
+        </span>
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
+        <span>{days[0].key.slice(5)}</span>
+        <span>{latest.key.slice(5)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ModelActivitySection(props: {
+  modelId: string;
+  usage: ModelUsage | null;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const points = props.usage?.points ?? [];
+  if (points.length === 0) return null;
+
+  const peak = Math.max(...points.map((point) => point.count), 1);
+  const busiest = points.reduce((best, point) => (point.count > best.count ? point : best), points[0]);
+  const average = Math.round(points.reduce((sum, point) => sum + point.count, 0) / points.length);
+  const averageHeight = (average / peak) * 100;
+
+  return (
+    <RevealSection id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-10 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Activity")}
+          title={props.t("Daily {{model}} requests on Flatkey", { model: props.modelId })}
+          description={props.t("Request volume routed through Flatkey over the last 30 days.")}
+        />
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="grid gap-4 p-5 sm:grid-cols-3">
+            <ActivityStat label={props.t("Total requests")} value={formatCallCount(props.usage?.total)} />
+            <ActivityStat label={props.t("Daily average")} value={formatCallCount(average)} />
+            <ActivityStat label={props.t("Busiest day")} value={formatUsageDate(busiest.date)} sub={formatCallCount(busiest.count)} />
+          </div>
+          <div className="border-t border-slate-200 bg-[#fbfcff] px-5 pt-6 pb-4 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="relative flex h-28 items-end gap-[3px]">
+              {/* Average line inside the plot box, so its percentage is relative
+                  to the bars rather than to the section's padding. It gives a
+                  tall bar something to be judged against. */}
+              <div
+                className="pointer-events-none absolute inset-x-0 border-t border-dashed border-violet-400/55"
+                style={{ bottom: `${averageHeight}%` }}
+              />
+              {points.map((point) => {
+                const isPeak = point.date === busiest.date;
+                return (
+                  <div
+                    key={point.date}
+                    title={`${formatUsageDate(point.date)} · ${formatCallCount(point.count)}`}
+                    className={`min-w-0 flex-1 rounded-t-[3px] transition hover:opacity-100 ${
+                      isPeak
+                        ? "bg-gradient-to-t from-violet-600 to-violet-400"
+                        : "bg-gradient-to-t from-violet-500/55 to-violet-400/75 opacity-80"
+                    }`}
+                    // Zero-count days keep a hairline so a gap reads as "no
+                    // traffic" rather than as a missing bar.
+                    style={{ height: `${Math.max(3, (point.count / peak) * 100)}%` }}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-2.5 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
+              <span>{formatUsageDate(points[0].date)}</span>
+              <span className="text-violet-500/80">{props.t("Daily average")}: {formatCallCount(average)}</span>
+              <span>{formatUsageDate(points[points.length - 1].date)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </RevealSection>
+  );
+}
+
+function ActivityStat(props: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="font-mono text-[26px] leading-none font-bold text-[#20222a] dark:text-white/90">{props.value}</span>
+        {props.sub ? <span className="font-mono text-[12px] font-semibold text-violet-600 dark:text-violet-400">{props.sub}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function formatUsageDate(unixSeconds: number): string {
+  // UTC to match the bucketing the API does; a local-time render would shift
+  // labels by a day for readers west of UTC.
+  const date = new Date(unixSeconds * 1000);
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+}
+
+// Quick Start reproduces the console overview's integration section: the same
+// four cards, each opening the same stepped dialog
+// (web/default/src/features/dashboard/components/overview/integration-dialog.tsx).
+//
+// Two differences, both because this is the public page: the model is fixed to
+// this page's model rather than picked from a dropdown, and there is no
+// signed-in key, so samples read $FLATKEY_API_KEY from the environment.
+type QuickStartId = "api" | "sdk" | "cli" | "agent";
+
+function ModelQuickStart(props: {
+  config: ModelConfig;
+  locale: Locale;
+  runHref: string;
+  onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const [openCard, setOpenCard] = useState<QuickStartId | null>(null);
+
+  const cards: Array<{ id: QuickStartId; icon: ReactNode; title: string; body: string }> = [
+    {
+      id: "api",
+      icon: <TerminalSquare className="size-5" />,
+      title: props.t("API for developers"),
+      body: props.t("Call any model with an OpenAI-compatible API. Copy a ready-to-run example for your model and language."),
+    },
+    {
+      id: "sdk",
+      icon: <Braces className="size-5" />,
+      title: props.t("SDKs for developers"),
+      body: props.t("Use the OpenAI SDK you already know — with Flatkey as the gateway."),
+    },
+    {
+      id: "cli",
+      icon: <Terminal className="size-5" />,
+      title: props.t("Flatkey CLI"),
+      body: props.t("Generate images and videos from your terminal. Let your AI assistant drive the workflow."),
+    },
+    {
+      id: "agent",
+      icon: <Bot className="size-5" />,
+      title: props.t("Codex & Claude Code"),
+      body: props.t("Connect your coding agent with one command, then use Flatkey from your existing projects."),
+    },
+  ];
+
+  const active = cards.find((card) => card.id === openCard) ?? null;
+
+  return (
+    <RevealSection id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold tracking-tight">
+            {props.t("How to call the {{model}} API", { model: props.config.displayName })}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {props.t("Four ways in, all on the same key and the same model catalog. Pick one to see a runnable example.")}
+          </p>
+        </div>
+        {/* Server-rendered so the page ships code in its HTML. The dialog below
+            still carries all three languages interactively, but its content
+            only exists after a click, where a crawler never sees it. */}
+        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] dark:border-white/10">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2.5">
+            <span className="font-mono text-[11px] font-semibold text-white/62">cURL</span>
+            <span className="font-mono text-[11px] text-white/44">{props.config.modelId}</span>
+          </div>
+          <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6 text-white/82">
+            {buildApiSnippet(
+              "curl",
+              props.config.modelId,
+              snippetKindForEndpoint(props.config.generator?.endpoint ?? "/v1/chat/completions")
+            )}
+          </pre>
+        </div>
+
+        <div className="fk-stagger mt-4 grid gap-3 sm:grid-cols-2">
+          {cards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => setOpenCard(card.id)}
+              className="fk-lift rounded-xl border border-slate-200 bg-white p-5 text-left hover:border-violet-500/35 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] dark:border-white/10 dark:bg-white/[0.04]"
+            >
+              <span className="grid size-10 place-items-center rounded-lg bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                {card.icon}
+              </span>
+              <h3 className="mt-4 text-[15px] font-semibold text-[#20222a] dark:text-white/90">{card.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{card.body}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {active ? (
+        <QuickStartDialog
+          card={active}
+          modelId={props.config.modelId}
+          endpoint={props.config.generator?.endpoint ?? "/v1/chat/completions"}
+          runHref={props.runHref}
+          onRunClick={props.onRunClick}
+          onClose={() => setOpenCard(null)}
+          t={props.t}
+        />
+      ) : null}
+    </RevealSection>
+  );
+}
+
+function QuickStartDialog(props: {
+  card: { id: QuickStartId; title: string; body: string };
+  modelId: string;
+  endpoint: string;
+  runHref: string;
+  onRunClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onClose: () => void;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const [language, setLanguage] = useState<SnippetLanguage>("curl");
+  const [platform, setPlatform] = useState<AgentPlatform>(() =>
+    detectAgentPlatform(typeof navigator === "undefined" ? "" : navigator.userAgent)
+  );
+  const kind = snippetKindForEndpoint(props.endpoint);
+  const { onClose } = props;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    // The dialog scrolls internally; letting the page scroll behind it makes
+    // the backdrop feel detached.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  // The second step's label follows the model kind: a video model is an async
+  // two-call flow, not a single ready-to-run request, and saying so up front is
+  // what makes the numbered steps in the sample legible.
+  const stepTwoLabel =
+    kind === "video"
+      ? props.t("Step 2 · Submit a video task, then poll for the result")
+      : kind === "image"
+        ? props.t("Step 2 · Copy a ready-to-run image request")
+        : props.t("Step 2 · Copy a ready-to-run request");
+
+  const keyStep = (
+    <QuickStartStep label={props.t("Step 1 · Create an API key")}>
+      <a
+        href={consoleUrl("/dashboard/keys")}
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+      >
+        <KeyRound className="size-3.5" />
+        {props.t("Open the console")}
+      </a>
+    </QuickStartStep>
+  );
+
+  // Portal to <body>: rendering in place would nest the dialog inside the
+  // page's stacking contexts, where the sticky header (z-50) and the section
+  // tab bar (z-30) paint over it.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={props.card.title}
+      data-quick-start-dialog={props.card.id}
+      className="fk-quick-start-overlay fixed inset-0 z-[999] grid place-items-center overflow-y-auto bg-black/55 px-4 py-8 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="my-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#0d1017]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold tracking-tight">{props.card.title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{props.card.body}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={props.t("Close")}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-[#6b7280] transition hover:bg-slate-500/10 hover:text-[#111827] dark:text-white/54"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        {props.card.id === "api" || props.card.id === "sdk" ? (
+          <div className="mt-5 grid gap-4">
+            {keyStep}
+            <QuickStartStep label={props.card.id === "api" ? stepTwoLabel : props.t("Step 2 · Copy the SDK setup")}>
+              <QuickStartTabs
+                options={[
+                  { value: "curl", label: "cURL" },
+                  { value: "node", label: "Node.js" },
+                  { value: "python", label: "Python" },
+                ]}
+                value={language}
+                onChange={(value) => setLanguage(value as SnippetLanguage)}
+              />
+              {/* The model is this page's model — no picker, unlike the console
+                  dialog, where the reader has a whole catalog to choose from. */}
+              <div className="mt-2 text-[11px] font-semibold text-muted-foreground">
+                {props.t("Model")}: <span className="font-mono">{props.modelId}</span>
+              </div>
+              <CodeBlock
+                code={
+                  props.card.id === "api"
+                    ? buildApiSnippet(language, props.modelId, kind)
+                    : buildSdkSnippet(language, props.modelId, kind)
+                }
+                t={props.t}
+              />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        {props.card.id === "cli" ? (
+          <div className="mt-5 grid gap-4">
+            <QuickStartStep label={props.t("Step 1 · Install the CLI")} hint={props.t("Copy the command below and paste it into your terminal.")}>
+              <CodeBlock code={CLI_INSTALL_COMMAND} t={props.t} />
+            </QuickStartStep>
+            <QuickStartStep label={props.t("Step 2 · Sign in")} hint={props.t("Run this command in your terminal to connect your account.")}>
+              <CodeBlock code={CLI_LOGIN_COMMAND} t={props.t} />
+            </QuickStartStep>
+            <QuickStartStep label={props.t("Step 3 · Start creating")} hint={props.t("Tell your AI assistant what you want to make.")}>
+              <CodeBlock code={props.t('Use Flatkey CLI to generate a "beautiful sunrise" picture.')} t={props.t} />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        {props.card.id === "agent" ? (
+          <div className="mt-5 grid gap-4">
+            {keyStep}
+            <QuickStartStep
+              label={props.t("Step 2 · Install Flatkey for your system")}
+              hint={props.t("Paste the next line into your terminal to integrate Flatkey in seconds.")}
+            >
+              <QuickStartTabs
+                options={[
+                  { value: "mac", label: "macOS" },
+                  { value: "linux", label: "Linux" },
+                  { value: "windows", label: "Windows" },
+                ]}
+                value={platform}
+                onChange={(value) => setPlatform(value as AgentPlatform)}
+              />
+              <CodeBlock code={buildAgentInstallCommand(platform, SITE_ORIGIN)} t={props.t} />
+            </QuickStartStep>
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <a
+            href={props.runHref}
+            onClick={props.onRunClick}
+            className="flatkey-hero-cta inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-[13px] font-semibold"
+          >
+            <WandSparkles className="size-4" />
+            {props.t("Open in console")}
+          </a>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function QuickStartStep(props: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-2">
+      <div className="text-sm font-semibold">{props.label}</div>
+      {props.hint ? <p className="text-sm leading-relaxed text-muted-foreground">{props.hint}</p> : null}
+      <div>{props.children}</div>
+    </div>
+  );
+}
+
+function QuickStartTabs(props: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg bg-slate-500/8 p-1 dark:bg-white/[0.06]">
+      {props.options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => props.onChange(option.value)}
+          aria-pressed={props.value === option.value}
+          className={`rounded-md px-3 py-1.5 text-[12px] font-semibold transition ${
+            props.value === option.value
+              ? "bg-white text-[#20222a] shadow-sm dark:bg-white/12 dark:text-white"
+              : "text-[#5f6673] hover:text-[#20222a] dark:text-white/58 dark:hover:text-white"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CodeBlock(props: { code: string; t: (key: string, vars?: Record<string, string>) => string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="group relative mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(props.code).then(
+            () => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1600);
+            },
+            () => undefined
+          );
+        }}
+        aria-label={props.t("Copy code")}
+        className="absolute top-2 right-2 z-1 grid size-7 place-items-center rounded-md bg-white/10 text-white/80 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/18"
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </button>
+      {/* Wrap instead of scrolling horizontally: the whole command should be
+          readable in place, and long curl lines otherwise hide their tail. */}
+      <pre className="rounded-xl border border-white/10 bg-[#10131a] p-4 pr-11 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-white/82">
+        {props.code}
+      </pre>
+    </div>
+  );
+}
+
+
+// Sample clips autoplay so the panel is alive on arrival, which browsers only
+// permit while muted. Sound then switches on at the reader's first click
+// anywhere on the page -- that gesture satisfies the autoplay policy, so the
+// clip becomes audible without them hunting for a control. The explicit button
+// stays for turning it back off, and because Seedance generates its own audio a
+// permanently silent loop would misrepresent the model as video-only.
+function AutoplayVideo(props: {
+  className: string;
+  poster: string;
+  src: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+  // Set once the reader mutes deliberately, so the first-gesture handler does
+  // not immediately undo their choice.
+  const userChoseMuted = useRef(false);
+
+  useEffect(() => {
+    const unmuteOnFirstGesture = () => {
+      const video = ref.current;
+      if (!video || userChoseMuted.current) return;
+      video.muted = false;
+      setMuted(false);
+      if (video.paused) void video.play().catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", unmuteOnFirstGesture, { once: true });
+    window.addEventListener("keydown", unmuteOnFirstGesture, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unmuteOnFirstGesture);
+      window.removeEventListener("keydown", unmuteOnFirstGesture);
+    };
+  }, []);
+
+  const toggleSound = () => {
+    const video = ref.current;
+    if (!video) return;
+    const next = !muted;
+    video.muted = next;
+    setMuted(next);
+    userChoseMuted.current = next;
+    if (!next && video.paused) void video.play().catch(() => undefined);
+  };
+
+  return (
+    <>
+      <video
+        ref={ref}
+        className={props.className}
+        autoPlay
+        controls
+        loop
+        muted
+        playsInline
+        poster={props.poster}
+        preload="metadata"
+        src={props.src}
+      />
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-pressed={!muted}
+        // Sits clear of the native controls bar at the bottom.
+        className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-lg bg-black/55 px-2.5 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm transition hover:bg-black/70"
+      >
+        {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+        {muted ? props.t("Sound off") : props.t("Sound on")}
+      </button>
+    </>
+  );
+}
+
 function ModelExamplesAndRelated(props: {
   config: ModelConfig;
   kind: ModelReadmeKind;
@@ -2042,39 +3575,9 @@ function ModelExamplesAndRelated(props: {
 }) {
   const visualKind = props.kind === "text" ? "text" : props.kind;
   return (
-    <section id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-b border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-7xl">
-        {props.examples.length > 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="mb-4">
-              <h2 className="text-base font-bold tracking-tight">{props.t("Examples")}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{props.t("Explore different use cases and parameter configurations")}</p>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {props.examples.map((example, index) => (
-                <div key={example.video ?? example.poster} className="min-w-[160px] overflow-hidden rounded-lg border border-slate-200 bg-slate-950 dark:border-white/10">
-                  <div className="relative aspect-video">
-                    <Image
-                      src={example.poster}
-                      alt=""
-                      fill
-                      sizes="180px"
-                      className="object-cover"
-                    />
-                    <span className="absolute bottom-2 left-2 rounded bg-black/65 px-2 py-1 text-[10px] font-bold text-white">
-                      {visualKind.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="bg-white px-3 py-2 text-xs font-semibold dark:bg-white/[0.04]">
-                    {props.t("Example {{index}} of {{total}}", { index: String(index + 1), total: String(props.examples.length) })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-xs font-bold tracking-widest text-blue-700 uppercase">{props.t("Related models")}</p>
@@ -2082,22 +3585,18 @@ function ModelExamplesAndRelated(props: {
             </div>
             <span className="text-xs font-semibold text-muted-foreground">{props.t("Swipe or scroll to compare")}</span>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="fk-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {props.relatedModels.slice(0, 8).map((model) => (
               <Link
                 key={model.href}
                 href={model.href}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-blue-500/35 dark:border-white/10 dark:bg-white/[0.03]"
+                className="fk-lift group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm hover:border-blue-500/45 hover:shadow-[0_18px_44px_-30px_rgba(37,99,235,.55)] dark:border-white/10 dark:bg-white/[0.03]"
               >
-                <div className="relative aspect-video bg-slate-950">
-                  <Image
-                    src={relatedVisualForModel(model.name, model.description)}
-                    alt=""
-                    fill
-                    sizes="(min-width: 1024px) 260px, 50vw"
-                    className="object-cover opacity-92 transition group-hover:scale-[1.02]"
-                  />
-                </div>
+                <RelatedModelVisual
+                  modelName={model.name}
+                  description={model.description}
+                  label={model.name}
+                />
                 <div className="p-3">
                   <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
                     {model.sameProvider ? props.config.officialName : props.t("Model catalog")}
@@ -2110,7 +3609,7 @@ function ModelExamplesAndRelated(props: {
           </div>
         </div>
       </div>
-    </section>
+    </RevealSection>
   );
 }
 
@@ -2229,9 +3728,21 @@ function buildRelatedModelsTitle(
   t: (key: string, vars?: Record<string, string>) => string
 ) {
   if (models.length > 0 && models.every((model) => model.sameProvider)) {
-    return t("More models from {{provider}}", { provider: config.officialName });
+    return t("More AI models from {{provider}}", { provider: config.officialName });
   }
-  return t("Keep exploring Flatkey");
+  return relatedModelsFallbackTitle(config, t);
+}
+
+// One phrase per modality rather than a "More {{kind}} models" template: the
+// interpolated form reads badly once the label is itself a noun phrase.
+function relatedModelsFallbackTitle(
+  config: ModelConfig,
+  t: (key: string, vars?: Record<string, string>) => string
+) {
+  if (config.generator?.kind === "video") return t("Other video generation models");
+  if (config.generator?.kind === "audio") return t("Other audio models");
+  if (config.generator?.kind === "image") return t("Other image generation models");
+  return t("Other models worth comparing");
 }
 
 function relatedModelKindLabel(
@@ -2269,15 +3780,21 @@ function ModelHeroPricingRow(props: {
   const rows = props.rows.slice(0, 2);
   const primaryRow = rows[0];
   const savings = primaryRow ? formatSavings(primaryRow.flatkey, primaryRow.official) : "—";
+  // A model priced at the vendor's own rate (group ratio 1) would render a
+  // "0%" saving. Drop the column instead of advertising no discount.
+  const hasSavings = savings !== "—" && savings !== "0%";
   const hasRequests = props.requests !== "—";
+  const columns = hasSavings
+    ? "minmax(260px,1.5fr) minmax(170px,0.9fr) minmax(170px,0.9fr) minmax(140px,0.7fr)"
+    : "minmax(260px,1.7fr) minmax(180px,1fr) minmax(180px,1fr)";
 
   return (
     <div
       data-model-hero-price-row="true"
       title={props.note}
-      className="mt-4 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
+      className="mt-3 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
     >
-      <div className="grid min-w-[900px] grid-cols-[minmax(260px,1.45fr)_minmax(160px,0.8fr)_minmax(160px,0.8fr)_minmax(130px,0.62fr)_minmax(150px,0.72fr)]">
+      <div className="grid min-w-[900px]" style={{ gridTemplateColumns: columns }}>
         <div data-model-price-logo-cell="true" className="flex min-w-0 items-center gap-3 p-3">
           <HomeModelLogo
             iconKey={props.model?.icon ?? props.model?.vendor_icon}
@@ -2311,21 +3828,13 @@ function ModelHeroPricingRow(props: {
           valueClassName="text-[#68707c] line-through dark:text-white/54"
           emptyLabel={props.t("Pricing data unavailable")}
         />
-        <div className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
-          <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
-        </div>
-        <div data-model-health-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
-          <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Live model health")}</div>
-          <div className="mt-2 flex items-center gap-2">
-            <span className={`size-2 rounded-full ${props.health === "—" ? "bg-slate-300" : "bg-emerald-500"}`} />
-            <span className="font-mono text-lg font-bold">{props.health}</span>
+        {hasSavings ? (
+          <div data-model-savings-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
+            <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
+            <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
+            <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
           </div>
-          <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
-            {hasRequests ? `${props.t("Requests")}: ${props.requests}` : props.t("Not enough data yet")}
-          </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
@@ -2343,9 +3852,9 @@ function ModelHeroPriceCell(props: {
       <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
       <div className="mt-2 grid gap-1.5">
         {props.rows.length > 0 ? props.rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-2">
-            <div className="truncate text-[11px] font-semibold text-[#6a7280] dark:text-white/52">{row.label}</div>
-            <div className={`shrink-0 truncate font-mono text-sm font-bold ${props.valueClassName}`}>
+          <div key={row.label} className="grid min-w-0 gap-0.5">
+            <div className="text-[11px] font-semibold text-[#6a7280] dark:text-white/52">{row.label}</div>
+            <div className={`min-w-0 font-mono text-[13px] font-bold ${props.valueClassName}`}>
               {props.valueForRow(row)}
             </div>
           </div>
@@ -2422,6 +3931,10 @@ function buildCatalogProviderRows(config: ModelConfig, liveModels: PricingModel[
   }));
 }
 
+// Price rows share the /models directory's source of truth: the pricing API's
+// display_pricing contract (per-second, per-request, or token dimensions),
+// resolved via resolveModelDisplayPrice. Reading model_price directly would
+// print a per-second model's calculation base as a per-request price.
 function buildFlatkeyPriceRows(
   config: ModelConfig,
   model: PricingModel | null,
@@ -2444,39 +3957,37 @@ function buildFlatkeyPriceRows(
     };
   }
 
-  if (!isTokenBasedModel(model)) {
-    const official = getOfficialPriceUsd(model);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
-    return {
-      note,
-      rows: [
-        {
-          label: t("Request price"),
-          flatkey: `${formatUsdPrice(flatkey)} ${t("/ request")}`,
-          official: `${formatUsdPrice(official)} ${t("/ request")}`,
-          flatkeyPercent: pricePercent(flatkey, official),
-          officialPercent: 100,
-        },
-      ],
-    };
-  }
-
-  return (["input", "output"] as const).map((type) => {
-    const official = getOfficialPriceUsd(model, type);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
-    return {
-      label: type === "input" ? t("Input /M") : t("Output /M"),
-      flatkey: formatUsdPrice(flatkey),
-      official: formatUsdPrice(official),
-      flatkeyPercent: pricePercent(flatkey, official),
+  const rows = displayPriceDimensions(model).flatMap(([labelKey, dimension]) => {
+    const price = resolveModelDisplayPrice(model, dimension, "plg", groupRatio);
+    if (!price) return [];
+    const official = price.configured ?? price.value;
+    const unit = t(price.unit);
+    // "from" is templated rather than concatenated: zh/ja place the qualifier
+    // after the amount, so each locale owns the word order.
+    const withFrom = (amount: string) => (price.from ? t("from {{price}}", { price: amount }) : amount);
+    return [{
+      label: t(labelKey),
+      flatkey: withFrom(`${price.text} ${unit}`),
+      official: withFrom(`${formatUsdPrice(official)} ${unit}`),
+      flatkeyPercent: pricePercent(price.value, official),
       officialPercent: 100,
-    };
-  }).reduce<{ rows: FlatkeyPriceTableRow[]; note: string }>(
-    (result, row) => ({ ...result, rows: [...result.rows, row] }),
-    { rows: [], note }
-  );
+    }];
+  });
+
+  return { rows, note };
+}
+
+// Which price rows a model shows, keyed to how it bills. Per-second and
+// per-request models collapse to one row; token models expand to input/output.
+function displayPriceDimensions(model: PricingModel): Array<[string, DisplayPricingDimension]> {
+  const kind = model.display_pricing?.billing_kind;
+  if (kind === "per_second") return [["Video price", "second"]];
+  if (kind === "request") return [["Request price", "request"]];
+  if (!isTokenBasedModel(model)) return [["Request price", "request"]];
+  return [
+    ["Input /M", "input"],
+    ["Output /M", "output"],
+  ];
 }
 
 function buildCatalogRelatedModels(
@@ -2496,15 +4007,17 @@ function buildCatalogRelatedModels(
     .map((model) => {
       const endpointMatch = (model.supported_endpoint_types ?? []).some((endpoint) => currentEndpoints.has(normalizeModelId(endpoint)));
       const modalityMatch = modelModalityKey(model) === currentModality;
+      const sameVendor = model.vendor_name === provider;
       const score =
-        model.vendor_name === provider ? 0 :
-        getModelFamilyKey(model.model_name) === family ? 1 :
-        endpointMatch ? 2 :
-        modalityMatch ? 3 :
-        4;
+        sameVendor && modalityMatch ? 0 :
+        sameVendor ? 1 :
+        getModelFamilyKey(model.model_name) === family ? 2 :
+        endpointMatch ? 3 :
+        modalityMatch ? 4 :
+        5;
       return { model, score };
     });
-  const preferredRelated = scoredRelated.filter((item) => item.score < 4);
+  const preferredRelated = scoredRelated.filter((item) => item.score < 5);
   const liveRelated = preferredRelated
     .sort((a, b) => a.score - b.score || a.model.model_name.localeCompare(b.model.model_name, "en", { numeric: true }))
     .slice(0, 8)
@@ -2516,10 +4029,11 @@ function buildCatalogRelatedModels(
     }));
 
   if (liveRelated.length > 0) {
+    const sameProviderCount = liveRelated.filter((model) => model.sameProvider).length;
     return {
-      title: liveRelated.every((model) => model.sameProvider)
-        ? t("More models from {{provider}}", { provider })
-        : t("Keep exploring Flatkey"),
+      title: sameProviderCount > liveRelated.length / 2
+        ? t("More AI models from {{provider}}", { provider })
+        : relatedModelsFallbackTitle(config, t),
       models: liveRelated,
     };
   }
@@ -2563,7 +4077,9 @@ function buildModelPageProfile(
     return {
       kindLabel: t("Text to Video"),
       modelTypes: [t("Image to Video"), t("Reference-guided Video"), t("Short-form Video")],
-      summary: t("{{model}} is a video generation model served through Flatkey for text-to-video, image-to-video, and production prompt testing. Use the form below to prepare the full request, including resolution, aspect ratio, duration, seed, audio, and reference metadata before opening the console.", { model }),
+      summary: config.summary
+        ? t(config.summary)
+        : t("{{model}} is a video generation model served through Flatkey for text-to-video, image-to-video, and production prompt testing. Use the form below to prepare the full request, including resolution, aspect ratio, duration, seed, audio, and reference metadata before opening the console.", { model }),
       playgroundDescription: t("Configure a real {{model}} video request here. The public page keeps generation disabled, then hands prompt, fields, and reference metadata to the console after sign-up or login.", { model }),
       heroImage: "/assets/model-pages/video-api-hero.png",
       waysTitle: t("Main ways to create with {{model}} API", { model }),
@@ -2897,6 +4413,75 @@ function relatedVisualForModel(name: string, description: string) {
   return "/assets/model-pages/text-api-hero.png";
 }
 
+// Models with a generated card clip in public/assets/model-cards/. Each clip
+// renders its own model id, so cards stay distinguishable; models without one
+// fall back to the shared per-modality still.
+//
+// Regenerate with: node scripts/build-related-model-videos.mjs
+const MODEL_CARD_CLIPS = new Set([
+  "seedance-2-5",
+  "minimax-h3",
+  "grok-imagine-video",
+  "grok-imagine-video-1-5",
+  "veo-3-1-generate-preview",
+  "veo-3-1-fast-generate-preview",
+  "sonilo-video-to-music",
+]);
+
+function modelCardSlug(modelName: string): string {
+  return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function modelCardClip(modelName: string): { poster: string; video: string } | null {
+  const slug = modelCardSlug(modelName);
+  if (!MODEL_CARD_CLIPS.has(slug)) return null;
+  return {
+    poster: `/assets/model-cards/${slug}.png`,
+    video: `/assets/model-cards/${slug}.mp4`,
+  };
+}
+
+// Card thumbnail: plays its clip on hover and pauses on leave. Autoplaying every
+// card at once would put a row of competing motion on the page, so playback is
+// tied to pointer intent; without a clip it stays a still.
+function RelatedModelVisual(props: { modelName: string; description: string; label: string }) {
+  const clip = modelCardClip(props.modelName);
+
+  return (
+    <div className="relative aspect-video overflow-hidden bg-slate-950">
+      {clip ? (
+        <video
+          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          poster={clip.poster}
+          preload="none"
+          muted
+          loop
+          playsInline
+          src={clip.video}
+          // Ignore the play() rejection that fires when the pointer leaves
+          // before the promise settles.
+          onMouseEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
+          onMouseLeave={(event) => {
+            event.currentTarget.pause();
+            event.currentTarget.currentTime = 0;
+          }}
+        />
+      ) : (
+        <Image
+          src={relatedVisualForModel(props.modelName, props.description)}
+          alt=""
+          fill
+          sizes="(min-width: 1024px) 260px, 50vw"
+          className="object-cover opacity-92 transition duration-300 group-hover:scale-[1.03]"
+        />
+      )}
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent px-3 pt-6 pb-2">
+        <span className="block truncate font-mono text-[11px] font-bold text-white">{props.label}</span>
+      </span>
+    </div>
+  );
+}
+
 function buildModelDescription(
   config: ModelConfig,
   model: PricingModel | null,
@@ -2904,9 +4489,13 @@ function buildModelDescription(
 ) {
   if (model?.description) return model.description;
   if (config.generator) {
-    return t("{{model}} is available through Flatkey with live pricing, provider routing, generation examples, API handoff, and related model links.", {
-      model: config.displayName,
-    });
+    // Describe what the model produces, not what this page contains.
+    const kindCopy = {
+      video: "{{model}} is a video generation model for text-to-video and reference-guided clips, with resolution, aspect ratio, and duration control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+      image: "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+      audio: "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
+    }[config.generator.kind];
+    return t(kindCopy, { model: config.displayName });
   }
   return t("{{model}} is a production text model for chat, coding, long-context reasoning, and tool-enabled workflows through Flatkey-compatible API access.", {
     model: config.modelId,
@@ -2914,20 +4503,35 @@ function buildModelDescription(
 }
 
 function buildModelFaq(config: ModelConfig, t: (key: string, vars?: Record<string, string>) => string) {
+  const model = config.displayName;
   return [
+    // Model questions first -- someone landing here is evaluating this model.
     {
-      question: t("What is {{model}}?", { model: config.displayName }),
+      question: t("What is {{model}}?", { model }),
       answer: buildModelDescription(config, null, t),
     },
     {
-      question: t("How much does {{model}} cost?", { model: config.displayName }),
+      question: t("How much does {{model}} cost?", { model }),
       answer: t("Use the pricing section above for current Flatkey prices from our pricing API."),
     },
-    {
-      question: t("Which providers serve {{model}}?", { model: config.displayName }),
-      answer: t("The providers section shows the upstream provider names available in our model catalog."),
-    },
     ...config.faq.map((item) => ({ question: t(item.question), answer: t(item.answer) })),
+    // Then the platform questions that decide whether they sign up at all.
+    {
+      question: t("Is the Flatkey API OpenAI-compatible?"),
+      answer: t("Yes. Point base_url at Flatkey and keep your existing OpenAI SDK, request shapes, and streaming code."),
+    },
+    {
+      question: t("How does billing work?"),
+      answer: t("One balance covers every model — text, image, video, and audio. You are charged per request against live catalog pricing, with usage analytics and a single invoice."),
+    },
+    {
+      question: t("Are there rate limits?"),
+      answer: t("Limits are per account and scale with your plan. Request routing spreads traffic across available upstream channels for the model."),
+    },
+    {
+      question: t("What happens to my prompts and generated files?"),
+      answer: t("Requests are relayed to the upstream provider for the model you choose. Generated media is served through Flatkey so your keys and the upstream endpoint stay private."),
+    },
   ];
 }
 
@@ -3015,9 +4619,9 @@ function RequestPreview(props: {
 
 function PanelHeader(props: { title: string; right: string }) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-3">
-      <h2 className="min-w-0 text-base font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.title}</h2>
-      <span className="shrink-0 rounded-full border border-violet-500/12 bg-violet-500/8 px-3 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300">
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="min-w-0 text-sm font-semibold tracking-tight text-[#20222a] dark:text-white/90">{props.title}</h2>
+      <span className="shrink-0 rounded-full border border-violet-500/12 bg-violet-500/8 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300">
         {props.right}
       </span>
     </div>
@@ -3150,7 +4754,7 @@ function buildInitialGeneratorValues(config: ModelConfig) {
   return Object.fromEntries((config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue]));
 }
 
-function buildGeneratorRequest(
+export function buildGeneratorRequest(
   config: ModelConfig,
   prompt: string,
   values: Record<string, string | number | boolean>,
@@ -3199,12 +4803,12 @@ function buildRunHref(
 ) {
   void prompt;
   void draft;
+  // Straight to the playground rather than via /sign-up. The console redirects
+  // anonymous visitors to sign-in itself and returns them here afterwards, so
+  // routing everyone through signup only added a step for people already
+  // logged in -- the ones most likely to press this.
   const playgroundParams = buildPlaygroundEntryParams(config, locale);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 export function buildDraftFallbackRunHref(config: ModelConfig, locale: Locale, draft: DraftValue) {
@@ -3213,11 +4817,7 @@ export function buildDraftFallbackRunHref(config: ModelConfig, locale: Locale, d
   if (draftText.length <= 12000) {
     playgroundParams.set("draft", draftText);
   }
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 function buildHandoffRunHref(
@@ -3229,11 +4829,7 @@ function buildHandoffRunHref(
   const playgroundParams = buildPlaygroundEntryParams(config, locale);
   playgroundParams.set("handoff_id", handoffId);
   playgroundParams.set("media_kind", mediaKind);
-  const authParams = new URLSearchParams({
-    redirect: `/playground?${playgroundParams.toString()}`,
-    lng: locale,
-  });
-  return consoleUrl("/sign-up", authParams.toString());
+  return consoleUrl("/playground", playgroundParams.toString());
 }
 
 function buildPlaygroundEntryParams(config: ModelConfig, locale: Locale) {
@@ -3304,6 +4900,15 @@ function coerceGeneratorValue(field: ModelGeneratorField, raw: string) {
 
 function buildQuickPrompt(label: string, kind: "image" | "video" | "audio") {
   if (kind === "video") {
+    if (label === "UGC ad clips") {
+      return "Create a 9:16 Flatkey brand UGC ad: a creator opens with a quick product pain point, shows the Flatkey dashboard workflow on a laptop, then ends on a clean CTA card. Natural handheld energy, clear speech-friendly pacing, generated audio on.";
+    }
+    if (label === "Product motion") {
+      return "Create a 16:9 Flatkey product reveal: start on the logo mark, move into API routing cards and live price rows, then finish with a polished dashboard hero shot. Smooth camera push, crisp UI motion, subtle sound design, generated audio on.";
+    }
+    if (label === "Social video variants") {
+      return "Create a short Flatkey campaign variant for social: three quick scenes show model choice, price comparison, and successful video output. Bright product lighting, simple transitions, readable UI rhythm, generated audio on.";
+    }
     return `${label}: a concise commercial video shot with clear subject motion, realistic lighting, stable camera, and production-ready framing.`;
   }
   if (kind === "audio") {
