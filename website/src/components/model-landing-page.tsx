@@ -307,9 +307,14 @@ const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
 // already uses 2.0 needs this to decide whether to move, and it is the one thing
 // a general catalog page cannot tell them.
 //
-// Rows are capability facts, not benchmarks -- the 2.0 family is not in the
-// public pricing catalog, so nothing here is derived from live data and none of
-// it should be presented as measured.
+// Rows follow ByteDance's own launch claims from the Volcano Engine FORCE
+// keynote (June 2026): length, references, and control are the three things
+// they put their name behind for 2.5.
+//
+// These are vendor claims, not benchmarks. Independent benchmark data still
+// largely covers 2.0, so nothing here is presented as measured. Several outlets
+// also list native 4K as a 2.5 feature; it belongs to the 2.0 line announced at
+// the same event, so it is deliberately absent from this table.
 type VersionCompareRow = {
   label: ModelLandingKey;
   previous: ModelLandingKey;
@@ -320,33 +325,33 @@ type VersionCompareRow = {
 
 const SEEDANCE_VERSION_ROWS: readonly VersionCompareRow[] = [
   {
+    label: "Clip length",
+    previous: "Short clips, stitched for longer runs",
+    current: "Up to 30s in a single continuous shot",
+    improved: true,
+  },
+  {
     label: "Reference inputs",
-    previous: "Images only",
-    current: "Images, video, and audio — up to 50 per request",
+    previous: "Image references",
+    current: "Up to 50 per request — 30 images, 10 videos, 10 audio",
     improved: true,
   },
   {
-    label: "Frame control",
-    previous: "First frame",
-    current: "First frame and first/last frame",
-    improved: true,
-  },
-  {
-    label: "Shot consistency",
-    previous: "Single shot",
-    current: "Multi-shot with character continuity",
+    label: "Motion control",
+    previous: "Text prompt only",
+    current: "Structured motion paths, green-screen and white-model references",
     improved: true,
   },
   {
     label: "Audio",
-    previous: "Optional generated audio",
-    current: "Native audio, multilingual",
+    previous: "Generated audio",
+    current: "Native audio in 10+ languages",
     improved: true,
   },
   {
     label: "Editing",
-    previous: "Generate only",
-    current: "Generate, edit, and extend existing video",
+    previous: "Regenerate to change a clip",
+    current: "Edit and extend an existing clip in place",
     improved: true,
   },
 ];
@@ -482,7 +487,7 @@ function ModelShowcase(props: {
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
-          eyebrow={props.t("Showcase")}
+          eyebrow={props.t("Capabilities")}
           title={props.t("What {{model}} can do", { model: props.modelName })}
           description={props.t("Real generations across common production use cases, each with the prompt behind it.")}
         />
@@ -490,10 +495,10 @@ function ModelShowcase(props: {
           {SHOWCASE_CAPABILITIES.map((capability) => (
             <div
               key={capability.title}
-              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 dark:border-white/10 dark:bg-white/[0.03]"
+              className="rounded-xl border border-slate-200 bg-[#fbfcff] p-5 dark:border-white/10 dark:bg-white/[0.03]"
             >
-              <h3 className="text-[13px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
-              <p className="mt-1.5 text-[12px] leading-5 text-muted-foreground">{props.t(capability.body)}</p>
+              <h3 className="text-[15px] font-semibold text-[#20222a] dark:text-white/88">{props.t(capability.title)}</h3>
+              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{props.t(capability.body)}</p>
             </div>
           ))}
         </div>
@@ -514,8 +519,8 @@ function ModelShowcase(props: {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3.5">
               <div className="min-w-0">
-                <div className="text-[13px] font-semibold text-white">{props.t(scene.label)}</div>
-                <div className="mt-0.5 text-[11px] text-white/54">
+                <div className="text-[15px] font-semibold text-white">{props.t(scene.label)}</div>
+                <div className="mt-1 text-[12.5px] leading-5 text-white/62">
                   {props.t("Generated with {{model}} — load this prompt into the playground and edit it", {
                     model: props.modelName,
                   })}
@@ -524,7 +529,7 @@ function ModelShowcase(props: {
               <button
                 type="button"
                 onClick={() => props.onUseScene(scene)}
-                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white px-3.5 text-[12px] font-semibold text-[#10131a] transition hover:bg-white/88"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white px-4 text-[13px] font-semibold text-[#10131a] transition hover:bg-white/88"
               >
                 <WandSparkles className="size-3.5" />
                 {props.t("Make one like this")}
@@ -550,10 +555,13 @@ function ModelShowcase(props: {
                   <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="80px" className="object-cover" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-semibold text-[#20222a] dark:text-white/88">
+                  <span className="block text-[14px] font-semibold text-[#20222a] dark:text-white/88">
                     {props.t(item.label)}
                   </span>
-                  <span className="mt-1 line-clamp-1 block text-[11px] leading-4 text-muted-foreground" title={item.prompt}>
+                  <span
+                    className="mt-1 block truncate text-[12px] leading-5 text-muted-foreground"
+                    title={item.prompt}
+                  >
                     {item.prompt}
                   </span>
                 </span>
@@ -1762,14 +1770,12 @@ function ModelPageTabs(props: {
   const sectionIds = useMemo(
     () =>
       props.generator
-        ? ["workbench", "showcase", "why-flatkey", "quick-start", "performance", "faq"]
-        : ["showcase", "why-flatkey", "quick-start", "performance", "faq"],
+        ? ["workbench", "quick-start", "performance", "faq"]
+        : ["quick-start", "performance", "faq"],
     [props.generator]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
-    { id: "showcase", href: "#showcase", label: props.t("Showcase"), icon: <Play className="size-3.5" /> },
-    { id: "why-flatkey", href: "#why-flatkey", label: props.t("Why Flatkey"), icon: <Sparkles className="size-3.5" /> },
     { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
     { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
@@ -3016,8 +3022,12 @@ function ModelQuickStart(props: {
     <RevealSection id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold tracking-tight">{props.t("Start calling {{model}} in minutes", { model: props.config.displayName })}</h2>
-          <p className="text-sm text-muted-foreground">{props.t("Pick an integration path — all four use the same account and model catalog.")}</p>
+          <h2 className="text-lg font-semibold tracking-tight">
+            {props.t("How to call the {{model}} API", { model: props.config.displayName })}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {props.t("Four ways in, all on the same key and the same model catalog. Pick one to see a runnable example.")}
+          </p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {cards.map((card) => (
