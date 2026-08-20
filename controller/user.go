@@ -339,15 +339,13 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	// Honeypot: the hidden "website" field is invisible to humans but bots
-	// auto-fill it. When present, silently drop the request — reply success
-	// without creating anything so the bot believes it registered and does not
-	// learn to avoid the trap. Checked before validation/DNS work so bots never
-	// reach the heavier registration path.
-	if strings.TrimSpace(user.Website) != "" {
+	// Honeypot: bots auto-fill the hidden "website" field. Instead of blocking
+	// the request (which would teach the bot about the trap), let the
+	// registration complete normally but immediately disable the account — the
+	// bot sees a "successful" signup and then has to debug why it cannot log in.
+	honeypotTriggered := strings.TrimSpace(user.Website) != ""
+	if honeypotTriggered {
 		common.SysLog("registration honeypot triggered from " + c.ClientIP())
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
-		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
@@ -398,6 +396,11 @@ func Register(c *gin.Context) {
 		Role:            common.RoleCommonUser, // 明确设置角色为普通用户
 		AdsAttribution:  sanitizeAdsAttribution(user.AdsAttribution),
 		EmailVerifiedAt: user.EmailVerifiedAt,
+	}
+	// Honeypot accounts: the registration completes (so the bot sees success),
+	// but the account is created already disabled and can never be used.
+	if honeypotTriggered {
+		cleanUser.Status = common.UserStatusDisabled
 	}
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})

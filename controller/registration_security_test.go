@@ -285,7 +285,7 @@ func TestLegacyOAuthEmailLessRegistrationDoesNotCount(t *testing.T) {
 	require.Zero(t, states)
 }
 
-func TestRegisterHoneypotSilentlyDropsBot(t *testing.T) {
+func TestRegisterHoneypotCreatesDisabledAccount(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	configureRegistrationEndpointTest(t)
 	withRegistrationSecurityConfig(t, map[string]string{})
@@ -298,16 +298,18 @@ func TestRegisterHoneypotSilentlyDropsBot(t *testing.T) {
 	require.NoError(t, err)
 	recorder := performRegisterRequest(t, body)
 
+	// The bot sees a fully successful registration (no trap revealed)...
 	var payload struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
-	require.True(t, payload.Success, "honeypot must reply success to the bot so it cannot learn the trap")
+	require.True(t, payload.Success, "honeypot registration must look successful to the bot")
 
-	var count int64
-	require.NoError(t, db.Model(&model.User{}).Where("username = ?", "honeypot-bot").Count(&count).Error)
-	require.Zero(t, count, "honeypot request must not create a user")
+	// ...but the account is created already disabled, so the bot cannot log in.
+	var user model.User
+	require.NoError(t, db.Where("username = ?", "honeypot-bot").First(&user).Error, "honeypot user is created")
+	require.Equal(t, common.UserStatusDisabled, user.Status, "honeypot user must be created disabled")
 }
 
 func TestRegisterWithoutHoneypotStillCreatesUser(t *testing.T) {
