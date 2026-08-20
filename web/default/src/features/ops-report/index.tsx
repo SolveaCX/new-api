@@ -144,6 +144,108 @@ const pct = (part: number, total: number): string =>
 
 const usd = (v: number): string => `$${v.toFixed(v >= 100 ? 0 : 2)}`
 
+interface FunnelCountDatum {
+  date: string
+  metric: string
+  value: number
+}
+
+interface FunnelUsdDatum {
+  date: string
+  metric: string
+  value: number
+}
+
+// FunnelComboChart draws the three count funnel metrics (registrations /
+// activated / paid) as grouped bars on the left axis and the dollar-valued
+// paid amount as a line on the right axis, in one shared coordinate system.
+function FunnelComboChart({
+  counts,
+  usdSeries,
+  usdLabel,
+}: {
+  counts: FunnelCountDatum[]
+  usdSeries: FunnelUsdDatum[]
+  usdLabel: string
+}) {
+  const { resolvedTheme } = useTheme()
+  return (
+    <div className='h-72 w-full'>
+      <VChart
+        key={`funnel-combo-${resolvedTheme}`}
+        spec={{
+          type: 'common',
+          series: [
+            {
+              type: 'bar',
+              id: 'counts',
+              data: { id: 'funnel-counts', values: counts },
+              xField: 'date',
+              yField: 'value',
+              seriesField: 'metric',
+              // Funnel stages are monotonic subsets (registrations >= activated
+              // >= paid), so keep the bars side-by-side instead of stacking
+              // them into one additive total.
+              stack: false,
+              bar: { style: { cornerRadius: [4, 4, 0, 0] } },
+            },
+            {
+              type: 'line',
+              id: 'usd',
+              data: { id: 'funnel-usd', values: usdSeries },
+              xField: 'date',
+              yField: 'value',
+              seriesField: 'metric',
+              point: { visible: true, style: { size: 4 } },
+              line: { style: { lineWidth: 2 } },
+            },
+          ],
+          axes: [
+            { orient: 'bottom', sampling: true, label: { autoHide: true } },
+            { orient: 'left', seriesId: ['counts'], title: { visible: false } },
+            {
+              orient: 'right',
+              seriesId: ['usd'],
+              title: { visible: false },
+              label: {
+                formatMethod: (val: number | string) => `$${val}`,
+              },
+            },
+          ],
+          legends: { visible: true },
+          theme: resolvedTheme === 'dark' ? 'dark' : 'light',
+          background: 'transparent',
+          height: 288,
+          padding: { top: 8, bottom: 4, left: 4, right: 8 },
+          tooltip: {
+            dimension: {
+              title: {
+                value: (datum: any) => String(datum?.date ?? ''),
+              },
+              content: [
+                {
+                  key: (datum: any) => String(datum?.metric ?? ''),
+                  value: (datum: any) => datum?.value ?? 0,
+                },
+              ],
+              updateContent: (
+                array: Array<{ key: string; value: string | number }>
+              ) =>
+                array.map((item) => ({
+                  key: item.key,
+                  value:
+                    item.key === usdLabel
+                      ? usd(Number(item.value))
+                      : String(item.value),
+                })),
+            },
+          },
+        }}
+      />
+    </div>
+  )
+}
+
 // All times in this report render in US Pacific Time to match the backend's
 // Pacific day bucketing. (The Google Ads account itself is America/New_York;
 // its dates join the Pacific buckets with a 3-hour edge skew.)
@@ -174,12 +276,13 @@ function FunnelCells({ row }: { row: OpsFunnelRow }) {
   return (
     <>
       <TableCell className='text-right'>{n}</TableCell>
+      {cell(row.activated)}
+      {cell(row.paid)}
+      <TableCell className='text-right'>{usd(row.paid_usd)}</TableCell>
       {cell(row.real_browse)}
       {cell(row.manual_keys)}
       {cell(row.key_users)}
       {cell(row.pay_intent)}
-      {cell(row.paid)}
-      <TableCell className='text-right'>{usd(row.paid_usd)}</TableCell>
       <TableCell className='text-right'>{usd(row.cost_usd)}</TableCell>
     </>
   )
@@ -204,12 +307,13 @@ function FunnelHeader({
           </>
         )}
         <TableHead className='text-right'>{t('Registrations')}</TableHead>
+        <TableHead className='text-right'>{t('Activated')}</TableHead>
+        <TableHead className='text-right'>{t('Paid Users')}</TableHead>
+        <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
         <TableHead className='text-right'>{t('Real Browse')}</TableHead>
         <TableHead className='text-right'>{t('Manual Keys')}</TableHead>
         <TableHead className='text-right'>{t('Key Users')}</TableHead>
         <TableHead className='text-right'>{t('Payment Intent')}</TableHead>
-        <TableHead className='text-right'>{t('Paid Users')}</TableHead>
-        <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
         <TableHead className='text-right'>{t('Op Cost')}</TableHead>
       </TableRow>
     </TableHeader>
@@ -936,14 +1040,34 @@ export function OpsReport() {
                     <CardTitle>{t('Daily Registrations')}</CardTitle>
                   </CardHeader>
                   <CardContent className='space-y-4'>
-                    <TrendBarChart
-                      data={[...report.daily]
+                    <FunnelComboChart
+                      counts={[...report.daily]
+                        .sort((a, b) => a.key.localeCompare(b.key))
+                        .flatMap((row) => [
+                          {
+                            date: row.key,
+                            metric: t('Registrations'),
+                            value: row.registrations,
+                          },
+                          {
+                            date: row.key,
+                            metric: t('Activated'),
+                            value: row.activated,
+                          },
+                          {
+                            date: row.key,
+                            metric: t('Paid Users'),
+                            value: row.paid,
+                          },
+                        ])}
+                      usdSeries={[...report.daily]
                         .sort((a, b) => a.key.localeCompare(b.key))
                         .map((row) => ({
                           date: row.key,
-                          value: row.registrations,
+                          metric: t('Paid Amount'),
+                          value: row.paid_usd,
                         }))}
-                      yLabel={t('Registrations')}
+                      usdLabel={t('Paid Amount')}
                     />
                     <DailyFunnelTable rows={report.daily} />
                   </CardContent>
