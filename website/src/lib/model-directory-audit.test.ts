@@ -236,6 +236,10 @@ describe("model directory metadata audit", () => {
 
     expect(markdown).toContain("No production writes were performed");
     expect(markdown).toContain("Review these findings before any database update");
+    expect(markdown).toContain("## Issue totals by severity");
+    expect(markdown).toContain("## Issue totals by affected filter");
+    expect(markdown).toContain("| unknown-model |");
+    expect(markdown).toContain("| metadata |");
     expect(markdown).not.toContain("UPDATE ");
     expect(markdown).not.toContain("INSERT ");
   });

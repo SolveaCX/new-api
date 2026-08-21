@@ -163,6 +163,27 @@ export function renderModelDirectoryAuditMarkdown(report: ModelDirectoryAuditRep
     return `${lines.join("\n")}\n`;
   }
 
+  const statusCounts = countIssueStatuses(report.issues);
+  const filterCounts = countAffectedFilters(report.issues);
+  lines.push("## Issue totals by severity");
+  lines.push("");
+  lines.push("| Severity | Total |");
+  lines.push("| --- | ---: |");
+  for (const status of AUDIT_STATUS_ORDER) {
+    const count = statusCounts.get(status) ?? 0;
+    if (count > 0) lines.push(`| ${escapeMarkdown(status)} | ${count} |`);
+  }
+  lines.push("");
+  lines.push("## Issue totals by affected filter");
+  lines.push("");
+  lines.push("| Filter | Total |");
+  lines.push("| --- | ---: |");
+  for (const [filter, count] of [...filterCounts.entries()].sort(([a], [b]) => a.localeCompare(b, "en"))) {
+    lines.push(`| ${escapeMarkdown(filter)} | ${count} |`);
+  }
+  lines.push("");
+  lines.push("## Issue details");
+  lines.push("");
   lines.push("| Status | Model | Field | Affected filters | Current value | Suggested value | Suggested source | Confidence | Review status |");
   lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const issue of report.issues) {
@@ -171,6 +192,22 @@ export function renderModelDirectoryAuditMarkdown(report: ModelDirectoryAuditRep
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+const AUDIT_STATUS_ORDER: AuditIssue["status"][] = ["invalid", "missing", "unknown-model", "stale-metadata"];
+
+function countIssueStatuses(issues: AuditIssue[]): Map<AuditIssue["status"], number> {
+  const counts = new Map<AuditIssue["status"], number>();
+  for (const issue of issues) counts.set(issue.status, (counts.get(issue.status) ?? 0) + 1);
+  return counts;
+}
+
+function countAffectedFilters(issues: AuditIssue[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const issue of issues) {
+    for (const filter of issue.affectedFilters) counts.set(filter, (counts.get(filter) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export function renderModelDirectoryAuditJson(report: ModelDirectoryAuditReport): string {

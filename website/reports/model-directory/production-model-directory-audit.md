@@ -1,6 +1,6 @@
 # Model Directory Metadata Audit
 
-Generated at: 2026-08-21T04:45:49.819Z
+Generated at: 2026-08-21T05:11:04.542Z
 Source: https://console.flatkey.ai/api/website/pricing
 Live models audited: 103
 Metadata entries audited: 96
@@ -10,6 +10,31 @@ Wrote production: false
 **No production writes were performed.**
 
 Review these findings before any database update. This report is read-only audit evidence, not an automatic backfill plan.
+
+## Issue totals by severity
+
+| Severity | Total |
+| --- | ---: |
+| invalid | 1 |
+| missing | 32 |
+| unknown-model | 7 |
+
+## Issue totals by affected filter
+
+| Filter | Total |
+| --- | ---: |
+| age | 9 |
+| categories | 11 |
+| context | 7 |
+| distillable | 7 |
+| metadata | 7 |
+| modalities | 7 |
+| outputPrice | 1 |
+| providers | 33 |
+| series | 7 |
+| vendor | 7 |
+
+## Issue details
 
 | Status | Model | Field | Affected filters | Current value | Suggested value | Suggested source | Confidence | Review status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
