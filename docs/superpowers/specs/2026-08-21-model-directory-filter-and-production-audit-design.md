@@ -57,13 +57,13 @@ The implementation should extend these boundaries instead of introducing a secon
 - For per-request and per-second models, the single final displayed price is used as both `inputFilterPrice` and `outputFilterPrice` so the model can participate in either price group.
 - Multiple provider prices do not independently trigger a match. Only the price finally selected for display is considered.
 - Price bands use non-overlapping half-open ranges:
-  - `< $0.5`: `0 <= price < 0.5`
+  - `< $0.5`: `0 < price < 0.5`
   - `$0.5-$1`: `0.5 <= price < 1`
   - `$1-$2`: `1 <= price < 2`
   - `$2-$5`: `2 <= price < 5`
   - `$5-$10`: `5 <= price < 10`
   - `$10+`: `price >= 10`
-- Null, negative, and non-finite prices do not match an active price filter.
+- Null, zero, negative, and non-finite prices do not match an active price filter.
 
 ### Remaining groups
 
@@ -221,7 +221,7 @@ The Markdown summary groups issues by severity and affected filter, lists totals
 - Legacy multi-context URLs normalize deterministically.
 - Distillable is single-select and can be cleared.
 - Multi-select groups preserve OR semantics; different groups preserve AND semantics.
-- Price boundary values fall into exactly one band.
+- Positive price boundary values fall into exactly one band; zero remains unpriced.
 - Token input/output prices filter independently.
 - Per-request and per-second display prices participate in both input and output price filters.
 - Missing/invalid fields match only while their filter is inactive.
