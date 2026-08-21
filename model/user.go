@@ -462,34 +462,35 @@ func searchUsersWithQuery(query *gorm.DB, startIdx, num int, users []*User, tota
 }
 
 func searchUsersByCountry(query *gorm.DB, country string, startIdx, num int, tx *gorm.DB) ([]*User, int64, error) {
-	var users []*User
-	if err := query.Omit("password").Order("id desc").Find(&users).Error; err != nil {
+	const batchSize = 500
+	users := make([]*User, 0, num)
+	var matched int64
+	var batchUsers []*User
+	err := query.Omit("password").Order("id desc").FindInBatches(&batchUsers, batchSize, func(_ *gorm.DB, _ int) error {
+		FillIPCountries(batchUsers)
+		for _, user := range batchUsers {
+			if user.IPCountry != country {
+				continue
+			}
+			if matched >= int64(startIdx) && int64(len(users)) < int64(num) {
+				users = append(users, user)
+			}
+			matched++
+		}
+		batchUsers = batchUsers[:0]
+		return nil
+	}).Error
+	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
 	}
 	if err := tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
-	FillIPCountries(users)
-	filtered := users[:0]
-	for _, user := range users {
-		if user.IPCountry == country {
-			filtered = append(filtered, user)
-		}
-	}
-	total := int64(len(filtered))
-	if startIdx >= len(filtered) {
-		return []*User{}, total, nil
-	}
-	end := startIdx + num
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-	filtered = filtered[startIdx:end]
-	if err := FillPaidAmounts(filtered); err != nil {
+	if err := FillPaidAmounts(users); err != nil {
 		common.SysLog("failed to fill paid amounts for country-filtered users: " + err.Error())
 	}
-	return filtered, total, nil
+	return users, matched, nil
 }
 
 // FillPaidAmounts hydrates each user's PaidAmount with the lifetime total of

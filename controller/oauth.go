@@ -256,6 +256,8 @@ func HandleOAuth(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
 		case *OAuthRegistrationDisabledError:
 			common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
+		case *OAuthRegistrationCountryBlockedError:
+			common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
 		default:
 			common.ApiError(c, err)
 		}
@@ -342,6 +344,8 @@ func HandleGoogleOneTap(c *gin.Context) {
 			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgOAuthUserDeleted))
 		case *OAuthRegistrationDisabledError:
 			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgUserRegisterDisabled))
+		case *OAuthRegistrationCountryBlockedError:
+			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgRegistrationCountryBlocked))
 		default:
 			respondGoogleOneTapFailure(c, http.StatusInternalServerError, err.Error())
 		}

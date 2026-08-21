@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -21,12 +22,20 @@ var registrationCountrySetting = RegistrationCountrySetting{
 	BlockedCountries:     []string{"MA"},
 	AutoDisableCountries: []string{},
 }
+var registrationCountrySettingMu sync.RWMutex
 
 func init() {
 	config.GlobalConfig.Register("registration_country", &registrationCountrySetting)
 }
 
-func GetRegistrationCountrySetting() *RegistrationCountrySetting { return &registrationCountrySetting }
+func GetRegistrationCountrySetting() *RegistrationCountrySetting {
+	registrationCountrySettingMu.RLock()
+	defer registrationCountrySettingMu.RUnlock()
+	copy := registrationCountrySetting
+	copy.BlockedCountries = append([]string(nil), registrationCountrySetting.BlockedCountries...)
+	copy.AutoDisableCountries = append([]string(nil), registrationCountrySetting.AutoDisableCountries...)
+	return &copy
+}
 
 func normalizeCountries(countries []string) []string {
 	seen := make(map[string]struct{}, len(countries))
@@ -59,12 +68,25 @@ func (s *RegistrationCountrySetting) NormalizeAndValidate() error {
 			}
 		}
 	}
-	s.BlockedCountries = normalizeCountries(s.BlockedCountries)
-	s.AutoDisableCountries = normalizeCountries(s.AutoDisableCountries)
+	blocked := normalizeCountries(s.BlockedCountries)
+	autoDisable := normalizeCountries(s.AutoDisableCountries)
+	blockedSet := make(map[string]struct{}, len(blocked))
+	for _, country := range blocked {
+		blockedSet[country] = struct{}{}
+	}
+	for _, country := range autoDisable {
+		if _, exists := blockedSet[country]; exists {
+			return fmt.Errorf("country %q cannot be both blocked and auto-disabled", country)
+		}
+	}
+	s.BlockedCountries = blocked
+	s.AutoDisableCountries = autoDisable
 	return nil
 }
 
 func UpdateRegistrationCountrySettingFromMap(values map[string]string) error {
+	registrationCountrySettingMu.Lock()
+	defer registrationCountrySettingMu.Unlock()
 	serialized, err := common.Marshal(registrationCountrySetting)
 	if err != nil {
 		return err
@@ -94,9 +116,13 @@ func countryIn(countries []string, country string) bool {
 }
 
 func IsCountryBlocked(country string) bool {
+	registrationCountrySettingMu.RLock()
+	defer registrationCountrySettingMu.RUnlock()
 	return registrationCountrySetting.Enabled && countryIn(registrationCountrySetting.BlockedCountries, country)
 }
 
 func IsCountryAutoDisabled(country string) bool {
+	registrationCountrySettingMu.RLock()
+	defer registrationCountrySettingMu.RUnlock()
 	return registrationCountrySetting.Enabled && countryIn(registrationCountrySetting.AutoDisableCountries, country)
 }
