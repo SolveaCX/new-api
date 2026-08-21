@@ -464,13 +464,15 @@ func buildOpsStripeReport(days int) (*opsStripeReport, error) {
 		sort.Strings(out)
 		return out
 	}
-	// last request IP (any log row, playground included) as an identity hint
+	// last request IP within the report window (any log row, playground
+	// included) as an identity hint; the time bound keeps the logs lookup
+	// off the oldest history
 	personIds := make([]int, 0, len(persons))
 	for _, a := range persons {
 		personIds = append(personIds, a.row.UserId)
 	}
 	ipByUser := map[int]string{}
-	if ips, err := model.GetOpsUsersLastIP(personIds); err == nil {
+	if ips, err := model.GetOpsUsersLastIP(personIds, startTs); err == nil {
 		for _, r := range ips {
 			ipByUser[r.UserId] = r.Ip
 		}

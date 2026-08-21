@@ -929,7 +929,7 @@ func hasActiveRecallMigrationLeases(nowUnix int64) (bool, error) {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}, &CompanyLogSchema{}, &LogRequestSample{}, &TaskAcceptedAccountingLogLedger{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &CompanyLogSchema{}, &LogRequestSample{}, &TaskAcceptedAccountingLogLedger{}, &OpsUserLogStatsRow{}, &OpsUserLogStatsMeta{}); err != nil {
 		return err
 	}
 	return nil

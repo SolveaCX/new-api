@@ -144,7 +144,31 @@ func chunkInts(ids []int, size int) [][]int {
 }
 
 // GetOpsUserLogStats returns per-user playground/API-key usage aggregates.
+// Prefer the ops_user_log_stats aggregate table (maintained incrementally in
+// the background) so the report never scans the whole logs history; fall back
+// to the direct logs scan only until the first backfill has populated the
+// table (e.g. right after a fresh deploy).
 func GetOpsUserLogStats(userIds []int) ([]*OpsUserLogStats, error) {
+	if opsUserLogStatsReady() {
+		var all []*OpsUserLogStats
+		for _, chunk := range chunkInts(userIds, opsReportChunkSize) {
+			var batch []*OpsUserLogStats
+			if err := LOG_DB.Table("ops_user_log_stats").
+				Select("user_id, first_playground_at, playground_count, first_api_key_at, api_key_count, last_request_at").
+				Where("user_id IN ?", chunk).
+				Scan(&batch).Error; err != nil {
+				return nil, err
+			}
+			all = append(all, batch...)
+		}
+		return all, nil
+	}
+	return getOpsUserLogStatsFromLogs(userIds)
+}
+
+// getOpsUserLogStatsFromLogs is the original direct logs scan, kept as the
+// fallback until the aggregate table is populated.
+func getOpsUserLogStatsFromLogs(userIds []int) ([]*OpsUserLogStats, error) {
 	var all []*OpsUserLogStats
 	for _, chunk := range chunkInts(userIds, opsReportChunkSize) {
 		var batch []*OpsUserLogStats
@@ -171,6 +195,12 @@ func GetOpsUserLogStats(userIds []int) ([]*OpsUserLogStats, error) {
 // holds n+1 ascending UTC epoch boundaries — the real report-timezone midnights
 // for the n days — so buckets stay correct across DST transitions. day_ts
 // values are the per-day start epochs.
+//
+// Data now comes from quota_data (hourly per-user-per-model rollups, ~500
+// rows/day) instead of raw logs: a 30-day window covers nearly the whole logs
+// table, so the optimizer full-scans ~45M rows there (measured 100s+ on prod).
+// Trade-off (same as GetOpsAllKeyDailyUsage): quota_data counts all consumption
+// including playground, not only token_id>0 API-key calls.
 func GetOpsKeyDailyUsage(userIds []int, dayStarts []int64) ([]*OpsKeyDaily, error) {
 	if len(dayStarts) < 2 {
 		return nil, nil
@@ -183,12 +213,12 @@ func GetOpsKeyDailyUsage(userIds []int, dayStarts []int64) ([]*OpsKeyDaily, erro
 		sql := fmt.Sprintf(`
 			SELECT user_id,
 			       %s AS day_ts,
-			       COUNT(*) AS req_count,
+			       COALESCE(SUM(count), 0) AS req_count,
 			       COALESCE(SUM(quota), 0) AS quota
-			FROM logs%s
-			WHERE type = ? AND %s AND created_at >= ? AND user_id IN ?
-			GROUP BY user_id, %s`, dayExpr, logsForceIndexHint(), opsExternalAPIKeyLogPredicate, dayExpr)
-		if err := LOG_DB.Raw(sql, LogTypeConsume, startTs, chunk).Scan(&batch).Error; err != nil {
+			FROM quota_data
+			WHERE created_at >= ? AND user_id IN ?
+			GROUP BY user_id, %s`, dayExpr, dayExpr)
+		if err := DB.Raw(sql, startTs, chunk).Scan(&batch).Error; err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
@@ -332,19 +362,21 @@ type OpsUserLastIP struct {
 	Ip     string `json:"ip"`
 }
 
-// GetOpsUsersLastIP returns the most recent non-empty request IP per user.
-// One indexed MAX(id) pass plus one primary-key lookup; used for the full plg
-// user set (~thousands) by the ops report region funnel.
-func GetOpsUsersLastIP(userIds []int) ([]*OpsUserLastIP, error) {
+// GetOpsUsersLastIP returns the most recent non-empty request IP per user,
+// restricted to logs at or after since (the report window start). One indexed
+// MAX(id) pass plus one primary-key lookup; used for the full plg user set
+// (~thousands) by the ops report region funnel. The time bound keeps the MAX
+// pass off the oldest logs, which otherwise grows without bound.
+func GetOpsUsersLastIP(userIds []int, since int64) ([]*OpsUserLastIP, error) {
 	if len(userIds) == 0 {
 		return nil, nil
 	}
 	var maxIds []int64
 	sql := fmt.Sprintf(`
 		SELECT MAX(id) FROM logs%s
-		WHERE user_id IN ? AND ip <> ''
+		WHERE user_id IN ? AND ip <> '' AND created_at >= ?
 		GROUP BY user_id`, logsForceIndexHint())
-	if err := LOG_DB.Raw(sql, userIds).Scan(&maxIds).Error; err != nil {
+	if err := LOG_DB.Raw(sql, userIds, since).Scan(&maxIds).Error; err != nil {
 		return nil, err
 	}
 	if len(maxIds) == 0 {
