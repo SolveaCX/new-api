@@ -173,6 +173,32 @@ describe("model directory metadata audit", () => {
     expectEveryIssueIsPendingAndFilterAffected(report.issues);
   });
 
+  test("same-name raw identities with same vendor but distinct modelIds collide", () => {
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: [{ ...COMPLETE_ROW, modelId: 102, name: "same-name", vendor: "OpenAI" }],
+      identityRows: [
+        { ...COMPLETE_ROW, modelId: 101, name: "same-name", vendor: "OpenAI" },
+        { ...COMPLETE_ROW, modelId: 102, name: "same-name", vendor: "OpenAI" },
+      ],
+      metadata: { "same-name": COMPLETE_META },
+    });
+
+    expect(report.modelCount).toBe(1);
+    expect(report.issues).toHaveLength(1);
+    expect(report.issues[0]).toMatchObject({
+      status: "invalid",
+      kind: "collision",
+      field: "identity",
+      modelName: "same-name",
+      currentValue: [
+        { modelId: 101, name: "same-name", vendor: "OpenAI" },
+        { modelId: 102, name: "same-name", vendor: "OpenAI" },
+      ],
+    });
+  });
+
   test("issue ordering is deterministic by status, model name, and field", () => {
     const first = audit({
       rows: [

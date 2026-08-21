@@ -365,7 +365,8 @@ function collisionIssues(
 
   for (const [name, duplicates] of byName) {
     const providers = new Set(duplicates.map((row) => row.vendor).filter(Boolean));
-    if (duplicates.length > 1 && providers.size > 1) {
+    const modelIds = new Set(duplicates.map((row) => normalizeModelId(row.modelId)).filter((id): id is string => id != null));
+    if (duplicates.length > 1 && (providers.size > 1 || modelIds.size > 1)) {
       issues.push(
         makeIssue({
           row: duplicates[0] ?? { name, vendor: "" },
@@ -404,6 +405,12 @@ function collisionIssues(
   }
 
   return dedupeIssues(issues);
+}
+
+function normalizeModelId(modelId: AuditModelDirectoryRow["modelId"]): string | undefined {
+  if (modelId == null) return undefined;
+  const value = String(modelId).trim();
+  return value === "" ? undefined : value;
 }
 
 function makeIssue(input: {
