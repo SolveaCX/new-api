@@ -1,4 +1,8 @@
 import type { ModelDirectoryMeta } from "./model-directory-meta";
+import {
+  STAGING_PREVIEW_MODEL_DIRECTORY_META,
+  STAGING_PREVIEW_MODEL_DIRECTORY_META_PATCHES,
+} from "./model-directory-meta-staging-preview";
 
 // Static directory metadata, keyed by the exact model name returned by
 // /api/website/pricing. Only the dimensions the pricing API cannot supply live
@@ -18,7 +22,7 @@ import type { ModelDirectoryMeta } from "./model-directory-meta";
 // metadata-driven filters and shows "—" in those columns. See
 // model-directory-meta.test.ts, which fails when live models drift out of
 // coverage.
-export const MODEL_DIRECTORY_META: Record<string, ModelDirectoryMeta> = {
+const BASE_MODEL_DIRECTORY_META: Record<string, ModelDirectoryMeta> = {
   "MiniMax-H3": { series: "MiniMax", vendor: "MiniMax", providers: [], modalities: ["text", "image", "video", "audio"], contextTokens: null, categories: ["Programming", "Roleplay", "Marketing", "SEO", "Technology", "Trivia"], distillable: false, releasedAt: "2026-08-04", rank: 1, top10: 7 },
   "minimax-m2.7": { series: "MiniMax", vendor: "MiniMax", providers: ["Minimax"], modalities: ["text", "file"], contextTokens: 204800, categories: ["Programming", "Roleplay", "Marketing", "SEO", "Technology", "Science", "Translation", "Finance", "Academia"], distillable: true, releasedAt: "2026-04-06", rank: 2 },
   "minimax-m2.5": { series: "MiniMax", vendor: "MiniMax", providers: ["Minimax"], modalities: ["text", "file"], contextTokens: 204800, categories: ["Programming", "Roleplay", "Marketing", "SEO", "Technology", "Translation", "Trivia", "Academia"], distillable: true, releasedAt: "2026-04-06", rank: 3 },
@@ -116,3 +120,18 @@ export const MODEL_DIRECTORY_META: Record<string, ModelDirectoryMeta> = {
   "claude-fable-5": { series: "Claude", vendor: "Anthropic", providers: ["Amazon Bedrock", "Anthropic", "Azure", "Claude Platform on AWS", "Google"], modalities: ["text", "image", "file"], contextTokens: 1048576, categories: ["Programming", "Marketing", "SEO", "Technology", "Translation", "Legal", "Health", "Trivia", "Academia"], distillable: false, releasedAt: "2026-08-04", rank: 95, top10: 5 },
   "claude-sonnet-4-5-20250929": { series: "Claude", vendor: "Anthropic", providers: ["Amazon Bedrock", "Google"], modalities: ["text", "image", "file"], contextTokens: 1048576, categories: ["Programming", "Marketing", "SEO", "Technology", "Translation", "Legal", "Health", "Trivia", "Academia"], distillable: false, releasedAt: "2025-11-22", rank: 96 },
 };
+
+function buildStagingPreviewMetadata(): Record<string, ModelDirectoryMeta> {
+  const patchedBase = Object.fromEntries(
+    Object.entries(BASE_MODEL_DIRECTORY_META).map(([name, metadata]) => [
+      name,
+      { ...metadata, ...STAGING_PREVIEW_MODEL_DIRECTORY_META_PATCHES[name] },
+    ])
+  );
+  return { ...patchedBase, ...STAGING_PREVIEW_MODEL_DIRECTORY_META };
+}
+
+export const MODEL_DIRECTORY_META: Record<string, ModelDirectoryMeta> =
+  process.env.NEXT_PUBLIC_MODEL_DIRECTORY_STAGING_PREVIEW === "true"
+    ? buildStagingPreviewMetadata()
+    : BASE_MODEL_DIRECTORY_META;

@@ -32,6 +32,22 @@ export type RecallPriceDiscount = {
   currency: string
 }
 
+export function formatRecallExpiryDate(
+  expiresAt: number,
+  locale = 'en-US'
+): string {
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return ''
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(expiresAt * 1000))
+  } catch {
+    return ''
+  }
+}
+
 export function normalizeRecallClaim(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined
@@ -79,13 +95,17 @@ export function isRecallPriceEligible(
   )
 }
 
-function amountToMinor(amountMajor: number): number {
-  if (!Number.isFinite(amountMajor) || amountMajor <= 0) return 0
-  return Math.round(amountMajor * 100)
+function currencyMinorUnitFactor(currency: string): number {
+  return currency.toUpperCase() === 'JPY' ? 1 : 100
 }
 
-function minorToAmount(amountMinor: number): number {
-  return Math.round(amountMinor) / 100
+function amountToMinor(amountMajor: number, currency: string): number {
+  if (!Number.isFinite(amountMajor) || amountMajor <= 0) return 0
+  return Math.round(amountMajor * currencyMinorUnitFactor(currency))
+}
+
+function minorToAmount(amountMinor: number, currency: string): number {
+  return Math.round(amountMinor) / currencyMinorUnitFactor(currency)
 }
 
 function getFixedDiscountMinor(
@@ -120,7 +140,7 @@ export function getRecallPriceDiscount(
     return null
   }
 
-  const priceMinor = amountToMinor(amountMajor)
+  const priceMinor = amountToMinor(amountMajor, normalizedCurrency)
   if (priceMinor <= 0) return null
 
   const minimumAmount = Math.max(
@@ -152,9 +172,12 @@ export function getRecallPriceDiscount(
 
   return {
     type: claim.discount.type,
-    originalAmount: minorToAmount(priceMinor),
-    discountAmount: minorToAmount(discountMinor),
-    discountedAmount: minorToAmount(priceMinor - discountMinor),
+    originalAmount: minorToAmount(priceMinor, normalizedCurrency),
+    discountAmount: minorToAmount(discountMinor, normalizedCurrency),
+    discountedAmount: minorToAmount(
+      priceMinor - discountMinor,
+      normalizedCurrency
+    ),
     currency: normalizedCurrency,
   }
 }
@@ -187,7 +210,10 @@ export function selectBestRecallOffer(
     )
     if (!discount) continue
 
-    const offerDiscountMinor = Math.round(discount.discountAmount * 100)
+    const offerDiscountMinor = amountToMinor(
+      discount.discountAmount,
+      discount.currency
+    )
     if (
       !best ||
       offerDiscountMinor > best.discountMinor ||

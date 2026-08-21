@@ -92,6 +92,8 @@ export function ModelsFilterSidebar(props: Props) {
             {/* Grid-rows trick: animates height from 0 to content without
                 measuring, and keeps the panel out of the tab order when shut. */}
             <div
+              aria-hidden={isOpen ? undefined : true}
+              inert={!isOpen}
               className={cn(
                 "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
                 isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"

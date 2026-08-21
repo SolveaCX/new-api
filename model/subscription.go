@@ -603,6 +603,7 @@ type SubscriptionOrder struct {
 	ChangeIntentId     int64  `json:"change_intent_id" gorm:"type:bigint;default:0;index"`
 	ProviderSessionId  string `json:"provider_session_id" gorm:"type:varchar(128);default:'';index"`
 	ProviderSessionURL string `json:"provider_session_url" gorm:"type:text"`
+	CheckoutRevision   int64  `json:"checkout_revision" gorm:"not null;default:0"`
 
 	SupersededByTradeNo            string `json:"superseded_by_trade_no" gorm:"type:varchar(255);not null;default:'';index"`
 	ProviderExpirationPending      bool   `json:"provider_expiration_pending" gorm:"not null;default:false;index"`

@@ -28,6 +28,7 @@ export const subscriptionPlanSchema = z.object({
   subtitle: z.string().optional(),
   price_amount: z.number(),
   currency: z.string().default('USD'),
+  currency_prices: z.record(z.string(), z.number()).optional(),
   pix_price_brl: z.number().nullable().optional(),
   upi_price_inr: z.number().nullable().optional(),
   duration_unit: z.enum(['year', 'month', 'day', 'hour', 'custom']),
@@ -110,16 +111,8 @@ export interface UserSubscriptionRecord {
   provider_binding?: SubscriptionProviderBindingSummary
 }
 
-export interface SubscriptionUsageLimits {
-  window_5h_used: number
-  window_5h_reset_at: number
-  window_week_used: number
-  window_week_reset_at: number
-}
-
 export interface CurrentSubscriptionRecord extends UserSubscriptionRecord {
   plan: SubscriptionPlan
-  usage_limits: SubscriptionUsageLimits
 }
 
 // ============================================================================
@@ -155,6 +148,14 @@ export interface SubscriptionPayResponse {
     client_secret?: string
     publishable_key?: string
     fallback_url?: string
+    checkout_context?: string
+    checkout_revision?: number
+    discount_state?: {
+      source: 'none' | 'invitation' | 'recall' | 'manual'
+      display_name?: string
+      promotion_code_masked?: string
+      replaced_source?: 'none' | 'invitation' | 'recall'
+    }
     // Waffo Pancake / Creem hosted checkout URL.
     checkout_url?: string
     // Pancake-only: order metadata + self-service buyer session token,
@@ -494,8 +495,6 @@ export interface SelfSubscriptionData {
   current_period?: SubscriptionCurrentPeriod
   quota?: SubscriptionQuota
   monthly_bucket?: SubscriptionUsageWindow
-  window_5h?: SubscriptionUsageWindow
-  window_7d?: SubscriptionUsageWindow
   media_credits?: SubscriptionUsageWindow
   remaining_days?: number
   renewal_source?: SubscriptionRenewalSource

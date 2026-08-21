@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -271,6 +273,81 @@ func TestGrokAuthPKCECompleteUnboundReturnsCredentialWithoutChannelWrite(t *test
 	_, claimed, err := model.ClaimGrokAuthFlow(start.FlowID, "replay")
 	require.NoError(t, err)
 	require.False(t, claimed)
+}
+
+func TestGrokAuthPKCECompleteUnboundRecoversCredentialWithoutSecondExchange(t *testing.T) {
+	setupGrokAuthTestDB(t)
+	setGrokCipherKey(t)
+	start, err := GrokPKCEStart(0, groksubscription.OAuthRedirectURI)
+	require.NoError(t, err)
+
+	exchanges := 0
+	restore := SetGrokAuthHTTPDoerForTest(grokDoerFunc(func(*http.Request) (*http.Response, error) {
+		exchanges++
+		return grokJSONResponse(200, `{"access_token":"at-recover","refresh_token":"rt-recover","token_type":"Bearer","expires_in":3600}`), nil
+	}))
+	defer restore()
+
+	first, err := GrokPKCEComplete(start.FlowID, "recover-code", start.State, "")
+	require.NoError(t, err)
+	second, err := GrokPKCEComplete(start.FlowID, "recover-code", start.State, "")
+	require.NoError(t, err, "a retry after a lost HTTP response must recover the persisted credential")
+	require.Equal(t, first.Key, second.Key)
+	require.Equal(t, 1, exchanges, "the one-time authorization code must never be exchanged twice")
+
+	var flow model.GrokAuthFlow
+	require.NoError(t, model.DB.Where("flow_id = ?", start.FlowID).First(&flow).Error)
+	require.NotContains(t, flow.EncryptedCompletionResult, "at-recover")
+	require.Empty(t, flow.EncryptedVerifier, "the completed flow must not retain the PKCE verifier")
+}
+
+func TestGrokAuthPKCECompleteUnboundConcurrentRetryDoesNotExchangeTwice(t *testing.T) {
+	setupGrokAuthTestDB(t)
+	setGrokCipherKey(t)
+	start, err := GrokPKCEStart(0, groksubscription.OAuthRedirectURI)
+	require.NoError(t, err)
+
+	var exchanges atomic.Int32
+	exchangeStarted := make(chan struct{})
+	releaseExchange := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseExchange) }) }
+	defer release()
+	restore := SetGrokAuthHTTPDoerForTest(grokDoerFunc(func(*http.Request) (*http.Response, error) {
+		if exchanges.Add(1) == 1 {
+			close(exchangeStarted)
+			<-releaseExchange
+		}
+		return grokJSONResponse(200, `{"access_token":"at-concurrent","refresh_token":"rt-concurrent","token_type":"Bearer","expires_in":3600}`), nil
+	}))
+	defer restore()
+
+	type completionResult struct {
+		result GrokPKCECompleteResult
+		err    error
+	}
+	firstDone := make(chan completionResult, 1)
+	go func() {
+		result, err := GrokPKCEComplete(start.FlowID, "concurrent-code", start.State, "")
+		firstDone <- completionResult{result: result, err: err}
+	}()
+	<-exchangeStarted
+
+	_, err = GrokPKCEComplete(start.FlowID, "concurrent-code", "wrong-concurrent-state", "")
+	require.ErrorIs(t, err, errGrokCompletionPending, "a malformed concurrent retry must not delete the in-flight exchange")
+	require.Equal(t, int32(1), exchanges.Load())
+
+	_, err = GrokPKCEComplete(start.FlowID, "concurrent-code", start.State, "")
+	require.ErrorIs(t, err, errGrokCompletionPending)
+	require.Equal(t, int32(1), exchanges.Load(), "a pending retry must not reach the token endpoint")
+
+	release()
+	first := <-firstDone
+	require.NoError(t, first.err)
+	recovered, err := GrokPKCEComplete(start.FlowID, "concurrent-code", start.State, "")
+	require.NoError(t, err)
+	require.Equal(t, first.result.Key, recovered.Key)
+	require.Equal(t, int32(1), exchanges.Load())
 }
 
 // TestGrokPKCECompleteStateMismatchBurnsFlow 守护防重放：state 不符必须 consume flow 且报 400 语义错误，
@@ -532,6 +609,7 @@ type grokAuthHandlerResponse struct {
 		Status        string `json:"status"`
 		Key           string `json:"key"`
 		QuotaSnapshot string `json:"quota_snapshot"`
+		BillingStatus string `json:"billing_status"`
 	} `json:"data"`
 }
 
@@ -738,6 +816,9 @@ func TestGrokAuthPKCECompleteHandlerAcceptsSub2AuthorizationInputs(t *testing.T)
 
 			var exchangedCode string
 			restore := SetGrokAuthHTTPDoerForTest(grokDoerFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.String() != groksubscription.OAuthToken {
+					return grokJSONResponse(http.StatusServiceUnavailable, `{}`), nil
+				}
 				require.NoError(t, req.ParseForm())
 				exchangedCode = req.Form.Get("code")
 				return grokJSONResponse(200, `{"access_token":"at-h","refresh_token":"rt-h","token_type":"Bearer","expires_in":3600}`), nil
@@ -899,6 +980,45 @@ func TestGrokAuthRefreshHandler(t *testing.T) {
 	require.True(t, resp.Success)
 	require.Equal(t, model.GrokAuthStatusActive, resp.Data.Status)
 	require.Equal(t, `{"remaining":7}`, resp.Data.QuotaSnapshot)
+}
+
+func TestGrokAuthRefreshHandlerKeepsOAuthActiveWhenBillingProbeUnavailable(t *testing.T) {
+	setupGrokAuthTestDB(t)
+	setGrokCipherKey(t)
+	ch := seedGrokChannel(t)
+	oldCred := groksubscription.Credential{Version: 1, Type: "grok_subscription", AccessToken: "old-at", RefreshToken: "old-rt", TokenType: "Bearer", ExpiresAt: time.Now().Unix() + 60}
+	serialized, err := oldCred.Serialize()
+	require.NoError(t, err)
+	require.NoError(t, model.UpdateChannelKeyForType(ch.Id, constant.ChannelTypeGrokSubscription, serialized))
+	require.NoError(t, model.UpsertGrokChannelState(&model.GrokChannelState{
+		ChannelID:         ch.Id,
+		AuthStatus:        model.GrokAuthStatusActive,
+		QuotaSnapshot:     `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200},"weekly":{"status_code":503}}`,
+		BillingObservedAt: 100,
+		BillingPlan:       "SuperGrok",
+	}))
+	restore := SetGrokAuthHTTPDoerForTest(grokDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() == groksubscription.OAuthToken {
+			return grokJSONResponse(200, `{"access_token":"new-at3","token_type":"Bearer","expires_in":3600}`), nil
+		}
+		return nil, errors.New("probe transport failed with secret-token-like-detail")
+	}))
+	defer restore()
+
+	ctx, rec := newGrokAuthRequestContext(t, `{"channel_id":`+strconv.Itoa(ch.Id)+`}`)
+	GrokRefreshHandler(ctx)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	resp := decodeGrokAuthResponse(t, rec)
+	require.True(t, resp.Success)
+	require.Equal(t, model.GrokAuthStatusActive, resp.Data.Status)
+	require.Equal(t, "unavailable", resp.Data.BillingStatus)
+	require.NotContains(t, rec.Body.String(), "secret-token-like-detail")
+	st, err := model.GetGrokChannelState(ch.Id)
+	require.NoError(t, err)
+	require.Equal(t, model.GrokAuthStatusActive, st.AuthStatus)
+	require.Equal(t, int64(100), st.BillingObservedAt)
+	require.Equal(t, "SuperGrok", st.BillingPlan)
 }
 
 // TestGrokRefreshShouldMarkNeedsReauth 守护设计 §6.3 的失败分类：

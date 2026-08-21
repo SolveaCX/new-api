@@ -2,6 +2,7 @@ import { localizePath, type Locale } from "./locales";
 import {
   DIRECTORY_FILTER_KEYS,
   EMPTY_DIRECTORY_FILTERS,
+  type DirectoryFilterKey,
   type DirectoryFilters,
   type DirectorySort,
 } from "./model-directory-filters";
@@ -23,6 +24,7 @@ const VALID_MODALITIES = new Set<string>(MODALITIES);
 const VALID_CONTEXT = new Set<number>(CONTEXT_BUCKETS);
 const VALID_PRICE_BANDS = new Set<string>(PRICE_BANDS.map((band) => band.id));
 const VALID_AGE_BANDS = new Set<string>(AGE_BANDS);
+const SINGLE_SELECT_FILTER_KEYS = new Set<DirectoryFilterKey>(["context", "distillable"]);
 
 export type DirectorySearchParams = Record<string, string | string[] | undefined>;
 
@@ -33,9 +35,14 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 }
 
 function splitValues(value: string | string[] | undefined): string[] {
-  const raw = firstValue(value);
-  if (!raw) return [];
-  return [...new Set(raw.split(",").map((item) => item.trim()).filter(Boolean))];
+  const rawValues = Array.isArray(value) ? value : value == null ? [] : [value];
+  const values = rawValues.flatMap((raw) =>
+    raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  return [...new Set(values)];
 }
 
 export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryFilters & { sort: DirectorySort } {
@@ -45,7 +52,8 @@ export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryF
     modalities: splitValues(params?.modalities).filter((value): value is Modality => VALID_MODALITIES.has(value)),
     context: splitValues(params?.context)
       .map((value) => Number(value))
-      .filter((value) => VALID_CONTEXT.has(value)),
+      .filter((value) => VALID_CONTEXT.has(value))
+      .slice(0, 1),
     inputPrice: splitValues(params?.inputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
     outputPrice: splitValues(params?.outputPrice).filter((value): value is PriceBandId => VALID_PRICE_BANDS.has(value)),
     vendors: splitValues(params?.vendors),
@@ -55,7 +63,8 @@ export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryF
     age: splitValues(params?.age).filter((value): value is AgeBand => VALID_AGE_BANDS.has(value)),
     distillable: splitValues(params?.distillable)
       .filter((value) => value === "true" || value === "false")
-      .map((value) => value === "true"),
+      .map((value) => value === "true")
+      .slice(0, 1),
     q: firstValue(params?.q),
     vendor: firstValue(params?.vendor),
     sort: sortParam && VALID_SORTS.has(sortParam) ? (sortParam as DirectorySort) : DEFAULT_SORT,
@@ -87,6 +96,11 @@ export function toggleDirectoryFilter<K extends (typeof DIRECTORY_FILTER_KEYS)[n
   value: DirectoryFilters[K][number]
 ): DirectoryFilters {
   const current = filters[key] as Array<DirectoryFilters[K][number]>;
-  const next = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
+  let next: Array<DirectoryFilters[K][number]>;
+  if (SINGLE_SELECT_FILTER_KEYS.has(key)) {
+    next = current.includes(value) ? [] : [value];
+  } else {
+    next = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
+  }
   return { ...filters, [key]: next };
 }

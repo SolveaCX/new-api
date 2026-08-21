@@ -347,11 +347,21 @@ export function getOfficialPriceUsd(model: PricingModel, type: "input" | "output
 // Cheapest visible group ratio for the model — the "60-90% of official" layer.
 // Group ratios live in the pricing payload's top-level group_ratio map, keyed
 // by the model's enable_groups.
-export function getBestGroupRatio(model: PricingModel, fallbackGroupRatio: Record<string, number>): number {
+//
+// Pass `groupModelRatio` (the payload's top-level map) whenever it is available:
+// per-model overrides beat the flat group ratio during billing, so omitting them
+// quotes a model higher than it is actually charged. Callers that already folded
+// the overrides in (via buildEffectiveGroupRatio) can leave it out.
+export function getBestGroupRatio(
+  model: PricingModel,
+  fallbackGroupRatio: Record<string, number>,
+  groupModelRatio: GroupModelRatio = {}
+): number {
+  const effective = buildEffectiveGroupRatio(model, fallbackGroupRatio, groupModelRatio);
   const groups = Array.isArray(model.enable_groups) ? model.enable_groups.filter(isVisibleGroup) : [];
-  const names = groups.includes("all") ? Object.keys(fallbackGroupRatio).filter(isVisibleGroup) : groups;
+  const names = groups.includes("all") ? Object.keys(effective).filter(isVisibleGroup) : groups;
   const ratios = names
-    .map((group) => model.group_ratio?.[group] ?? fallbackGroupRatio[group])
+    .map((group) => effective[group])
     .filter((ratio): ratio is number => typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0);
   return ratios.length > 0 ? Math.min(...ratios) : 1;
 }

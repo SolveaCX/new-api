@@ -6,6 +6,7 @@ import {
   hasActiveFilters,
   sortDirectoryRows,
   EMPTY_DIRECTORY_FILTERS,
+  type DirectoryRow,
   type DirectoryFilters,
 } from "./model-directory-filters";
 import { ageBandFor, formatContextTokens, getModelMeta, priceBandFor, seriesForModels } from "./model-directory-meta";
@@ -33,6 +34,20 @@ function withFilters(overrides: Partial<DirectoryFilters>): DirectoryFilters {
   return { ...EMPTY_DIRECTORY_FILTERS, ...overrides };
 }
 
+function contextRow(name: string, contextTokens: number | null): DirectoryRow {
+  return {
+    name,
+    vendor: "Test",
+    searchText: name,
+    author: "Test",
+    providers: [],
+    modalities: [],
+    contextTokens,
+    categories: [],
+    rank: 1,
+  };
+}
+
 describe("price banding", () => {
   test("buckets on half-open ranges so boundaries land in exactly one band", () => {
     expect(priceBandFor(0.49)).toBe("lt-0.5");
@@ -42,10 +57,26 @@ describe("price banding", () => {
     expect(priceBandFor(25)).toBe("10+");
   });
 
-  test("treats missing and non-positive prices as unpriced, not cheapest", () => {
+  test("positive band boundaries are strict and non-overlapping", () => {
+    expect(priceBandFor(0.499999)).toBe("lt-0.5");
+    expect(priceBandFor(0.5)).toBe("0.5-1");
+    expect(priceBandFor(0.999999)).toBe("0.5-1");
+    expect(priceBandFor(1)).toBe("1-2");
+    expect(priceBandFor(1.999999)).toBe("1-2");
+    expect(priceBandFor(2)).toBe("2-5");
+    expect(priceBandFor(4.999999)).toBe("2-5");
+    expect(priceBandFor(5)).toBe("5-10");
+    expect(priceBandFor(9.999999)).toBe("5-10");
+    expect(priceBandFor(10)).toBe("10+");
+  });
+
+  test("treats missing, non-positive and non-finite prices as unpriced, not cheapest", () => {
     expect(priceBandFor(undefined)).toBeUndefined();
+    expect(priceBandFor(null as unknown as number | undefined)).toBeUndefined();
     expect(priceBandFor(0)).toBeUndefined();
+    expect(priceBandFor(-1)).toBeUndefined();
     expect(priceBandFor(Number.NaN)).toBeUndefined();
+    expect(priceBandFor(Infinity)).toBeUndefined();
   });
 });
 
@@ -82,17 +113,20 @@ describe("filter semantics", () => {
     expect(narrowed).toHaveLength(0);
   });
 
-  test("context length is a >= filter using the smallest selected bound", () => {
-    const oneMillion = filterDirectoryRows(SAMPLE, withFilters({ context: [1048576] }));
-    expect(oneMillion.map((row) => row.name).sort()).toEqual([
-      "claude-opus-5",
-      "deepseek-v4-pro",
-      "gemini-2.5-flash",
-      "gpt-5.6-sol",
-    ]);
+  test("context length is a single upper-bound filter", () => {
+    const contextRows = [
+      contextRow("ctx-128000", 128000),
+      contextRow("ctx-200000", 200000),
+      contextRow("ctx-400000", 400000),
+      contextRow("ctx-zero", 0),
+      contextRow("ctx-null", null),
+      contextRow("ctx-nan", Number.NaN),
+      contextRow("ctx-infinity", Infinity),
+    ];
 
-    const mixed = filterDirectoryRows(SAMPLE, withFilters({ context: [1048576, 128000] }));
-    expect(mixed.map((row) => row.name)).toContain("gpt-4o-mini");
+    const result = filterDirectoryRows(contextRows, withFilters({ context: [200000] }));
+
+    expect(result.map((row) => row.name)).toEqual(["ctx-128000", "ctx-200000"]);
   });
 
   test("models with no context window are excluded from context filters", () => {
@@ -107,6 +141,49 @@ describe("filter semantics", () => {
     const repriced = rows([{ name: "gpt-4o-mini", vendor: "OpenAI", inputUsd: 6 }]);
     expect(filterDirectoryRows(repriced, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(0);
     expect(filterDirectoryRows(repriced, withFilters({ inputPrice: ["5-10"] }))).toHaveLength(1);
+  });
+
+  test("token rows filter input and output prices independently", () => {
+    const token = rows([{ name: "gpt-4o-mini", vendor: "OpenAI", inputUsd: 0.36, outputUsd: 1.44 }]);
+
+    expect(filterDirectoryRows(token, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(1);
+    expect(filterDirectoryRows(token, withFilters({ outputPrice: ["lt-0.5"] }))).toHaveLength(0);
+    expect(filterDirectoryRows(token, withFilters({ outputPrice: ["1-2"] }))).toHaveLength(1);
+  });
+
+  test("request and second rows filter the same final display price through both price groups", () => {
+    const mixed = rows([
+      { name: "request-priced-model", vendor: "VideoCo", inputUsd: 0.9, outputUsd: 0.9 },
+      { name: "second-priced-model", vendor: "VideoCo", inputUsd: 0.072, outputUsd: 0.072 },
+    ]);
+
+    expect(filterDirectoryRows(mixed, withFilters({ inputPrice: ["0.5-1"] })).map((row) => row.name)).toEqual([
+      "request-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ outputPrice: ["0.5-1"] })).map((row) => row.name)).toEqual([
+      "request-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ inputPrice: ["lt-0.5"] })).map((row) => row.name)).toEqual([
+      "second-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ outputPrice: ["lt-0.5"] })).map((row) => row.name)).toEqual([
+      "second-priced-model",
+    ]);
+  });
+
+  test("unpriced rows remain without active price filters and drop only when a price filter is active", () => {
+    const unpriced = rows([
+      { name: "zero-price", vendor: "Test", inputUsd: 0, outputUsd: 0 },
+      { name: "negative-price", vendor: "Test", inputUsd: -1, outputUsd: -1 },
+      { name: "null-price", vendor: "Test", inputUsd: null, outputUsd: null },
+      { name: "undefined-price", vendor: "Test" },
+      { name: "nan-price", vendor: "Test", inputUsd: Number.NaN, outputUsd: Number.NaN },
+      { name: "infinite-price", vendor: "Test", inputUsd: Infinity, outputUsd: Infinity },
+    ]);
+
+    expect(filterDirectoryRows(unpriced, EMPTY_DIRECTORY_FILTERS)).toHaveLength(unpriced.length);
+    expect(filterDirectoryRows(unpriced, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(0);
+    expect(filterDirectoryRows(unpriced, withFilters({ outputPrice: ["lt-0.5"] }))).toHaveLength(0);
   });
 
   test("search matches every term across name, vendor, series and categories", () => {
@@ -153,7 +230,7 @@ describe("filter semantics", () => {
   });
 
   test("models with no documented providers drop out of that filter", () => {
-    const row = buildDirectoryRow({ name: "MiniMax-H3", vendor: "MiniMax" }, NOW);
+    const row = buildDirectoryRow({ name: "unregistered-preview-model", vendor: "Unknown" }, NOW);
     expect(row.providers).toEqual([]);
     expect(filterDirectoryRows([row], withFilters({ providers: ["Minimax"] }))).toHaveLength(0);
     expect(filterDirectoryRows([row], EMPTY_DIRECTORY_FILTERS)).toHaveLength(1);
@@ -183,6 +260,18 @@ describe("facet counts", () => {
     const filters = withFilters({ modalities: ["video"] });
     expect(facetCount(SAMPLE, filters, "series", "GPT")).toBe(0);
     expect(facetCount(SAMPLE, filters, "series", "Seedance")).toBe(1);
+  });
+
+  test("single-select context facet counts replace the active context value", () => {
+    const contextRows = [
+      contextRow("ctx-128000", 128000),
+      contextRow("ctx-200000", 200000),
+      contextRow("ctx-400000", 400000),
+    ];
+    const filters = withFilters({ context: [200000] });
+
+    expect(facetCount(contextRows, filters, "context", 128000)).toBe(1);
+    expect(facetCount(contextRows, filters, "context", 400000)).toBe(3);
   });
 });
 
@@ -327,10 +416,36 @@ describe("url round-trip", () => {
     expect(parsed.sort).toBe("rank");
   });
 
+  test("normalizes legacy multi-value single-select filters to the first valid value", () => {
+    expect(parseDirectorySearch({ context: "8192,200000" }).context).toEqual([8192]);
+    expect(parseDirectorySearch({ distillable: "false,true" }).distillable).toEqual([false]);
+  });
+
+  test("normalizes repeated-param single-select filters to the first valid value across entries", () => {
+    expect(parseDirectorySearch({ context: ["abc", "200000,400000"] }).context).toEqual([200000]);
+    expect(parseDirectorySearch({ distillable: ["maybe", "true,false"] }).distillable).toEqual([true]);
+  });
+
   test("toggling adds then removes a value", () => {
     const once = toggleDirectoryFilter(EMPTY_DIRECTORY_FILTERS, "series", "GPT");
     expect(once.series).toEqual(["GPT"]);
     expect(toggleDirectoryFilter(once, "series", "GPT").series).toEqual([]);
+  });
+
+  test("toggling context replaces a different value and clears the same value", () => {
+    const initial = withFilters({ context: [8192] });
+
+    const replaced = toggleDirectoryFilter(initial, "context", 200000);
+    expect(replaced.context).toEqual([200000]);
+    expect(toggleDirectoryFilter(replaced, "context", 200000).context).toEqual([]);
+  });
+
+  test("toggling distillable replaces a different value and preserves other groups as multi-select", () => {
+    const replaced = toggleDirectoryFilter(withFilters({ distillable: [false] }), "distillable", true);
+    expect(replaced.distillable).toEqual([true]);
+
+    const multi = toggleDirectoryFilter(withFilters({ series: ["GPT"] }), "series", "Claude");
+    expect(multi.series).toEqual(["GPT", "Claude"]);
   });
 
   test("hasActiveFilters reflects search, vendor and groups", () => {

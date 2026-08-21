@@ -90,7 +90,7 @@ user.password_login_disabled: "O login por senha foi desabilitado pelo administr
 user.register_disabled: "O registro de novos usuários foi desabilitado pelo administrador"
 user.password_register_disabled: "O registro por senha foi desabilitado pelo administrador; use verificação por conta de terceiros"
 user.username_or_password_empty: "Nome de usuário ou senha vazio"
-user.username_or_password_error: "Nome de usuário ou senha incorreto, ou o usuário foi banido"
+user.username_or_password_error: "Nome de usuário ou senha incorretos, ou a conta foi banida por violação de regras"
 user.email_or_password_empty: "E-mail ou senha vazio!"
 user.exists: "O nome de usuário já existe ou foi excluído"
 user.not_exists: "O usuário não existe"
@@ -144,8 +144,6 @@ quota.user_insufficient: "Cota de usuário insuficiente, cota restante: {{.Quota
 quota.topup_hint: "Adicione créditos em {{.URL}} para continuar."
 quota.pre_consume_failed: "Falha na pré-dedução de cota, cota restante do usuário: {{.Remaining}}, cota de pré-dedução necessária: {{.Required}}"
 quota.subscription_insufficient: "Cota de assinatura insuficiente ou nenhuma assinatura configurada: {{.Detail}}"
-quota.subscription_window_5h_exceeded: "A janela de uso de 5 horas do seu plano está cheia. A capacidade é liberada conforme o uso antigo expira (cerca de {{.Minutes}} minutos para a próxima liberação). Adicione saldo para continuar sem esperar."
-quota.subscription_window_week_exceeded: "A janela de uso semanal do seu plano está cheia. Ela reinicia em cerca de {{.Hours}} horas. Adicione saldo para continuar sem esperar."
 quota.token_insufficient: "Cota do token insuficiente, cota restante do token: {{.Remain}}, cota necessária: {{.Required}}"
 quota.user_insufficient_need: "Cota de usuário insuficiente, cota do usuário: {{.Quota}}, cota necessária: {{.Required}}"
 

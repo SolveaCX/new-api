@@ -175,11 +175,11 @@ func TestCreateStripeSubscriptionCheckoutAppliesInvitationCouponOnce(t *testing.
 	require.Equal(t, "usd", couponForm.Get("currency"))
 	require.Equal(t, string(stripe.CouponDurationOnce), couponForm.Get("duration"))
 	require.Equal(t, "Flatkey invitation package credit", couponForm.Get("name"))
-	require.Equal(t, "idem-invitation-subscription:invitation-coupon", couponIdempotency)
+	require.Equal(t, "idem-invitation-subscription:invitation-coupon:rev:0", couponIdempotency)
 	require.Equal(t, "coupon_invitation_once", sessionForm.Get("discounts[0][coupon]"))
 	require.Empty(t, sessionForm.Get("discounts[1][coupon]"))
 	require.Empty(t, sessionForm.Get("allow_promotion_codes"))
-	require.Equal(t, "idem-invitation-subscription", sessionIdempotency)
+	require.Contains(t, sessionIdempotency, "idem-invitation-subscription:rev:0:discount:")
 	for _, prefix := range []string{"metadata", "subscription_data[metadata]"} {
 		require.Equal(t, "invitation", sessionForm.Get(prefix+"[discount_kind]"))
 		require.Equal(t, "525", sessionForm.Get(prefix+"[subscription_discount_amount_minor]"))
@@ -225,23 +225,135 @@ func TestCreateStripeSubscriptionCheckoutDiscountSelectionVariants(t *testing.T)
 	_, err := createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
 		TradeNo: "sub_recall_winner", UserID: 8111, PlanID: 8211, ContractID: 8311, ChangeIntentID: 8411,
 		Email: "recall@example.com", PriceID: "price_recall", DiscountKind: SubscriptionDiscountKindRecall,
-		RecallDiscount: &RecallCheckoutDiscount{PromotionCodeID: "promo_recall_winner", CampaignID: 1, RecipientID: 2},
+		DiscountSelection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountRecall, PromotionCodeID: "promo_recall_winner"},
+		RecallDiscount:    &RecallCheckoutDiscount{PromotionCodeID: "promo_recall_winner", CampaignID: 1, RecipientID: 2},
 	})
 	require.NoError(t, err)
 	_, err = createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
 		TradeNo: "sub_no_discount", UserID: 8112, PlanID: 8212, ContractID: 8312, ChangeIntentID: 8412,
 		Email: "none@example.com", PriceID: "price_none", DiscountKind: SubscriptionDiscountKindNone,
+		DiscountSelection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone},
+	})
+	require.NoError(t, err)
+	_, err = createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
+		TradeNo: "sub_invitation_restore", UserID: 8113, PlanID: 8213, ContractID: 8313, ChangeIntentID: 8413,
+		Email: "invitation@example.com", PriceID: "price_invitation_restore", DiscountKind: SubscriptionDiscountKindInvitation,
+		DiscountSelection: StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountInvitation, CouponID: "coupon_invitation_restore"},
 	})
 	require.NoError(t, err)
 
 	require.Zero(t, couponCalls)
-	require.Len(t, sessionForms, 2)
+	require.Len(t, sessionForms, 3)
 	require.Equal(t, "promo_recall_winner", sessionForms[0].Get("discounts[0][promotion_code]"))
 	require.Empty(t, sessionForms[0].Get("discounts[0][coupon]"))
 	require.Empty(t, sessionForms[0].Get("allow_promotion_codes"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][promotion_code]"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][coupon]"))
 	require.Empty(t, sessionForms[1].Get("allow_promotion_codes"))
+	require.Equal(t, "coupon_invitation_restore", sessionForms[2].Get("discounts[0][coupon]"))
+	require.Empty(t, sessionForms[2].Get("discounts[0][promotion_code]"))
+	require.Empty(t, sessionForms[2].Get("discounts[1][coupon]"))
+	require.Empty(t, sessionForms[2].Get("allow_promotion_codes"))
+}
+
+func TestStripeSubscriptionCheckoutRevision(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	originalKey := stripe.Key
+	var form url.Values
+	var idempotencyKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/v1/checkout/sessions", r.URL.Path)
+		require.NoError(t, r.ParseForm())
+		form = r.PostForm
+		idempotencyKey = r.Header.Get("Idempotency-Key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cs_revision_subscription","object":"checkout.session","url":"https://checkout.example/revision"}`))
+	}))
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+		URL:               stripe.String(server.URL),
+		HTTPClient:        server.Client(),
+		MaxNetworkRetries: stripe.Int64(0),
+		LeveledLogger:     &stripe.LeveledLogger{Level: stripe.LevelNull},
+	}))
+	setting.StripeApiSecret = "sk_test_subscription_revision"
+	t.Cleanup(func() {
+		server.Close()
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+		stripe.Key = originalKey
+	})
+
+	selection := StripeCheckoutDiscountSelection{
+		Source:          StripeCheckoutDiscountManual,
+		PromotionCodeID: "promo_manual_7",
+		MaskedCode:      "MAN***-7",
+	}
+	session, err := createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
+		TradeNo:           "sub_revision_checkout",
+		UserID:            8113,
+		PlanID:            8213,
+		ContractID:        8313,
+		ChangeIntentID:    8413,
+		Email:             "manual@example.com",
+		PriceID:           "price_revision_subscription",
+		IdempotencyKey:    "idem-revision-subscription",
+		CheckoutRevision:  2,
+		DiscountSelection: selection,
+		RecallDiscount: &RecallCheckoutDiscount{
+			PromotionCodeID: "promo_recall_must_not_leak",
+			CampaignID:      8513,
+			RecipientID:     8613,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_revision_subscription", session.ID)
+	require.Equal(t, "promo_manual_7", form.Get("discounts[0][promotion_code]"))
+	require.Empty(t, form.Get("discounts[0][coupon]"))
+	for _, prefix := range []string{"metadata", "subscription_data[metadata]"} {
+		require.Equal(t, "sub_revision_checkout", form.Get(prefix+"[trade_no]"))
+		require.Equal(t, "2", form.Get(prefix+"[checkout_revision]"))
+		require.Equal(t, "manual", form.Get(prefix+"[discount_selection]"))
+		require.Empty(t, form.Get(prefix+"[recall_campaign_id]"))
+		require.Empty(t, form.Get(prefix+"[recall_recipient_id]"))
+		require.Empty(t, form.Get(prefix+"[recall_promotion_code_id]"))
+	}
+	require.Contains(t, idempotencyKey, ":rev:2:")
+	require.NotContains(t, idempotencyKey, "promo_manual_7")
+	require.NotContains(t, idempotencyKey, "MAN***-7")
+}
+
+func TestStripeSubscriptionCheckoutRejectsInvalidExplicitSelectionBeforeSessionCreation(t *testing.T) {
+	originalSecret := setting.StripeApiSecret
+	originalCreator := stripeSubscriptionSessionCreator
+	setting.StripeApiSecret = "sk_test_invalid_selection"
+	creatorCalled := false
+	stripeSubscriptionSessionCreator = func(context.Context, *stripe.CheckoutSessionParams) (*stripe.CheckoutSession, error) {
+		creatorCalled = true
+		return nil, errors.New("unexpected session creation")
+	}
+	t.Cleanup(func() {
+		setting.StripeApiSecret = originalSecret
+		stripeSubscriptionSessionCreator = originalCreator
+	})
+
+	tests := []StripeCheckoutDiscountSelection{
+		{Source: "affiliate"},
+		{Source: StripeCheckoutDiscountInvitation},
+		{Source: StripeCheckoutDiscountManual},
+		{Source: StripeCheckoutDiscountRecall},
+	}
+	for _, selection := range tests {
+		_, err := createStripeSubscriptionCheckout(context.Background(), StripeSubscriptionCheckoutInput{
+			TradeNo:           "sub_invalid_selection",
+			PriceID:           "price_invalid_selection",
+			DiscountSelection: selection,
+		})
+		require.Error(t, err)
+	}
+	require.False(t, creatorCalled)
 }
 
 func TestPaymentAnalyticsEventForPaidRenewalUsesCurrentPlanID(t *testing.T) {

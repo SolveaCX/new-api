@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -89,9 +90,28 @@ func rateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gi
 
 func GlobalWebRateLimit() func(c *gin.Context) {
 	if common.GlobalWebRateLimitEnable {
-		return rateLimitFactory(common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration, "GW")
+		limiter := rateLimitFactory(common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration, "GW")
+		return func(c *gin.Context) {
+			// Static assets are requested in bursts while the SPA boots. They
+			// should not consume the per-IP page request budget and make the
+			// document request fail with 429 after a normal asset load.
+			if isStaticWebAsset(c.Request.URL.Path) {
+				c.Next()
+				return
+			}
+			limiter(c)
+		}
 	}
 	return defNext
+}
+
+func isStaticWebAsset(requestPath string) bool {
+	switch path.Ext(requestPath) {
+	case ".css", ".eot", ".gif", ".ico", ".jpeg", ".jpg", ".js", ".map", ".png", ".svg", ".ttf", ".wasm", ".webp", ".woff", ".woff2":
+		return true
+	default:
+		return false
+	}
 }
 
 func GlobalAPIRateLimit() func(c *gin.Context) {

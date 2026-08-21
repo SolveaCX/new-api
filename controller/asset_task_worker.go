@@ -263,9 +263,8 @@ func taskBillingContextSnapshot(info *relaycommon.RelayInfo) *model.TaskBillingC
 	}
 	if info.BillingSource == service.BillingSourceSubscription {
 		if bs, ok := info.Billing.(*service.BillingSession); ok && bs != nil {
-			weight, window := bs.SubscriptionTaskSnapshot()
+			weight, _ := bs.SubscriptionTaskSnapshot()
 			snapshot.SubscriptionWeight = weight
-			snapshot.SubscriptionWindow = window
 		}
 	}
 	return snapshot
@@ -732,12 +731,10 @@ func taskPollingKey(channel *model.Channel, info *relaycommon.RelayInfo) string 
 	if channel == nil || info == nil || info.ChannelMeta == nil {
 		return ""
 	}
-	switch channel.Type {
-	case constant.ChannelTypeTechMobiVideo, constant.ChannelTypeModelAPISeedance:
+	if model.TaskChannelTypePersistsPollingKey(channel.Type) {
 		return strings.TrimSpace(info.ChannelMeta.ApiKey)
-	default:
-		return ""
 	}
+	return ""
 }
 
 func acceptLeasedAssetTask(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task, owner string, lease *taskPreparationLease, channel *model.Channel, result *relay.TaskSubmitResult) error {

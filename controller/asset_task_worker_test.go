@@ -520,6 +520,21 @@ func TestModelAPISeedanceAssetTaskWorkerPersistsSelectedKeyAfterAcceptance(t *te
 	require.Equal(t, "modelapi-key-b", stored.PrivateData.Key)
 }
 
+func TestGrokAssetTaskWorkerPollingKeyPolicyDoesNotPersistOAuth(t *testing.T) {
+	key := taskPollingKey(&model.Channel{
+		Id:   113,
+		Type: constant.ChannelTypeGrokSubscription,
+		Key:  `{"access_token":"oauth-access","refresh_token":"oauth-refresh","expires_at":4102444800}`,
+	}, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeGrokSubscription,
+			ApiKey:      `{"access_token":"oauth-access","refresh_token":"oauth-refresh","expires_at":4102444800}`,
+		},
+	})
+
+	require.Empty(t, key)
+}
+
 func TestTechMobiAssetTaskWorkerRequeuesProcessingBindingThenSubmitsWhenActive(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()
@@ -1436,7 +1451,7 @@ func TestAssetTaskWorkerAcceptedSubscriptionUsesSnapshotForSettlement(t *testing
 	require.EqualValues(t, 1, consumeLogs)
 }
 
-func TestAssetTaskQueuePersistsSubscriptionBillingSnapshot(t *testing.T) {
+func TestAssetTaskQueuePersistsSubscriptionSnapshot(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()
 	restorePricing := useControllerAssetTaskPricingForTest(t)
@@ -1509,10 +1524,7 @@ func TestAssetTaskQueuePersistsSubscriptionBillingSnapshot(t *testing.T) {
 	require.Equal(t, service.BillingSourceSubscription, task.PrivateData.BillingSource)
 	require.Equal(t, subID, task.PrivateData.SubscriptionId)
 	require.InDelta(t, 1.5, task.PrivateData.BillingContext.SubscriptionWeight, 0.0001)
-	require.NotNil(t, task.PrivateData.BillingContext.SubscriptionWindow)
-	require.Equal(t, subID, task.PrivateData.BillingContext.SubscriptionWindow.SubId)
-	require.Equal(t, window5h, task.PrivateData.BillingContext.SubscriptionWindow.Limit5h)
-	require.Equal(t, windowWeek, task.PrivateData.BillingContext.SubscriptionWindow.LimitWeek)
+	require.Nil(t, task.PrivateData.BillingContext.SubscriptionWindow)
 
 	beforeRefund := getControllerSubscriptionUsed(t, subID)
 	service.RefundTaskQuota(context.Background(), &task, "restart refund")

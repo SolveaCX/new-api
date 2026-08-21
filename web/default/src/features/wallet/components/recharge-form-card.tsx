@@ -24,6 +24,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  formatRecallExpiryDate,
   getRecallPriceDiscount,
   getTopupStripePriceId,
   selectBestRecallOffer,
@@ -31,6 +32,8 @@ import {
 } from '../lib/recall-claim'
 import {
   STRIPE_CHECKOUT_CURRENCY_OPTIONS,
+  currencySupportsPresetAmounts,
+  stripeTopUpDisplayAmount,
   type StripeCheckoutCurrency,
 } from '../lib/stripe-currency'
 import type { PresetAmount, RecallOfferView, TopupInfo } from '../types'
@@ -83,15 +86,37 @@ function getConfiguredPresetAmounts(
 }
 
 export function RechargeFormCard(props: RechargeFormCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const checkoutCurrency = props.checkoutCurrency ?? 'USD'
   const checkoutCurrencySymbol = CURRENCY_SYMBOLS[checkoutCurrency]
+  const stripeCurrencyPrices = props.topupInfo?.stripe_currency_prices ?? {}
   const stripeEnabled =
     props.topupInfo?.enable_stripe_topup ||
     props.topupInfo?.pay_methods?.some((method) => method.type === 'stripe')
-  const presets = getConfiguredPresetAmounts(props.presetAmounts)
+  const configuredPresets = getConfiguredPresetAmounts(props.presetAmounts)
+  const configuredPresetValues = configuredPresets.map((preset) => preset.value)
+  const presets = configuredPresets
+    .map((preset) => ({
+      preset,
+      displayAmount: stripeTopUpDisplayAmount(
+        stripeCurrencyPrices,
+        checkoutCurrency,
+        preset.value
+      ),
+    }))
+    .filter(
+      (preset): preset is { preset: PresetAmount; displayAmount: number } =>
+        preset.displayAmount !== undefined
+    )
+  const currencyOptions = STRIPE_CHECKOUT_CURRENCY_OPTIONS.filter((currency) =>
+    currencySupportsPresetAmounts(
+      stripeCurrencyPrices,
+      currency,
+      configuredPresetValues
+    )
+  )
   const selected =
-    presets.find((preset) => preset.value === props.selectedPreset) ||
+    presets.find((preset) => preset.preset.value === props.selectedPreset) ||
     presets[0]
 
   if (props.loading) {
@@ -132,8 +157,8 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
       </div>
 
       <div className='grid grid-cols-3 gap-2 sm:grid-cols-5'>
-        {presets.map((preset) => {
-          const isSelected = selected?.value === preset.value
+        {presets.map(({ preset, displayAmount }) => {
+          const isSelected = selected?.preset.value === preset.value
           const stripePriceId = getTopupStripePriceId(
             props.topupInfo?.stripe_price_ids,
             preset.value
@@ -141,16 +166,22 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
           const recallOffer = selectBestRecallOffer(props.recallOffers ?? [], {
             purchaseKind: 'topup',
             productId: stripePriceId,
-            amountMajor: preset.value,
+            amountMajor: displayAmount,
             currency: props.checkoutCurrency ?? 'USD',
           })
           const recallDiscount = getRecallPriceDiscount(
             recallOffer,
             stripePriceId,
             'topup',
-            preset.value,
+            displayAmount,
             checkoutCurrency
           )
+          const recallExpiryDate = recallOffer
+            ? formatRecallExpiryDate(
+                recallOffer.expires_at,
+                i18n.resolvedLanguage || i18n.language || 'en-US'
+              )
+            : ''
           return (
             <Button
               key={preset.value}
@@ -164,20 +195,11 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
               onClick={() => props.onSelectPreset(preset)}
             >
               <span className='flex flex-col items-center gap-1 leading-tight'>
-                {recallDiscount ? (
-                  <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 text-[10px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
-                    {getRecallDiscountLabel(
-                      recallDiscount,
-                      Number(recallOffer?.discount.percent_off || 0),
-                      t
-                    )}
-                  </span>
-                ) : null}
                 <span className='flex items-baseline justify-center gap-1'>
                   <span>
                     {recallDiscount
                       ? `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountedAmount)}`
-                      : `$${formatNumber(preset.value)}`}
+                      : `${checkoutCurrencySymbol}${formatNumber(displayAmount)}`}
                   </span>
                   {recallDiscount ? (
                     <span className='text-[10px] font-medium line-through opacity-75'>
@@ -187,10 +209,24 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                   ) : null}
                 </span>
                 {recallDiscount ? (
-                  <span className='text-[10px] font-medium text-[#166534] dark:text-[#86efac]'>
-                    {t('Save {{amount}}', {
-                      amount: `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountAmount)}`,
-                    })}
+                  <span className='flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-[10px] font-medium text-[#166534] dark:text-[#86efac]'>
+                    <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
+                      {getRecallDiscountLabel(
+                        recallDiscount,
+                        Number(recallOffer?.discount.percent_off || 0),
+                        t
+                      )}
+                    </span>
+                    <span>
+                      {t('Save {{amount}}', {
+                        amount: `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountAmount)}`,
+                      })}
+                    </span>
+                    {recallExpiryDate ? (
+                      <span>
+                        {t('Expires {{date}}', { date: recallExpiryDate })}
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
               </span>
@@ -204,7 +240,7 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
           <span className='text-muted-foreground mr-1 text-xs'>
             {t('Checkout currency')}
           </span>
-          {STRIPE_CHECKOUT_CURRENCY_OPTIONS.map((currency) => (
+          {currencyOptions.map((currency) => (
             <Button
               key={currency}
               type='button'
@@ -225,7 +261,7 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
       <Button
         className='w-full bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
         disabled={!selected || !!props.paymentLoadingAmount}
-        onClick={() => selected && props.onStripeTopUp(selected)}
+        onClick={() => selected && props.onStripeTopUp(selected.preset)}
       >
         {props.paymentLoadingAmount ? (
           <Loader2 className='mr-2 h-4 w-4 animate-spin' />

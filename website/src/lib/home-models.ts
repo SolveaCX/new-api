@@ -116,7 +116,6 @@ export function buildHomeModelRows(data: PricingData): HomePricedModel[] {
   return sortPricingModelsBySeries(pricedTokenModels(data)).map((model) => toHomeRow(model, data));
 }
 
-/** Keep one priced row per model name when the upstream payload has duplicates. */
 export function finalHomePricedRowsByName(rows: HomePricedModel[]): HomePricedModel[] {
   return [...new Map(rows.map((row) => [row.name, row])).values()];
 }
@@ -131,16 +130,17 @@ export function buildRowsForModels(
   groupModelRatio: GroupModelRatio = {}
 ): HomePricedModel[] {
   return models
-    .filter((model) => {
-      const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, groupModelRatio);
-      return getOfficialPriceUsd(model) > 0 || resolveModelDisplayPrice(model, undefined, "plg", effectiveGroupRatio) != null;
-    })
+    .filter((model) => getOfficialPriceUsd(model) > 0 || resolveModelDisplayPrice(model, undefined, "plg", groupRatio) != null)
     .map((model) => {
       const official = getOfficialPriceUsd(model);
       // Per-model overrides in group_model_ratio beat the flat group ratio
       // during billing, so the quoted price has to apply them too — otherwise a
       // model priced below its group is advertised higher than it is charged.
-      const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, groupModelRatio);
+      // The model's own group_model_ratio is the fallback, so a caller that
+      // omits the payload-level map still quotes the billed rate.
+      const overrides =
+        Object.keys(groupModelRatio).length > 0 ? groupModelRatio : modelScopedGroupModelRatio(model);
+      const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, overrides);
       const listed = official * getBestGroupRatio(model, effectiveGroupRatio);
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
       const displayPrice = resolveModelDisplayPrice(model, undefined, "plg", effectiveGroupRatio);
@@ -201,7 +201,7 @@ function pricedTokenModels(data: PricingData): PricingModel[] {
 // (i.e. 60-90% of official). The top-up bonus layer is retired.
 function toHomeRow(model: PricingModel, data: PricingData): HomePricedModel {
   const official = getOfficialPriceUsd(model);
-  const listed = official * getBestGroupRatio(model, data.groupRatio);
+  const listed = official * getBestGroupRatio(model, data.groupRatio, data.groupModelRatio);
   const vendor = model.vendor_name ?? getVendorName(model, data.vendors);
   return {
     name: model.model_name,
@@ -212,6 +212,21 @@ function toHomeRow(model: PricingModel, data: PricingData): HomePricedModel {
     discountedUsd: discountedPriceUsd(listed),
     iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
   };
+}
+
+/**
+ * The per-model overrides carried on the model itself, reshaped like the
+ * payload-level map. `enrichVendorNames` attaches these, so a caller holding an
+ * enriched model but not the top-level map still resolves the billed ratio.
+ */
+function modelScopedGroupModelRatio(model: PricingModel): GroupModelRatio {
+  const own = model.group_model_ratio;
+  if (!own) return {};
+  const scoped: GroupModelRatio = {};
+  for (const [group, ratio] of Object.entries(own)) {
+    if (typeof ratio === "number" && Number.isFinite(ratio)) scoped[group] = { [model.model_name]: ratio };
+  }
+  return scoped;
 }
 
 function normalizeDisplayUnit(unit: string): string {
