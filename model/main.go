@@ -377,6 +377,7 @@ func orderedMigrationModels() []migrationModel {
 		{&AssetModelCoverageTarget{}, "AssetModelCoverageTarget"},
 		{&AssetModelReadiness{}, "AssetModelReadiness"},
 		{&Model{}, "Model"},
+		{&ModelDirectoryMetadata{}, "ModelDirectoryMetadata"},
 		{&Vendor{}, "Vendor"},
 		{&WebsiteFeaturedModel{}, "WebsiteFeaturedModel"},
 		{&PrefillGroup{}, "PrefillGroup"},
