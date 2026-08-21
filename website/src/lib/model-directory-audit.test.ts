@@ -7,6 +7,7 @@ import {
   type AuditModelDirectoryMetadata,
   type AuditModelDirectoryRow,
 } from "./model-directory-audit";
+import { assembleAuditRowsFromPricingPayload, runModelDirectoryAuditCli } from "../../scripts/audit-model-directory-metadata";
 
 const COMPLETE_META: AuditModelDirectoryMetadata = {
   series: "GPT",
@@ -191,8 +192,246 @@ describe("model directory metadata audit", () => {
 
     expect(report.issues[0]).not.toHaveProperty("suggestedValue");
     expect(report.issues[0]).not.toHaveProperty("source");
+    expect(report.issues[0]).not.toHaveProperty("suggestedSource");
     expect(report.issues[0]).not.toHaveProperty("confidence");
     expect(report.issues[0]?.backfillSqlEligible).toBe(false);
+  });
+
+  test("trusted suggestions retain provenance and enable backfill eligibility metadata only", () => {
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: [{ ...COMPLETE_ROW, inputFilterUsd: undefined }],
+      metadata: { [COMPLETE_ROW.name]: COMPLETE_META },
+      suggestions: {
+        "gpt-test:inputFilterUsd": {
+          suggestedValue: 0.75,
+          suggestedSource: "pricing payload display_pricing.gpt-test.input.plg",
+          confidence: "high",
+        },
+      },
+    });
+
+    expect(report.issues).toHaveLength(1);
+    expect(report.issues[0]).toMatchObject({
+      suggestedValue: 0.75,
+      suggestedSource: "pricing payload display_pricing.gpt-test.input.plg",
+      confidence: "high",
+      backfillSqlEligible: true,
+    });
+    expect(report.issues[0]).not.toHaveProperty("source");
+  });
+
+  test("markdown renders suggestion evidence, affected filters, current value, and review status", () => {
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: [{ ...COMPLETE_ROW, inputFilterUsd: undefined }],
+      metadata: { [COMPLETE_ROW.name]: COMPLETE_META },
+      suggestions: {
+        "gpt-test:inputFilterUsd": {
+          suggestedValue: 0.75,
+          suggestedSource: "pricing payload display_pricing.gpt-test.input.plg",
+          confidence: "high",
+        },
+      },
+    });
+
+    const markdown = renderModelDirectoryAuditMarkdown(report);
+
+    expect(markdown).toContain("inputPrice");
+    expect(markdown).toContain("undefined");
+    expect(markdown).toContain("pending");
+    expect(markdown).toContain("0.75");
+    expect(markdown).toContain("pricing payload display_pricing.gpt-test.input.plg");
+    expect(markdown).toContain("high");
+  });
+
+  test("issues preserve production modelId from audit rows", () => {
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: [{ ...COMPLETE_ROW, modelId: 917, inputFilterUsd: undefined }],
+      metadata: { [COMPLETE_ROW.name]: COMPLETE_META },
+    });
+
+    expect(report.issues[0]?.modelId).toBe("917");
+  });
+});
+
+describe("model directory audit CLI assembly", () => {
+  test("keeps live unpriced catalogue records in the audit rows", () => {
+    const rows = assembleAuditRowsFromPricingPayload({
+      success: true,
+      vendors: [{ id: 1, name: "Live Vendor" }],
+      group_ratio: { plg: 0.9 },
+      data: [
+        {
+          id: 101,
+          model_name: "gpt-test",
+          vendor_id: 1,
+          quota_type: 0,
+          model_ratio: 0.5,
+          completion_ratio: 2,
+          enable_groups: ["plg"],
+        },
+        {
+          id: 202,
+          model_name: "unpriced-live",
+          vendor_id: 1,
+          quota_type: 1,
+          model_ratio: 0,
+          completion_ratio: 0,
+          model_price: 0,
+          enable_groups: ["plg"],
+        },
+      ],
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.name === "unpriced-live")).toMatchObject({
+      modelId: 202,
+      name: "unpriced-live",
+      vendor: "Live Vendor",
+      billingUnit: undefined,
+      inputFilterUsd: undefined,
+      outputFilterUsd: undefined,
+    });
+
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows,
+      metadata: {
+        "gpt-test": COMPLETE_META,
+        "unpriced-live": COMPLETE_META,
+      },
+    });
+    expect(report.modelCount).toBe(2);
+    expect(issueKeys(report.issues)).toEqual([
+      "missing:unpriced-live:billingUnit",
+      "missing:unpriced-live:inputFilterUsd",
+      "missing:unpriced-live:outputFilterUsd",
+    ]);
+  });
+
+  test("preserves raw duplicate identities and live vendors for collision detection", () => {
+    const rows = assembleAuditRowsFromPricingPayload({
+      success: true,
+      vendors: [
+        { id: 1, name: "Live Vendor" },
+        { id: 2, name: "Other Provider" },
+      ],
+      group_ratio: { plg: 0.9 },
+      data: [
+        {
+          id: 101,
+          model_name: "gpt-4.1-mini",
+          vendor_id: 1,
+          quota_type: 0,
+          model_ratio: 0.2,
+          completion_ratio: 4,
+          enable_groups: ["plg"],
+        },
+        {
+          id: 102,
+          model_name: "gpt-4.1-mini",
+          vendor_id: 2,
+          quota_type: 0,
+          model_ratio: 0.3,
+          completion_ratio: 4,
+          enable_groups: ["plg"],
+        },
+      ],
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => ({ modelId: row.modelId, vendor: row.vendor }))).toEqual([
+      { modelId: 101, vendor: "Live Vendor" },
+      { modelId: 102, vendor: "Other Provider" },
+    ]);
+  });
+
+  test("carries usable ids for malformed records while continuing valid rows", () => {
+    const rows = assembleAuditRowsFromPricingPayload({
+      success: true,
+      vendors: [{ id: 1, name: "Live Vendor" }],
+      group_ratio: { plg: 0.9 },
+      data: [
+        {
+          id: 301,
+          model_name: "malformed-live",
+          vendor_id: 1,
+          quota_type: "token",
+          model_ratio: 0.2,
+          completion_ratio: 4,
+        },
+        {
+          id: 302,
+          model_name: "gpt-test",
+          vendor_id: 1,
+          quota_type: 0,
+          model_ratio: 0.5,
+          completion_ratio: 2,
+          enable_groups: ["plg"],
+        },
+      ],
+    });
+
+    expect(rows.map((row) => ({ modelId: row.modelId, name: row.name }))).toEqual([
+      { modelId: 302, name: "gpt-test" },
+      { modelId: 301, name: "malformed-live" },
+    ]);
+  });
+});
+
+describe("model directory audit CLI runner", () => {
+  test("rejects non-ok pricing fetch without writing or logging success", async () => {
+    const calls: string[] = [];
+
+    await expect(
+      runModelDirectoryAuditCli({
+        env: { APP_CONSOLE_ORIGIN: "https://console.test", MODEL_DIRECTORY_AUDIT_OUT_DIR: "tmp/audit" },
+        fetchImpl: async () => new Response("nope", { status: 503 }),
+        mkdirImpl: async () => {
+          calls.push("mkdir");
+        },
+        writeFileImpl: async () => {
+          calls.push("write");
+        },
+        logImpl: () => {
+          calls.push("log");
+        },
+        now: () => new Date("2026-08-21T00:00:00.000Z"),
+      })
+    ).rejects.toThrow("pricing fetch failed: 503");
+
+    expect(calls).toEqual([]);
+  });
+
+  test("rejects missing console origin without fetching or writing", async () => {
+    const calls: string[] = [];
+
+    await expect(
+      runModelDirectoryAuditCli({
+        env: {},
+        fetchImpl: async () => {
+          calls.push("fetch");
+          return new Response(null, { status: 200 });
+        },
+        mkdirImpl: async () => {
+          calls.push("mkdir");
+        },
+        writeFileImpl: async () => {
+          calls.push("write");
+        },
+        logImpl: () => {
+          calls.push("log");
+        },
+      })
+    ).rejects.toThrow("APP_CONSOLE_ORIGIN is required");
+
+    expect(calls).toEqual([]);
   });
 });
 

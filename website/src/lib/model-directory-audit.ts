@@ -20,7 +20,7 @@ export type AffectedFilter =
 
 export type TrustedSuggestion = {
   suggestedValue: unknown;
-  source: string;
+  suggestedSource: string;
   confidence: "low" | "medium" | "high";
 };
 
@@ -53,7 +53,7 @@ export type AuditIssue = {
   kind: AuditIssueKind;
   currentValue: unknown;
   suggestedValue?: unknown;
-  source?: string;
+  suggestedSource?: string;
   confidence?: "low" | "medium" | "high";
   affectedFilters: AffectedFilter[];
   backfillSqlEligible: boolean;
@@ -162,11 +162,11 @@ export function renderModelDirectoryAuditMarkdown(report: ModelDirectoryAuditRep
     return `${lines.join("\n")}\n`;
   }
 
-  lines.push("| Status | Model | Field | Affected filters | Current value |");
-  lines.push("| --- | --- | --- | --- | --- |");
+  lines.push("| Status | Model | Field | Affected filters | Current value | Suggested value | Suggested source | Confidence | Review status |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const issue of report.issues) {
     lines.push(
-      `| ${escapeMarkdown(issue.status)} | ${escapeMarkdown(issue.modelName)} | ${escapeMarkdown(issue.field)} | ${escapeMarkdown(issue.affectedFilters.join(", "))} | ${escapeMarkdown(formatValue(issue.currentValue))} |`
+      `| ${escapeMarkdown(issue.status)} | ${escapeMarkdown(issue.modelName)} | ${escapeMarkdown(issue.field)} | ${escapeMarkdown(issue.affectedFilters.join(", "))} | ${escapeMarkdown(formatValue(issue.currentValue))} | ${escapeMarkdown(formatOptionalValue(issue.suggestedValue))} | ${escapeMarkdown(issue.suggestedSource ?? "")} | ${escapeMarkdown(issue.confidence ?? "")} | ${escapeMarkdown(issue.reviewStatus)} |`
     );
   }
   return `${lines.join("\n")}\n`;
@@ -401,7 +401,7 @@ function makeIssue(input: {
   suggestions?: Record<string, TrustedSuggestion>;
 }): AuditIssue {
   const suggestion = input.suggestions?.[suggestionKey(input.row.name, input.field)];
-  const hasTrustedSuggestion = suggestion?.source && suggestion.suggestedValue !== undefined;
+  const hasTrustedSuggestion = suggestion?.suggestedSource && suggestion.suggestedValue !== undefined;
   return {
     modelId: String(input.row.modelId ?? input.row.name),
     modelName: input.row.name,
@@ -410,11 +410,11 @@ function makeIssue(input: {
     kind: input.kind,
     currentValue: input.currentValue,
     ...(hasTrustedSuggestion
-      ? {
-          suggestedValue: suggestion.suggestedValue,
-          source: suggestion.source,
-          confidence: suggestion.confidence,
-        }
+        ? {
+            suggestedValue: suggestion.suggestedValue,
+            suggestedSource: suggestion.suggestedSource,
+            confidence: suggestion.confidence,
+          }
       : {}),
     affectedFilters: [...input.affectedFilters],
     backfillSqlEligible: Boolean(hasTrustedSuggestion),
@@ -462,6 +462,10 @@ function formatValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatOptionalValue(value: unknown): string {
+  return value === undefined ? "" : formatValue(value);
 }
 
 function escapeMarkdown(value: string): string {

@@ -7,6 +7,7 @@ import {
 } from "../src/lib/model-directory-audit";
 import { MODEL_DIRECTORY_META } from "../src/lib/model-directory-meta-data";
 import { buildRowsForModels, finalHomePricedRowsByName } from "../src/lib/home-models";
+import { getVendorName } from "../src/lib/pricing";
 import type {
   DisplayPricingDimension,
   DisplayPricingUnit,
@@ -26,57 +27,84 @@ type PricingApiResponse = {
   display_pricing?: unknown;
 };
 
-const OUTPUT_DIR = process.env.MODEL_DIRECTORY_AUDIT_OUT_DIR || "reports/model-directory";
 const JSON_REPORT_NAME = "production-model-directory-audit.json";
 const MARKDOWN_REPORT_NAME = "production-model-directory-audit.md";
 
-async function main() {
-  const origin = process.env.APP_CONSOLE_ORIGIN;
+export type ModelDirectoryAuditCliDeps = {
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+  mkdirImpl?: typeof mkdir;
+  writeFileImpl?: typeof writeFile;
+  logImpl?: (message: string) => void;
+  now?: () => Date;
+};
+
+export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps = {}) {
+  const env = deps.env ?? process.env;
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const mkdirImpl = deps.mkdirImpl ?? mkdir;
+  const writeFileImpl = deps.writeFileImpl ?? writeFile;
+  const logImpl = deps.logImpl ?? console.log;
+  const now = deps.now ?? (() => new Date());
+  const origin = env.APP_CONSOLE_ORIGIN;
   if (!origin) throw new Error("APP_CONSOLE_ORIGIN is required");
 
   const pricingUrl = new URL("/api/website/pricing", origin);
-  const response = await fetch(pricingUrl, {
+  const response = await fetchImpl(pricingUrl, {
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw new Error(`pricing fetch failed: ${response.status}`);
 
   const payload = (await response.json()) as PricingApiResponse;
+  const auditRows = assembleAuditRowsFromPricingPayload(payload);
+
+  const report = auditModelDirectoryCatalog({
+    generatedAt: now().toISOString(),
+    source: pricingUrl.toString(),
+    rows: auditRows,
+    metadata: MODEL_DIRECTORY_META,
+  });
+
+  const outputDir = env.MODEL_DIRECTORY_AUDIT_OUT_DIR || "reports/model-directory";
+  await mkdirImpl(outputDir, { recursive: true });
+  const jsonPath = join(outputDir, JSON_REPORT_NAME);
+  const markdownPath = join(outputDir, MARKDOWN_REPORT_NAME);
+  await writeFileImpl(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFileImpl(markdownPath, renderModelDirectoryAuditMarkdown(report), "utf8");
+
+  logImpl(`JSON report: ${jsonPath}`);
+  logImpl(`Markdown report: ${markdownPath}`);
+  logImpl(`Issue count: ${report.issues.length}`);
+  logImpl("No production write occurred.");
+}
+
+export function assembleAuditRowsFromPricingPayload(payload: PricingApiResponse): AuditModelDirectoryRow[] {
   const { models, malformedRows, vendors, groupRatio, groupModelRatio } = parsePricingPayload(payload);
   const displayPricing = parseDisplayPricingMap(payload.display_pricing);
   const modelsWithDisplayPricing = models.map((model) => {
     const display = displayPricing[model.model_name];
     return display ? { ...model, display_pricing: display } : model;
   });
-
-  const pricedRows = finalHomePricedRowsByName(buildRowsForModels(modelsWithDisplayPricing, vendors, groupRatio, groupModelRatio));
-  const auditRows: AuditModelDirectoryRow[] = [
-    ...pricedRows.map((row) => ({
-      name: row.name,
-      vendor: row.vendor,
-      billingUnit: row.billingUnit,
-      inputFilterUsd: row.inputFilterUsd,
-      outputFilterUsd: row.outputFilterUsd,
-    })),
+  const visibleRows = finalHomePricedRowsByName(buildRowsForModels(modelsWithDisplayPricing, vendors, groupRatio, groupModelRatio));
+  const visibleByName = new Map(visibleRows.map((row) => [row.name, row]));
+  return [
+    ...models.map((model) => {
+      const visible = visibleByName.get(model.model_name);
+      const hasUsablePricing =
+        visible?.billingUnit != null &&
+        isPositiveFiniteNumber(visible.inputFilterUsd) &&
+        isPositiveFiniteNumber(visible.outputFilterUsd);
+      return {
+        modelId: model.id,
+        name: model.model_name,
+        vendor: getVendorName(model, vendors),
+        billingUnit: hasUsablePricing ? visible.billingUnit : undefined,
+        inputFilterUsd: hasUsablePricing ? visible.inputFilterUsd : undefined,
+        outputFilterUsd: hasUsablePricing ? visible.outputFilterUsd : undefined,
+      };
+    }),
     ...malformedRows,
   ];
-
-  const report = auditModelDirectoryCatalog({
-    generatedAt: new Date().toISOString(),
-    source: pricingUrl.toString(),
-    rows: auditRows,
-    metadata: MODEL_DIRECTORY_META,
-  });
-
-  await mkdir(OUTPUT_DIR, { recursive: true });
-  const jsonPath = join(OUTPUT_DIR, JSON_REPORT_NAME);
-  const markdownPath = join(OUTPUT_DIR, MARKDOWN_REPORT_NAME);
-  await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  await writeFile(markdownPath, renderModelDirectoryAuditMarkdown(report), "utf8");
-
-  console.log(`JSON report: ${jsonPath}`);
-  console.log(`Markdown report: ${markdownPath}`);
-  console.log(`Issue count: ${report.issues.length}`);
-  console.log("No production write occurred.");
 }
 
 function parsePricingPayload(payload: PricingApiResponse) {
@@ -95,8 +123,9 @@ function parsePricingPayload(payload: PricingApiResponse) {
       models.push(model);
     } else {
       malformedRows.push({
+        modelId: malformedModelId(entry),
         name: malformedModelName(entry, index),
-        vendor: "",
+        vendor: malformedVendor(entry, vendors),
         billingUnit: "malformed",
         inputFilterUsd: undefined,
         outputFilterUsd: undefined,
@@ -245,6 +274,19 @@ function malformedModelName(entry: unknown, index: number): string {
   return `malformed-pricing-record-${index}`;
 }
 
+function malformedModelId(entry: unknown): string | number | undefined {
+  if (!isRecord(entry)) return undefined;
+  const id = entry.id;
+  return typeof id === "string" || isFiniteNumber(id) ? id : undefined;
+}
+
+function malformedVendor(entry: unknown, vendors: PricingVendor[]): string {
+  if (!isRecord(entry)) return "";
+  if (typeof entry.vendor_name === "string") return entry.vendor_name;
+  if (isFiniteNumber(entry.vendor_id)) return vendors.find((vendor) => vendor.id === entry.vendor_id)?.name ?? "";
+  return "";
+}
+
 function nullableNumber(value: unknown): number | null | undefined {
   if (value === null) return null;
   return isFiniteNumber(value) ? value : undefined;
@@ -264,11 +306,17 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (import.meta.main) {
+  runModelDirectoryAuditCli().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
