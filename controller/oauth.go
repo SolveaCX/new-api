@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -673,7 +674,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	// blocks password and other OAuth registrations. Existing-user login was
 	// already allowed for every provider above.
 	registrationCountry, blocked, _ := registrationCountryDecision(c)
-	if blocked && !isGoogleOAuthProvider(provider) {
+	if blocked && (!isGoogleOAuthProvider(provider) || !operation_setting.IsGoogleOAuthAllowed()) {
 		return nil, false, &OAuthRegistrationCountryBlockedError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)

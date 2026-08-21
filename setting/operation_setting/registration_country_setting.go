@@ -15,17 +15,20 @@ type RegistrationCountrySetting struct {
 	Enabled              bool     `json:"enabled"`
 	BlockedCountries     []string `json:"blocked_countries"`
 	AutoDisableCountries []string `json:"auto_disable_countries"`
+	AllowGoogleOAuth     bool     `json:"allow_google_oauth"`
 }
 
 var registrationCountrySetting = RegistrationCountrySetting{
 	Enabled:              true,
 	BlockedCountries:     []string{"MA"},
 	AutoDisableCountries: []string{},
+	AllowGoogleOAuth:     true,
 }
 var registrationCountrySettingMu sync.RWMutex
 
 func init() {
 	config.GlobalConfig.Register("registration_country", &registrationCountrySetting)
+	config.GlobalConfig.RegisterUpdateLock("registration_country", &registrationCountrySettingMu)
 }
 
 func GetRegistrationCountrySetting() *RegistrationCountrySetting {
@@ -125,4 +128,10 @@ func IsCountryAutoDisabled(country string) bool {
 	registrationCountrySettingMu.RLock()
 	defer registrationCountrySettingMu.RUnlock()
 	return registrationCountrySetting.Enabled && countryIn(registrationCountrySetting.AutoDisableCountries, country)
+}
+
+func IsGoogleOAuthAllowed() bool {
+	registrationCountrySettingMu.RLock()
+	defer registrationCountrySettingMu.RUnlock()
+	return registrationCountrySetting.AllowGoogleOAuth
 }
