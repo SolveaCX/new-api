@@ -536,21 +536,34 @@ func BackfillRegistrationCountries() error {
 	lastID := 0
 	for {
 		var batch []*User
-		if err := DB.Where("id > ? AND (registration_country = '' OR registration_country IS NULL) AND registration_ip <> ''", lastID).Order("id").Limit(500).Find(&batch).Error; err != nil {
+		if err := DB.Where("id > ? AND (registration_country = '' OR registration_country IS NULL) AND (registration_ip <> '' OR last_login_ip <> '')", lastID).Order("id").Limit(500).Find(&batch).Error; err != nil {
 			return err
 		}
 		if len(batch) == 0 {
 			return nil
 		}
 		lastID = batch[len(batch)-1].Id
+		updates := make(map[int]string, len(batch))
 		for _, user := range batch {
-			country := ResolveIPCountry(user.RegistrationIP)
+			ip := user.RegistrationIP
+			if ip == "" {
+				ip = user.LastLoginIp
+			}
+			country := ResolveIPCountry(ip)
 			if country == "" {
 				continue
 			}
-			if err := DB.Model(&User{}).Where("id = ?", user.Id).Update("registration_country", country).Error; err != nil {
-				return err
+			updates[user.Id] = country
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			for id, country := range updates {
+				if err := tx.Model(&User{}).Where("id = ?", id).Update("registration_country", country).Error; err != nil {
+					return err
+				}
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 }
