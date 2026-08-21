@@ -90,17 +90,13 @@ export function assembleAuditRowsFromPricingPayload(payload: PricingApiResponse)
   return [
     ...models.map((model) => {
       const visible = visibleByName.get(model.model_name);
-      const hasUsablePricing =
-        visible?.billingUnit != null &&
-        isPositiveFiniteNumber(visible.inputFilterUsd) &&
-        isPositiveFiniteNumber(visible.outputFilterUsd);
       return {
         modelId: model.id,
         name: model.model_name,
         vendor: getVendorName(model, vendors),
-        billingUnit: hasUsablePricing ? visible.billingUnit : undefined,
-        inputFilterUsd: hasUsablePricing ? visible.inputFilterUsd : undefined,
-        outputFilterUsd: hasUsablePricing ? visible.outputFilterUsd : undefined,
+        billingUnit: visible?.billingUnit,
+        inputFilterUsd: visible?.inputFilterUsd,
+        outputFilterUsd: visible?.outputFilterUsd,
       };
     }),
     ...malformedRows,
@@ -304,10 +300,6 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-function isPositiveFiniteNumber(value: unknown): value is number {
-  return isFiniteNumber(value) && value > 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

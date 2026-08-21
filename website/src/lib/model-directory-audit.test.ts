@@ -260,7 +260,7 @@ describe("model directory metadata audit", () => {
 });
 
 describe("model directory audit CLI assembly", () => {
-  test("keeps live unpriced catalogue records in the audit rows", () => {
+  test("keeps live zero-priced catalogue records in the audit rows", () => {
     const rows = assembleAuditRowsFromPricingPayload({
       success: true,
       vendors: [{ id: 1, name: "Live Vendor" }],
@@ -293,9 +293,9 @@ describe("model directory audit CLI assembly", () => {
       modelId: 202,
       name: "unpriced-live",
       vendor: "Live Vendor",
-      billingUnit: undefined,
-      inputFilterUsd: undefined,
-      outputFilterUsd: undefined,
+      billingUnit: "request",
+      inputFilterUsd: 0,
+      outputFilterUsd: 0,
     });
 
     const report = auditModelDirectoryCatalog({
@@ -309,9 +309,8 @@ describe("model directory audit CLI assembly", () => {
     });
     expect(report.modelCount).toBe(2);
     expect(issueKeys(report.issues)).toEqual([
-      "missing:unpriced-live:billingUnit",
-      "missing:unpriced-live:inputFilterUsd",
-      "missing:unpriced-live:outputFilterUsd",
+      "invalid:unpriced-live:inputFilterUsd",
+      "invalid:unpriced-live:outputFilterUsd",
     ]);
   });
 
@@ -350,6 +349,98 @@ describe("model directory audit CLI assembly", () => {
       { modelId: 101, vendor: "Live Vendor" },
       { modelId: 102, vendor: "Other Provider" },
     ]);
+  });
+
+  test("preserves token billing and valid input when only output pricing is zero", () => {
+    const rows = assembleAuditRowsFromPricingPayload({
+      success: true,
+      vendors: [{ id: 1, name: "Live Vendor" }],
+      group_ratio: { plg: 0.9 },
+      data: [
+        {
+          id: 401,
+          model_name: "input-only-token",
+          vendor_id: 1,
+          quota_type: 0,
+          model_ratio: 0.5,
+          completion_ratio: 0,
+          enable_groups: ["plg"],
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      {
+        modelId: 401,
+        name: "input-only-token",
+        vendor: "Live Vendor",
+        billingUnit: "token",
+        inputFilterUsd: 0.9,
+        outputFilterUsd: 0,
+      },
+    ]);
+
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows,
+      metadata: { "input-only-token": COMPLETE_META },
+    });
+
+    expect(issueKeys(report.issues)).toEqual(["invalid:input-only-token:outputFilterUsd"]);
+    expect(report.issues[0]?.currentValue).toBe(0);
+  });
+
+  test("preserves display-priced zero as invalid current value instead of missing", () => {
+    const rows = assembleAuditRowsFromPricingPayload({
+      success: true,
+      vendors: [{ id: 1, name: "Live Vendor" }],
+      group_ratio: { plg: 0.9 },
+      display_pricing: {
+        "zero-display-request": {
+          billing_kind: "request",
+          prices: {
+            request: { configured: 0, plg: 0 },
+          },
+        },
+      },
+      data: [
+        {
+          id: 402,
+          model_name: "zero-display-request",
+          vendor_id: 1,
+          quota_type: 1,
+          model_ratio: 0,
+          completion_ratio: 0,
+          model_price: 0,
+          enable_groups: ["plg"],
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      {
+        modelId: 402,
+        name: "zero-display-request",
+        vendor: "Live Vendor",
+        billingUnit: "request",
+        inputFilterUsd: 0,
+        outputFilterUsd: 0,
+      },
+    ]);
+
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows,
+      metadata: { "zero-display-request": COMPLETE_META },
+    });
+
+    expect(issueKeys(report.issues)).toEqual([
+      "invalid:zero-display-request:inputFilterUsd",
+      "invalid:zero-display-request:outputFilterUsd",
+    ]);
+    expect(report.issues.map((issue) => issue.currentValue)).toEqual([0, 0]);
   });
 
   test("carries usable ids for malformed records while continuing valid rows", () => {
