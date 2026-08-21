@@ -660,6 +660,24 @@ describe("model directory audit CLI assembly", () => {
 });
 
 describe("model directory audit CLI runner", () => {
+  test("audits the same plg pricing scope used by the models directory", async () => {
+    let fetchedUrl = "";
+
+    await runModelDirectoryAuditCli({
+      env: { APP_CONSOLE_ORIGIN: "https://console.test", MODEL_DIRECTORY_AUDIT_OUT_DIR: "tmp/audit" },
+      fetchImpl: async (input) => {
+        fetchedUrl = String(input);
+        return new Response(JSON.stringify({ success: true, data: [] }), { status: 200 });
+      },
+      mkdirImpl: async () => {},
+      writeFileImpl: async () => {},
+      logImpl: () => {},
+      now: () => new Date("2026-08-21T00:00:00.000Z"),
+    });
+
+    expect(fetchedUrl).toBe("https://console.test/api/website/pricing?group=plg");
+  });
+
   test("rejects non-ok pricing fetch without writing or logging success", async () => {
     const calls: string[] = [];
 

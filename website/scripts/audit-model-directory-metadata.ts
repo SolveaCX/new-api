@@ -50,6 +50,7 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
   if (!origin) throw new Error("APP_CONSOLE_ORIGIN is required");
 
   const pricingUrl = new URL("/api/website/pricing", origin);
+  pricingUrl.searchParams.set("group", "plg");
   const response = await fetchImpl(pricingUrl, {
     headers: { accept: "application/json" },
   });
