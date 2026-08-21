@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModelsDirectoryTable } from "@/components/models-directory-table";
 import { ModelsFeaturedCarousel } from "@/components/models-featured-carousel";
 import { ModelsFilterSidebar, type FilterGroup } from "@/components/models-filter-sidebar";
-import { buildRowsForModels, type HomePricedModel } from "@/lib/home-models";
+import { buildRowsForModels, finalHomePricedRowsByName, type HomePricedModel } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   AGE_BAND_LABELS,
@@ -92,24 +92,25 @@ export function ModelsDirectory(props: Props) {
     () => buildRowsForModels(props.models, props.vendors, props.groupRatio, props.groupModelRatio),
     [props.models, props.vendors, props.groupRatio, props.groupModelRatio]
   );
-  const pricedByName = useMemo(() => new Map(priced.map((row) => [row.name, row])), [priced]);
+  const finalPriced = useMemo(() => finalHomePricedRowsByName(priced), [priced]);
+  const pricedByName = useMemo(() => new Map(finalPriced.map((row) => [row.name, row])), [finalPriced]);
 
   // Rows carry everything filtering and sorting need, resolved once per model.
   const rows = useMemo(
     () =>
-      priced.map((row) =>
+      finalPriced.map((row) =>
         buildDirectoryRow({
           name: row.name,
           vendor: row.vendor,
-          inputUsd: parseUsd(row.input) ?? row.discountedUsd,
-          outputUsd: parseUsd(row.output),
+          inputUsd: row.inputFilterUsd,
+          outputUsd: row.outputFilterUsd,
           // Official rate drives the discount sort; both sides come from the
           // live payload so a reprice re-sorts on the next render.
           officialUsd: parseUsd(row.inputOfficial) ?? row.officialUsd,
           endpointTypes: row.endpointTypes,
         })
       ),
-    [priced]
+    [finalPriced]
   );
 
   const matched = useMemo(() => sortDirectoryRows(filterDirectoryRows(rows, filters), sort), [rows, filters, sort]);
@@ -271,7 +272,12 @@ export function ModelsDirectory(props: Props) {
           ) : null}
 
           {visible.length > 0 ? (
-            <ModelsDirectoryTable copy={copy} rows={visible} locale={props.locale} />
+            <ModelsDirectoryTable
+              copy={{ ...copy, colInput: copy.colOurInputPrice, colOutput: copy.colOurOutputPrice }}
+              rows={visible}
+              locale={props.locale}
+              hideOurPrice
+            />
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-[#E7E4EC] bg-white px-6 py-14 text-center dark:border-white/10 dark:bg-white/[0.03]">
               <h3 className="text-lg font-bold text-[#0B0B0F] dark:text-white">{copy.noResults}</h3>
@@ -314,6 +320,10 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
     discounted: row.discounted,
     officialUsd: row.officialUsd,
     discountedUsd: row.discountedUsd,
+    input: row.input,
+    inputOfficial: row.inputOfficial,
+    output: row.output,
+    outputOfficial: row.outputOfficial,
     priceUnit: row.priceUnit,
     pricePrefix: row.pricePrefix,
     contextTokens: row.contextTokens ?? null,
