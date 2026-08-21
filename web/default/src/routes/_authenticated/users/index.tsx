@@ -28,7 +28,7 @@ const usersSearchSchema = z.object({
   filter: z.string().optional().catch(''),
   status: z
     .array(z.enum(['-1', '1', '2']))
-    .optional()
+    .default(['1'])
     .catch(['1']),
   role: z
     .array(z.enum(['1', '10', '100']))

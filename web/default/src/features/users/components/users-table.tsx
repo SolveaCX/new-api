@@ -123,6 +123,13 @@ export function UsersTable() {
       | string[]
       | undefined) ?? []
   const emailVerifiedFilterValue = emailVerifiedFilter[0] ?? ''
+  const setCountryFilter = (value: string | null) => {
+    const normalized = value?.trim().toUpperCase() ?? ''
+    onColumnFiltersChange((previous) => {
+      const next = previous.filter((filter) => filter.id !== 'country')
+      return normalized ? [...next, { id: 'country', value: normalized }] : next
+    })
+  }
   let emailVerifiedParam: boolean | undefined
   if (emailVerifiedFilterValue === '1') {
     emailVerifiedParam = true
@@ -288,13 +295,12 @@ export function UsersTable() {
             <Combobox
               options={[]}
               value={countryFilter}
-              onValueChange={(value) =>
-                table.getColumn('country')?.setFilterValue(value || undefined)
-              }
+              onValueChange={setCountryFilter}
               placeholder={t('Country')}
               searchPlaceholder={t('Country code, e.g. MA')}
               emptyText={t('Enter an ISO country code')}
               allowCustomValue
+              commitCustomValueOnEnter
               className='w-full sm:w-[150px] lg:w-[180px]'
             />
           </div>
