@@ -69,6 +69,15 @@ func prepareOAuthState(c *gin.Context, session sessions.Session) string {
 	} else {
 		session.Delete("ga_session_id")
 	}
+	deviceID := strings.TrimSpace(c.Query("device_id"))
+	if len(deviceID) > 128 {
+		deviceID = deviceID[:128]
+	}
+	if deviceID != "" {
+		session.Set("registration_device_id", deviceID)
+	} else {
+		session.Delete("registration_device_id")
+	}
 	session.Set("oauth_state", state)
 	return state
 }
@@ -621,6 +630,9 @@ func selfHealOAuthEmailVerification(user *model.User, oauthUser *oauth.OAuthUser
 // true only when a brand-new user was created (used to trigger first-login onboarding).
 func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, session sessions.Session) (*model.User, bool, error) {
 	user := &model.User{}
+	if deviceID, ok := session.Get("registration_device_id").(string); ok {
+		user.DeviceID = deviceID
+	}
 	adsAttribution := getOAuthAdsAttribution(c, session)
 
 	// Check if user already exists with new ID
@@ -743,6 +755,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 	}
 
+	applyRegistrationRisk(c, user)
 	if _, err := model.RegisterUserWithDomainRisk(user, inviterId, c.ClientIP(), emailDecision.Policy, afterCreate); err != nil {
 		return nil, false, err
 	}

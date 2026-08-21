@@ -496,6 +496,10 @@ func TokenAuth() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgAuthUserBanned))
 			return
 		}
+		if model.IsUserRegistrationRiskTokenBlocked(&model.User{Role: userCache.Role, RegistrationRiskLevel: userCache.RegistrationRiskLevel}) {
+			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgAuthUserBanned))
+			return
+		}
 
 		// Defense-in-depth: block quota consumption from API tokens owned by
 		// users who never verified their email. Covers accounts created before

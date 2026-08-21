@@ -235,6 +235,9 @@ const RegisterForm = () => {
           affCode = localStorage.getItem('aff');
         }
         inputs.aff_code = affCode;
+        if (!inputs.device_id) {
+          inputs.device_id = localStorage.getItem('flatkey_registration_device_id') || '';
+        }
         const res = await API.post(
           `/api/user/register?turnstile=${turnstileToken}`,
           inputs,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -82,20 +83,49 @@ func grantNewUserBonusInTx(tx *gorm.DB, user *User) error {
 }
 
 func claimRegistrationIPNewUserBonusInTx(tx *gorm.DB, user *User) error {
+	// Keep the existing safety rule: accounts without a trusted registration IP
+	// never receive the signup bonus. Device risk only adds restrictions when an
+	// IP is available for the cross-signal decision.
 	if common.QuotaForNewUser <= 0 || user == nil || user.Id == 0 || user.RegistrationIP == "" {
 		return nil
 	}
-	if common.RedisEnabled && common.RDB != nil {
+	if IsUserRegistrationRiskBenefitsBlocked(user) {
+		user.Quota = 0
+		user.NewUserBonusGiven = false
+		return nil
+	}
+	deviceSlotClaimed := false
+	if common.RedisEnabled && common.RDB != nil && user.DeviceIDHash != "" {
+		maxDeviceBenefitClaims := system_setting.GetRegistrationSecuritySettings().DeviceBenefitBlockThreshold - 1
+		claimed, err := claimRegistrationRiskBenefitSlot(context.Background(), "device", user.DeviceIDHash, user.Id, maxDeviceBenefitClaims)
+		if err != nil {
+			common.SysError("claim registration device benefit slot failed: " + err.Error())
+		} else if !claimed {
+			return nil
+		} else {
+			deviceSlotClaimed = true
+		}
+	}
+	if common.RedisEnabled && common.RDB != nil && user.RegistrationIP != "" {
 		claimed, err := claimRegistrationIPNewUserBonusInRedis(context.Background(), user)
 		if err != nil {
 			common.SysError("claim new user bonus in redis failed: " + err.Error())
+			if deviceSlotClaimed {
+				releaseRegistrationRiskBenefitSlot(context.Background(), "device", user.DeviceIDHash, user.Id)
+			}
 			return nil
 		}
 		if !claimed {
+			if deviceSlotClaimed {
+				releaseRegistrationRiskBenefitSlot(context.Background(), "device", user.DeviceIDHash, user.Id)
+			}
 			return nil
 		}
 		if err := grantNewUserBonusInTx(tx, user); err != nil {
 			releaseRegistrationIPNewUserBonusRedisClaim(context.Background(), user)
+			if deviceSlotClaimed {
+				releaseRegistrationRiskBenefitSlot(context.Background(), "device", user.DeviceIDHash, user.Id)
+			}
 			return err
 		}
 		return nil
@@ -139,6 +169,9 @@ func releaseRegistrationIPNewUserBonusRedisClaim(ctx context.Context, user *User
 // ReleaseRegistrationIPNewUserBonusRedisClaim releases a Redis bonus slot when user creation rolls back.
 func ReleaseRegistrationIPNewUserBonusRedisClaim(user *User) {
 	releaseRegistrationIPNewUserBonusRedisClaim(context.Background(), user)
+	if user != nil && user.DeviceIDHash != "" {
+		releaseRegistrationRiskBenefitSlot(context.Background(), "device", user.DeviceIDHash, user.Id)
+	}
 }
 
 func newUserBonusRegistrationIPRedisKey(registrationIP string) string {

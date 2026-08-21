@@ -91,9 +91,35 @@ func registerLegacyOAuthUser(c *gin.Context, user *model.User, inviterID int) er
 		return err
 	}
 	user.EmailDomain = decision.Domain
+	applyRegistrationRisk(c, user)
 	if _, err := model.RegisterUserWithDomainRisk(user, inviterID, c.ClientIP(), decision.Policy, nil); err != nil {
 		return err
 	}
 	user.FinalizeOAuthUserCreation(inviterID)
 	return nil
+}
+
+// applyRegistrationRisk stores only keyed correlation signals on the user.
+// Registration is not rejected solely for velocity; benefits and API access
+// are progressively restricted to avoid shared-network false positives.
+func applyRegistrationRisk(c *gin.Context, user *model.User) model.RegistrationRiskDecision {
+	if user == nil {
+		return model.RegistrationRiskDecision{}
+	}
+	deviceID := strings.TrimSpace(user.DeviceID)
+	if deviceID == "" {
+		// API/CLI and privacy-restricted browsers may not provide the first-party
+		// ID. A coarse UA/language fallback is still useful as a secondary signal;
+		// it is never used as the sole account-blocking decision.
+		deviceID = c.GetHeader("User-Agent") + "|" + c.GetHeader("Accept-Language")
+	}
+	decision := model.AssessRegistrationRisk(deviceID, user.Email, c.ClientIP())
+	user.DeviceIDHash = decision.DeviceIDHash
+	user.RegistrationIPHash = decision.RegistrationIPHash
+	user.EmailIdentityHash = decision.EmailIdentityHash
+	user.RegistrationRiskLevel = decision.Level
+	user.DeviceRegistrationCount = decision.DeviceRegistrations
+	user.IPRegistrationCount = decision.IPRegistrations
+	user.EmailRegistrationCount = decision.EmailRegistrations
+	return decision
 }
