@@ -116,6 +116,10 @@ export function buildHomeModelRows(data: PricingData): HomePricedModel[] {
   return sortPricingModelsBySeries(pricedTokenModels(data)).map((model) => toHomeRow(model, data));
 }
 
+export function finalHomePricedRowsByName(rows: HomePricedModel[]): HomePricedModel[] {
+  return [...new Map(rows.map((row) => [row.name, row])).values()];
+}
+
 // Rows for an externally filtered/sorted model list (the /models directory).
 // Includes per-request and display-priced models; rows carry unit metadata so
 // the table can mix token, request, and second billing without a global suffix.
@@ -237,8 +241,9 @@ function modelBillingLabel(model: PricingModel, displayUnit?: string): string {
 }
 
 function modelBillingUnit(model: PricingModel, displayUnit?: string): "token" | "request" | "second" {
-  if (isTokenBasedModel(model)) return "token";
   if (displayUnit === "/ second") return "second";
+  if (displayUnit === "/ request") return "request";
+  if (isTokenBasedModel(model)) return "token";
   return "request";
 }
 

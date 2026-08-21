@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModelsDirectoryTable } from "@/components/models-directory-table";
 import { ModelsFeaturedCarousel } from "@/components/models-featured-carousel";
 import { ModelsFilterSidebar, type FilterGroup } from "@/components/models-filter-sidebar";
-import { buildRowsForModels, type HomePricedModel } from "@/lib/home-models";
+import { buildRowsForModels, finalHomePricedRowsByName, type HomePricedModel } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   AGE_BAND_LABELS,
@@ -92,12 +92,13 @@ export function ModelsDirectory(props: Props) {
     () => buildRowsForModels(props.models, props.vendors, props.groupRatio, props.groupModelRatio),
     [props.models, props.vendors, props.groupRatio, props.groupModelRatio]
   );
-  const pricedByName = useMemo(() => new Map(priced.map((row) => [row.name, row])), [priced]);
+  const finalPriced = useMemo(() => finalHomePricedRowsByName(priced), [priced]);
+  const pricedByName = useMemo(() => new Map(finalPriced.map((row) => [row.name, row])), [finalPriced]);
 
   // Rows carry everything filtering and sorting need, resolved once per model.
   const rows = useMemo(
     () =>
-      priced.map((row) =>
+      finalPriced.map((row) =>
         buildDirectoryRow({
           name: row.name,
           vendor: row.vendor,
@@ -109,7 +110,7 @@ export function ModelsDirectory(props: Props) {
           endpointTypes: row.endpointTypes,
         })
       ),
-    [priced]
+    [finalPriced]
   );
 
   const matched = useMemo(() => sortDirectoryRows(filterDirectoryRows(rows, filters), sort), [rows, filters, sort]);
