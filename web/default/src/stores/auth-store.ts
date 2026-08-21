@@ -56,6 +56,8 @@ export interface AuthUser {
   is_enterprise?: boolean
   sidebar_modules?: string
   permissions?: UserPermissions
+  impersonating?: boolean
+  impersonator_username?: string
 }
 
 type AuthUserUpdate =

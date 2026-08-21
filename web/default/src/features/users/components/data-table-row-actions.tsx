@@ -30,6 +30,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  Eye,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -44,7 +45,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
-import { manageUser, resetUserPasskey, resetUserTwoFA } from '../api'
+import {
+  impersonateUser,
+  manageUser,
+  resetUserPasskey,
+  resetUserTwoFA,
+} from '../api'
 import {
   USER_STATUS,
   USER_ROLE,
@@ -68,6 +74,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const [impersonateOpen, setImpersonateOpen] = useState(false)
+
+  const handleImpersonate = async () => {
+    const result = await impersonateUser(user.id)
+    if (!result.success) {
+      toast.error(result.message || t('Failed to enter user view'))
+      return
+    }
+    window.location.assign('/')
+  }
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -157,6 +173,20 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <Pencil size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
+
+          {!isAdmin && (
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                setImpersonateOpen(true)
+              }}
+            >
+              {t('View as user')}
+              <DropdownMenuShortcut>
+                <Eye size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 
@@ -263,6 +293,18 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ConfirmDialog
+        open={impersonateOpen}
+        onOpenChange={setImpersonateOpen}
+        title={t('View as user')}
+        desc={t(
+          'You will temporarily see the console as {{username}}. Actions and billing remain subject to the user account.',
+          { username: user.username }
+        )}
+        confirmText={t('Continue')}
+        handleConfirm={handleImpersonate}
+      />
 
       <ConfirmDialog
         open={resetPasskeyOpen}
