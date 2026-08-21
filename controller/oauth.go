@@ -664,7 +664,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if !common.RegisterEnabled {
 		return nil, false, &OAuthRegistrationDisabledError{}
 	}
-	if _, blocked, _ := registrationCountryDecision(c); blocked {
+	// Google verifies the user's identity and email with Google directly, so it
+	// is allowed to create an account even when the IP-based country policy
+	// blocks password and other OAuth registrations. Existing-user login was
+	// already allowed for every provider above.
+	if _, blocked, _ := registrationCountryDecision(c); blocked && !isGoogleOAuthProvider(provider) {
 		return nil, false, &OAuthRegistrationCountryBlockedError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
@@ -766,6 +770,10 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	sendSignUpSuccessGA(c.Request.Context(), user.Id, inviterId, provider.GetProviderPrefix(), gaClientID, gaSessionID)
 
 	return user, true, nil
+}
+
+func isGoogleOAuthProvider(provider oauth.Provider) bool {
+	return provider != nil && provider.GetProviderPrefix() == "google_"
 }
 
 // Error types for OAuth
