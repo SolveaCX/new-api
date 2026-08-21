@@ -6,7 +6,6 @@ import {
   renderModelDirectoryAuditMarkdown,
   type AuditModelDirectoryRow,
 } from "../src/lib/model-directory-audit";
-import { MODEL_DIRECTORY_META } from "../src/lib/model-directory-meta-data";
 import { buildRowsForModels } from "../src/lib/home-models";
 import { getVendorName } from "../src/lib/pricing";
 import type {
@@ -64,7 +63,7 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
     source: pricingUrl.toString(),
     rows: auditCatalog.rows,
     identityRows: auditCatalog.identityRows,
-    metadata: MODEL_DIRECTORY_META,
+    metadata: auditCatalog.metadata,
   });
 
   const outputDir = env.MODEL_DIRECTORY_AUDIT_OUT_DIR || "reports/model-directory";
@@ -87,8 +86,9 @@ export function assembleAuditRowsFromPricingPayload(payload: PricingApiResponse)
 export function assembleAuditCatalogFromPricingPayload(payload: PricingApiResponse): {
   rows: AuditModelDirectoryRow[];
   identityRows: AuditModelDirectoryRow[];
+  metadata: Record<string, import("../src/lib/model-directory-audit").AuditModelDirectoryMetadata>;
 } {
-  const { models, malformedRows, vendors, groupRatio, groupModelRatio } = parsePricingPayload(payload);
+  const { models, malformedRows, vendors, groupRatio, groupModelRatio, metadata } = parsePricingPayload(payload);
   const displayPricing = parseDisplayPricingMap(payload.display_pricing);
   const modelsWithDisplayPricing = models.map((model) => {
     const display = displayPricing[model.model_name];
@@ -119,7 +119,7 @@ export function assembleAuditCatalogFromPricingPayload(payload: PricingApiRespon
     })),
     ...malformedRows,
   ];
-  return { rows, identityRows };
+  return { rows, identityRows, metadata };
 }
 
 function parsePricingPayload(payload: PricingApiResponse) {
@@ -131,11 +131,14 @@ function parsePricingPayload(payload: PricingApiResponse) {
   const groupModelRatio = parseGroupModelRatio(payload.group_model_ratio);
   const models: PricingModel[] = [];
   const malformedRows: AuditModelDirectoryRow[] = [];
+  const metadata: Record<string, import("../src/lib/model-directory-audit").AuditModelDirectoryMetadata> = {};
 
   payload.data.forEach((entry, index) => {
     const model = parsePricingModel(entry);
     if (model) {
       models.push(model);
+      const parsedMetadata = parseAuditMetadata(entry);
+      if (parsedMetadata) metadata[model.model_name] = parsedMetadata;
     } else {
       malformedRows.push({
         modelId: malformedModelId(entry),
@@ -148,7 +151,7 @@ function parsePricingPayload(payload: PricingApiResponse) {
     }
   });
 
-  return { models, malformedRows, vendors, groupRatio, groupModelRatio };
+  return { models, malformedRows, vendors, groupRatio, groupModelRatio, metadata };
 }
 
 function parsePricingModel(value: unknown): PricingModel | null {
@@ -190,6 +193,21 @@ function parsePricingModel(value: unknown): PricingModel | null {
     availability_reason: stringOrUndefined(value.availability_reason),
     availability_detected_at: isFiniteNumber(value.availability_detected_at) ? value.availability_detected_at : undefined,
     availability_checked_at: isFiniteNumber(value.availability_checked_at) ? value.availability_checked_at : undefined,
+  };
+}
+
+function parseAuditMetadata(value: unknown): import("../src/lib/model-directory-audit").AuditModelDirectoryMetadata | null {
+  if (!isRecord(value) || !isRecord(value.directory_metadata)) return null;
+  const metadata = value.directory_metadata;
+  return {
+    series: stringOrUndefined(metadata.series),
+    vendor: stringOrUndefined(metadata.author),
+    providers: Array.isArray(metadata.providers) ? metadata.providers as string[] : undefined,
+    modalities: Array.isArray(metadata.modalities) ? metadata.modalities as import("../src/lib/model-directory-meta").Modality[] : undefined,
+    contextTokens: metadata.context_tokens === null ? null : isFiniteNumber(metadata.context_tokens) ? metadata.context_tokens : undefined,
+    categories: Array.isArray(metadata.categories) ? metadata.categories as string[] : undefined,
+    releasedAt: metadata.released_at === null ? null : stringOrUndefined(metadata.released_at),
+    distillable: typeof metadata.distillable === "boolean" ? metadata.distillable : undefined,
   };
 }
 

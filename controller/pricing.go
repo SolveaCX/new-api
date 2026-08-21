@@ -24,11 +24,12 @@ var (
 		body      []byte
 		expiresAt time.Time
 	}{}
-	buildWebsitePricingPayload = buildWebsitePricingPayloadDefault
-	buildWebsiteDisplayPricing = service.BuildWebsiteDisplayPricing
-	getPricingModels           = model.GetPricing
-	getPricingVendors          = model.GetVendors
-	getSupportedEndpointMap    = model.GetSupportedEndpointMap
+	buildWebsitePricingPayload          = buildWebsitePricingPayloadDefault
+	buildWebsiteDisplayPricing          = service.BuildWebsiteDisplayPricing
+	getPricingModels                    = model.GetPricing
+	getPricingVendors                   = model.GetVendors
+	getSupportedEndpointMap             = model.GetSupportedEndpointMap
+	getEnabledModelDirectoryMetadataMap = model.GetEnabledModelDirectoryMetadataMap
 )
 
 func init() {
@@ -305,6 +306,33 @@ func buildWebsiteDisplayPricingOrEmpty(pricing []model.Pricing, group string) ma
 	return displayPricing
 }
 
+func attachModelDirectoryMetadata(pricing []model.Pricing) []model.Pricing {
+	rows := append([]model.Pricing(nil), pricing...)
+	if len(rows) == 0 {
+		return rows
+	}
+
+	modelNames := make([]string, 0, len(rows))
+	for _, item := range rows {
+		if item.ModelName != "" {
+			modelNames = append(modelNames, item.ModelName)
+		}
+	}
+	metadataByName, err := getEnabledModelDirectoryMetadataMap(modelNames)
+	if err != nil {
+		common.SysLog("failed to load model directory metadata: " + err.Error())
+		return rows
+	}
+	for index := range rows {
+		metadata, ok := metadataByName[rows[index].ModelName]
+		if !ok {
+			continue
+		}
+		rows[index].DirectoryMetadata = &metadata
+	}
+	return rows
+}
+
 func buildWebsitePublicGroupPricingPayload(
 	pricing []model.Pricing,
 	vendors []model.PricingVendor,
@@ -320,6 +348,7 @@ func buildWebsitePublicGroupPricingPayload(
 	usableGroup := map[string]string{group: description}
 	visiblePricing := filterHiddenPricingModels(filterPricingByUsableGroups(pricing, usableGroup))
 	visiblePricing = applyWebsiteFeaturedOrder(visiblePricing, getWebsiteFeaturedModelNames())
+	visiblePricing = attachModelDirectoryMetadata(visiblePricing)
 
 	return gin.H{
 		"success":     true,

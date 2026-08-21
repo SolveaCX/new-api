@@ -388,6 +388,39 @@ describe("model directory metadata audit", () => {
 });
 
 describe("model directory audit CLI assembly", () => {
+  test("uses directory metadata attached by the database-backed pricing endpoint", () => {
+    const assembled = assembleAuditCatalogFromPricingPayload({
+      success: true,
+      data: [{
+        model_name: "gpt-test",
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+        directory_metadata: {
+          author: "OpenAI",
+          providers: ["OpenAI"],
+          modalities: ["text"],
+          context_tokens: 128000,
+          series: "GPT",
+          categories: ["Programming"],
+          released_at: "2026-08-01",
+          distillable: false,
+        },
+      }],
+    });
+
+    expect(assembled.metadata["gpt-test"]).toEqual({
+      vendor: "OpenAI",
+      providers: ["OpenAI"],
+      modalities: ["text"],
+      contextTokens: 128000,
+      series: "GPT",
+      categories: ["Programming"],
+      releasedAt: "2026-08-01",
+      distillable: false,
+    });
+  });
+
   test("keeps live zero-priced catalogue records in the audit rows", () => {
     const rows = assembleAuditRowsFromPricingPayload({
       success: true,

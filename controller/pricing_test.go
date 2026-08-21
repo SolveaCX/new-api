@@ -353,6 +353,57 @@ func withWebsiteDisplayPricingBuilder(
 	buildWebsiteDisplayPricing = builder
 }
 
+func withModelDirectoryMetadataLoader(
+	t *testing.T,
+	loader func([]string) (map[string]model.ModelDirectoryMetadataView, error),
+) {
+	t.Helper()
+	previous := getEnabledModelDirectoryMetadataMap
+	t.Cleanup(func() { getEnabledModelDirectoryMetadataMap = previous })
+	getEnabledModelDirectoryMetadataMap = loader
+}
+
+func TestBuildWebsitePublicGroupPricingPayloadAttachesExactDirectoryMetadata(t *testing.T) {
+	pricing := []model.Pricing{
+		{ModelName: "gpt-5", EnableGroup: []string{"plg"}},
+		{ModelName: "gpt-5-mini", EnableGroup: []string{"plg"}},
+	}
+	metadata := model.ModelDirectoryMetadataView{
+		Author: "OpenAI", Providers: []string{"OpenAI"}, Modalities: []string{"text"},
+		Series: "GPT", Categories: []string{"coding"}, ReleasedAt: "2026-08-01",
+	}
+	var requested []string
+	withModelDirectoryMetadataLoader(t, func(modelNames []string) (map[string]model.ModelDirectoryMetadataView, error) {
+		requested = append([]string(nil), modelNames...)
+		return map[string]model.ModelDirectoryMetadataView{"gpt-5": metadata}, nil
+	})
+
+	payload := buildWebsitePublicGroupPricingPayload(pricing, nil, nil, nil, "plg", 0.9)
+	rows := payload["data"].([]model.Pricing)
+
+	require.Equal(t, []string{"gpt-5", "gpt-5-mini"}, requested)
+	require.Equal(t, &metadata, rows[0].DirectoryMetadata)
+	require.Nil(t, rows[1].DirectoryMetadata)
+	require.Nil(t, pricing[0].DirectoryMetadata, "source pricing cache must not be mutated")
+}
+
+func TestBuildWebsitePublicGroupPricingPayloadKeepsPricingWhenMetadataLookupFails(t *testing.T) {
+	pricing := []model.Pricing{
+		{ModelName: "gpt-5", EnableGroup: []string{"plg"}},
+		{ModelName: "gpt-5-mini", EnableGroup: []string{"plg"}},
+	}
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		return nil, errors.New("metadata database unavailable")
+	})
+
+	payload := buildWebsitePublicGroupPricingPayload(pricing, nil, nil, nil, "plg", 0.9)
+	rows := payload["data"].([]model.Pricing)
+
+	require.Len(t, rows, 2)
+	require.Nil(t, rows[0].DirectoryMetadata)
+	require.Nil(t, rows[1].DirectoryMetadata)
+}
+
 func withWebsitePricingModelSources(t *testing.T, pricing []model.Pricing) {
 	t.Helper()
 	previousPricingModels := getPricingModels
