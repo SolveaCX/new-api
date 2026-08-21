@@ -301,7 +301,7 @@ function validateNonEmptyString(
   issues: AuditIssue[],
   suggestions: Record<string, TrustedSuggestion> | undefined
 ) {
-  if (value == null || value === "") {
+  if (value == null || (typeof value === "string" && value.trim() === "")) {
     issues.push(makeIssue({ row, field, status: "missing", kind: "field", currentValue: value, affectedFilters, suggestions }));
   } else if (typeof value !== "string") {
     issues.push(makeIssue({ row, field, status: "invalid", kind: "field", currentValue: value, affectedFilters, suggestions }));

@@ -134,6 +134,17 @@ describe("model directory metadata audit", () => {
     expectEveryIssueIsPendingAndFilterAffected(report.issues);
   });
 
+  test("whitespace-only string metadata is missing", () => {
+    const report = audit({
+      rows: [COMPLETE_ROW],
+      metadata: { [COMPLETE_ROW.name]: { ...COMPLETE_META, vendor: "   ", series: "\t" } },
+    });
+
+    expect(report.issues.map((issue) => issue.field)).toEqual(["series", "vendor"]);
+    expect(report.issues.map((issue) => issue.status)).toEqual(["missing", "missing"]);
+    expect(report.issues.map((issue) => issue.currentValue)).toEqual(["\t", "   "]);
+  });
+
   test("live model with no exact metadata entry is an unknown-model issue", () => {
     const report = audit({ metadata: {} });
 
