@@ -73,6 +73,7 @@ export type AuditModelDirectoryCatalogInput = {
   generatedAt?: string;
   source: string;
   rows: AuditModelDirectoryRow[];
+  identityRows?: AuditModelDirectoryRow[];
   metadata: Record<string, AuditModelDirectoryMetadata>;
   suggestions?: Record<string, TrustedSuggestion>;
 };
@@ -92,7 +93,7 @@ export function auditModelDirectoryCatalog(input: AuditModelDirectoryCatalogInpu
   const metadataEntries = Object.entries(input.metadata);
   const liveNames = new Set(rows.map((row) => row.name));
 
-  for (const issue of collisionIssues(rows, input.metadata, input.suggestions)) issues.push(issue);
+  for (const issue of collisionIssues(input.identityRows ?? rows, input.metadata, input.suggestions)) issues.push(issue);
 
   for (const row of rows) {
     const metadata = input.metadata[row.name];
@@ -170,6 +171,10 @@ export function renderModelDirectoryAuditMarkdown(report: ModelDirectoryAuditRep
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+export function renderModelDirectoryAuditJson(report: ModelDirectoryAuditReport): string {
+  return `${JSON.stringify(report, nonFiniteNumberReplacer, 2)}\n`;
 }
 
 function validateRowPricing(
@@ -334,9 +339,19 @@ function validateReleasedAt(
     issues.push(makeIssue({ row, field: "releasedAt", status: "missing", kind: "field", currentValue: value, affectedFilters: ["age"], suggestions }));
     return;
   }
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  if (typeof value !== "string" || !isStrictCalendarDate(value)) {
     issues.push(makeIssue({ row, field: "releasedAt", status: "invalid", kind: "field", currentValue: value, affectedFilters: ["age"], suggestions }));
   }
+}
+
+function isStrictCalendarDate(value: string): boolean {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
 function collisionIssues(
@@ -470,4 +485,10 @@ function formatOptionalValue(value: unknown): string {
 
 function escapeMarkdown(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function nonFiniteNumberReplacer(_key: string, value: unknown): unknown {
+  if (typeof value !== "number" || Number.isFinite(value)) return value;
+  if (Number.isNaN(value)) return "NaN";
+  return value === Number.POSITIVE_INFINITY ? "Infinity" : "-Infinity";
 }

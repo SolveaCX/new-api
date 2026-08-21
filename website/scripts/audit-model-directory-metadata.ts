@@ -2,11 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   auditModelDirectoryCatalog,
+  renderModelDirectoryAuditJson,
   renderModelDirectoryAuditMarkdown,
   type AuditModelDirectoryRow,
 } from "../src/lib/model-directory-audit";
 import { MODEL_DIRECTORY_META } from "../src/lib/model-directory-meta-data";
-import { buildRowsForModels, finalHomePricedRowsByName } from "../src/lib/home-models";
+import { buildRowsForModels } from "../src/lib/home-models";
 import { getVendorName } from "../src/lib/pricing";
 import type {
   DisplayPricingDimension,
@@ -56,12 +57,13 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
   if (!response.ok) throw new Error(`pricing fetch failed: ${response.status}`);
 
   const payload = (await response.json()) as PricingApiResponse;
-  const auditRows = assembleAuditRowsFromPricingPayload(payload);
+  const auditCatalog = assembleAuditCatalogFromPricingPayload(payload);
 
   const report = auditModelDirectoryCatalog({
     generatedAt: now().toISOString(),
     source: pricingUrl.toString(),
-    rows: auditRows,
+    rows: auditCatalog.rows,
+    identityRows: auditCatalog.identityRows,
     metadata: MODEL_DIRECTORY_META,
   });
 
@@ -69,7 +71,7 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
   await mkdirImpl(outputDir, { recursive: true });
   const jsonPath = join(outputDir, JSON_REPORT_NAME);
   const markdownPath = join(outputDir, MARKDOWN_REPORT_NAME);
-  await writeFileImpl(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFileImpl(jsonPath, renderModelDirectoryAuditJson(report), "utf8");
   await writeFileImpl(markdownPath, renderModelDirectoryAuditMarkdown(report), "utf8");
 
   logImpl(`JSON report: ${jsonPath}`);
@@ -79,28 +81,45 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
 }
 
 export function assembleAuditRowsFromPricingPayload(payload: PricingApiResponse): AuditModelDirectoryRow[] {
+  return assembleAuditCatalogFromPricingPayload(payload).rows;
+}
+
+export function assembleAuditCatalogFromPricingPayload(payload: PricingApiResponse): {
+  rows: AuditModelDirectoryRow[];
+  identityRows: AuditModelDirectoryRow[];
+} {
   const { models, malformedRows, vendors, groupRatio, groupModelRatio } = parsePricingPayload(payload);
   const displayPricing = parseDisplayPricingMap(payload.display_pricing);
   const modelsWithDisplayPricing = models.map((model) => {
     const display = displayPricing[model.model_name];
     return display ? { ...model, display_pricing: display } : model;
   });
-  const visibleRows = finalHomePricedRowsByName(buildRowsForModels(modelsWithDisplayPricing, vendors, groupRatio, groupModelRatio));
-  const visibleByName = new Map(visibleRows.map((row) => [row.name, row]));
-  return [
-    ...models.map((model) => {
-      const visible = visibleByName.get(model.model_name);
-      return {
-        modelId: model.id,
-        name: model.model_name,
-        vendor: getVendorName(model, vendors),
-        billingUnit: visible?.billingUnit,
-        inputFilterUsd: visible?.inputFilterUsd,
-        outputFilterUsd: visible?.outputFilterUsd,
-      };
-    }),
+  const finalByName = new Map<string, { model: PricingModel; row: ReturnType<typeof buildRowsForModels>[number] | undefined }>();
+  for (const model of modelsWithDisplayPricing) {
+    const [row] = buildRowsForModels([model], vendors, groupRatio, groupModelRatio);
+    const existing = finalByName.get(model.model_name);
+    if (row || !existing || !existing.row) finalByName.set(model.model_name, { model, row });
+  }
+  const rows = [
+    ...[...finalByName.values()].map(({ model, row }) => ({
+      modelId: model.id,
+      name: model.model_name,
+      vendor: getVendorName(model, vendors),
+      billingUnit: row?.billingUnit,
+      inputFilterUsd: row?.inputFilterUsd,
+      outputFilterUsd: row?.outputFilterUsd,
+    })),
     ...malformedRows,
   ];
+  const identityRows = [
+    ...models.map((model) => ({
+      modelId: model.id,
+      name: model.model_name,
+      vendor: getVendorName(model, vendors),
+    })),
+    ...malformedRows,
+  ];
+  return { rows, identityRows };
 }
 
 function parsePricingPayload(payload: PricingApiResponse) {

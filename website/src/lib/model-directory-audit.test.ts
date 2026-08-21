@@ -1,13 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import {
   auditModelDirectoryCatalog,
+  renderModelDirectoryAuditJson,
   renderModelDirectoryAuditMarkdown,
   type AuditIssue,
   type AuditIssueStatus,
   type AuditModelDirectoryMetadata,
   type AuditModelDirectoryRow,
 } from "./model-directory-audit";
-import { assembleAuditRowsFromPricingPayload, runModelDirectoryAuditCli } from "../../scripts/audit-model-directory-metadata";
+import {
+  assembleAuditCatalogFromPricingPayload,
+  assembleAuditRowsFromPricingPayload,
+  runModelDirectoryAuditCli,
+} from "../../scripts/audit-model-directory-metadata";
 
 const COMPLETE_META: AuditModelDirectoryMetadata = {
   series: "GPT",
@@ -86,6 +91,28 @@ describe("model directory metadata audit", () => {
       "missing:gpt-test:vendor",
     ]);
     expectEveryIssueIsPendingAndFilterAffected(report.issues);
+  });
+
+  test("releasedAt uses strict calendar-date validation", () => {
+    const invalid = audit({
+      metadata: {
+        "gpt-test": {
+          ...COMPLETE_META,
+          releasedAt: "2026-02-31",
+        },
+      },
+    });
+    expect(issueKeys(invalid.issues)).toEqual(["invalid:gpt-test:releasedAt"]);
+
+    const validLeap = audit({
+      metadata: {
+        "gpt-test": {
+          ...COMPLETE_META,
+          releasedAt: "2024-02-29",
+        },
+      },
+    });
+    expect(validLeap.issues).toEqual([]);
   });
 
   test("invalid effective price and billing data are invalid issues", () => {
@@ -257,6 +284,28 @@ describe("model directory metadata audit", () => {
 
     expect(report.issues[0]?.modelId).toBe("917");
   });
+
+  test("JSON renderer preserves non-finite numbers explicitly", () => {
+    const report = audit({
+      rows: [
+        { ...COMPLETE_ROW, name: "bad-infinity", inputFilterUsd: Number.POSITIVE_INFINITY },
+        { ...COMPLETE_ROW, name: "bad-negative-infinity", inputFilterUsd: Number.NEGATIVE_INFINITY },
+        { ...COMPLETE_ROW, name: "bad-nan", inputFilterUsd: Number.NaN },
+      ],
+      metadata: {
+        "bad-infinity": COMPLETE_META,
+        "bad-negative-infinity": COMPLETE_META,
+        "bad-nan": COMPLETE_META,
+      },
+    });
+
+    const json = renderModelDirectoryAuditJson(report);
+
+    expect(json).toContain('"currentValue": "Infinity"');
+    expect(json).toContain('"currentValue": "-Infinity"');
+    expect(json).toContain('"currentValue": "NaN"');
+    expect(json).not.toContain('"currentValue": null');
+  });
 });
 
 describe("model directory audit CLI assembly", () => {
@@ -314,12 +363,12 @@ describe("model directory audit CLI assembly", () => {
     ]);
   });
 
-  test("preserves raw duplicate identities and live vendors for collision detection", () => {
-    const rows = assembleAuditRowsFromPricingPayload({
+  test("audits one coherent final duplicate row while preserving raw collision identities", () => {
+    const assembled = assembleAuditCatalogFromPricingPayload({
       success: true,
       vendors: [
-        { id: 1, name: "Live Vendor" },
-        { id: 2, name: "Other Provider" },
+        { id: 1, name: "Hidden Provider" },
+        { id: 2, name: "Displayed Provider" },
       ],
       group_ratio: { plg: 0.9 },
       data: [
@@ -344,10 +393,32 @@ describe("model directory audit CLI assembly", () => {
       ],
     });
 
-    expect(rows).toHaveLength(2);
-    expect(rows.map((row) => ({ modelId: row.modelId, vendor: row.vendor }))).toEqual([
-      { modelId: 101, vendor: "Live Vendor" },
-      { modelId: 102, vendor: "Other Provider" },
+    expect(assembled.rows).toEqual([
+      {
+        modelId: 102,
+        name: "gpt-4.1-mini",
+        vendor: "Displayed Provider",
+        billingUnit: "token",
+        inputFilterUsd: 0.54,
+        outputFilterUsd: 2.16,
+      },
+    ]);
+    expect(assembled.identityRows.map((row) => ({ modelId: row.modelId, vendor: row.vendor }))).toEqual([
+      { modelId: 101, vendor: "Hidden Provider" },
+      { modelId: 102, vendor: "Displayed Provider" },
+    ]);
+
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: assembled.rows,
+      identityRows: assembled.identityRows,
+      metadata: { "gpt-4.1-mini": COMPLETE_META },
+    });
+
+    expect(report.modelCount).toBe(1);
+    expect(report.issues.map((issue) => ({ kind: issue.kind, field: issue.field, modelName: issue.modelName }))).toEqual([
+      { kind: "collision", field: "identity", modelName: "gpt-4.1-mini" },
     ]);
   });
 
