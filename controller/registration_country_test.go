@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/oauth"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -19,4 +20,11 @@ func TestRegistrationCountryDecisionRecognizesMorocco(t *testing.T) {
 	require.Equal(t, "MA", country)
 	require.True(t, blocked)
 	require.False(t, autoDisable)
+}
+
+func TestGoogleOAuthIsAllowedToCreateInBlockedCountry(t *testing.T) {
+	provider := oauth.GetProvider("google")
+	require.NotNil(t, provider)
+	require.True(t, isGoogleOAuthProvider(provider))
+	require.False(t, isGoogleOAuthProvider(nil))
 }
