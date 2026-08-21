@@ -251,11 +251,21 @@ type OptionsUpdateRequest struct {
 }
 
 func isBulkOptionUpdateKey(key string) bool {
+	if strings.HasPrefix(key, "registration_country.") {
+		return true
+	}
 	if strings.HasPrefix(key, "registration_security.") {
 		return true
 	}
 	switch key {
-	case "SidebarModulesAdmin", "LogConsumeEnabled", model.OptionKeyCompanyLogRoutingEnabled, model.OptionKeyPlaygroundDefaultModel:
+	case "SidebarModulesAdmin",
+		"LogConsumeEnabled",
+		model.OptionKeyCompanyLogRoutingEnabled,
+		model.OptionKeyPlaygroundDefaultModel,
+		"CodexClientUserAgent",
+		"CodexClientVersion",
+		"CodexAutoSyncClientVersion",
+		"CodexEnforceClientIdentity":
 		return true
 	default:
 		return false
