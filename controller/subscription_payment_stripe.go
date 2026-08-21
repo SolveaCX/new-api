@@ -491,6 +491,8 @@ func buildOneTimePlanCheckoutSessionParams(order *model.SubscriptionOrder, user 
 		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
 			{PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId))},
 		}
+	} else {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 	if user != nil {
 		if strings.TrimSpace(user.StripeCustomer) != "" {

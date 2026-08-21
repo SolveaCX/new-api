@@ -32,6 +32,10 @@ await i18n.init({
         'Confirm Payment': 'Confirm Payment',
         Email: 'Email',
         'Payment method': 'Payment method',
+        'Promotion code': 'Promotion code',
+        'Enter promotion code': 'Enter promotion code',
+        Apply: 'Apply',
+        Remove: 'Remove',
         Subtotal: 'Subtotal',
         Discount: 'Discount',
         Tax: 'Tax',
@@ -79,6 +83,13 @@ describe('StripeCheckoutLayout', () => {
           submitting={false}
           error={null}
           onConfirm={() => undefined}
+          promotionCode='SAVE20'
+          promotionCodeApplied
+          promotionCodeError={null}
+          promotionCodeSubmitting={false}
+          onPromotionCodeChange={() => undefined}
+          onApplyPromotionCode={() => undefined}
+          onRemovePromotionCode={() => undefined}
         />
       </I18nextProvider>
     )
@@ -90,6 +101,9 @@ describe('StripeCheckoutLayout', () => {
     expect(html).toContain('Flatkey Go')
     expect(html).toContain('R$48.65')
     expect(html).toContain('Surcharge')
+    expect(html).toContain('Promotion code')
+    expect(html).toContain('SAVE20')
+    expect(html).toContain('Remove')
     expect(html).toContain('bg-[#0576d7]')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Continue.*<\/button>/)
   })

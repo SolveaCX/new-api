@@ -241,7 +241,7 @@ func TestCreateStripeSubscriptionCheckoutDiscountSelectionVariants(t *testing.T)
 	require.Empty(t, sessionForms[0].Get("allow_promotion_codes"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][promotion_code]"))
 	require.Empty(t, sessionForms[1].Get("discounts[0][coupon]"))
-	require.Empty(t, sessionForms[1].Get("allow_promotion_codes"))
+	require.Equal(t, "true", sessionForms[1].Get("allow_promotion_codes"))
 }
 
 func TestPaymentAnalyticsEventForPaidRenewalUsesCurrentPlanID(t *testing.T) {

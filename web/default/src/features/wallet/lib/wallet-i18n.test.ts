@@ -66,6 +66,14 @@ const walletRechargeKeys = [
   'Get {{bonus}} free',
   'Top up for {{amount}}',
   'Coupon Applied from {{source}} {{percent}}% off',
+  '{{percent}}% OFF',
+  'Expires {{date}}',
+  'Promotion code',
+  'Enter promotion code',
+  'Enter a promotion code',
+  'Promotion code could not be applied',
+  'Promotion code could not be removed',
+  'Apply',
   'No top-up packages available. Please contact administrator.',
   'Stripe top-up is not enabled. Please contact administrator.',
 ] as const
@@ -107,6 +115,14 @@ describe('wallet recharge i18n', () => {
       'Custom usage, routing, and invoicing',
       'For higher monthly usage, invoicing, team procurement, or custom routing discounts.',
       'Coupon Applied from {{source}} {{percent}}% off',
+      '{{percent}}% OFF',
+      'Expires {{date}}',
+      'Promotion code',
+      'Enter promotion code',
+      'Enter a promotion code',
+      'Promotion code could not be applied',
+      'Promotion code could not be removed',
+      'Apply',
     ] as const
 
     for (const [locale, translations] of Object.entries(localeTranslations)) {

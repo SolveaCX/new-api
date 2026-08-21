@@ -309,6 +309,8 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
 			{Coupon: stripe.String(strings.TrimSpace(coupon.ID))},
 		}
+	} else if input.RecallDiscount == nil {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 	ApplyStripeCheckoutPresentation(params, input.Presentation, input.TradeNo)
 	if strings.TrimSpace(input.CustomerID) != "" {

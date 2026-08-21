@@ -61,7 +61,7 @@ export function StripeCheckoutDialog(props: StripeCheckoutDialogProps) {
     <Dialog open={Boolean(props.session)} onOpenChange={props.onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className='max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1120px] gap-0 overflow-y-auto rounded-[24px] p-0 ring-1 ring-[#dfe3e8] sm:max-w-[1120px] max-[520px]:top-0 max-[520px]:left-0 max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-screen max-[520px]:max-w-none max-[520px]:translate-x-0 max-[520px]:translate-y-0 max-[520px]:rounded-none'
+        className='max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1120px] gap-0 overflow-y-auto rounded-[24px] p-0 ring-1 ring-[#dfe3e8] max-[520px]:top-0 max-[520px]:left-0 max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-screen max-[520px]:max-w-none max-[520px]:translate-x-0 max-[520px]:translate-y-0 max-[520px]:rounded-none sm:max-w-[1120px]'
       >
         <DialogTitle className='sr-only'>{title}</DialogTitle>
         <DialogDescription className='sr-only'>{description}</DialogDescription>
@@ -94,6 +94,12 @@ function StripeCheckoutFrame(props: {
   const [mounting, setMounting] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [promotionCode, setPromotionCode] = useState('')
+  const [promotionCodeApplied, setPromotionCodeApplied] = useState(false)
+  const [promotionCodeSubmitting, setPromotionCodeSubmitting] = useState(false)
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(
+    null
+  )
   const sessionClientSecret = props.session.clientSecret
   const sessionPublishableKey = props.session.publishableKey
   const sessionFallbackUrl = props.session.fallbackUrl
@@ -187,6 +193,59 @@ function StripeCheckoutFrame(props: {
     }
   }, [submitting, t])
 
+  const handleApplyPromotionCode = useCallback(async () => {
+    const mounted = mountedRef.current
+    const code = promotionCode.trim()
+    if (!mounted || promotionCodeSubmitting) return
+    if (!code) {
+      setPromotionCodeError(t('Enter a promotion code'))
+      return
+    }
+    setPromotionCodeSubmitting(true)
+    setPromotionCodeError(null)
+    try {
+      const result = await mounted.applyPromotionCode(code)
+      if (result.type === 'error') {
+        setPromotionCodeError(result.error.message)
+        toast.error(result.error.message)
+        return
+      }
+      setCheckoutSession(result.session)
+      setPromotionCode(code)
+      setPromotionCodeApplied(true)
+    } catch (_promotionError) {
+      const message = t('Promotion code could not be applied')
+      setPromotionCodeError(message)
+      toast.error(message)
+    } finally {
+      setPromotionCodeSubmitting(false)
+    }
+  }, [promotionCode, promotionCodeSubmitting, t])
+
+  const handleRemovePromotionCode = useCallback(async () => {
+    const mounted = mountedRef.current
+    if (!mounted || promotionCodeSubmitting) return
+    setPromotionCodeSubmitting(true)
+    setPromotionCodeError(null)
+    try {
+      const result = await mounted.removePromotionCode()
+      if (result.type === 'error') {
+        setPromotionCodeError(result.error.message)
+        toast.error(result.error.message)
+        return
+      }
+      setCheckoutSession(result.session)
+      setPromotionCodeApplied(false)
+      setPromotionCode('')
+    } catch (_promotionError) {
+      const message = t('Promotion code could not be removed')
+      setPromotionCodeError(message)
+      toast.error(message)
+    } finally {
+      setPromotionCodeSubmitting(false)
+    }
+  }, [promotionCodeSubmitting, t])
+
   return (
     <StripeCheckoutLayout
       title={props.title}
@@ -199,6 +258,16 @@ function StripeCheckoutFrame(props: {
       submitting={submitting}
       error={error}
       onConfirm={() => void handleConfirm()}
+      promotionCode={promotionCode}
+      promotionCodeApplied={promotionCodeApplied}
+      promotionCodeError={promotionCodeError}
+      promotionCodeSubmitting={promotionCodeSubmitting}
+      onPromotionCodeChange={(value) => {
+        setPromotionCode(value)
+        if (promotionCodeError) setPromotionCodeError(null)
+      }}
+      onApplyPromotionCode={() => void handleApplyPromotionCode()}
+      onRemovePromotionCode={() => void handleRemovePromotionCode()}
       closeControl={
         <DialogClose
           render={

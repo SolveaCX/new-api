@@ -49,7 +49,10 @@ import type {
   StripeCheckoutOpenResult,
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
-import { selectBestRecallOffer } from '../lib/recall-claim'
+import {
+  formatRecallExpiryDate,
+  selectBestRecallOffer,
+} from '../lib/recall-claim'
 import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
@@ -185,20 +188,6 @@ function getPlanCardDiscountPreview(
     originalTotal,
     total,
   }
-}
-
-function getRecallCouponSourceLabel(
-  offer: RecallOfferView | null | undefined,
-  t: Translate
-): string {
-  if (!offer || offer.discount.type !== 'percent') return ''
-  const source =
-    typeof offer.campaign_name === 'string' ? offer.campaign_name.trim() : ''
-  if (!source) return ''
-  return t('Coupon Applied from {{source}} {{percent}}% off', {
-    source,
-    percent: Number(offer.discount.percent_off || 0),
-  })
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -842,9 +831,19 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   currency: plan.currency || 'USD',
                 }
               )
-              const recallCouponSourceLabel =
-                discountPreview?.discountKind === 'recall'
-                  ? getRecallCouponSourceLabel(recallOffer, t)
+              const discountPercent = discountPreview
+                ? Math.round(
+                    (discountPreview.discountAmount /
+                      discountPreview.originalTotal) *
+                      100
+                  )
+                : 0
+              const recallExpiryDate =
+                discountPreview?.discountKind === 'recall' && recallOffer
+                  ? formatRecallExpiryDate(
+                      recallOffer.expires_at,
+                      i18n.resolvedLanguage || i18n.language || 'en-US'
+                    )
                   : ''
               const configuredDisplayPrice =
                 resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
@@ -899,14 +898,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         ) : null}
                       </div>
                       <div className='flex shrink-0 flex-col items-end gap-1'>
-                        {discountPreview ? (
-                          <span
-                            data-discount-kind={discountPreview.discountKind}
-                            className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'
-                          >
-                            {t('OFF')}
-                          </span>
-                        ) : null}
                         {isMostPopular ? (
                           <span className='inline-flex items-center gap-1 rounded-full bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
                             <Sparkles className='h-3 w-3' />
@@ -931,6 +922,16 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     </div>
                     {discountPreview ? (
                       <div className='mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-medium text-[#166534] dark:text-[#86efac]'>
+                        <span
+                          data-discount-kind={discountPreview.discountKind}
+                          className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'
+                        >
+                          {discountPercent > 0
+                            ? t('{{percent}}% OFF', {
+                                percent: discountPercent,
+                              })
+                            : t('OFF')}
+                        </span>
                         <span>
                           {t('Save {{amount}}', {
                             amount: formatPlanPrice(
@@ -939,8 +940,10 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                             ),
                           })}
                         </span>
-                        {recallCouponSourceLabel ? (
-                          <span>{recallCouponSourceLabel}</span>
+                        {recallExpiryDate ? (
+                          <span>
+                            {t('Expires {{date}}', { date: recallExpiryDate })}
+                          </span>
                         ) : null}
                       </div>
                     ) : null}

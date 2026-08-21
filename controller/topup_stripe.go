@@ -2689,6 +2689,8 @@ func buildStripeCheckoutSessionParams(referenceId string, customerId string, ema
 			"recall_campaign_id":  strconv.FormatInt(recall.CampaignID, 10),
 			"recall_recipient_id": strconv.FormatInt(recall.RecipientID, 10),
 		}
+	} else {
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
 	if uiMode, ok := presentation.SessionUIMode(); ok {

@@ -20,6 +20,7 @@ import {
   loadStripe,
   type Stripe,
   type StripeCheckoutConfirmResult,
+  type StripeCheckoutLoadActionsSuccess,
   type StripeCheckoutSession,
 } from '@stripe/stripe-js'
 
@@ -71,6 +72,8 @@ interface MountStripeCheckoutElementsOptions {
 
 export interface MountedStripeCheckoutElements {
   confirm: () => Promise<StripeCheckoutConfirmResult>
+  applyPromotionCode: StripeCheckoutLoadActionsSuccess['applyPromotionCode']
+  removePromotionCode: StripeCheckoutLoadActionsSuccess['removePromotionCode']
   destroy: () => void
 }
 
@@ -96,6 +99,7 @@ export async function mountStripeCheckoutElements(
     throw new Error(loadActionsResult.error.message)
   }
 
+  const actions = loadActionsResult.actions
   const paymentElement = checkout.createPaymentElement({
     layout: 'accordion',
   })
@@ -112,10 +116,10 @@ export async function mountStripeCheckoutElements(
   options.onSessionChange(initialSession)
 
   return {
-    confirm: () =>
-      loadActionsResult.actions.confirm({
-        redirect: 'always',
-      }),
+    confirm: () => actions.confirm({ redirect: 'always' }),
+    applyPromotionCode: (promotionCode) =>
+      actions.applyPromotionCode(promotionCode),
+    removePromotionCode: () => actions.removePromotionCode(),
     destroy: () => {
       currencyElement?.destroy()
       paymentElement.destroy()

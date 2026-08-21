@@ -32,6 +32,22 @@ export type RecallPriceDiscount = {
   currency: string
 }
 
+export function formatRecallExpiryDate(
+  expiresAt: number,
+  locale = 'en-US'
+): string {
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return ''
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(expiresAt * 1000))
+  } catch {
+    return ''
+  }
+}
+
 export function normalizeRecallClaim(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined
@@ -158,7 +174,10 @@ export function getRecallPriceDiscount(
     type: claim.discount.type,
     originalAmount: minorToAmount(priceMinor, normalizedCurrency),
     discountAmount: minorToAmount(discountMinor, normalizedCurrency),
-    discountedAmount: minorToAmount(priceMinor - discountMinor, normalizedCurrency),
+    discountedAmount: minorToAmount(
+      priceMinor - discountMinor,
+      normalizedCurrency
+    ),
     currency: normalizedCurrency,
   }
 }
