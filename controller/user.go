@@ -524,8 +524,12 @@ func SearchUsers(c *gin.Context) {
 		v := false
 		emailVerified = &v
 	}
+	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
+	if len(country) > 2 {
+		country = country[:2]
+	}
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, emailVerified, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, emailVerified, country, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return

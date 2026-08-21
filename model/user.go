@@ -376,7 +376,7 @@ func recallAudienceUserLikePattern(keyword string) string {
 	return "%" + escaped + "%"
 }
 
-func SearchUsers(keyword string, group string, role *int, status *int, language string, paid bool, emailVerified *bool, startIdx int, num int) ([]*User, int64, error) {
+func SearchUsers(keyword string, group string, role *int, status *int, language string, paid bool, emailVerified *bool, country string, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -432,32 +432,64 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 		}
 	}
 	query = applyUserLanguageFilter(query, language)
+	country = strings.ToUpper(strings.TrimSpace(country))
+	if country == "" {
+		return searchUsersWithQuery(query, startIdx, num, users, total, tx)
+	}
+	return searchUsersByCountry(query, country, startIdx, num, tx)
 
-	// 获取总数
-	err = query.Count(&total).Error
-	if err != nil {
+}
+
+// searchUsersWithQuery keeps the ordinary SQL pagination path separate from
+// country filtering, which is resolved from the embedded IP database in Go.
+func searchUsersWithQuery(query *gorm.DB, startIdx, num int, users []*User, total int64, tx *gorm.DB) ([]*User, int64, error) {
+	if err := query.Count(&total).Error; err != nil {
 		tx.Rollback()
 		return nil, 0, err
 	}
-
-	// 获取分页数据
-	err = query.Omit("password").Order("id desc").Limit(num).Offset(startIdx).Find(&users).Error
-	if err != nil {
+	if err := query.Omit("password").Order("id desc").Limit(num).Offset(startIdx).Find(&users).Error; err != nil {
 		tx.Rollback()
 		return nil, 0, err
 	}
-
-	// 提交事务
-	if err = tx.Commit().Error; err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
-
 	if err := FillPaidAmounts(users); err != nil {
 		common.SysError("failed to fill paid amounts for user search: " + err.Error())
 	}
 	FillIPCountries(users)
-
 	return users, total, nil
+}
+
+func searchUsersByCountry(query *gorm.DB, country string, startIdx, num int, tx *gorm.DB) ([]*User, int64, error) {
+	var users []*User
+	if err := query.Omit("password").Order("id desc").Find(&users).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+	FillIPCountries(users)
+	filtered := users[:0]
+	for _, user := range users {
+		if user.IPCountry == country {
+			filtered = append(filtered, user)
+		}
+	}
+	total := int64(len(filtered))
+	if startIdx >= len(filtered) {
+		return []*User{}, total, nil
+	}
+	end := startIdx + num
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	filtered = filtered[startIdx:end]
+	if err := FillPaidAmounts(filtered); err != nil {
+		common.SysLog("failed to fill paid amounts for country-filtered users: " + err.Error())
+	}
+	return filtered, total, nil
 }
 
 // FillPaidAmounts hydrates each user's PaidAmount with the lifetime total of
