@@ -24,6 +24,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  formatRecallExpiryDate,
   getRecallPriceDiscount,
   getTopupStripePriceId,
   selectBestRecallOffer,
@@ -72,20 +73,6 @@ function getRecallDiscountLabel(
   }).toUpperCase()
 }
 
-function getRecallCouponSourceLabel(
-  offer: RecallOfferView | null | undefined,
-  t: Translate
-): string {
-  if (!offer || offer.discount.type !== 'percent') return ''
-  const source =
-    typeof offer.campaign_name === 'string' ? offer.campaign_name.trim() : ''
-  if (!source) return ''
-  return t('Coupon Applied from {{source}} {{percent}}% off', {
-    source,
-    percent: Number(offer.discount.percent_off || 0),
-  })
-}
-
 function getConfiguredPresetAmounts(
   presetAmounts: PresetAmount[]
 ): PresetAmount[] {
@@ -99,7 +86,7 @@ function getConfiguredPresetAmounts(
 }
 
 export function RechargeFormCard(props: RechargeFormCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const checkoutCurrency = props.checkoutCurrency ?? 'USD'
   const checkoutCurrencySymbol = CURRENCY_SYMBOLS[checkoutCurrency]
   const stripeCurrencyPrices = props.topupInfo?.stripe_currency_prices ?? {}
@@ -189,10 +176,12 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
             displayAmount,
             checkoutCurrency
           )
-          const recallCouponSourceLabel = getRecallCouponSourceLabel(
-            recallOffer,
-            t
-          )
+          const recallExpiryDate = recallOffer
+            ? formatRecallExpiryDate(
+                recallOffer.expires_at,
+                i18n.resolvedLanguage || i18n.language || 'en-US'
+              )
+            : ''
           return (
             <Button
               key={preset.value}
@@ -206,15 +195,6 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
               onClick={() => props.onSelectPreset(preset)}
             >
               <span className='flex flex-col items-center gap-1 leading-tight'>
-                {recallDiscount ? (
-                  <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 text-[10px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
-                    {getRecallDiscountLabel(
-                      recallDiscount,
-                      Number(recallOffer?.discount.percent_off || 0),
-                      t
-                    )}
-                  </span>
-                ) : null}
                 <span className='flex items-baseline justify-center gap-1'>
                   <span>
                     {recallDiscount
@@ -230,13 +210,22 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                 </span>
                 {recallDiscount ? (
                   <span className='flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-[10px] font-medium text-[#166534] dark:text-[#86efac]'>
+                    <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
+                      {getRecallDiscountLabel(
+                        recallDiscount,
+                        Number(recallOffer?.discount.percent_off || 0),
+                        t
+                      )}
+                    </span>
                     <span>
                       {t('Save {{amount}}', {
                         amount: `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountAmount)}`,
                       })}
                     </span>
-                    {recallCouponSourceLabel ? (
-                      <span>{recallCouponSourceLabel}</span>
+                    {recallExpiryDate ? (
+                      <span>
+                        {t('Expires {{date}}', { date: recallExpiryDate })}
+                      </span>
                     ) : null}
                   </span>
                 ) : null}

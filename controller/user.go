@@ -94,6 +94,16 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// registrationCountryDecision applies the same IP-country policy to password
+// and OAuth signups. Existing users are intentionally not affected here; the
+// policy controls creation only and avoids locking out legitimate travelers.
+func registrationCountryDecision(c *gin.Context) (country string, blocked bool, autoDisable bool) {
+	country = model.ResolveIPCountry(c.ClientIP())
+	return country,
+		operation_setting.IsCountryBlocked(country),
+		operation_setting.IsCountryAutoDisabled(country)
+}
+
 func Login(c *gin.Context) {
 	if !common.PasswordLoginEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordLoginDisabled)
@@ -333,6 +343,10 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordRegisterDisabled)
 		return
 	}
+	if _, blocked, _ := registrationCountryDecision(c); blocked {
+		common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
+		return
+	}
 	var user model.User
 	err := json.NewDecoder(c.Request.Body).Decode(&user)
 	if err != nil {
@@ -403,6 +417,9 @@ func Register(c *gin.Context) {
 	if honeypotTriggered {
 		cleanUser.Status = common.UserStatusDisabled
 		cleanUser.IsHoneypot = true
+	}
+	if _, _, autoDisable := registrationCountryDecision(c); autoDisable {
+		cleanUser.Status = common.UserStatusDisabled
 	}
 	if language, ok := dto.NormalizeUserLanguagePreference(i18n.GetLangFromContext(c)); ok {
 		cleanUser.SetSetting(dto.UserSetting{Language: language})
@@ -507,8 +524,12 @@ func SearchUsers(c *gin.Context) {
 		v := false
 		emailVerified = &v
 	}
+	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
+	if len(country) > 2 {
+		country = country[:2]
+	}
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, emailVerified, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	users, total, err := model.SearchUsers(keyword, group, role, status, language, paid, emailVerified, country, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return

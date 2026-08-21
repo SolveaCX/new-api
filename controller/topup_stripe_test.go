@@ -405,7 +405,8 @@ func TestStripeCheckoutSessionKeepsAccountEmailVerbatim(t *testing.T) {
 
 	require.NotNil(t, params.CustomerEmail)
 	require.Equal(t, "buyer+location_JP@example.com", *params.CustomerEmail)
-	require.Nil(t, params.AllowPromotionCodes, "promotion code field must stay hidden on checkout")
+	require.NotNil(t, params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
 	require.NotNil(t, params.PaymentIntentData)
 	require.Equal(t, "trade_123", params.PaymentIntentData.Metadata["trade_no"])
 }
@@ -427,7 +428,8 @@ func TestStripeCheckoutSessionOrdinaryPromotionCodes(t *testing.T) {
 		nil,
 	)
 
-	require.Nil(t, params.AllowPromotionCodes, "ordinary top-up checkouts must not show a promotion-code entry")
+	require.NotNil(t, params.AllowPromotionCodes)
+	require.True(t, *params.AllowPromotionCodes)
 	require.Empty(t, params.Discounts)
 }
 

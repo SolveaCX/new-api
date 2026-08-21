@@ -1254,7 +1254,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Save $5')
   })
 
-  test('shows the applied Recall coupon source for a backend recall quote', () => {
+  test('shows recall percentage and expiry without exposing the coupon source', () => {
     const html = renderWalletCardWithPreviewQuoteAndRecall(
       stripePaymentQuote({
         unit_price: 10,
@@ -1268,10 +1268,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain('Save $2')
-    expect(html).toContain('Coupon Applied from Come back offer 20% off')
-    expect(html.indexOf('Save $2')).toBeLessThan(
-      html.indexOf('Coupon Applied from Come back offer 20% off')
-    )
+    expect(html).toContain('20% OFF')
+    expect(html).toContain('Expires ')
+    expect(html).not.toContain('Coupon Applied from')
+    expect(html).not.toContain('Come back offer')
   })
 
   test('formats backend preview amounts in the quote currency', () => {

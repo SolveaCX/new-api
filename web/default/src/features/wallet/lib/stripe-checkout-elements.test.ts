@@ -79,6 +79,12 @@ describe('mountStripeCheckoutElements', () => {
     const mountCurrency = mock(() => undefined)
     const destroyCurrency = mock(() => undefined)
     const confirm = mock(async () => ({ type: 'success', session }) as const)
+    const applyPromotionCode = mock(
+      async () => ({ type: 'success', session }) as const
+    )
+    const removePromotionCode = mock(
+      async () => ({ type: 'success', session }) as const
+    )
     let changeHandler: ((next: StripeCheckoutSession) => void) | undefined
 
     const paymentElement = {
@@ -92,6 +98,8 @@ describe('mountStripeCheckoutElements', () => {
     const actions = {
       getSession: () => session,
       confirm,
+      applyPromotionCode,
+      removePromotionCode,
     } as unknown as StripeCheckoutLoadActionsSuccess
     const checkout = {
       on: (
@@ -136,6 +144,11 @@ describe('mountStripeCheckoutElements', () => {
 
     await mounted.confirm()
     expect(confirm).toHaveBeenCalledWith({ redirect: 'always' })
+
+    await mounted.applyPromotionCode('SAVE20')
+    expect(applyPromotionCode).toHaveBeenCalledWith('SAVE20')
+    await mounted.removePromotionCode()
+    expect(removePromotionCode).toHaveBeenCalledTimes(1)
 
     mounted.destroy()
     expect(destroyPayment).toHaveBeenCalledTimes(1)

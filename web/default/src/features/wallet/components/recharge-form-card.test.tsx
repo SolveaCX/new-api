@@ -312,7 +312,9 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('$10')
     expect(html).toContain('line-through')
     expect(html).toContain('Save $2')
-    expect(html).toContain('Coupon Applied from Welcome back 20% off')
+    expect(html).toContain('Expires ')
+    expect(html).not.toContain('Coupon Applied from')
+    expect(html).not.toContain('Welcome back')
   })
 
   test('calculates percent recall savings from the configured checkout price', () => {

@@ -80,7 +80,7 @@ export function StripePromotionCodeControl({
             autoComplete='off'
             placeholder={t('Enter promotion code')}
             onChange={(event) => onValueChange(event.currentTarget.value)}
-            className='min-h-11 min-w-0 rounded-lg border border-[#cfd5dc] bg-[#fbfbfc] px-3 text-base text-[#20242a] outline-none transition placeholder:text-[#8a929d] focus:border-[#0576d7] focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60'
+            className='min-h-11 min-w-0 rounded-lg border border-[#cfd5dc] bg-[#fbfbfc] px-3 text-base text-[#20242a] transition outline-none placeholder:text-[#8a929d] focus:border-[#0576d7] focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60'
           />
           <button
             type='submit'
