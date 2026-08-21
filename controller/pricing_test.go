@@ -358,8 +358,12 @@ func withModelDirectoryMetadataLoader(
 	loader func([]string) (map[string]model.ModelDirectoryMetadataView, error),
 ) {
 	t.Helper()
+	invalidateWebsiteMetadataCache()
 	previous := getEnabledModelDirectoryMetadataMap
-	t.Cleanup(func() { getEnabledModelDirectoryMetadataMap = previous })
+	t.Cleanup(func() {
+		getEnabledModelDirectoryMetadataMap = previous
+		invalidateWebsiteMetadataCache()
+	})
 	getEnabledModelDirectoryMetadataMap = loader
 }
 
@@ -385,6 +389,90 @@ func TestBuildWebsitePublicGroupPricingPayloadAttachesExactDirectoryMetadata(t *
 	require.Equal(t, &metadata, rows[0].DirectoryMetadata)
 	require.Nil(t, rows[1].DirectoryMetadata)
 	require.Nil(t, pricing[0].DirectoryMetadata, "source pricing cache must not be mutated")
+}
+
+func TestAttachModelDirectoryMetadataUsesIndependentPointersPerRow(t *testing.T) {
+	pricing := []model.Pricing{
+		{ModelName: "gpt-5", EnableGroup: []string{"plg"}},
+		{ModelName: "claude-4", EnableGroup: []string{"plg"}},
+	}
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		return map[string]model.ModelDirectoryMetadataView{
+			"gpt-5":    {Author: "OpenAI"},
+			"claude-4": {Author: "Anthropic"},
+		}, nil
+	})
+
+	rows := attachModelDirectoryMetadata(pricing)
+	require.NotNil(t, rows[0].DirectoryMetadata)
+	require.NotNil(t, rows[1].DirectoryMetadata)
+	require.NotSame(t, rows[0].DirectoryMetadata, rows[1].DirectoryMetadata)
+	require.Equal(t, "OpenAI", rows[0].DirectoryMetadata.Author)
+	require.Equal(t, "Anthropic", rows[1].DirectoryMetadata.Author)
+}
+
+func TestAttachModelDirectoryMetadataCachesLookupWithoutCachingPricingRows(t *testing.T) {
+	pricing := []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}}
+	lookupCount := 0
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		lookupCount++
+		return map[string]model.ModelDirectoryMetadataView{"gpt-5": {Author: "OpenAI"}}, nil
+	})
+
+	first := attachModelDirectoryMetadata(pricing)
+	second := attachModelDirectoryMetadata(pricing)
+
+	require.Equal(t, 1, lookupCount)
+	require.Nil(t, pricing[0].DirectoryMetadata)
+	require.NotSame(t, first[0].DirectoryMetadata, second[0].DirectoryMetadata)
+	require.Equal(t, "OpenAI", second[0].DirectoryMetadata.Author)
+}
+
+func TestAttachModelDirectoryMetadataRefreshesAfterCacheTTL(t *testing.T) {
+	previousNow := websiteMetadataNow
+	previousTTL := websiteMetadataCacheTTL
+	t.Cleanup(func() {
+		websiteMetadataNow = previousNow
+		websiteMetadataCacheTTL = previousTTL
+		invalidateWebsiteMetadataCache()
+	})
+	now := time.Unix(100, 0)
+	websiteMetadataNow = func() time.Time { return now }
+	websiteMetadataCacheTTL = time.Minute
+
+	lookupCount := 0
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		lookupCount++
+		return map[string]model.ModelDirectoryMetadataView{"gpt-5": {Author: "OpenAI"}}, nil
+	})
+	pricing := []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}}
+
+	attachModelDirectoryMetadata(pricing)
+	now = now.Add(59 * time.Second)
+	attachModelDirectoryMetadata(pricing)
+	require.Equal(t, 1, lookupCount)
+
+	now = now.Add(2 * time.Second)
+	attachModelDirectoryMetadata(pricing)
+	require.Equal(t, 2, lookupCount)
+}
+
+func TestCachedWebsiteMetadataDoesNotShareMutableFields(t *testing.T) {
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		contextTokens := int64(128000)
+		return map[string]model.ModelDirectoryMetadataView{
+			"gpt-5": {Providers: []string{"OpenAI"}, ContextTokens: &contextTokens},
+		}, nil
+	})
+	pricing := []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}}
+
+	first := attachModelDirectoryMetadata(pricing)
+	first[0].DirectoryMetadata.Providers[0] = "Mutated"
+	*first[0].DirectoryMetadata.ContextTokens = 1
+	second := attachModelDirectoryMetadata(pricing)
+
+	require.Equal(t, "OpenAI", second[0].DirectoryMetadata.Providers[0])
+	require.EqualValues(t, 128000, *second[0].DirectoryMetadata.ContextTokens)
 }
 
 func TestBuildWebsitePublicGroupPricingPayloadKeepsPricingWhenMetadataLookupFails(t *testing.T) {

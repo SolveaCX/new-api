@@ -24,6 +24,12 @@ var (
 		body      []byte
 		expiresAt time.Time
 	}{}
+	websiteMetadataCacheTTL = time.Minute
+	websiteMetadataNow      = time.Now
+	websiteMetadataCache    = struct {
+		sync.RWMutex
+		entries map[string]websiteMetadataCacheEntry
+	}{entries: make(map[string]websiteMetadataCacheEntry)}
 	buildWebsitePricingPayload          = buildWebsitePricingPayloadDefault
 	buildWebsiteDisplayPricing          = service.BuildWebsiteDisplayPricing
 	getPricingModels                    = model.GetPricing
@@ -31,6 +37,11 @@ var (
 	getSupportedEndpointMap             = model.GetSupportedEndpointMap
 	getEnabledModelDirectoryMetadataMap = model.GetEnabledModelDirectoryMetadataMap
 )
+
+type websiteMetadataCacheEntry struct {
+	metadata  map[string]model.ModelDirectoryMetadataView
+	expiresAt time.Time
+}
 
 func init() {
 	operation_setting.OnPricingVisibilityChanged(InvalidateWebsitePricingCache)
@@ -237,10 +248,16 @@ func GetWebsitePricing(c *gin.Context) {
 
 func InvalidateWebsitePricingCache() {
 	websitePricingCache.Lock()
-	defer websitePricingCache.Unlock()
-
 	websitePricingCache.body = nil
 	websitePricingCache.expiresAt = time.Time{}
+	websitePricingCache.Unlock()
+	invalidateWebsiteMetadataCache()
+}
+
+func invalidateWebsiteMetadataCache() {
+	websiteMetadataCache.Lock()
+	websiteMetadataCache.entries = make(map[string]websiteMetadataCacheEntry)
+	websiteMetadataCache.Unlock()
 }
 
 func getCachedWebsitePricingJSON() ([]byte, error) {
@@ -318,7 +335,7 @@ func attachModelDirectoryMetadata(pricing []model.Pricing) []model.Pricing {
 			modelNames = append(modelNames, item.ModelName)
 		}
 	}
-	metadataByName, err := getEnabledModelDirectoryMetadataMap(modelNames)
+	metadataByName, err := getCachedEnabledModelDirectoryMetadataMap(modelNames)
 	if err != nil {
 		common.SysLog("failed to load model directory metadata: " + err.Error())
 		return rows
@@ -328,9 +345,79 @@ func attachModelDirectoryMetadata(pricing []model.Pricing) []model.Pricing {
 		if !ok {
 			continue
 		}
-		rows[index].DirectoryMetadata = &metadata
+		metadataCopy := metadata
+		rows[index].DirectoryMetadata = &metadataCopy
 	}
 	return rows
+}
+
+func getCachedEnabledModelDirectoryMetadataMap(modelNames []string) (map[string]model.ModelDirectoryMetadataView, error) {
+	keyParts := make([]string, 0, len(modelNames))
+	seen := make(map[string]struct{}, len(modelNames))
+	for _, name := range modelNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		keyParts = append(keyParts, name)
+	}
+	sort.Strings(keyParts)
+	key := strings.Join(keyParts, "\x00")
+	now := websiteMetadataNow()
+
+	websiteMetadataCache.RLock()
+	entry, ok := websiteMetadataCache.entries[key]
+	if ok && now.Before(entry.expiresAt) {
+		metadata := cloneWebsiteMetadataMap(entry.metadata)
+		websiteMetadataCache.RUnlock()
+		return metadata, nil
+	}
+	websiteMetadataCache.RUnlock()
+
+	metadata, err := getEnabledModelDirectoryMetadataMap(modelNames)
+	if err != nil {
+		return nil, err
+	}
+
+	websiteMetadataCache.Lock()
+	websiteMetadataCache.entries[key] = websiteMetadataCacheEntry{
+		metadata:  cloneWebsiteMetadataMap(metadata),
+		expiresAt: now.Add(websiteMetadataCacheTTL),
+	}
+	websiteMetadataCache.Unlock()
+	return cloneWebsiteMetadataMap(metadata), nil
+}
+
+func cloneWebsiteMetadataMap(source map[string]model.ModelDirectoryMetadataView) map[string]model.ModelDirectoryMetadataView {
+	clone := make(map[string]model.ModelDirectoryMetadataView, len(source))
+	for name, metadata := range source {
+		clone[name] = cloneWebsiteMetadataView(metadata)
+	}
+	return clone
+}
+
+func cloneWebsiteMetadataView(source model.ModelDirectoryMetadataView) model.ModelDirectoryMetadataView {
+	clone := source
+	clone.Providers = append([]string(nil), source.Providers...)
+	clone.Modalities = append([]string(nil), source.Modalities...)
+	clone.Categories = append([]string(nil), source.Categories...)
+	if source.ContextTokens != nil {
+		value := *source.ContextTokens
+		clone.ContextTokens = &value
+	}
+	if source.PopularityRank != nil {
+		value := *source.PopularityRank
+		clone.PopularityRank = &value
+	}
+	if source.TopTenRank != nil {
+		value := *source.TopTenRank
+		clone.TopTenRank = &value
+	}
+	return clone
 }
 
 func buildWebsitePublicGroupPricingPayload(

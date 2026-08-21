@@ -123,7 +123,11 @@ func run(args []string, getenv func(string) string, output io.Writer) error {
 	os.Args = []string{originalArgs[0]}
 	common.InitEnv()
 	os.Args = originalArgs
-	if err := model.InitDB(); err != nil {
+	initDB := model.InitDB
+	if options.dryRun {
+		initDB = model.InitDBWithoutMigration
+	}
+	if err := initDB(); err != nil {
 		return err
 	}
 

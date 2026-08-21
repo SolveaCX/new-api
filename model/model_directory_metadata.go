@@ -33,7 +33,7 @@ type ModelDirectoryMetadata struct {
 	Distillable    bool   `json:"distillable" gorm:"not null"`
 	PopularityRank *int   `json:"popularity_rank"`
 	TopTenRank     *int   `json:"top_ten_rank"`
-	Status         int    `json:"status" gorm:"default:1;index"`
+	Status         int    `json:"status" gorm:"not null;index"`
 	CreatedTime    int64  `json:"created_time" gorm:"bigint"`
 	UpdatedTime    int64  `json:"updated_time" gorm:"bigint"`
 }

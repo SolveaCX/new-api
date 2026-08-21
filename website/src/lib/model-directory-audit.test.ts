@@ -660,8 +660,8 @@ describe("model directory audit CLI assembly", () => {
 });
 
 describe("model directory audit CLI runner", () => {
-  test("audits the same plg pricing scope used by the models directory", async () => {
-    let fetchedUrl = "";
+	test("audits the full pricing scope by default", async () => {
+		let fetchedUrl = "";
 
     await runModelDirectoryAuditCli({
       env: { APP_CONSOLE_ORIGIN: "https://console.test", MODEL_DIRECTORY_AUDIT_OUT_DIR: "tmp/audit" },
@@ -675,8 +675,59 @@ describe("model directory audit CLI runner", () => {
       now: () => new Date("2026-08-21T00:00:00.000Z"),
     });
 
-    expect(fetchedUrl).toBe("https://console.test/api/website/pricing?group=plg");
-  });
+		expect(fetchedUrl).toBe("https://console.test/api/website/pricing");
+	});
+
+	test("uses an explicit group when the audit scope is configured", async () => {
+		let fetchedUrl = "";
+		const writtenPaths: string[] = [];
+
+		await runModelDirectoryAuditCli({
+			env: {
+				APP_CONSOLE_ORIGIN: "https://console.test",
+				MODEL_DIRECTORY_AUDIT_GROUP: "plg",
+				MODEL_DIRECTORY_AUDIT_OUT_DIR: "tmp/audit",
+			},
+			fetchImpl: async (input) => {
+				fetchedUrl = String(input);
+				return new Response(JSON.stringify({ success: true, data: [] }), { status: 200 });
+			},
+			mkdirImpl: async () => {},
+			writeFileImpl: async (path) => {
+				writtenPaths.push(String(path));
+			},
+			logImpl: () => {},
+			now: () => new Date("2026-08-21T00:00:00.000Z"),
+		});
+
+		expect(fetchedUrl).toBe("https://console.test/api/website/pricing?group=plg");
+		expect(writtenPaths.map((path) => path.replaceAll("\\", "/"))).toEqual([
+			"tmp/audit/production-model-directory-audit-plg.json",
+			"tmp/audit/production-model-directory-audit-plg.md",
+		]);
+	});
+
+	test("rejects unsupported audit groups before fetching or writing", async () => {
+		const calls: string[] = [];
+
+		await expect(
+			runModelDirectoryAuditCli({
+				env: { APP_CONSOLE_ORIGIN: "https://console.test", MODEL_DIRECTORY_AUDIT_GROUP: "internal" },
+				fetchImpl: async () => {
+					calls.push("fetch");
+					return new Response(JSON.stringify({ success: true, data: [] }), { status: 200 });
+				},
+				mkdirImpl: async () => {
+					calls.push("mkdir");
+				},
+				writeFileImpl: async () => {
+					calls.push("write");
+				},
+			})
+		).rejects.toThrow("unsupported audit group");
+
+		expect(calls).toEqual([]);
+	});
 
   test("rejects non-ok pricing fetch without writing or logging success", async () => {
     const calls: string[] = [];

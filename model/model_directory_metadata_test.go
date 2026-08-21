@@ -69,6 +69,18 @@ func TestModelDirectoryMetadataSchemaEnforcesExactUniqueModelName(t *testing.T) 
 
 }
 
+func TestModelDirectoryMetadataCreatePreservesExplicitDisabledStatus(t *testing.T) {
+	setupModelDirectoryMetadataTestDB(t)
+
+	metadata := validModelDirectoryMetadata(t, "disabled-model")
+	metadata.Status = 0
+	require.NoError(t, DB.Create(&metadata).Error)
+
+	var stored ModelDirectoryMetadata
+	require.NoError(t, DB.Where("model_name = ?", metadata.ModelName).First(&stored).Error)
+	require.Equal(t, 0, stored.Status)
+}
+
 func TestModelDirectoryMetadataNormalizeAndValidate(t *testing.T) {
 	contextTokens := int64(128000)
 	popularityRank := 12

@@ -27,8 +27,9 @@ type PricingApiResponse = {
   display_pricing?: unknown;
 };
 
-const JSON_REPORT_NAME = "production-model-directory-audit.json";
-const MARKDOWN_REPORT_NAME = "production-model-directory-audit.md";
+const JSON_REPORT_PREFIX = "production-model-directory-audit";
+
+type ModelDirectoryAuditGroup = "plg";
 
 export type ModelDirectoryAuditCliDeps = {
   env?: Record<string, string | undefined>;
@@ -48,9 +49,10 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
   const now = deps.now ?? (() => new Date());
   const origin = env.APP_CONSOLE_ORIGIN;
   if (!origin) throw new Error("APP_CONSOLE_ORIGIN is required");
+  const auditGroup = parseAuditGroup(env.MODEL_DIRECTORY_AUDIT_GROUP);
 
   const pricingUrl = new URL("/api/website/pricing", origin);
-  pricingUrl.searchParams.set("group", "plg");
+  if (auditGroup) pricingUrl.searchParams.set("group", auditGroup);
   const response = await fetchImpl(pricingUrl, {
     headers: { accept: "application/json" },
   });
@@ -69,15 +71,24 @@ export async function runModelDirectoryAuditCli(deps: ModelDirectoryAuditCliDeps
 
   const outputDir = env.MODEL_DIRECTORY_AUDIT_OUT_DIR || "reports/model-directory";
   await mkdirImpl(outputDir, { recursive: true });
-  const jsonPath = join(outputDir, JSON_REPORT_NAME);
-  const markdownPath = join(outputDir, MARKDOWN_REPORT_NAME);
+  const reportSuffix = auditGroup ? `-${auditGroup}` : "";
+  const jsonPath = join(outputDir, `${JSON_REPORT_PREFIX}${reportSuffix}.json`);
+  const markdownPath = join(outputDir, `${JSON_REPORT_PREFIX}${reportSuffix}.md`);
   await writeFileImpl(jsonPath, renderModelDirectoryAuditJson(report), "utf8");
   await writeFileImpl(markdownPath, renderModelDirectoryAuditMarkdown(report), "utf8");
 
+  logImpl(`Audit scope: ${auditGroup ?? "all"}`);
   logImpl(`JSON report: ${jsonPath}`);
   logImpl(`Markdown report: ${markdownPath}`);
   logImpl(`Issue count: ${report.issues.length}`);
   logImpl("No production write occurred.");
+}
+
+function parseAuditGroup(value: string | undefined): ModelDirectoryAuditGroup | undefined {
+  const group = value?.trim();
+  if (!group) return undefined;
+  if (group !== "plg") throw new Error(`unsupported audit group: ${group}`);
+  return group;
 }
 
 export function assembleAuditRowsFromPricingPayload(payload: PricingApiResponse): AuditModelDirectoryRow[] {

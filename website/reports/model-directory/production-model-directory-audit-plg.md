@@ -1,10 +1,10 @@
 # Model Directory Metadata Audit
 
-Generated at: 2026-08-21T14:42:33.283Z
-Source: https://console.flatkey.ai/api/website/pricing
-Live models audited: 91
+Generated at: 2026-08-21T14:42:44.939Z
+Source: https://console.flatkey.ai/api/website/pricing?group=plg
+Live models audited: 89
 Metadata entries audited: 0
-Issue count: 92
+Issue count: 90
 Wrote production: false
 
 **No production writes were performed.**
@@ -16,22 +16,22 @@ Review these findings before any database update. This report is read-only audit
 | Severity | Total |
 | --- | ---: |
 | invalid | 1 |
-| unknown-model | 91 |
+| unknown-model | 89 |
 
 ## Issue totals by affected filter
 
 | Filter | Total |
 | --- | ---: |
-| age | 91 |
-| categories | 91 |
-| context | 91 |
-| distillable | 91 |
-| metadata | 91 |
-| modalities | 91 |
+| age | 89 |
+| categories | 89 |
+| context | 89 |
+| distillable | 89 |
+| metadata | 89 |
+| modalities | 89 |
 | outputPrice | 1 |
-| providers | 91 |
-| series | 91 |
-| vendor | 91 |
+| providers | 89 |
+| series | 89 |
+| vendor | 89 |
 
 ## Issue details
 
@@ -110,8 +110,6 @@ Review these findings before any database update. This report is read-only audit
 | unknown-model | minimax-m2 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | minimax-m2.5 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | minimax-m2.7 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
-| unknown-model | mirothinker-1-7-deepresearch | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
-| unknown-model | mirothinker-1-7-deepresearch-mini | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | qwen3.5-27b | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | qwen3.5-35b-a3b | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | qwen3.5-397b-a17b | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
