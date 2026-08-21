@@ -1,6 +1,6 @@
 import type { BlogPost } from "./blog";
 import type { Locale } from "./locales";
-import { isLocale, localizePath } from "./locales";
+import { isLocale, localeLanguageTag, localizePath } from "./locales";
 import { SITE_NAME, SITE_ORIGIN } from "./seo";
 
 type JsonLdValue = string | number | boolean | null | JsonLdObject | JsonLdValue[];
@@ -56,7 +56,7 @@ export function buildBasePageSchema(input: BasePageSchemaInput): JsonLdGraph {
       "@type": "WebPage",
       name: pageNameFromPath(input.pathname),
       url: pageUrl,
-      inLanguage: input.locale,
+      inLanguage: localeLanguageTag(input.locale),
       isPartOf: websiteSchema(),
       publisher: organizationSchema(),
     },
@@ -103,7 +103,7 @@ export function buildBlogIndexSchema(input: BlogIndexSchemaInput): JsonLdGraph {
       name: input.title,
       description: input.description,
       url: blogUrl,
-      inLanguage: input.locale,
+      inLanguage: localeLanguageTag(input.locale),
       publisher: organizationSchema(),
     },
   ]);
@@ -120,7 +120,7 @@ export function buildBlogCategorySchema(input: BlogCategorySchemaInput): JsonLdG
       name: input.name,
       description: input.description,
       url: categoryUrl,
-      inLanguage: input.locale,
+      inLanguage: localeLanguageTag(input.locale),
       isPartOf: { "@type": "Blog", name: SITE_NAME, url: blogUrl },
       publisher: organizationSchema(),
     },
@@ -151,7 +151,7 @@ export function buildBlogArticleSchema(input: BlogArticleSchemaInput): JsonLdGra
       author: post.author ? { "@type": "Person", name: post.author } : organizationSchema(),
       publisher: organizationSchema(),
       articleSection: post.categoryName,
-      inLanguage: input.locale,
+      inLanguage: localeLanguageTag(input.locale),
     },
     breadcrumbSchema([
       { name: "Blog", item: blogUrl },

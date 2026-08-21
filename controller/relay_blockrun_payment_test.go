@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -51,9 +53,16 @@ func TestNormalizeBlockRunPaymentErrors(t *testing.T) {
 		ctx, _ := newBlockRunPaymentTestContext()
 		relaycommon.MarkBlockRunPaymentAttempt(ctx, dto.BlockRunPaymentChainBase, 203, "request=req-3")
 
-		got := normalizeBlockRunPaymentError(ctx, types.NewError(errors.New("connection reset"), types.ErrorCodeDoRequestFailed))
+		upstream := types.NewErrorWithStatusCode(errors.New("upstream 503: connection reset"), types.ErrorCodeDoRequestFailed, http.StatusServiceUnavailable)
+		got := normalizeBlockRunPaymentError(ctx, upstream)
 		require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, got.GetErrorCode())
 		require.True(t, types.IsSkipRetryError(got))
+		require.Equal(t, "BlockRun signed payment settlement is unknown and may have been charged; automatic retry is disabled, reconcile using the request ID", got.Error())
+		preserved, ok := common.GetContextKeyType[*types.NewAPIError](ctx, constant.ContextKeyBlockRunUpstreamError)
+		require.True(t, ok)
+		require.Same(t, upstream, preserved)
+		require.Equal(t, types.ErrorCodeDoRequestFailed, preserved.GetErrorCode())
+		require.Equal(t, http.StatusServiceUnavailable, preserved.StatusCode)
 		state, ok := relaycommon.GetBlockRunPaymentState(ctx)
 		require.True(t, ok)
 		require.Equal(t, relaycommon.BlockRunPaymentOutcomeSettlementUnknown, state.Outcome)

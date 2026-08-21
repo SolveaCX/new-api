@@ -16,11 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider } from 'react-i18next'
-import { StripeCheckoutLayout } from './stripe-checkout-layout'
+
+// The installed lucide-react CJS bundle does not expose LockKeyhole in this
+// test environment. Keep the layout test focused on DOM ordering by stubbing
+// the icon module locally instead of changing the production icon choice.
+mock.module('lucide-react', () => ({
+  Gift: () => null,
+  Loader2: () => null,
+  LockKeyhole: () => null,
+  ShieldCheck: () => null,
+}))
+
+const { StripeCheckoutLayout } = await import('./stripe-checkout-layout')
 
 const i18n = createInstance()
 await i18n.init({
@@ -79,6 +90,9 @@ describe('StripeCheckoutLayout', () => {
           submitting={false}
           error={null}
           onConfirm={() => undefined}
+          promotionControl={
+            <div data-slot='stripe-promotion-code-control'>Promotion code</div>
+          }
         />
       </I18nextProvider>
     )
@@ -92,5 +106,45 @@ describe('StripeCheckoutLayout', () => {
     expect(html).toContain('Surcharge')
     expect(html).toContain('bg-[#0576d7]')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Continue.*<\/button>/)
+  })
+
+  test('places the promotion-code control between the summary card and Continue', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <StripeCheckoutLayout
+          title='Confirm Payment'
+          description='Payment is processed securely by Stripe.'
+          viewModel={{
+            canConfirm: true,
+            currency: 'BRL',
+            email: 'buyer@example.com',
+            productDescription: '1 month subscription',
+            productName: 'Flatkey Go',
+            primaryAmount: 'R$48.65',
+            summaryLines: [{ key: 'subtotal', amount: 'R$49.90' }],
+            topupSummary: null,
+            totalAmount: 'R$48.65',
+          }}
+          onPaymentContainer={() => undefined}
+          onCurrencyContainer={() => undefined}
+          showCurrencySelector={false}
+          mounting={false}
+          submitting={false}
+          error={null}
+          onConfirm={() => undefined}
+          promotionControl={
+            <div data-slot='stripe-promotion-code-control'>Promotion code</div>
+          }
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('Promotion code')
+    expect(html.indexOf('Promotion code')).toBeGreaterThan(
+      html.indexOf('Total due')
+    )
+    expect(html.indexOf('Promotion code')).toBeLessThan(
+      html.indexOf('Continue')
+    )
   })
 })

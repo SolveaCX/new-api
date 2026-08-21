@@ -54,7 +54,9 @@ type GrokPKCEStartResult struct {
 // GrokPKCECompleteResult 是 PKCE 授权完成的结果。
 // Key 只在未绑定渠道的 flow 中返回；已绑定渠道的凭证只写回 Channel.Key。
 type GrokPKCECompleteResult struct {
-	Key string
+	Key           string
+	ChannelID     int
+	BillingStatus string
 }
 
 // GrokPKCEStart 生成 PKCE verifier/challenge + state，构造 authorize URL，
@@ -123,9 +125,12 @@ func GrokPKCEStart(channelID int, redirectURI string) (GrokPKCEStartResult, erro
 	}, nil
 }
 
-// grokSensitiveFieldPKCEVerifierForController 与 service.grokSensitiveFieldPKCEVerifier 同值
-// （cipher 白名单只放行 "pkce_verifier" 一个字段）；不直接引用 service 私有常量。
-const grokSensitiveFieldPKCEVerifierForController = "pkce_verifier"
+// These values mirror the private service cipher field allowlist. The field is
+// part of the AEAD associated data, so encryption and decryption must match.
+const (
+	grokSensitiveFieldPKCEVerifierForController  = "pkce_verifier"
+	grokSensitiveFieldCompletionKeyForController = "completion_key"
+)
 
 // loadGrokAuthCipher 装载 Task 5 cipher（fail-closed：env 未配置即失败）。
 func loadGrokAuthCipher() (service.GrokCredentialCipher, error) {
@@ -172,9 +177,35 @@ func SetGrokAuthHTTPDoerForTest(doer groksubscription.HTTPDoer) func() {
 // errGrokStateMismatch 是 400 语义错误：state 校验失败（flow 已被 consume 防重放）。
 var errGrokStateMismatch = errors.New("grok auth: state mismatch")
 
+// errGrokCompletionPending tells a concurrent retry that another request owns
+// the one-time code exchange. Retrying later will recover the persisted result.
+var errGrokCompletionPending = errors.New("grok auth: completion pending, retry shortly")
+
+func recoverGrokAuthCompletion(flowID, ownerToken, state string) (GrokPKCECompleteResult, bool, error) {
+	completion, found, err := model.GetGrokAuthFlowCompletion(flowID, ownerToken)
+	if err != nil || !found {
+		return GrokPKCECompleteResult{}, found, err
+	}
+	if subtle.ConstantTimeCompare([]byte(hashGrokState(state)), []byte(completion.StateHash)) != 1 {
+		return GrokPKCECompleteResult{}, true, errGrokStateMismatch
+	}
+	cipher, err := loadGrokAuthCipher()
+	if err != nil {
+		return GrokPKCECompleteResult{}, true, err
+	}
+	serialized, err := cipher.Decrypt(flowID, grokSensitiveFieldCompletionKeyForController, completion.EncryptedCompletionResult)
+	if err != nil {
+		return GrokPKCECompleteResult{}, true, err
+	}
+	if _, err := groksubscription.ParseCredential(serialized); err != nil {
+		return GrokPKCECompleteResult{}, true, errors.New("grok auth: stored completion is invalid")
+	}
+	return GrokPKCECompleteResult{Key: serialized}, true, nil
+}
+
 // GrokPKCEComplete 用授权码换凭证。未绑定渠道时返回凭证；已绑定渠道时写回渠道。
 // 流程：claim flow（一次性）→ 常数时间校验 state hash → 解密 verifier → ExchangeToken
-// → 序列化凭证 → 未绑定时 consume 并返回；已绑定时一次性写回、置 active、consume。
+// → 序列化凭证 → 未绑定时加密保存可恢复结果并返回；已绑定时一次性写回、置 active、consume。
 // ownerToken 为空时从 flowID 确定性推导（同 flow 重试幂等，他人 owner 抢不走 claim）。
 func GrokPKCEComplete(flowID, code, state, ownerToken string) (GrokPKCECompleteResult, error) {
 	if flowID == "" || code == "" || state == "" {
@@ -183,16 +214,29 @@ func GrokPKCEComplete(flowID, code, state, ownerToken string) (GrokPKCECompleteR
 	if ownerToken == "" {
 		ownerToken = grokFlowOwnerToken(flowID)
 	}
+	if result, found, err := recoverGrokAuthCompletion(flowID, ownerToken, state); err != nil || found {
+		return result, err
+	}
 	flow, claimed, err := model.ClaimGrokAuthFlow(flowID, ownerToken)
 	if err != nil {
 		return GrokPKCECompleteResult{}, err
 	}
 	if !claimed || flow == nil {
+		if result, found, err := recoverGrokAuthCompletion(flowID, ownerToken, state); err != nil || found {
+			return result, err
+		}
 		return GrokPKCECompleteResult{}, errors.New("grok auth: flow not found, expired or already used")
 	}
 	if subtle.ConstantTimeCompare([]byte(hashGrokState(state)), []byte(flow.StateHash)) != 1 {
-		// state 不符必须烧掉 flow：防重放（设计 §7.1）。
-		_ = model.ConsumeGrokAuthFlow(flowID, ownerToken)
+		// 未开始换码时烧掉 flow 防重放；一旦另一个请求已开始使用一次性
+		// authorization code，就不能让并发坏请求删除它。
+		consumed, err := model.ConsumeGrokAuthFlowBeforeExchange(flowID, ownerToken)
+		if err != nil {
+			return GrokPKCECompleteResult{}, err
+		}
+		if !consumed {
+			return GrokPKCECompleteResult{}, errGrokCompletionPending
+		}
 		return GrokPKCECompleteResult{}, errGrokStateMismatch
 	}
 	cipher, err := loadGrokAuthCipher()
@@ -202,6 +246,18 @@ func GrokPKCEComplete(flowID, code, state, ownerToken string) (GrokPKCECompleteR
 	verifier, err := cipher.Decrypt(flow.FlowID, grokSensitiveFieldPKCEVerifierForController, flow.EncryptedVerifier)
 	if err != nil {
 		return GrokPKCECompleteResult{}, err // cipher 错误信息自身已脱敏
+	}
+	if flow.ChannelID == 0 {
+		began, err := model.BeginGrokAuthFlowExchange(flowID, ownerToken)
+		if err != nil {
+			return GrokPKCECompleteResult{}, err
+		}
+		if !began {
+			if result, found, err := recoverGrokAuthCompletion(flowID, ownerToken, state); err != nil || found {
+				return result, err
+			}
+			return GrokPKCECompleteResult{}, errGrokCompletionPending
+		}
 	}
 	cred, err := groksubscription.ExchangeToken(context.Background(), grokAuthHTTPDoer,
 		groksubscription.GrantTypeAuthorizationCode, code, verifier, "", flow.RedirectURI)
@@ -217,7 +273,11 @@ func GrokPKCEComplete(flowID, code, state, ownerToken string) (GrokPKCECompleteR
 		return GrokPKCECompleteResult{}, err
 	}
 	if flow.ChannelID == 0 {
-		if err := model.ConsumeGrokAuthFlow(flowID, ownerToken); err != nil {
+		encryptedResult, err := cipher.Encrypt(flowID, grokSensitiveFieldCompletionKeyForController, serialized)
+		if err != nil {
+			return GrokPKCECompleteResult{}, err
+		}
+		if err := model.CompleteGrokAuthFlow(flowID, ownerToken, encryptedResult); err != nil {
 			return GrokPKCECompleteResult{}, err
 		}
 		return GrokPKCECompleteResult{Key: serialized}, nil
@@ -231,7 +291,7 @@ func GrokPKCEComplete(flowID, code, state, ownerToken string) (GrokPKCECompleteR
 	if err := model.ConsumeGrokAuthFlow(flowID, ownerToken); err != nil {
 		return GrokPKCECompleteResult{}, err
 	}
-	return GrokPKCECompleteResult{}, nil
+	return GrokPKCECompleteResult{ChannelID: flow.ChannelID}, nil
 }
 
 // grokFlowOwnerToken 从 flowID 推导 claim 用的 owner token：同一 flow 的重试幂等
@@ -530,6 +590,10 @@ func GrokPKCECompleteHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "state mismatch"})
 			return
 		}
+		if errors.Is(err, errGrokCompletionPending) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": errGrokCompletionPending.Error()})
+			return
+		}
 		body := gin.H{"success": false, "message": err.Error()}
 		var rejected *groksubscription.GrantRejectedError
 		if errors.As(err, &rejected) {
@@ -541,6 +605,12 @@ func GrokPKCECompleteHandler(c *gin.Context) {
 	data := gin.H{"status": model.GrokAuthStatusActive}
 	if result.Key != "" {
 		data["key"] = result.Key
+	}
+	if result.ChannelID > 0 {
+		result.BillingStatus = groksubscription.RefreshMediaBillingStatusWithHTTPDoer(c.Request.Context(), result.ChannelID, grokAuthHTTPDoer)
+	}
+	if result.BillingStatus != "" {
+		data["billing_status"] = result.BillingStatus
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
@@ -564,7 +634,8 @@ func GrokImportHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, body)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"status": model.GrokAuthStatusActive}})
+	billingStatus := groksubscription.RefreshMediaBillingStatusWithHTTPDoer(c.Request.Context(), req.ChannelID, grokAuthHTTPDoer)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"status": model.GrokAuthStatusActive, "billing_status": billingStatus}})
 }
 
 func GrokRefreshHandler(c *gin.Context) {
@@ -590,11 +661,13 @@ func GrokRefreshHandler(c *gin.Context) {
 	if st, err := model.GetGrokChannelState(req.ChannelID); err == nil && st != nil {
 		quotaSnapshot = st.QuotaSnapshot
 	}
+	billingStatus := groksubscription.RefreshMediaBillingStatusWithHTTPDoer(c.Request.Context(), req.ChannelID, grokAuthHTTPDoer)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"status":         model.GrokAuthStatusActive,
 			"quota_snapshot": quotaSnapshot,
+			"billing_status": billingStatus,
 		},
 	})
 }

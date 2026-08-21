@@ -127,7 +127,7 @@ func TestBuildOneTimePlanCheckoutUsesPaymentModeAndRequestedMethod(t *testing.T)
 	require.NotNil(t, params.ClientReferenceID)
 	require.Equal(t, order.TradeNo, *params.ClientReferenceID)
 	require.NotNil(t, params.IdempotencyKey)
-	require.Equal(t, "subscription-one-time:"+order.TradeNo, *params.IdempotencyKey)
+	require.Contains(t, *params.IdempotencyKey, "subscription-one-time:"+order.TradeNo+":rev:0:discount:")
 	require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
 	require.Equal(t, "purchase", params.Metadata["purchase_intent"])
 	require.Equal(t, "2", params.Metadata["purchase_months"])
@@ -159,10 +159,20 @@ func TestOneTimePlanMetadataIncludesInvitationDiscountSnapshot(t *testing.T) {
 	order.SubscriptionDiscountUSDMinor = 700
 	order.SubscriptionDiscountAmountMinor = 700
 
-	params, err := buildOneTimePlanCheckoutSessionParams(order, &model.User{Id: 501, Email: "buyer@example.com"})
+	params, err := buildOneTimePlanCheckoutSessionParamsForRevision(
+		order,
+		&model.User{Id: 501, Email: "buyer@example.com"},
+		order.CheckoutRevision,
+		service.StripeCheckoutDiscountSelection{
+			Source:   service.StripeCheckoutDiscountInvitation,
+			CouponID: "coupon_invitation_snapshot",
+		},
+	)
 
 	require.NoError(t, err)
-	require.EqualValues(t, 1300, *params.LineItems[0].PriceData.UnitAmount)
+	require.EqualValues(t, 2000, *params.LineItems[0].PriceData.UnitAmount)
+	require.Len(t, params.Discounts, 1)
+	require.Equal(t, "coupon_invitation_snapshot", *params.Discounts[0].Coupon)
 	require.Equal(t, service.SubscriptionDiscountKindInvitation, params.Metadata["discount_kind"])
 	require.Equal(t, order.SubscriptionDiscountReservationKey, params.Metadata["subscription_discount_reservation_key"])
 	require.Equal(t, "700", params.Metadata["subscription_discount_usd_minor"])
@@ -193,6 +203,163 @@ func TestBuildOneTimePlanCheckoutRecallMetadataUsesDiscountedOrderWithoutRawClai
 		require.NotContains(t, strings.ToLower(key), "claim")
 		require.NotContains(t, strings.ToLower(value), "claim")
 		require.NotContains(t, value, "FKSECRET234")
+	}
+}
+
+func TestOneTimePlanStripeRevision(t *testing.T) {
+	tests := []struct {
+		name              string
+		selection         service.StripeCheckoutDiscountSelection
+		wantCoupon        string
+		wantPromotionCode string
+		wantRecall        bool
+	}{
+		{
+			name: "manual",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountManual,
+				PromotionCodeID: "promo_manual_7",
+				MaskedCode:      "MAN***-7",
+			},
+			wantPromotionCode: "promo_manual_7",
+		},
+		{
+			name: "invitation restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:   service.StripeCheckoutDiscountInvitation,
+				CouponID: "coupon_invitation_7",
+			},
+			wantCoupon: "coupon_invitation_7",
+		},
+		{
+			name: "recall restore",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountRecall,
+				PromotionCodeID: "promo_recall_7",
+			},
+			wantPromotionCode: "promo_recall_7",
+			wantRecall:        true,
+		},
+		{
+			name:      "none restore",
+			selection: service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 280, 1)
+			order.RecallCampaignId = 41
+			order.RecallRecipientId = 82
+			order.RecallPromotionCodeId = "promo_recall_7"
+			order.RecallDiscountAmountMinor = 20
+
+			params, err := buildOneTimePlanCheckoutSessionParamsForRevision(
+				order,
+				&model.User{Id: 501, Email: "buyer@example.com"},
+				2,
+				test.selection,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, order.TradeNo, params.Metadata["trade_no"])
+			require.Equal(t, "2", params.Metadata["checkout_revision"])
+			require.Equal(t, string(test.selection.Source), params.Metadata["discount_selection"])
+			require.Equal(t, params.Metadata, params.PaymentIntentData.Metadata)
+			require.NotNil(t, params.IdempotencyKey)
+			require.Contains(t, *params.IdempotencyKey, ":rev:2:")
+			require.NotContains(t, *params.IdempotencyKey, "promo_manual_7")
+			require.NotContains(t, *params.IdempotencyKey, "MAN***-7")
+			if test.wantCoupon == "" && test.wantPromotionCode == "" {
+				require.Empty(t, params.Discounts)
+			} else {
+				require.Len(t, params.Discounts, 1)
+				if test.wantCoupon != "" {
+					require.NotNil(t, params.Discounts[0].Coupon)
+					require.Equal(t, test.wantCoupon, *params.Discounts[0].Coupon)
+				} else {
+					require.NotNil(t, params.Discounts[0].PromotionCode)
+					require.Equal(t, test.wantPromotionCode, *params.Discounts[0].PromotionCode)
+				}
+			}
+			if test.wantRecall {
+				require.Equal(t, "41", params.Metadata["recall_campaign_id"])
+				require.Equal(t, "82", params.Metadata["recall_recipient_id"])
+			} else {
+				require.NotContains(t, params.Metadata, "recall_campaign_id")
+				require.NotContains(t, params.Metadata, "recall_recipient_id")
+				require.NotContains(t, params.Metadata, "recall_promotion_code_id")
+				require.NotContains(t, params.Metadata, "recall_discount_amount_minor")
+			}
+		})
+	}
+}
+
+func TestOneTimePlanInvitationReplacementBuildsDiscountAgainstGrossAmount(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection service.StripeCheckoutDiscountSelection
+		wantCount int
+	}{
+		{
+			name: "canonical invitation",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:   service.StripeCheckoutDiscountInvitation,
+				CouponID: "coupon_invitation_restore",
+			},
+			wantCount: 1,
+		},
+		{
+			name: "manual replacement",
+			selection: service.StripeCheckoutDiscountSelection{
+				Source:          service.StripeCheckoutDiscountManual,
+				PromotionCodeID: "promo_manual_replace",
+			},
+			wantCount: 1,
+		},
+		{
+			name:      "restore none",
+			selection: service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1300, 1)
+			order.DiscountKind = service.SubscriptionDiscountKindInvitation
+			order.SubscriptionDiscountAmountMinor = 700
+			order.SubscriptionDiscountUSDMinor = 700
+
+			params, err := buildOneTimePlanCheckoutSessionParamsForRevision(
+				order,
+				&model.User{Id: 501, Email: "buyer@example.com"},
+				2,
+				test.selection,
+			)
+
+			require.NoError(t, err)
+			require.EqualValues(t, 2000, *params.LineItems[0].PriceData.UnitAmount)
+			require.Len(t, params.Discounts, test.wantCount)
+		})
+	}
+}
+
+func TestOneTimePlanStripeRevisionRejectsInvalidDiscountSelection(t *testing.T) {
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1234, 1)
+	tests := []service.StripeCheckoutDiscountSelection{
+		{Source: "affiliate"},
+		{Source: service.StripeCheckoutDiscountInvitation},
+		{Source: service.StripeCheckoutDiscountManual},
+		{Source: service.StripeCheckoutDiscountRecall},
+	}
+	for _, selection := range tests {
+		_, err := buildOneTimePlanCheckoutSessionParamsForRevision(
+			order,
+			&model.User{Id: 501, Email: "buyer@example.com"},
+			2,
+			selection,
+		)
+		require.Error(t, err)
 	}
 }
 
@@ -337,6 +504,187 @@ func TestCreateOneTimePlanCheckoutUsesRecallScopedProductForPriceData(t *testing
 	require.NotNil(t, priceData.Product)
 	require.Equal(t, "prod_one_time", *priceData.Product)
 	require.Nil(t, priceData.ProductData)
+}
+
+func TestCreateOneTimePlanCheckoutForRevisionDoesNotReplaceActiveOrderPointer(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	backend := &oneTimeStripeCheckoutRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, backend)
+	setting.StripeApiSecret = "sk_test_one_time_candidate"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+	})
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1234, 1)
+	order.ProviderSessionId = "cs_active_original"
+	order.ProviderSessionURL = "https://checkout.stripe.test/original"
+	order.CheckoutRevision = 1
+	require.NoError(t, model.DB.Create(order).Error)
+
+	candidate, err := createOneTimeStripeCheckoutSessionForRevision(
+		context.Background(),
+		order,
+		&model.User{Id: 501, Email: "buyer@example.com"},
+		2,
+		service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_one_time_created", candidate.ID)
+	var stored model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).First(&stored).Error)
+	require.Equal(t, "cs_active_original", stored.ProviderSessionId)
+	require.Equal(t, "https://checkout.stripe.test/original", stored.ProviderSessionURL)
+	require.EqualValues(t, 1, stored.CheckoutRevision)
+}
+
+func TestCreateOneTimePlanManualRevisionUsesStableStripeProduct(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	backend := &oneTimeStripeCheckoutRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, backend)
+	setting.StripeApiSecret = "sk_test_one_time_manual_product"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+	})
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1234, 1)
+	order.PlanSnapshot = `{"plan_id":901,"title":"Pro Local","price_amount":12.34,"currency":"USD","stripe_price_id":"price_manual_product","duration_unit":"month","duration_value":1,"total_amount":1234}`
+	client := &oneTimeStripeRecallFakeClient{
+		getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) {
+			require.Equal(t, "price_manual_product", id)
+			return &stripe.Price{
+				ID:      id,
+				Active:  true,
+				Product: &stripe.Product{ID: "prod_manual_stable"},
+			}, nil
+		},
+	}
+	originalRecallClient := stripeOneTimeRecallClient
+	stripeOneTimeRecallClient = client
+	t.Cleanup(func() { stripeOneTimeRecallClient = originalRecallClient })
+
+	created, err := createOneTimeStripeCheckoutSessionForRevision(
+		context.Background(),
+		order,
+		&model.User{Id: 501, Email: "buyer@example.com"},
+		2,
+		service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountManual,
+			PromotionCodeID: "promo_manual_product_scoped",
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_one_time_created", created.ID)
+	require.Len(t, backend.params, 1)
+	priceData := backend.params[0].LineItems[0].PriceData
+	require.NotNil(t, priceData.Product)
+	require.Equal(t, "prod_manual_stable", *priceData.Product)
+	require.Nil(t, priceData.ProductData)
+}
+
+func TestCreateOneTimePlanManualRevisionStopsWhenStableProductLookupFails(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	backend := &oneTimeStripeCheckoutRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, backend)
+	setting.StripeApiSecret = "sk_test_one_time_manual_product_failure"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+	})
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1234, 1)
+	order.PlanSnapshot = `{"plan_id":901,"title":"Pro Local","price_amount":12.34,"currency":"USD","stripe_price_id":"price_manual_product_failure","duration_unit":"month","duration_value":1,"total_amount":1234}`
+	client := &oneTimeStripeRecallFakeClient{
+		getPriceFn: func(_ context.Context, id string) (*stripe.Price, error) {
+			require.Equal(t, "price_manual_product_failure", id)
+			return nil, errors.New("Stripe price lookup unavailable")
+		},
+	}
+	originalRecallClient := stripeOneTimeRecallClient
+	stripeOneTimeRecallClient = client
+	t.Cleanup(func() { stripeOneTimeRecallClient = originalRecallClient })
+
+	_, err := createOneTimeStripeCheckoutSessionForRevision(
+		context.Background(),
+		order,
+		&model.User{Id: 501, Email: "buyer@example.com"},
+		2,
+		service.StripeCheckoutDiscountSelection{
+			Source:          service.StripeCheckoutDiscountManual,
+			PromotionCodeID: "promo_manual_product_scoped",
+		},
+	)
+
+	require.ErrorContains(t, err, "Stripe price lookup unavailable")
+	require.Zero(t, backend.checkoutCalls)
+}
+
+func TestCreateOneTimePlanCheckoutInitialWrapperPersistsActiveOrderPointer(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	backend := &oneTimeStripeCheckoutRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, backend)
+	setting.StripeApiSecret = "sk_test_one_time_initial"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+	})
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1234, 1)
+	require.NoError(t, model.DB.Create(order).Error)
+
+	created, err := createOneTimeStripeCheckoutSession(context.Background(), order, &model.User{Id: 501, Email: "buyer@example.com"})
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_one_time_created", created.ID)
+	var stored model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).First(&stored).Error)
+	require.Equal(t, "cs_one_time_created", stored.ProviderSessionId)
+	require.Equal(t, "https://checkout.stripe.test/one-time", stored.ProviderSessionURL)
+}
+
+func TestCreateOneTimePlanCheckoutInitialInvitationCreatesCouponAndPersists(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	backend := &oneTimeStripeCheckoutRecordingBackend{}
+	stripe.SetBackend(stripe.APIBackend, backend)
+	setting.StripeApiSecret = "sk_test_one_time_initial_invitation"
+	t.Cleanup(func() {
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+	})
+	var couponParams *stripe.CouponParams
+	originalCouponCreator := stripeOneTimeCouponCreator
+	stripeOneTimeCouponCreator = func(_ context.Context, params *stripe.CouponParams) (*stripe.Coupon, error) {
+		couponParams = params
+		return &stripe.Coupon{ID: "coupon_initial_invitation"}, nil
+	}
+	t.Cleanup(func() { stripeOneTimeCouponCreator = originalCouponCreator })
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 1300, 1)
+	order.DiscountKind = service.SubscriptionDiscountKindInvitation
+	order.SubscriptionDiscountAmountMinor = 700
+	order.SubscriptionDiscountUSDMinor = 700
+	require.NoError(t, model.DB.Create(order).Error)
+
+	created, err := createOneTimeStripeCheckoutSession(context.Background(), order, &model.User{Id: 501, Email: "buyer@example.com"})
+
+	require.NoError(t, err)
+	require.Equal(t, "cs_one_time_created", created.ID)
+	require.NotNil(t, couponParams)
+	require.EqualValues(t, 700, *couponParams.AmountOff)
+	require.Equal(t, "usd", *couponParams.Currency)
+	require.Len(t, backend.params, 1)
+	require.EqualValues(t, 2000, *backend.params[0].LineItems[0].PriceData.UnitAmount)
+	require.Len(t, backend.params[0].Discounts, 1)
+	require.Equal(t, "coupon_initial_invitation", *backend.params[0].Discounts[0].Coupon)
+	var stored model.SubscriptionOrder
+	require.NoError(t, model.DB.Where("trade_no = ?", order.TradeNo).First(&stored).Error)
+	require.Equal(t, "cs_one_time_created", stored.ProviderSessionId)
 }
 
 func TestOneTimeRecallDiscountAmountMinorUsesBaseAndCurrencyOptions(t *testing.T) {
@@ -857,6 +1205,47 @@ func TestOneTimePlanPaidWebhookReturnsPermanentErrorForValidationMismatch(t *tes
 
 	require.Error(t, err)
 	require.False(t, isRetryableStripeWebhookProcessingError(err))
+}
+
+func TestOneTimePlanPaidWebhookPromotesPaidCandidateBeforeActivate(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.UserSubscriptionContract{}, &model.SubscriptionChangeIntent{}, &model.SubscriptionTermSegment{}))
+	insertStripeFulfillmentUser(t, 506)
+	insertStripeFulfillmentSubscriptionPlan(t, 906)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", 906).Updates(map[string]any{"price_amount": 49, "total_amount": 4990, "currency": "BRL"}).Error)
+	contract := model.UserSubscriptionContract{UserId: 506, Status: model.SubscriptionContractStatusEnded, PaymentMode: model.SubscriptionPaymentModePrepaid}
+	require.NoError(t, model.DB.Create(&contract).Error)
+	intent := model.SubscriptionChangeIntent{
+		Id:          806,
+		ContractId:  contract.Id,
+		UserId:      506,
+		Kind:        model.SubscriptionChangeIntentKindPurchase,
+		PaymentMode: model.SubscriptionPaymentModePrepaid,
+		Status:      model.SubscriptionChangeIntentStatusAwaitingPayment,
+		ToPlanId:    906,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("latest_change_intent_id", intent.Id).Error)
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
+	order.UserId = 506
+	order.PlanId = 906
+	order.TradeNo = "sub_one_time_paid_candidate"
+	order.ProviderSessionId = "cs_one_time_old"
+	order.CheckoutRevision = 1
+	order.ChangeIntentId = intent.Id
+	order.PlanSnapshot = `{"plan_id":906,"title":"Webhook plan","price_amount":49,"currency":"BRL","duration_unit":"month","duration_value":1,"total_amount":4990}`
+	order.ProviderPayload = "choice=" + order.PaymentMethod + ";months=1;contract_id=" + strconv.FormatInt(contract.Id, 10) + ";change_intent_id=" + strconv.FormatInt(intent.Id, 10)
+	require.NoError(t, model.DB.Create(order).Error)
+	seedStripeCheckoutRevisionPairForWebhook(t, model.StripeCheckoutOrderSubscription, order.TradeNo, order.UserId, "cs_one_time_old", "cs_one_time_candidate_paid", 2)
+	order.ProviderSessionId = "cs_one_time_candidate_paid"
+	event := stripe.Event{ID: "evt_one_time_paid_candidate", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: oneTimeStripePaidSessionObject(order)}}
+
+	require.NoError(t, handleStripeOneTimePlanPaid(context.Background(), event, order.TradeNo, "127.0.0.1"))
+	stored := model.GetSubscriptionOrderByTradeNo(order.TradeNo)
+	require.NotNil(t, stored)
+	require.Equal(t, common.TopUpStatusSuccess, stored.Status)
+	require.EqualValues(t, 2, stored.CheckoutRevision)
+	require.Equal(t, "cs_one_time_candidate_paid", stored.ProviderSessionId)
 }
 
 func TestOneTimePlanPaidWebhookDoesNotFulfillSupersededCheckout(t *testing.T) {

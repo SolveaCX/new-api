@@ -37,6 +37,7 @@ interface StripeCheckoutLayoutProps {
   error: string | null
   onConfirm: () => void
   closeControl?: ReactNode
+  promotionControl?: ReactNode
 }
 
 function getSummaryLabel(
@@ -65,6 +66,7 @@ export function StripeCheckoutLayout({
   error,
   onConfirm,
   closeControl,
+  promotionControl,
 }: StripeCheckoutLayoutProps) {
   const { t } = useTranslation()
   const canSubmit = Boolean(viewModel?.canConfirm && !mounting && !submitting)
@@ -180,7 +182,10 @@ export function StripeCheckoutLayout({
             </div>
           ) : null}
 
-          <div className='rounded-[14px] border border-[#dfe3e8] bg-white p-6 shadow-[0_8px_22px_rgba(22,30,46,0.06)]'>
+          <div
+            data-slot='stripe-checkout-summary-card'
+            className='rounded-[14px] border border-[#dfe3e8] bg-white p-6 shadow-[0_8px_22px_rgba(22,30,46,0.06)]'
+          >
             {viewModel?.summaryLines.map((line) => (
               <div
                 key={line.key}
@@ -200,8 +205,11 @@ export function StripeCheckoutLayout({
             </div>
           </div>
 
+          {promotionControl}
+
           <button
             type='button'
+            data-slot='stripe-checkout-continue'
             disabled={!canSubmit}
             onClick={onConfirm}
             className='inline-flex min-h-[66px] w-full items-center justify-center gap-3 rounded-lg bg-[#0576d7] px-5 text-lg font-bold text-white shadow-[0_8px_16px_rgba(5,118,215,0.26)] transition hover:-translate-y-px hover:bg-[#0469c0] hover:shadow-[0_10px_20px_rgba(5,118,215,0.30)] focus-visible:ring-4 focus-visible:ring-blue-200 focus-visible:outline-none disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 sm:text-[22px]'

@@ -110,6 +110,64 @@ describe('resolveStripeCheckoutOpening', () => {
     })
   })
 
+  test('preserves a complete revision contract for an Elements session', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_revision',
+        publishable_key: 'pk_test_revision',
+        fallback_url: 'https://checkout.example.com/fallback',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+        discount_state: {
+          source: 'manual',
+          display_name: 'SAVE20',
+          promotion_code_masked: 'SAVE20',
+          replaced_source: 'invitation',
+        },
+        topup_summary: {
+          pay_amount: 30,
+          bonus_amount: 0,
+          credit_amount: 30,
+          show_amounts: true,
+        },
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_revision',
+      publishableKey: 'pk_test_revision',
+      fallbackUrl: 'https://checkout.example.com/fallback',
+      checkoutContext: 'signed-context',
+      checkoutRevision: 2,
+      discountState: {
+        source: 'manual',
+        display_name: 'SAVE20',
+        promotion_code_masked: 'SAVE20',
+        replaced_source: 'invitation',
+      },
+      summary: {
+        pay_amount: 30,
+        bonus_amount: 0,
+        credit_amount: 30,
+        show_amounts: true,
+      },
+    })
+  })
+
+  test('drops incomplete revision contracts so legacy responses cannot show the control', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_partial',
+        publishable_key: 'pk_test_partial',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_partial',
+      publishableKey: 'pk_test_partial',
+    })
+  })
+
   test('does not infer an Elements fallback from legacy hosted fields', () => {
     expect(
       resolveStripeCheckoutOpening({

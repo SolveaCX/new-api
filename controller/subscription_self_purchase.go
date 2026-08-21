@@ -69,6 +69,9 @@ type SubscriptionSelfPurchaseResponse struct {
 	HostedInvoiceURL string                            `json:"hosted_invoice_url,omitempty"`
 	ClientSecret     string                            `json:"client_secret,omitempty"`
 	PublishableKey   string                            `json:"publishable_key,omitempty"`
+	CheckoutContext  string                            `json:"checkout_context,omitempty"`
+	CheckoutRevision int64                             `json:"checkout_revision,omitempty"`
+	DiscountState    *StripeCheckoutDiscountState      `json:"discount_state,omitempty"`
 }
 
 func QuoteSubscriptionSelfPurchase(c *gin.Context) {
@@ -550,6 +553,18 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 	}
 	if response.ClientSecret != "" {
 		response.PublishableKey = strings.TrimSpace(setting.StripePublishableKey)
+		if setting.StripePromotionCodeEnabled && result.Order != nil && result.Order.CheckoutRevision > 0 {
+			if active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, result.Order.TradeNo); err == nil {
+				revisionResponse, responseErr := stripeCheckoutRevisionResponse(service.StripeCheckoutPurchaseOneTimeSubscription, active, &stripeCheckoutSessionSnapshot{
+					ID: result.Order.ProviderSessionId, URL: checkoutURL, ClientSecret: response.ClientSecret,
+				})
+				if responseErr == nil {
+					response.CheckoutContext = revisionResponse.CheckoutContext
+					response.CheckoutRevision = revisionResponse.CheckoutRevision
+					response.DiscountState = &revisionResponse.DiscountState
+				}
+			}
+		}
 	}
 	if result.Contract != nil && result.Contract.Id > 0 {
 		response.Contract = subscriptionSelfContractDTO(result.Contract)

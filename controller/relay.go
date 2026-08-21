@@ -466,9 +466,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		if c.Request != nil && c.Request.URL != nil {
 			other["request_path"] = c.Request.URL.Path
 		}
-		other["error_type"] = err.GetErrorType()
-		other["error_code"] = err.GetErrorCode()
-		other["status_code"] = err.StatusCode
 		other["channel_id"] = channelId
 		other["channel_name"] = channelError.ChannelName
 		other["channel_type"] = channelType
@@ -483,13 +480,30 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		if paymentState, ok := relaycommon.GetBlockRunPaymentState(c); ok {
 			adminInfo["blockrun_payment"] = *paymentState
 		}
+		recordErr := err
+		if isBlockRunPaidError(err) {
+			// normalizeBlockRunPaymentError intentionally replaces the public
+			// error with a safe message after a signed payment attempt. Keep the
+			// original upstream error for operator-facing error logs instead of
+			// losing its body/code/status during normalization.
+			if upstreamErr, ok := common.GetContextKeyType[*types.NewAPIError](c, constant.ContextKeyBlockRunUpstreamError); ok && upstreamErr != nil {
+				recordErr = upstreamErr
+				other["normalized_error_type"] = err.GetErrorType()
+				other["normalized_error_code"] = err.GetErrorCode()
+				other["normalized_status_code"] = err.StatusCode
+				other["normalized_error"] = err.Error()
+			}
+		}
+		other["error_type"] = recordErr.GetErrorType()
+		other["error_code"] = recordErr.GetErrorCode()
+		other["status_code"] = recordErr.StatusCode
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelId, channelType, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		model.RecordErrorLog(c, userId, channelId, channelType, modelName, tokenName, recordErr.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
 }
@@ -503,6 +517,10 @@ func normalizeBlockRunPaymentError(c *gin.Context, err *types.NewAPIError) *type
 		relaycommon.UpdateBlockRunPaymentOutcome(c, relaycommon.BlockRunPaymentOutcomeSucceeded, false)
 		return nil
 	}
+	// Keep the upstream error in request context before replacing it with the
+	// safe client-facing settlement message. processChannelError reads this
+	// value when persisting the error log.
+	common.SetContextKey(c, constant.ContextKeyBlockRunUpstreamError, err)
 	streamTruncated := c != nil && c.Writer != nil && c.Writer.Written()
 	if state.Outcome == relaycommon.BlockRunPaymentOutcomeRejected || err.StatusCode == http.StatusPaymentRequired {
 		relaycommon.UpdateBlockRunPaymentOutcome(c, relaycommon.BlockRunPaymentOutcomeRejected, streamTruncated)
@@ -835,6 +853,10 @@ func RelayTask(c *gin.Context) {
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 
+		if result != nil && result.OutcomeMayBeUnknown {
+			break
+		}
+
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
@@ -866,13 +888,11 @@ func RelayTask(c *gin.Context) {
 			OriginModelName:      relayInfo.OriginModelName,
 			PerCallBilling:       common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		}
-		// 订阅计费：快照模型权重与窗口台账，供轮询阶段的退款/差额结算
-		// 按加权额调整池扣量并补偿原始窗口计数（task.Quota 本身是未加权额）。
+		// 订阅计费：快照模型权重，供轮询阶段按加权额做退款/差额结算。
 		if relayInfo.BillingSource == service.BillingSourceSubscription {
 			if bs, ok := relayInfo.Billing.(*service.BillingSession); ok && bs != nil {
-				weight, window := bs.SubscriptionTaskSnapshot()
+				weight, _ := bs.SubscriptionTaskSnapshot()
 				task.PrivateData.BillingContext.SubscriptionWeight = weight
-				task.PrivateData.BillingContext.SubscriptionWindow = window
 			}
 		}
 		task.Quota = result.Quota
