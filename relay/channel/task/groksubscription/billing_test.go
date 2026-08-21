@@ -138,6 +138,27 @@ func TestEstimateBillingEditAndExtendDimensions(t *testing.T) {
 	}
 }
 
+func TestEstimateBillingEditUsesTotalDuration(t *testing.T) {
+	withVideoRules(t, []billing_setting.VideoPriceRule{
+		{Model: ModelGrokImagineVideo, Match: map[string]string{"action": "edit", "has_video": "true"}, PricePerSecond: 0.2, Basis: billing_setting.BasisTotalDuration, FallbackSeconds: 8.7},
+	})
+	c, info := newAdaptorTestContext(`{"model":"grok-imagine-video","action":"edit","prompt":"x","video":{"url":"https://example.com/in.mp4"}}`)
+	info.OriginModelName = ModelGrokImagineVideo
+	info.PriceData = types.PriceData{ModelPrice: 0.09}
+	a := &TaskAdaptor{}
+	if taskErr := a.ValidateRequestAndSetAction(c, info); taskErr != nil {
+		t.Fatalf("validate: %v", taskErr)
+	}
+	a.EstimateBilling(c, info)
+	got, err := a.SecondBillingRatios()
+	if err != nil {
+		t.Fatalf("SecondBillingRatios: %v", err)
+	}
+	if math.Abs(got[taskcommon.BillingUnitsKey]-(8.7*0.2/0.09)) > 1e-9 {
+		t.Fatalf("units = %v, want %v", got[taskcommon.BillingUnitsKey], 8.7*0.2/0.09)
+	}
+}
+
 func TestEstimateBillingSnapshotSurvivesConfigEdit(t *testing.T) {
 	withVideoRules(t, []billing_setting.VideoPriceRule{
 		{Model: ModelGrokImagineVideo15, Match: map[string]string{"action": "generate", "resolution": "480p", "has_video": "false"}, PricePerSecond: 0.11, Basis: billing_setting.BasisOutputDuration},

@@ -72,11 +72,12 @@ func TestGrokChannelStateUpsert(t *testing.T) {
 
 func TestGrokBillingObservationConditionalWriteIsMonotonicAndLeaseOwned(t *testing.T) {
 	setupGrokChannelStateTestDB(t)
+	now := GetDBTimestamp()
 	require.NoError(t, UpsertGrokChannelState(&GrokChannelState{
 		ChannelID:             113,
 		AuthStatus:            GrokAuthStatusActive,
 		RefreshLeaseOwner:     "node-A",
-		RefreshLeaseExpiresAt: 2000,
+		RefreshLeaseExpiresAt: now + 300,
 	}))
 
 	wrote, err := SaveGrokBillingObservation(113, "node-A", GrokBillingObservation{
@@ -148,6 +149,41 @@ func TestGrokBillingObservationConditionalWriteIsMonotonicAndLeaseOwned(t *testi
 	}
 }
 
+func TestGrokBillingObservationRejectsExpiredSameOwnerLease(t *testing.T) {
+	setupGrokChannelStateTestDB(t)
+	now := GetDBTimestamp()
+	require.NoError(t, UpsertGrokChannelState(&GrokChannelState{
+		ChannelID:             116,
+		AuthStatus:            GrokAuthStatusActive,
+		RefreshLeaseOwner:     "node-A",
+		RefreshLeaseExpiresAt: now - 1,
+		BillingObservedAt:     1700000100,
+		BillingPlan:           "ExistingPlan",
+		TierRaw:               "existing-tier",
+		QuotaSnapshot:         `{"remaining":50}`,
+		UpdatedAt:             1700000100,
+	}))
+	before, err := GetGrokChannelState(116)
+	require.NoError(t, err)
+
+	wrote, err := SaveGrokBillingObservation(116, "node-A", GrokBillingObservation{
+		ObservedAt:    1700000200,
+		BillingPlan:   "StaleWorkerPlan",
+		TierRaw:       "stale-worker-tier",
+		QuotaSnapshot: `{"remaining":1}`,
+	})
+	require.NoError(t, err)
+	require.False(t, wrote)
+
+	got, err := GetGrokChannelState(116)
+	require.NoError(t, err)
+	require.Equal(t, int64(1700000100), got.BillingObservedAt)
+	require.Equal(t, "ExistingPlan", got.BillingPlan)
+	require.Equal(t, "existing-tier", got.TierRaw)
+	require.Equal(t, `{"remaining":50}`, got.QuotaSnapshot)
+	require.Equal(t, before.UpdatedAt, got.UpdatedAt)
+}
+
 func TestGrokBillingObservationAcceptsLegacyNullObservedAt(t *testing.T) {
 	originalDB := DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -175,7 +211,7 @@ func TestGrokBillingObservationAcceptsLegacyNullObservedAt(t *testing.T) {
 		billing_observed_at,
 		refresh_lease_owner,
 		refresh_lease_expires_at
-	) VALUES (?, ?, NULL, ?, ?)`, 115, GrokAuthStatusActive, "node-A", 2000).Error)
+	) VALUES (?, ?, NULL, ?, ?)`, 115, GrokAuthStatusActive, "node-A", GetDBTimestamp()+300).Error)
 
 	wrote, err := SaveGrokBillingObservation(115, "node-A", GrokBillingObservation{
 		ObservedAt:    1700000300,

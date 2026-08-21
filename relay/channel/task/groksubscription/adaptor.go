@@ -214,11 +214,14 @@ func normalizeAcceptedStatus(resp *http.Response) {
 }
 
 func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (taskID string, taskData []byte, taskErr *dto.TaskError) {
+	if resp == nil || resp.Body == nil {
+		return "", nil, service.TaskErrorWrapperLocal(fmt.Errorf("upstream task submit failed"), "read_response_body_failed", http.StatusInternalServerError)
+	}
+	defer resp.Body.Close()
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", nil, service.TaskErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
 	}
-	_ = resp.Body.Close()
 
 	var sub submitResponse
 	if err := common.Unmarshal(responseBody, &sub); err != nil {

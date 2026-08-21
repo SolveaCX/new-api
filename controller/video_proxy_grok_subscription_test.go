@@ -20,6 +20,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type countingReadCloser struct {
+	io.Reader
+	closed *bool
+}
+
+func (c *countingReadCloser) Close() error {
+	*c.closed = true
+	return nil
+}
+
+type countingReader struct {
+	remaining int
+	read      int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, io.EOF
+	}
+	if len(p) > r.remaining {
+		p = p[:r.remaining]
+	}
+	for i := range p {
+		p[i] = 'a'
+	}
+	r.remaining -= len(p)
+	r.read += len(p)
+	return len(p), nil
+}
+
 func TestGrokSubscriptionVideoProxyFailureLogIsNeutral(t *testing.T) {
 	buf := &strings.Builder{}
 	common.LogWriterMu.Lock()
@@ -117,6 +147,55 @@ func TestGrokSubscriptionVideoProxyDoesNotFollowRedirectOrExposeLocation(t *test
 	require.Empty(t, recorder.Header().Get("Location"))
 	require.NotContains(t, recorder.Body.String(), "vidgen.x.ai")
 	require.NotContains(t, recorder.Body.String(), "upstream-secret")
+}
+
+func TestGrokSubscriptionVideoProxyForwardsRangeAndIfRangeAndAcceptsPartialContent(t *testing.T) {
+	restore := useVideoProxyDBForTest(t)
+	defer restore()
+	service.InitHttpClient()
+	restoreValidate := setGrokSubscriptionVideoProxyValidateForTest(func(string) error { return nil })
+	defer restoreValidate()
+
+	var gotRange, gotIfRange string
+	content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		gotIfRange = r.Header.Get("If-Range")
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Range", "bytes 0-3/8")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("part"))
+	}))
+	defer content.Close()
+	seedGrokVideoProxyTask(t, "task_grok_range", "same-upstream", content.URL+"/range")
+
+	recorder, c := newGrokVideoProxyContext("task_grok_range")
+	c.Request.Header.Set("Range", "bytes=0-3")
+	c.Request.Header.Set("If-Range", `"etag-1"`)
+	VideoProxy(c)
+
+	require.Equal(t, http.StatusPartialContent, recorder.Code)
+	require.Equal(t, "part", recorder.Body.String())
+	require.Equal(t, "bytes=0-3", gotRange)
+	require.Equal(t, `"etag-1"`, gotIfRange)
+	require.Equal(t, "bytes 0-3/8", recorder.Header().Get("Content-Range"))
+	require.Equal(t, "bytes", recorder.Header().Get("Accept-Ranges"))
+}
+
+func TestCloseGrokVideoResponseDrainsAtMostOneMiB(t *testing.T) {
+	reader := &countingReader{remaining: grokSubscriptionPollResponseMaxBytes + 128}
+	var closed bool
+	resp := &http.Response{
+		Body: &countingReadCloser{
+			Reader: reader,
+			closed: &closed,
+		},
+	}
+
+	closeGrokVideoResponse(resp)
+
+	require.True(t, closed)
+	require.LessOrEqual(t, reader.read, grokSubscriptionPollResponseMaxBytes)
 }
 
 func TestGrokSubscriptionVideoProxyRefreshesOnceForExpiredStatuses(t *testing.T) {

@@ -22,6 +22,7 @@ import (
 )
 
 const maxGrokEditImages = 3
+const maxGrokMultipartImageBytes = 32 << 20
 
 var ensureMediaCredentialForImage = EnsureMediaCredential
 
@@ -377,9 +378,12 @@ func grokMultipartFileToDataURI(fh *multipart.FileHeader) (string, error) {
 		return "", fmt.Errorf("open upload: %w", err)
 	}
 	defer f.Close()
-	data, err := io.ReadAll(f)
+	data, err := io.ReadAll(io.LimitReader(f, maxGrokMultipartImageBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read upload: %w", err)
+	}
+	if int64(len(data)) > maxGrokMultipartImageBytes {
+		return "", fmt.Errorf("upload exceeds %d bytes", maxGrokMultipartImageBytes)
 	}
 	if len(data) == 0 {
 		return "", errors.New("empty upload")

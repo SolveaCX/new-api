@@ -5453,8 +5453,20 @@
             "minItems": 1,
             "maxItems": 3,
             "items": {
-              "type": "string",
-              "description": "JPEG/PNG 文件或 HTTPS URL"
+              "description": "JPEG/PNG 文件或 HTTPS URL",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "JPEG/PNG 上传文件"
+                },
+                {
+                  "type": "string",
+                  "format": "uri",
+                  "pattern": "^https://",
+                  "description": "HTTPS 图片 URL"
+                }
+              ]
             }
           },
           "n": {

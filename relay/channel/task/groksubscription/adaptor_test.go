@@ -21,6 +21,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type failingReadCloser struct {
+	closed bool
+}
+
+func (f *failingReadCloser) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (f *failingReadCloser) Close() error             { f.closed = true; return nil }
+
 func newAdaptorTestContext(body string) (*gin.Context, *relaycommon.RelayInfo) {
 	c, info, _ := newAdaptorTestContextWithRecorder(body)
 	return c, info
@@ -184,6 +191,18 @@ func TestDoResponseSanitizesMalformedSubmitErrors(t *testing.T) {
 		if strings.Contains(strings.ToLower(msg), strings.ToLower(forbidden)) {
 			t.Fatalf("error leaked %q in %q", forbidden, msg)
 		}
+	}
+}
+
+func TestDoResponseClosesBodyWhenReadFails(t *testing.T) {
+	c, info := newAdaptorTestContext(`{"model":"grok-imagine-video-1.5","prompt":"x"}`)
+	body := &failingReadCloser{}
+	_, _, taskErr := (&TaskAdaptor{}).DoResponse(c, &http.Response{Body: body}, info)
+	if taskErr == nil {
+		t.Fatal("expected read error")
+	}
+	if !body.closed {
+		t.Fatal("response body must be closed when reading fails")
 	}
 }
 

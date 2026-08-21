@@ -55,8 +55,10 @@ func proxyGrokSubscriptionVideoContent(c *gin.Context, task *model.Task, channel
 	}
 	proxy := channel.GetSetting().Proxy
 	prior := model.CloneGrokSubscriptionVideoResult(task.PrivateData.GrokVideoResult)
-	resp, err := fetchGrokSubscriptionVideo(c.Request.Context(), prior, proxy)
-	if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+	rangeValue := strings.TrimSpace(c.Request.Header.Get("Range"))
+	ifRangeValue := strings.TrimSpace(c.Request.Header.Get("If-Range"))
+	resp, err := fetchGrokSubscriptionVideo(c.Request.Context(), prior, proxy, rangeValue, ifRangeValue)
+	if err == nil && isGrokSubscriptionVideoSuccessStatus(resp) {
 		streamGrokSubscriptionVideoResponse(c, resp)
 		return
 	}
@@ -73,8 +75,8 @@ func proxyGrokSubscriptionVideoContent(c *gin.Context, task *model.Task, channel
 		videoProxyGenericFailure(c)
 		return
 	}
-	resp, err = fetchGrokSubscriptionVideo(c.Request.Context(), refreshed, proxy)
-	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+	resp, err = fetchGrokSubscriptionVideo(c.Request.Context(), refreshed, proxy, rangeValue, ifRangeValue)
+	if err != nil || !isGrokSubscriptionVideoSuccessStatus(resp) {
 		closeGrokVideoResponse(resp)
 		logGrokSubscriptionProxyFailure(c.Request.Context(), task, channel, "refetch", statusCodeOf(resp))
 		videoProxyGenericFailure(c)
@@ -83,7 +85,7 @@ func proxyGrokSubscriptionVideoContent(c *gin.Context, task *model.Task, channel
 	streamGrokSubscriptionVideoResponse(c, resp)
 }
 
-func fetchGrokSubscriptionVideo(ctx context.Context, result *model.GrokSubscriptionVideoResult, proxy string) (*http.Response, error) {
+func fetchGrokSubscriptionVideo(ctx context.Context, result *model.GrokSubscriptionVideoResult, proxy, rangeValue, ifRangeValue string) (*http.Response, error) {
 	if result == nil {
 		return nil, errors.New("missing video result")
 	}
@@ -106,6 +108,12 @@ func fetchGrokSubscriptionVideo(ctx context.Context, result *model.GrokSubscript
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, videoURL, nil)
 	if err != nil {
 		return nil, err
+	}
+	if rangeValue != "" {
+		req.Header.Set("Range", rangeValue)
+	}
+	if ifRangeValue != "" {
+		req.Header.Set("If-Range", ifRangeValue)
 	}
 	return clientCopy.Do(req)
 }
@@ -232,8 +240,20 @@ func statusCodeOf(resp *http.Response) int {
 
 func closeGrokVideoResponse(resp *http.Response) {
 	if resp != nil && resp.Body != nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.CopyN(io.Discard, resp.Body, grokSubscriptionPollResponseMaxBytes)
 		_ = resp.Body.Close()
+	}
+}
+
+func isGrokSubscriptionVideoSuccessStatus(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusPartialContent:
+		return true
+	default:
+		return false
 	}
 }
 

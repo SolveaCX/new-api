@@ -244,6 +244,21 @@ func TestCollectGrokEditImagesMultipartRejectsFourthAndUnsupportedMime(t *testin
 	})
 }
 
+func TestCollectGrokEditImagesMultipartRejectsSingleFileAboveLimit(t *testing.T) {
+	const maxUploadBytes = 32 << 20
+	data := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{'x'}, maxUploadBytes)...)
+	c := newMultipartImageContext(t, []multipartImagePart{
+		{Field: "image", Filename: "huge.png", ContentType: "image/png", Data: data},
+	})
+	_, err := collectGrokEditImages(c, dto.ImageRequest{})
+	if err == nil {
+		t.Fatalf("expected oversize upload error")
+	}
+	if !strings.Contains(err.Error(), "upload exceeds") {
+		t.Fatalf("error = %v, want upload size error", err)
+	}
+}
+
 func jsonEqual(a, b []byte) bool {
 	var av any
 	var bv any

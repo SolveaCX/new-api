@@ -1045,6 +1045,26 @@ func TestGrokSubscriptionDefaultVideoPriceRulesMergeWithoutGlobalMutation(t *tes
 	}
 }
 
+func TestValidateVideoPriceRulesRejectsGrokEditOutputDuration(t *testing.T) {
+	rules := []VideoPriceRule{
+		{Model: "grok-imagine-video", Match: map[string]string{"action": "edit", "has_video": "true"},
+			PricePerSecond: 0.09, Basis: BasisOutputDuration},
+	}
+	if err := ValidateVideoPriceRules(rules); err == nil {
+		t.Fatal("Grok edit rules must not use output_duration")
+	}
+}
+
+func TestValidateVideoPriceRulesAcceptsGrokEditTotalDuration(t *testing.T) {
+	rules := []VideoPriceRule{
+		{Model: "grok-imagine-video-1.5", Match: map[string]string{"action": "edit", "has_video": "true"},
+			PricePerSecond: 0.11, Basis: BasisTotalDuration, FallbackSeconds: 8.7},
+	}
+	if err := ValidateVideoPriceRules(rules); err != nil {
+		t.Fatalf("Grok edit total_duration rule must stay valid: %v", err)
+	}
+}
+
 func TestGrokSubscriptionDefaultVideoPriceRulesCoverDocumentedActionsAndResolutions(t *testing.T) {
 	rules := GetGrokSubscriptionVideoPriceRules(nil)
 	if err := ValidateVideoPriceRules(rules); err != nil {

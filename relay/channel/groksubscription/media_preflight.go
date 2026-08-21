@@ -221,13 +221,21 @@ func inspectMediaCredential(ctx context.Context, channelID int, requirePaid bool
 }
 
 func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requirePaid bool, owner string, hooks MediaPreflightHooks) (MediaCredential, error) {
+	return ensureMediaCredentialWithLeaseOptions(ctx, channelID, requirePaid, owner, hooks, true, false)
+}
+
+func ensureMediaCredentialWithLeaseOptions(ctx context.Context, channelID int, requirePaid bool, owner string, hooks MediaPreflightHooks, allowCachedBilling bool, forceRefresh bool) (MediaCredential, error) {
 	defer func() { _ = model.ReleaseGrokRefreshLease(channelID, owner) }()
 
 	now := hooks.Now(ctx)
 	if now <= 0 {
 		return MediaCredential{}, errors.New("grok media preflight: database time unavailable")
 	}
-	cred, st, _, terminalErr, err := inspectMediaCredential(ctx, channelID, requirePaid, now)
+	// A forced billing refresh must inspect only credential freshness. Looking
+	// at the cached paid eligibility here could return an old ineligible result
+	// before the new ProbeBilling evidence has a chance to replace it.
+	inspectRequirePaid := requirePaid && allowCachedBilling
+	cred, st, _, terminalErr, err := inspectMediaCredential(ctx, channelID, inspectRequirePaid, now)
 	if err != nil {
 		return MediaCredential{}, err
 	}
@@ -235,7 +243,7 @@ func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requireP
 		return MediaCredential{}, terminalErr
 	}
 
-	if mediaCredentialNeedsRefresh(cred, now, requirePaid) {
+	if forceRefresh || mediaCredentialNeedsRefresh(cred, now, requirePaid) {
 		refresher := NewRefresher(newMediaCredentialStore(), hooks.HTTPDoer, func() int64 { return now })
 		cred, err = refresher.Refresh(ctx, channelID)
 		if err != nil {
@@ -259,7 +267,7 @@ func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requireP
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return MediaCredential{}, err
 	}
-	if st != nil {
+	if allowCachedBilling && st != nil {
 		if eligibilityErr := EvaluateMediaEligibility(st.QuotaSnapshot, st.BillingObservedAt, now); eligibilityErr == nil {
 			if err := model.SyncGrokMediaAbilities(channelID, true); err != nil {
 				return MediaCredential{}, err
@@ -281,13 +289,20 @@ func ensureMediaCredentialWithLease(ctx context.Context, channelID int, requireP
 	if err != nil {
 		return MediaCredential{}, err
 	}
+	// Billing probes can be slow enough to cross the lease TTL. Re-read the
+	// database clock immediately before the CAS so an expired worker cannot
+	// publish evidence after another worker is entitled to take over.
+	now = hooks.Now(ctx)
+	if now <= 0 {
+		return MediaCredential{}, errors.New("grok media preflight: database time unavailable")
+	}
 	observation := model.GrokBillingObservation{
 		ObservedAt:    now,
 		BillingPlan:   snapshot.Plan,
 		TierRaw:       snapshot.Tier,
 		QuotaSnapshot: string(snapshotJSON),
 	}
-	wrote, err := model.SaveGrokBillingObservation(channelID, owner, observation)
+	wrote, err := model.SaveGrokBillingObservationAt(channelID, owner, now, observation)
 	if err != nil {
 		return MediaCredential{}, err
 	}
@@ -339,7 +354,7 @@ func RefreshMediaBillingStatusWithHTTPDoer(ctx context.Context, channelID int, d
 	if doer != nil {
 		hooks.HTTPDoer = doer
 	}
-	_, err := ensureMediaCredential(ctx, channelID, true, hooks)
+	_, err := refreshMediaBillingStatus(ctx, channelID, hooks)
 	switch {
 	case err == nil:
 		return BillingStatusEligible
@@ -347,6 +362,40 @@ func RefreshMediaBillingStatusWithHTTPDoer(ctx context.Context, channelID int, d
 		return BillingStatusIneligible
 	default:
 		return BillingStatusUnavailable
+	}
+}
+
+func refreshMediaBillingStatus(ctx context.Context, channelID int, hooks MediaPreflightHooks) (MediaCredential, error) {
+	if ctx == nil {
+		return MediaCredential{}, errors.New("grok media preflight: context is nil")
+	}
+	if channelID <= 0 {
+		return MediaCredential{}, errors.New("grok media preflight: invalid channel id")
+	}
+	for waited := time.Duration(0); ; waited += mediaPreflightWaitInterval {
+		hooks = normalizeMediaPreflightHooks(hooks)
+		now := hooks.Now(ctx)
+		if now <= 0 {
+			return MediaCredential{}, errors.New("grok media preflight: database time unavailable")
+		}
+		owner := "media-refresh-status:" + common.GetUUID()
+		acquired, err := model.AcquireGrokRefreshLease(channelID, owner, now, mediaPreflightLeaseTTLSeconds)
+		if err != nil {
+			return MediaCredential{}, err
+		}
+		if acquired {
+			// Manual billing refresh must bypass the cached observation, but does
+			// not needlessly rotate a still-valid OAuth credential. The lease and
+			// the credential-needs-refresh check ensure a waiter cannot probe with
+			// a stale token after another worker wins a refresh.
+			return ensureMediaCredentialWithLeaseOptions(ctx, channelID, true, owner, hooks, false, false)
+		}
+		if waited >= mediaPreflightMaxWait {
+			return MediaCredential{}, ErrRefreshConflict
+		}
+		if err := hooks.Sleep(ctx, mediaPreflightWaitInterval); err != nil {
+			return MediaCredential{}, err
+		}
 	}
 }
 
@@ -405,7 +454,14 @@ func mediaRefreshShouldMarkNeedsReauth(err error) bool {
 	if err == nil || errors.Is(err, ErrRefreshConflict) {
 		return false
 	}
-	return true
+	if errors.Is(err, ErrNotRefreshable) {
+		return true
+	}
+	var statusErr RefreshHTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden
+	}
+	return false
 }
 
 func markGrokAuthStatus(channelID int, status string, markRefreshed bool, lastErr string) error {

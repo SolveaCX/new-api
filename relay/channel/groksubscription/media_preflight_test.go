@@ -200,6 +200,162 @@ func TestEnsureMediaCredentialProbeFailurePreservesSnapshotAndReturnsUnavailable
 	require.Equal(t, model.GrokAuthStatusActive, st.AuthStatus)
 }
 
+func TestForceRefreshMediaCredentialTransportErrorDoesNotMarkNeedsReauth(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 4000)
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != OAuthToken {
+				t.Fatalf("transport error path must only hit token endpoint, got %s", req.URL.String())
+			}
+			return nil, errors.New("transient refresh error")
+		}),
+	})
+	defer restore()
+
+	_, err := ForceRefreshMediaCredential(context.Background(), channelID)
+
+	require.Error(t, err)
+	st, err := model.GetGrokChannelState(channelID)
+	require.NoError(t, err)
+	require.Equal(t, model.GrokAuthStatusActive, st.AuthStatus)
+	require.Empty(t, st.LastError)
+}
+
+func TestForceRefreshMediaCredentialUnauthorizedMarksNeedsReauth(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 4000)
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != OAuthToken {
+				t.Fatalf("unauthorized path must only hit token endpoint, got %s", req.URL.String())
+			}
+			return jsonResponse(http.StatusUnauthorized, `{"error":"invalid_grant"}`), nil
+		}),
+	})
+	defer restore()
+
+	_, err := ForceRefreshMediaCredential(context.Background(), channelID)
+
+	require.Error(t, err)
+	st, err := model.GetGrokChannelState(channelID)
+	require.NoError(t, err)
+	require.Equal(t, model.GrokAuthStatusNeedsReauth, st.AuthStatus)
+	require.NotEmpty(t, st.LastError)
+}
+
+func TestMediaRefreshShouldMarkNeedsReauthOnlyForDefinitiveAuthFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "missing refresh token", err: ErrNotRefreshable, want: true},
+		{name: "token endpoint 401", err: RefreshHTTPStatusError{StatusCode: http.StatusUnauthorized}, want: true},
+		{name: "token endpoint 403", err: RefreshHTTPStatusError{StatusCode: http.StatusForbidden}, want: true},
+		{name: "transport error", err: errors.New("dial tcp: transient network failure"), want: false},
+		{name: "token endpoint 500", err: RefreshHTTPStatusError{StatusCode: http.StatusInternalServerError}, want: false},
+		{name: "cas conflict", err: ErrRefreshConflict, want: false},
+		{name: "invalid token response", err: errors.New("grok refresh: invalid token response"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, mediaRefreshShouldMarkNeedsReauth(tt.err))
+		})
+	}
+}
+
+func TestRefreshMediaBillingStatusWithHTTPDoerProbesBillingEvenWhenCredentialFresh(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 2000+int64(MediaCredentialExpirySafetyWindow/time.Second)-1)
+	require.NoError(t, model.DB.Model(&model.GrokChannelState{}).Where("channel_id = ?", channelID).Updates(map[string]any{
+		"quota_snapshot":      `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200,"monthly_limit_cents":15000},"weekly":{"status_code":200,"used_percent":12.5}}`,
+		"billing_observed_at": 2000,
+	}).Error)
+
+	var tokenRefreshes, billingCalls int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.String() == OAuthToken:
+				tokenRefreshes++
+				return jsonResponse(http.StatusOK, `{"access_token":"new-at","refresh_token":"rt2","token_type":"Bearer","expires_in":7200}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+				billingCalls++
+				return jsonResponse(http.StatusOK, `{"monthlyLimit":15000}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+				billingCalls++
+				return jsonResponse(http.StatusOK, `{"usagePercent":12.5}`), nil
+			default:
+				t.Fatalf("unexpected upstream request: %s", req.URL.String())
+				return nil, nil
+			}
+		}),
+	})
+	defer restore()
+
+	got := RefreshMediaBillingStatusWithHTTPDoer(context.Background(), channelID, doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.String() == OAuthToken:
+			tokenRefreshes++
+			return jsonResponse(http.StatusOK, `{"access_token":"new-at","refresh_token":"rt2","token_type":"Bearer","expires_in":7200}`), nil
+		case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+			billingCalls++
+			return jsonResponse(http.StatusOK, `{"monthlyLimit":15000}`), nil
+		case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+			billingCalls++
+			return jsonResponse(http.StatusOK, `{"usagePercent":12.5}`), nil
+		default:
+			t.Fatalf("unexpected upstream request: %s", req.URL.String())
+			return nil, nil
+		}
+	}))
+
+	require.Equal(t, BillingStatusEligible, got)
+	require.Equal(t, 1, tokenRefreshes)
+	require.Equal(t, 2, billingCalls)
+}
+
+func TestRefreshMediaBillingStatusWithHTTPDoerIgnoresCachedBillingSnapshot(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 4000)
+	require.NoError(t, model.DB.Model(&model.GrokChannelState{}).Where("channel_id = ?", channelID).Updates(map[string]any{
+		"quota_snapshot":      `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200,"monthly_limit_cents":15000},"weekly":{"status_code":200,"used_percent":12.5}}`,
+		"billing_observed_at": 2000,
+	}).Error)
+
+	var tokenRefreshes, billingCalls int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.String() == OAuthToken:
+				tokenRefreshes++
+				return jsonResponse(http.StatusOK, `{"access_token":"new-at","refresh_token":"rt2","token_type":"Bearer","expires_in":7200}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+				billingCalls++
+				return jsonResponse(http.StatusOK, `{"monthlyLimit":15000}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+				billingCalls++
+				return jsonResponse(http.StatusOK, `{"usagePercent":12.5}`), nil
+			default:
+				t.Fatalf("unexpected upstream request: %s", req.URL.String())
+				return nil, nil
+			}
+		}),
+	})
+	defer restore()
+
+	got := RefreshMediaBillingStatusWithHTTPDoer(context.Background(), channelID, nil)
+
+	require.Equal(t, BillingStatusEligible, got)
+	require.Zero(t, tokenRefreshes)
+	require.Equal(t, 2, billingCalls)
+}
+
 func TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe(t *testing.T) {
 	setupMediaPreflightTestDB(t)
 	channelID := seedMediaPreflightChannel(t, 5000)
@@ -230,6 +386,40 @@ func TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe(t *testing.T)
 	require.Zero(t, mediaCount)
 }
 
+func TestEnsureMediaCredentialDoesNotSaveProbeAfterLeaseExpires(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 5000)
+	var nowCalls int
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 {
+			nowCalls++
+			if nowCalls >= 4 {
+				return 2031
+			}
+			return 2000
+		},
+		HTTPDoer: doerFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+				return jsonResponse(http.StatusOK, `{"monthlyLimit":15000}`), nil
+			case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+				return jsonResponse(http.StatusOK, `{"usagePercent":12.5}`), nil
+			default:
+				t.Fatalf("unexpected upstream request: %s", req.URL.String())
+				return nil, nil
+			}
+		}),
+	})
+	defer restore()
+
+	_, err := EnsureMediaCredential(context.Background(), channelID, true)
+
+	require.ErrorIs(t, err, ErrRefreshConflict)
+	st, stateErr := model.GetGrokChannelState(channelID)
+	require.NoError(t, stateErr)
+	require.Zero(t, st.BillingObservedAt)
+}
+
 func TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence(t *testing.T) {
 	setupMediaPreflightTestDB(t)
 	channelID := seedMediaPreflightChannel(t, 5000)
@@ -247,7 +437,7 @@ func TestEnsureMediaCredentialLosingWorkerWaitsAndReloadsPersistedEvidence(t *te
 		}),
 		Sleep: func(ctx context.Context, d time.Duration) error {
 			sleeps++
-			wrote, err := model.SaveGrokBillingObservation(channelID, "winner", model.GrokBillingObservation{
+			wrote, err := model.SaveGrokBillingObservationAt(channelID, "winner", now, model.GrokBillingObservation{
 				ObservedAt:    now,
 				BillingPlan:   "SuperGrok",
 				QuotaSnapshot: `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200},"weekly":{"status_code":503}}`,

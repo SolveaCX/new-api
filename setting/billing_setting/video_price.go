@@ -122,6 +122,11 @@ func ValidateVideoPriceRules(rules []VideoPriceRule) error {
 				"video price rule %d (model %s): basis must be %s or %s, got %q",
 				i, r.Model, BasisOutputDuration, BasisTotalDuration, r.Basis)
 		}
+		if strings.HasPrefix(r.Model, "grok-imagine-video") && r.Match["action"] == "edit" && r.Basis == BasisOutputDuration {
+			return fmt.Errorf(
+				"video price rule %d (model %s): action edit must use %s, got %s",
+				i, r.Model, BasisTotalDuration, BasisOutputDuration)
+		}
 	}
 	// Two rules for one model are ambiguous only when they have equal constraint
 	// counts AND could both match the same request: there is then no principled

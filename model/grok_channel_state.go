@@ -74,13 +74,24 @@ func upsertGrokChannelState(db *gorm.DB, st *GrokChannelState) error {
 }
 
 func SaveGrokBillingObservation(channelID int, leaseOwner string, observation GrokBillingObservation) (bool, error) {
-	if channelID <= 0 || leaseOwner == "" || observation.ObservedAt <= 0 {
+	now := GetDBTimestamp()
+	if now <= 0 {
+		return false, errors.New("grok billing observation: database time unavailable")
+	}
+	return SaveGrokBillingObservationAt(channelID, leaseOwner, now, observation)
+}
+
+// SaveGrokBillingObservationAt conditionally writes billing evidence while the
+// caller still owns a live refresh lease. leaseNow must come from the same
+// database clock used when the lease was acquired.
+func SaveGrokBillingObservationAt(channelID int, leaseOwner string, leaseNow int64, observation GrokBillingObservation) (bool, error) {
+	if channelID <= 0 || leaseOwner == "" || leaseNow <= 0 || observation.ObservedAt <= 0 {
 		return false, errors.New("grok billing observation: invalid args")
 	}
 	owner := leaseOwner
 	observedAt := observation.ObservedAt
 	res := DB.Model(&GrokChannelState{}).
-		Where("channel_id = ? AND refresh_lease_owner = ? AND (billing_observed_at IS NULL OR billing_observed_at < ?)", channelID, owner, observedAt).
+		Where("channel_id = ? AND refresh_lease_owner = ? AND refresh_lease_expires_at > ? AND (billing_observed_at IS NULL OR billing_observed_at < ?)", channelID, owner, leaseNow, observedAt).
 		Updates(map[string]any{
 			"quota_snapshot":      observation.QuotaSnapshot,
 			"billing_plan":        observation.BillingPlan,
