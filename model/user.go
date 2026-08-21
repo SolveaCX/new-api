@@ -68,6 +68,7 @@ type User struct {
 	StripeCardBound         bool           `json:"stripe_card_bound" gorm:"default:false;column:stripe_card_bound"`
 	NewUserBonusGiven       bool           `json:"new_user_bonus_given" gorm:"default:false;column:new_user_bonus_given"`
 	RegistrationIP          string         `json:"registration_ip,omitempty" gorm:"type:varchar(64);column:registration_ip;index"`
+	RegistrationCountry     string         `json:"registration_country,omitempty" gorm:"type:varchar(2);column:registration_country;index"`
 	IsEnterprise            bool           `json:"is_enterprise" gorm:"default:false;column:is_enterprise"` // enterprise users retain the group concept; PLG (non-enterprise) users are forced to the plg group with groups hidden
 	// PaidAmount is the lifetime total of successful top-ups (USD) for this
 	// user. It is not persisted on the user row — FillPaidAmounts aggregates it
@@ -433,10 +434,10 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 	}
 	query = applyUserLanguageFilter(query, language)
 	country = strings.ToUpper(strings.TrimSpace(country))
-	if country == "" {
-		return searchUsersWithQuery(query, startIdx, num, users, total, tx)
+	if country != "" {
+		query = query.Where("registration_country = ?", country)
 	}
-	return searchUsersByCountry(query, country, startIdx, num, tx)
+	return searchUsersWithQuery(query, startIdx, num, users, total, tx)
 
 }
 
@@ -459,38 +460,6 @@ func searchUsersWithQuery(query *gorm.DB, startIdx, num int, users []*User, tota
 	}
 	FillIPCountries(users)
 	return users, total, nil
-}
-
-func searchUsersByCountry(query *gorm.DB, country string, startIdx, num int, tx *gorm.DB) ([]*User, int64, error) {
-	const batchSize = 500
-	users := make([]*User, 0, num)
-	var matched int64
-	var batchUsers []*User
-	err := query.Omit("password").Order("id desc").FindInBatches(&batchUsers, batchSize, func(_ *gorm.DB, _ int) error {
-		FillIPCountries(batchUsers)
-		for _, user := range batchUsers {
-			if user.IPCountry != country {
-				continue
-			}
-			if matched >= int64(startIdx) && int64(len(users)) < int64(num) {
-				users = append(users, user)
-			}
-			matched++
-		}
-		batchUsers = batchUsers[:0]
-		return nil
-	}).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-	if err := tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-	if err := FillPaidAmounts(users); err != nil {
-		common.SysLog("failed to fill paid amounts for country-filtered users: " + err.Error())
-	}
-	return users, matched, nil
 }
 
 // FillPaidAmounts hydrates each user's PaidAmount with the lifetime total of
@@ -559,6 +528,31 @@ func resolveIPCountry(ip string) string {
 // database. It returns an empty string for private, malformed, or unknown IPs.
 func ResolveIPCountry(ip string) string {
 	return resolveIPCountry(ip)
+}
+
+// BackfillRegistrationCountries populates the indexed registration country
+// for legacy users without changing their stored IP or login history.
+func BackfillRegistrationCountries() error {
+	lastID := 0
+	for {
+		var batch []*User
+		if err := DB.Where("id > ? AND (registration_country = '' OR registration_country IS NULL) AND registration_ip <> ''", lastID).Order("id").Limit(500).Find(&batch).Error; err != nil {
+			return err
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		lastID = batch[len(batch)-1].Id
+		for _, user := range batch {
+			country := ResolveIPCountry(user.RegistrationIP)
+			if country == "" {
+				continue
+			}
+			if err := DB.Model(&User{}).Where("id = ?", user.Id).Update("registration_country", country).Error; err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func applyUserLanguageFilter(query *gorm.DB, language string) *gorm.DB {

@@ -276,6 +276,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := BackfillRegistrationCountries(); err != nil {
+		return err
+	}
 	if err := migrateAssetBindingScopeIndex(); err != nil {
 		return err
 	}
@@ -444,6 +447,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
+	}
+	if err := BackfillRegistrationCountries(); err != nil {
+		return err
 	}
 	// SQLite's AutoMigrate normally widens this table, but keep the explicit
 	// compatibility migration on the startup path for legacy databases whose

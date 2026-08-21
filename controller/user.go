@@ -343,7 +343,8 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordRegisterDisabled)
 		return
 	}
-	if _, blocked, _ := registrationCountryDecision(c); blocked {
+	registrationCountry, blocked, _ := registrationCountryDecision(c)
+	if blocked {
 		common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
 		return
 	}
@@ -403,13 +404,14 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
 	cleanUser := model.User{
-		Username:        user.Username,
-		Password:        user.Password,
-		DisplayName:     user.Username,
-		InviterId:       inviterId,
-		Role:            common.RoleCommonUser, // 明确设置角色为普通用户
-		AdsAttribution:  sanitizeAdsAttribution(user.AdsAttribution),
-		EmailVerifiedAt: user.EmailVerifiedAt,
+		Username:            user.Username,
+		Password:            user.Password,
+		DisplayName:         user.Username,
+		InviterId:           inviterId,
+		Role:                common.RoleCommonUser, // 明确设置角色为普通用户
+		RegistrationCountry: registrationCountry,
+		AdsAttribution:      sanitizeAdsAttribution(user.AdsAttribution),
+		EmailVerifiedAt:     user.EmailVerifiedAt,
 	}
 	// Honeypot accounts: the registration completes (so the bot sees success),
 	// but the account is created already disabled and can never be used. The
