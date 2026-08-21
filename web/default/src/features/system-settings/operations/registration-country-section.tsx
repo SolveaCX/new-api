@@ -22,7 +22,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
+import { TagInput } from '@/components/tag-input'
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -57,6 +57,18 @@ function toCountries(value: string): string[] {
     .split(/[\n,]/)
     .map((item) => item.trim().toUpperCase())
     .filter(Boolean)
+}
+
+function tagValues(value: string): string[] {
+  return toCountries(value)
+}
+
+function countriesValue(values: string[]): string {
+  return values
+    .flatMap((value) => value.split(/[\n,]/))
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+    .join('\n')
 }
 
 function buildDefaults(defaults: Defaults): FormInput {
@@ -173,10 +185,14 @@ export function RegistrationCountrySection(props: { defaultValues: Defaults }) {
             <FormItem>
               <FormLabel>{t('Blocked countries')}</FormLabel>
               <FormControl>
-                <Textarea rows={5} placeholder='MA\nDZ' {...field} />
+                <TagInput
+                  value={tagValues(field.value)}
+                  onChange={(values) => field.onChange(countriesValue(values))}
+                  placeholder='MA'
+                />
               </FormControl>
               <FormDescription>
-                {t('ISO alpha-2 codes, one per line. Registration is rejected.')}
+                {t('Press Enter or comma to add tags')}
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -189,10 +205,14 @@ export function RegistrationCountrySection(props: { defaultValues: Defaults }) {
             <FormItem>
               <FormLabel>{t('Auto-disable countries')}</FormLabel>
               <FormControl>
-                <Textarea rows={5} placeholder='MA' {...field} />
+                <TagInput
+                  value={tagValues(field.value)}
+                  onChange={(values) => field.onChange(countriesValue(values))}
+                  placeholder='MA'
+                />
               </FormControl>
               <FormDescription>
-                {t('ISO alpha-2 codes, one per line. Accounts are created disabled.')}
+                {t('Press Enter or comma to add tags')}
               </FormDescription>
               <FormMessage />
             </FormItem>
