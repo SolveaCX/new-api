@@ -174,7 +174,7 @@ export function renderModelDirectoryAuditMarkdown(report: ModelDirectoryAuditRep
 }
 
 export function renderModelDirectoryAuditJson(report: ModelDirectoryAuditReport): string {
-  return `${JSON.stringify(report, nonFiniteNumberReplacer, 2)}\n`;
+  return `${JSON.stringify(report, auditJsonValueReplacer, 2)}\n`;
 }
 
 function validateRowPricing(
@@ -494,8 +494,8 @@ function escapeMarkdown(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-function nonFiniteNumberReplacer(_key: string, value: unknown): unknown {
-  if (value === undefined) return "undefined";
+function auditJsonValueReplacer(key: string, value: unknown): unknown {
+  if (key === "currentValue" && value === undefined) return "undefined";
   if (typeof value !== "number" || Number.isFinite(value)) return value;
   if (Number.isNaN(value)) return "NaN";
   return value === Number.POSITIVE_INFINITY ? "Infinity" : "-Infinity";

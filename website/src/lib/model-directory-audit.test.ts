@@ -344,6 +344,32 @@ describe("model directory metadata audit", () => {
       currentValue: "undefined",
     });
   });
+
+  test("JSON renderer does not stringify nested undefined optional properties", () => {
+    const report = auditModelDirectoryCatalog({
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      source: "fixture",
+      rows: [{ ...COMPLETE_ROW, name: "dup", vendor: "OpenAI" }],
+      identityRows: [
+        { name: "dup", vendor: "OpenAI" },
+        { name: "dup", vendor: "Azure" },
+      ],
+      metadata: { dup: COMPLETE_META },
+    });
+
+    const parsed = JSON.parse(renderModelDirectoryAuditJson(report));
+
+    expect(parsed.issues[0]).toMatchObject({
+      modelName: "dup",
+      field: "identity",
+      currentValue: [
+        { name: "dup", vendor: "OpenAI" },
+        { name: "dup", vendor: "Azure" },
+      ],
+    });
+    expect(parsed.issues[0].currentValue[0]).not.toHaveProperty("modelId");
+    expect(parsed.issues[0].currentValue[1]).not.toHaveProperty("modelId");
+  });
 });
 
 describe("model directory audit CLI assembly", () => {
