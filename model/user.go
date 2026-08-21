@@ -89,10 +89,10 @@ type User struct {
 	// IsHoneypot marks accounts created by a honeypot (hidden field) submission.
 	// Such accounts are created already disabled; the flag lets admins
 	// distinguish them from manually-disabled accounts in the users table.
-	IsHoneypot bool `json:"is_honeypot" gorm:"default:false;column:is_honeypot"`
-	StripeCardFingerprint   string         `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
-	CreatedAt               int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt             int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	IsHoneypot            bool   `json:"is_honeypot" gorm:"default:false;column:is_honeypot"`
+	StripeCardFingerprint string `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
+	CreatedAt             int64  `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt           int64  `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	// Primary Accept-Language tag observed at the most recent login
 	// (e.g. "zh-CN"). Analytics-only: surfaced in the ops report to explain
 	// currency/locale mismatches; never used for authorization.
@@ -520,6 +520,12 @@ func resolveIPCountry(ip string) string {
 		return ""
 	}
 	return country
+}
+
+// ResolveIPCountry resolves an IP to an ISO country code using the embedded
+// database. It returns an empty string for private, malformed, or unknown IPs.
+func ResolveIPCountry(ip string) string {
+	return resolveIPCountry(ip)
 }
 
 func applyUserLanguageFilter(query *gorm.DB, language string) *gorm.DB {
