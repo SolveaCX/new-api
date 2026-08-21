@@ -672,7 +672,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	// is allowed to create an account even when the IP-based country policy
 	// blocks password and other OAuth registrations. Existing-user login was
 	// already allowed for every provider above.
-	if _, blocked, _ := registrationCountryDecision(c); blocked && !isGoogleOAuthProvider(provider) {
+	registrationCountry, blocked, _ := registrationCountryDecision(c)
+	if blocked && !isGoogleOAuthProvider(provider) {
 		return nil, false, &OAuthRegistrationCountryBlockedError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
@@ -714,6 +715,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 	}
 	user.Role = common.RoleCommonUser
+	user.RegistrationCountry = registrationCountry
 	user.Status = common.UserStatusEnabled
 	if _, _, autoDisable := registrationCountryDecision(c); autoDisable {
 		user.Status = common.UserStatusDisabled
