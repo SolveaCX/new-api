@@ -25,11 +25,13 @@ The runtime table is currently empty in production (`metadata entries: 0`). The 
 
 ## Proposed phases
 
-1. Review and import the 89 exact-name records covering the full public catalogue. Of these, 87 cover the PLG models-directory catalogue.
+1. Review and import `data/model-directory/production-candidate.json`, which contains the 89 exact-name records covering the full public catalogue. Of these, 87 cover the PLG models-directory catalogue.
 2. Research and add exact-name records for `eleven_sound_v1` and `eleven_multilingual_v2`; do not infer their modality, context, release date, or distillability.
 3. Keep the reviewed-but-not-live records out of production until their exact public names appear in the relevant catalogue scope.
 4. Run the importer in `--dry-run` mode against production and review every insert/update/disable before any `--apply` execution.
 5. After explicit approval, apply the reviewed set in one transaction, then rerun the read-only audit and require zero live metadata gaps.
+
+The two excluded records and the evidence required to add them are tracked in `data/model-directory/production-pending-review.md`.
 
 ## Production-only pricing note
 
