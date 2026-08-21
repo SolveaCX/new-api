@@ -22,6 +22,14 @@ func TestRegistrationCountrySettingRejectsInvalidCode(t *testing.T) {
 	require.Error(t, s.NormalizeAndValidate())
 }
 
+func TestRegistrationCountrySettingRejectsOverlappingRules(t *testing.T) {
+	s := RegistrationCountrySetting{
+		BlockedCountries:     []string{"MA"},
+		AutoDisableCountries: []string{"ma"},
+	}
+	require.Error(t, s.NormalizeAndValidate())
+}
+
 func TestMoroccoIsBlockedByDefault(t *testing.T) {
 	require.True(t, IsCountryBlocked("ma"))
 	require.False(t, IsCountryAutoDisabled("MA"))

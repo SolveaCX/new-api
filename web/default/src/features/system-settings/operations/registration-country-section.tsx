@@ -29,7 +29,7 @@ import {
   SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
-import { useUpdateOption } from '../hooks/use-update-option'
+import { useUpdateOptionsBulk } from '../hooks/use-update-option'
 
 const schema = z.object({
   registration_country: z.object({
@@ -99,7 +99,7 @@ function normalize(values: FormValues): Defaults {
 
 export function RegistrationCountrySection(props: { defaultValues: Defaults }) {
   const { t } = useTranslation()
-  const updateOption = useUpdateOption()
+  const updateOptions = useUpdateOptionsBulk()
   const formDefaults = useMemo(
     () => buildDefaults(props.defaultValues),
     [props.defaultValues]
@@ -132,15 +132,16 @@ export function RegistrationCountrySection(props: { defaultValues: Defaults }) {
       toast.info(t('No changes to save'))
       return
     }
-    for (const key of changedKeys) {
-      await updateOption.mutateAsync({
+    const response = await updateOptions.mutateAsync({
+      options: changedKeys.map((key) => ({
         key,
         value:
           typeof normalized[key] === 'boolean'
-            ? normalized[key]
+            ? String(normalized[key])
             : JSON.stringify(normalized[key]),
-      })
-    }
+      })),
+    })
+    if (!response.success) return
     baselineRef.current = normalized
     baselineSerializedRef.current = JSON.stringify(normalized)
     form.reset(buildDefaults(normalized))
@@ -151,7 +152,7 @@ export function RegistrationCountrySection(props: { defaultValues: Defaults }) {
       <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
         <SettingsPageFormActions
           onSave={form.handleSubmit(onSubmit)}
-          isSaving={updateOption.isPending}
+        isSaving={updateOptions.isPending}
         />
         <div data-settings-form-span='full'>
           <h4 className='font-medium'>{t('Country registration rules')}</h4>

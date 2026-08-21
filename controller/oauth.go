@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -256,6 +257,8 @@ func HandleOAuth(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
 		case *OAuthRegistrationDisabledError:
 			common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
+		case *OAuthRegistrationCountryBlockedError:
+			common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
 		default:
 			common.ApiError(c, err)
 		}
@@ -342,6 +345,8 @@ func HandleGoogleOneTap(c *gin.Context) {
 			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgOAuthUserDeleted))
 		case *OAuthRegistrationDisabledError:
 			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgUserRegisterDisabled))
+		case *OAuthRegistrationCountryBlockedError:
+			respondGoogleOneTapFailure(c, http.StatusForbidden, i18n.T(c, i18n.MsgRegistrationCountryBlocked))
 		default:
 			respondGoogleOneTapFailure(c, http.StatusInternalServerError, err.Error())
 		}
@@ -668,7 +673,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	// is allowed to create an account even when the IP-based country policy
 	// blocks password and other OAuth registrations. Existing-user login was
 	// already allowed for every provider above.
-	if _, blocked, _ := registrationCountryDecision(c); blocked && !isGoogleOAuthProvider(provider) {
+	registrationCountry, blocked, _ := registrationCountryDecision(c)
+	if blocked && (!isGoogleOAuthProvider(provider) || !operation_setting.IsGoogleOAuthAllowed()) {
 		return nil, false, &OAuthRegistrationCountryBlockedError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
@@ -710,6 +716,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		}
 	}
 	user.Role = common.RoleCommonUser
+	user.RegistrationCountry = registrationCountry
 	user.Status = common.UserStatusEnabled
 	if _, _, autoDisable := registrationCountryDecision(c); autoDisable {
 		user.Status = common.UserStatusDisabled
