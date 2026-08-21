@@ -24,6 +24,9 @@ export type HomePricedModel = {
   discountedUsd: number;
   priceUnit?: string;
   pricePrefix?: string;
+  billingUnit?: "token" | "request" | "second";
+  inputFilterUsd?: number;
+  outputFilterUsd?: number;
   input?: string;
   inputOfficial?: string;
   output?: string;
@@ -145,6 +148,10 @@ export function buildRowsForModels(
       const outputPrice = resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio);
       const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", effectiveGroupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
+      const discountedUsd = usesParsedDisplayPrice ? displayPrice.value : discountedPriceUsd(listed);
+      const billingUnit = modelBillingUnit(model, displayPrice?.unit);
+      const inputFilterUsd = billingUnit === "token" ? inputPrice?.value : discountedUsd;
+      const outputFilterUsd = billingUnit === "token" ? outputPrice?.value : discountedUsd;
       const directoryMeta = getModelMeta(model.model_name);
       return {
         name: model.model_name,
@@ -153,13 +160,16 @@ export function buildRowsForModels(
         // would otherwise fall back to the literal "AI".
         vendor: directoryMeta?.vendor ?? vendor,
         official: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official),
-        discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedPriceUsd(listed)),
+        discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedUsd),
         officialUsd: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.value : official,
-        discountedUsd: usesParsedDisplayPrice ? displayPrice.value : discountedPriceUsd(listed),
-        input: inputPrice?.text ?? (usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedPriceUsd(listed))),
+        discountedUsd,
+        input: inputPrice?.text ?? (usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedUsd)),
         inputOfficial: officialInputPrice?.text ?? (usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official)),
         output: outputPrice?.text,
         outputOfficial: officialOutputPrice?.text,
+        billingUnit,
+        inputFilterUsd,
+        outputFilterUsd,
         billing: modelBillingLabel(model, displayPrice?.unit),
         capabilities: modelCapabilities(model),
         endpointTypes: model.supported_endpoint_types ?? [],
@@ -220,9 +230,16 @@ function normalizeDisplayUnit(unit: string): string {
 }
 
 function modelBillingLabel(model: PricingModel, displayUnit?: string): string {
-  if (isTokenBasedModel(model)) return "Token";
-  if (displayUnit === "/ second") return "Second";
+  const unit = modelBillingUnit(model, displayUnit);
+  if (unit === "token") return "Token";
+  if (unit === "second") return "Second";
   return "Request";
+}
+
+function modelBillingUnit(model: PricingModel, displayUnit?: string): "token" | "request" | "second" {
+  if (isTokenBasedModel(model)) return "token";
+  if (displayUnit === "/ second") return "second";
+  return "request";
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {

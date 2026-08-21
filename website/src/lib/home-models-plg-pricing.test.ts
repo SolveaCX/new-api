@@ -35,6 +35,9 @@ describe("buildRowsForModels on the plg payload", () => {
     // 0.2 x 2 x 0.9 = 0.36. The old bonus path produced $0.24.
     expect(row.discounted).toBe("$0.36");
     expect(row.discounted).not.toBe("$0.24");
+    expect(row.billingUnit).toBe("token");
+    expect(row.inputFilterUsd).toBeCloseTo(0.36);
+    expect(row.outputFilterUsd).toBeCloseTo(1.44);
   });
 
   test("falls back to the official price when no group ratio resolves", () => {
@@ -59,6 +62,9 @@ describe("buildRowsForModels on the plg payload", () => {
 
     expect(row.official).toBe("$1");
     expect(row.discounted).toBe("$0.9");
+    expect(row.billingUnit).toBe("request");
+    expect(row.inputFilterUsd).toBe(row.discountedUsd);
+    expect(row.outputFilterUsd).toBe(row.discountedUsd);
   });
 
   test("describes token rows with per-1M token unit metadata", () => {
@@ -108,6 +114,9 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.discounted).toBe("$0.072");
     expect(row.priceUnit).toBe("per second");
     expect(row.pricePrefix).toBe("from");
+    expect(row.billingUnit).toBe("second");
+    expect(row.inputFilterUsd).toBe(row.discountedUsd);
+    expect(row.outputFilterUsd).toBe(row.discountedUsd);
   });
 
   test("keeps display-priced video models even when legacy model_price is zero", () => {

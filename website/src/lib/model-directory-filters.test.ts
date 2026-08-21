@@ -57,10 +57,26 @@ describe("price banding", () => {
     expect(priceBandFor(25)).toBe("10+");
   });
 
-  test("treats missing and non-positive prices as unpriced, not cheapest", () => {
+  test("positive band boundaries are strict and non-overlapping", () => {
+    expect(priceBandFor(0.499999)).toBe("lt-0.5");
+    expect(priceBandFor(0.5)).toBe("0.5-1");
+    expect(priceBandFor(0.999999)).toBe("0.5-1");
+    expect(priceBandFor(1)).toBe("1-2");
+    expect(priceBandFor(1.999999)).toBe("1-2");
+    expect(priceBandFor(2)).toBe("2-5");
+    expect(priceBandFor(4.999999)).toBe("2-5");
+    expect(priceBandFor(5)).toBe("5-10");
+    expect(priceBandFor(9.999999)).toBe("5-10");
+    expect(priceBandFor(10)).toBe("10+");
+  });
+
+  test("treats missing, non-positive and non-finite prices as unpriced, not cheapest", () => {
     expect(priceBandFor(undefined)).toBeUndefined();
+    expect(priceBandFor(null as unknown as number | undefined)).toBeUndefined();
     expect(priceBandFor(0)).toBeUndefined();
+    expect(priceBandFor(-1)).toBeUndefined();
     expect(priceBandFor(Number.NaN)).toBeUndefined();
+    expect(priceBandFor(Infinity)).toBeUndefined();
   });
 });
 
@@ -125,6 +141,49 @@ describe("filter semantics", () => {
     const repriced = rows([{ name: "gpt-4o-mini", vendor: "OpenAI", inputUsd: 6 }]);
     expect(filterDirectoryRows(repriced, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(0);
     expect(filterDirectoryRows(repriced, withFilters({ inputPrice: ["5-10"] }))).toHaveLength(1);
+  });
+
+  test("token rows filter input and output prices independently", () => {
+    const token = rows([{ name: "gpt-4o-mini", vendor: "OpenAI", inputUsd: 0.36, outputUsd: 1.44 }]);
+
+    expect(filterDirectoryRows(token, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(1);
+    expect(filterDirectoryRows(token, withFilters({ outputPrice: ["lt-0.5"] }))).toHaveLength(0);
+    expect(filterDirectoryRows(token, withFilters({ outputPrice: ["1-2"] }))).toHaveLength(1);
+  });
+
+  test("request and second rows filter the same final display price through both price groups", () => {
+    const mixed = rows([
+      { name: "request-priced-model", vendor: "VideoCo", inputUsd: 0.9, outputUsd: 0.9 },
+      { name: "second-priced-model", vendor: "VideoCo", inputUsd: 0.072, outputUsd: 0.072 },
+    ]);
+
+    expect(filterDirectoryRows(mixed, withFilters({ inputPrice: ["0.5-1"] })).map((row) => row.name)).toEqual([
+      "request-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ outputPrice: ["0.5-1"] })).map((row) => row.name)).toEqual([
+      "request-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ inputPrice: ["lt-0.5"] })).map((row) => row.name)).toEqual([
+      "second-priced-model",
+    ]);
+    expect(filterDirectoryRows(mixed, withFilters({ outputPrice: ["lt-0.5"] })).map((row) => row.name)).toEqual([
+      "second-priced-model",
+    ]);
+  });
+
+  test("unpriced rows remain without active price filters and drop only when a price filter is active", () => {
+    const unpriced = rows([
+      { name: "zero-price", vendor: "Test", inputUsd: 0, outputUsd: 0 },
+      { name: "negative-price", vendor: "Test", inputUsd: -1, outputUsd: -1 },
+      { name: "null-price", vendor: "Test", inputUsd: null, outputUsd: null },
+      { name: "undefined-price", vendor: "Test" },
+      { name: "nan-price", vendor: "Test", inputUsd: Number.NaN, outputUsd: Number.NaN },
+      { name: "infinite-price", vendor: "Test", inputUsd: Infinity, outputUsd: Infinity },
+    ]);
+
+    expect(filterDirectoryRows(unpriced, EMPTY_DIRECTORY_FILTERS)).toHaveLength(unpriced.length);
+    expect(filterDirectoryRows(unpriced, withFilters({ inputPrice: ["lt-0.5"] }))).toHaveLength(0);
+    expect(filterDirectoryRows(unpriced, withFilters({ outputPrice: ["lt-0.5"] }))).toHaveLength(0);
   });
 
   test("search matches every term across name, vendor, series and categories", () => {

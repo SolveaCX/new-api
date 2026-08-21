@@ -111,8 +111,8 @@ export type DirectoryRow = {
 export type DirectoryRowInput = {
   name: string;
   vendor: string;
-  inputUsd?: number;
-  outputUsd?: number;
+  inputUsd?: number | null;
+  outputUsd?: number | null;
   /** Official (pre-discount) input rate, for the discount sort. */
   officialUsd?: number;
   endpointTypes?: string[];
@@ -135,12 +135,12 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
     categories: meta?.categories ?? [],
     distillable: meta?.distillable,
     age: ageBandFor(meta?.releasedAt, now),
-    inputBand: priceBandFor(input.inputUsd),
-    outputBand: priceBandFor(input.outputUsd),
+    inputBand: priceBandFor(input.inputUsd ?? undefined),
+    outputBand: priceBandFor(input.outputUsd ?? undefined),
     rank: meta?.rank ?? Number.MAX_SAFE_INTEGER,
     top10: meta?.top10,
     releasedAt: meta?.releasedAt,
-    saving: savingRatio(input.officialUsd, input.inputUsd),
+    saving: savingRatio(input.officialUsd, input.inputUsd ?? undefined),
   };
 }
 

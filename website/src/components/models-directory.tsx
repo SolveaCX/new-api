@@ -101,11 +101,11 @@ export function ModelsDirectory(props: Props) {
         buildDirectoryRow({
           name: row.name,
           vendor: row.vendor,
-          inputUsd: parseUsd(row.input) ?? row.discountedUsd,
-          outputUsd: parseUsd(row.output),
+          inputUsd: row.inputFilterUsd,
+          outputUsd: row.outputFilterUsd,
           // Official rate drives the discount sort; both sides come from the
           // live payload so a reprice re-sorts on the next render.
-          officialUsd: parseUsd(row.inputOfficial) ?? row.officialUsd,
+          officialUsd: row.officialUsd,
           endpointTypes: row.endpointTypes,
         })
       ),
@@ -294,13 +294,6 @@ export function ModelsDirectory(props: Props) {
 function stripSort(parsed: DirectoryFilters & { sort: DirectorySort }): DirectoryFilters {
   const { sort: _sort, ...filters } = parsed;
   return filters;
-}
-
-/** "$1.32" → 1.32. Non-numeric or absent prices read as undefined, not zero. */
-function parseUsd(text: string | undefined): number | undefined {
-  if (!text) return undefined;
-  const parsed = Number.parseFloat(text.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
