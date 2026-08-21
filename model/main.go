@@ -281,11 +281,6 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		if err := BackfillRegistrationCountries(); err != nil {
-			common.SysError("registration country backfill failed: " + err.Error())
-		}
-	}()
 	if err := migrateAssetBindingScopeIndex(); err != nil {
 		return err
 	}
@@ -316,7 +311,15 @@ func migrateDB() error {
 	if err := BackfillCodexFingerprintSeeds(); err != nil {
 		return err
 	}
-	return migrateStartupInvitationValue()
+	if err := migrateStartupInvitationValue(); err != nil {
+		return err
+	}
+	go func() {
+		if err := BackfillRegistrationCountries(); err != nil {
+			common.SysError("registration country backfill failed: " + err.Error())
+		}
+	}()
+	return nil
 }
 
 type migrationModel struct {
@@ -457,11 +460,6 @@ func migrateDBFast() error {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
 	}
-	go func() {
-		if err := BackfillRegistrationCountries(); err != nil {
-			common.SysError("registration country backfill failed: " + err.Error())
-		}
-	}()
 	// SQLite's AutoMigrate normally widens this table, but keep the explicit
 	// compatibility migration on the startup path for legacy databases whose
 	// schema metadata still reports the old varchar(64) columns.
@@ -501,6 +499,11 @@ func migrateDBFast() error {
 	if err := migrateStartupInvitationValue(); err != nil {
 		return err
 	}
+	go func() {
+		if err := BackfillRegistrationCountries(); err != nil {
+			common.SysError("registration country backfill failed: " + err.Error())
+		}
+	}()
 	common.SysLog("database migrated")
 	return nil
 }
