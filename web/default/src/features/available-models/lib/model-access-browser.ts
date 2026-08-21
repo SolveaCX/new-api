@@ -44,6 +44,18 @@ export type ModelVendorFilterState = {
   value: ModelVendorFilter
 }
 
+/**
+ * Endpoints that carry no signal as a badge.
+ *
+ * Nearly every model in the catalog speaks the OpenAI-compatible protocol, so
+ * labelling each one costs a badge slot and distinguishes nothing. The special
+ * OpenAI endpoints that *do* say something ("openai-video" → Video) resolve to
+ * their own label in {@link getModelEndpointLabel} and are not generic.
+ */
+export function isGenericModelEndpoint(endpoint: string): boolean {
+  return endpoint === 'openai' || endpoint === 'openai-response'
+}
+
 export function getModelEndpointLabel(endpoint: string, t: TFunction): string {
   if (endpoint === 'openai-video' || endpoint === 'video') return t('Video')
   if (endpoint === 'video-to-music') return t('Audio')

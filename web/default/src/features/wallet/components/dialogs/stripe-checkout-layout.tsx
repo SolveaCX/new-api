@@ -36,14 +36,8 @@ interface StripeCheckoutLayoutProps {
   submitting: boolean
   error: string | null
   onConfirm: () => void
-  promotionCode: string
-  promotionCodeApplied: boolean
-  promotionCodeError: string | null
-  promotionCodeSubmitting: boolean
-  onPromotionCodeChange: (value: string) => void
-  onApplyPromotionCode: () => void
-  onRemovePromotionCode: () => void
   closeControl?: ReactNode
+  promotionControl?: ReactNode
 }
 
 function getSummaryLabel(
@@ -71,14 +65,8 @@ export function StripeCheckoutLayout({
   submitting,
   error,
   onConfirm,
-  promotionCode,
-  promotionCodeApplied,
-  promotionCodeError,
-  promotionCodeSubmitting,
-  onPromotionCodeChange,
-  onApplyPromotionCode,
-  onRemovePromotionCode,
   closeControl,
+  promotionControl,
 }: StripeCheckoutLayoutProps) {
   const { t } = useTranslation()
   const canSubmit = Boolean(viewModel?.canConfirm && !mounting && !submitting)
@@ -154,62 +142,6 @@ export function StripeCheckoutLayout({
             ) : null}
           </div>
 
-          <div className='mt-5 rounded-[14px] border border-[#dfe3e8] bg-[#fbfbfc] p-4 shadow-[0_2px_7px_rgba(25,31,40,0.08)] sm:p-5'>
-            <label
-              htmlFor='stripe-promotion-code'
-              className='mb-2 block text-sm font-semibold text-[#5c6066]'
-            >
-              {t('Promotion code')}
-            </label>
-            <div className='flex gap-2 max-[520px]:flex-col'>
-              <input
-                id='stripe-promotion-code'
-                type='text'
-                value={promotionCode}
-                onChange={(event) => onPromotionCodeChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (!promotionCodeApplied) onApplyPromotionCode()
-                  }
-                }}
-                placeholder={t('Enter promotion code')}
-                autoComplete='off'
-                disabled={promotionCodeApplied || promotionCodeSubmitting}
-                className='min-w-0 flex-1 rounded-lg border border-[#cfd5dc] bg-white px-3 py-2.5 text-sm text-[#20242a] transition outline-none placeholder:text-[#8b919a] focus:border-[#0576d7] focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-[#f1f2f4]'
-              />
-              {promotionCodeApplied ? (
-                <button
-                  type='button'
-                  onClick={onRemovePromotionCode}
-                  disabled={promotionCodeSubmitting}
-                  className='rounded-lg border border-[#cfd5dc] bg-white px-4 py-2.5 text-sm font-semibold text-[#4b5057] transition hover:bg-[#f1f2f4] disabled:cursor-not-allowed disabled:opacity-50'
-                >
-                  {t('Remove')}
-                </button>
-              ) : (
-                <button
-                  type='button'
-                  onClick={onApplyPromotionCode}
-                  disabled={
-                    !promotionCode.trim() ||
-                    promotionCodeSubmitting ||
-                    mounting ||
-                    submitting
-                  }
-                  className='rounded-lg bg-[#20242a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3b4149] disabled:cursor-not-allowed disabled:opacity-50'
-                >
-                  {promotionCodeSubmitting ? t('Applying...') : t('Apply')}
-                </button>
-              )}
-            </div>
-            {promotionCodeError ? (
-              <p role='alert' className='mt-2 text-sm text-red-700'>
-                {promotionCodeError}
-              </p>
-            ) : null}
-          </div>
-
           {error ? (
             <p
               role='alert'
@@ -250,7 +182,10 @@ export function StripeCheckoutLayout({
             </div>
           ) : null}
 
-          <div className='rounded-[14px] border border-[#dfe3e8] bg-white p-6 shadow-[0_8px_22px_rgba(22,30,46,0.06)]'>
+          <div
+            data-slot='stripe-checkout-summary-card'
+            className='rounded-[14px] border border-[#dfe3e8] bg-white p-6 shadow-[0_8px_22px_rgba(22,30,46,0.06)]'
+          >
             {viewModel?.summaryLines.map((line) => (
               <div
                 key={line.key}
@@ -270,8 +205,11 @@ export function StripeCheckoutLayout({
             </div>
           </div>
 
+          {promotionControl}
+
           <button
             type='button'
+            data-slot='stripe-checkout-continue'
             disabled={!canSubmit}
             onClick={onConfirm}
             className='inline-flex min-h-[66px] w-full items-center justify-center gap-3 rounded-lg bg-[#0576d7] px-5 text-lg font-bold text-white shadow-[0_8px_16px_rgba(5,118,215,0.26)] transition hover:-translate-y-px hover:bg-[#0469c0] hover:shadow-[0_10px_20px_rgba(5,118,215,0.30)] focus-visible:ring-4 focus-visible:ring-blue-200 focus-visible:outline-none disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 sm:text-[22px]'

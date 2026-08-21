@@ -1,0 +1,96 @@
+# Task 5 Report: Unified Mutation Endpoint and Candidate Transition
+
+## Status
+
+Complete. The authenticated Stripe checkout discount mutation endpoint, fenced candidate transition, replay/race handling, and initial revision-1 lifecycle are implemented for top-up, recurring subscription, and one-time subscription checkouts.
+
+Step 0 remains provided by commit `f0eda674e`; this task consumes `model.GetStripeCheckoutRevision` and `model.GetActiveStripeCheckoutRevision` without adding controller-side ledger queries.
+
+## Delivered behavior
+
+- Registered `POST /api/user/stripe/checkout/discount` under authenticated self routes with `CriticalRateLimit`.
+- Added the locked request/success/error envelopes and typed discount/top-up response payloads.
+- Validates the feature flag, signed context, authenticated user, purchase kind, expected revision, trimmed request ID, and request ID length.
+- Resolves manual codes through the Task 3 resolver without logging or echoing buyer-entered raw codes.
+- Restores the canonical revision-1 selection, including persisted invitation Coupon IDs and top-up recall payloads.
+- Runs `Prepare -> create candidate -> Record -> inspect/expire predecessor -> Activate`; only activation changes the order pointer.
+- Handles exact active/preparing/abandoned replay, revision gaps, stale requests, payment-wins races, activation CAS loss, and transient activation retry.
+- Creates active revision 1 for feature-enabled Elements top-up, recurring, and one-time initial checkouts; feature-disabled or hosted checkout paths retain legacy behavior.
+- Adds `checkout_context`, `checkout_revision`, and `discount_state` to feature-enabled Elements responses and top-up resume responses backed by an active ledger revision.
+- Persists the recurring invitation Coupon ID actually returned by the builder so later restore reuses the same provider object.
+
+## TDD evidence
+
+RED was observed before implementation for:
+
+- Missing authenticated/rate-limited route.
+- Missing coordinator handler/runtime and locked response types.
+- Missing exact replay, stale revision, payment race, CAS loss, transient activation retry, and revision-gap behavior.
+- Missing initial revision-1 lifecycle helpers for all three checkout kinds.
+- Missing subscription initial response revision fields.
+
+Each group was advanced to GREEN with the smallest corresponding production change. Stripe access is injected in controller tests; the final focused runs make no real Stripe requests.
+
+## Verification
+
+All commands exited 0 on 2026-08-20:
+
+```powershell
+# All production controller .go files plus owned/required helper tests;
+# excludes the known baseline customer_usage_reconciliation_test.go failure.
+go test <controller-production-file-list> <owned-and-required-helper-tests> -run 'TestUpdateStripeCheckoutDiscount|TestStripeCheckoutDiscountRequestDigest|TestStripeCheckoutDefinitiveSessionRejection|TestCreateStripeCheckoutCandidateInvoice|TestCreateInitialStripeCheckoutRevision|TestStripeRecurringInitialRevision|TestCreateStripeTopUpCheckoutSession|TestCreateOneTimeStripeCheckoutSession|TestSubscriptionSelfPurchase.*Revision|TestSubscriptionSelfPurchaseResponseIncludesClientSecret' -count=1 -v
+
+go test ./router/ -run 'TestStripeCheckoutDiscountRoute|TestSubscriptionRoutes' -count=1 -v
+go test ./service/ -run 'TestCreateStripeSubscriptionCheckout|TestStripeSubscriptionCheckout|TestStripeRecurringChangePlan' -count=1 -v
+go vet <controller-production-file-list> <owned-and-required-helper-tests>
+go vet ./service/
+go vet ./router/
+git diff --check
+```
+
+## Concerns and exclusions
+
+- The repository's pre-existing `controller/customer_usage_reconciliation_test.go` compile failure was intentionally excluded and not modified, per the task brief.
+- No unbounded controller or repository-wide suite was run.
+- No real Stripe API call was made; provider behavior is covered through injected creator/getter/expirer fakes and existing parameter-builder tests.
+- Hosted checkout responses and feature-disabled flows intentionally remain on their existing compatibility path.
+
+## Fix round 1
+
+Review findings were addressed in a follow-up TDD pass:
+
+- Fresh requests now accept the next monotonic ledger revision after abandoned gaps; exact replay is proven from request digest, row state, current order revision, and provider pointer rather than numeric adjacency.
+- The request digest is a domain-separated, server-keyed HMAC of order identity, request identity, expected predecessor, normalized action, and case-normalized trimmed input. Raw buyer input is not persisted. Existing requests are looked up before promotion resolution, so exact apply replay does not call the resolver again and stale new requests conflict before resolution.
+- A preparing row without a provider Session ID re-enters the same revision-specific candidate creator and records the idempotently returned Session. A durable Record whose response was lost is detected and preserved; failed cleanup never abandons an unconfirmed candidate.
+- Activation conflicts now reload the order and active ledger row. Only a proven winner causes loser expiration/abandonment and a latest-revision conflict; no-winner conflicts remain preparing for exact retry.
+- Initial revision 1 converges from interruptions after Prepare, provider create, Record, and Activate for top-up, one-time subscription, and recurring subscription checkouts. Recurring invitation replay reads the persisted Coupon ID and does not call the Coupon or Session creator again.
+- Invoice top-ups use the invoice snapshot Stripe customer for resolution and candidate construction, and require the predecessor Session to have the same customer identity.
+- Completed top-up and subscription orders return `checkout_already_completed`; successful initial and replay envelopes use `message: success`.
+
+Fix-round RED was observed for the abandoned-gap expectation, missing Record recovery seam/customer identity, all shared initial interruption stages, and recurring durable-stage replay. The final focused controller, router, service, vet, and diff-check commands listed above all returned exit 0 after the fixes.
+
+## Fix round 2
+
+The second scoped review pass tightened provider ambiguity and terminal-state handling:
+
+- Activation CAS recovery now distinguishes the exact same active ledger row/Session from a different winner. The same candidate is returned as a successful replay and is never expired or abandoned.
+- Mutation request HMACs bind order type, trade number, request ID, expected predecessor revision, normalized action, and normalized code, preventing low-entropy offline digest comparison and request-ID reuse across predecessors.
+- Generic or transport candidate-creation errors leave the revision preparing for idempotent recovery; only typed Stripe invalid-request rejection is treated as definitive and abandoned.
+- Recovered candidates are activated only when the provider reports them open. Expired candidates are safely abandoned without touching the predecessor; completed/paid candidates report completion and remain non-active. The same rule is enforced for shared top-up/one-time revision 1 and recurring revision 1.
+- Invoice lookup is fail-closed in both purchase loading and candidate construction. Only an explicit invoice-not-found result falls back to the user customer; database failures stop before provider creation.
+- Only confirmed unavailable or ambiguous buyer promotion codes produce 400 responses. Canonical ledger, Price/Product, database, and provider lookup failures produce `checkout_replacement_failed` without exposing raw input.
+- One-time initial active replay reconstructs its response from the persisted provider Session snapshot, preserving the Session ID and client secret without another create.
+
+Round-2 RED was observed for same-candidate CAS cleanup, predecessor-unbound digesting, ambiguous create abandonment, recovered terminal candidate activation, invoice lookup fallback, dependency error mapping, and one-time active replay. The final focused controller file-list, router, related service tests, controller/service vet, and `git diff --check` all exited 0.
+
+## Fix round 3
+
+The third scoped review pass made provider state authoritative across creation and recovery:
+
+- Every mutation or initial candidate creation that returns a Session ID is immediately re-read through the provider getter before Record or Activate. An ambiguous lookup keeps the ledger row preparing; an expired Session is safely abandoned and never becomes the order pointer.
+- A recovered paid/complete candidate now runs the predecessor payment fence and activation CAS. If the predecessor did not win, the paid candidate becomes the authoritative active revision before the API returns `checkout_already_completed`, allowing later fulfillment to follow the correct pointer. If the predecessor is also paid, the established predecessor wins.
+- Exact stale replay for a preparing loser now proves the different active winner, reloads the loser, and retries cleanup. Open losers are expired and abandoned; already-expired losers are abandoned without another provider expiration; cleanup ambiguity remains recoverable.
+- Recurring candidate creation no longer invents `open`/`unpaid` state. The coordinator or initial lifecycle always uses the provider's retrieved status and payment status.
+- Definitive Stripe rejection classification is restricted to discount/promotion/coupon parameters or an explicit promotion/coupon code allowlist. Price, customer, URL, line-item, generic invalid-parameter, transport, and API failures stay preparing and map to the redacted replacement failure.
+
+Round-3 RED was observed for missing provider GET after create, activation of stale expired snapshots, paid candidates stranded in preparing, stale loser cleanup response loss, recurring hardcoded status, and broad `invalid_request_error` abandonment. The final controller production file-list with owned/required tests, router tests, related service tests, controller/router/service vet, and `git diff --check` all exited 0 on 2026-08-20.

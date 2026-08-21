@@ -39,6 +39,7 @@ import {
 import { StatusBadge } from '@/components/status-badge'
 import {
   getModelEndpointLabel,
+  isGenericModelEndpoint,
   normalizeModelAvailabilityStatus,
 } from '../lib/model-access-browser'
 import { getModelQuickstartLink } from '../lib/model-catalog-actions'
@@ -62,14 +63,35 @@ function formatUnitPrice(amountUSD: number): string {
   return formatBillingCurrencyFromUSD(amountUSD, PRICE_FORMAT)
 }
 
-function PriceRow(props: { label: string; value: string }) {
+function PriceRow(props: {
+  label: string
+  value: string
+  official?: string | null
+}) {
+  const { t } = useTranslation()
+
   return (
     <div className='flex items-baseline justify-between gap-3'>
       <span className='text-muted-foreground text-xs font-semibold tracking-wide uppercase'>
         {props.label}
       </span>
-      <span className='min-w-0 truncate font-mono text-lg font-bold tabular-nums'>
-        {props.value}
+      <span className='flex min-w-0 items-baseline gap-2'>
+        {props.official && (
+          // `<s>` over a styling-only class so assistive tech announces the
+          // official rate as superseded rather than as the current price.
+          <s className='text-muted-foreground/70 min-w-0 truncate font-mono text-sm tabular-nums'>
+            <span className='sr-only'>{t('Official price')} </span>
+            {props.official}
+          </s>
+        )}
+        <span
+          className={cn(
+            'min-w-0 truncate font-mono text-lg font-bold tabular-nums',
+            props.official && 'text-emerald-600 dark:text-emerald-400'
+          )}
+        >
+          {props.value}
+        </span>
       </span>
     </div>
   )
@@ -80,6 +102,22 @@ function PriceKicker(props: { children: string }) {
     <span className='text-muted-foreground text-[11px] font-bold tracking-[0.08em] uppercase'>
       {props.children}
     </span>
+  )
+}
+
+/** Kicker row that carries the saving badge when the model is discounted. */
+function PriceHeader(props: { label: string; discountPercent: number | null }) {
+  const { t } = useTranslation()
+
+  return (
+    <div className='flex items-center justify-between gap-2'>
+      <PriceKicker>{props.label}</PriceKicker>
+      {props.discountPercent !== null && (
+        <Badge className='shrink-0 border-transparent bg-emerald-600 text-white dark:bg-emerald-500'>
+          {t('Save {{percent}}%', { percent: props.discountPercent })}
+        </Badge>
+      )}
+    </div>
   )
 }
 
@@ -104,20 +142,47 @@ function ModelPricePanel(props: { price: CatalogPrice }) {
   if (price.kind === 'request') {
     return (
       <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
-        <PriceKicker>{t('Per request')}</PriceKicker>
-        <PriceRow label={t('Price')} value={formatUnitPrice(price.priceUSD)} />
+        <PriceHeader
+          label={t('Per request')}
+          discountPercent={price.discountPercent}
+        />
+        <PriceRow
+          label={t('Price')}
+          value={formatUnitPrice(price.priceUSD)}
+          official={
+            price.officialUSD === null
+              ? null
+              : formatUnitPrice(price.officialUSD)
+          }
+        />
       </div>
     )
   }
 
   return (
     <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
-      <PriceKicker>{t('Per 1M tokens')}</PriceKicker>
-      <PriceRow label={t('Input')} value={formatUnitPrice(price.inputUSD)} />
+      <PriceHeader
+        label={t('Per 1M tokens')}
+        discountPercent={price.discountPercent}
+      />
+      <PriceRow
+        label={t('Input')}
+        value={formatUnitPrice(price.inputUSD)}
+        official={
+          price.officialInputUSD === null
+            ? null
+            : formatUnitPrice(price.officialInputUSD)
+        }
+      />
       {price.outputUSD !== null && (
         <PriceRow
           label={t('Output')}
           value={formatUnitPrice(price.outputUSD)}
+          official={
+            price.officialOutputUSD === null
+              ? null
+              : formatUnitPrice(price.officialOutputUSD)
+          }
         />
       )}
     </div>
@@ -136,14 +201,15 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
   const category = getModelCategory(model)
   const categoryLabel = getModelCategoryLabel(category, t)
   const brand = resolveModelBrand(model)
-  // The category badge already leads the row, so an endpoint that resolves to
-  // the same word ("Video" for a video endpoint) is dropped rather than shown
-  // twice side by side.
+  // "OpenAI Compatible" is true of nearly every model here, so as a badge it
+  // costs a slot and tells the reader nothing. The category badge already
+  // leads the row, so an endpoint resolving to the same word ("Video" for a
+  // video endpoint) is dropped too rather than shown twice side by side.
   const endpointLabels = Array.from(
     new Set(
-      model.supported_endpoint_types.map((endpoint) =>
-        getModelEndpointLabel(endpoint, t)
-      )
+      model.supported_endpoint_types
+        .filter((endpoint) => !isGenericModelEndpoint(endpoint))
+        .map((endpoint) => getModelEndpointLabel(endpoint, t))
     )
   ).filter((label) => label !== categoryLabel)
 

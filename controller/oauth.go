@@ -664,6 +664,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	if !common.RegisterEnabled {
 		return nil, false, &OAuthRegistrationDisabledError{}
 	}
+	if _, blocked, _ := registrationCountryDecision(c); blocked {
+		return nil, false, &OAuthRegistrationCountryBlockedError{}
+	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
 	emailDecision, err := evaluateRegistrationEmail(oauthUser.Email)
 	if err != nil {
@@ -704,6 +707,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
+	if _, _, autoDisable := registrationCountryDecision(c); autoDisable {
+		user.Status = common.UserStatusDisabled
+	}
 	user.AdsAttribution = adsAttribution
 	if cookieLang, err := c.Cookie(i18n.LanguagePreferenceCookieName); err == nil {
 		if language, ok := dto.NormalizeUserLanguagePreference(cookieLang); ok {
@@ -775,9 +781,17 @@ func (e *OAuthRegistrationDisabledError) Error() string {
 	return "registration is disabled"
 }
 
+type OAuthRegistrationCountryBlockedError struct{}
+
+func (e *OAuthRegistrationCountryBlockedError) Error() string {
+	return "registration is not available in this country"
+}
+
 // handleOAuthError handles OAuth errors and returns translated message
 func handleOAuthError(c *gin.Context, err error) {
 	switch e := err.(type) {
+	case *OAuthRegistrationCountryBlockedError:
+		common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
 	case *oauth.OAuthError:
 		if e.Params != nil {
 			common.ApiErrorI18n(c, e.MsgKey, e.Params)

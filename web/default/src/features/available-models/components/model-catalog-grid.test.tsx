@@ -163,6 +163,50 @@ describe('ModelCatalogGrid', () => {
     expect(html).not.toContain('×')
   })
 
+  // The saving only lands if the user can see what it is measured against, so
+  // the official rate is struck through beside ours.
+  test('strikes through the official rate beside the discounted price', () => {
+    const html = renderGrid({
+      models: [buildModel()],
+      pricing: [buildPricingModel()],
+      defaultRatio: 0.5,
+    })
+
+    // `<s class=` rather than `<s`, which also matches the card's `<svg>`.
+    expect(html).toContain('<s class=')
+    expect(html).toContain('$0.15')
+    expect(html).toContain('$0.075')
+    expect(html).toContain('Save 50%')
+  })
+
+  // Striking through a price identical to ours would fake a discount that the
+  // user is not actually getting.
+  test('shows no official rate when the model is priced at list', () => {
+    const html = renderGrid({
+      models: [buildModel()],
+      pricing: [buildPricingModel()],
+      defaultRatio: 1,
+    })
+
+    expect(html).toContain('$0.15')
+    expect(html).not.toContain('<s class=')
+    expect(html).not.toContain('Save')
+  })
+
+  test('strikes through the official rate for a per-request model', () => {
+    const html = renderGrid({
+      models: [buildModel()],
+      pricing: [buildPricingModel({ quota_type: 1, model_price: 0.04 })],
+      defaultRatio: 0.5,
+    })
+
+    expect(html).toContain('Per request')
+    expect(html).toContain('<s class=')
+    expect(html).toContain('$0.04')
+    expect(html).toContain('$0.02')
+    expect(html).toContain('Save 50%')
+  })
+
   test('renders no price panel when the model has no pricing row', () => {
     const html = renderGrid({ models: [buildModel()] })
 
@@ -197,6 +241,30 @@ describe('ModelCatalogGrid', () => {
 
     expect(html.match(/>Video</g)).toHaveLength(1)
     expect(html).not.toContain('Endpoint not specified')
+  })
+
+  // Nearly every model speaks the OpenAI-compatible protocol, so the badge
+  // spent a slot to say nothing.
+  test('drops the generic OpenAI-compatible endpoint badge', () => {
+    const html = renderGrid({
+      models: [buildModel({ supported_endpoint_types: ['openai'] })],
+    })
+
+    expect(html).not.toContain('OpenAI Compatible')
+    expect(html).not.toContain('Endpoint not specified')
+    expect(html).toContain('Chat')
+  })
+
+  // Protocols that only some models speak still earn their badge.
+  test('keeps a distinguishing endpoint badge beside the generic one', () => {
+    const html = renderGrid({
+      models: [
+        buildModel({ supported_endpoint_types: ['openai', 'anthropic'] }),
+      ],
+    })
+
+    expect(html).not.toContain('OpenAI Compatible')
+    expect(html).toContain('Anthropic Compatible')
   })
 
   test('flags a genuinely untagged model as endpoint-unspecified', () => {

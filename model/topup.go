@@ -24,6 +24,7 @@ type TopUp struct {
 	PaymentAmountMinor int64   `json:"payment_amount_minor" gorm:"default:0"`
 	TradeNo            string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	GatewayTradeNo     string  `json:"gateway_trade_no" gorm:"type:varchar(255);index"`
+	CheckoutRevision   int64   `json:"checkout_revision" gorm:"not null;default:0"`
 	PaymentMethod      string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider    string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	GAClientID         string  `json:"ga_client_id,omitempty" gorm:"type:varchar(128);default:''"`

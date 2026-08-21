@@ -24,12 +24,28 @@ import type { PricingModel } from '@/features/pricing/types'
  *
  * `none` covers both "this model has no pricing row" and "the row is unusable"
  * — the card renders no price panel rather than a misleading zero.
+ *
+ * The `official*` fields carry the undiscounted list rate so the card can
+ * strike it through beside what the user actually pays. They are `null`
+ * whenever there is no saving to show (see {@link resolveOfficialDiscount}).
  */
 export type CatalogPrice =
   | { kind: 'none' }
   | { kind: 'dynamic' }
-  | { kind: 'request'; priceUSD: number }
-  | { kind: 'token'; inputUSD: number; outputUSD: number | null }
+  | {
+      kind: 'request'
+      priceUSD: number
+      officialUSD: number | null
+      discountPercent: number | null
+    }
+  | {
+      kind: 'token'
+      inputUSD: number
+      outputUSD: number | null
+      officialInputUSD: number | null
+      officialOutputUSD: number | null
+      discountPercent: number | null
+    }
 
 /**
  * `model_ratio` is quoted per 500K tokens, so a price per 1M tokens is the
@@ -70,6 +86,21 @@ export function resolveCatalogPriceRatio(options: {
   return 1
 }
 
+/**
+ * Whole-percent saving against the official list rate, or `null` when there is
+ * nothing worth showing.
+ *
+ * A ratio at or above 1 prices the model at or above list: striking through an
+ * identical (or lower) official price would read as a fake discount. A saving
+ * that rounds to 0% is dropped for the same reason — "省 0%" is worse than no
+ * badge. A ratio of 0 makes the model free, which is a genuine 100% saving.
+ */
+export function resolveOfficialDiscount(ratio: number): number | null {
+  if (!(ratio >= 0) || ratio >= 1) return null
+  const percent = Math.round((1 - ratio) * 100)
+  return percent > 0 ? percent : null
+}
+
 export function resolveCatalogPrice(
   model: PricingModel | undefined,
   options: { ratio: number }
@@ -83,19 +114,35 @@ export function resolveCatalogPrice(
   }
 
   const ratio = isUsableNumber(options.ratio) ? options.ratio : 1
+  const discountPercent = resolveOfficialDiscount(ratio)
 
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
-    const price = isUsableNumber(model.model_price) ? model.model_price : 0
-    return { kind: 'request', priceUSD: price * ratio }
+    const official = isUsableNumber(model.model_price) ? model.model_price : 0
+    // A model that is free at list price has no list rate to strike through.
+    const discounted = discountPercent !== null && official > 0
+    return {
+      kind: 'request',
+      priceUSD: official * ratio,
+      officialUSD: discounted ? official : null,
+      discountPercent: discounted ? discountPercent : null,
+    }
   }
 
   if (!isUsableNumber(model.model_ratio)) return { kind: 'none' }
 
-  const inputUSD = model.model_ratio * TOKENS_PER_RATIO_UNIT * ratio
-  const outputUSD =
+  const officialInputUSD = model.model_ratio * TOKENS_PER_RATIO_UNIT
+  const officialOutputUSD =
     isUsableNumber(model.completion_ratio) && model.completion_ratio > 0
-      ? inputUSD * model.completion_ratio
+      ? officialInputUSD * model.completion_ratio
       : null
+  const discounted = discountPercent !== null && officialInputUSD > 0
 
-  return { kind: 'token', inputUSD, outputUSD }
+  return {
+    kind: 'token',
+    inputUSD: officialInputUSD * ratio,
+    outputUSD: officialOutputUSD === null ? null : officialOutputUSD * ratio,
+    officialInputUSD: discounted ? officialInputUSD : null,
+    officialOutputUSD: discounted ? officialOutputUSD : null,
+    discountPercent: discounted ? discountPercent : null,
+  }
 }

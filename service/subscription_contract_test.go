@@ -972,6 +972,33 @@ func TestStripeRecurringCheckoutExpiresRemoteSessionWhenPersistFails(t *testing.
 	require.Zero(t, contract.LatestChangeIntentId)
 }
 
+func TestStripeSubscriptionCheckoutInputRestoresRevisionAndRecallSelection(t *testing.T) {
+	order := &model.SubscriptionOrder{
+		TradeNo:                   "sub_restore_revision_2",
+		PlanId:                    7229,
+		PaymentCurrency:           "USD",
+		PlanSnapshot:              `{"plan_id":7229,"title":"Pro","price_amount":12.34,"currency":"USD","stripe_price_id":"price_restore_revision","duration_unit":"month","duration_value":1,"total_amount":1234}`,
+		DiscountKind:              SubscriptionDiscountKindRecall,
+		RecallCampaignId:          901,
+		RecallRecipientId:         902,
+		RecallPromotionCodeId:     "promo_restore_revision",
+		RecallDiscountAmountMinor: 500,
+		CheckoutRevision:          2,
+	}
+	user := &model.User{Id: 7119, Email: "restore@example.com"}
+	plan := &model.SubscriptionPlan{Id: 7229}
+	contract := &model.UserSubscriptionContract{Id: 7339}
+	intent := &model.SubscriptionChangeIntent{Id: 7449, ProviderIdempotencyKey: "idem-restore-revision"}
+
+	input, err := stripeSubscriptionCheckoutInputFromOrder(order, user, plan, contract, intent, StripeCheckoutPresentation{})
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, input.CheckoutRevision)
+	require.Equal(t, StripeCheckoutDiscountRecall, input.DiscountSelection.Source)
+	require.Equal(t, "promo_restore_revision", input.DiscountSelection.PromotionCodeID)
+	require.Empty(t, input.DiscountSelection.CouponID)
+}
+
 func TestStripeRecurringPendingReplayRequiresSnapshotPrice(t *testing.T) {
 	testCases := []struct {
 		name         string
