@@ -1,6 +1,6 @@
 import type { BlogPost } from "./blog";
 import type { Locale } from "./locales";
-import { localeLanguageTag, localizePath } from "./locales";
+import { isLocale, localeLanguageTag, localizePath } from "./locales";
 import { SITE_NAME, SITE_ORIGIN } from "./seo";
 
 type JsonLdValue = string | number | boolean | null | JsonLdObject | JsonLdValue[];

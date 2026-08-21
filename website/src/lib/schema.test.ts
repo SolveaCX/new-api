@@ -21,7 +21,7 @@ describe("sitewide structured data", () => {
       expect.objectContaining({
         "@type": "WebPage",
         url: "https://flatkey.ai/zh/models",
-        inLanguage: "zh",
+        inLanguage: "zh-CN",
         isPartOf: expect.objectContaining({ "@type": "WebSite" }),
         publisher: expect.objectContaining({ "@type": "Organization" }),
       })
