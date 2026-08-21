@@ -271,6 +271,12 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
+	common.OptionMap["CodexClientUserAgent"] = ""
+	common.OptionMap["CodexClientVersion"] = ""
+	common.OptionMap["CodexSyncedClientVersion"] = "0.144.0"
+	common.OptionMap["CodexSyncedClientVersionAt"] = ""
+	common.OptionMap["CodexAutoSyncClientVersion"] = strconv.FormatBool(true)
+	common.OptionMap["CodexEnforceClientIdentity"] = strconv.FormatBool(true)
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -1319,6 +1325,10 @@ func handleConfigUpdate(key, value string) (bool, error) {
 
 	if configName == "registration_security" {
 		return true, system_setting.UpdateRegistrationSecuritySettingsFromMap(map[string]string{configKey: value})
+	}
+
+	if configName == "registration_country" {
+		return true, operation_setting.UpdateRegistrationCountrySettingFromMap(map[string]string{configKey: value})
 	}
 
 	// The generic path below calls config.UpdateConfigFromMap, a raw setter that

@@ -174,7 +174,18 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 	})
 }
 
-func InitDB() (err error) {
+func InitDB() error {
+	return initDB(true)
+}
+
+// InitDBWithoutMigration opens the primary database for read-only workflows
+// such as import dry-runs. It deliberately skips all schema migrations and
+// other startup writes performed by InitDB.
+func InitDBWithoutMigration() error {
+	return initDB(false)
+}
+
+func initDB(runMigrations bool) (err error) {
 	db, err := chooseDB("SQL_DSN", false)
 	if err == nil {
 		if common.DebugEnabled {
@@ -195,7 +206,7 @@ func InitDB() (err error) {
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
 
-		if !common.IsMasterNode {
+		if !runMigrations || !common.IsMasterNode {
 			return nil
 		}
 		if common.UsingMySQL {
@@ -271,11 +282,21 @@ func migrateDB() error {
 	if err := migrateQuotaLifecycleStateCycleColumns(); err != nil {
 		return err
 	}
+	// Provider binding scopes include a version prefix plus a SHA-256 digest.
+	// Widen legacy schemas before workers try to persist those full identities.
+	if err := migrateAssetBindingScopeColumns(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(migrationModelValues(orderedMigrationModels())...)
 	if err != nil {
 		return err
 	}
+	go func() {
+		if err := BackfillRegistrationCountries(); err != nil {
+			common.SysError("registration country backfill failed: " + err.Error())
+		}
+	}()
 	if err := migrateAssetBindingScopeIndex(); err != nil {
 		return err
 	}
@@ -302,6 +323,9 @@ func migrateDB() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	if err := BackfillCodexFingerprintSeeds(); err != nil {
+		return err
 	}
 	return migrateStartupInvitationValue()
 }
@@ -364,6 +388,7 @@ func orderedMigrationModels() []migrationModel {
 		{&AssetModelCoverageTarget{}, "AssetModelCoverageTarget"},
 		{&AssetModelReadiness{}, "AssetModelReadiness"},
 		{&Model{}, "Model"},
+		{&ModelDirectoryMetadata{}, "ModelDirectoryMetadata"},
 		{&Vendor{}, "Vendor"},
 		{&WebsiteFeaturedModel{}, "WebsiteFeaturedModel"},
 		{&PrefillGroup{}, "PrefillGroup"},
@@ -444,6 +469,11 @@ func migrateDBFast() error {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
 	}
+	go func() {
+		if err := BackfillRegistrationCountries(); err != nil {
+			common.SysError("registration country backfill failed: " + err.Error())
+		}
+	}()
 	// SQLite's AutoMigrate normally widens this table, but keep the explicit
 	// compatibility migration on the startup path for legacy databases whose
 	// schema metadata still reports the old varchar(64) columns.
@@ -476,6 +506,9 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	if err := BackfillCodexFingerprintSeeds(); err != nil {
+		return err
 	}
 	if err := migrateStartupInvitationValue(); err != nil {
 		return err
@@ -1144,6 +1177,80 @@ func quotaLifecycleColumnTypeLength(columnType string) (int64, bool) {
 		return 0, false
 	}
 	return length, true
+}
+
+func migrateAssetBindingScopeColumns() error {
+	if DB == nil {
+		return nil
+	}
+
+	targets := []struct {
+		model     any
+		tableName string
+	}{
+		{model: &AssetBinding{}, tableName: "asset_bindings"},
+		{model: &AssetModelCoverageTarget{}, tableName: "asset_model_coverage_targets"},
+		{model: &AssetModelReadiness{}, tableName: "asset_model_readinesses"},
+	}
+	for _, target := range targets {
+		if !DB.Migrator().HasTable(target.model) || !DB.Migrator().HasColumn(target.model, "binding_scope") {
+			continue
+		}
+
+		columnTypes, err := DB.Migrator().ColumnTypes(target.model)
+		if err != nil {
+			return fmt.Errorf("failed to inspect %s.binding_scope: %w", target.tableName, err)
+		}
+		var current gorm.ColumnType
+		for _, columnType := range columnTypes {
+			if strings.EqualFold(columnType.Name(), "binding_scope") {
+				current = columnType
+				break
+			}
+		}
+		if current == nil || assetBindingScopeColumnIsWideEnough(current) {
+			continue
+		}
+		if err := DB.Migrator().AlterColumn(target.model, "BindingScope"); err != nil {
+			return fmt.Errorf("failed to widen %s.binding_scope to varchar(%d): %w", target.tableName, AssetBindingScopeMaxLength, err)
+		}
+	}
+	return nil
+}
+
+func assetBindingScopeColumnIsWideEnough(columnType gorm.ColumnType) bool {
+	if declaredType, ok := columnType.ColumnType(); ok {
+		declaredType = strings.ToLower(strings.TrimSpace(declaredType))
+		if length, ok := quotaLifecycleColumnTypeLength(declaredType); ok {
+			return length < 0 || length >= AssetBindingScopeMaxLength
+		}
+		switch declaredType {
+		case "text", "tinytext", "mediumtext", "longtext", "clob":
+			return true
+		case "varchar", "character varying":
+			if length, ok := columnType.Length(); ok {
+				return length < 0 || length >= AssetBindingScopeMaxLength
+			}
+			return false
+		}
+	}
+
+	databaseType := strings.ToLower(strings.TrimSpace(columnType.DatabaseTypeName()))
+	if length, ok := quotaLifecycleColumnTypeLength(databaseType); ok {
+		return length < 0 || length >= AssetBindingScopeMaxLength
+	}
+	switch databaseType {
+	case "text", "tinytext", "mediumtext", "longtext", "clob":
+		return true
+	case "varchar", "character varying":
+		if length, ok := columnType.Length(); ok {
+			return length < 0 || length >= AssetBindingScopeMaxLength
+		}
+		return false
+	default:
+		// Unknown non-character metadata is not safe to rewrite automatically.
+		return true
+	}
 }
 
 // migrateSubscriptionPlanPriceAmount migrates price_amount column from float/double to decimal(10,6)

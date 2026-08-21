@@ -112,6 +112,36 @@ var passthroughSkipHeaderNamesLower = map[string]struct{}{
 
 var headerPassthroughRegexCache sync.Map // map[string]*regexp.Regexp
 
+type definitelyNotSentError struct {
+	err error
+}
+
+func (e definitelyNotSentError) Error() string {
+	if e.err == nil {
+		return "request was definitely not sent"
+	}
+	return e.err.Error()
+}
+
+func (e definitelyNotSentError) Unwrap() error {
+	return e.err
+}
+
+func MarkDefinitelyNotSent(err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsDefinitelyNotSent(err) {
+		return err
+	}
+	return definitelyNotSentError{err: err}
+}
+
+func IsDefinitelyNotSent(err error) bool {
+	var marker definitelyNotSentError
+	return errors.As(err, &marker)
+}
+
 func getHeaderPassthroughRegex(pattern string) (*regexp.Regexp, error) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
@@ -207,6 +237,9 @@ func applyHeaderOverridePlaceholders(template string, c *gin.Context, apiKey str
 func processHeaderOverride(info *common.RelayInfo, c *gin.Context) (map[string]string, error) {
 	headerOverride := make(map[string]string)
 	if info == nil {
+		return headerOverride, nil
+	}
+	if info.ApiType == rootconstant.APITypeGrokSubscription {
 		return headerOverride, nil
 	}
 
@@ -321,21 +354,29 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+func finalizeRequestIfSupported(a any, c *gin.Context, req *http.Request, info *common.RelayInfo) error {
+	finalizer, ok := a.(RequestFinalizer)
+	if !ok {
+		return nil
+	}
+	return finalizer.FinalizeRequest(c, req, info)
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
-		return nil, fmt.Errorf("get request url failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("get request url failed: %w", err))
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
 	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("new request failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("new request failed: %w", err))
 	}
 	applyUpstreamContentLength(req, info)
 	headers := req.Header
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
-		return nil, fmt.Errorf("setup request header failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("setup request header failed: %w", err))
 	}
 	// Copilot's channel key is a high-value GitHub credential, not an upstream
 	// API key. Header overrides run after adaptor authentication and support the
@@ -351,6 +392,9 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		}
 		applyHeaderOverrideToRequest(req, headerOverride)
 	}
+	if err := finalizeRequestIfSupported(a, c, req, info); err != nil {
+		return nil, err
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -361,12 +405,12 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
-		return nil, fmt.Errorf("get request url failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("get request url failed: %w", err))
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
 	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("new request failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("new request failed: %w", err))
 	}
 	applyUpstreamContentLength(req, info)
 	// set form data
@@ -374,7 +418,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	headers := req.Header
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
-		return nil, fmt.Errorf("setup request header failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("setup request header failed: %w", err))
 	}
 	// 在 SetupRequestHeader 之后应用 Header Override，确保用户设置优先级最高
 	// 这样可以覆盖默认的 Authorization header 设置
@@ -383,6 +427,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if err := finalizeRequestIfSupported(a, c, req, info); err != nil {
+		return nil, err
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -410,6 +457,17 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		targetHeader.Set(key, value)
 	}
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
+	if finalizer, ok := a.(RequestFinalizer); ok {
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, fullRequestURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("new websocket request failed: %w", err)
+		}
+		req.Header = targetHeader
+		if err := finalizer.FinalizeRequest(c, req, info); err != nil {
+			return nil, err
+		}
+		targetHeader = req.Header
+	}
 	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed to %s: %w", fullRequestURL, err)
@@ -605,11 +663,11 @@ func effectiveHTTPPort(value *url.URL) string {
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.BuildRequestURL(info)
 	if err != nil {
-		return nil, err
+		return nil, MarkDefinitelyNotSent(err)
 	}
 	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("new request failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("new request failed: %w", err))
 	}
 	applyUpstreamContentLength(req, info)
 	req.GetBody = func() (io.ReadCloser, error) {
@@ -618,7 +676,10 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 
 	err = a.BuildRequestHeader(c, req, info)
 	if err != nil {
-		return nil, fmt.Errorf("setup request header failed: %w", err)
+		return nil, MarkDefinitelyNotSent(fmt.Errorf("setup request header failed: %w", err))
+	}
+	if err := finalizeRequestIfSupported(a, c, req, info); err != nil {
+		return nil, err
 	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {

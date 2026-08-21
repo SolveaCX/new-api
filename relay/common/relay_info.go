@@ -32,6 +32,8 @@ const (
 	LastMessageTypeText     = "text"
 	LastMessageTypeTools    = "tools"
 	LastMessageTypeThinking = "thinking"
+
+	ChannelCodexFingerprintSeedContextKey = "channel_codex_fingerprint_seed"
 )
 
 type ClaudeConvertInfo struct {
@@ -65,6 +67,7 @@ type ChannelMeta struct {
 	ChannelId            int
 	ChannelIsMultiKey    bool
 	ChannelMultiKeyIndex int
+	CodexFingerprintSeed string `json:"-"`
 	ChannelBaseUrl       string
 	ApiType              int
 	ApiVersion           string
@@ -202,6 +205,7 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		ChannelId:            common.GetContextKeyInt(c, constant.ContextKeyChannelId),
 		ChannelIsMultiKey:    common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey),
 		ChannelMultiKeyIndex: common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex),
+		CodexFingerprintSeed: c.GetString(ChannelCodexFingerprintSeedContextKey),
 		ChannelBaseUrl:       common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl),
 		ApiType:              apiType,
 		ApiVersion:           c.GetString("api_version"),
@@ -788,15 +792,17 @@ func (t *TaskSubmitReq) UnmarshalMetadata(v any) error {
 }
 
 type TaskInfo struct {
-	Code             int    `json:"code"`
-	TaskID           string `json:"task_id"`
-	Status           string `json:"status"`
-	Reason           string `json:"reason,omitempty"`
-	Url              string `json:"url,omitempty"`
-	RemoteUrl        string `json:"remote_url,omitempty"`
-	Progress         string `json:"progress,omitempty"`
-	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
-	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	Code             int     `json:"code"`
+	TaskID           string  `json:"task_id"`
+	Status           string  `json:"status"`
+	Reason           string  `json:"reason,omitempty"`
+	Url              string  `json:"url,omitempty"`
+	RemoteUrl        string  `json:"remote_url,omitempty"`
+	Progress         string  `json:"progress,omitempty"`
+	Duration         float64 `json:"duration,omitempty"`
+	Resolution       string  `json:"resolution,omitempty"`
+	CompletionTokens int     `json:"completion_tokens,omitempty"` // 用于按倍率计费
+	TotalTokens      int     `json:"total_tokens,omitempty"`      // 用于按倍率计费
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

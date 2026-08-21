@@ -331,6 +331,9 @@ export type OperationsSettings = {
   DefaultCollapseSidebar: boolean
   DemoSiteEnabled: boolean
   SelfUseModeEnabled: boolean
+  'registration_country.enabled': boolean
+  'registration_country.blocked_countries': string[]
+  'registration_country.auto_disable_countries': string[]
   ChannelDisableThreshold: string
   QuotaRemindThreshold: string
   AutomaticDisableChannelEnabled: boolean
@@ -357,6 +360,12 @@ export type OperationsSettings = {
   'codex_model_governance_setting.official_source_urls': string[]
   'codex_model_governance_setting.official_lifecycle_terms': string[]
   'codex_model_governance_setting.alert_cooldown_minutes': number
+  CodexClientUserAgent: string
+  CodexClientVersion: string
+  CodexSyncedClientVersion: string
+  CodexSyncedClientVersionAt: string
+  CodexAutoSyncClientVersion: boolean
+  CodexEnforceClientIdentity: boolean
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string
