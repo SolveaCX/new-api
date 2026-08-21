@@ -556,6 +556,9 @@ func TestBuildWebsitePricingPayloadDefaultIncludesDisplayPricingForVisibleModels
 	withGroupRatio(t, `{"default":1,"plg":0.9}`)
 	withUserUsableGroups(t, `{"default":"Default","plg":"PLG"}`)
 	withHiddenPricingModels(t, "hidden-model")
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		return map[string]model.ModelDirectoryMetadataView{}, nil
+	})
 	withWebsitePricingModelSources(t, []model.Pricing{
 		{ModelName: "captured-model", EnableGroup: []string{"plg", "vip"}},
 		{ModelName: "all-model", EnableGroup: []string{"all"}},
@@ -587,6 +590,22 @@ func TestBuildWebsitePricingPayloadDefaultIncludesDisplayPricingForVisibleModels
 	require.Contains(t, payload, "group_ratio")
 	require.Contains(t, payload, "group_model_ratio")
 	require.Contains(t, payload, "pricing_version")
+}
+
+func TestBuildWebsitePricingPayloadDefaultAttachesDirectoryMetadata(t *testing.T) {
+	withGroupRatio(t, `{"plg":0.9}`)
+	withUserUsableGroups(t, `{"plg":"PLG"}`)
+	metadata := model.ModelDirectoryMetadataView{Author: "OpenAI", Series: "GPT", Providers: []string{"OpenAI"}}
+	withModelDirectoryMetadataLoader(t, func(modelNames []string) (map[string]model.ModelDirectoryMetadataView, error) {
+		require.Equal(t, []string{"gpt-5"}, modelNames)
+		return map[string]model.ModelDirectoryMetadataView{"gpt-5": metadata}, nil
+	})
+	withWebsitePricingModelSources(t, []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}})
+
+	payload := buildWebsitePricingPayloadDefault()
+	rows := payload["data"].([]model.Pricing)
+	require.Len(t, rows, 1)
+	require.Equal(t, &metadata, rows[0].DirectoryMetadata)
 }
 
 func TestBuildWebsitePublicGroupPricingPayloadKeepsLegacyFieldsWhenDisplayPricingFails(t *testing.T) {
