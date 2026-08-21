@@ -381,10 +381,13 @@ const TokenSourceCLI = "cli"
 func createUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) error {
 	var user User
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id").
+		Select("id", "role", "registration_risk_level").
 		Where("id = ?", userId).
 		First(&user).Error; err != nil {
 		return err
+	}
+	if IsUserRegistrationRiskTokenBlocked(&user) {
+		return ErrRegistrationRiskTokenBlocked
 	}
 
 	var total int64
@@ -445,10 +448,13 @@ func EnsureInitialUserTokenWithInviteReward(userId int, token Token, maxTokens i
 func ensureInitialUserTokenInTx(tx *gorm.DB, userId int, token *Token, maxTokens int) (bool, error) {
 	var user User
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id").
+		Select("id", "role", "registration_risk_level").
 		Where("id = ?", userId).
 		First(&user).Error; err != nil {
 		return false, err
+	}
+	if IsUserRegistrationRiskTokenBlocked(&user) {
+		return false, ErrRegistrationRiskTokenBlocked
 	}
 
 	var total int64

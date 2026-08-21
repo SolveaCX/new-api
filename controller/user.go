@@ -317,7 +317,7 @@ func ensureDefaultUserToken(user *model.User) error {
 		token.Group = "auto"
 		token.CrossGroupRetry = true
 	}
-	if _, _, err := model.EnsureInitialUserToken(user.Id, token, operation_setting.GetMaxUserTokens()); err != nil && !errors.Is(err, model.ErrUserTokenLimitReached) {
+	if _, _, err := model.EnsureInitialUserToken(user.Id, token, operation_setting.GetMaxUserTokens()); err != nil && !errors.Is(err, model.ErrUserTokenLimitReached) && !errors.Is(err, model.ErrRegistrationRiskTokenBlocked) {
 		common.SysLog("failed to ensure default token for user " + strconv.Itoa(user.Id) + ": " + err.Error())
 		return err
 	}
@@ -393,6 +393,7 @@ func Register(c *gin.Context) {
 		Password:        user.Password,
 		DisplayName:     user.Username,
 		InviterId:       inviterId,
+		DeviceID:        user.DeviceID,
 		Role:            common.RoleCommonUser, // 明确设置角色为普通用户
 		AdsAttribution:  sanitizeAdsAttribution(user.AdsAttribution),
 		EmailVerifiedAt: user.EmailVerifiedAt,
@@ -409,6 +410,7 @@ func Register(c *gin.Context) {
 	}
 	cleanUser.Email = user.Email
 	cleanUser.EmailDomain = emailDecision.Domain
+	applyRegistrationRisk(c, &cleanUser)
 	registrationEmailGrant := ""
 	registrationEmailReservationOwner := ""
 	grantReserved := false

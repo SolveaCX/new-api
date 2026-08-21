@@ -370,6 +370,10 @@ func AddToken(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgTokenLimitReached, map[string]any{"Max": maxTokens})
 			return
 		}
+		if errors.Is(err, model.ErrRegistrationRiskTokenBlocked) {
+			common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -420,6 +424,10 @@ func EnsureInitialToken(c *gin.Context) {
 	maxTokens := operation_setting.GetMaxUserTokens()
 	createdToken, created, err := model.EnsureInitialUserTokenWithInviteReward(c.GetInt("id"), cleanToken, maxTokens, model.InviteRewardTriggerInitialTokenCreate)
 	if err != nil {
+		if errors.Is(err, model.ErrRegistrationRiskTokenBlocked) {
+			common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
+			return
+		}
 		if errors.Is(err, model.ErrUserTokenLimitReached) {
 			common.ApiErrorI18n(c, i18n.MsgTokenLimitReached, map[string]any{"Max": maxTokens})
 			return

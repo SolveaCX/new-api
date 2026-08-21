@@ -45,6 +45,7 @@ export interface RegisterPayload {
   // Honeypot: hidden from humans, bots auto-fill it. Server silently drops
   // registrations that carry a value.
   website?: string
+  device_id?: string
 }
 
 export interface PasswordResetPayload {

@@ -243,9 +243,15 @@ export const processGroupsData = (data, userGroup) => {
 export async function getOAuthState() {
   let path = '/api/oauth/state';
   let affCode = localStorage.getItem('aff');
-  if (affCode && affCode.length > 0) {
-    path += `?aff=${affCode}`;
+  const params = new URLSearchParams();
+  if (affCode && affCode.length > 0) params.set('aff', affCode);
+  let deviceId = localStorage.getItem('flatkey_registration_device_id');
+  if (!deviceId) {
+    deviceId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+    localStorage.setItem('flatkey_registration_device_id', deviceId);
   }
+  params.set('device_id', deviceId.slice(0, 128));
+  path += `?${params.toString()}`;
   const res = await API.get(path);
   const { success, message, data } = res.data;
   if (success) {

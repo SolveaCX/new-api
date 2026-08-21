@@ -303,7 +303,7 @@ export function SignUpForm({
         aff_code: getAffiliateCode(),
         ads_attribution: adsAttribution || undefined,
         turnstile: turnstileToken,
-        website: data.website || undefined,
+					website: data.website || undefined,
       })
 
       if (res?.success) {
