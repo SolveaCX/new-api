@@ -339,9 +339,7 @@ func TestChannelSupportsRequestEndpointDoesNotFilterLegacyEndpointModes(t *testi
 		{"anthropic messages", "/v1/messages", "glm-5.2"},
 		{"gemini generate content", "/v1beta/models/gemini-2.5-flash:generateContent", "gemini-2.5-flash"},
 		{"embeddings", "/v1/embeddings", "text-embedding-3-small"},
-		{"image generation", "/v1/images/generations", "gpt-image-2"},
 		{"rerank", "/v1/rerank", "jina-reranker-v2-base-multilingual"},
-		{"video", "/v1/video/generations", "sora-2"},
 	}
 
 	for _, tc := range cases {

@@ -136,6 +136,16 @@ func seedRelayTaskContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only"})
 	common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
 	common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{"seedance-2.0": true})
+	// RelayTask is normally entered after the distributor has selected the
+	// first channel and populated these channel-derived context values. Keep
+	// the fixture faithful to that production contract so the retry loop can
+	// exercise channel 131 first and reselect channel 132 only after the first
+	// attempt is definitely retryable.
+	common.SetContextKey(c, constant.ContextKeyChannelId, 131)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeBytePlus)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "sk-provider-a")
+	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, "https://provider.example")
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "seedance-2.0")
 	c.Set("token_name", "task-token")
 	c.Set("token_quota", 10000)
 }
