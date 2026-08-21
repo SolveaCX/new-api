@@ -230,7 +230,7 @@ describe("filter semantics", () => {
   });
 
   test("models with no documented providers drop out of that filter", () => {
-    const row = buildDirectoryRow({ name: "MiniMax-H3", vendor: "MiniMax" }, NOW);
+    const row = buildDirectoryRow({ name: "unregistered-preview-model", vendor: "Unknown" }, NOW);
     expect(row.providers).toEqual([]);
     expect(filterDirectoryRows([row], withFilters({ providers: ["Minimax"] }))).toHaveLength(0);
     expect(filterDirectoryRows([row], EMPTY_DIRECTORY_FILTERS)).toHaveLength(1);

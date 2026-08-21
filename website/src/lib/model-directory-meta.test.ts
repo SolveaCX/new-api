@@ -11,7 +11,57 @@ import { MODEL_DIRECTORY_META } from "./model-directory-meta-data";
 
 const MODELS_PAGE_PRICING_GROUP = "plg";
 
+const STAGING_PREVIEW_MODELS = [
+  "bytedance/seedance-2.0",
+  "bytedance/seedance-2.0-fast",
+  "claude-3-5-haiku-20241022",
+  "doubao/doubao-seedance-2-0-260128",
+  "gemini-2.0-flash",
+  "jimeng-image-4.5",
+  "jimeng-image-5.0-lite",
+  "jimeng-video-3.0-fast",
+  "jimeng-video-3.0-pro",
+  "jimeng-video-seedance-2.0",
+  "jimeng-video-seedance-2.0-fast",
+  "jimeng-video-seedance-2.0-mini",
+  "mirothinker-1-7-deepresearch",
+  "mirothinker-1-7-deepresearch-mini",
+  "seedance-2.0",
+  "seedance-2.0-fast",
+  "seedance-2.0-mini",
+] as const;
+
 describe("model directory metadata coverage", () => {
+  test("loads candidate metadata only in the staging preview build", () => {
+    const loadedPreviewModels = STAGING_PREVIEW_MODELS.filter((name) => MODEL_DIRECTORY_META[name] != null);
+
+    if (process.env.NEXT_PUBLIC_MODEL_DIRECTORY_STAGING_PREVIEW === "true") {
+      expect(loadedPreviewModels).toEqual(STAGING_PREVIEW_MODELS);
+      for (const name of STAGING_PREVIEW_MODELS) {
+        const metadata = MODEL_DIRECTORY_META[name];
+        expect(metadata.vendor.trim(), `${name} vendor`).not.toBe("");
+        expect(metadata.providers.length, `${name} providers`).toBeGreaterThan(0);
+        expect(metadata.modalities.length, `${name} modalities`).toBeGreaterThan(0);
+        expect(metadata.series.trim(), `${name} series`).not.toBe("");
+        expect(metadata.categories.length, `${name} categories`).toBeGreaterThan(0);
+        expect(metadata.releasedAt, `${name} releasedAt`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(typeof metadata.distillable, `${name} distillable`).toBe("boolean");
+      }
+    } else {
+      expect(loadedPreviewModels).toEqual([]);
+    }
+  });
+
+  test("fills every metadata-driven filter field in the staging preview build", () => {
+    if (process.env.NEXT_PUBLIC_MODEL_DIRECTORY_STAGING_PREVIEW !== "true") return;
+
+    for (const [name, metadata] of Object.entries(MODEL_DIRECTORY_META)) {
+      expect(metadata.providers.length, `${name} providers`).toBeGreaterThan(0);
+      expect(metadata.categories.length, `${name} categories`).toBeGreaterThan(0);
+      expect(metadata.releasedAt, `${name} releasedAt`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
   test("covers every model in the live catalogue", async () => {
     const pricing = await getPricingData(MODELS_PAGE_PRICING_GROUP);
     if (pricing.models.length === 0) {
