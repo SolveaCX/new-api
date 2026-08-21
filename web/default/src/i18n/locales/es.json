@@ -6787,6 +6787,8 @@
     "Video generation timed out": "La generación de video agotó el tiempo de espera",
     "Generation was interrupted": "La generación fue interrumpida",
     "Your browser does not support video playback.": "Tu navegador no admite la reproducción de video.",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "Ahorra {{percent}} %",
+    "Official price": "Precio oficial"
   }
 }

@@ -6787,6 +6787,8 @@
     "Video generation timed out": "Quá thời gian tạo video",
     "Generation was interrupted": "Quá trình tạo đã bị gián đoạn",
     "Your browser does not support video playback.": "Trình duyệt của bạn không hỗ trợ phát video.",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "Tiết kiệm {{percent}}%",
+    "Official price": "Giá chính thức"
   }
 }

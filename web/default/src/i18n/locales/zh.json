@@ -6787,6 +6787,8 @@
     "Video generation timed out": "视频生成超时",
     "Generation was interrupted": "生成已中断",
     "Your browser does not support video playback.": "当前浏览器不支持视频播放。",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "省 {{percent}}%",
+    "Official price": "官方价格"
   }
 }

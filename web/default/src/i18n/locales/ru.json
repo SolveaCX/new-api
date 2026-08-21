@@ -6787,6 +6787,8 @@
     "Video generation timed out": "Время ожидания генерации видео истекло",
     "Generation was interrupted": "Генерация была прервана",
     "Your browser does not support video playback.": "Ваш браузер не поддерживает воспроизведение видео.",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "Экономия {{percent}}%",
+    "Official price": "Официальная цена"
   }
 }

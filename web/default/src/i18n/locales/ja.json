@@ -6787,6 +6787,8 @@
     "Video generation timed out": "動画生成がタイムアウトしました",
     "Generation was interrupted": "生成が中断されました",
     "Your browser does not support video playback.": "お使いのブラウザーは動画再生に対応していません。",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "{{percent}}% お得",
+    "Official price": "公式価格"
   }
 }

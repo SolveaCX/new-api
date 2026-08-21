@@ -6787,6 +6787,8 @@
     "Video generation timed out": "A geração de vídeo excedeu o tempo limite",
     "Generation was interrupted": "A geração foi interrompida",
     "Your browser does not support video playback.": "Seu navegador não oferece suporte à reprodução de vídeo.",
-    "%": "%"
+    "%": "%",
+    "Save {{percent}}%": "Economize {{percent}}%",
+    "Official price": "Preço oficial"
   }
 }

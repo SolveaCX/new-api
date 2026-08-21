@@ -59,13 +59,116 @@ describe('resolveCatalogPrice', () => {
     expect(price.outputUSD).toBeCloseTo(0.3, 10)
   })
 
+  // The official rate is the undiscounted list price — the same price the
+  // ratio is applied to — so the card can strike it through next to ours.
+  test('quotes the official rate alongside the discounted price', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 0.5 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.officialInputUSD).toBeCloseTo(0.15, 10)
+    expect(price.officialOutputUSD).toBeCloseTo(0.6, 10)
+    expect(price.discountPercent).toBe(50)
+  })
+
+  // At or above the list rate there is nothing to strike through; showing the
+  // official price would either duplicate ours or advertise a negative saving.
+  test('omits the official rate when the price carries no discount', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 1 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.officialInputUSD).toBeNull()
+    expect(price.officialOutputUSD).toBeNull()
+    expect(price.discountPercent).toBeNull()
+  })
+
+  test('omits the official rate when the model is billed above list', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 2 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.officialInputUSD).toBeNull()
+    expect(price.discountPercent).toBeNull()
+  })
+
+  // An exclusive ratio of 0 makes the model free; that is a 100% saving, not
+  // an absent one.
+  test('reports a free model as a full discount off the official rate', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 0 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.inputUSD).toBe(0)
+    expect(price.officialInputUSD).toBeCloseTo(0.15, 10)
+    expect(price.discountPercent).toBe(100)
+  })
+
+  // 0.9 → 10%, not 9.999999999999998%.
+  test('rounds the saving to a whole percent', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 0.9 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.discountPercent).toBe(10)
+  })
+
+  // Under a fraction of a percent the badge would read "省 0%", which is worse
+  // than no badge at all.
+  test('drops a saving that rounds away to nothing', () => {
+    const price = resolveCatalogPrice(buildPricingModel(), { ratio: 0.999 })
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.officialInputUSD).toBeNull()
+    expect(price.discountPercent).toBeNull()
+  })
+
+  test('keeps the official output rate when only the input rate is priced', () => {
+    const price = resolveCatalogPrice(
+      buildPricingModel({ completion_ratio: 0 }),
+      { ratio: 0.5 }
+    )
+
+    if (price.kind !== 'token') throw new Error('expected token pricing')
+    expect(price.outputUSD).toBeNull()
+    expect(price.officialOutputUSD).toBeNull()
+    expect(price.officialInputUSD).toBeCloseTo(0.15, 10)
+  })
+
   test('reports a per-request price for request-billed models', () => {
     const price = resolveCatalogPrice(
       buildPricingModel({ quota_type: 1, model_price: 0.04 }),
       { ratio: 2 }
     )
 
-    expect(price).toEqual({ kind: 'request', priceUSD: 0.08 })
+    expect(price).toEqual({
+      kind: 'request',
+      priceUSD: 0.08,
+      officialUSD: null,
+      discountPercent: null,
+    })
+  })
+
+  test('quotes the official rate for a discounted per-request model', () => {
+    const price = resolveCatalogPrice(
+      buildPricingModel({ quota_type: 1, model_price: 0.04 }),
+      { ratio: 0.5 }
+    )
+
+    if (price.kind !== 'request') throw new Error('expected request pricing')
+    expect(price.priceUSD).toBeCloseTo(0.02, 10)
+    expect(price.officialUSD).toBeCloseTo(0.04, 10)
+    expect(price.discountPercent).toBe(50)
+  })
+
+  // A free model has no list price to strike through either.
+  test('omits the official rate for a request model priced at zero', () => {
+    const price = resolveCatalogPrice(
+      buildPricingModel({ quota_type: 1 }),
+      { ratio: 0.5 }
+    )
+
+    expect(price).toEqual({
+      kind: 'request',
+      priceUSD: 0,
+      officialUSD: null,
+      discountPercent: null,
+    })
   })
 
   test('treats a request-billed model without a price as free', () => {
@@ -74,7 +177,12 @@ describe('resolveCatalogPrice', () => {
       { ratio: 1 }
     )
 
-    expect(price).toEqual({ kind: 'request', priceUSD: 0 })
+    expect(price).toEqual({
+      kind: 'request',
+      priceUSD: 0,
+      officialUSD: null,
+      discountPercent: null,
+    })
   })
 
   // A tiered expression has no single number to show; inventing one would

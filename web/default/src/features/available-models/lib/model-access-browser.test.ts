@@ -34,6 +34,7 @@ import {
   getModelVendorFilters,
   getVisibleVendorFilters,
   isFixedModelAccessView,
+  isGenericModelEndpoint,
   normalizeModelAvailabilityStatus,
   reconcileModelVendorFilterState,
   resolveModelAccessScope,
@@ -417,6 +418,16 @@ describe('available models browser filters', () => {
     expect(getModelEndpointLabel('video', t)).toBe('Video')
     expect(getModelEndpointLabel('video-to-music', t)).toBe('Audio')
     expect(getModelEndpointLabel('embeddings', t)).toBe('Embeddings')
+  })
+
+  // The OpenAI-compatible protocol is near-universal here, so it is dropped as
+  // a badge — but only the plain variants; `openai-video` says something.
+  test('treats only the plain OpenAI protocols as generic', () => {
+    expect(isGenericModelEndpoint('openai')).toBe(true)
+    expect(isGenericModelEndpoint('openai-response')).toBe(true)
+    expect(isGenericModelEndpoint('openai-video')).toBe(false)
+    expect(isGenericModelEndpoint('anthropic')).toBe(false)
+    expect(isGenericModelEndpoint('embeddings')).toBe(false)
   })
 
   test('keeps temporary failures callable while filtering vendors', () => {
