@@ -332,6 +332,18 @@ describe("model directory metadata audit", () => {
     expect(json).toContain('"currentValue": "NaN"');
     expect(json).not.toContain('"currentValue": null');
   });
+
+  test("JSON renderer preserves undefined current values explicitly", () => {
+    const report = audit({ metadata: {} });
+
+    const parsed = JSON.parse(renderModelDirectoryAuditJson(report));
+
+    expect(parsed.issues[0]).toMatchObject({
+      modelName: "gpt-test",
+      field: "metadata",
+      currentValue: "undefined",
+    });
+  });
 });
 
 describe("model directory audit CLI assembly", () => {

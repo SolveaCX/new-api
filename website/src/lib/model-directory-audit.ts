@@ -495,6 +495,7 @@ function escapeMarkdown(value: string): string {
 }
 
 function nonFiniteNumberReplacer(_key: string, value: unknown): unknown {
+  if (value === undefined) return "undefined";
   if (typeof value !== "number" || Number.isFinite(value)) return value;
   if (Number.isNaN(value)) return "NaN";
   return value === Number.POSITIVE_INFINITY ? "Infinity" : "-Infinity";
