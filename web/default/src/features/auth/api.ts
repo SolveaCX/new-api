@@ -126,10 +126,26 @@ export async function getOAuthState(): Promise<string> {
       aff,
       ads_attribution: adsAttribution || undefined,
       ...getGAMeasurementIdentifiers(),
+      device_id: getRegistrationDeviceId(),
     },
   })
   if (res.data?.success) return res.data.data
   return ''
+}
+
+function getRegistrationDeviceId(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    const key = 'flatkey_registration_device_id'
+    let value = window.localStorage.getItem(key)
+    if (!value) {
+      value = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+      window.localStorage.setItem(key, value)
+    }
+    return value.slice(0, 128)
+  } catch {
+    return ''
+  }
 }
 
 // WeChat login by authorization code
@@ -149,6 +165,7 @@ export async function register(payload: RegisterPayload): Promise<ApiResponse> {
     {
       ...payload,
       ...getGAMeasurementIdentifiers(),
+      device_id: payload.device_id ?? getRegistrationDeviceId(),
     },
     {
       params: { turnstile: payload.turnstile ?? '' },

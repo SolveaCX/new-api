@@ -68,7 +68,17 @@ type User struct {
 	StripeCardBound         bool           `json:"stripe_card_bound" gorm:"default:false;column:stripe_card_bound"`
 	NewUserBonusGiven       bool           `json:"new_user_bonus_given" gorm:"default:false;column:new_user_bonus_given"`
 	RegistrationIP          string         `json:"registration_ip,omitempty" gorm:"type:varchar(64);column:registration_ip;index"`
-	IsEnterprise            bool           `json:"is_enterprise" gorm:"default:false;column:is_enterprise"` // enterprise users retain the group concept; PLG (non-enterprise) users are forced to the plg group with groups hidden
+	// DeviceID is supplied by the browser during registration and is never
+	// persisted. Only keyed hashes are stored for privacy-preserving linkage.
+	DeviceID                string `json:"device_id,omitempty" gorm:"-:all"`
+	DeviceIDHash            string `json:"-" gorm:"type:char(64);column:device_id_hash;index"`
+	RegistrationIPHash      string `json:"-" gorm:"type:char(64);column:registration_ip_hash;index"`
+	EmailIdentityHash       string `json:"-" gorm:"type:char(64);column:email_identity_hash;index"`
+	RegistrationRiskLevel   int    `json:"registration_risk_level,omitempty" gorm:"default:0;column:registration_risk_level;index"`
+	DeviceRegistrationCount int    `json:"device_registration_count,omitempty" gorm:"default:0;column:device_registration_count"`
+	IPRegistrationCount     int    `json:"ip_registration_count,omitempty" gorm:"default:0;column:ip_registration_count"`
+	EmailRegistrationCount  int    `json:"email_registration_count,omitempty" gorm:"default:0;column:email_registration_count"`
+	IsEnterprise            bool   `json:"is_enterprise" gorm:"default:false;column:is_enterprise"` // enterprise users retain the group concept; PLG (non-enterprise) users are forced to the plg group with groups hidden
 	// PaidAmount is the lifetime total of successful top-ups (USD) for this
 	// user. It is not persisted on the user row — FillPaidAmounts aggregates it
 	// from the top_ups table when listing users (admin console only).
@@ -89,10 +99,10 @@ type User struct {
 	// IsHoneypot marks accounts created by a honeypot (hidden field) submission.
 	// Such accounts are created already disabled; the flag lets admins
 	// distinguish them from manually-disabled accounts in the users table.
-	IsHoneypot bool `json:"is_honeypot" gorm:"default:false;column:is_honeypot"`
-	StripeCardFingerprint   string         `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
-	CreatedAt               int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt             int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	IsHoneypot            bool   `json:"is_honeypot" gorm:"default:false;column:is_honeypot"`
+	StripeCardFingerprint string `json:"stripe_card_fingerprint,omitempty" gorm:"type:varchar(64);column:stripe_card_fingerprint;index"`
+	CreatedAt             int64  `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt           int64  `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	// Primary Accept-Language tag observed at the most recent login
 	// (e.g. "zh-CN"). Analytics-only: surfaced in the ops report to explain
 	// currency/locale mismatches; never used for authorization.
@@ -110,16 +120,17 @@ type User struct {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:              user.Id,
-		Group:           user.Group,
-		Quota:           user.Quota,
-		Status:          user.Status,
-		Username:        user.Username,
-		Setting:         user.Setting,
-		Email:           user.Email,
-		IsEnterprise:    user.IsEnterprise,
-		EmailVerifiedAt: user.EmailVerifiedAt,
-		Role:            user.Role,
+		Id:                    user.Id,
+		Group:                 user.Group,
+		Quota:                 user.Quota,
+		Status:                user.Status,
+		Username:              user.Username,
+		Setting:               user.Setting,
+		Email:                 user.Email,
+		IsEnterprise:          user.IsEnterprise,
+		EmailVerifiedAt:       user.EmailVerifiedAt,
+		Role:                  user.Role,
+		RegistrationRiskLevel: user.RegistrationRiskLevel,
 	}
 	return cache
 }
@@ -672,6 +683,10 @@ func (user *User) InsertWithRegistrationIP(inviterId int, registrationIP string)
 		ReleaseRegistrationIPNewUserBonusRedisClaim(user)
 		return err
 	}
+	RecordRegistrationRiskSignal(user.Id, RegistrationRiskDecision{
+		DeviceIDHash: user.DeviceIDHash, RegistrationIPHash: user.RegistrationIPHash,
+		EmailIdentityHash: user.EmailIdentityHash, Level: user.RegistrationRiskLevel,
+	})
 
 	// 用户创建成功后，根据角色初始化边栏配置
 	// 需要重新获取用户以确保有正确的ID和Role
@@ -754,6 +769,9 @@ func grantInviteeRegistrationSubscriptionDiscountInTx(tx *gorm.DB, user *User) e
 	if !common.InviteRewardSubscriptionMode || user == nil || user.Id <= 0 || user.InviterId <= 0 {
 		return nil
 	}
+	if IsUserRegistrationRiskBenefitsBlocked(user) {
+		return nil
+	}
 	configuredDiscount := common.InviteFirstSubDiscountUSD
 	amountMinor, err := subscriptionDiscountUSDToMinor(configuredDiscount)
 	if err != nil {
@@ -808,6 +826,10 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	// 用户创建成功后，根据角色初始化边栏配置
 	var createdUser User
 	if err := DB.Where("id = ?", user.Id).First(&createdUser).Error; err == nil {
+		RecordRegistrationRiskSignal(createdUser.Id, RegistrationRiskDecision{
+			DeviceIDHash: createdUser.DeviceIDHash, RegistrationIPHash: createdUser.RegistrationIPHash,
+			EmailIdentityHash: createdUser.EmailIdentityHash, Level: createdUser.RegistrationRiskLevel,
+		})
 		defaultSidebarConfig := generateDefaultSidebarConfigForRole(createdUser.Role)
 		if defaultSidebarConfig != "" {
 			currentSetting := createdUser.GetSetting()
@@ -823,7 +845,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	}
 
 	// 纯套餐模式：注册成功（风控通过）后自动发放 Free 套餐。发放失败不阻断注册。
-	if setting.FreePlanOnSignupEnabled && user.Role <= common.RoleCommonUser {
+	if setting.FreePlanOnSignupEnabled && user.Role <= common.RoleCommonUser && !IsUserRegistrationRiskBenefitsBlocked(user) {
 		if err := GrantFreePlanToUser(user.Id); err != nil {
 			common.SysError(fmt.Sprintf("failed to grant free plan to user %d: %s", user.Id, err.Error()))
 		}
@@ -832,6 +854,11 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 
 func (user *User) setInviteRewardInitialStatus() {
 	if user.InviterId > 0 {
+		if IsUserRegistrationRiskBenefitsBlocked(user) {
+			user.InviteRewardStatus = InviteRewardStatusBlocked
+			user.InviteRewardBlockReason = "registration_risk"
+			return
+		}
 		user.InviteRewardStatus = InviteRewardStatusPending
 		return
 	}
