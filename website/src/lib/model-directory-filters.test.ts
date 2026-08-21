@@ -6,6 +6,7 @@ import {
   hasActiveFilters,
   sortDirectoryRows,
   EMPTY_DIRECTORY_FILTERS,
+  type DirectoryRow,
   type DirectoryFilters,
 } from "./model-directory-filters";
 import { ageBandFor, formatContextTokens, getModelMeta, priceBandFor, seriesForModels } from "./model-directory-meta";
@@ -31,6 +32,20 @@ const SAMPLE = rows([
 
 function withFilters(overrides: Partial<DirectoryFilters>): DirectoryFilters {
   return { ...EMPTY_DIRECTORY_FILTERS, ...overrides };
+}
+
+function contextRow(name: string, contextTokens: number | null): DirectoryRow {
+  return {
+    name,
+    vendor: "Test",
+    searchText: name,
+    author: "Test",
+    providers: [],
+    modalities: [],
+    contextTokens,
+    categories: [],
+    rank: 1,
+  };
 }
 
 describe("price banding", () => {
@@ -82,17 +97,18 @@ describe("filter semantics", () => {
     expect(narrowed).toHaveLength(0);
   });
 
-  test("context length is a >= filter using the smallest selected bound", () => {
-    const oneMillion = filterDirectoryRows(SAMPLE, withFilters({ context: [1048576] }));
-    expect(oneMillion.map((row) => row.name).sort()).toEqual([
-      "claude-opus-5",
-      "deepseek-v4-pro",
-      "gemini-2.5-flash",
-      "gpt-5.6-sol",
-    ]);
+  test("context length is a single upper-bound filter", () => {
+    const contextRows = [
+      contextRow("ctx-128000", 128000),
+      contextRow("ctx-200000", 200000),
+      contextRow("ctx-400000", 400000),
+      contextRow("ctx-zero", 0),
+      contextRow("ctx-null", null),
+    ];
 
-    const mixed = filterDirectoryRows(SAMPLE, withFilters({ context: [1048576, 128000] }));
-    expect(mixed.map((row) => row.name)).toContain("gpt-4o-mini");
+    const result = filterDirectoryRows(contextRows, withFilters({ context: [200000] }));
+
+    expect(result.map((row) => row.name)).toEqual(["ctx-128000", "ctx-200000"]);
   });
 
   test("models with no context window are excluded from context filters", () => {
@@ -183,6 +199,18 @@ describe("facet counts", () => {
     const filters = withFilters({ modalities: ["video"] });
     expect(facetCount(SAMPLE, filters, "series", "GPT")).toBe(0);
     expect(facetCount(SAMPLE, filters, "series", "Seedance")).toBe(1);
+  });
+
+  test("single-select context facet counts replace the active context value", () => {
+    const contextRows = [
+      contextRow("ctx-128000", 128000),
+      contextRow("ctx-200000", 200000),
+      contextRow("ctx-400000", 400000),
+    ];
+    const filters = withFilters({ context: [200000] });
+
+    expect(facetCount(contextRows, filters, "context", 128000)).toBe(1);
+    expect(facetCount(contextRows, filters, "context", 400000)).toBe(3);
   });
 });
 
@@ -327,10 +355,31 @@ describe("url round-trip", () => {
     expect(parsed.sort).toBe("rank");
   });
 
+  test("normalizes legacy multi-value single-select filters to the first valid value", () => {
+    expect(parseDirectorySearch({ context: "8192,200000" }).context).toEqual([8192]);
+    expect(parseDirectorySearch({ distillable: "false,true" }).distillable).toEqual([false]);
+  });
+
   test("toggling adds then removes a value", () => {
     const once = toggleDirectoryFilter(EMPTY_DIRECTORY_FILTERS, "series", "GPT");
     expect(once.series).toEqual(["GPT"]);
     expect(toggleDirectoryFilter(once, "series", "GPT").series).toEqual([]);
+  });
+
+  test("toggling context replaces a different value and clears the same value", () => {
+    const initial = withFilters({ context: [8192] });
+
+    const replaced = toggleDirectoryFilter(initial, "context", 200000);
+    expect(replaced.context).toEqual([200000]);
+    expect(toggleDirectoryFilter(replaced, "context", 200000).context).toEqual([]);
+  });
+
+  test("toggling distillable replaces a different value and preserves other groups as multi-select", () => {
+    const replaced = toggleDirectoryFilter(withFilters({ distillable: [false] }), "distillable", true);
+    expect(replaced.distillable).toEqual([true]);
+
+    const multi = toggleDirectoryFilter(withFilters({ series: ["GPT"] }), "series", "Claude");
+    expect(multi.series).toEqual(["GPT", "Claude"]);
   });
 
   test("hasActiveFilters reflects search, vendor and groups", () => {

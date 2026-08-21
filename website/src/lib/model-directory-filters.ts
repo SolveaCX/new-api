@@ -16,8 +16,8 @@ import {
 //     ticked, ignoring the other selections in its own group — so sibling
 //     options never zero each other out. A zero-count option is disabled.
 //
-// Context length is a >= filter: 200K+ means at least 200K, and selecting
-// several values uses the smallest as the lower bound.
+// Context length is a single upper-bound filter: 200K means documented context
+// windows greater than 0 and up to 200K tokens.
 
 export type DirectoryFilterKey =
   | "modalities"
@@ -166,8 +166,15 @@ function matchesGroup(row: DirectoryRow, key: DirectoryFilterKey, filters: Direc
     case "context": {
       const selected = filters.context;
       if (selected.length === 0) return true;
-      if (row.contextTokens == null) return false;
-      return row.contextTokens >= Math.min(...selected);
+      const upperBound = selected[0];
+      return (
+        Number.isFinite(upperBound) &&
+        upperBound > 0 &&
+        row.contextTokens != null &&
+        Number.isFinite(row.contextTokens) &&
+        row.contextTokens > 0 &&
+        row.contextTokens <= upperBound
+      );
     }
     case "inputPrice": {
       const selected = filters.inputPrice;
