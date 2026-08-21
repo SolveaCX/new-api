@@ -113,16 +113,6 @@ func TestGrokBillingObservationConditionalWriteIsMonotonicAndLeaseOwned(t *testi
 			},
 		},
 		{
-			name:       "same timestamp",
-			leaseOwner: "node-A",
-			observation: GrokBillingObservation{
-				ObservedAt:    1700000100,
-				BillingPlan:   "SameTimePlan",
-				TierRaw:       "same-time-tier",
-				QuotaSnapshot: `{"remaining":2}`,
-			},
-		},
-		{
 			name:       "wrong lease owner",
 			leaseOwner: "node-B",
 			observation: GrokBillingObservation{
@@ -147,6 +137,21 @@ func TestGrokBillingObservationConditionalWriteIsMonotonicAndLeaseOwned(t *testi
 			require.Equal(t, int64(1700000100), got.UpdatedAt)
 		})
 	}
+
+	wrote, err = SaveGrokBillingObservation(113, "node-A", GrokBillingObservation{
+		ObservedAt:    1700000100,
+		BillingPlan:   "SameTimePlan",
+		TierRaw:       "same-time-tier",
+		QuotaSnapshot: `{"remaining":2}`,
+	})
+	require.NoError(t, err)
+	require.True(t, wrote)
+	got, err = GetGrokChannelState(113)
+	require.NoError(t, err)
+	require.Equal(t, int64(1700000100), got.BillingObservedAt)
+	require.Equal(t, "SameTimePlan", got.BillingPlan)
+	require.Equal(t, "same-time-tier", got.TierRaw)
+	require.Equal(t, `{"remaining":2}`, got.QuotaSnapshot)
 }
 
 func TestGrokBillingObservationRejectsExpiredSameOwnerLease(t *testing.T) {

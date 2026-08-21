@@ -91,7 +91,7 @@ func SaveGrokBillingObservationAt(channelID int, leaseOwner string, leaseNow int
 	owner := leaseOwner
 	observedAt := observation.ObservedAt
 	res := DB.Model(&GrokChannelState{}).
-		Where("channel_id = ? AND refresh_lease_owner = ? AND refresh_lease_expires_at > ? AND (billing_observed_at IS NULL OR billing_observed_at < ?)", channelID, owner, leaseNow, observedAt).
+		Where("channel_id = ? AND refresh_lease_owner = ? AND refresh_lease_expires_at > ? AND (billing_observed_at IS NULL OR billing_observed_at <= ?)", channelID, owner, leaseNow, observedAt).
 		Updates(map[string]any{
 			"quota_snapshot":      observation.QuotaSnapshot,
 			"billing_plan":        observation.BillingPlan,

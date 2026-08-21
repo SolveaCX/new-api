@@ -356,6 +356,40 @@ func TestRefreshMediaBillingStatusWithHTTPDoerIgnoresCachedBillingSnapshot(t *te
 	require.Equal(t, 2, billingCalls)
 }
 
+func TestRefreshMediaBillingStatusReplacesCachedSnapshotInSameDatabaseSecond(t *testing.T) {
+	setupMediaPreflightTestDB(t)
+	channelID := seedMediaPreflightChannel(t, 5000)
+	require.NoError(t, model.DB.Model(&model.GrokChannelState{}).Where("channel_id = ?", channelID).Updates(map[string]any{
+		"quota_snapshot":      `{"version":1,"plan":"SuperGrok","monthly":{"status_code":200,"monthly_limit_cents":15000},"weekly":{"status_code":200,"usage_percent":12.5}}`,
+		"billing_plan":        "SuperGrok",
+		"billing_observed_at": 2000,
+	}).Error)
+
+	restore := SetMediaPreflightHooksForTest(MediaPreflightHooks{
+		Now: func(context.Context) int64 { return 2000 },
+	})
+	defer restore()
+
+	got := RefreshMediaBillingStatusWithHTTPDoer(context.Background(), channelID, doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, BillingMonthlyPath):
+			return jsonResponse(http.StatusOK, `{"plan":"free","monthlyLimit":0}`), nil
+		case strings.HasSuffix(req.URL.Path, BillingWeeklyCreditsPath):
+			return jsonResponse(http.StatusOK, `{}`), nil
+		default:
+			t.Fatalf("unexpected upstream request: %s", req.URL.String())
+			return nil, nil
+		}
+	}))
+
+	require.Equal(t, BillingStatusIneligible, got)
+	st, err := model.GetGrokChannelState(channelID)
+	require.NoError(t, err)
+	require.Equal(t, int64(2000), st.BillingObservedAt)
+	require.Equal(t, "free", st.BillingPlan)
+	require.ErrorIs(t, EvaluateMediaEligibility(st.QuotaSnapshot, st.BillingObservedAt, 2000), ErrMediaSubscriptionRequired)
+}
+
 func TestEnsureMediaCredentialDoesNotSyncAbilitiesFromUnsavedProbe(t *testing.T) {
 	setupMediaPreflightTestDB(t)
 	channelID := seedMediaPreflightChannel(t, 5000)
