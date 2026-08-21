@@ -35,9 +35,14 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 }
 
 function splitValues(value: string | string[] | undefined): string[] {
-  const raw = firstValue(value);
-  if (!raw) return [];
-  return [...new Set(raw.split(",").map((item) => item.trim()).filter(Boolean))];
+  const rawValues = Array.isArray(value) ? value : value == null ? [] : [value];
+  const values = rawValues.flatMap((raw) =>
+    raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  return [...new Set(values)];
 }
 
 export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryFilters & { sort: DirectorySort } {

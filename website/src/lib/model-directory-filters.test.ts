@@ -362,6 +362,11 @@ describe("url round-trip", () => {
     expect(parseDirectorySearch({ distillable: "false,true" }).distillable).toEqual([false]);
   });
 
+  test("normalizes repeated-param single-select filters to the first valid value across entries", () => {
+    expect(parseDirectorySearch({ context: ["abc", "200000,400000"] }).context).toEqual([200000]);
+    expect(parseDirectorySearch({ distillable: ["maybe", "true,false"] }).distillable).toEqual([true]);
+  });
+
   test("toggling adds then removes a value", () => {
     const once = toggleDirectoryFilter(EMPTY_DIRECTORY_FILTERS, "series", "GPT");
     expect(once.series).toEqual(["GPT"]);
