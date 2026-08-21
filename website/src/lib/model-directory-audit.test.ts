@@ -560,6 +560,7 @@ describe("model directory audit CLI assembly", () => {
         billingUnit: "token",
         inputFilterUsd: 0.9,
         outputFilterUsd: 0,
+        outputPriceZeroAllowed: true,
       },
     ]);
 
@@ -570,8 +571,15 @@ describe("model directory audit CLI assembly", () => {
       metadata: { "input-only-token": COMPLETE_META },
     });
 
-    expect(issueKeys(report.issues)).toEqual(["invalid:input-only-token:outputFilterUsd"]);
-    expect(report.issues[0]?.currentValue).toBe(0);
+    expect(report.issues).toEqual([]);
+  });
+
+  test("accepts zero output pricing for an explicitly input-only model", () => {
+    const report = audit({
+      rows: [{ ...COMPLETE_ROW, outputFilterUsd: 0, outputPriceZeroAllowed: true }],
+    });
+
+    expect(report.issues).toEqual([]);
   });
 
   test("preserves display-priced zero as invalid current value instead of missing", () => {

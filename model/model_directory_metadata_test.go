@@ -272,6 +272,22 @@ func TestModelDirectoryMetadataImportApplyIsTransactionalAndIdempotent(t *testin
 	require.Equal(t, []string{"claude-5", "gpt-5"}, second.Unchanged)
 }
 
+func TestModelDirectoryMetadataImportNotifiesAfterChangedRowsCommit(t *testing.T) {
+	setupModelDirectoryMetadataTestDB(t)
+	var notifications int
+	SetModelDirectoryMetadataChangedHook(func() { notifications++ })
+	t.Cleanup(func() { SetModelDirectoryMetadataChangedHook(nil) })
+
+	rows := []ModelDirectoryMetadata{validModelDirectoryMetadata(t, "gpt-5")}
+	_, err := ApplyModelDirectoryMetadataImport(DB, rows)
+	require.NoError(t, err)
+	require.Equal(t, 1, notifications)
+
+	_, err = ApplyModelDirectoryMetadataImport(DB, rows)
+	require.NoError(t, err)
+	require.Equal(t, 1, notifications)
+}
+
 func TestModelDirectoryMetadataImportRollsBackOnWriteFailure(t *testing.T) {
 	setupModelDirectoryMetadataTestDB(t)
 	require.NoError(t, DB.Exec(`CREATE TRIGGER reject_bad_metadata BEFORE INSERT ON model_directory_metadata WHEN NEW.model_name = 'bad-model' BEGIN SELECT RAISE(FAIL, 'rejected'); END`).Error)

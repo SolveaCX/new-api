@@ -1,6 +1,6 @@
 # Production Model Directory Metadata Backfill Plan
 
-Generated at: 2026-08-21T14:42:44.939Z
+Generated at: 2026-08-21T15:26:15.572Z
 Scopes:
 
 - Full public pricing catalogue: `https://console.flatkey.ai/api/website/pricing`
@@ -31,9 +31,9 @@ The runtime table is currently empty in production (`metadata entries: 0`). The 
 4. Run the importer in `--dry-run` mode against production and review every insert/update/disable before any `--apply` execution.
 5. After explicit approval, apply the reviewed set in one transaction, then rerun the read-only audit and require zero live metadata gaps.
 
-## Production-only issue to resolve separately
+## Production-only pricing note
 
-`gemini-embedding-001` currently produces an output filter price of `0`. This is a pricing-pipeline/data-quality issue, not a metadata backfill. It must be explicitly accepted or corrected before the final production audit can be considered clean.
+`gemini-embedding-001` is an input-only token model (`completion_ratio=0`), so its output filter price of `0` is a valid display value. The audit treats this zero as allowed for explicitly input-only models; no metadata backfill or pricing correction is required for this row.
 
 ## Reviewed records not currently live in the full catalogue
 

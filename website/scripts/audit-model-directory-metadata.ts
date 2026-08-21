@@ -120,6 +120,7 @@ export function assembleAuditCatalogFromPricingPayload(payload: PricingApiRespon
       billingUnit: row?.billingUnit,
       inputFilterUsd: row?.inputFilterUsd,
       outputFilterUsd: row?.outputFilterUsd,
+      ...(model.quota_type === 0 && model.completion_ratio === 0 ? { outputPriceZeroAllowed: true } : {}),
     })),
     ...malformedRows,
   ];

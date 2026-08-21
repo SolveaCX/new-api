@@ -45,6 +45,7 @@ type websiteMetadataCacheEntry struct {
 
 func init() {
 	operation_setting.OnPricingVisibilityChanged(InvalidateWebsitePricingCache)
+	model.SetModelDirectoryMetadataChangedHook(InvalidateWebsitePricingCache)
 }
 
 // filterHiddenPricingModels 按后台配置的隐藏名单过滤定价列表。
@@ -379,17 +380,24 @@ func getCachedEnabledModelDirectoryMetadataMap(modelNames []string) (map[string]
 	}
 	websiteMetadataCache.RUnlock()
 
+	websiteMetadataCache.Lock()
+	defer websiteMetadataCache.Unlock()
+
+	// Re-check after acquiring the writer lock. This closes the miss race so a
+	// concurrent burst performs one database lookup instead of one per caller.
+	now = websiteMetadataNow()
+	if entry, ok := websiteMetadataCache.entries[key]; ok && now.Before(entry.expiresAt) {
+		return cloneWebsiteMetadataMap(entry.metadata), nil
+	}
+
 	metadata, err := getEnabledModelDirectoryMetadataMap(modelNames)
 	if err != nil {
 		return nil, err
 	}
-
-	websiteMetadataCache.Lock()
 	websiteMetadataCache.entries[key] = websiteMetadataCacheEntry{
 		metadata:  cloneWebsiteMetadataMap(metadata),
 		expiresAt: now.Add(websiteMetadataCacheTTL),
 	}
-	websiteMetadataCache.Unlock()
 	return cloneWebsiteMetadataMap(metadata), nil
 }
 

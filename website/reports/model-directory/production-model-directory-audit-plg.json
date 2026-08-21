@@ -1,22 +1,9 @@
 {
-  "generatedAt": "2026-08-21T14:42:44.939Z",
+  "generatedAt": "2026-08-21T15:26:15.572Z",
   "source": "https://console.flatkey.ai/api/website/pricing?group=plg",
   "modelCount": 89,
   "metadataCount": 0,
   "issues": [
-    {
-      "modelId": "gemini-embedding-001",
-      "modelName": "gemini-embedding-001",
-      "field": "outputFilterUsd",
-      "status": "invalid",
-      "kind": "field",
-      "currentValue": 0,
-      "affectedFilters": [
-        "outputPrice"
-      ],
-      "backfillSqlEligible": false,
-      "reviewStatus": "pending"
-    },
     {
       "modelId": "claude-fable-5",
       "modelName": "claude-fable-5",

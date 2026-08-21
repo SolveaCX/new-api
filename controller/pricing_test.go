@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -455,6 +456,42 @@ func TestAttachModelDirectoryMetadataRefreshesAfterCacheTTL(t *testing.T) {
 	now = now.Add(2 * time.Second)
 	attachModelDirectoryMetadata(pricing)
 	require.Equal(t, 2, lookupCount)
+}
+
+func TestAttachModelDirectoryMetadataCoalescesConcurrentCacheMisses(t *testing.T) {
+	previousTTL := websiteMetadataCacheTTL
+	t.Cleanup(func() {
+		websiteMetadataCacheTTL = previousTTL
+		invalidateWebsiteMetadataCache()
+	})
+	websiteMetadataCacheTTL = time.Hour
+
+	lookupCount := 0
+	var lookupMu sync.Mutex
+	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
+		lookupMu.Lock()
+		lookupCount++
+		lookupMu.Unlock()
+		time.Sleep(25 * time.Millisecond)
+		return map[string]model.ModelDirectoryMetadataView{"gpt-5": {Author: "OpenAI"}}, nil
+	})
+
+	pricing := []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}}
+	const callers = 16
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for index := 0; index < callers; index++ {
+		go func() {
+			defer wg.Done()
+			rows := attachModelDirectoryMetadata(pricing)
+			require.NotNil(t, rows[0].DirectoryMetadata)
+		}()
+	}
+	wg.Wait()
+
+	lookupMu.Lock()
+	defer lookupMu.Unlock()
+	require.Equal(t, 1, lookupCount)
 }
 
 func TestCachedWebsiteMetadataDoesNotShareMutableFields(t *testing.T) {

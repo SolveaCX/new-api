@@ -1,10 +1,10 @@
 # Model Directory Metadata Audit
 
-Generated at: 2026-08-21T14:42:44.939Z
+Generated at: 2026-08-21T15:26:15.572Z
 Source: https://console.flatkey.ai/api/website/pricing?group=plg
 Live models audited: 89
 Metadata entries audited: 0
-Issue count: 90
+Issue count: 89
 Wrote production: false
 
 **No production writes were performed.**
@@ -15,7 +15,6 @@ Review these findings before any database update. This report is read-only audit
 
 | Severity | Total |
 | --- | ---: |
-| invalid | 1 |
 | unknown-model | 89 |
 
 ## Issue totals by affected filter
@@ -28,7 +27,6 @@ Review these findings before any database update. This report is read-only audit
 | distillable | 89 |
 | metadata | 89 |
 | modalities | 89 |
-| outputPrice | 1 |
 | providers | 89 |
 | series | 89 |
 | vendor | 89 |
@@ -37,7 +35,6 @@ Review these findings before any database update. This report is read-only audit
 
 | Status | Model | Field | Affected filters | Current value | Suggested value | Suggested source | Confidence | Review status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| invalid | gemini-embedding-001 | outputFilterUsd | outputPrice | 0 |  |  |  | pending |
 | unknown-model | claude-fable-5 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | claude-haiku-4-5-20251001 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |
 | unknown-model | claude-opus-4-5 | metadata | metadata, vendor, providers, modalities, context, series, categories, age, distillable | undefined |  |  |  | pending |

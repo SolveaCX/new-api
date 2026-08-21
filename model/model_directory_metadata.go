@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,6 +12,29 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var modelDirectoryMetadataChanged = struct {
+	sync.RWMutex
+	hook func()
+}{}
+
+// SetModelDirectoryMetadataChangedHook lets the serving layer invalidate any
+// in-process read caches after a metadata import commits. The model package
+// owns the write path, so the hook avoids a model -> controller dependency.
+func SetModelDirectoryMetadataChangedHook(hook func()) {
+	modelDirectoryMetadataChanged.Lock()
+	modelDirectoryMetadataChanged.hook = hook
+	modelDirectoryMetadataChanged.Unlock()
+}
+
+func notifyModelDirectoryMetadataChanged() {
+	modelDirectoryMetadataChanged.RLock()
+	hook := modelDirectoryMetadataChanged.hook
+	modelDirectoryMetadataChanged.RUnlock()
+	if hook != nil {
+		hook()
+	}
+}
 
 var allowedModelDirectoryModalities = map[string]struct{}{
 	"text":  {},
@@ -233,6 +257,9 @@ func ApplyModelDirectoryMetadataImport(db *gorm.DB, rows []ModelDirectoryMetadat
 	})
 	if err != nil {
 		return ModelDirectoryMetadataImportResult{}, err
+	}
+	if len(result.Inserts)+len(result.Updates) > 0 {
+		notifyModelDirectoryMetadataChanged()
 	}
 	return result, nil
 }
