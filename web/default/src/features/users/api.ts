@@ -162,6 +162,18 @@ export async function resetUserTwoFA(id: number): Promise<ApiResponse> {
   return res.data
 }
 
+export async function impersonateUser(
+  id: number
+): Promise<ApiResponse<{ id: number; username: string }>> {
+  const res = await api.post(`/api/user/${id}/impersonate`)
+  return res.data
+}
+
+export async function exitImpersonation(): Promise<ApiResponse> {
+  const res = await api.post('/api/user/impersonation/exit')
+  return res.data
+}
+
 export async function getUserInvoiceProfile(
   id: number
 ): Promise<ApiResponse<UserInvoiceProfile | null>> {
@@ -196,7 +208,9 @@ export async function getGroups(): Promise<ApiResponse<string[]>> {
  * user may select for requests). Unlike getGroups(), this excludes
  * model/channel/system pricing groups.
  */
-export async function getAssignableUserGroups(): Promise<ApiResponse<string[]>> {
+export async function getAssignableUserGroups(): Promise<
+  ApiResponse<string[]>
+> {
   const res = await api.get('/api/group/?type=user')
   return res.data
 }
