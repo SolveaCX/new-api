@@ -104,6 +104,8 @@ describe("filter semantics", () => {
       contextRow("ctx-400000", 400000),
       contextRow("ctx-zero", 0),
       contextRow("ctx-null", null),
+      contextRow("ctx-nan", Number.NaN),
+      contextRow("ctx-infinity", Infinity),
     ];
 
     const result = filterDirectoryRows(contextRows, withFilters({ context: [200000] }));
