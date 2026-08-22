@@ -290,7 +290,6 @@ mock.module('@/lib/analytics/gtag', () => ({
 
 mock.module('../../lib', () => ({
   formatDuration: () => '1 month',
-  formatMediaValue: () => '',
   formatResetPeriod: () => 'No Reset',
 }))
 
@@ -431,7 +430,6 @@ function planRecord(): PlanRecord {
       total_amount: 1000000,
       window_5h_amount: 0,
       window_week_amount: 0,
-      media_credits_monthly: 0,
       stripe_price_id: 'price_123',
       model_count: 0,
       rpm: 0,

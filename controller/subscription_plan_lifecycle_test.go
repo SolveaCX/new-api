@@ -230,13 +230,84 @@ func TestAdminCreateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *
 	require.True(t, resp.Success, recorder.Body.String())
 	require.Zero(t, resp.Data.Window5hAmount)
 	require.Zero(t, resp.Data.WindowWeekAmount)
-	require.Equal(t, int64(75), resp.Data.MediaCreditsMonthly)
+	require.Zero(t, resp.Data.MediaCreditsMonthly)
+	var rawResp struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &rawResp))
+	require.NotContains(t, rawResp.Data, "window_5h_amount")
+	require.NotContains(t, rawResp.Data, "window_week_amount")
+	require.NotContains(t, rawResp.Data, "media_credits_monthly")
 
 	var stored model.SubscriptionPlan
 	require.NoError(t, model.DB.First(&stored, "id = ?", resp.Data.Id).Error)
 	require.Zero(t, stored.Window5hAmount)
 	require.Zero(t, stored.WindowWeekAmount)
-	require.Equal(t, int64(75), stored.MediaCreditsMonthly)
+	require.Zero(t, stored.MediaCreditsMonthly)
+}
+
+func TestAdminSubscriptionPlanIgnoresLegacyMediaCredits(t *testing.T) {
+	setupSubscriptionPlanControllerLifecycleTestDB(t)
+	confirmSubscriptionPlanPaymentComplianceForTest(t)
+	gin.SetMode(gin.TestMode)
+
+	req := AdminUpsertSubscriptionPlanRequest{Plan: model.SubscriptionPlan{
+		Title:               "Unified quota",
+		PriceAmount:         9.99,
+		Currency:            "USD",
+		DurationUnit:        model.SubscriptionDurationMonth,
+		DurationValue:       1,
+		Enabled:             false,
+		TotalAmount:         1000,
+		MediaCreditsMonthly: 999,
+	}}
+	recorder := performAdminCreateSubscriptionPlan(t, req)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var raw struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &raw))
+	require.NotContains(t, raw.Data, "media_credits_monthly")
+	var stored model.SubscriptionPlan
+	require.NoError(t, model.DB.First(&stored, "title = ?", "Unified quota").Error)
+	require.Zero(t, stored.MediaCreditsMonthly)
+}
+
+func TestAdminListSubscriptionPlansOmitsLegacyShortWindowAmounts(t *testing.T) {
+	setupSubscriptionPlanControllerLifecycleTestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	plan := &model.SubscriptionPlan{
+		Title:            "Legacy window list",
+		PriceAmount:      9.99,
+		Currency:         "USD",
+		DurationUnit:     model.SubscriptionDurationMonth,
+		DurationValue:    1,
+		Enabled:          false,
+		TotalAmount:      1000,
+		Window5hAmount:   500,
+		WindowWeekAmount: 2000,
+	}
+	require.NoError(t, model.CreateSubscriptionPlan(plan))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/subscription/plans", nil)
+	AdminListSubscriptionPlans(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Success bool `json:"success"`
+		Data    []struct {
+			Plan map[string]any `json:"plan"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.True(t, resp.Success, recorder.Body.String())
+	require.Len(t, resp.Data, 1)
+	require.NotContains(t, resp.Data[0].Plan, "window_5h_amount")
+	require.NotContains(t, resp.Data[0].Plan, "window_week_amount")
+	require.NotContains(t, resp.Data[0].Plan, "media_credits_monthly")
 }
 
 func TestAdminUpdateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *testing.T) {
@@ -274,7 +345,7 @@ func TestAdminUpdateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *
 	require.NoError(t, model.DB.First(&stored, "id = ?", plan.Id).Error)
 	require.Zero(t, stored.Window5hAmount)
 	require.Zero(t, stored.WindowWeekAmount)
-	require.Equal(t, int64(75), stored.MediaCreditsMonthly)
+	require.Zero(t, stored.MediaCreditsMonthly)
 }
 
 func performAdminCreateSubscriptionPlan(t *testing.T, req AdminUpsertSubscriptionPlanRequest) *httptest.ResponseRecorder {
