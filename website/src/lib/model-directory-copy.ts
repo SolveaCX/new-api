@@ -30,6 +30,8 @@ export type DirectoryCopy = {
   learnMore: string;
   featuredLabel: string;
   chooseSlide: string;
+  previousSlide: string;
+  nextSlide: string;
   groupModalities: string;
   groupContext: string;
   groupInputPrice: string;
@@ -77,6 +79,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Learn More",
     featuredLabel: "Featured models",
     chooseSlide: "Choose a featured model",
+    previousSlide: "Previous featured model",
+    nextSlide: "Next featured model",
     groupModalities: "Input Modalities",
     groupContext: "Context Length",
     groupInputPrice: "Input Pricing",
@@ -119,6 +123,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "了解更多",
     featuredLabel: "精选模型",
     chooseSlide: "选择精选模型",
+    previousSlide: "上一个精选模型",
+    nextSlide: "下一个精选模型",
     groupModalities: "输入模态",
     groupContext: "上下文长度",
     groupInputPrice: "输入价格",
@@ -159,6 +165,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Saber más",
     featuredLabel: "Modelos destacados",
     chooseSlide: "Elige un modelo destacado",
+    previousSlide: "Modelo destacado anterior",
+    nextSlide: "Siguiente modelo destacado",
     groupModalities: "Modalidades de entrada",
     groupContext: "Longitud de contexto",
     groupInputPrice: "Precio de entrada",
@@ -201,6 +209,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "En savoir plus",
     featuredLabel: "Modèles en vedette",
     chooseSlide: "Choisir un modèle en vedette",
+    previousSlide: "Modèle en vedette précédent",
+    nextSlide: "Modèle en vedette suivant",
     groupModalities: "Modalités d'entrée",
     groupContext: "Longueur de contexte",
     groupInputPrice: "Prix en entrée",
@@ -241,6 +251,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Saiba mais",
     featuredLabel: "Modelos em destaque",
     chooseSlide: "Escolha um modelo em destaque",
+    previousSlide: "Modelo em destaque anterior",
+    nextSlide: "Próximo modelo em destaque",
     groupModalities: "Modalidades de entrada",
     groupContext: "Tamanho do contexto",
     groupInputPrice: "Preço de entrada",
@@ -281,6 +293,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Подробнее",
     featuredLabel: "Избранные модели",
     chooseSlide: "Выберите избранную модель",
+    previousSlide: "Предыдущая избранная модель",
+    nextSlide: "Следующая избранная модель",
     groupModalities: "Входные модальности",
     groupContext: "Длина контекста",
     groupInputPrice: "Цена за ввод",
@@ -321,6 +335,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "詳しく見る",
     featuredLabel: "注目のモデル",
     chooseSlide: "注目のモデルを選ぶ",
+    previousSlide: "前の注目モデル",
+    nextSlide: "次の注目モデル",
     groupModalities: "入力モダリティ",
     groupContext: "コンテキスト長",
     groupInputPrice: "入力料金",
@@ -361,6 +377,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Tìm hiểu thêm",
     featuredLabel: "Mô hình nổi bật",
     chooseSlide: "Chọn mô hình nổi bật",
+    previousSlide: "Mô hình nổi bật trước",
+    nextSlide: "Mô hình nổi bật tiếp theo",
     groupModalities: "Phương thức đầu vào",
     groupContext: "Độ dài ngữ cảnh",
     groupInputPrice: "Giá đầu vào",
@@ -401,6 +419,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Mehr erfahren",
     featuredLabel: "Empfohlene Modelle",
     chooseSlide: "Empfohlenes Modell wählen",
+    previousSlide: "Vorheriges empfohlenes Modell",
+    nextSlide: "Nächstes empfohlenes Modell",
     groupModalities: "Eingabemodalitäten",
     groupContext: "Kontextlänge",
     groupInputPrice: "Eingabepreis",
@@ -441,6 +461,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     learnMore: "Pelajari lebih lanjut",
     featuredLabel: "Model unggulan",
     chooseSlide: "Pilih model unggulan",
+    previousSlide: "Model unggulan sebelumnya",
+    nextSlide: "Model unggulan berikutnya",
     groupModalities: "Modalitas masukan",
     groupContext: "Panjang konteks",
     groupInputPrice: "Harga masukan",
