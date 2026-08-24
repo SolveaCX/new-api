@@ -165,6 +165,9 @@ type FlatkeyPriceTableRow = {
 };
 
 const MAX_REFERENCE_MEDIA_FILES = 10;
+// Replace-in-place CDN objects must carry a version so browsers do not keep a
+// previously cached lower-resolution generation after a staging refresh.
+const SEEDANCE_SHOWCASE_ASSET_VERSION = "20260824";
 
 // Workbench examples for one model.
 //
@@ -194,8 +197,8 @@ function promptLibraryVideoSchema(
     return SHOWCASE_SCENES.map((scene) => ({
       name: `${displayName} — ${t(scene.label)}`,
       description: scene.prompt,
-      contentPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.mp4`,
-      thumbnailPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.png`,
+      contentPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}`,
+      thumbnailPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.png?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}`,
       duration: "PT6S",
     }));
   }
@@ -255,7 +258,7 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
       video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
       label: "Wet-track chase shot",
       prompt:
-        "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
+        "Create an ultra-realistic cinematic shot of a black-and-silver formula car racing at high speed on a wet forest circuit. Use a low rear three-quarter chase camera that keeps the full car in frame as it accelerates through the bend. The tires cut through standing water and throw white spray; the car has subtle high-speed vibration while the camera stays locked to its motion. Misty pine trees, distant grandstands, and a grey overcast sky fill the background. Use a blue-grey, mist-white, and deep-green palette, shallow motion blur on the surrounding track, deep focus on the car, realistic wet-surface reflections, and a strong sense of speed. No text, captions, logos, vehicle deformation, grass separating lanes, frame drops, or extra cars.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
       references: [
         { kind: "image", name: "f1-wet-track-reference.png", url: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-reference.png" },
@@ -321,9 +324,9 @@ function imageExampleForModel(modelId: string): MediaExample {
   return IMAGE_SCENE_ASSETS[index];
 }
 
-// To add a scene: drop <id>.mp4 and <id>.png into website/public/assets/
-// model-showcase/, add the entry here, and add its `label` to the copy maps in
-// lib/model-landing.ts for all 10 locales.
+// To add a scene: add the generated video and poster to the CDN, add the entry
+// here, and add its `label` to the copy maps in lib/model-landing.ts for all 10
+// locales.
 // The capabilities the clips below demonstrate, stated as text. A gallery shows
 // what the model did; this says what it can do -- which is what a reader
 // comparing models, and a crawler indexing the page, can actually read.
@@ -351,34 +354,34 @@ const SHOWCASE_CAPABILITIES: ReadonlyArray<{ title: ModelLandingKey; body: Model
 
 const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
   {
-    id: "racing-chase",
-    label: "High-speed action",
+    id: "romance-scene",
+    label: "Micro-drama & audio/comic drama creators",
     prompt:
-      "Low rear-chase shot of a formula car at speed on a wet forest circuit, tyres throwing spray, misty treeline and grandstands behind, heavy motion blur on the surrounding track, overcast light, blue-grey and deep green palette, cinematic realism.",
+      "Prompt template — Micro-drama / audio-comic drama: Two original fictional actors in a rain-streaked cafe at dusk share a quiet turning point as one slides a folded note across the table and the other looks up. Begin with a wide window-and-table establishing shot, then a gentle handheld push-in to a medium two-shot and close reaction, one continuous readable beat, warm practical lamps against cool rain light, natural restrained dialogue and rain room tone, keep wardrobe, props, eyelines and screen direction consistent, live-action short-drama realism, no subtitles, no logos, no extra characters.",
+  },
+  {
+    id: "product-macro",
+    label: "Advertising & e-commerce marketing teams",
+    prompt:
+      "Prompt template — Advertising / e-commerce: A generic matte-black wireless earbud case on a pale stone plinth, a macro camera makes one slow orbit across the hinge and brushed metal, the lid opens to reveal the earbuds, then settles on a clean hero composition. Controlled studio key light, soft rim, precise reflections, shallow depth of field, one subtle mechanical click, stable geometry and materials, premium e-commerce product film, no brand marks, no readable text, no invented claims.",
   },
   {
     id: "coastal-landmark",
-    label: "Cinematic landscape",
+    label: "Film concept & production teams",
     prompt:
-      "Aerial approach along a clifftop coast road at dusk, lighthouse on the headland, heavy surf breaking against layered rock, gulls crossing frame, soft overcast light, muted blue and ochre palette, slow drifting camera.",
+      "Prompt template — Film concept / previs: An original six-wheel exploration rover drives through a red-rock canyon after light rain, water spraying from the tires as it takes one sharp bend. Start wide, track in a low rear-chase path, hold the rover in frame through the turn, preserve scale, screen direction, contact shadows and lens perspective, one controlled mist cue, restrained amber-and-slate color design, clear action timing, live-action film previs, no text, no logos, no accidental cuts.",
   },
   {
     id: "creature-closeup",
-    label: "Character and creature",
+    label: "Game artists & animators",
     prompt:
-      "A giant soft-bodied creature walking down a sunlit city street, pedestrians reacting around it, natural daylight, handheld documentary framing, believable scale and contact shadows, photoreal texture on fur and fabric.",
-  },
-  {
-    id: "romance-scene",
-    label: "Character performance",
-    prompt:
-      "A couple sitting close on a rain-streaked cafe window seat at dusk, warm interior light, she laughs and rests her head on his shoulder, shallow depth of field, film grain, intimate handheld framing, soft ambient room tone.",
+      "Prompt template — Game trailer / animation concept: An original bioluminescent quadruped creature enters an abandoned sky-bridge level and swipes through hanging vines, sending glowing spores into the air as distant silhouettes react. Readable silhouette, one primary action, believable weight and foot contact, camera arcs from a medium profile to a low hero angle, keep creature design, materials and motion arcs consistent, high-detail cinematic 3D game trailer animation, no UI text, no logos, no extra limbs.",
   },
   {
     id: "ugc-creator",
-    label: "UGC and social",
+    label: "Content creators & knowledge streamers",
     prompt:
-      "Handheld selfie shot: a young creator in a bright apartment holds the camera at arm's length, talking to it with natural energy, gestures toward a laptop on the desk beside her, warm daylight from a window, slight camera shake, unpolished authentic UGC look.",
+      "Prompt template — Content creator / knowledge stream: A fictional science presenter in a bright home studio explains how a lunar eclipse works, speaking directly to camera and gesturing toward a small desk globe. Start with a natural hook, make one slow handheld push-in, cut to a close illustrative detail of the globe in shadow, then return to the presenter, keep face, hands, wardrobe, room layout and screen direction stable, clean natural voice and room tone, authentic knowledge-stream style, no unsupported claims, no subtitles, no logos.",
   },
 ];
 
@@ -618,10 +621,10 @@ function ModelShowcase(props: {
       return IMAGE_SCENE_ASSETS[index % IMAGE_SCENE_ASSETS.length].poster;
     }
     if (usesCuratedVideoScenes) return MEDIA_EXAMPLES.video[index % MEDIA_EXAMPLES.video.length].poster;
-    return usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.png` : modelSampleImageUrl(id);
+    return usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.png?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : modelSampleImageUrl(id);
   };
   const videoUrl = (id: string) =>
-    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4` : usesCuratedVideoScenes ? MEDIA_EXAMPLES.video[Number(id.split("-").pop())]?.video ?? "" : modelSampleVideoUrl(id);
+    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : usesCuratedVideoScenes ? MEDIA_EXAMPLES.video[Number(id.split("-").pop())]?.video ?? "" : modelSampleVideoUrl(id);
 
   return (
     <RevealSection
@@ -638,10 +641,10 @@ function ModelShowcase(props: {
             alternating sides down the list.
 
             This replaces a single full-width player with a thumbnail strip. Two
-            reasons: the clips are 1280x720, and a full max-w-6xl frame stretched
-            them past their own resolution -- on a 2x display the browser was
-            upscaling well beyond 2x, which is what made them look soft. At half
-            the column each frame sits under its source size and renders sharp.
+            reasons: these clips are 1920x1080, and a full max-w-6xl frame can
+            still stretch them past their own resolution on a 2x display. At
+            half the column each frame stays close to its native size and
+            renders sharp.
             The strip also hid four of five prompts behind a click; here every
             prompt is on the page next to the thing it produced. */}
         <div className="mt-6 grid gap-5">
@@ -4679,14 +4682,38 @@ function relatedVisualForModel(name: string, description: string) {
 //
 // Regenerate with: node scripts/build-related-model-videos.mjs
 const MODEL_CARD_CLIPS = new Set([
+  "seedance-2-0",
+  "seedance-2-0-pro",
+  "seedance-2-0-fast",
+  "seedance-2-0-mini",
   "seedance-2-5",
   "minimax-h3",
   "grok-imagine-video",
   "grok-imagine-video-1-5",
   "veo-3-1-generate-preview",
   "veo-3-1-fast-generate-preview",
-  "sonilo-video-to-music",
 ]);
+
+// These older cards had gradient-only poster/video files. Keep each model on a
+// different real motion source until its provider-specific sample is available.
+const DISTINCT_VIDEO_SOURCES: Record<string, { poster: string; video: string }> = {
+  "minimax-h3": {
+    poster: "https://cdn.shulex-voc.com/flatkey/models-featured/minimax.jpg",
+    video: "https://cdn.shulex-voc.com/flatkey/models-featured/minimax.mp4",
+  },
+  "grok-imagine-video": {
+    poster: "https://cdn.shulex-voc.com/flatkey/model-showcase/creature-closeup.png",
+    video: "https://cdn.shulex-voc.com/flatkey/model-showcase/creature-closeup.mp4",
+  },
+  "grok-imagine-video-1-5": {
+    poster: "https://cdn.shulex-voc.com/flatkey/model-showcase/racing-chase.png",
+    video: "https://cdn.shulex-voc.com/flatkey/model-showcase/racing-chase.mp4",
+  },
+  "veo-3-1-fast-generate-preview": {
+    poster: "https://cdn.shulex-voc.com/flatkey/model-showcase/coastal-landmark.png",
+    video: "https://cdn.shulex-voc.com/flatkey/model-showcase/coastal-landmark.mp4",
+  },
+};
 
 function modelCardSlug(modelName: string): string {
   return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -4695,6 +4722,14 @@ function modelCardSlug(modelName: string): string {
 function modelCardClip(modelName: string): { poster: string; video: string } | null {
   const slug = modelCardSlug(modelName);
   if (!MODEL_CARD_CLIPS.has(slug)) return null;
+  const hasDedicatedClip = [
+    "seedance-2-0",
+    "seedance-2-0-pro",
+    "seedance-2-0-fast",
+    "seedance-2-0-mini",
+    "seedance-2-5",
+  ].includes(slug);
+  if (!hasDedicatedClip) return DISTINCT_VIDEO_SOURCES[slug] ?? null;
   return {
     poster: `https://cdn.shulex-voc.com/flatkey/model-cards/${slug}.png`,
     video: `https://cdn.shulex-voc.com/flatkey/model-cards/${slug}.mp4`,
@@ -4709,10 +4744,11 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
   // Falls back through: the model's own cover, then the shared per-modality
   // still. Before the covers existed, four images served the whole catalog, so
   // a row of related models read as one picture repeated.
-  const media = getModelMedia(props.modelName);
-  const still = media
-    ? modelCoverUrl(media.coverSlug)
-    : relatedVisualForModel(props.modelName, props.description);
+  // Catalog cards must use the live model's own generated cover. The curated
+  // MODEL_MEDIA table is intentionally retained for detail-page workbench and
+  // prompt-library examples, but its older coverSlug values would make the
+  // catalog silently fall back to the legacy shared illustrations.
+  const still = modelCoverUrl(modelCardSlug(props.modelName));
 
   return (
     <div className="relative aspect-video overflow-hidden bg-slate-950">
@@ -4745,6 +4781,12 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
             event.currentTarget.src = relatedVisualForModel(props.modelName, props.description);
           }}
         />
+      )}
+      {clip && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/65 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white">
+          <span className="truncate normal-case tracking-normal">{props.modelName}</span>
+          <span className="ml-3 shrink-0 opacity-90">flatkey</span>
+        </div>
       )}
     </div>
   );
