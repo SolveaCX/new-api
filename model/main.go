@@ -397,6 +397,7 @@ func orderedMigrationModels() []migrationModel {
 		{&CodexModelGovernanceRecord{}, "CodexModelGovernanceRecord"},
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
+		{&PlaygroundRecord{}, "PlaygroundRecord"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},
 		{&ComputeNode{}, "ComputeNode"},
 		{&DataToolCall{}, "DataToolCall"},
