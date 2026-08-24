@@ -67,6 +67,76 @@ func TestStripeUpgradeExecutorRecoversAppliedTargetPriceWithLatestInvoiceWithout
 	require.Equal(t, "in_upgrade_executor_replay", result.Snapshot.ProviderLatestInvoiceId)
 }
 
+func TestStripeUpgradeExecutorRejectsAppliedTargetPriceWhenExistingSnapshotDiscountInvalid(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7142, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7249, 1, 10, 1000, "price_current_executor_invalid_snapshot")
+	targetPlan := insertStripeUpgradePlan(t, 7250, 2, 25, 2500, "price_target_executor_invalid_snapshot")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7142, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7142,
+		RequestId:              "stripe-upgrade-executor-invalid-snapshot",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusSyncing,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderIdempotencyKey: "subscription-upgrade:executor-invalid-snapshot",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Create(&model.SubscriptionOrder{
+		UserId:             7142,
+		PlanId:             targetPlan.Id,
+		Money:              18,
+		TradeNo:            "invalid_executor_applied_snapshot",
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          25,
+		PaymentCurrency:    "USD",
+		PaymentAmountMinor: 1800,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindUpgrade,
+		RenewalSource:      model.SubscriptionRenewalSourceProvider,
+		ChangeIntentId:     intent.Id,
+		DiscountKind:       SubscriptionDiscountKindRecall,
+		RecallCampaignId:   9107,
+		RecallRecipientId:  9207,
+	}).Error)
+	updateCalls := 0
+	useStripeUpgradeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub_upgrade":
+			_, _ = w.Write([]byte(`{"id":"sub_upgrade","object":"subscription","status":"active","cancel_at_period_end":false,"current_period_start":3000,"current_period_end":4000,"customer":"cus_upgrade","items":{"object":"list","data":[{"id":"si_current_item","object":"subscription_item","price":{"id":"price_target_executor_invalid_snapshot","object":"price"}}]},"latest_invoice":{"id":"in_upgrade_executor_invalid_snapshot","object":"invoice","paid":false,"status":"open","hosted_invoice_url":"https://stripe.test/invoice/in_upgrade_executor_invalid_snapshot"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/subscriptions/sub_upgrade":
+			updateCalls++
+			_, _ = w.Write([]byte(`{"id":"sub_upgrade","object":"subscription"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	_, err := executeStripeSubscriptionUpgrade(context.Background(), StripeSubscriptionUpgradeInput{
+		ContractID:                 contract.Id,
+		ChangeVersion:              intent.ChangeVersion,
+		TargetPlanID:               targetPlan.Id,
+		TargetPriceID:              targetPlan.StripePriceId,
+		ProviderSubscriptionID:     binding.ProviderSubscriptionId,
+		ProviderSubscriptionItemID: binding.ProviderSubscriptionItemId,
+		IdempotencyKey:             intent.ProviderIdempotencyKey,
+	})
+
+	require.ErrorIs(t, err, ErrSubscriptionPurchaseQuoteInvalid)
+	require.Contains(t, err.Error(), "recall promotion code id is required")
+	require.Zero(t, updateCalls)
+}
+
 func TestStripeUpgradeReplayReturnsHostedInvoiceWithoutReexecutingUpgrade(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7135, 0)

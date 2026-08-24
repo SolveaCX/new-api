@@ -84,10 +84,6 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 		return nil, err
 	}
 	targetPlan.NormalizeDefaults()
-	order, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan)
-	if err != nil {
-		return nil, err
-	}
 	if err := ensureStripeSecretForSubscription(); err != nil {
 		return nil, err
 	}
@@ -101,7 +97,16 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 		return nil, err
 	}
 	if stripeSubscriptionUpgradeTargetAppliedWithInvoice(current, input) {
+		if _, found, err := findStripeSubscriptionUpgradeSnapshotOrder(input); err != nil {
+			return nil, err
+		} else if found {
+			return stripeSubscriptionUpgradeResultFromSubscription(current, "", input.CancelAtPeriodEnd), nil
+		}
 		return stripeSubscriptionUpgradeResultFromSubscription(current, "", input.CancelAtPeriodEnd), nil
+	}
+	order, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan)
+	if err != nil {
+		return nil, err
 	}
 
 	previousScheduleSnapshot := ""
@@ -183,9 +188,9 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 	return stripeSubscriptionUpgradeResultFromSubscription(updated, previousScheduleSnapshot, input.CancelAtPeriodEnd), nil
 }
 
-func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan) (*model.SubscriptionOrder, error) {
-	if input.ChangeIntentID <= 0 || input.UserID <= 0 || input.TargetPlanID <= 0 || plan == nil {
-		return nil, errors.New("Stripe subscription upgrade snapshot facts are incomplete")
+func findStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput) (*model.SubscriptionOrder, bool, error) {
+	if input.ChangeIntentID <= 0 {
+		return nil, false, nil
 	}
 	var order model.SubscriptionOrder
 	query := model.DB.Where(
@@ -195,18 +200,31 @@ func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgrad
 		model.SubscriptionChangeIntentKindUpgrade,
 	).Order("id desc").Limit(1).Find(&order)
 	if query.Error != nil {
-		return nil, query.Error
+		return nil, false, query.Error
 	}
-	if query.RowsAffected > 0 {
-		if err := validateStripeSubscriptionUpgradeSnapshotOrderDiscount(&order); err != nil {
-			return nil, err
-		}
-		return &order, nil
+	if query.RowsAffected == 0 {
+		return nil, false, nil
+	}
+	if err := validateStripeSubscriptionUpgradeSnapshotOrderDiscount(&order); err != nil {
+		return nil, true, err
+	}
+	return &order, true, nil
+}
+
+func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan) (*model.SubscriptionOrder, error) {
+	if input.ChangeIntentID <= 0 || input.UserID <= 0 || input.TargetPlanID <= 0 || plan == nil {
+		return nil, errors.New("Stripe subscription upgrade snapshot facts are incomplete")
+	}
+	if order, found, err := findStripeSubscriptionUpgradeSnapshotOrder(input); err != nil {
+		return nil, err
+	} else if found {
+		return order, nil
 	}
 	quote, err := validateStripeSubscriptionUpgradeQuote(input, *plan)
 	if err != nil {
 		return nil, err
 	}
+	var order model.SubscriptionOrder
 	order, err = buildStripeSubscriptionUpgradeSnapshotOrder(input, plan, quote)
 	if err != nil {
 		return nil, err
