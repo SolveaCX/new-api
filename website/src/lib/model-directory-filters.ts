@@ -20,6 +20,8 @@ import type { ModelDirectoryMetadata } from "./pricing";
 
 export type DirectoryFilterKey =
   | "modalities"
+  | "outputModalities"
+  | "reasoning"
   | "context"
   | "inputPrice"
   | "outputPrice"
@@ -32,6 +34,8 @@ export type DirectoryFilterKey =
 
 export type DirectoryFilters = {
   modalities: Modality[];
+  outputModalities: Modality[];
+  reasoning: boolean[];
   context: number[];
   inputPrice: PriceBandId[];
   outputPrice: PriceBandId[];
@@ -54,6 +58,8 @@ export type DirectoryFilters = {
 
 export const EMPTY_DIRECTORY_FILTERS: DirectoryFilters = {
   modalities: [],
+  outputModalities: [],
+  reasoning: [],
   context: [],
   inputPrice: [],
   outputPrice: [],
@@ -67,6 +73,8 @@ export const EMPTY_DIRECTORY_FILTERS: DirectoryFilters = {
 
 export const DIRECTORY_FILTER_KEYS: DirectoryFilterKey[] = [
   "modalities",
+  "outputModalities",
+  "reasoning",
   "context",
   "inputPrice",
   "outputPrice",
@@ -80,7 +88,7 @@ export const DIRECTORY_FILTER_KEYS: DirectoryFilterKey[] = [
 
 /**
  * Everything one row needs for filtering and sorting, resolved once per model
- * so a facet sweep across eight groups does not redo the derivations.
+ * so a facet sweep across all groups does not redo the derivations.
  */
 export type DirectoryRow = {
   name: string;
@@ -91,6 +99,8 @@ export type DirectoryRow = {
   author: string;
   providers: string[];
   modalities: Modality[];
+  outputModalities: Modality[];
+  reasoning?: boolean;
   contextTokens: number | null;
   categories: string[];
   distillable?: boolean;
@@ -131,6 +141,8 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
     author: meta?.author ?? input.vendor,
     providers: meta?.providers ?? [],
     modalities: meta?.modalities ?? [],
+    outputModalities: meta?.output_modalities ?? [],
+    reasoning: meta?.reasoning,
     contextTokens: meta?.context_tokens ?? null,
     categories: meta?.categories ?? [],
     distillable: meta?.distillable,
@@ -162,6 +174,14 @@ function matchesGroup(row: DirectoryRow, key: DirectoryFilterKey, filters: Direc
     case "modalities": {
       const selected = filters.modalities;
       return selected.length === 0 || selected.some((value) => row.modalities.includes(value));
+    }
+    case "outputModalities": {
+      const selected = filters.outputModalities;
+      return selected.length === 0 || selected.some((value) => row.outputModalities.includes(value));
+    }
+    case "reasoning": {
+      const selected = filters.reasoning;
+      return selected.length === 0 || (row.reasoning != null && selected.includes(row.reasoning));
     }
     case "context": {
       const selected = filters.context;

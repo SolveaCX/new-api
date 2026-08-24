@@ -51,6 +51,8 @@ describe("directory SEO policy", () => {
       { series: "Claude,GPT" },
       { series: "Claude", context: "1048576" },
       { modalities: "image" },
+      { outputModalities: "video" },
+      { reasoning: "true" },
       { inputPrice: "lt-0.5" },
       { age: "new" },
       { distillable: "true" },

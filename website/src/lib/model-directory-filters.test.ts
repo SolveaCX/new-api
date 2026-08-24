@@ -25,6 +25,8 @@ function metadata(
     author,
     providers: [author],
     modalities: ["text", "image"],
+    output_modalities: ["text"],
+    reasoning: false,
     context_tokens: 128000,
     series,
     categories: ["Programming"],
@@ -44,11 +46,17 @@ const TEST_METADATA: Record<string, ModelDirectoryMetadata> = {
   }),
   "gpt-5.6-sol": metadata("OpenAI", "GPT", 23, {
     providers: ["OpenAI", "Azure"], context_tokens: 1048576, top_ten_rank: 2, released_at: "2026-06-20",
+    reasoning: true,
   }),
   "gpt-4o-mini": metadata("OpenAI", "GPT", 24, { providers: ["OpenAI", "Azure"] }),
-  "deepseek-v4-pro": metadata("DeepSeek", "DeepSeek", 10, { top_ten_rank: 4, context_tokens: 1048576 }),
+  "deepseek-v4-pro": metadata("DeepSeek", "DeepSeek", 10, {
+    top_ten_rank: 4,
+    context_tokens: 1048576,
+    reasoning: true,
+  }),
   "seedance-2.5": metadata("ByteDance", "Seedance", 94, {
     providers: ["ByteDance"], modalities: ["text", "image", "video"], context_tokens: null,
+    output_modalities: ["video"],
     categories: ["Marketing"], top_ten_rank: 8, released_at: "2026-08-04",
   }),
   "gemini-2.5-flash": metadata("Google", "Gemini", 62, {
@@ -85,6 +93,7 @@ function contextRow(name: string, contextTokens: number | null): DirectoryRow {
     author: "Test",
     providers: [],
     modalities: [],
+    outputModalities: [],
     contextTokens,
     categories: [],
     rank: 1,
@@ -154,6 +163,30 @@ describe("filter semantics", () => {
 
     const narrowed = filterDirectoryRows(SAMPLE, withFilters({ series: ["GPT"], modalities: ["video"] }));
     expect(narrowed).toHaveLength(0);
+  });
+
+  test("output modalities are OR within their group and AND with input modalities", () => {
+    const textOrVideo = filterDirectoryRows(SAMPLE, withFilters({ outputModalities: ["text", "video"] }));
+    expect(textOrVideo.map((row) => row.name)).toEqual(SAMPLE.map((row) => row.name));
+
+    const videoFromImageInput = filterDirectoryRows(
+      SAMPLE,
+      withFilters({ modalities: ["image"], outputModalities: ["video"] })
+    );
+    expect(videoFromImageInput.map((row) => row.name)).toEqual(["seedance-2.5"]);
+  });
+
+  test("reasoning capability is an explicit single-value metadata filter", () => {
+    expect(filterDirectoryRows(SAMPLE, withFilters({ reasoning: [true] })).map((row) => row.name)).toEqual([
+      "gpt-5.6-sol",
+      "deepseek-v4-pro",
+    ]);
+    expect(filterDirectoryRows(SAMPLE, withFilters({ reasoning: [false] })).map((row) => row.name)).toEqual([
+      "claude-opus-5",
+      "gpt-4o-mini",
+      "seedance-2.5",
+      "gemini-2.5-flash",
+    ]);
   });
 
   test("context length is a single upper-bound filter", () => {
@@ -405,6 +438,8 @@ describe("url round-trip", () => {
   test("serializes and re-parses every group", () => {
     const filters = withFilters({
       modalities: ["image", "video"],
+      outputModalities: ["text", "video"],
+      reasoning: [true],
       context: [1048576],
       inputPrice: ["lt-0.5"],
       outputPrice: ["10+"],
@@ -419,6 +454,8 @@ describe("url round-trip", () => {
 
     const parsed = parseDirectorySearch(Object.fromEntries(new URLSearchParams(directorySearchQuery(filters, "newest"))));
     expect(parsed.modalities).toEqual(["image", "video"]);
+    expect(parsed.outputModalities).toEqual(["text", "video"]);
+    expect(parsed.reasoning).toEqual([true]);
     expect(parsed.context).toEqual([1048576]);
     expect(parsed.inputPrice).toEqual(["lt-0.5"]);
     expect(parsed.outputPrice).toEqual(["10+"]);
@@ -440,12 +477,16 @@ describe("url round-trip", () => {
   test("drops malformed values instead of throwing", () => {
     const parsed = parseDirectorySearch({
       modalities: "image,telepathy",
+      outputModalities: "video,telepathy",
+      reasoning: "maybe",
       context: "1048576,abc",
       age: "new,ancient",
       distillable: "maybe",
       sort: "bogus",
     });
     expect(parsed.modalities).toEqual(["image"]);
+    expect(parsed.outputModalities).toEqual(["video"]);
+    expect(parsed.reasoning).toEqual([]);
     expect(parsed.context).toEqual([1048576]);
     expect(parsed.age).toEqual(["new"]);
     expect(parsed.distillable).toEqual([]);
@@ -455,11 +496,13 @@ describe("url round-trip", () => {
   test("normalizes legacy multi-value single-select filters to the first valid value", () => {
     expect(parseDirectorySearch({ context: "8192,200000" }).context).toEqual([8192]);
     expect(parseDirectorySearch({ distillable: "false,true" }).distillable).toEqual([false]);
+    expect(parseDirectorySearch({ reasoning: "true,false" }).reasoning).toEqual([true]);
   });
 
   test("normalizes repeated-param single-select filters to the first valid value across entries", () => {
     expect(parseDirectorySearch({ context: ["abc", "200000,400000"] }).context).toEqual([200000]);
     expect(parseDirectorySearch({ distillable: ["maybe", "true,false"] }).distillable).toEqual([true]);
+    expect(parseDirectorySearch({ reasoning: ["maybe", "false,true"] }).reasoning).toEqual([false]);
   });
 
   test("toggling adds then removes a value", () => {
@@ -484,12 +527,20 @@ describe("url round-trip", () => {
     expect(multi.series).toEqual(["GPT", "Claude"]);
   });
 
+  test("toggling reasoning replaces the other boolean value", () => {
+    const replaced = toggleDirectoryFilter(withFilters({ reasoning: [false] }), "reasoning", true);
+    expect(replaced.reasoning).toEqual([true]);
+    expect(toggleDirectoryFilter(replaced, "reasoning", true).reasoning).toEqual([]);
+  });
+
   test("hasActiveFilters reflects search, vendor and groups", () => {
     expect(hasActiveFilters(EMPTY_DIRECTORY_FILTERS)).toBe(false);
     expect(hasActiveFilters(withFilters({ q: "gpt" }))).toBe(true);
     expect(hasActiveFilters(withFilters({ vendor: "OpenAI" }))).toBe(true);
     expect(hasActiveFilters(withFilters({ vendor: "all" }))).toBe(false);
     expect(hasActiveFilters(withFilters({ modalities: ["text"] }))).toBe(true);
+    expect(hasActiveFilters(withFilters({ outputModalities: ["image"] }))).toBe(true);
+    expect(hasActiveFilters(withFilters({ reasoning: [true] }))).toBe(true);
   });
 });
 

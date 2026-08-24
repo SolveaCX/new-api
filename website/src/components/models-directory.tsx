@@ -316,7 +316,7 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
   };
 }
 
-function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["directoryMetadata"]>): FilterGroup[] {
+export function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["directoryMetadata"]>): FilterGroup[] {
   const copy = getDirectoryCopy(locale);
   return [
     {
@@ -324,6 +324,21 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
       label: copy.groupModalities,
       defaultOpen: true,
       options: MODALITIES.map((value) => ({ value, label: MODALITY_LABELS[locale][value] })),
+    },
+    {
+      key: "outputModalities",
+      label: copy.groupOutputModalities,
+      defaultOpen: true,
+      options: MODALITIES.map((value) => ({ value, label: MODALITY_LABELS[locale][value] })),
+    },
+    {
+      key: "reasoning",
+      label: copy.groupCapabilities,
+      defaultOpen: true,
+      options: [
+        { value: true, label: copy.reasoningModel },
+        { value: false, label: copy.nonReasoningModel },
+      ],
     },
     {
       key: "context",

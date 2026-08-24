@@ -7,8 +7,8 @@ No production database write has been performed.
 
 | Model name | Why it is excluded | Required before import |
 | --- | --- | --- |
-| `eleven_multilingual_v2` | Live production model has no reviewed metadata row yet. | Confirm authoritative provider/model documentation for series, modalities, context, categories, release date, and distillability. |
-| `eleven_sound_v1` | Live production model has no reviewed metadata row yet. | Confirm authoritative provider/model documentation for series, modalities, context, categories, release date, and distillability. |
+| `eleven_multilingual_v2` | Live production model has no reviewed metadata row yet. | Confirm authoritative provider/model documentation for series, input modalities, output modalities, reasoning support, context, categories, release date, and distillability. |
+| `eleven_sound_v1` | Live production model has no reviewed metadata row yet. | Confirm authoritative provider/model documentation for series, input modalities, output modalities, reasoning support, context, categories, release date, and distillability. |
 
 Repository evidence confirms these are audio models and identifies their billing behavior:
 

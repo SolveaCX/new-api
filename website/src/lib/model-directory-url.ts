@@ -24,7 +24,7 @@ const VALID_MODALITIES = new Set<string>(MODALITIES);
 const VALID_CONTEXT = new Set<number>(CONTEXT_BUCKETS);
 const VALID_PRICE_BANDS = new Set<string>(PRICE_BANDS.map((band) => band.id));
 const VALID_AGE_BANDS = new Set<string>(AGE_BANDS);
-const SINGLE_SELECT_FILTER_KEYS = new Set<DirectoryFilterKey>(["context", "distillable"]);
+const SINGLE_SELECT_FILTER_KEYS = new Set<DirectoryFilterKey>(["context", "reasoning", "distillable"]);
 
 export type DirectorySearchParams = Record<string, string | string[] | undefined>;
 
@@ -50,6 +50,13 @@ export function parseDirectorySearch(params?: DirectorySearchParams): DirectoryF
   return {
     ...EMPTY_DIRECTORY_FILTERS,
     modalities: splitValues(params?.modalities).filter((value): value is Modality => VALID_MODALITIES.has(value)),
+    outputModalities: splitValues(params?.outputModalities).filter(
+      (value): value is Modality => VALID_MODALITIES.has(value)
+    ),
+    reasoning: splitValues(params?.reasoning)
+      .filter((value) => value === "true" || value === "false")
+      .map((value) => value === "true")
+      .slice(0, 1),
     context: splitValues(params?.context)
       .map((value) => Number(value))
       .filter((value) => VALID_CONTEXT.has(value))

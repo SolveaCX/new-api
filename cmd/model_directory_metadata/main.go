@@ -20,18 +20,20 @@ type commandOptions struct {
 }
 
 type importRow struct {
-	ModelName      string   `json:"model_name"`
-	Author         string   `json:"author"`
-	Providers      []string `json:"providers"`
-	Modalities     []string `json:"modalities"`
-	ContextTokens  *int64   `json:"context_tokens"`
-	Series         string   `json:"series"`
-	Categories     []string `json:"categories"`
-	ReleasedAt     string   `json:"released_at"`
-	Distillable    bool     `json:"distillable"`
-	PopularityRank *int     `json:"popularity_rank,omitempty"`
-	TopTenRank     *int     `json:"top_ten_rank,omitempty"`
-	Status         *int     `json:"status,omitempty"`
+	ModelName        string   `json:"model_name"`
+	Author           string   `json:"author"`
+	Providers        []string `json:"providers"`
+	Modalities       []string `json:"modalities"`
+	OutputModalities []string `json:"output_modalities"`
+	ContextTokens    *int64   `json:"context_tokens"`
+	Series           string   `json:"series"`
+	Categories       []string `json:"categories"`
+	ReleasedAt       string   `json:"released_at"`
+	Distillable      bool     `json:"distillable"`
+	Reasoning        *bool    `json:"reasoning"`
+	PopularityRank   *int     `json:"popularity_rank,omitempty"`
+	TopTenRank       *int     `json:"top_ten_rank,omitempty"`
+	Status           *int     `json:"status,omitempty"`
 }
 
 func parseCommandOptions(args []string, getenv func(string) string) (commandOptions, error) {
@@ -80,6 +82,10 @@ func decodeImportFile(path string) ([]model.ModelDirectoryMetadata, error) {
 		if err != nil {
 			return nil, fmt.Errorf("row %d modalities: %w", index+1, err)
 		}
+		outputModalitiesJSON, err := common.Marshal(item.OutputModalities)
+		if err != nil {
+			return nil, fmt.Errorf("row %d output modalities: %w", index+1, err)
+		}
 		categoriesJSON, err := common.Marshal(item.Categories)
 		if err != nil {
 			return nil, fmt.Errorf("row %d categories: %w", index+1, err)
@@ -88,19 +94,24 @@ func decodeImportFile(path string) ([]model.ModelDirectoryMetadata, error) {
 		if item.Status != nil {
 			status = *item.Status
 		}
+		if item.Reasoning == nil {
+			return nil, fmt.Errorf("row %d reasoning is required", index+1)
+		}
 		rows = append(rows, model.ModelDirectoryMetadata{
-			ModelName:      item.ModelName,
-			Author:         item.Author,
-			ProvidersJSON:  string(providersJSON),
-			ModalitiesJSON: string(modalitiesJSON),
-			ContextTokens:  item.ContextTokens,
-			Series:         item.Series,
-			CategoriesJSON: string(categoriesJSON),
-			ReleasedAt:     item.ReleasedAt,
-			Distillable:    item.Distillable,
-			PopularityRank: item.PopularityRank,
-			TopTenRank:     item.TopTenRank,
-			Status:         status,
+			ModelName:            item.ModelName,
+			Author:               item.Author,
+			ProvidersJSON:        string(providersJSON),
+			ModalitiesJSON:       string(modalitiesJSON),
+			OutputModalitiesJSON: string(outputModalitiesJSON),
+			ContextTokens:        item.ContextTokens,
+			Series:               item.Series,
+			CategoriesJSON:       string(categoriesJSON),
+			ReleasedAt:           item.ReleasedAt,
+			Distillable:          item.Distillable,
+			Reasoning:            *item.Reasoning,
+			PopularityRank:       item.PopularityRank,
+			TopTenRank:           item.TopTenRank,
+			Status:               status,
 		})
 	}
 	return rows, nil

@@ -109,11 +109,13 @@ describe("publicPricingUrl", () => {
   test("keeps valid model directory metadata from the pricing payload", async () => {
     const originalFetch = globalThis.fetch;
     try {
-      const metadata = {
-        author: "OpenAI",
-        providers: ["OpenAI"],
-        modalities: ["text", "image"],
-        context_tokens: 128000,
+        const metadata = {
+          author: "OpenAI",
+          providers: ["OpenAI"],
+          modalities: ["text", "image"],
+          output_modalities: ["text"],
+          reasoning: true,
+          context_tokens: 128000,
         series: "GPT",
         categories: ["Programming"],
         released_at: "2026-08-01",
@@ -129,6 +131,34 @@ describe("publicPricingUrl", () => {
       const data = await getPricingData("plg");
 
       expect(data.models[0]?.directory_metadata).toEqual(metadata);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("does not expose migrated metadata as reviewed before output modalities are backfilled", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      const metadata = {
+        author: "OpenAI",
+        providers: ["OpenAI"],
+        modalities: ["text"],
+        output_modalities: [],
+        reasoning: false,
+        context_tokens: 128000,
+        series: "GPT",
+        categories: ["Programming"],
+        released_at: "2026-08-01",
+        distillable: false,
+      };
+      globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({
+        success: true,
+        data: [{ model_name: "gpt-5", quota_type: 0, model_ratio: 1, completion_ratio: 1, directory_metadata: metadata }],
+      }), { status: 200 }))) as typeof fetch;
+
+      const data = await getPricingData("plg");
+
+      expect(data.models[0]?.directory_metadata).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -271,6 +301,39 @@ describe("group model ratio", () => {
     expect(buildEffectiveGroupRatio(model, { plg: 0.9 }, { plg: { "gemini-2.5-pro-thinking-*": 0.5 } })).toEqual({
       plg: 0.5,
     });
+  });
+
+  test("drops directory metadata with invalid output modalities or reasoning flags", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({
+        success: true,
+        data: [{
+          model_name: "broken-model",
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+          directory_metadata: {
+            author: "Broken",
+            providers: ["Broken"],
+            modalities: ["text"],
+            output_modalities: ["telepathy"],
+            reasoning: "yes",
+            context_tokens: 128000,
+            series: "Broken",
+            categories: [],
+            released_at: "2026-08-01",
+            distillable: false,
+          },
+        }],
+      }), { status: 200 }))) as typeof fetch;
+
+      const data = await getPricingData("plg");
+
+      expect(data.models[0]?.directory_metadata).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

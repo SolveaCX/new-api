@@ -10,6 +10,13 @@ The data package is prepared, but this runbook is approval-gated. It does not au
 
 ## After the production code is live
 
+The application migration adds `output_modalities_json` and `reasoning` to the
+existing `model_directory_metadata` table. The migration default only keeps the
+schema add safe for existing rows; it is not the source of reviewed metadata.
+Run this import after the migrated application is deployed so the existing rows
+are upserted with authoritative `output_modalities_json` and `reasoning` values
+from the reviewed JSON.
+
 From the repository root, set the production database DSN in the process environment only (do not commit it), then run the importer in dry-run mode:
 
 ```powershell
@@ -17,7 +24,11 @@ $env:SQL_DSN = '<production-dsn>'
 go run ./cmd/model_directory_metadata --file data/model-directory/production-candidate.json --dry-run
 ```
 
-Review the JSON plan. It should contain 89 inserts (or explicit updates if an operator has already added rows) and no rows for the two pending ElevenLabs models or the 24 non-live candidates.
+Review the JSON plan. On a table that already contains the older metadata
+contract, expect explicit updates for existing rows because the reviewed import
+now backfills `output_modalities_json` and `reasoning`. On a fresh table, expect
+89 inserts. The plan must contain no rows for the two pending ElevenLabs models
+or the 24 non-live candidates.
 
 Only after the reviewed dry-run is explicitly approved, run the transactional apply:
 
@@ -38,7 +49,9 @@ bun run audit:model-directory
 Acceptance criteria:
 
 1. The importer exits successfully and reports the expected insert/update/unchanged plan.
-2. The post-apply full-catalogue audit reports zero live metadata gaps for the imported 89 models.
-3. The PLG audit reports zero live metadata gaps for the 87 overlapping PLG models.
-4. `eleven_multilingual_v2` and `eleven_sound_v1` remain explicitly pending until their reviewed rows are added.
-5. No stale metadata candidate is imported merely because it exists in the review dataset.
+2. A repeat dry-run after apply reports the imported models as unchanged,
+   proving the upsert stored `output_modalities_json` and `reasoning`.
+3. The post-apply full-catalogue audit reports zero live metadata gaps for the imported 89 models.
+4. The PLG audit reports zero live metadata gaps for the 87 overlapping PLG models.
+5. `eleven_multilingual_v2` and `eleven_sound_v1` remain explicitly pending until their reviewed rows are added.
+6. No stale metadata candidate is imported merely because it exists in the review dataset.
