@@ -3844,7 +3844,7 @@ function ModelExamplesAndRelated(props: {
             <span className="text-xs font-semibold text-muted-foreground">{props.t("Swipe or scroll to compare")}</span>
           </div>
           <div className="fk-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {props.relatedModels.slice(0, 8).map((model) => (
+            {props.relatedModels.slice(0, 8).map((model, index) => (
               <Link
                 key={model.href}
                 href={model.href}
@@ -3853,6 +3853,7 @@ function ModelExamplesAndRelated(props: {
                 <RelatedModelVisual
                   modelName={model.name}
                   description={model.description}
+                  slot={index}
                 />
                 <div className="p-3">
                   <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
@@ -4718,6 +4719,33 @@ function modelCardSlug(modelName: string): string {
   return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+const MODEL_COVER_ART_V2 = [
+  "observatory-gouache",
+  "flooded-market-oil",
+  "bamboo-linocut",
+  "salt-flat-gouache",
+  "greenhouse-impressionist",
+  "whale-surreal",
+  "moonlit-woodblock",
+  "aurora-expressionist",
+  "mediterranean-pastel",
+  "monastery-oil",
+  "storm-collage",
+  "lavender-pointillist",
+  "rail-charcoal",
+  "folk-festival",
+  "ink-waterfall",
+  "stained-sea",
+] as const;
+
+function modelCoverArtV2Url(modelName: string, slot?: number): string {
+  const slug = modelCardSlug(modelName);
+  let hash = 0;
+  for (const char of slug) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const index = slot === undefined ? hash % MODEL_COVER_ART_V2.length : slot % MODEL_COVER_ART_V2.length;
+  return `/assets/model-cover-art/v2/${MODEL_COVER_ART_V2[index]}.png`;
+}
+
 function modelCardClip(modelName: string): { poster: string; video: string } | null {
   const slug = modelCardSlug(modelName);
   if (!MODEL_CARD_CLIPS.has(slug)) return null;
@@ -4738,7 +4766,7 @@ function modelCardClip(modelName: string): { poster: string; video: string } | n
 // Card thumbnail: plays its clip on hover and pauses on leave. Autoplaying every
 // card at once would put a row of competing motion on the page, so playback is
 // tied to pointer intent; without a clip it stays a still.
-function RelatedModelVisual(props: { modelName: string; description: string }) {
+function RelatedModelVisual(props: { modelName: string; description: string; slot?: number }) {
   const clip = modelCardClip(props.modelName);
   // Falls back through: the model's own cover, then the shared per-modality
   // still. Before the covers existed, four images served the whole catalog, so
@@ -4750,7 +4778,7 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
   // Use the generated model-specific scene cover. Prompt-gallery examples are
   // references only: many are posters/UI/infographics with baked-in text and
   // must not be used as catalog cover art.
-  const still = modelCoverUrl(modelCardSlug(props.modelName));
+  const still = modelCoverArtV2Url(props.modelName, props.slot);
 
   return (
     <div className="relative aspect-video overflow-hidden bg-slate-950">
