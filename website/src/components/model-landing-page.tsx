@@ -92,7 +92,8 @@ import {
   type AgentPlatform,
   type SnippetLanguage,
 } from "@/lib/model-snippets";
-import type { ModelUsage } from "@/lib/model-usage";
+import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
+import { getModelMedia, localModelSampleUrl, modelCoverUrl, modelMediaSlug, modelSampleImageUrl, modelSampleVideoUrl } from "@/lib/model-media";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -165,6 +166,73 @@ type FlatkeyPriceTableRow = {
 
 const MAX_REFERENCE_MEDIA_FILES = 10;
 
+// Workbench examples for one model.
+//
+// MEDIA_EXAMPLES is keyed by modality, so every video model offered the same
+// seedance clips as "its" examples -- MiniMax-H3's page led with a Seedance F1
+// shot and that shot's reference image. A model with its own generated sample
+// leads with that sample instead, and the modality set follows as additional
+// examples so the picker still shows a range of parameter configurations.
+/** Whether a model page renders the prompt library section. */
+function hasPromptLibrary(modelId: string): boolean {
+  if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
+  return Boolean(getModelMedia(modelId)?.library.length);
+}
+
+/**
+ * VideoObject entries for the prompt library, or none.
+ *
+ * Only video assets are declared: a VideoObject pointing at a .png is a lie to
+ * the crawler, and image models' library entries are stills.
+ */
+function promptLibraryVideoSchema(
+  config: ModelConfig,
+  t: (key: string, vars?: Record<string, string>) => string
+) {
+  const displayName = config.displayName;
+  if (modelMediaSlug(config.modelId) === "seedance-2-5") {
+    return SHOWCASE_SCENES.map((scene) => ({
+      name: `${displayName} — ${t(scene.label)}`,
+      description: scene.prompt,
+      contentPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.mp4`,
+      thumbnailPath: `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.png`,
+      duration: "PT6S",
+    }));
+  }
+  const media = getModelMedia(config.modelId);
+  if (!media) return [];
+  return media.library
+    .filter((sample) => sample.kind === "video")
+    .map((sample) => ({
+      name: `${displayName} — ${t(sample.label)}`,
+      description: sample.prompt,
+      contentPath: modelSampleVideoUrl(sample.slug),
+      thumbnailPath: modelSampleImageUrl(sample.slug),
+      duration: "PT6S",
+    }));
+}
+
+function examplesForModel(
+  modelId: string,
+  kind: "image" | "video" | "audio"
+): readonly MediaExample[] {
+  const media = getModelMedia(modelId);
+  if (!media || media.workbench.length === 0) {
+    return kind === "image" ? [imageExampleForModel(modelId)] : MEDIA_EXAMPLES[kind].slice(0, 1);
+  }
+
+  const own: MediaExample[] = media.workbench.map((sample) => ({
+    poster: modelSampleImageUrl(sample.slug),
+    video: sample.kind === "video" ? modelSampleVideoUrl(sample.slug) : undefined,
+    label: sample.label,
+    prompt: sample.prompt,
+  }));
+  // Keep the detail page focused: each model exposes one representative
+  // example, while the workbench remains fully configurable below it.
+  return own.slice(0, 1);
+}
+
+
 // Mirrors models-directory-table.tsx so a model reads the same health on
 // its detail page as it does in the directory listing.
 const DEFAULT_HEALTH_SUCCESS_RATE = 100;
@@ -172,49 +240,49 @@ const DEFAULT_HEALTH_TTFT_MS = 600;
 
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [
-    { poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png" },
-    { poster: "/assets/prompts/awesome-images/ecommerce-skincare.png" },
-    { poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png" },
+    { poster: "/assets/model-examples/image2/flatkey-image2-hotel.png", label: "Product mockups", prompt: "A premium boutique hotel suite prepared for a booking campaign, warm morning light, layered textiles, room service tray, city view, architectural interior photography." },
+    { poster: "/assets/model-examples/image2/flatkey-image2-creator.png", label: "UGC ad clips", prompt: "A short-form video creator filming a beauty tutorial in a compact studio, phone on tripod, softbox lights, product props, energetic but polished social content aesthetic." },
+    { poster: "/assets/model-examples/image2/flatkey-image2-medical.png", label: "Portrait", prompt: "A clean modern medical clinic consultation room with doctor and patient reviewing a tablet chart, calm daylight, trustworthy editorial healthcare photography, no patient-identifying details." },
+    { poster: "/assets/model-examples/image2/flatkey-image2-developer.png", label: "Apps", prompt: "A developer workstation with code editor, terminal, architecture diagram and coffee, dark room with focused monitor glow, realistic editorial technology photography, no readable code text." },
+    { poster: "/assets/model-examples/image2/skincare.png", label: "Product mockups", prompt: "Premium skincare product photographed for an ecommerce hero image, clean studio background, soft directional daylight, accurate packaging details, generous negative space for price and call-to-action." },
   ],
   video: [
     {
-      // Real Seedance output, each paired with the prompt and reference that
-      // produced it -- the workbench is a request blueprint, so every sample has
-      // to be a request that actually ran. These are deliberately different
-      // scenes from the showcase below, so the page shows eight distinct
-      // generations rather than five shown twice.
-      poster: "/assets/model-examples/seedance-f1-wet-track.png",
-      video: "/assets/model-examples/seedance-f1-wet-track.mp4",
+      // Real Seedance output paired with the exact prompt and reference that
+      // produced it. This is the F1 workbench sample from the latest Seedance
+      // page worktree and is also the output shown in the reference layout.
+      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.png",
+      video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
       label: "Wet-track chase shot",
       prompt:
         "一辆黑银色的方程式赛车在湿滑的森林赛道上高速疾驰，镜头采用低机位斜后方跟拍视角，镜头捕捉全部车身，车身位于画面左下 2/3 处，赛车从画面中央颜色弯曲的赛道向前冲刺，轮胎压过积水，扬起大量白色水雾和水花，车身在高速运动中轻微抖动，背景是被薄雾笼罩的赛道、远处的松林和看台，镜头焦点跟随车身，大景深，旁边的车道路面都做运动模糊处理，旁边的天空阴天、光线柔和而冷淡，整体色调以蓝灰、雾白、深绿为主，画面有雨后潮湿感、速度感和电影级真实质感，构图强调前景赛车的力量感和赛道纵深，动态模糊明显，超写实，cinematic, high speed racing, wet track, misty atmosphere, rear chase shot, dramatic motion blur, realistic lighting。忽略参考图上的文字，生成的视频上不要出现任务文案，不要车身变形，不要用草坪来岔分多车道，视频不要出现脱帧情况",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
       references: [
-        { kind: "image", name: "f1-wet-track-reference.png", url: "/assets/model-examples/seedance-f1-reference.png" },
+        { kind: "image", name: "f1-wet-track-reference.png", url: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-reference.png" },
       ],
     },
     {
-      poster: "/assets/model-examples/product-macro.png",
-      video: "/assets/model-examples/product-macro.mp4",
+      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro.png",
+      video: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro.mp4",
       label: "Product macro",
       prompt:
         "Slow macro dolly across a matte-black wireless earbud case on a concrete surface, lid opening to reveal the buds, controlled studio key light with a soft rim, dust motes in the beam, shallow depth of field, premium product cinematography, subtle mechanical click.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
       references: [
-        { kind: "image", name: "product-reference.png", url: "/assets/model-examples/product-macro-reference.png" },
+        { kind: "image", name: "product-reference.png", url: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro-reference.png" },
       ],
     },
     {
-      poster: "/assets/model-examples/food-motion.png",
-      video: "/assets/model-examples/food-motion.mp4",
+      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/food-motion.png",
+      video: "https://cdn.shulex-voc.com/flatkey/model-examples/food-motion.mp4",
       label: "Food and beverage",
       prompt:
         "Overhead shot of espresso being poured into a glass of milk over ice, dark coffee blooming through the white in slow motion, condensation on the glass, warm cafe daylight, marble counter, appetising commercial food cinematography.",
       fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
     },
     {
-      poster: "/assets/model-examples/fashion-walk.png",
-      video: "/assets/model-examples/fashion-walk.mp4",
+      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/fashion-walk.png",
+      video: "https://cdn.shulex-voc.com/flatkey/model-examples/fashion-walk.mp4",
       label: "Fashion film",
       prompt:
         "A model in a long camel coat walking toward camera down a wide city street at golden hour, coat moving with the stride, backlit rim light through the fabric, shallow depth of field with compressed background, editorial fashion film look.",
@@ -236,11 +304,22 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
 // standing in with placeholder art, because a fabricated "fight scene" still
 // implies the model produced it.
 type ShowcaseScene = {
-  /** Slug used for the asset paths under /assets/model-showcase/. */
+  /** Slug used for the asset paths under https://cdn.shulex-voc.com/flatkey/model-showcase/. */
   id: string;
   label: ModelLandingKey;
   prompt: string;
 };
+
+const IMAGE_SCENE_ASSETS = MEDIA_EXAMPLES.image;
+
+function imageExampleForModel(modelId: string): MediaExample {
+  const key = normalizeModelId(modelId);
+  const index = key.includes("image") || key.includes("banana") ? 0
+    : key.includes("vision") || key.includes("gemini") ? 3
+      : key.includes("grok") ? 4
+        : key.includes("qwen") || key.includes("flux") ? 2 : 1;
+  return IMAGE_SCENE_ASSETS[index];
+}
 
 // To add a scene: drop <id>.mp4 and <id>.png into website/public/assets/
 // model-showcase/, add the entry here, and add its `label` to the copy maps in
@@ -362,9 +441,10 @@ function ModelVersionCompare(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   return (
+    <>
     <RevealSection
       id="versions"
-      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-[#f8fafc] dark:bg-white/[0.02]"
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
@@ -386,7 +466,20 @@ function ModelVersionCompare(props: {
           ))}
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+      </div>
+    </RevealSection>
+
+    <RevealSection
+      id="versions-compare"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-t border-slate-200/80 bg-[#f8fafc] px-6 pt-10 pb-14 dark:border-white/10 dark:bg-white/[0.02]"
+    >
+      <div className="mx-auto max-w-6xl">
+        <FlatkeySectionHeading
+          eyebrow={props.t("Capabilities")}
+          title={props.t("What changed from the previous generation, so you can tell whether it is worth switching.")}
+          description={props.t("Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.", { previous: props.previousName })}
+        />
+        <div className="mt-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_36px_-28px_rgba(24,14,38,0.35)] dark:border-white/10 dark:bg-white/[0.04]">
           <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] border-b border-slate-200 bg-[#fbfcff] text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase dark:border-white/10 dark:bg-white/[0.02]">
             <div className="px-4 py-3">{props.t("Capability")}</div>
             <div className="px-4 py-3">{props.previousName}</div>
@@ -408,6 +501,7 @@ function ModelVersionCompare(props: {
         </div>
       </div>
     </RevealSection>
+    </>
   );
 }
 
@@ -455,7 +549,7 @@ function WhyFlatkey(props: {
   return (
     <RevealSection
       id="why-flatkey"
-      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-white dark:bg-transparent"
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
@@ -483,19 +577,56 @@ function WhyFlatkey(props: {
 }
 
 function ModelShowcase(props: {
+  modelId: string;
   modelName: string;
   onUseScene: (scene: ShowcaseScene) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const [active, setActive] = useState(0);
-  const [copied, setCopied] = useState(false);
-  if (SHOWCASE_SCENES.length === 0) return null;
-  const scene = SHOWCASE_SCENES[active] ?? SHOWCASE_SCENES[0];
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Each model shows its own generated output, or nothing at all.
+  //
+  // There is deliberately no shared fallback across models. This section used
+  // to render SHOWCASE_SCENES for every model, so a text model like
+  // deepseek-v4-pro presented video generation as its own "prompts that work",
+  // and an image model advertised video it cannot produce.
+  //
+  // SHOWCASE_SCENES itself is not generic, though: those five clips are real
+  // Seedance 2.5 generations made for that page, so seedance-2.5 still uses
+  // them. Every other model uses the assets generated for it.
+  const media = getModelMedia(props.modelId);
+  const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
+  const usesCuratedImageScenes = !usesOriginalScenes && media?.library[0]?.kind === "image";
+  const usesCuratedVideoScenes = !usesOriginalScenes && media?.library[0]?.kind === "video";
+  const scenes: ShowcaseScene[] = usesOriginalScenes
+    ? [...SHOWCASE_SCENES]
+    : usesCuratedImageScenes
+      ? IMAGE_SCENE_ASSETS.map((sample, index) => ({ id: `curated-image-${index}`, label: sample.label ?? "Product mockups", prompt: sample.prompt ?? "" }))
+      : usesCuratedVideoScenes
+        ? MEDIA_EXAMPLES.video.slice(0, 5).map((sample, index) => ({ id: `curated-video-${index}`, label: sample.label ?? "Product motion", prompt: sample.prompt ?? "" }))
+    : (media?.library ?? []).map((sample) => ({
+        id: sample.slug,
+        label: sample.label,
+        prompt: sample.prompt,
+      }));
+  if (scenes.length === 0) return null;
+
+  const sampleKind = (id: string) =>
+    usesOriginalScenes || usesCuratedImageScenes || usesCuratedVideoScenes ? (usesOriginalScenes || usesCuratedVideoScenes ? "video" : "image") : media?.library.find((sample) => sample.slug === id)?.kind ?? "video";
+  const posterUrl = (id: string, index: number) => {
+    if (usesCuratedImageScenes) {
+      return IMAGE_SCENE_ASSETS[index % IMAGE_SCENE_ASSETS.length].poster;
+    }
+    if (usesCuratedVideoScenes) return MEDIA_EXAMPLES.video[index % MEDIA_EXAMPLES.video.length].poster;
+    return usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.png` : modelSampleImageUrl(id);
+  };
+  const videoUrl = (id: string) =>
+    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4` : usesCuratedVideoScenes ? MEDIA_EXAMPLES.video[Number(id.split("-").pop())]?.video ?? "" : modelSampleVideoUrl(id);
 
   return (
     <RevealSection
       id="showcase"
-      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-12 dark:bg-white/[0.02]"
+      className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-white dark:bg-transparent"
     >
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
@@ -503,84 +634,102 @@ function ModelShowcase(props: {
           title={props.t("{{model}} prompts that work", { model: props.modelName })}
           description={props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")}
         />
-        {/* Player, then a thumbnail strip, then the selected prompt in full.
-            Stacking these beats the previous side rail: five prompts in a narrow
-            column were five walls of text, and the column outran the player. */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="relative aspect-video bg-[#10131a]">
-            <video
-              key={scene.id}
-              className="h-full w-full object-cover"
-              autoPlay
-              loop
-              muted
-              playsInline
-              poster={`/assets/model-showcase/${scene.id}.png`}
-              preload="metadata"
-              src={`/assets/model-showcase/${scene.id}.mp4`}
-            />
-          </div>
+        {/* One row per scene, media on one side and its prompt on the other,
+            alternating sides down the list.
 
-          <div className="flex gap-2 overflow-x-auto border-b border-slate-200 p-3 dark:border-white/10">
-            {SHOWCASE_SCENES.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setActive(index);
-                  setCopied(false);
-                }}
-                aria-pressed={index === active}
-                className={`fk-lift relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg border-2 ${
-                  index === active ? "border-violet-500" : "border-transparent opacity-70 hover:opacity-100"
-                }`}
+            This replaces a single full-width player with a thumbnail strip. Two
+            reasons: the clips are 1280x720, and a full max-w-6xl frame stretched
+            them past their own resolution -- on a 2x display the browser was
+            upscaling well beyond 2x, which is what made them look soft. At half
+            the column each frame sits under its source size and renders sharp.
+            The strip also hid four of five prompts behind a click; here every
+            prompt is on the page next to the thing it produced. */}
+        <div className="mt-6 grid gap-5">
+          {scenes.map((scene, index) => {
+            const mediaFirst = index % 2 === 0;
+            const copied = copiedId === scene.id;
+            const isVideo = sampleKind(scene.id) === "video";
+            return (
+              <div
+                key={scene.id}
+                className="grid items-stretch gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2 dark:border-white/10 dark:bg-white/[0.04]"
               >
-                <Image src={`/assets/model-showcase/${item.id}.png`} alt="" fill sizes="128px" className="object-cover" />
-                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-4 pb-1.5 text-left text-[11px] font-semibold text-white">
-                  {props.t(item.label)}
-                </span>
-              </button>
-            ))}
-          </div>
+                <div className={`relative aspect-video overflow-hidden rounded-xl bg-[#10131a] ${mediaFirst ? "" : "lg:order-2"}`}>
+                  {isVideo ? (
+                    <video
+                      className="h-full w-full object-cover"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      poster={posterUrl(scene.id, index)}
+                      preload="metadata"
+                      src={videoUrl(scene.id)}
+                      onError={(event) => {
+                        event.currentTarget.src = localModelSampleUrl(scene.id, "mp4");
+                      }}
+                    />
+                  ) : (
+                    // Image models get a still: an <img> is what they produce,
+                    // and wrapping one in a <video> would imply otherwise.
+                    <Image
+                      src={posterUrl(scene.id, index)}
+                      alt={props.t(scene.label)}
+                      fill
+                      sizes="(min-width: 1024px) 560px, 100vw"
+                      className="object-cover"
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.src = localModelSampleUrl(scene.id, "png");
+                      }}
+                      unoptimized
+                    />
+                  )}
+                </div>
 
-          <div className="grid gap-3 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
-                {props.t("Prompt")}
+                <div className={`flex min-w-0 flex-col justify-center ${mediaFirst ? "" : "lg:order-1"}`}>
+                  <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    {props.t(scene.label)}
+                  </div>
+                  {/* Sized to the text, not stretched to the clip: these prompts
+                      are three or four lines, and a full-height box left most of
+                      the column empty. */}
+                  <p className="mt-2 min-w-0 rounded-xl border border-slate-200 bg-[#fbfcff] p-4 font-mono text-[12.5px] leading-6 text-[#3f4652] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72">
+                    {scene.prompt}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(scene.prompt).then(
+                          () => {
+                            setCopiedId(scene.id);
+                            window.setTimeout(
+                              () => setCopiedId((current) => (current === scene.id ? null : current)),
+                              1600
+                            );
+                          },
+                          () => undefined
+                        );
+                      }}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+                    >
+                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied ? props.t("Copied") : props.t("Copy")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => props.onUseScene(scene)}
+                      className="flatkey-hero-cta inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-semibold"
+                    >
+                      <WandSparkles className="size-3.5" />
+                      {props.t("Make one like this")}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(scene.prompt).then(
-                      () => {
-                        setCopied(true);
-                        window.setTimeout(() => setCopied(false), 1600);
-                      },
-                      () => undefined
-                    );
-                  }}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-[#3f4652] transition hover:border-violet-500/35 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-                >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  {copied ? props.t("Copied") : props.t("Copy")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => props.onUseScene(scene)}
-                  className="flatkey-hero-cta inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-semibold"
-                >
-                  <WandSparkles className="size-3.5" />
-                  {props.t("Make one like this")}
-                </button>
-              </div>
-            </div>
-            {/* Full width, so the prompt reads as prose instead of a narrow
-                column of wrapped fragments. */}
-            <p className="rounded-xl border border-slate-200 bg-[#fbfcff] p-4 font-mono text-[12.5px] leading-6 text-[#3f4652] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/72">
-              {scene.prompt}
-            </p>
-          </div>
+            );
+          })}
         </div>
       </div>
     </RevealSection>
@@ -646,7 +795,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     buildInitialGeneratorValues(config)
   );
   const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>(() =>
-    exampleReferenceDrafts(config.generator ? MEDIA_EXAMPLES[config.generator.kind][0] : undefined)
+    exampleReferenceDrafts(config.generator ? examplesForModel(config.modelId, config.generator.kind)[0] : undefined)
   );
   const [selectedExample, setSelectedExample] = useState(0);
   const generator = config.generator;
@@ -728,7 +877,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
   // kept; only the previous example's assets are swapped out.
   const onExampleSelect = (index: number) => {
     setSelectedExample(index);
-    const example = generator ? MEDIA_EXAMPLES[generator.kind][index] : undefined;
+    const example = generator ? examplesForModel(config.modelId, generator.kind)[index] : undefined;
     if (!example) return;
     if (example.prompt) setPrompt(example.prompt);
     if (example.fields) {
@@ -802,7 +951,7 @@ function FlatkeyModelDetailPage(props: {
     ? formatSavings(priceRows.rows[0].flatkey, priceRows.rows[0].official)
     : "0%";
   const generator = props.config.generator;
-  const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
+  const examples = generator ? examplesForModel(props.config.modelId, generator.kind) : [];
   const modelDescription = buildModelDescription(props.config, model, props.t);
   const pageKind: ModelReadmeKind = generator?.kind ?? "text";
   const pageProfile = buildModelPageProfile(props.config, pageKind, providerName, modelDescription, props.t);
@@ -820,15 +969,11 @@ function FlatkeyModelDetailPage(props: {
       : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
-    // Declare the showcase clips so they are eligible for video rich results;
-    // undeclared, five real generations were invisible to video search.
-    videos: SHOWCASE_SCENES.map((scene) => ({
-      name: `${props.config.displayName} — ${props.t(scene.label)}`,
-      description: scene.prompt,
-      contentPath: `/assets/model-showcase/${scene.id}.mp4`,
-      thumbnailPath: `/assets/model-showcase/${scene.id}.png`,
-      duration: "PT6S",
-    })),
+    // Declare this model's own clips so they are eligible for video rich
+    // results. Scoped to what the page actually shows: this used to emit
+    // SHOWCASE_SCENES unconditionally, so every text and image model told
+    // search engines it had five seedance videos it does not have.
+    videos: promptLibraryVideoSchema(props.config, props.t),
   });
   const rankingRow = findRankingRow(props.rankings?.models ?? [], props.config.modelId);
 
@@ -879,12 +1024,11 @@ function FlatkeyModelDetailPage(props: {
       : getJitteredSuccessRate(measuredSuccessRate, props.config.modelId) ?? measuredSuccessRate;
   const ttft = measured(summary?.avg_ttft_ms) ?? measured(trendAvgTtftMs(trend));
   const healthTrend = trend.length > 0 ? trend : buildDirectoryHealthTrend(trend);
-  const dashboardHref = consoleUrl("/dashboard");
 
   return (
     <SiteShell locale={props.locale} pathname={`/models/${props.config.slug}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
-      <main className="home-landing relative overflow-x-clip bg-[#f7f9fc] text-[#0B0B0F] dark:bg-[#070812] dark:text-white">
+      <main className="home-landing relative overflow-x-clip bg-white text-[#0B0B0F] dark:bg-[#070812] dark:text-white">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(37,99,235,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(37,99,235,0.035)_1px,transparent_1px)] bg-[size:4rem_4rem] opacity-80 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.045)_1px,transparent_1px)] dark:opacity-45"
@@ -908,26 +1052,18 @@ function FlatkeyModelDetailPage(props: {
                   {props.t("Back to Models")}
                 </a>
                 <a
-                  href={dashboardHref}
-                  className="flatkey-hero-cta inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-[0_16px_34px_-18px_rgba(37,99,235,0.6)]"
+                  href="#quick-start"
+                  className="flatkey-primary-cta inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-sm transition-colors hover:bg-[#202020]"
                   style={{ borderRadius: "0.5rem" }}
                 >
-                  <KeyRound className="size-4" />
-                  {props.t("Get API Key")}
+                  <Code2 className="size-4" />
+                  {props.t("Quick Start")}
                 </a>
               </div>
             </div>
 
             <div className="max-w-6xl">
               <div className="min-w-0">
-                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1 text-[10px] font-semibold text-blue-700 shadow-[0_12px_34px_-24px_rgba(37,99,235,0.55)]">
-                  <span className="relative flex size-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex size-1.5 rounded-full bg-blue-500" />
-                  </span>
-                  <span>{model ? pageProfile.kindLabel : props.t("Catalog data unavailable")}</span>
-                </div>
-
                 <div className="mb-2 flex items-center gap-3">
                   <HomeModelLogo
                     iconKey={model?.icon ?? model?.vendor_icon}
@@ -941,19 +1077,6 @@ function FlatkeyModelDetailPage(props: {
                     <h1 className="text-[clamp(1.6rem,3vw,2.25rem)] leading-[1.1] font-bold tracking-tight">
                       {props.config.displayName} API
                     </h1>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5f6368] dark:text-white/62">
-                      <Link href={localizePath(`/models/${props.config.slug}`, props.locale)} className="font-mono text-[#3f3f46] underline underline-offset-4 dark:text-white/78">
-                        {props.config.modelId}
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => navigator.clipboard?.writeText(props.config.modelId).catch(() => undefined)}
-                        className="grid size-7 place-items-center rounded-lg border border-slate-200 bg-white/70 text-[#6b7280] hover:text-[#111827] dark:border-white/10 dark:bg-white/[0.04]"
-                        aria-label={props.t("Copy model id")}
-                      >
-                        <Copy className="size-3.5" />
-                      </button>
-                    </div>
                   </div>
                 </div>
 
@@ -971,13 +1094,12 @@ function FlatkeyModelDetailPage(props: {
                   data-model-hero-attributes="true"
                   className="mt-2.5 grid max-w-4xl gap-2 text-xs"
                 >
-                  <div className="flex flex-wrap items-center gap-1.5" aria-label={props.t("Capabilities")}>
-                    <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-blue-500/8 px-2 font-bold text-blue-700">
-                      <Zap className="size-3.5" />
+                  <div className="flex flex-wrap items-center gap-2" aria-label={props.t("Capabilities")}>
+                    <span className="mr-1 text-[11px] font-extrabold tracking-[0.12em] text-[#7b8494] uppercase dark:text-white/50">
                       {props.t("Capabilities")}
                     </span>
                     {pageProfile.modelTypes.map((item) => (
-                      <span key={item} className="inline-flex min-h-7 items-center rounded-md border border-slate-200 bg-white/70 px-2 font-semibold text-[#626b78] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66">
+                      <span key={item} className="inline-flex min-h-8 items-center rounded-full border border-slate-200/90 bg-white px-3 text-[12px] font-semibold text-[#4f5867] shadow-[0_1px_2px_rgba(24,14,38,0.04)] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72">
                         {item}
                       </span>
                     ))}
@@ -999,18 +1121,15 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelPageTabs t={props.t} generator={Boolean(generator)} activity={(props.usage?.points.length ?? 0) > 0} />
+        <ModelPageTabs
+          t={props.t}
+          generator={Boolean(generator)}
+          showcase={hasPromptLibrary(props.config.modelId)}
+        />
 
         {generator ? (
-          <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-6 dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <ExamplePicker
-                examples={examples}
-                modelName={props.config.displayName}
-                selected={props.selectedExample}
-                onSelect={props.onExampleSelect}
-                t={props.t}
-              />
+          <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-6 bg-[#f8fafc] dark:bg-white/[0.02]">
+            <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
               <div className="grid gap-6 p-5 lg:grid-cols-2 lg:items-start">
                 <div className="min-w-0">
                   <PanelHeader title={props.t("Input")} right={props.t("Form")} />
@@ -1036,7 +1155,7 @@ function FlatkeyModelDetailPage(props: {
                     <a
                       href={runHref}
                       onClick={props.onRunClick}
-                      className="flatkey-hero-cta inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-semibold shadow-[0_18px_42px_-24px_rgba(37,99,235,.65)]"
+                      className="flatkey-hero-cta inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-[13px] font-semibold"
                     >
                       <WandSparkles className="size-4" />
                       {props.t("Start generating")}
@@ -1096,7 +1215,12 @@ function FlatkeyModelDetailPage(props: {
           />
         ) : null}
 
-        <ModelShowcase modelName={props.config.displayName} onUseScene={props.onUseScene} t={props.t} />
+        <ModelShowcase
+          modelId={props.config.modelId}
+          modelName={props.config.displayName}
+          onUseScene={props.onUseScene}
+          t={props.t}
+        />
 
         <WhyFlatkey
           modelName={props.config.displayName}
@@ -1122,14 +1246,14 @@ function FlatkeyModelDetailPage(props: {
           t={props.t}
         />
 
-        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12">
+        <RevealSection id="faq" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-[#f8fafc] dark:bg-white/[0.02]">
           <div className="mx-auto max-w-7xl">
             <FlatkeySectionHeading
               eyebrow="FAQ"
               title={props.t("{{model}} API — frequently asked questions", { model: props.config.displayName })}
               description={props.t("Pricing, compatibility, limits, and how your prompts and generated files are handled.")}
             />
-            <div className="mt-6 divide-y divide-violet-500/12 rounded-2xl border border-violet-500/16 bg-white/72 px-5 shadow-[0_24px_70px_-52px_rgba(91,33,182,0.78)] backdrop-blur-sm dark:bg-white/[0.04]">
+            <div className="mt-6 divide-y divide-violet-500/12 rounded-2xl border border-violet-500/16 bg-white/72 px-5 backdrop-blur-sm dark:bg-white/[0.04]">
               {faqItems.map((item) => (
                 <details key={item.question} className="group py-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold">
@@ -1162,7 +1286,7 @@ function MediaModelLanding(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const generator = props.config.generator!;
-  const examples = MEDIA_EXAMPLES[generator.kind];
+  const examples = examplesForModel(props.config.modelId, generator.kind);
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
     model: props.config.modelId,
     prompt: props.prompt,
@@ -1229,7 +1353,7 @@ function MediaModelLanding(props: {
 
         <section id="playground" className="border-y border-[#0B0B0F14] bg-[#f8f6fc] py-8">
           <div className="px-6 sm:px-8 lg:px-10">
-            <div className="grid overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.26)] lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)] xl:grid-cols-[minmax(0,0.86fr)_minmax(430px,1.14fr)]">
+            <div className="grid overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)] xl:grid-cols-[minmax(0,0.86fr)_minmax(430px,1.14fr)]">
               <div className="min-w-0 border-b border-[#0B0B0F14] p-4 sm:p-5 lg:border-r lg:border-b-0 xl:p-6">
                 <PanelHeader title={props.t("Input")} right={props.t("Form")} />
                 <MediaPromptEditor
@@ -1246,7 +1370,7 @@ function MediaModelLanding(props: {
                 <a
                   href={runHref}
                   onClick={props.onRunClick}
-                  className="mt-5 flex h-12 items-center justify-center gap-2 rounded-full bg-[#070707] text-base font-extrabold !text-white shadow-[0_18px_42px_-24px_rgba(11,11,15,.46)] hover:bg-[#1a1a1d]"
+                  className="mt-5 flex h-12 items-center justify-center gap-2 rounded-full bg-[#070707] text-base font-extrabold !text-white hover:bg-[#1a1a1d]"
                   style={{ color: "#fff" }}
                 >
                   <WandSparkles className="size-4" />
@@ -1392,7 +1516,7 @@ function MediaModelLanding(props: {
         </section>
 
         <section className="grid gap-5 px-6 pb-12 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:px-10">
-          <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-7 shadow-sm xl:p-8">
+          <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-7 xl:p-8">
             <div className="mb-5 grid size-10 place-items-center rounded-full bg-[#f4f0ff] text-[#7c3aed]">
               <Code2 className="size-5" />
             </div>
@@ -1413,7 +1537,7 @@ function MediaModelLanding(props: {
               ))}
             </ol>
           </div>
-          <div className="rounded-2xl bg-[#0d0d10] p-7 text-white shadow-[0_24px_80px_-60px_rgba(0,0,0,.9)] xl:p-8">
+          <div className="rounded-2xl bg-[#0d0d10] p-7 text-white xl:p-8">
             <div className="mb-5 grid size-10 place-items-center rounded-full bg-white/10">
               <ImageIcon className="size-5" />
             </div>
@@ -1448,7 +1572,7 @@ function MediaModelLanding(props: {
               ))}
             </div>
           </div>
-          <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white shadow-[0_24px_80px_-54px_rgba(0,0,0,.9)]">
+          <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white">
             <div className="mb-4 text-sm font-bold text-white/55">{props.config.displayName} API</div>
             <h3 className="text-2xl font-extrabold tracking-tight">
               {props.t("Generate your first {{model}} on Flatkey", { model: props.config.displayName })}
@@ -1509,7 +1633,7 @@ function TextModelGuide(props: {
                 onRunClick={props.onRunClick}
                 t={props.t}
               />
-              <a href="#overview" className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold shadow-sm">
+              <a href="#overview" className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold">
                 <BookOpen className="size-3.5" />
                 Markdown
               </a>
@@ -1549,7 +1673,7 @@ function TextModelGuide(props: {
                 <Pill label={props.t("Updated")} value={updated} />
               </div>
             </div>
-            <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white shadow-[0_24px_80px_-54px_rgba(0,0,0,.9)]">
+            <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white">
               <div className="mb-4 text-sm font-bold text-white/55">{props.config.displayName} API</div>
               <h3 className="text-2xl font-extrabold tracking-tight">
                 {props.t("Generate your first {{model}} on Flatkey", { model: props.config.displayName })}
@@ -1575,7 +1699,7 @@ function TextModelGuide(props: {
 
           <section id="overview" className="border-y border-[#0B0B0F14] bg-[#f8f6fc] py-8">
             <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-6 shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)]">
+              <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-6">
                 <div className="text-xs font-extrabold tracking-[0.16em] text-[#7c3aed] uppercase">
                   {props.t("Model Overview")}
                 </div>
@@ -1592,7 +1716,7 @@ function TextModelGuide(props: {
                 </div>
               </div>
               <div className="grid gap-5 self-start">
-                <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-6 shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)]">
+                <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-6">
                   <div className="text-xs font-extrabold tracking-[0.16em] text-[#7c3aed] uppercase">
                     {props.t("How to Use {{model}} API", { model: props.config.modelId })}
                   </div>
@@ -1604,7 +1728,7 @@ function TextModelGuide(props: {
                     <li>{props.t("Use logs and retries to refine prompts before broader rollout.")}</li>
                   </ol>
                 </div>
-                <div className="rounded-2xl bg-[#0d0d10] p-6 text-white shadow-[0_24px_80px_-54px_rgba(0,0,0,.9)]">
+                <div className="rounded-2xl bg-[#0d0d10] p-6 text-white">
                   <div className="mb-4 text-sm font-bold text-white/55">{props.t("Common Errors")}</div>
                   <div className="grid gap-3">
                     {[
@@ -1644,7 +1768,7 @@ function TextModelGuide(props: {
                 ))}
               </div>
             </div>
-            <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white shadow-[0_24px_80px_-54px_rgba(0,0,0,.9)]">
+            <div className="self-start rounded-2xl bg-[#0d0d10] p-6 text-white">
               <div className="mb-4 text-sm font-bold text-white/55">{props.config.displayName} API</div>
               <h3 className="text-2xl font-extrabold tracking-tight">
                 {props.t("Ready to unify your AI model access?")}
@@ -1687,7 +1811,7 @@ function ModelLandingActions(props: {
     <div className="flex flex-wrap items-center gap-2">
       <Link
         href={localizePath("/models", props.locale)}
-        className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
+        className="inline-flex h-9 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs font-bold text-[#3d3845] hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
       >
         <ArrowLeft className="size-3.5" />
         {props.t("Back to Models")}
@@ -1695,7 +1819,7 @@ function ModelLandingActions(props: {
       <a
         href={props.runHref}
         onClick={props.onRunClick}
-        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#070707] px-4 text-xs font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] hover:bg-[#1a1a1d]"
+        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#070707] px-4 text-xs font-extrabold !text-white hover:bg-[#1a1a1d]"
         style={{ color: "#fff" }}
       >
         <Play className="size-3.5 fill-current" />
@@ -1783,28 +1907,31 @@ export function animateScrollToTop(windowLike: SectionScrollWindow, targetTop: n
 
 function ModelPageTabs(props: {
   generator: boolean;
-  // Activity renders only for models with a measured usage series, so the tab
-  // has to follow it -- otherwise the subnav offers an anchor that is not on
-  // the page and the smooth-scroll handler jumps nowhere.
-  activity: boolean;
+  /** Whether the page renders a prompt library -- media models with samples. */
+  showcase: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   type ModelSectionTab = { id: string; href: string; label: string; icon: ReactNode };
+  // Mirrors what the page actually renders. The tab list used to be a fixed
+  // set, so the prompt library had no way in from the nav while text models
+  // were offered tabs for sections they do not have.
   const sectionIds = useMemo(
     () =>
       [
         ...(props.generator ? ["workbench"] : []),
         "performance",
-        ...(props.activity ? ["activity"] : []),
+        "activity",
+        ...(props.showcase ? ["showcase"] : []),
         "quick-start",
         "faq",
       ],
-    [props.generator, props.activity]
+    [props.generator, props.showcase]
   );
   const tabs: ModelSectionTab[] = [
     ...(props.generator ? [{ id: "workbench", href: "#workbench", label: props.t("Playground"), icon: <Play className="size-3.5" /> }] : []),
     { id: "performance", href: "#performance", label: props.t("Performance"), icon: <Gauge className="size-3.5" /> },
     { id: "activity", href: "#activity", label: props.t("Activity"), icon: <Zap className="size-3.5" /> },
+    { id: "showcase", href: "#showcase", label: props.t("Prompt library"), icon: <Sparkles className="size-3.5" /> },
     { id: "quick-start", href: "#quick-start", label: props.t("Quick Start"), icon: <Code2 className="size-3.5" /> },
     { id: "faq", href: "#faq", label: props.t("FAQ"), icon: <BookOpen className="size-3.5" /> },
   ].filter((tab) => sectionIds.includes(tab.id));
@@ -1893,7 +2020,7 @@ function ModelPageTabs(props: {
     <div className="sticky z-30 border-y border-slate-200 bg-white/92 backdrop-blur-md dark:border-white/10 dark:bg-[#080a13]/88" style={{ top: "var(--fk-model-sticky-offset, var(--fk-site-header-height))" }}>
       <nav
         aria-label="Model page sections"
-        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] items-center gap-1.5 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
+        className="mx-auto flex h-[var(--fk-model-section-nav-height)] max-w-[var(--fk-site-frame-max-width)] items-stretch gap-6 overflow-x-auto px-[var(--fk-site-gutter)] text-sm"
       >
         {tabs.map((tab) => {
           const isActive = activeSection === tab.id;
@@ -1906,15 +2033,16 @@ function ModelPageTabs(props: {
               data-active-model-section={isActive ? "true" : undefined}
               aria-current={isActive ? "true" : undefined}
               onClick={(event) => handleSectionClick(event, tab.href)}
-              // Pill tabs: the selected one carries a filled surface and ring so
-              // it reads as selected at a glance, and every tab reports the
-              // press with a scale-down rather than only changing colour.
-              className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 font-semibold transition active:scale-[0.97] ${
-                isActive
-                  ? "bg-blue-500/10 text-blue-700 ring-1 ring-blue-500/30 dark:bg-blue-400/12 dark:text-white dark:ring-blue-400/30"
-                  : "text-[#5f6673] hover:bg-slate-500/8 hover:text-blue-700 dark:text-white/62 dark:hover:bg-white/[0.07] dark:hover:text-white"
+              // Underline tabs: the active one takes the brand colour and a rule
+              // beneath it. The border is always present and only changes
+              // colour, so switching tabs never shifts the row.
+              className={`relative inline-flex h-full shrink-0 items-center gap-2 px-1 font-semibold transition-colors ${
+                isActive ? "text-blue-700 dark:text-blue-300" : "text-[#5f6673] dark:text-white/62"
               }`}
             >
+              {isActive ? (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+              ) : null}
               {tab.icon}
               {tab.label}
             </a>
@@ -1930,10 +2058,10 @@ function ModelTypeChip(props: { label?: string; value: string; active?: boolean 
     <span
       data-model-type-chip="true"
       className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold ${
-        props.active
-          ? "border-blue-500/22 bg-blue-500/10 text-blue-700"
-          : "border-slate-200 bg-white text-[#5f6673] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66"
-      }`}
+ props.active
+ ? "border-blue-500/22 bg-blue-500/10 text-blue-700"
+ : "border-slate-200 bg-white text-[#5f6673] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66"
+ }`}
     >
       {props.label ? <span className="text-[#8b93a3]">{props.label}</span> : null}
       <span>{props.value}</span>
@@ -1949,7 +2077,7 @@ function ModelHeroVisual(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   return (
-    <figure className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.55)] dark:border-white/10 dark:bg-white/[0.04]">
+    <figure className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
       <div className="relative aspect-video bg-slate-950">
         <Image
           src={props.image}
@@ -1977,7 +2105,7 @@ function ModelReadmeSections(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const content = buildModelReadmeContent(props.config, props.kind, props.t);
-  const examples = props.kind === "text" ? [] : MEDIA_EXAMPLES[props.kind];
+  const examples = props.kind === "text" ? [] : examplesForModel(props.config.modelId, props.kind);
   const storyImages = [
     props.profile.heroImage,
     examples[0]?.poster ?? props.profile.heroImage,
@@ -2085,7 +2213,7 @@ function ModelReadmeSections(props: {
 function ModelReadmeStory(props: { item: ModelReadmeCard; image: string; reverse?: boolean }) {
   return (
     <div className={`grid items-center gap-8 lg:grid-cols-2 ${props.reverse ? "lg:[&>figure]:order-2" : ""}`}>
-      <figure className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 shadow-[0_22px_60px_-42px_rgba(15,23,42,0.55)] dark:border-white/10">
+      <figure className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 dark:border-white/10">
         <div className="relative aspect-video">
           <Image
             src={props.image}
@@ -2109,7 +2237,7 @@ function ModelReadmeStory(props: { item: ModelReadmeCard; image: string; reverse
 
 function ModelReadmeFeature(props: { item: ModelReadmeCard }) {
   return (
-    <div className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+    <div className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.04]">
       <span className="grid size-10 place-items-center rounded-lg bg-blue-500/10 text-blue-700">
         {props.item.icon}
       </span>
@@ -2186,7 +2314,7 @@ function MediaPromptEditor(props: {
         <textarea
           value={props.prompt}
           onChange={(event) => props.onPromptChange(event.target.value)}
-          className="mt-1.5 min-h-[92px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3 font-mono text-[13px] leading-5 font-medium text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="mt-1.5 min-h-[92px] w-full resize-y rounded-lg border border-slate-200 bg-[#fbfcff] p-3 font-mono text-[13px] leading-5 font-medium text-[#20222a] outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       </label>
       <div className="mt-1 text-right text-[11px] font-medium text-muted-foreground">
@@ -2213,19 +2341,21 @@ function MediaPromptEditor(props: {
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
-        {fields.map((field) => (
-          <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
-            <GeneratorFieldControl
-              kind={props.generator.kind}
-              field={field}
-              value={props.fieldValues[field.name] ?? field.defaultValue}
-              onChange={(value) => props.onFieldChange(field.name, value)}
-              t={props.t}
-            />
-          </div>
-        ))}
-      </div>
+      {fields.length > 0 ? (
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+          {fields.map((field) => (
+            <div key={field.name} className={generatorFieldColumnClass(props.generator.kind, field)}>
+              <GeneratorFieldControl
+                kind={props.generator.kind}
+                field={field}
+                value={props.fieldValues[field.name] ?? field.defaultValue}
+                onChange={(value) => props.onFieldChange(field.name, value)}
+                t={props.t}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -2282,10 +2412,10 @@ function ReferenceMediaSection(props: {
 
       <label
         className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
-          isFull
-            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
-            : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
-        }`}
+ isFull
+ ? "cursor-not-allowed border-slate-200 bg-slate-100 text-[#9aa3b2] dark:border-white/10 dark:bg-white/[0.03] dark:text-white/34"
+ : "cursor-pointer border-slate-200 bg-white text-[#3f4652] hover:border-blue-500/25 hover:bg-blue-500/5 hover:text-blue-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/72"
+ }`}
       >
         <Upload className="size-3.5" />
         {props.t("Upload from device")}
@@ -2322,7 +2452,7 @@ function GeneratorFieldControl(props: {
           <select
             value={String(props.value)}
             onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-            className="h-9 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+            className="h-9 w-full min-w-0 appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[13px] font-bold tracking-normal text-[#20222a] outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
           >
             {options.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
@@ -2335,7 +2465,7 @@ function GeneratorFieldControl(props: {
           type="text"
           value={String(props.value)}
           onChange={(event) => props.onChange(coerceGeneratorValue(props.field, event.target.value))}
-          className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-bold tracking-normal text-[#20222a] shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
+          className="h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-bold tracking-normal text-[#20222a] outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/84"
         />
       )}
       {props.field.help ? <span className="text-[10px] font-medium tracking-normal text-[#8b93a3] normal-case">{props.t(props.field.help)}</span> : null}
@@ -2502,10 +2632,10 @@ function ExamplePicker(props: {
               aria-pressed={isActive}
               data-active-example={isActive ? "true" : undefined}
               className={`relative size-[76px] shrink-0 overflow-hidden rounded-lg border-2 transition active:scale-[0.97] ${
-                isActive
-                  ? "border-blue-500 shadow-[0_10px_26px_-16px_rgba(37,99,235,.8)]"
-                  : "border-transparent opacity-80 hover:opacity-100"
-              }`}
+ isActive
+ ? "border-blue-500"
+ : "border-transparent opacity-80 hover:opacity-100"
+ }`}
             >
               <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
               {example.video ? (
@@ -2594,7 +2724,7 @@ function OutputPreview(props: {
     return (
       <div
         data-model-output-video="true"
-        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] shadow-sm dark:border-white/10"
+        className="relative aspect-video min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[#10131a] dark:border-white/10"
       >
         <AutoplayVideo
           className="aspect-video h-full w-full bg-[#10131a] object-cover"
@@ -2607,7 +2737,7 @@ function OutputPreview(props: {
   }
 
   return (
-    <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white shadow-[0_18px_42px_-32px_rgba(15,15,18,.8)]" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F] shadow-[0_18px_42px_-34px_rgba(76,29,149,.65)]"}>
+    <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F]"}>
       <div className={`relative overflow-hidden rounded-[1.05rem] ${props.kind === "video" ? "aspect-video bg-[#171b24]" : "aspect-[16/10] bg-[#11131a]"}`}>
         {props.kind === "video" && primary?.video ? (
           <AutoplayVideo
@@ -2624,6 +2754,10 @@ function OutputPreview(props: {
               fill
               sizes="(min-width: 1280px) 620px, (min-width: 1024px) 56vw, 100vw"
               className="object-cover"
+              onError={(event) => {
+                const local = primary.poster.match(/\/sample\/([^/]+)\.png$/)?.[1];
+                if (local) event.currentTarget.src = localModelSampleUrl(local, "png");
+              }}
             />
           </>
         )}
@@ -2657,7 +2791,7 @@ function GeneratedExamplesCarousel(props: {
   if (!activeExample) return null;
 
   return (
-    <figure className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+    <figure className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white">
       <div className="relative overflow-hidden bg-[#10131a]">
         <div className={`relative w-full ${props.kind === "video" ? "aspect-video" : "aspect-[16/10]"}`}>
           {activeExample.video ? (
@@ -2694,7 +2828,7 @@ function GeneratedExamplesCarousel(props: {
             <button
               type="button"
               onClick={goToPrevious}
-              className="grid size-10 place-items-center rounded-full bg-black/58 text-white shadow-sm backdrop-blur transition hover:bg-black/75"
+              className="grid size-10 place-items-center rounded-full bg-black/58 text-white backdrop-blur transition hover:bg-black/75"
               aria-label={props.t("Previous example")}
             >
               <ArrowLeft className="size-4" />
@@ -2702,7 +2836,7 @@ function GeneratedExamplesCarousel(props: {
             <button
               type="button"
               onClick={goToNext}
-              className="grid size-10 place-items-center rounded-full bg-black/58 text-white shadow-sm backdrop-blur transition hover:bg-black/75"
+              className="grid size-10 place-items-center rounded-full bg-black/58 text-white backdrop-blur transition hover:bg-black/75"
               aria-label={props.t("Next example")}
             >
               <ArrowRight className="size-4" />
@@ -2721,8 +2855,8 @@ function GeneratedExamplesCarousel(props: {
               type="button"
               onClick={() => setActiveIndex(index)}
               className={`relative aspect-video overflow-hidden rounded-xl border bg-[#10131a] transition ${
-                activeIndex === index ? "border-[#7c3aed] ring-2 ring-[#7c3aed]/18" : "border-black/10 hover:border-[#7c3aed]/45"
-              }`}
+ activeIndex === index ? "border-[#7c3aed] ring-2 ring-[#7c3aed]/18" : "border-black/10 hover:border-[#7c3aed]/45"
+ }`}
               aria-label={props.t("Example {{index}} of {{total}}", {
                 index: String(index + 1),
                 total: String(total),
@@ -2789,6 +2923,19 @@ type PerformanceStat = {
   accent: string;
   surface: string;
 };
+
+/**
+ * Whether a stat cell holds a real reading.
+ *
+ * The formatters render an em dash for metrics a model never reported. At the
+ * 28px mono weight the value cell uses, that dash is a wide horizontal bar --
+ * and in the uptime cell, which is coloured emerald, it read as a stray green
+ * line rather than as "no data". Cells without a reading are styled as an
+ * absence instead: muted colour, normal weight, explicit wording.
+ */
+export function isMeasuredStatValue(value: string): boolean {
+  return value !== "—";
+}
 
 export function buildPerformanceStats(input: {
   kind: ModelReadmeKind;
@@ -2931,7 +3078,7 @@ function ModelPerformanceSection(props: {
   const showTrend = props.successRate != null;
 
   return (
-    <RevealSection id="performance" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="performance" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-10 bg-white dark:bg-transparent">
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
           eyebrow={props.t("Performance")}
@@ -2940,28 +3087,47 @@ function ModelPerformanceSection(props: {
         />
         {/* Stats and trend share one surface: they are the same measurement read
             two ways, and separate cards made them look unrelated. */}
-        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
           <div className={`grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 dark:divide-white/10 ${stats.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
-            {stats.map((stat, index) => (
+            {stats.map((stat, index) => {
+              const measured = isMeasuredStatValue(stat.value);
+              return (
               <div
                 key={stat.label}
                 className={`p-5 ${index % 2 === 1 ? "sm:border-l sm:border-slate-200 sm:dark:border-white/10" : ""} ${index === 2 ? "sm:border-t sm:border-slate-200 lg:border-t-0 lg:border-l lg:border-slate-200 sm:dark:border-white/10" : ""}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className={`grid size-7 place-items-center rounded-lg ${stat.surface}`}>{STAT_ICONS[stat.key]}</span>
+                  <span
+                    className={`grid size-7 place-items-center rounded-lg ${
+                      measured ? stat.surface : "bg-slate-500/8 text-[#98a2b3] dark:bg-white/[0.06] dark:text-white/40"
+                    }`}
+                  >
+                    {STAT_ICONS[stat.key]}
+                  </span>
                   <span className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{stat.label}</span>
                 </div>
-                <div className={`mt-3 font-mono text-[28px] leading-none font-bold ${stat.accent}`}>{stat.value}</div>
+                {measured ? (
+                  <div className={`mt-3 font-mono text-[28px] leading-none font-bold ${stat.accent}`}>{stat.value}</div>
+                ) : (
+                  // Not the 28px mono dash: at that size an em dash is a bar,
+                  // and in the emerald uptime cell it read as a green line.
+                  <div className="mt-3 text-[15px] leading-none font-semibold text-[#98a2b3] dark:text-white/40">
+                    {props.t("Not reported")}
+                  </div>
+                )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/44">{stat.hint}</span>
-                  {stat.rank != null && stat.rank >= 50 ? (
+                  <span className="text-[11px] font-medium text-[#98a2b3] dark:text-white/44">
+                    {measured ? stat.hint : props.t("This model does not report this metric")}
+                  </span>
+                  {measured && stat.rank != null && stat.rank >= 50 ? (
                     <span className="rounded-full bg-slate-500/8 px-2 py-0.5 text-[10px] font-bold text-[#5f6673] dark:bg-white/[0.07] dark:text-white/62">
                       {props.t("Top {{percent}}% of models", { percent: String(Math.max(1, 100 - stat.rank)) })}
                     </span>
                   ) : null}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           {showsTimeToFirstTokenFootnote({ kind: props.kind, latencyMs: props.latencyMs, ttftMs: props.ttftMs }) ? (
             <div className="border-t border-slate-200 bg-[#fbfcff] px-5 py-3 text-[11px] font-medium text-[#6a7280] dark:border-white/10 dark:bg-white/[0.02] dark:text-white/54">
@@ -3026,6 +3192,10 @@ function UptimeTrend(props: {
           {props.t("Daily uptime")}
         </span>
       </div>
+      {/* No value badge pinned to the top-right: it landed on top of the line's
+          end point and its marker dot, and the overlap read as a thick green
+          bar rather than as a number. The figure it repeated is already the
+          Uptime cell directly above this chart. */}
       <div className="relative h-28">
         <svg
           viewBox="0 0 100 100"
@@ -3053,11 +3223,20 @@ function UptimeTrend(props: {
             strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
           />
-          <circle cx={x(days.length - 1)} cy={y(latest.rate)} r="3" fill="rgb(16 185 129)" vectorEffect="non-scaling-stroke" />
+          {/* Same non-uniform-scale caveat as the activity chart: a <circle>
+              here stretches into a horizontal bar, which is what the green
+              slab at the right edge of this chart actually was. */}
+          <line
+            x1={x(days.length - 1)}
+            y1={y(latest.rate)}
+            x2={x(days.length - 1)}
+            y2={y(latest.rate)}
+            stroke="rgb(16 185 129)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
         </svg>
-        <span className="pointer-events-none absolute top-0 right-0 rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-          {formatHealthSuccessRate(latest.rate)}
-        </span>
       </div>
       <div className="mt-2 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
         <span>{days[0].key.slice(5)}</span>
@@ -3078,49 +3257,35 @@ function ModelActivitySection(props: {
   const peak = Math.max(...points.map((point) => point.count), 1);
   const busiest = points.reduce((best, point) => (point.count > best.count ? point : best), points[0]);
   const average = Math.round(points.reduce((sum, point) => sum + point.count, 0) / points.length);
-  const averageHeight = (average / peak) * 100;
 
   return (
-    <RevealSection id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-white px-6 py-10 dark:bg-white/[0.02]">
+    <RevealSection id="activity" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-10 bg-[#f8fafc] dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <FlatkeySectionHeading
           eyebrow={props.t("Activity")}
           title={props.t("Daily {{model}} requests on Flatkey", { model: props.modelId })}
-          description={props.t("Request volume routed through Flatkey over the last 30 days.")}
+          description={
+            props.t("Request volume routed through Flatkey over the last 30 days.")
+          }
         />
-        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_-42px_rgba(24,14,38,0.4)] dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
           <div className="grid gap-4 p-5 sm:grid-cols-3">
             <ActivityStat label={props.t("Total requests")} value={formatCallCount(props.usage?.total)} />
             <ActivityStat label={props.t("Daily average")} value={formatCallCount(average)} />
             <ActivityStat label={props.t("Busiest day")} value={formatUsageDate(busiest.date)} sub={formatCallCount(busiest.count)} />
           </div>
           <div className="border-t border-slate-200 bg-[#fbfcff] px-5 pt-6 pb-4 dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="relative flex h-28 items-end gap-[3px]">
-              {/* Average line inside the plot box, so its percentage is relative
-                  to the bars rather than to the section's padding. It gives a
-                  tall bar something to be judged against. */}
-              <div
-                className="pointer-events-none absolute inset-x-0 border-t border-dashed border-violet-400/55"
-                style={{ bottom: `${averageHeight}%` }}
-              />
-              {points.map((point) => {
-                const isPeak = point.date === busiest.date;
-                return (
-                  <div
-                    key={point.date}
-                    title={`${formatUsageDate(point.date)} · ${formatCallCount(point.count)}`}
-                    className={`min-w-0 flex-1 rounded-t-[3px] transition hover:opacity-100 ${
-                      isPeak
-                        ? "bg-gradient-to-t from-violet-600 to-violet-400"
-                        : "bg-gradient-to-t from-violet-500/55 to-violet-400/75 opacity-80"
-                    }`}
-                    // Zero-count days keep a hairline so a gap reads as "no
-                    // traffic" rather than as a missing bar.
-                    style={{ height: `${Math.max(3, (point.count / peak) * 100)}%` }}
-                  />
-                );
-              })}
-            </div>
+            {/* A流线 rather than 30 bars: request volume is a continuous
+                series, and one bar per day turned a trend into a picket fence
+                where the shape had to be inferred from the tops. The filled
+                curve states the shape directly, and the peak keeps its marker. */}
+            <ActivityTrendChart
+              points={points}
+              peak={peak}
+              average={average}
+              busiestDate={busiest.date}
+              t={props.t}
+            />
             <div className="mt-2.5 flex justify-between text-[10px] font-medium text-[#98a2b3] dark:text-white/40">
               <span>{formatUsageDate(points[0].date)}</span>
               <span className="text-violet-500/80">{props.t("Daily average")}: {formatCallCount(average)}</span>
@@ -3130,6 +3295,113 @@ function ModelActivitySection(props: {
         </div>
       </div>
     </RevealSection>
+  );
+}
+
+/**
+ * Smooths a series of points into an SVG path with Catmull-Rom segments
+ * converted to cubic beziers.
+ *
+ * A polyline through 30 daily counts is visually noisy -- every day is a corner
+ * -- and the eye reads the corners rather than the trend. Catmull-Rom passes
+ * through every data point (so nothing is invented) while giving each segment a
+ * continuous tangent.
+ */
+export function buildSmoothLinePath(coords: Array<{ x: number; y: number }>): string {
+  if (coords.length === 0) return "";
+  if (coords.length === 1) return `M${coords[0].x},${coords[0].y}`;
+
+  let path = `M${coords[0].x.toFixed(2)},${coords[0].y.toFixed(2)}`;
+  for (let index = 0; index < coords.length - 1; index++) {
+    const p0 = coords[index - 1] ?? coords[index];
+    const p1 = coords[index];
+    const p2 = coords[index + 1];
+    const p3 = coords[index + 2] ?? p2;
+    // Tension 1/6 is the standard uniform Catmull-Rom to bezier conversion.
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    path += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+  }
+  return path;
+}
+
+function ActivityTrendChart(props: {
+  points: ModelUsagePoint[];
+  peak: number;
+  average: number;
+  busiestDate: number;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const { points, peak } = props;
+  // Headroom above the peak so the curve's apex is not clipped by the box.
+  const ceiling = peak * 1.08;
+  const x = (index: number) => (points.length === 1 ? 50 : (index / (points.length - 1)) * 100);
+  const y = (count: number) => 100 - (count / ceiling) * 100;
+
+  const coords = points.map((point, index) => ({ x: x(index), y: y(point.count) }));
+  const line = buildSmoothLinePath(coords);
+  const area = `${line} L100,100 L0,100 Z`;
+  const averageY = y(props.average);
+  const busiestIndex = points.findIndex((point) => point.date === props.busiestDate);
+
+  return (
+    <div className="relative h-32">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="h-full w-full overflow-visible"
+        role="img"
+        aria-label={props.t("Request volume routed through Flatkey over the last 30 days.")}
+      >
+        <defs>
+          <linearGradient id="fk-activity-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgb(139 92 246)" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="rgb(139 92 246)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#fk-activity-fill)" />
+        {/* Average as a dashed rule, so a day can be read as above or below the
+            model's own normal without counting pixels. */}
+        <line
+          x1="0"
+          y1={averageY}
+          x2="100"
+          y2={averageY}
+          stroke="rgb(167 139 250)"
+          strokeWidth="1"
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={line}
+          fill="none"
+          stroke="rgb(124 58 237)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {busiestIndex >= 0 ? (
+          // Plain SVG shapes inherit the viewBox's non-uniform scale: with
+          // preserveAspectRatio="none" the x axis is stretched ~12x, so a
+          // <circle r="3"> draws as a wide horizontal lozenge, not a dot. A
+          // zero-length round-capped line is scale-independent -- the cap is
+          // rendered in device space -- so the marker stays circular.
+          <line
+            x1={x(busiestIndex)}
+            y1={y(points[busiestIndex].count)}
+            x2={x(busiestIndex)}
+            y2={y(points[busiestIndex].count)}
+            stroke="rgb(124 58 237)"
+            strokeWidth="7"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null}
+      </svg>
+    </div>
   );
 }
 
@@ -3200,7 +3472,7 @@ function ModelQuickStart(props: {
   const active = cards.find((card) => card.id === openCard) ?? null;
 
   return (
-    <RevealSection id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] bg-[#f8fafc] px-6 py-12 dark:bg-white/[0.02]">
+    <RevealSection id="quick-start" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-[#f8fafc] dark:bg-white/[0.02]">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold tracking-tight">
@@ -3233,7 +3505,7 @@ function ModelQuickStart(props: {
               key={card.id}
               type="button"
               onClick={() => setOpenCard(card.id)}
-              className="fk-lift rounded-xl border border-slate-200 bg-white p-5 text-left hover:border-violet-500/35 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] dark:border-white/10 dark:bg-white/[0.04]"
+              className="fk-lift rounded-xl border border-slate-200 bg-white p-5 text-left hover:border-violet-500/35 dark:border-white/10 dark:bg-white/[0.04]"
             >
               <span className="grid size-10 place-items-center rounded-lg bg-violet-500/10 text-violet-700 dark:text-violet-300">
                 {card.icon}
@@ -3329,7 +3601,7 @@ function QuickStartDialog(props: {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="my-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#0d1017]">
+      <div className="my-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 dark:border-white/10 dark:bg-[#0d1017]">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold tracking-tight">{props.card.title}</h3>
@@ -3450,10 +3722,10 @@ function QuickStartTabs(props: {
           onClick={() => props.onChange(option.value)}
           aria-pressed={props.value === option.value}
           className={`rounded-md px-3 py-1.5 text-[12px] font-semibold transition ${
-            props.value === option.value
-              ? "bg-white text-[#20222a] shadow-sm dark:bg-white/12 dark:text-white"
-              : "text-[#5f6673] hover:text-[#20222a] dark:text-white/58 dark:hover:text-white"
-          }`}
+ props.value === option.value
+ ? "bg-white text-[#20222a] dark:bg-white/12 dark:text-white"
+ : "text-[#5f6673] hover:text-[#20222a] dark:text-white/58 dark:hover:text-white"
+ }`}
         >
           {option.label}
         </button>
@@ -3506,34 +3778,14 @@ function AutoplayVideo(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const [source, setSource] = useState(props.src);
   const [muted, setMuted] = useState(true);
-  // Set once the reader mutes deliberately, so the first-gesture handler does
-  // not immediately undo their choice.
-  const userChoseMuted = useRef(false);
-
-  useEffect(() => {
-    const unmuteOnFirstGesture = () => {
-      const video = ref.current;
-      if (!video || userChoseMuted.current) return;
-      video.muted = false;
-      setMuted(false);
-      if (video.paused) void video.play().catch(() => undefined);
-    };
-    window.addEventListener("pointerdown", unmuteOnFirstGesture, { once: true });
-    window.addEventListener("keydown", unmuteOnFirstGesture, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", unmuteOnFirstGesture);
-      window.removeEventListener("keydown", unmuteOnFirstGesture);
-    };
-  }, []);
-
   const toggleSound = () => {
     const video = ref.current;
     if (!video) return;
     const next = !muted;
     video.muted = next;
     setMuted(next);
-    userChoseMuted.current = next;
     if (!next && video.paused) void video.play().catch(() => undefined);
   };
 
@@ -3549,7 +3801,11 @@ function AutoplayVideo(props: {
         playsInline
         poster={props.poster}
         preload="metadata"
-        src={props.src}
+        src={source}
+        onError={() => {
+          const local = props.src.match(/\/sample\/([^/]+)\.mp4$/)?.[1];
+          if (local && source === props.src) setSource(localModelSampleUrl(local, "mp4"));
+        }}
       />
       <button
         type="button"
@@ -3575,9 +3831,9 @@ function ModelExamplesAndRelated(props: {
 }) {
   const visualKind = props.kind === "text" ? "text" : props.kind;
   return (
-    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-y border-slate-200 bg-[#f8fafc] px-6 py-12 dark:border-white/10 dark:bg-white/[0.02]">
+    <RevealSection id="related" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-12 bg-white dark:bg-transparent">
       <div className="mx-auto max-w-7xl">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.04]">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-xs font-bold tracking-widest text-blue-700 uppercase">{props.t("Related models")}</p>
@@ -3590,12 +3846,11 @@ function ModelExamplesAndRelated(props: {
               <Link
                 key={model.href}
                 href={model.href}
-                className="fk-lift group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm hover:border-blue-500/45 hover:shadow-[0_18px_44px_-30px_rgba(37,99,235,.55)] dark:border-white/10 dark:bg-white/[0.03]"
+                className="fk-lift group overflow-hidden rounded-lg border border-slate-200 bg-white hover:border-blue-500/45 dark:border-white/10 dark:bg-white/[0.03]"
               >
                 <RelatedModelVisual
                   modelName={model.name}
                   description={model.description}
-                  label={model.name}
                 />
                 <div className="p-3">
                   <div className="text-[10px] font-bold tracking-widest text-blue-700 uppercase">
@@ -3638,7 +3893,7 @@ function RelatedModelsCarousel(props: {
           <Link
             key={model.name}
             href={model.href}
-            className="group grid min-h-36 min-w-[16rem] snap-start rounded-2xl border border-black/10 bg-white p-4 shadow-sm transition hover:border-[#7c3aed]/40 hover:shadow-[0_18px_44px_-34px_rgba(76,29,149,.55)] sm:min-w-[18rem]"
+            className="group grid min-h-36 min-w-[16rem] snap-start rounded-2xl border border-black/10 bg-white p-4 transition hover:border-[#7c3aed]/40 sm:min-w-[18rem]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="grid size-9 place-items-center rounded-full bg-[#f4f0ff] text-sm font-extrabold text-[#6d28d9]">
@@ -3784,34 +4039,17 @@ function ModelHeroPricingRow(props: {
   // "0%" saving. Drop the column instead of advertising no discount.
   const hasSavings = savings !== "—" && savings !== "0%";
   const hasRequests = props.requests !== "—";
-  const columns = hasSavings
-    ? "minmax(260px,1.5fr) minmax(170px,0.9fr) minmax(170px,0.9fr) minmax(140px,0.7fr)"
-    : "minmax(260px,1.7fr) minmax(180px,1fr) minmax(180px,1fr)";
-
   return (
     <div
       data-model-hero-price-row="true"
       title={props.note}
-      className="mt-3 overflow-x-auto rounded-xl border border-[#E7E4EC] bg-white shadow-[0_18px_46px_-40px_rgba(24,14,38,0.34)] dark:border-white/10 dark:bg-white/[0.04]"
+      className="mt-4 overflow-x-auto border-y border-[#E7E4EC] dark:border-white/10"
     >
-      <div className="grid min-w-[900px]" style={{ gridTemplateColumns: columns }}>
-        <div data-model-price-logo-cell="true" className="flex min-w-0 items-center gap-3 p-3">
-          <HomeModelLogo
-            iconKey={props.model?.icon ?? props.model?.vendor_icon}
-            modelName={props.config.modelId}
-            vendor={props.providerName}
-            fallback={props.config.modelId.slice(0, 1)}
-            surfaceSize={38}
-            imageSize={24}
-          />
+      <div className="flex min-w-[720px] items-stretch gap-2 py-2">
+        <div data-model-price-logo-cell="true" className="flex min-w-[170px] flex-1 items-center rounded-xl bg-[#f7f5fb] px-4 py-3 dark:bg-white/[0.05]">
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold">{props.config.displayName}</div>
-            <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{props.config.modelId}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-[#5f6673] dark:text-white/60">
-              <span>{props.providerName}</span>
-              <span className="text-slate-300 dark:text-white/20">/</span>
-              <span>{props.t("Model price comparison")}</span>
-            </div>
+            <div className="text-sm font-extrabold text-[#20222a] dark:text-white/90">{props.t("Model price comparison")}</div>
+            <div className="mt-1 text-xs font-semibold text-muted-foreground">{props.providerName}</div>
           </div>
         </div>
         <ModelHeroPriceCell
@@ -3829,7 +4067,7 @@ function ModelHeroPricingRow(props: {
           emptyLabel={props.t("Pricing data unavailable")}
         />
         {hasSavings ? (
-          <div data-model-savings-cell="true" className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
+          <div data-model-savings-cell="true" className="min-w-[130px] rounded-xl bg-emerald-50 p-3 dark:bg-emerald-400/10">
             <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.t("Pricing vs official")}</div>
             <div className="mt-2 font-mono text-lg font-bold text-emerald-700 dark:text-emerald-300">{savings}</div>
             <div className="mt-0.5 text-[11px] font-semibold text-muted-foreground">vs {props.providerName}</div>
@@ -3848,7 +4086,7 @@ function ModelHeroPriceCell(props: {
   emptyLabel: string;
 }) {
   return (
-    <div className="border-l border-[#E7E4EC] p-3 dark:border-white/10">
+    <div className="min-w-[180px] flex-1 rounded-xl border border-[#E7E4EC] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="text-[10px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{props.label}</div>
       <div className="mt-2 grid gap-1.5">
         {props.rows.length > 0 ? props.rows.map((row) => (
@@ -3868,7 +4106,7 @@ function ModelHeroPriceCell(props: {
 
 function FlatkeyMetricCard(props: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-violet-500/16 bg-white/72 p-5 shadow-[0_24px_70px_-56px_rgba(91,33,182,0.72)] backdrop-blur-sm dark:bg-white/[0.04]">
+    <div className="rounded-2xl border border-violet-500/16 bg-white/72 p-5 backdrop-blur-sm dark:bg-white/[0.04]">
       <div className="text-muted-foreground text-xs font-medium tracking-widest uppercase">{props.label}</div>
       <div className="mt-3 font-mono text-2xl font-bold text-emerald-600 dark:text-emerald-400">{props.value}</div>
     </div>
@@ -4406,14 +4644,36 @@ function modelModalityKey(model: PricingModel) {
 }
 
 function relatedVisualForModel(name: string, description: string) {
-  const text = normalizeModelId(`${name} ${description}`);
-  if (/(audio|music|sound|tts|voice|sonilo|suno)/.test(text)) return "/assets/model-pages/audio-api-hero.png";
-  if (/(video|seedance|kling|sora|veo|wan|runway|minimax)/.test(text)) return "/assets/model-pages/video-api-hero.png";
-  if (/(image|imagen|banana|flux|ideogram|gpt-image|dall-e|qwen-image|recraft)/.test(text)) return "/assets/model-pages/image-api-hero.png";
-  return "/assets/model-pages/text-api-hero.png";
+  // Use a stable, model-specific slot from the existing cover pool instead of
+  // returning one modality-wide fallback (which made an entire provider row
+  // look like the same model). The slot is deterministic, so it stays stable
+  // between renders and can later be replaced one-for-one by CDN cover URLs.
+  const covers = [
+    "/assets/model-examples/image2/flatkey-image2-hotel.png",
+    "/assets/model-examples/image2/flatkey-image2-creator.png",
+    "/assets/model-examples/image2/flatkey-image2-medical.png",
+    "/assets/model-examples/image2/flatkey-image2-developer.png",
+    "/assets/model-examples/image2/skincare.png",
+    "/assets/model-pages/text-api-hero.png",
+    "/assets/model-pages/image-api-hero.png",
+    "/assets/model-pages/video-api-hero.png",
+    "/assets/model-pages/audio-api-hero.png",
+    "/assets/model-pages/gpt-5-hero.png",
+    "/assets/model-pages/gpt-image-2-hero.png",
+    "/assets/model-pages/deepseek-api-hero.png",
+    "/assets/model-pages/gemini-api-hero.png",
+    "/assets/model-pages/glm-api-hero.png",
+    "/assets/model-pages/qwen-api-hero.png",
+    "/assets/model-pages/minimax-h3-hero.png",
+    "/assets/model-pages/seedance-2-0-hero.png",
+  ];
+  const key = normalizeModelId(`${name} ${description}`);
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return covers[hash % covers.length];
 }
 
-// Models with a generated card clip in public/assets/model-cards/. Each clip
+// Models with a generated card clip in publichttps://cdn.shulex-voc.com/flatkey/model-cards/. Each clip
 // renders its own model id, so cards stay distinguishable; models without one
 // fall back to the shared per-modality still.
 //
@@ -4436,16 +4696,23 @@ function modelCardClip(modelName: string): { poster: string; video: string } | n
   const slug = modelCardSlug(modelName);
   if (!MODEL_CARD_CLIPS.has(slug)) return null;
   return {
-    poster: `/assets/model-cards/${slug}.png`,
-    video: `/assets/model-cards/${slug}.mp4`,
+    poster: `https://cdn.shulex-voc.com/flatkey/model-cards/${slug}.png`,
+    video: `https://cdn.shulex-voc.com/flatkey/model-cards/${slug}.mp4`,
   };
 }
 
 // Card thumbnail: plays its clip on hover and pauses on leave. Autoplaying every
 // card at once would put a row of competing motion on the page, so playback is
 // tied to pointer intent; without a clip it stays a still.
-function RelatedModelVisual(props: { modelName: string; description: string; label: string }) {
+function RelatedModelVisual(props: { modelName: string; description: string }) {
   const clip = modelCardClip(props.modelName);
+  // Falls back through: the model's own cover, then the shared per-modality
+  // still. Before the covers existed, four images served the whole catalog, so
+  // a row of related models read as one picture repeated.
+  const media = getModelMedia(props.modelName);
+  const still = media
+    ? modelCoverUrl(media.coverSlug)
+    : relatedVisualForModel(props.modelName, props.description);
 
   return (
     <div className="relative aspect-video overflow-hidden bg-slate-950">
@@ -4468,16 +4735,17 @@ function RelatedModelVisual(props: { modelName: string; description: string; lab
         />
       ) : (
         <Image
-          src={relatedVisualForModel(props.modelName, props.description)}
+          src={still}
           alt=""
           fill
           sizes="(min-width: 1024px) 260px, 50vw"
           className="object-cover opacity-92 transition duration-300 group-hover:scale-[1.03]"
+          unoptimized
+          onError={(event) => {
+            event.currentTarget.src = relatedVisualForModel(props.modelName, props.description);
+          }}
         />
       )}
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent px-3 pt-6 pb-2">
-        <span className="block truncate font-mono text-[11px] font-bold text-white">{props.label}</span>
-      </span>
     </div>
   );
 }
@@ -4512,7 +4780,7 @@ function buildModelFaq(config: ModelConfig, t: (key: string, vars?: Record<strin
     },
     {
       question: t("How much does {{model}} cost?", { model }),
-      answer: t("Use the pricing section above for current Flatkey prices from our pricing API."),
+      answer: t("One balance covers every model — text, image, video, and audio. You are charged per request against live catalog pricing, with usage analytics and a single invoice."),
     },
     ...config.faq.map((item) => ({ question: t(item.question), answer: t(item.answer) })),
     // Then the platform questions that decide whether they sign up at all.
@@ -4599,7 +4867,7 @@ function RequestPreview(props: {
 }) {
   const request = buildGeneratorRequest(props.config, props.prompt, props.fieldValues, props.referenceImages);
   return (
-    <div className="mt-5 rounded-2xl border border-violet-500/16 bg-white/72 p-4 shadow-[0_24px_70px_-56px_rgba(91,33,182,0.72)] backdrop-blur-sm sm:p-5 dark:bg-white/[0.04]">
+    <div className="mt-5 rounded-2xl border border-violet-500/16 bg-white/72 p-4 backdrop-blur-sm sm:p-5 dark:bg-white/[0.04]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm font-semibold text-[#2c2d33] dark:text-white/88">
         <span>{props.t("Request preview")}</span>
         <button
@@ -4610,7 +4878,7 @@ function RequestPreview(props: {
           {props.t("Copy request")}
         </button>
       </div>
-      <pre className="max-h-64 overflow-auto rounded-xl border border-white/10 bg-[#11131a] p-4 font-mono text-xs leading-6 text-white/78 shadow-inner sm:p-5">
+      <pre className="max-h-64 overflow-auto rounded-xl border border-white/10 bg-[#11131a] p-4 font-mono text-xs leading-6 text-white/78 sm:p-5">
         {JSON.stringify(request, null, 2)}
       </pre>
     </div>
@@ -4630,7 +4898,7 @@ function PanelHeader(props: { title: string; right: string }) {
 
 function Pill(props: { label: string; value: string }) {
   return (
-    <span className="rounded-xl border border-black/10 bg-white p-4 shadow-sm">
+    <span className="rounded-xl border border-black/10 bg-white p-4">
       <span className="block text-xs font-extrabold tracking-[0.12em] text-[#8b8891] uppercase">{props.label}</span>
       <b className="mt-1.5 block text-sm">{props.value}</b>
     </span>
@@ -4639,7 +4907,7 @@ function Pill(props: { label: string; value: string }) {
 
 function StatCard(props: { value: string; label: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border border-black/10 bg-white p-6">
       <b className="text-3xl font-extrabold">{props.value}</b>
       <div className="mt-2 text-sm font-medium text-[#77747d]">{props.label}</div>
     </div>
@@ -4659,7 +4927,7 @@ function PriceBox(props: { label: string; value: string; muted?: boolean }) {
 
 function ReasonCard(props: { icon: ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border border-black/10 bg-white p-6">
       <div className="mb-5 grid size-10 place-items-center rounded-full bg-[#f4f0ff] text-[#7c3aed]">{props.icon}</div>
       <h3 className="text-base font-extrabold">{props.title}</h3>
       <p className="mt-2 text-base leading-7 text-[#6b6872]">{props.body}</p>
@@ -4678,7 +4946,7 @@ function GuideFact(props: { label: string; value: string }) {
 
 function FeatureCard(props: { icon: ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-black/10 bg-white p-5">
       <div className="mb-5 grid size-9 place-items-center rounded-full bg-[#141824] text-white">{props.icon}</div>
       <h3 className="text-base font-extrabold">{props.title}</h3>
       <p className="mt-2 text-sm leading-6 text-[#6b6872]">{props.body}</p>
@@ -4723,31 +4991,40 @@ function buildTextGuideFeatures(config: ModelConfig, t: (key: string, vars?: Rec
 
 function buildMediaPricingRows(config: ModelConfig) {
   if (config.slug === "gpt-image-2") {
-    return [
+    return normalizeMediaPricingRows([
       { spec: "1K", flatkey: "$0.0075", official: "$0.22" },
       { spec: "2K", flatkey: "$0.010", official: "$0.50" },
       { spec: "4K", flatkey: "$0.0125", official: "$1.30" },
-    ];
+    ]);
   }
   if (config.generator?.kind === "video") {
-    return [
+    return normalizeMediaPricingRows([
       { spec: "720p", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
       { spec: "1080p", flatkey: "$0.067", note: "Shared balance", official: "$0.10" },
       { spec: "I2V", flatkey: "$0.053", note: "Shared balance", official: "$0.08" },
-    ];
+    ]);
   }
   if (config.generator?.kind === "audio") {
-    return [
+    return normalizeMediaPricingRows([
       { spec: "Standard", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
       { spec: "High quality", flatkey: config.estFlatkey, note: "Shared balance", official: config.estOfficial },
       { spec: "Batch", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
-    ];
+    ]);
   }
-  return [
+  return normalizeMediaPricingRows([
     { spec: "1024x1024", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
     { spec: "1536x1024", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
     { spec: "1024x1536", flatkey: config.flatkeyPrice, note: "Shared balance", official: config.officialPrice },
-  ];
+  ]);
+}
+
+function normalizeMediaPricingRows<T extends { flatkey: string; official?: string }>(rows: T[]): T[] {
+  const normalize = (value: string) => value.replace(/\$([0-9]+(?:\.[0-9]+)?)/g, (_, amount: string) => `$${Number(Number(amount).toFixed(2))}`);
+  return rows.map((row) => ({
+    ...row,
+    flatkey: normalize(row.flatkey),
+    official: row.official ? normalize(row.official) : row.official,
+  }));
 }
 
 function buildInitialGeneratorValues(config: ModelConfig) {

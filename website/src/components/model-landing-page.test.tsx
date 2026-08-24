@@ -5,6 +5,7 @@ import {
   animateScrollToTop,
   buildDraftFallbackRunHref,
   buildPerformanceStats,
+  isMeasuredStatValue,
   showsTimeToFirstTokenFootnote,
 } from "./model-landing-page";
 import {
@@ -202,17 +203,20 @@ describe("ModelLandingPage", () => {
     expect(scrollCalls.length).toBeGreaterThan(2);
   });
 
-  test("routes the top Get API Key action to the console overview", () => {
+  // The hero action used to be "Get API Key" pointing at the console
+  // dashboard. A reader on a model page wants to see how the call is made
+  // before being sent to a key form, so it now scrolls to the Quick Start
+  // section on this page.
+  test("routes the top hero action to the on-page Quick Start section", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(hrefBeforeText(html, "Get API Key")).toBe(
-      "https://console.flatkey.ai/dashboard",
-    );
+    expect(hrefBeforeText(html, "Quick Start")).toBe("#quick-start");
+    expect(html).not.toContain("Get API Key");
   });
 
-  test("keeps the top Get API Key action group aligned to the right", () => {
+  test("keeps the top hero action group aligned to the right", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
     );
@@ -352,7 +356,7 @@ describe("ModelLandingPage", () => {
     expect(heroHtml).toContain("Flatkey price");
     expect(heroHtml).toContain("Reference price");
     expect(heroHtml).toContain("Live model health");
-    expect(heroHtml).toContain("$0.0402");
+    expect(heroHtml).toContain("$0.04");
     expect(heroHtml).toContain("$0.06");
     expect(heroHtml).toContain("Image");
     expect((heroHtml.match(/data-model-type-chip="true"/g) ?? []).length).toBe(1);
@@ -652,29 +656,70 @@ describe("Performance metrics for async media models", () => {
   });
 });
 
-// The Activity section renders only when the model has measured traffic, so the
-// subnav must not advertise an anchor that is not on the page.
-describe("Activity section navigation", () => {
-  test("omits the Activity tab when the model has no usage series", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} usage={null} />
-    );
+// seedance-2.5 reports avg_latency_ms and request_count but success_rate 0, so
+// the uptime cell has no reading. It used to render formatHealthSuccessRate's
+// em dash at 28px mono in emerald, which on the page read as a stray green
+// line rather than as missing data.
+describe("Performance cells with no reading", () => {
+  const identity = (key: string) => key;
 
-    expect(html).not.toContain('<section id="activity"');
-    expect(html).not.toContain('href="#activity"');
+  test("marks an unreported metric as unmeasured rather than as a value", () => {
+    const stats = buildPerformanceStats({
+      kind: "video",
+      successRate: undefined,
+      ttftMs: undefined,
+      latencyMs: 996,
+      throughput: undefined,
+      requests: 3,
+      peers: [],
+      t: identity,
+    });
+
+    const uptime = stats.find((stat) => stat.label === "Uptime");
+    expect(uptime!.value).toBe("—");
+    expect(isMeasuredStatValue(uptime!.value)).toBe(false);
   });
 
-  test("keeps the Activity tab when the model has a measured usage series", () => {
+  test("treats real readings as measured", () => {
+    expect(isMeasuredStatValue("99.9%")).toBe(true);
+    expect(isMeasuredStatValue("838ms")).toBe(true);
+    expect(isMeasuredStatValue("23.2K")).toBe(true);
+  });
+
+  test("does not render the emerald 28px value style for an unreported uptime", () => {
     const html = renderToStaticMarkup(
-      <ModelLandingPage
-        config={SEEDANCE_CONFIG}
-        locale="en"
-        liveModels={[]}
-        usage={{ model: "seedance-2.5", total: 4, points: [{ date: 1787097600, count: 4 }] }}
-      />
+      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(html).toContain('<section id="activity"');
-    expect(html).toContain('href="#activity"');
+    // The dash-in-a-value-cell combination is what produced the green line.
+    expect(html).not.toContain('class="mt-3 font-mono text-[28px] leading-none font-bold text-emerald-600 dark:text-emerald-400">—<');
+  });
+});
+
+// Image generation pages take a prompt and reference images only; the size,
+// quality, format, background, and moderation selects were removed from the
+// on-page form. The console playground still exposes the full parameter set.
+describe("Image model workbench inputs", () => {
+  test("GPT-image-2 exposes no parameter selects on the page", () => {
+    expect(GPT_IMAGE_2_CONFIG.generator?.fields).toEqual([]);
+  });
+
+  test("renders no size or quality controls on the image workbench", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    );
+
+    expect(html).not.toContain("1536x1024");
+    expect(html).not.toContain(">Moderation<");
+    expect(html).not.toContain(">Output format<");
+  });
+
+  test("keeps the prompt and reference-image inputs", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    );
+
+    expect(html).toContain("Prompt");
+    expect(html).toContain("Reference media");
   });
 });

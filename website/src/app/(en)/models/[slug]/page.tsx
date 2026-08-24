@@ -4,12 +4,14 @@ import {
   getModelLandingConfig,
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
+  enrichPricingModelsForLanding,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { fetchModelUsage } from "@/lib/model-usage";
 import { fetchRankingsData } from "@/lib/rankings-live";
+import { modelCoverImage } from "@/lib/model-media";
 import { buildMetadata } from "@/lib/seo";
 import { getSkagLandingMetadataInput } from "@/lib/skag-landing";
 
@@ -35,6 +37,7 @@ export async function generateMetadata(props: Props) {
       title: config.seo.title,
       description: config.seo.description,
       pathname: `/models/${config.slug}`,
+      image: modelCoverImage(config.modelId),
     });
   }
   const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
@@ -49,6 +52,7 @@ export async function generateMetadata(props: Props) {
     title: modelSpecificConfig.seo.title,
     description: modelSpecificConfig.seo.description,
     pathname: modelPublicPath(model.model_name),
+    image: modelCoverImage(model.model_name),
   });
 }
 
@@ -65,10 +69,12 @@ export default async function Page(props: Props) {
   // Keyed, server-only: WEBSITE_METRICS_KEY must not reach the browser, so the
   // series is resolved here and passed down as a prop.
   const usage = await fetchModelUsage(config?.modelId ?? params.slug);
-  const models = pricing.models.map((model) => ({
-    ...model,
-    vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
-  }));
+  const models = enrichPricingModelsForLanding(
+    pricing.models,
+    pricing.vendors,
+    pricing.groupRatio,
+    pricing.groupModelRatio
+  );
 
   if (config) {
     return (

@@ -841,13 +841,7 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
 .fk-lift {
   transition:
     transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
     border-color 0.18s ease;
-  will-change: transform;
-}
-
-.fk-lift:hover {
-  transform: translateY(-2px);
 }
 
 .fk-lift:active {
