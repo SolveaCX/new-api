@@ -195,15 +195,9 @@ const MODEL_MEDIA: Record<string, ModelMedia> = {
   "veo-3-1-generate-preview": {
     coverSlug: "veo-3-1-generate-preview",
     workbench: [
-      { slug: "veo-3-1-generate-preview-w1", kind: "video", label: "Array aerial", prompt: "A terraforming array on a red desert plateau at golden hour, condenser towers venting white vapour, slow aerial push toward the towers, cinematic sci-fi realism." },
       { slug: "veo-3-1-generate-preview-w2", kind: "video", label: "Vapour drift", prompt: "White vapour drifting off terraforming condensers across a red plateau, golden light behind it, static wide shot, cinematic sci-fi realism." },
-      { slug: "veo-3-1-generate-preview-w3", kind: "video", label: "Tower base", prompt: "Camera tracking past the base of a terraforming tower, red dust blowing across its footings, golden hour light, cinematic sci-fi realism." },
-      { slug: "veo-3-1-generate-preview-w4", kind: "video", label: "Shadow lengthen", prompt: "Time passing over a terraforming array as shadows lengthen across red sand, vapour catching the last light, cinematic sci-fi realism." },
     ],
     library: [
-      { slug: "veo-3-1-generate-preview-l1", kind: "video", label: "Golden-hour aerial", prompt: "A terraforming array on a red desert plateau at golden hour, condenser towers venting white vapour that drifts across the frame, long shadows over the sand, slow aerial push toward the towers, cinematic sci-fi realism." },
-      { slug: "veo-3-1-generate-preview-l2", kind: "video", label: "Dust devil", prompt: "A dust devil crossing a terraforming array's field, vapour and red dust mixing, camera holding steady, cinematic sci-fi realism." },
-      { slug: "veo-3-1-generate-preview-l3", kind: "video", label: "Night array", prompt: "A terraforming array at night, condenser towers lit from below, vapour glowing against a star field, cinematic sci-fi realism." },
       { slug: "veo-3-1-generate-preview-l4", kind: "video", label: "Maintenance flyby", prompt: "A maintenance craft flying low past terraforming towers at golden hour, its shadow racing over the sand, cinematic sci-fi realism." },
     ],
   },
@@ -370,10 +364,14 @@ const MODEL_MEDIA: Record<string, ModelMedia> = {
  * group -- so the page is left exactly as it was.
  */
 const KEEPS_ORIGINAL_ASSETS = new Set(["seedance-2-5"]);
+// Google denied both test keys for this model, so do not render broken local
+// fallbacks or claim that an unavailable generation is a real sample.
+const MEDIA_NOT_AVAILABLE = new Set(["veo-3-1-fast-generate-preview"]);
 
 export function getModelMedia(modelId: string): ModelMedia | null {
   const slug = modelMediaSlug(modelId);
   if (KEEPS_ORIGINAL_ASSETS.has(slug)) return null;
+  if (MEDIA_NOT_AVAILABLE.has(slug)) return null;
   const media = MODEL_MEDIA[slug];
   if (media) return normalizeModelMedia(media);
 
