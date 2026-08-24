@@ -60,6 +60,10 @@ export interface AuthUser {
   impersonator_username?: string
 }
 
+export function isPlgUser(group: string | undefined): boolean {
+  return group?.trim().toLowerCase() === 'plg'
+}
+
 type AuthUserUpdate =
   | AuthUser
   | null
