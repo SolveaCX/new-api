@@ -200,6 +200,16 @@ type AssetBindingProcessingRefresh struct {
 	Now             int64
 }
 
+type AssetBindingActiveRefresh struct {
+	AssetID         int64
+	ChannelID       int
+	BindingScope    string
+	UpstreamAssetID string
+	Status          string
+	ErrorCode       string
+	Now             int64
+}
+
 type ExpiredAssetUploadCleanupCandidate struct {
 	Asset  Asset
 	Upload AssetUpload
@@ -558,6 +568,36 @@ func RefreshProcessingAssetBindingCAS(refresh AssetBindingProcessingRefresh) (bo
 	result := DB.Model(&AssetBinding{}).
 		Where("asset_id = ? AND channel_id = ? AND binding_scope = ?", refresh.AssetID, refresh.ChannelID, refresh.BindingScope).
 		Where("status = ?", AssetStatusProcessing).
+		Where("upstream_asset_id = ?", refresh.UpstreamAssetID).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func RefreshActiveAssetBindingCAS(refresh AssetBindingActiveRefresh) (bool, error) {
+	if refresh.UpstreamAssetID == "" {
+		return false, nil
+	}
+	status := refresh.Status
+	if status == "" {
+		status = AssetStatusFailed
+	}
+	updates := map[string]any{
+		"status":           status,
+		"lease_owner":      "",
+		"lease_expires_at": int64(0),
+		"updated_at":       refresh.Now,
+	}
+	if refresh.ErrorCode != "" {
+		updates["error_code"] = refresh.ErrorCode
+	} else {
+		updates["error_code"] = ""
+	}
+	result := DB.Model(&AssetBinding{}).
+		Where("asset_id = ? AND channel_id = ? AND binding_scope = ?", refresh.AssetID, refresh.ChannelID, refresh.BindingScope).
+		Where("status = ?", AssetStatusActive).
 		Where("upstream_asset_id = ?", refresh.UpstreamAssetID).
 		Updates(updates)
 	if result.Error != nil {
