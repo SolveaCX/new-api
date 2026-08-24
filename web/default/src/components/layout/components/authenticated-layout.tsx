@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import { api } from '@/lib/api'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -28,6 +27,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
 import { Onboarding } from '@/features/onboarding'
+import { exitImpersonation as exitImpersonationRequest } from '@/features/users/api'
 import { AppHeader } from './app-header'
 import { AppSidebar } from './app-sidebar'
 
@@ -39,8 +39,13 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const { t } = useTranslation()
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const user = useAuthStore((state) => state.auth.user)
+  const setUser = useAuthStore((state) => state.auth.setUser)
   const exitImpersonation = async () => {
-    await api.post('/api/user/impersonation/exit')
+    const result = await exitImpersonationRequest()
+    if (!result.success || !result.data) return
+    // The restored admin ID must be persisted before navigating, for the same
+    // New-Api-User/session consistency check used when entering user view.
+    setUser(result.data)
     window.location.assign('/users')
   }
 

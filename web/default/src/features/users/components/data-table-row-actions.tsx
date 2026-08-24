@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -69,6 +70,7 @@ interface DataTableRowActionsProps {
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const { t } = useTranslation()
   const user = row.original
+  const setAuthUser = useAuthStore((state) => state.auth.setUser)
   const { setOpen, setCurrentRow, triggerRefresh } = useUsers()
   const [resetPasskeyOpen, setResetPasskeyOpen] = useState(false)
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
@@ -82,6 +84,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       toast.error(result.message || t('Failed to enter user view'))
       return
     }
+    if (!result.data) {
+      toast.error(t('Failed to enter user view'))
+      return
+    }
+    // Synchronize localStorage before the reload. Every authenticated request
+    // carries New-Api-User from this store; leaving the administrator ID here
+    // makes the first request after the server-side session switch fail closed.
+    setAuthUser(result.data)
     window.location.assign('/')
   }
 
