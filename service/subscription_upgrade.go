@@ -215,13 +215,37 @@ func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgrad
 		return model.CreateSubscriptionOrderWithPendingPurchaseLifecycleTx(tx, &order, stripeSubscriptionUpgradeSnapshotLifecycleSourceRef(input.ChangeIntentID))
 	})
 	if err != nil {
-		var existing model.SubscriptionOrder
-		if findErr := model.DB.Where("trade_no = ?", order.TradeNo).First(&existing).Error; findErr == nil {
+		existing, found, findErr := findStripeSubscriptionUpgradeSnapshotOrderAfterCreateConflict(input, order.TradeNo)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if found {
 			return &existing, nil
 		}
 		return nil, err
 	}
 	return &order, nil
+}
+
+func findStripeSubscriptionUpgradeSnapshotOrderAfterCreateConflict(input StripeSubscriptionUpgradeInput, tradeNo string) (model.SubscriptionOrder, bool, error) {
+	var existing model.SubscriptionOrder
+	query := model.DB.Where(
+		"trade_no = ? AND payment_provider = ? AND purchase_intent = ? AND change_intent_id = ?",
+		strings.TrimSpace(tradeNo),
+		model.PaymentProviderStripe,
+		model.SubscriptionChangeIntentKindUpgrade,
+		input.ChangeIntentID,
+	).Order("id desc").Limit(1).Find(&existing)
+	if query.Error != nil {
+		return model.SubscriptionOrder{}, false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return model.SubscriptionOrder{}, false, nil
+	}
+	if err := validateStripeSubscriptionUpgradeSnapshotOrderDiscount(&existing); err != nil {
+		return model.SubscriptionOrder{}, true, err
+	}
+	return existing, true, nil
 }
 
 func buildStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan, quote SubscriptionPurchaseQuote) (model.SubscriptionOrder, error) {

@@ -845,6 +845,62 @@ func TestStripeUpgradeSnapshotReplayRejectsInvalidPersistedDiscount(t *testing.T
 	}
 }
 
+func TestStripeUpgradeSnapshotDuplicateTradeNoFallbackRejectsInvalidPersistedDiscount(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7147, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7266, 1, 10, 1000, "price_current_duplicate_fallback")
+	targetPlan := insertStripeUpgradePlan(t, 7267, 2, 25, 2500, "price_target_duplicate_fallback")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7147, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7147,
+		RequestId:              "stripe-upgrade-duplicate-fallback",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusAwaitingPayment,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderIdempotencyKey: "subscription-upgrade:duplicate-fallback",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	tradeNo := fmt.Sprintf("SUBUPGINT%d", intent.Id)
+	existing := model.SubscriptionOrder{
+		UserId:             7147,
+		PlanId:             targetPlan.Id,
+		Money:              25,
+		TradeNo:            tradeNo,
+		PaymentMethod:      model.PaymentMethodStripe,
+		PaymentProvider:    model.PaymentProviderStripe,
+		Status:             common.TopUpStatusPending,
+		CreateTime:         common.GetTimestamp(),
+		PurchaseMonths:     1,
+		UnitPrice:          25,
+		PaymentCurrency:    "USD",
+		PaymentAmountMinor: 2500,
+		PurchaseIntent:     model.SubscriptionChangeIntentKindUpgrade,
+		RenewalSource:      model.SubscriptionRenewalSourceProvider,
+		DiscountKind:       SubscriptionDiscountKindRecall,
+		RecallCampaignId:   9501,
+		RecallRecipientId:  9601,
+		ChangeIntentId:     intent.Id,
+	}
+	require.NoError(t, model.DB.Create(&existing).Error)
+
+	_, found, err := findStripeSubscriptionUpgradeSnapshotOrderAfterCreateConflict(StripeSubscriptionUpgradeInput{
+		UserID:         7147,
+		ContractID:     contract.Id,
+		ChangeIntentID: intent.Id,
+		TargetPlanID:   targetPlan.Id,
+	}, tradeNo)
+
+	require.True(t, found)
+	require.ErrorIs(t, err, ErrSubscriptionPurchaseQuoteInvalid)
+	require.Contains(t, err.Error(), "recall promotion code id is required")
+}
+
 func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7132, 0)
