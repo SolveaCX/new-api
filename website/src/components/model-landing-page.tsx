@@ -96,7 +96,6 @@ import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
 import { getModelMedia, localModelSampleUrl, modelCoverUrl, modelMediaSlug, modelSampleImageUrl, modelSampleVideoUrl } from "@/lib/model-media";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
-import { PROMPT_GALLERY_COVER_URLS } from "@/lib/prompt-gallery-covers";
 
 type Props = {
   config: ModelConfig;
@@ -222,6 +221,7 @@ function examplesForModel(
 ): readonly MediaExample[] {
   const media = getModelMedia(modelId);
   if (!media || media.workbench.length === 0) {
+    if (modelMediaSlug(modelId) === "veo-3-1-fast-generate-preview") return [];
     return kind === "image" ? [imageExampleForModel(modelId)] : MEDIA_EXAMPLES[kind].slice(0, 1);
   }
 
@@ -600,14 +600,8 @@ function ModelShowcase(props: {
   // them. Every other model uses the assets generated for it.
   const media = getModelMedia(props.modelId);
   const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
-  const usesCuratedImageScenes = !usesOriginalScenes && media?.library[0]?.kind === "image";
-  const usesCuratedVideoScenes = !usesOriginalScenes && media?.library[0]?.kind === "video";
   const scenes: ShowcaseScene[] = usesOriginalScenes
     ? [...SHOWCASE_SCENES]
-    : usesCuratedImageScenes
-      ? IMAGE_SCENE_ASSETS.map((sample, index) => ({ id: `curated-image-${index}`, label: sample.label ?? "Product mockups", prompt: sample.prompt ?? "" }))
-      : usesCuratedVideoScenes
-        ? MEDIA_EXAMPLES.video.slice(0, 5).map((sample, index) => ({ id: `curated-video-${index}`, label: sample.label ?? "Product motion", prompt: sample.prompt ?? "" }))
     : (media?.library ?? []).map((sample) => ({
         id: sample.slug,
         label: sample.label,
@@ -616,16 +610,12 @@ function ModelShowcase(props: {
   if (scenes.length === 0) return null;
 
   const sampleKind = (id: string) =>
-    usesOriginalScenes || usesCuratedImageScenes || usesCuratedVideoScenes ? (usesOriginalScenes || usesCuratedVideoScenes ? "video" : "image") : media?.library.find((sample) => sample.slug === id)?.kind ?? "video";
+    usesOriginalScenes ? "video" : media?.library.find((sample) => sample.slug === id)?.kind ?? "video";
   const posterUrl = (id: string, index: number) => {
-    if (usesCuratedImageScenes) {
-      return IMAGE_SCENE_ASSETS[index % IMAGE_SCENE_ASSETS.length].poster;
-    }
-    if (usesCuratedVideoScenes) return MEDIA_EXAMPLES.video[index % MEDIA_EXAMPLES.video.length].poster;
     return usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.png?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : modelSampleImageUrl(id);
   };
   const videoUrl = (id: string) =>
-    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : usesCuratedVideoScenes ? MEDIA_EXAMPLES.video[Number(id.split("-").pop())]?.video ?? "" : modelSampleVideoUrl(id);
+    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : modelSampleVideoUrl(id);
 
   return (
     <RevealSection
@@ -4728,13 +4718,6 @@ function modelCardSlug(modelName: string): string {
   return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-function promptGalleryCoverForModel(modelName: string): string {
-  const slug = modelCardSlug(modelName);
-  let hash = 0;
-  for (const char of slug) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return PROMPT_GALLERY_COVER_URLS[hash % PROMPT_GALLERY_COVER_URLS.length];
-}
-
 function modelCardClip(modelName: string): { poster: string; video: string } | null {
   const slug = modelCardSlug(modelName);
   if (!MODEL_CARD_CLIPS.has(slug)) return null;
@@ -4764,7 +4747,10 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
   // MODEL_MEDIA table is intentionally retained for detail-page workbench and
   // prompt-library examples, but its older coverSlug values would make the
   // catalog silently fall back to the legacy shared illustrations.
-  const still = promptGalleryCoverForModel(props.modelName);
+  // Use the generated model-specific scene cover. Prompt-gallery examples are
+  // references only: many are posters/UI/infographics with baked-in text and
+  // must not be used as catalog cover art.
+  const still = modelCoverUrl(modelCardSlug(props.modelName));
 
   return (
     <div className="relative aspect-video overflow-hidden bg-slate-950">
@@ -4797,6 +4783,12 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
             event.currentTarget.src = relatedVisualForModel(props.modelName, props.description);
           }}
         />
+      )}
+      {!clip && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/60 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white">
+          <span className="truncate normal-case tracking-normal">{props.modelName}</span>
+          <span className="ml-3 shrink-0 opacity-90">flatkey</span>
+        </div>
       )}
       {clip && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/65 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white">
