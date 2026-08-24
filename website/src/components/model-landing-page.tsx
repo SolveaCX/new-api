@@ -96,6 +96,7 @@ import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
 import { getModelMedia, localModelSampleUrl, modelCoverUrl, modelMediaSlug, modelSampleImageUrl, modelSampleVideoUrl } from "@/lib/model-media";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
+import { PROMPT_GALLERY_COVER_URLS } from "@/lib/prompt-gallery-covers";
 
 type Props = {
   config: ModelConfig;
@@ -792,8 +793,16 @@ function exampleReferenceDrafts(example: MediaExample | undefined): ReferenceIma
   }));
 }
 
+function initialPromptForModel(config: ModelConfig): string {
+  if (config.generator) {
+    const modelExample = examplesForModel(config.modelId, config.generator.kind)[0];
+    if (modelExample?.prompt) return modelExample.prompt;
+  }
+  return config.examplePrompt;
+}
+
 export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, rankings = null, usage = null }: Props) {
-  const [prompt, setPrompt] = useState(config.examplePrompt);
+  const [prompt, setPrompt] = useState(() => initialPromptForModel(config));
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
@@ -855,7 +864,7 @@ export function ModelLandingPage({ config, locale, liveModels = [], allModels = 
     referenceImages.forEach((image) => {
       if (!image.fromExample) URL.revokeObjectURL(image.previewUrl);
     });
-    setPrompt(config.examplePrompt);
+    setPrompt(initialPromptForModel(config));
     setFieldValues(buildInitialGeneratorValues(config));
     setReferenceImages([]);
     setSelectedExample(0);
@@ -4719,6 +4728,13 @@ function modelCardSlug(modelName: string): string {
   return modelName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+function promptGalleryCoverForModel(modelName: string): string {
+  const slug = modelCardSlug(modelName);
+  let hash = 0;
+  for (const char of slug) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return PROMPT_GALLERY_COVER_URLS[hash % PROMPT_GALLERY_COVER_URLS.length];
+}
+
 function modelCardClip(modelName: string): { poster: string; video: string } | null {
   const slug = modelCardSlug(modelName);
   if (!MODEL_CARD_CLIPS.has(slug)) return null;
@@ -4748,7 +4764,7 @@ function RelatedModelVisual(props: { modelName: string; description: string }) {
   // MODEL_MEDIA table is intentionally retained for detail-page workbench and
   // prompt-library examples, but its older coverSlug values would make the
   // catalog silently fall back to the legacy shared illustrations.
-  const still = modelCoverUrl(modelCardSlug(props.modelName));
+  const still = promptGalleryCoverForModel(props.modelName);
 
   return (
     <div className="relative aspect-video overflow-hidden bg-slate-950">
