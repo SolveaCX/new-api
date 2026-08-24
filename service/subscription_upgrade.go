@@ -27,6 +27,7 @@ type StripeSubscriptionUpgradeInput struct {
 	ProviderScheduleID         string
 	CancelAtPeriodEnd          bool
 	IdempotencyKey             string
+	VerifiedQuote              *SubscriptionPurchaseQuote
 }
 
 type StripeSubscriptionUpgradeResult struct {
@@ -83,7 +84,8 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 		return nil, err
 	}
 	targetPlan.NormalizeDefaults()
-	if _, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan); err != nil {
+	order, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan)
+	if err != nil {
 		return nil, err
 	}
 	if err := ensureStripeSecretForSubscription(); err != nil {
@@ -155,6 +157,11 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 	params.AddExpand("pending_update")
 	params.AddExpand("items.data.price")
 	params.AddExpand("customer")
+	if strings.TrimSpace(order.DiscountKind) == SubscriptionDiscountKindRecall {
+		params.Discounts = []*stripe.SubscriptionDiscountParams{{
+			PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId)),
+		}}
+	}
 	updated, err := stripesubscription.Update(input.ProviderSubscriptionID, params)
 	if err != nil {
 		if previousScheduleSnapshot != "" {
@@ -190,7 +197,11 @@ func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgrad
 	if query.RowsAffected > 0 {
 		return &order, nil
 	}
-	order, err := buildStripeSubscriptionUpgradeSnapshotOrder(input, plan)
+	quote, err := validateStripeSubscriptionUpgradeQuote(input, *plan)
+	if err != nil {
+		return nil, err
+	}
+	order, err = buildStripeSubscriptionUpgradeSnapshotOrder(input, plan, quote)
 	if err != nil {
 		return nil, err
 	}
@@ -207,34 +218,70 @@ func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgrad
 	return &order, nil
 }
 
-func buildStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan) (model.SubscriptionOrder, error) {
+func buildStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgradeInput, plan *model.SubscriptionPlan, quote SubscriptionPurchaseQuote) (model.SubscriptionOrder, error) {
 	snapshot, err := subscriptionPurchasePlanSnapshot(plan)
 	if err != nil {
 		return model.SubscriptionOrder{}, err
 	}
-	minorAmount, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, plan.Currency)
+	recallCampaignID, recallRecipientID, recallPromotionCodeID, recallDiscountAmountMinor := subscriptionPurchaseRecallAttribution(quote)
+	discountSnapshot, err := subscriptionDiscountSnapshotJSON(quote, "")
 	if err != nil {
 		return model.SubscriptionOrder{}, err
 	}
 	return model.SubscriptionOrder{
-		UserId:             input.UserID,
-		PlanId:             input.TargetPlanID,
-		Money:              plan.PriceAmount,
-		TradeNo:            fmt.Sprintf("SUBUPGINT%d", input.ChangeIntentID),
-		PaymentMethod:      model.PaymentMethodStripe,
-		PaymentProvider:    model.PaymentProviderStripe,
-		Status:             common.TopUpStatusPending,
-		CreateTime:         common.GetTimestamp(),
-		PurchaseMonths:     1,
-		UnitPrice:          plan.PriceAmount,
-		PaymentCurrency:    strings.ToUpper(strings.TrimSpace(plan.Currency)),
-		PaymentAmountMinor: minorAmount,
-		PlanSnapshot:       snapshot,
-		PurchaseIntent:     model.SubscriptionChangeIntentKindUpgrade,
-		RenewalSource:      model.SubscriptionRenewalSourceProvider,
-		ProviderPayload:    fmt.Sprintf("contract_id=%d;change_intent_id=%d", input.ContractID, input.ChangeIntentID),
-		ChangeIntentId:     input.ChangeIntentID,
+		UserId:                    input.UserID,
+		PlanId:                    input.TargetPlanID,
+		Money:                     quote.Total,
+		TradeNo:                   fmt.Sprintf("SUBUPGINT%d", input.ChangeIntentID),
+		PaymentMethod:             model.PaymentMethodStripe,
+		PaymentProvider:           model.PaymentProviderStripe,
+		Status:                    common.TopUpStatusPending,
+		CreateTime:                common.GetTimestamp(),
+		PurchaseMonths:            1,
+		UnitPrice:                 quote.UnitPrice,
+		PaymentCurrency:           quote.Currency,
+		PaymentAmountMinor:        quote.PaymentAmountMinor,
+		PlanSnapshot:              snapshot,
+		PurchaseIntent:            model.SubscriptionChangeIntentKindUpgrade,
+		RenewalSource:             model.SubscriptionRenewalSourceProvider,
+		RecallCampaignId:          recallCampaignID,
+		RecallRecipientId:         recallRecipientID,
+		RecallPromotionCodeId:     recallPromotionCodeID,
+		RecallDiscountAmountMinor: recallDiscountAmountMinor,
+		DiscountKind:              quote.DiscountKind,
+		DiscountPricingSnapshot:   discountSnapshot,
+		ProviderPayload:           fmt.Sprintf("contract_id=%d;change_intent_id=%d", input.ContractID, input.ChangeIntentID),
+		ChangeIntentId:            input.ChangeIntentID,
 	}, nil
+}
+
+func validateStripeSubscriptionUpgradeQuote(input StripeSubscriptionUpgradeInput, plan model.SubscriptionPlan) (SubscriptionPurchaseQuote, error) {
+	if input.VerifiedQuote == nil {
+		return SubscriptionPurchaseQuote{}, ErrSubscriptionPurchaseQuoteRequired
+	}
+	quote, err := validateSubscriptionPurchaseQuoteForChoice(*input.VerifiedQuote, SubscriptionPaymentChoiceStripeRecurring, 1)
+	if err != nil {
+		return SubscriptionPurchaseQuote{}, err
+	}
+	if err := validateSubscriptionPurchaseQuoteMatchesPlan(plan, PurchaseSubscriptionCommand{
+		UserID:        input.UserID,
+		PlanID:        input.TargetPlanID,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		VerifiedQuote: &quote,
+	}, quote); err != nil {
+		return SubscriptionPurchaseQuote{}, err
+	}
+	switch quote.DiscountKind {
+	case SubscriptionDiscountKindNone:
+	case SubscriptionDiscountKindRecall:
+		if strings.TrimSpace(quote.RecallPromotionCodeID) == "" {
+			return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: recall promotion code id is required", ErrSubscriptionPurchaseQuoteInvalid)
+		}
+	default:
+		return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: unsupported active upgrade discount kind", ErrSubscriptionPurchaseQuoteInvalid)
+	}
+	return quote, nil
 }
 
 func stripeSubscriptionUpgradeSnapshotLifecycleSourceRef(changeIntentID int64) string {
