@@ -286,6 +286,61 @@ func TestStripeUpgradeExecuteAppliesPersistedRecallPromotionCode(t *testing.T) {
 	require.Equal(t, "promo_upgrade_recall_update", updateForm.Get("discounts[0][promotion_code]"))
 }
 
+func TestStripeUpgradeExecuteClearsPersistedNoneDiscount(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7144, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7260, 1, 10, 1000, "price_current_none_clear")
+	targetPlan := insertStripeUpgradePlan(t, 7261, 2, 25, 2500, "price_target_none_clear")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7144, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7144,
+		RequestId:              "stripe-upgrade-none-clear",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusSyncing,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderIdempotencyKey: stripeSubscriptionUpgradeIdempotencyKey(contract.Id, 1, targetPlan.Id),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+
+	var updateForm url.Values
+	useStripeUpgradeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/subscriptions/sub_upgrade":
+			_, _ = w.Write([]byte(`{"id":"sub_upgrade","object":"subscription","status":"active","cancel_at_period_end":false,"current_period_start":1000,"current_period_end":2000,"customer":"cus_upgrade","discounts":[{"id":"di_existing","object":"discount"}],"items":{"object":"list","data":[{"id":"si_current_item","object":"subscription_item","price":{"id":"price_current_none_clear","object":"price"}}]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/subscriptions/sub_upgrade":
+			require.NoError(t, r.ParseForm())
+			updateForm = r.PostForm
+			_, _ = w.Write([]byte(`{"id":"sub_upgrade","object":"subscription","status":"active","cancel_at_period_end":false,"current_period_start":1000,"current_period_end":2000,"customer":"cus_upgrade","items":{"object":"list","data":[{"id":"si_current_item","object":"subscription_item","price":{"id":"price_target_none_clear","object":"price"}}]},"latest_invoice":{"id":"in_upgrade_none_clear","object":"invoice","paid":false,"status":"open","hosted_invoice_url":"https://stripe.test/invoice/in_upgrade_none_clear"},"pending_update":{"expires_at":9999999999}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	result, err := executeStripeSubscriptionUpgrade(context.Background(), StripeSubscriptionUpgradeInput{
+		ContractID:                 contract.Id,
+		ChangeVersion:              intent.ChangeVersion,
+		TargetPlanID:               targetPlan.Id,
+		TargetPriceID:              targetPlan.StripePriceId,
+		ProviderSubscriptionID:     binding.ProviderSubscriptionId,
+		ProviderSubscriptionItemID: binding.ProviderSubscriptionItemId,
+		IdempotencyKey:             intent.ProviderIdempotencyKey,
+		VerifiedQuote:              stripeUpgradeNoDiscountQuote(t, targetPlan),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	values, ok := updateForm["discounts"]
+	require.True(t, ok)
+	require.Equal(t, []string{""}, values)
+	require.Empty(t, updateForm.Get("discounts[0][promotion_code]"))
+}
+
 func TestStripeUpgradeUpdateFailureRestoresReleasedDowngradeSchedule(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7129, 0)
@@ -708,6 +763,86 @@ func TestStripeUpgradeSnapshotUsesDiscountedRecallQuoteAndReplaysWithoutQuote(t 
 	require.Equal(t, int64(700), order.RecallDiscountAmountMinor)
 	require.JSONEq(t, `{"discount_kind":"recall","currency":"USD","unit_amount_minor":2500,"original_total_amount_minor":2500,"payment_amount_minor":1800,"discount_amount_minor":700,"invitation_available_usd_minor":0,"invitation_discount_usd_minor":0,"invitation_discount_amount_minor":0,"invitation_remaining_usd_minor":0,"other_discount_kind":"recall","other_discount_amount_minor":700,"recall_campaign_id":9103,"recall_recipient_id":9203,"recall_promotion_code_id":"promo_upgrade_recall_snapshot"}`, order.DiscountPricingSnapshot)
 	require.Equal(t, order.PaymentAmountMinor, replayed.PaymentAmountMinor)
+}
+
+func TestStripeUpgradeSnapshotReplayRejectsInvalidPersistedDiscount(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*model.SubscriptionOrder)
+		wantErr string
+	}{
+		{
+			name: "unsupported discount kind",
+			mutate: func(order *model.SubscriptionOrder) {
+				order.DiscountKind = SubscriptionDiscountKindInvitation
+			},
+			wantErr: "unsupported active upgrade discount kind",
+		},
+		{
+			name: "recall without promotion code",
+			mutate: func(order *model.SubscriptionOrder) {
+				order.DiscountKind = SubscriptionDiscountKindRecall
+				order.RecallCampaignId = 9301
+				order.RecallRecipientId = 9401
+				order.RecallPromotionCodeId = ""
+			},
+			wantErr: "recall promotion code id is required",
+		},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionContractServiceTestDB(t)
+			userID := 7145 + index
+			insertContractServiceUser(t, userID, 0)
+			currentPlan := insertStripeUpgradePlan(t, 7262+index*2, 1, 10, 1000, fmt.Sprintf("price_current_invalid_snapshot_%d", index))
+			targetPlan := insertStripeUpgradePlan(t, 7263+index*2, 2, 25, 2500, fmt.Sprintf("price_target_invalid_snapshot_%d", index))
+			contract, binding, _ := seedStripeUpgradeContract(t, userID, currentPlan)
+			intent := &model.SubscriptionChangeIntent{
+				ContractId:             contract.Id,
+				UserId:                 userID,
+				RequestId:              fmt.Sprintf("stripe-upgrade-invalid-snapshot-%d", index),
+				ChangeVersion:          1,
+				Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+				PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+				Status:                 model.SubscriptionChangeIntentStatusAwaitingPayment,
+				FromPlanId:             currentPlan.Id,
+				ToPlanId:               targetPlan.Id,
+				ProviderBindingId:      binding.Id,
+				ProviderIdempotencyKey: fmt.Sprintf("subscription-upgrade:invalid-snapshot:%d", index),
+				EffectiveAt:            common.GetTimestamp(),
+			}
+			require.NoError(t, model.DB.Create(intent).Error)
+			order := model.SubscriptionOrder{
+				UserId:             userID,
+				PlanId:             targetPlan.Id,
+				Money:              25,
+				TradeNo:            fmt.Sprintf("invalid_upgrade_snapshot_%d", index),
+				PaymentMethod:      model.PaymentMethodStripe,
+				PaymentProvider:    model.PaymentProviderStripe,
+				Status:             common.TopUpStatusPending,
+				CreateTime:         common.GetTimestamp(),
+				PurchaseMonths:     1,
+				UnitPrice:          25,
+				PaymentCurrency:    "USD",
+				PaymentAmountMinor: 2500,
+				PurchaseIntent:     model.SubscriptionChangeIntentKindUpgrade,
+				RenewalSource:      model.SubscriptionRenewalSourceProvider,
+				ChangeIntentId:     intent.Id,
+			}
+			test.mutate(&order)
+			require.NoError(t, model.DB.Create(&order).Error)
+
+			_, err := ensureStripeSubscriptionUpgradeSnapshotOrder(StripeSubscriptionUpgradeInput{
+				UserID:         userID,
+				ContractID:     contract.Id,
+				ChangeIntentID: intent.Id,
+				TargetPlanID:   targetPlan.Id,
+			}, &targetPlan)
+
+			require.ErrorIs(t, err, ErrSubscriptionPurchaseQuoteInvalid)
+			require.Contains(t, err.Error(), test.wantErr)
+		})
+	}
 }
 
 func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {

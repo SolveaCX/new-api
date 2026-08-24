@@ -157,10 +157,13 @@ func executeStripeSubscriptionUpgrade(ctx context.Context, input StripeSubscript
 	params.AddExpand("pending_update")
 	params.AddExpand("items.data.price")
 	params.AddExpand("customer")
-	if strings.TrimSpace(order.DiscountKind) == SubscriptionDiscountKindRecall {
+	switch strings.TrimSpace(order.DiscountKind) {
+	case SubscriptionDiscountKindRecall:
 		params.Discounts = []*stripe.SubscriptionDiscountParams{{
 			PromotionCode: stripe.String(strings.TrimSpace(order.RecallPromotionCodeId)),
 		}}
+	case SubscriptionDiscountKindNone:
+		params.AddExtra("discounts", "")
 	}
 	updated, err := stripesubscription.Update(input.ProviderSubscriptionID, params)
 	if err != nil {
@@ -195,6 +198,9 @@ func ensureStripeSubscriptionUpgradeSnapshotOrder(input StripeSubscriptionUpgrad
 		return nil, query.Error
 	}
 	if query.RowsAffected > 0 {
+		if err := validateStripeSubscriptionUpgradeSnapshotOrderDiscount(&order); err != nil {
+			return nil, err
+		}
 		return &order, nil
 	}
 	quote, err := validateStripeSubscriptionUpgradeQuote(input, *plan)
@@ -282,6 +288,23 @@ func validateStripeSubscriptionUpgradeQuote(input StripeSubscriptionUpgradeInput
 		return SubscriptionPurchaseQuote{}, fmt.Errorf("%w: unsupported active upgrade discount kind", ErrSubscriptionPurchaseQuoteInvalid)
 	}
 	return quote, nil
+}
+
+func validateStripeSubscriptionUpgradeSnapshotOrderDiscount(order *model.SubscriptionOrder) error {
+	if order == nil {
+		return errors.New("Stripe subscription upgrade snapshot order is required")
+	}
+	switch strings.TrimSpace(order.DiscountKind) {
+	case SubscriptionDiscountKindNone:
+		return nil
+	case SubscriptionDiscountKindRecall:
+		if strings.TrimSpace(order.RecallPromotionCodeId) == "" {
+			return fmt.Errorf("%w: recall promotion code id is required", ErrSubscriptionPurchaseQuoteInvalid)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported active upgrade discount kind", ErrSubscriptionPurchaseQuoteInvalid)
+	}
 }
 
 func stripeSubscriptionUpgradeSnapshotLifecycleSourceRef(changeIntentID int64) string {
