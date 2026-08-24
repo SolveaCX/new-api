@@ -62,6 +62,7 @@ describe("model landing configuration", () => {
       "/models/minimax-h3",
       "/models/qwen-api",
       "/models/seedance-api",
+      "/models/seedance-2-5",
       "/models/sonilo-video-to-music",
     ]);
   });

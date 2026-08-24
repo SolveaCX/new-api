@@ -37,9 +37,12 @@ export async function generateMetadata(props: Props) {
   }
   const config = getModelLandingConfig(params.slug);
   if (config) {
+    const isBrazilianSeedance = params.locale === "pt" && config.slug === "seedance-2-5";
     return buildMetadata({
-      title: config.seo.title,
-      description: config.seo.description,
+      title: isBrazilianSeedance ? "Seedance 2.5: Gerador de Vídeo com IA e API | Flatkey" : config.seo.title,
+      description: isBrazilianSeedance
+        ? "Use o Seedance 2.5 da ByteDance como gerador de vídeo com IA ou por uma API compatível com OpenAI. Crie vídeos a partir de texto e imagens, use áudio nativo e teste seus prompts na Flatkey."
+        : config.seo.description,
       pathname: `/models/${config.slug}`,
       image: modelCoverImage(config.modelId),
       locale: params.locale,

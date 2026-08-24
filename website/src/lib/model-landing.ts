@@ -355,9 +355,9 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     { label: "Coverage", flatkey: "", value: "Seedance · Kling · Veo · Sora · GPT · Claude" },
   ],
   seo: {
-    title: "Seedance 2.5 API pricing and providers",
+    title: "Seedance 2.5 AI Video Generator & API Pricing | Flatkey",
     description:
-      "Seedance 2.5 API by ByteDance: multimodal video generation with up to 50 references, native audio, first/last-frame control, editing, and extension.",
+      "Use Seedance 2.5 by ByteDance as an AI video generator or through an OpenAI-compatible API. Check Seedance 2.5 pricing, create text-to-video and image-to-video clips, use native audio, and test prompts before production.",
   },
   positioning: "Best for long-form storytelling, multimodal reference generation, and video editing",
   useCases: ["Long-form storytelling", "Reference-guided video", "Video editing and extension"],
@@ -1836,7 +1836,7 @@ const en: Record<ModelLandingKey, string> = {
   "Output": "Output",
   "Preview": "Preview",
   "Upload from device": "Upload from device",
-  "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "Seedance 2.5 is ByteDance's multimodal AI video model and AI video generator. Through Flatkey's OpenAI-compatible API, it turns text, image, video, and audio references into coherent text-to-video and image-to-video clips with multi-shot consistency and native audio. Use it for long-form storytelling, film previsualization, game cinematics, ecommerce and advertising creatives, video editing, extension, and prompt testing — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.",
   "from {{price}}": "from {{price}}",
   "50% off": "50% off",
 };
@@ -6877,6 +6877,7 @@ const localizedModelDetailSupplementalCopy: Partial<Record<Locale, Partial<Recor
     "OpenAI-compatible chat completions": "Chat Completions compatíveis com OpenAI",
     "Long-context reasoning and coding": "Raciocínio e código com contexto longo",
     "Streaming and tool workflows": "Workflows de streaming e ferramentas",
+    "Seedance 2.5 is ByteDance's multimodal AI video model. It turns text, image, video, and audio references into cinematic, coherent clips with strong multi-shot consistency and native audio. Use it for long-form storytelling, reference-guided generation, video editing, and video extension — with first-frame and first/last-frame control, up to 50 references per request, optional audio generation, and multilingual audiovisual output.": "O Seedance 2.5 é um modelo multimodal de vídeo com IA da ByteDance e um gerador de vídeo com IA. Pela API compatível com OpenAI da Flatkey, ele transforma referências de texto, imagem, vídeo e áudio em vídeos coerentes de texto para vídeo e imagem para vídeo, com consistência entre planos e áudio nativo. Use-o para storytelling longo, pré-visualização de filmes, cinemáticas de jogos, criativos de ecommerce e publicidade, edição, extensão de vídeos e testes de prompts — com controle do primeiro quadro e do primeiro e último quadro, até 50 referências por requisição, geração de áudio opcional e saída audiovisual multilíngue.",
   },
   ru: {
     "Open in console": "Открыть в консоли",
