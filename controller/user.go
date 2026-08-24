@@ -824,7 +824,7 @@ func ImpersonateUser(c *gin.Context) {
 	// Keep impersonation audit events on the administrator's own log. Writing
 	// them against the target user exposes internal admin wording in that
 	// user's self-service usage log.
-	model.RecordLogWithAdminInfo(c.GetInt("id"), model.LogTypeManage, "administrator entered user view", map[string]interface{}{
+	model.RecordLogWithAdminInfo(c.GetInt("id"), model.LogTypeManage, model.LogContentImpersonationEntered, map[string]interface{}{
 		"admin_id":        adminInfo["admin_id"],
 		"admin_username":  adminInfo["admin_username"],
 		"target_user_id":  user.Id,
@@ -877,7 +877,7 @@ func ExitImpersonation(c *gin.Context) {
 	// As with entry, keep the audit event out of the impersonated user's own
 	// log while retaining the target identity for administrator auditing.
 	if adminIDInt, ok := adminID.(int); ok {
-		model.RecordLogWithAdminInfo(adminIDInt, model.LogTypeManage, "administrator exited user view", map[string]interface{}{
+		model.RecordLogWithAdminInfo(adminIDInt, model.LogTypeManage, model.LogContentImpersonationExited, map[string]interface{}{
 			"admin_id":       adminID,
 			"admin_username": adminUsername,
 			"target_user_id": impersonatedUserID,
