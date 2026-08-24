@@ -1004,9 +1004,11 @@ type stripeInvoiceCommonFacts struct {
 }
 
 type recurringInvoicePlanSnapshot struct {
-	Snapshot purchasePlanSnapshot
-	Found    bool
-	OrderID  int
+	Snapshot                purchasePlanSnapshot
+	Found                   bool
+	OrderID                 int
+	OrderPaymentCurrency    string
+	OrderPaymentAmountMinor int64
 }
 
 func validatePaidInvoiceFacts(inv *stripe.Invoice, sub *stripe.Subscription) (paidInvoiceFacts, error) {
@@ -1297,7 +1299,13 @@ func recurringPlanSnapshotFromOrder(order *model.SubscriptionOrder) (recurringIn
 		snapshot.Window5hAmount < 0 || snapshot.WindowWeekAmount < 0 {
 		return recurringInvoicePlanSnapshot{}, errors.New("local subscription plan snapshot values are invalid")
 	}
-	return recurringInvoicePlanSnapshot{Snapshot: snapshot, Found: true, OrderID: order.Id}, nil
+	return recurringInvoicePlanSnapshot{
+		Snapshot:                snapshot,
+		Found:                   true,
+		OrderID:                 order.Id,
+		OrderPaymentCurrency:    strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)),
+		OrderPaymentAmountMinor: order.PaymentAmountMinor,
+	}, nil
 }
 
 func recurringPlanSnapshotFromBindingTx(tx *gorm.DB, binding *model.SubscriptionProviderBinding) (recurringInvoicePlanSnapshot, error) {

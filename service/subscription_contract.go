@@ -141,6 +141,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					ProviderScheduleID:         strings.TrimSpace(binding.ProviderScheduleId),
 					CancelAtPeriodEnd:          binding.CancelAtPeriodEnd,
 					IdempotencyKey:             idempotencyKey,
+					VerifiedQuote:              cmd.VerifiedQuote,
 				}
 				if upgradeInput.ProviderSubscriptionItemID == "" {
 					return errors.New("Stripe subscription binding is incomplete")
@@ -437,7 +438,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 					}
 					intent.ProviderIdempotencyKey = idempotencyKey
 					upgradeInput = &StripeSubscriptionUpgradeInput{
+						UserID:                     cmd.UserID,
 						ContractID:                 contract.Id,
+						ChangeIntentID:             intent.Id,
 						ChangeVersion:              intent.ChangeVersion,
 						TargetPlanID:               plan.Id,
 						TargetPriceID:              strings.TrimSpace(plan.StripePriceId),
@@ -446,6 +449,7 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 						ProviderScheduleID:         binding.ProviderScheduleId,
 						CancelAtPeriodEnd:          binding.CancelAtPeriodEnd,
 						IdempotencyKey:             idempotencyKey,
+						VerifiedQuote:              cmd.VerifiedQuote,
 					}
 					result = &ChangePlanResult{
 						Status:   ChangePlanStatusPaymentActionRequired,

@@ -2626,6 +2626,77 @@ func TestPurchaseSubscriptionStripeRecurringReturnsHostedInvoiceURL(t *testing.T
 	require.Equal(t, "https://invoice.stripe.test/purchase-upgrade", result.HostedInvoiceURL)
 }
 
+func TestPurchaseSubscriptionRecallActiveStripeUpgradeReturnsDiscountedSnapshotOrderAndHostedInvoiceURL(t *testing.T) {
+	setupSubscriptionRecallPurchaseTestDB(t)
+	now := time.Now().UTC()
+	fixture := createRecallClaimFixture(t, now)
+	insertPurchaseServiceUser(t, fixture.recipient.UserId, 5000)
+	currentPlan := insertPurchaseServicePlan(t, 7427, 1, 9.99, 100)
+	targetPlan := insertPurchaseServicePlan(t, 7428, 2, 25, 2500)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", currentPlan.Id).
+		Update("stripe_price_id", "price_purchase_recall_current").Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", targetPlan.Id).
+		Update("stripe_price_id", "price_subscription").Error)
+	currentPlan.StripePriceId = "price_purchase_recall_current"
+	targetPlan.StripePriceId = "price_subscription"
+	_, binding, _ := seedStripeUpgradeContract(t, fixture.recipient.UserId, currentPlan)
+
+	originalUpgrade := stripeSubscriptionUpgradeExecutor
+	t.Cleanup(func() { stripeSubscriptionUpgradeExecutor = originalUpgrade })
+	stripeSubscriptionUpgradeExecutor = func(_ context.Context, input StripeSubscriptionUpgradeInput) (*StripeSubscriptionUpgradeResult, error) {
+		require.NotNil(t, input.VerifiedQuote)
+		require.Equal(t, int64(2000), input.VerifiedQuote.PaymentAmountMinor)
+		require.Equal(t, fixture.campaign.Id, input.VerifiedQuote.RecallCampaignID)
+		require.Equal(t, fixture.recipient.Id, input.VerifiedQuote.RecallRecipientID)
+		_, err := ensureStripeSubscriptionUpgradeSnapshotOrder(input, &targetPlan)
+		require.NoError(t, err)
+		return &StripeSubscriptionUpgradeResult{
+			Status:            model.SubscriptionChangeIntentStatusAwaitingPayment,
+			ProviderInvoiceID: "in_purchase_recall_upgrade",
+			HostedInvoiceURL:  "https://invoice.stripe.test/purchase-recall-upgrade",
+			Snapshot: model.ProviderSubscriptionSnapshot{
+				ProviderSubscriptionId:     input.ProviderSubscriptionID,
+				ProviderSubscriptionItemId: input.ProviderSubscriptionItemID,
+				ProviderCustomerId:         binding.ProviderCustomerId,
+				ProviderPriceId:            currentPlan.StripePriceId,
+				ProviderLatestInvoiceId:    "in_purchase_recall_upgrade",
+				ProviderStatus:             "active",
+				CurrentPeriodStart:         binding.CurrentPeriodStart,
+				CurrentPeriodEnd:           binding.CurrentPeriodEnd,
+			},
+		}, nil
+	}
+	quoteResult, err := QuoteSubscriptionPurchase(PurchaseSubscriptionCommand{
+		UserID:        fixture.recipient.UserId,
+		PlanID:        targetPlan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RecallClaim:   fixture.claim,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(2000), quoteResult.PaymentAmountMinor)
+
+	result, err := PurchaseSubscription(PurchaseSubscriptionCommand{
+		UserID:        fixture.recipient.UserId,
+		PlanID:        targetPlan.Id,
+		PaymentChoice: SubscriptionPaymentChoiceStripeRecurring,
+		Months:        1,
+		RequestID:     "stripe-purchase-recall-upgrade",
+		RecallClaim:   fixture.claim,
+		VerifiedQuote: purchaseQuoteFromResult(quoteResult),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ChangePlanStatusPaymentActionRequired, result.Status)
+	require.Equal(t, "https://invoice.stripe.test/purchase-recall-upgrade", result.HostedInvoiceURL)
+	require.NotNil(t, result.Order)
+	require.Equal(t, int64(2000), result.Order.PaymentAmountMinor)
+	require.Equal(t, "USD", result.Order.PaymentCurrency)
+	require.Equal(t, SubscriptionDiscountKindRecall, result.Order.DiscountKind)
+	require.Equal(t, fixture.campaign.Id, result.Order.RecallCampaignId)
+	require.Equal(t, fixture.recipient.Id, result.Order.RecallRecipientId)
+}
+
 func TestPurchaseSubscriptionBalanceThreeMonthsChargesFullPriceOnce(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	insertPurchaseServiceUser(t, 7303, 1000)

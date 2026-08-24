@@ -872,6 +872,11 @@ func reconcilePaidInvoiceUpgradeTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	if err != nil {
 		return true, err
 	}
+	if applied {
+		if err := recordRecurringInvoiceRecallConversionTx(tx, &upgradeOrder, facts, facts.InvoiceID); err != nil {
+			return true, err
+		}
+	}
 	if err := tx.Model(&binding).Where("id = ?", binding.Id).Updates(map[string]interface{}{
 		"plan_id":                       plan.Id,
 		"initial_order_id":              recurringInvoiceInitialOrderID(binding.InitialOrderId, planSnapshot),
@@ -1086,6 +1091,9 @@ func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model
 	if planSnapshot.Found {
 		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.Snapshot.Currency))
 	}
+	if planSnapshot.Found && strings.TrimSpace(planSnapshot.OrderPaymentCurrency) != "" {
+		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.OrderPaymentCurrency))
+	}
 	if expectedCurrency != facts.Currency {
 		return errors.New("Stripe invoice currency mismatch")
 	}
@@ -1093,9 +1101,16 @@ func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model
 	if planSnapshot.Found {
 		expectedPrice = planSnapshot.Snapshot.PriceAmount
 	}
-	expectedMinor, err := stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
-	if err != nil {
-		return err
+	expectedMinor := int64(0)
+	if planSnapshot.Found {
+		expectedMinor = planSnapshot.OrderPaymentAmountMinor
+	}
+	if expectedMinor <= 0 {
+		var err error
+		expectedMinor, err = stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
+		if err != nil {
+			return err
+		}
 	}
 	if expectedMinor != facts.AmountPaid {
 		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.AmountPaid)

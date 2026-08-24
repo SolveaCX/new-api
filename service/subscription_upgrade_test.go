@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v86"
+	"gorm.io/gorm"
 )
 
 func requireStripeUpgradeLifecycleEventCount(t *testing.T, tradeNo string, eventType string, want int64) {
@@ -54,6 +55,21 @@ func stripeUpgradeNoDiscountQuote(t *testing.T, plan model.SubscriptionPlan) *Su
 	t.Helper()
 	quote, err := validateSubscriptionPurchaseQuoteForChoice(subscriptionPurchaseQuoteFromUnitPrice(plan.Currency, plan.PriceAmount, 1), SubscriptionPaymentChoiceStripeRecurring, 1)
 	require.NoError(t, err)
+	return &quote
+}
+
+func stripeUpgradeRecallDiscountQuote(t *testing.T, plan model.SubscriptionPlan, campaignID int64, recipientID int64, promotionCodeID string, discountMinor int64) *SubscriptionPurchaseQuote {
+	t.Helper()
+	quote := *stripeUpgradeNoDiscountQuote(t, plan)
+	quote.DiscountKind = SubscriptionDiscountKindRecall
+	quote.DiscountAmountMinor = discountMinor
+	quote.Total = float64(quote.PaymentAmountMinor-discountMinor) / 100
+	quote.PaymentAmountMinor -= discountMinor
+	quote.OtherDiscountKind = SubscriptionDiscountKindRecall
+	quote.OtherDiscountAmountMinor = discountMinor
+	quote.RecallCampaignID = campaignID
+	quote.RecallRecipientID = recipientID
+	quote.RecallPromotionCodeID = promotionCodeID
 	return &quote
 }
 
@@ -1069,6 +1085,211 @@ func TestStripeUpgradePaidInvoiceLifecycleClosesOrderRotatesQuotaAndReplaysOnce(
 	var entitlements int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("grant_key = ?", "stripe:in_upgrade_paid_lifecycle").Count(&entitlements).Error)
 	require.Equal(t, int64(1), entitlements)
+}
+
+func TestStripeUpgradePaidInvoiceAcceptsDiscountedRecallSnapshotOrderAndRecordsConversionOnce(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.RecallCampaign{}, &model.RecallRecipient{}, &model.RecallEvent{}))
+	insertContractServiceUser(t, 7144, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7258, 1, 10, 1000, "price_current_paid_recall")
+	targetPlan := insertStripeUpgradePlan(t, 7259, 2, 25, 2500, "price_target_paid_recall")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7144, currentPlan)
+	campaign := model.RecallCampaign{Name: "upgrade recall", Status: model.RecallCampaignRunning}
+	require.NoError(t, model.DB.Create(&campaign).Error)
+	promotionCodeID := "promo_upgrade_paid_recall"
+	recipient := model.RecallRecipient{
+		CampaignId: campaign.Id, UserId: 7144, EmailSnapshot: "upgrade-recall@example.com",
+		State: model.RecallRecipientContacting, StripePromotionCodeId: &promotionCodeID,
+	}
+	require.NoError(t, model.DB.Create(&recipient).Error)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7144,
+		RequestId:              "stripe-upgrade-paid-recall",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusAwaitingPayment,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderInvoiceId:      "in_upgrade_paid_recall",
+		ProviderIdempotencyKey: "subscription-upgrade:1:1:7259",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
+	order, err := ensureStripeSubscriptionUpgradeSnapshotOrder(StripeSubscriptionUpgradeInput{
+		UserID:         7144,
+		ContractID:     contract.Id,
+		ChangeIntentID: intent.Id,
+		TargetPlanID:   targetPlan.Id,
+		VerifiedQuote:  stripeUpgradeRecallDiscountQuote(t, targetPlan, campaign.Id, recipient.Id, promotionCodeID, 700),
+	}, &targetPlan)
+	require.NoError(t, err)
+	require.Equal(t, int64(1800), order.PaymentAmountMinor)
+
+	invoice := stripeInvoiceFixture("in_upgrade_paid_recall", "sub_upgrade")
+	invoice.AmountPaid = 1800
+	invoice.AmountDue = 1800
+	invoice.Total = 1800
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid_recall")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
+	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
+		"user_id":          "7144",
+		"plan_id":          fmt.Sprintf("%d", targetPlan.Id),
+		"contract_id":      fmt.Sprintf("%d", contract.Id),
+		"change_intent_id": fmt.Sprintf("%d", intent.Id),
+	})
+	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Items.Data[0].ID = "si_current_item"
+	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid_recall"}
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	reconciled, err := ReconcilePaidInvoice(context.Background(), "in_upgrade_paid_recall")
+	require.NoError(t, err)
+	require.True(t, reconciled.Applied)
+	replay, err := ReconcilePaidInvoice(context.Background(), "in_upgrade_paid_recall")
+	require.NoError(t, err)
+	require.False(t, replay.Applied)
+
+	var eventCount int64
+	require.NoError(t, model.DB.Model(&model.RecallEvent{}).Where("recipient_id = ? AND event_type = ?", recipient.Id, "conversion").Count(&eventCount).Error)
+	require.Equal(t, int64(1), eventCount)
+	var converted model.RecallRecipient
+	require.NoError(t, model.DB.First(&converted, "id = ?", recipient.Id).Error)
+	require.Equal(t, model.RecallRecipientConverted, converted.State)
+}
+
+func TestStripeUpgradePaidInvoiceRejectsAmountDifferentFromDiscountedSnapshotOrder(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7145, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7260, 1, 10, 1000, "price_current_paid_recall_mismatch")
+	targetPlan := insertStripeUpgradePlan(t, 7261, 2, 25, 2500, "price_target_paid_recall_mismatch")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7145, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7145,
+		RequestId:              "stripe-upgrade-paid-recall-mismatch",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusAwaitingPayment,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderInvoiceId:      "in_upgrade_paid_recall_mismatch",
+		ProviderIdempotencyKey: "subscription-upgrade:1:1:7261",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
+	_, err := ensureStripeSubscriptionUpgradeSnapshotOrder(StripeSubscriptionUpgradeInput{
+		UserID:         7145,
+		ContractID:     contract.Id,
+		ChangeIntentID: intent.Id,
+		TargetPlanID:   targetPlan.Id,
+		VerifiedQuote:  stripeUpgradeRecallDiscountQuote(t, targetPlan, 9105, 9205, "promo_upgrade_paid_recall_mismatch", 700),
+	}, &targetPlan)
+	require.NoError(t, err)
+
+	invoice := stripeInvoiceFixture("in_upgrade_paid_recall_mismatch", "sub_upgrade")
+	invoice.AmountPaid = 2500
+	invoice.AmountDue = 2500
+	invoice.Total = 2500
+	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid_recall_mismatch")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
+	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
+		"user_id":          "7145",
+		"plan_id":          fmt.Sprintf("%d", targetPlan.Id),
+		"contract_id":      fmt.Sprintf("%d", contract.Id),
+		"change_intent_id": fmt.Sprintf("%d", intent.Id),
+	})
+	invoice.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
+	subscription.Items.Data[0].ID = "si_current_item"
+	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid_recall_mismatch"}
+	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	_, err = ReconcilePaidInvoice(context.Background(), "in_upgrade_paid_recall_mismatch")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Stripe invoice amount mismatch: expected 1800 got 2500")
+}
+
+func TestStripeUpgradeDiscountedSnapshotDoesNotDiscountLaterRenewalInvoice(t *testing.T) {
+	setupSubscriptionContractServiceTestDB(t)
+	insertContractServiceUser(t, 7146, 0)
+	currentPlan := insertStripeUpgradePlan(t, 7262, 1, 10, 1000, "price_current_renewal_after_recall")
+	targetPlan := insertStripeUpgradePlan(t, 7263, 2, 25, 2500, "price_target_renewal_after_recall")
+	contract, binding, _ := seedStripeUpgradeContract(t, 7146, currentPlan)
+	intent := &model.SubscriptionChangeIntent{
+		ContractId:             contract.Id,
+		UserId:                 7146,
+		RequestId:              "stripe-upgrade-renewal-after-recall",
+		ChangeVersion:          1,
+		Kind:                   model.SubscriptionChangeIntentKindUpgrade,
+		PaymentMode:            model.SubscriptionPaymentModeStripeRecurring,
+		Status:                 model.SubscriptionChangeIntentStatusApplied,
+		FromPlanId:             currentPlan.Id,
+		ToPlanId:               targetPlan.Id,
+		ProviderBindingId:      binding.Id,
+		ProviderInvoiceId:      "in_upgrade_discounted_first",
+		ProviderIdempotencyKey: "subscription-upgrade:1:1:7263",
+		EffectiveAt:            common.GetTimestamp(),
+	}
+	require.NoError(t, model.DB.Create(intent).Error)
+	order, err := ensureStripeSubscriptionUpgradeSnapshotOrder(StripeSubscriptionUpgradeInput{
+		UserID:         7146,
+		ContractID:     contract.Id,
+		ChangeIntentID: intent.Id,
+		TargetPlanID:   targetPlan.Id,
+		VerifiedQuote:  stripeUpgradeRecallDiscountQuote(t, targetPlan, 9106, 9206, "promo_upgrade_renewal_after_recall", 700),
+	}, &targetPlan)
+	require.NoError(t, err)
+	require.Equal(t, int64(1800), order.PaymentAmountMinor)
+	require.NoError(t, model.DB.Model(contract).Updates(map[string]interface{}{
+		"current_plan_id":         targetPlan.Id,
+		"latest_change_intent_id": intent.Id,
+	}).Error)
+	require.NoError(t, model.DB.Model(binding).Updates(map[string]interface{}{
+		"plan_id":                    targetPlan.Id,
+		"initial_order_id":           order.Id,
+		"provider_price_id":          targetPlan.StripePriceId,
+		"provider_latest_invoice_id": "in_upgrade_discounted_first",
+	}).Error)
+
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		var reloadedBinding model.SubscriptionProviderBinding
+		require.NoError(t, tx.First(&reloadedBinding, "id = ?", binding.Id).Error)
+		var reloadedContract model.UserSubscriptionContract
+		require.NoError(t, tx.First(&reloadedContract, "id = ?", contract.Id).Error)
+		var reloadedPlan model.SubscriptionPlan
+		require.NoError(t, tx.First(&reloadedPlan, "id = ?", targetPlan.Id).Error)
+		var user model.User
+		require.NoError(t, tx.First(&user, "id = ?", 7146).Error)
+		planSnapshot, err := recurringPlanSnapshotFromBindingTx(tx, &reloadedBinding)
+		require.NoError(t, err)
+		require.True(t, planSnapshot.Found)
+		require.Equal(t, int64(1800), planSnapshot.OrderPaymentAmountMinor)
+		return validateRenewalInvoiceFactsTx(tx, stripeInvoiceCommonFacts{
+			SubscriptionID: "sub_upgrade",
+			CustomerID:     "cus_upgrade",
+			PriceID:        "price_target_renewal_after_recall",
+			Currency:       "USD",
+			Amount:         2500,
+			Livemode:       false,
+			PeriodStart:    4000,
+			PeriodEnd:      5000,
+		}, &reloadedBinding, &reloadedContract, &reloadedPlan, &user, planSnapshot)
+	})
+
+	require.NoError(t, err)
 }
 
 func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit(t *testing.T) {
