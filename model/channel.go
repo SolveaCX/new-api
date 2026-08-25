@@ -882,6 +882,9 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		if channelCache == nil {
 			return false
 		}
+		if channelCache.Status == common.ChannelStatusBanned {
+			return false
+		}
 		if channelCache.ChannelInfo.IsMultiKey {
 			// Use per-channel lock to prevent concurrent map read/write with GetNextEnabledKey
 			beforeStatus := channelCache.Status
@@ -921,7 +924,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			return false
 		}
 		if channel.Status == common.ChannelStatusBanned {
-			return nil
+			return false
 		}
 
 		if channel.ChannelInfo.IsMultiKey {
