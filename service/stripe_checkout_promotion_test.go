@@ -379,6 +379,44 @@ func TestStripeCheckoutPromotionListClientFiltersAndConsumesAllPages(t *testing.
 	require.True(t, strings.Contains(queries[1], "starting_after=promo_first"))
 }
 
+func TestStripeCheckoutPromotionListClientSupportsDirectCouponResponse(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalKey := stripe.Key
+	originalSecret := setting.StripeApiSecret
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/v1/promotion_codes", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"promo_direct","object":"promotion_code","active":true,"code":"FLATKEYTEST5","coupon":{"id":"coupon_direct","object":"coupon","amount_off":500,"currency":"usd","duration":"once","valid":true},"restrictions":{"first_time_transaction":false,"minimum_amount":null,"minimum_amount_currency":null}}],"has_more":false,"url":"/v1/promotion_codes"}`))
+	}))
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+		URL:               stripe.String(server.URL),
+		HTTPClient:        server.Client(),
+		MaxNetworkRetries: stripe.Int64(0),
+		LeveledLogger:     &stripe.LeveledLogger{Level: stripe.LevelNull},
+	}))
+	stripe.Key = "global-sentinel"
+	setting.StripeApiSecret = "sk_test_promotion_resolver"
+	t.Cleanup(func() {
+		server.Close()
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		stripe.Key = originalKey
+		setting.StripeApiSecret = originalSecret
+	})
+
+	got, err := (StripeCheckoutPromotionResolver{}).ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
+		Code: " FLATKEYTEST5 ", CustomerID: "cus_7", ProductID: "prod_pro",
+		Currency: stripe.CurrencyUSD, Subtotal: 3000,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutResolvedPromotion{
+		PromotionCodeID: "promo_direct",
+		CouponID:        "coupon_direct",
+		MaskedCode:      "FLATKEYTEST5",
+	}, got)
+}
+
 func stripeCheckoutTestGlobalPromotion(id, code string, percentOff float64) *stripe.PromotionCode {
 	return &stripe.PromotionCode{
 		Active: true,

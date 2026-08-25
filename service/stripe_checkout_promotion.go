@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stripe/stripe-go/v86"
-	"github.com/stripe/stripe-go/v86/promotioncode"
 )
 
 var (
@@ -91,22 +94,79 @@ func (r StripeCheckoutPromotionResolver) ResolveManualPromotion(ctx context.Cont
 type stripeCheckoutPromotionListClient struct{}
 
 func (stripeCheckoutPromotionListClient) ListPromotionCodes(ctx context.Context, code string) ([]*stripe.PromotionCode, error) {
-	params := &stripe.PromotionCodeListParams{
-		Active: stripe.Bool(true),
-		Code:   stripe.String(strings.TrimSpace(code)),
-	}
-	params.AddExpand("data.promotion.coupon")
-	params.Context = ctx
-	client := promotioncode.Client{B: stripe.GetBackend(stripe.APIBackend), Key: setting.StripeApiSecret}
-	iter := client.List(params)
+	query := url.Values{}
+	query.Set("active", "true")
+	query.Set("code", strings.TrimSpace(code))
+	query.Add("expand[]", "data.promotion.coupon")
+
 	promotions := make([]*stripe.PromotionCode, 0)
-	for iter.Next() {
-		promotions = append(promotions, iter.PromotionCode())
+	for {
+		params := &stripe.RawParams{}
+		params.Context = ctx
+		backend, err := stripe.GetRawRequestBackend(stripe.APIBackend)
+		if err != nil {
+			return nil, err
+		}
+		response, err := backend.RawRequest(http.MethodGet, "/v1/promotion_codes?"+query.Encode(), setting.StripeApiSecret, "", params)
+		if err != nil {
+			return nil, err
+		}
+		var page stripeCheckoutPromotionListResponse
+		if err := json.Unmarshal(response.RawJSON, &page); err != nil {
+			return nil, err
+		}
+		for _, item := range page.Data {
+			promotions = append(promotions, item.PromotionCode())
+		}
+		if !page.HasMore {
+			return promotions, nil
+		}
+		if len(page.Data) == 0 || strings.TrimSpace(page.Data[len(page.Data)-1].ID) == "" {
+			return nil, fmt.Errorf("Stripe promotion code list has_more response is missing a last id")
+		}
+		query.Set("starting_after", strings.TrimSpace(page.Data[len(page.Data)-1].ID))
 	}
-	if err := iter.Err(); err != nil {
-		return nil, err
+}
+
+type stripeCheckoutPromotionListResponse struct {
+	Data    []stripeCheckoutPromotionListItem `json:"data"`
+	HasMore bool                              `json:"has_more"`
+}
+
+type stripeCheckoutPromotionListItem struct {
+	ID             string                            `json:"id"`
+	Active         bool                              `json:"active"`
+	Code           string                            `json:"code"`
+	Created        int64                             `json:"created"`
+	Customer       *stripe.Customer                  `json:"customer"`
+	ExpiresAt      int64                             `json:"expires_at"`
+	MaxRedemptions int64                             `json:"max_redemptions"`
+	Promotion      *stripe.PromotionCodePromotion    `json:"promotion"`
+	Coupon         *stripe.Coupon                    `json:"coupon"`
+	Restrictions   *stripe.PromotionCodeRestrictions `json:"restrictions"`
+	TimesRedeemed  int64                             `json:"times_redeemed"`
+}
+
+func (item stripeCheckoutPromotionListItem) PromotionCode() *stripe.PromotionCode {
+	promotion := item.Promotion
+	if promotion == nil && item.Coupon != nil {
+		promotion = &stripe.PromotionCodePromotion{
+			Type:   stripe.PromotionCodePromotionTypeCoupon,
+			Coupon: item.Coupon,
+		}
 	}
-	return promotions, nil
+	return &stripe.PromotionCode{
+		Active:         item.Active,
+		Code:           item.Code,
+		Created:        item.Created,
+		Customer:       item.Customer,
+		ExpiresAt:      item.ExpiresAt,
+		ID:             item.ID,
+		MaxRedemptions: item.MaxRedemptions,
+		Promotion:      promotion,
+		Restrictions:   item.Restrictions,
+		TimesRedeemed:  item.TimesRedeemed,
+	}
 }
 
 func stripeCheckoutPromotionEligible(promotion *stripe.PromotionCode, code, customerID string, query StripeCheckoutPromotionQuery, now int64) bool {
