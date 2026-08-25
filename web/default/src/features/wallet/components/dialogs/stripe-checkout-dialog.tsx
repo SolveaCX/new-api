@@ -28,7 +28,10 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { updateStripeCheckoutDiscount } from '../../api'
+import {
+  closeStripeCheckout,
+  updateStripeCheckoutDiscount,
+} from '../../api'
 import {
   mountStripeCheckoutElements,
   type MountedStripeCheckoutElements,

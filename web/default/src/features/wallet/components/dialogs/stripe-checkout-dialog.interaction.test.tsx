@@ -22,7 +22,6 @@ import type { StripeCheckoutSession } from '@stripe/stripe-js'
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import type { StripeCheckoutSession } from '@stripe/stripe-js'
 
 type MountedRecord = {
   clientSecret: string
@@ -44,6 +43,8 @@ let latestPromotionControlProps:
 let latestSessionChange:
   | ((session: StripeCheckoutSession) => void)
   | undefined
+let latestDialogCloseClick: (() => void) | undefined
+let latestDialogOpenChange: ((open: boolean) => void) | undefined
 let discountResponse:
   | {
       success: boolean
