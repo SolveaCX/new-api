@@ -92,7 +92,7 @@ export function ModelsDirectoryTable(props: Props) {
             <th className="w-[25%] px-3 py-3.5 font-bold 2xl:px-5">{props.copy.colModel}</th>
             <th className="w-[11%] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colOfficial}</th>
             {!props.hideOurPrice ? (
-              <th className="w-[11%] px-2 py-3.5 text-right font-bold text-[#4C1D95] dark:text-violet-300 2xl:px-3">
+              <th className="w-[11%] px-2 py-3.5 text-right font-bold 2xl:px-3">
                 {props.copy.colOurPrice ?? props.copy.colFlatkey}
               </th>
             ) : null}
@@ -230,12 +230,12 @@ function DirectoryRow(props: {
         <PriceCell price={row.official} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} struck />
       </td>
       {!props.hideOurPrice ? (
-        <td className="px-2 py-3 text-right font-mono text-[13px] font-bold text-emerald-600 dark:text-emerald-400 2xl:px-3">
+        <td className="px-2 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 2xl:px-3">
           <PriceCell price={row.discounted} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} />
         </td>
       ) : null}
-      {props.showInput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-emerald-600 dark:text-emerald-400">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
-      {props.showOutput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-emerald-600 dark:text-emerald-400">{row.output ? <PriceCell price={row.output} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
+      {props.showInput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
+      {props.showOutput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.output ? <PriceCell price={row.output} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
       {props.showDiscount ? (
         <td className="px-2 py-3 text-right font-mono text-[12px] 2xl:px-3 2xl:text-[13px]">
           {discount == null ? (
