@@ -867,11 +867,14 @@ describe("Video model prompt library", () => {
 
     expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
     expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
+    expect(workbenchHtml).toContain('data-model-output-video="true"');
+    expect(workbenchHtml).toContain("model-media/sample/seedance-2-0-w1.mp4");
     expect(workbenchHtml).toContain("product launch clip");
     expect(workbenchHtml).toContain("campaign-hero.png");
 
     expect((showcaseHtml.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
     expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect((showcaseHtml.match(/<video\b/g) ?? []).length).toBe(6);
     expect(showcaseHtml).toContain("ecommerce and consumer-brand teams");
     expect(showcaseHtml).toContain("restaurant, beverage, and packaged-food teams");
     expect(showcaseHtml).toContain("hotel, resort, and real-estate marketing teams");
@@ -884,7 +887,7 @@ describe("Video model prompt library", () => {
     expect(showcaseHtml).not.toContain("Each clip is a real generation");
   });
 
-  test("uses a distinct six-poster set for another video model", () => {
+  test("uses a distinct six-video set for another video model", () => {
     const seedanceHtml = renderToStaticMarkup(
       <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
     );
@@ -895,6 +898,7 @@ describe("Video model prompt library", () => {
     const minimaxShowcase = sectionHtml(minimaxHtml, "showcase", "why-flatkey");
 
     expect((minimaxShowcase.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect((minimaxShowcase.match(/<video\b/g) ?? []).length).toBe(6);
     expect(seedanceShowcase.match(/\/assets\/[^"']+\.png/g)).not.toEqual(
       minimaxShowcase.match(/\/assets\/[^"']+\.png/g)
     );
