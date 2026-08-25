@@ -798,7 +798,9 @@ func CleanupChannelPollingLocks() {
 }
 
 func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) {
-	if channel.Status == common.ChannelStatusBanned && status == common.ChannelStatusAutoDisabled {
+	// Banned is an administrator-controlled state and must never be written by
+	// automatic status handling, including multi-key bookkeeping.
+	if status == common.ChannelStatusBanned || channel.Status == common.ChannelStatusBanned {
 		return
 	}
 
@@ -867,6 +869,11 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
+	// Banned is reserved for explicit administrator updates through Channel.Update.
+	// This helper is used by automatic status handling and must not create that state.
+	if status == common.ChannelStatusBanned {
+		return false
+	}
 	if common.MemoryCacheEnabled {
 		channelStatusLock.Lock()
 		defer channelStatusLock.Unlock()
@@ -913,7 +920,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		if channel.Status == status {
 			return false
 		}
-		if channel.Status == common.ChannelStatusBanned && status == common.ChannelStatusAutoDisabled {
+		if channel.Status == common.ChannelStatusBanned {
 			return nil
 		}
 
