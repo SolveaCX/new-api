@@ -292,6 +292,7 @@ func LoadOptionsFromDatabase() {
 	if err := applyOptionMapValues(optionValues); err != nil {
 		common.SysLog("failed to update option map: " + err.Error())
 	}
+	applyStripePromotionCodeEnvOverride()
 	setting.ApplyPaddleEnvOverrides()
 	syncPaddleOptionMap()
 	InvalidatePricingCache()
@@ -356,6 +357,9 @@ func UpdateOption(key string, value string) error {
 	if isPaddleOptionKey(key) {
 		setting.ApplyPaddleEnvOverrides()
 		syncPaddleOptionMap()
+	}
+	if key == "StripePromotionCodeEnabled" {
+		applyStripePromotionCodeEnvOverride()
 	}
 
 	// Notify peer replicas via pubsub. Pubsub failures are logged but do not
@@ -646,6 +650,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err := applyOptionMapValues(normalizedValues); err != nil {
 		return err
 	}
+	applyStripePromotionCodeEnvOverride()
 	if hasPaddleOptionKey(normalizedValues) {
 		setting.ApplyPaddleEnvOverrides()
 		syncPaddleOptionMap()
@@ -654,6 +659,13 @@ func UpdateOptionsBulk(values map[string]string) error {
 		common.SysError("pubsub: failed to publish options change: " + pubErr.Error())
 	}
 	return nil
+}
+
+func applyStripePromotionCodeEnvOverride() {
+	setting.ApplyStripePromotionCodeEnvOverride()
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["StripePromotionCodeEnabled"] = strconv.FormatBool(setting.StripePromotionCodeEnabled)
+	common.OptionMapRWMutex.Unlock()
 }
 
 func validateAndNormalizeOptionValue(key string, value string) (string, error) {

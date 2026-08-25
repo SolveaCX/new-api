@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/hmac"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,6 +24,21 @@ const (
 	StripeCheckoutPurchaseRecurringSubscription StripeCheckoutPurchaseKind = "recurring_subscription"
 	StripeCheckoutPurchaseOneTimeSubscription   StripeCheckoutPurchaseKind = "one_time_subscription"
 )
+
+const stripeCheckoutRevisionRequestIDMaxLength = 64
+
+// StripeCheckoutInitialRequestID returns the durable idempotency key used for
+// the first revision of a Checkout Session. Keep the historical readable form
+// when it fits the database contract, but hash oversized trade numbers so
+// subscription orders cannot fail before Checkout is created.
+func StripeCheckoutInitialRequestID(kind StripeCheckoutPurchaseKind, tradeNo string) string {
+	raw := "initial:" + string(kind) + ":" + strings.TrimSpace(tradeNo)
+	if len(raw) <= stripeCheckoutRevisionRequestIDMaxLength {
+		return raw
+	}
+	digest := hex.EncodeToString(common.Sha256Raw([]byte(raw)))
+	return "initial:" + digest[:stripeCheckoutRevisionRequestIDMaxLength-len("initial:")]
+}
 
 type StripeCheckoutContextClaims struct {
 	UserID       int                        `json:"uid"`

@@ -1,6 +1,7 @@
 package setting
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,19 @@ var StripeTopUpPriceIds = ""
 var StripeUnitPrice = 8.0
 var StripeMinTopUp = 1
 var StripePromotionCodeEnabled = false
+
+// ApplyStripePromotionCodeEnvOverride applies the optional environment-level
+// override used by staging deployments. An unset or unrecognized value keeps
+// the database-backed setting unchanged.
+func ApplyStripePromotionCodeEnvOverride() {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("STRIPE_PROMOTION_CODE_ENABLED")))
+	switch value {
+	case "true", "1", "yes", "on":
+		StripePromotionCodeEnabled = true
+	case "false", "0", "no", "off":
+		StripePromotionCodeEnabled = false
+	}
+}
 
 // StripeTopUpPriceIDForAmount resolves the multi-currency Stripe Price ID for
 // a wallet top-up preset amount. The JSON map is the current source of truth;

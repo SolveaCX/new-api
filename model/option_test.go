@@ -21,3 +21,18 @@ func TestStripePromotionCodeOption(t *testing.T) {
 	defer common.OptionMapRWMutex.RUnlock()
 	require.Equal(t, "true", common.OptionMap["StripePromotionCodeEnabled"])
 }
+
+func TestStripePromotionCodeEnvOverrideWinsOverOptionUpdates(t *testing.T) {
+	setupOptionGroupRenameTestDB(t)
+	original := setting.StripePromotionCodeEnabled
+	t.Cleanup(func() { setting.StripePromotionCodeEnabled = original })
+	t.Setenv("STRIPE_PROMOTION_CODE_ENABLED", "on")
+
+	InitOptionMap()
+	require.NoError(t, UpdateOption("StripePromotionCodeEnabled", "false"))
+	require.True(t, setting.StripePromotionCodeEnabled)
+
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	require.Equal(t, "true", common.OptionMap["StripePromotionCodeEnabled"])
+}

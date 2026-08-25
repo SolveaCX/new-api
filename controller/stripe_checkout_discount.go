@@ -719,13 +719,13 @@ func createInitialStripeCheckoutRevision(
 	if err != nil {
 		return nil, nil, err
 	}
-	digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
+	digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
 	if err != nil {
 		return nil, nil, err
 	}
 	prepared, replay, err := currentStripeCheckoutDiscountRuntime.PrepareRevision(model.StripeCheckoutRevisionPrepare{
 		OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: purchase.UserID, ExpectedRevision: 0,
-		RequestID: "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo, SelectionDigest: digest,
+		RequestID: service.StripeCheckoutInitialRequestID(purchase.Kind, purchase.TradeNo), SelectionDigest: digest,
 		DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
 		PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
 		DiscountPayload: purchase.DiscountPayload, Currency: purchase.Currency, SubtotalMinor: purchase.SubtotalMinor, SummaryPayload: stripeCheckoutTopUpSummaryPayload(summary),

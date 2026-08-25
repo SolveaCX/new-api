@@ -822,7 +822,21 @@ func ImpersonateUser(c *gin.Context) {
 		return
 	}
 	model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage, "administrator entered user view", adminInfo)
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": common.TranslateMessage(c, i18n.MsgOperationSuccess), "data": gin.H{"id": user.Id, "username": user.Username}})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": common.TranslateMessage(c, i18n.MsgOperationSuccess),
+		"data": gin.H{
+			"id":                    user.Id,
+			"username":              user.Username,
+			"display_name":          user.DisplayName,
+			"role":                  user.Role,
+			"status":                user.Status,
+			"group":                 user.Group,
+			"is_enterprise":         user.IsEnterprise,
+			"impersonating":         true,
+			"impersonator_username": adminInfo["admin_username"],
+		},
+	})
 }
 
 // ExitImpersonation restores the administrator session saved by
@@ -835,15 +849,20 @@ func ExitImpersonation(c *gin.Context) {
 		return
 	}
 	impersonatedUserID, _ := session.Get("id").(int)
+	adminID := session.Get("impersonator_id")
+	adminUsername := session.Get("impersonator_username")
+	adminRole := session.Get("impersonator_role")
+	adminStatus := session.Get("impersonator_status")
+	adminGroup := session.Get("impersonator_group")
 	adminInfo := map[string]interface{}{
-		"admin_id":       session.Get("impersonator_id"),
-		"admin_username": session.Get("impersonator_username"),
+		"admin_id":       adminID,
+		"admin_username": adminUsername,
 	}
-	session.Set("id", session.Get("impersonator_id"))
-	session.Set("username", session.Get("impersonator_username"))
-	session.Set("role", session.Get("impersonator_role"))
-	session.Set("status", session.Get("impersonator_status"))
-	session.Set("group", session.Get("impersonator_group"))
+	session.Set("id", adminID)
+	session.Set("username", adminUsername)
+	session.Set("role", adminRole)
+	session.Set("status", adminStatus)
+	session.Set("group", adminGroup)
 	for _, key := range []string{"impersonating", "impersonator_id", "impersonator_username", "impersonator_role", "impersonator_status", "impersonator_group"} {
 		session.Delete(key)
 	}
@@ -852,7 +871,17 @@ func ExitImpersonation(c *gin.Context) {
 		return
 	}
 	model.RecordLogWithAdminInfo(impersonatedUserID, model.LogTypeManage, "administrator exited user view", adminInfo)
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": common.TranslateMessage(c, i18n.MsgOperationSuccess)})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": common.TranslateMessage(c, i18n.MsgOperationSuccess),
+		"data": gin.H{
+			"id":       adminID,
+			"username": adminUsername,
+			"role":     adminRole,
+			"status":   adminStatus,
+			"group":    adminGroup,
+		},
+	})
 }
 
 func GetAnalyticsSelf(c *gin.Context) {

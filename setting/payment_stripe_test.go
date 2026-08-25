@@ -27,3 +27,19 @@ func TestStripeTopUpPriceIDForAmountUsesJsonWrapperParsedMap(t *testing.T) {
 	require.Equal(t, "price_20", StripeTopUpPriceIDForAmount(20))
 	require.Empty(t, StripeTopUpPriceIDForAmount(200))
 }
+
+func TestApplyStripePromotionCodeEnvOverride(t *testing.T) {
+	original := StripePromotionCodeEnabled
+	t.Cleanup(func() {
+		StripePromotionCodeEnabled = original
+	})
+
+	StripePromotionCodeEnabled = false
+	t.Setenv("STRIPE_PROMOTION_CODE_ENABLED", "true")
+	ApplyStripePromotionCodeEnvOverride()
+	require.True(t, StripePromotionCodeEnabled)
+
+	t.Setenv("STRIPE_PROMOTION_CODE_ENABLED", "false")
+	ApplyStripePromotionCodeEnvOverride()
+	require.False(t, StripePromotionCodeEnabled)
+}

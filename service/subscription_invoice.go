@@ -300,7 +300,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 	stripe.Key = setting.StripeApiSecret
 	selection := stripeSubscriptionCheckoutDiscountSelection(input)
 	initialMode := setting.StripePromotionCodeEnabled && input.Presentation.UsesClientSecret() && input.CheckoutRevision == 0
-	initialRequestID := "initial:recurring_subscription:" + strings.TrimSpace(input.TradeNo)
+	initialRequestID := StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, input.TradeNo)
 	var initialRevision *model.StripeCheckoutRevision
 	if initialMode {
 		existing, lookupErr := model.GetStripeCheckoutRevisionByRequestID(model.StripeCheckoutOrderSubscription, input.TradeNo, initialRequestID)
@@ -345,7 +345,7 @@ func createStripeSubscriptionCheckout(ctx context.Context, input StripeSubscript
 		return nil, err
 	}
 	if initialMode && initialRevision == nil {
-		digest, digestErr := StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+strings.TrimSpace(input.TradeNo), 1, selection)
+		digest, digestErr := StripeCheckoutSelectionDigest("stripe-checkout-initial:subscription:"+strings.TrimSpace(input.TradeNo), 1, selection)
 		if digestErr != nil {
 			return nil, digestErr
 		}
