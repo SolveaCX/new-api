@@ -163,7 +163,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
       id: ["Chat", "Penalaran", "Penggunaan alat"],
     },
     blurb: {
-      en: "The dependable workhorse of the GPT line — strong general reasoning, reliable structured output and first-class tool calling, priced so you can put it on the hot path of a production app.",
+      en: "Advanced reasoning model for coding, analysis, and complex problem solving, delivering strong instruction following, reliable tool use, and efficient long-context performance.",
       zh: "GPT 系列里最稳的主力：通用推理扎实、结构化输出可靠、工具调用一流，价格足以让它直接跑在生产应用的核心链路上。",
       es: "El caballo de batalla fiable de la línea GPT: razonamiento general sólido, salida estructurada confiable y llamadas a herramientas de primer nivel, a un precio que permite ponerlo en la ruta crítica de una app en producción.",
       fr: "La valeur sûre de la gamme GPT : raisonnement général solide, sortie structurée fiable et appels d'outils de premier ordre, à un prix qui permet de le placer sur le chemin critique d'une application en production.",
