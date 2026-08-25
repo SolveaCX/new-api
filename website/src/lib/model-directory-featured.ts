@@ -193,7 +193,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
       id: ["Chat", "Coding", "Agen"],
     },
     blurb: {
-      en: "The model teams are switching to for agentic coding: sharp instruction following, dependable function calling and open weights, at a price that makes long autonomous runs actually affordable.",
+      en: "Fast, capable general-purpose model for coding, reasoning, and multilingual tasks, with strong instruction following, efficient tool use, and reliable everyday performance.",
       zh: "越来越多团队转向它做智能体编程：指令遵循精准、函数调用可靠、权重开放，价格让长时间自主运行真正划算。",
       es: "El modelo al que se están pasando los equipos para programación con agentes: seguimiento preciso de instrucciones, llamadas a funciones fiables y pesos abiertos, a un precio que hace viables las ejecuciones autónomas largas.",
       fr: "Le modèle vers lequel les équipes migrent pour le codage agentique : suivi précis des instructions, appels de fonctions fiables et poids ouverts, à un prix qui rend les longues exécutions autonomes réellement abordables.",
