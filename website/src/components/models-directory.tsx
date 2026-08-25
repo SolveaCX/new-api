@@ -272,7 +272,12 @@ export function ModelsDirectory(props: Props) {
           ) : null}
 
           {visible.length > 0 ? (
-            <ModelsDirectoryTable copy={copy} rows={visible} locale={props.locale} />
+            <ModelsDirectoryTable
+              copy={{ ...copy, colInput: copy.colOurInputPrice, colOutput: copy.colOurOutputPrice }}
+              rows={visible}
+              locale={props.locale}
+              hideOurPrice
+            />
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-[#E7E4EC] bg-white px-6 py-14 text-center dark:border-white/10 dark:bg-white/[0.03]">
               <h3 className="text-lg font-bold text-[#0B0B0F] dark:text-white">{copy.noResults}</h3>
@@ -308,6 +313,10 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
     discounted: row.discounted,
     officialUsd: row.officialUsd,
     discountedUsd: row.discountedUsd,
+    input: row.input,
+    inputOfficial: row.inputOfficial,
+    output: row.output,
+    outputOfficial: row.outputOfficial,
     priceUnit: row.priceUnit,
     pricePrefix: row.pricePrefix,
     contextTokens: row.contextTokens ?? null,
