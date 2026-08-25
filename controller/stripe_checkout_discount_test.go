@@ -1963,10 +1963,19 @@ func TestSubscriptionSelfPurchaseInitialResponsesExposeRevisionContract(t *testi
 	require.NotEmpty(t, recurring["checkout_context"])
 	require.Equal(t, service.StripeCheckoutDiscountNone, recurring["discount_state"].(StripeCheckoutDiscountState).Source)
 
+	selfPurchase := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{Order: order, ClientSecret: "cs_response_secret"}, "")
+	require.EqualValues(t, 1, selfPurchase.CheckoutRevision)
+	require.NotEmpty(t, selfPurchase.CheckoutContext)
+	require.Equal(t, service.StripeCheckoutDiscountNone, selfPurchase.DiscountState.Source)
+	claims, err := service.VerifyStripeCheckoutContext(selfPurchase.CheckoutContext, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, service.StripeCheckoutPurchaseRecurringSubscription, claims.PurchaseKind)
+
+	order.PaymentMethod = service.SubscriptionPaymentChoicePix
 	oneTime := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{Order: order, ClientSecret: "cs_response_secret"}, "")
-	require.EqualValues(t, 1, oneTime.CheckoutRevision)
-	require.NotEmpty(t, oneTime.CheckoutContext)
-	require.Equal(t, service.StripeCheckoutDiscountNone, oneTime.DiscountState.Source)
+	oneTimeClaims, err := service.VerifyStripeCheckoutContext(oneTime.CheckoutContext, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, service.StripeCheckoutPurchaseOneTimeSubscription, oneTimeClaims.PurchaseKind)
 }
 
 func TestCreateStripeTopUpCheckoutSessionKeepsLegacyPathWhenFeatureDisabled(t *testing.T) {

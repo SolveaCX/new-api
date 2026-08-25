@@ -555,7 +555,11 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 		response.PublishableKey = strings.TrimSpace(setting.StripePublishableKey)
 		if setting.StripePromotionCodeEnabled && result.Order != nil && result.Order.CheckoutRevision > 0 {
 			if active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, result.Order.TradeNo); err == nil {
-				revisionResponse, responseErr := stripeCheckoutRevisionResponse(service.StripeCheckoutPurchaseOneTimeSubscription, active, &stripeCheckoutSessionSnapshot{
+				purchaseKind := service.StripeCheckoutPurchaseRecurringSubscription
+				if isOneTimePlanStripeMethod(result.Order.PaymentMethod) {
+					purchaseKind = service.StripeCheckoutPurchaseOneTimeSubscription
+				}
+				revisionResponse, responseErr := stripeCheckoutRevisionResponse(purchaseKind, active, &stripeCheckoutSessionSnapshot{
 					ID: result.Order.ProviderSessionId, URL: checkoutURL, ClientSecret: response.ClientSecret,
 				})
 				if responseErr == nil {
