@@ -33,6 +33,11 @@ func TestEvaluateMediaEligibility(t *testing.T) {
 			observedAt: now,
 		},
 		{
+			name:       "known paid subscription tier grants media",
+			snapshot:   `{"version":1,"tier":"SuperGrokPlus","monthly":{"status_code":200},"weekly":{"status_code":200}}`,
+			observedAt: now,
+		},
+		{
 			name:       "missing version fails strict snapshot parsing",
 			snapshot:   `{"monthly":{"status_code":200},"weekly":{"status_code":200}}`,
 			observedAt: now,
@@ -86,19 +91,22 @@ func TestEvaluateMediaEligibility(t *testing.T) {
 			observedAt: now,
 		},
 		{
-			name:       "usage percent grants media",
+			name:       "usage percent alone does not prove paid media entitlement",
 			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 200, UsagePercent: &usage}, Weekly: BillingWindowSnapshot{StatusCode: 503}}),
 			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
 		},
 		{
-			name:       "derived used percent grants media",
+			name:       "derived used percent alone does not prove paid media entitlement",
 			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 200, UsedPercent: &used}, Weekly: BillingWindowSnapshot{StatusCode: 503}}),
 			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
 		},
 		{
-			name:       "partial weekly success with monthly failure grants media",
+			name:       "partial weekly usage without entitlement denies media",
 			snapshot:   mustBillingSnapshotJSON(t, BillingProbeSnapshot{Version: 1, Monthly: BillingWindowSnapshot{StatusCode: 500}, Weekly: BillingWindowSnapshot{StatusCode: 200, UsagePercent: &usage}}),
 			observedAt: now,
+			wantErr:    ErrMediaSubscriptionRequired,
 		},
 		{
 			name:       "paid-looking evidence on failed window does not grant media",
@@ -221,6 +229,308 @@ func TestProbeBillingSanitizesUpstreamBillingResponses(t *testing.T) {
 		if strings.Contains(serialized, secret) {
 			t.Fatalf("sanitized snapshot must not retain %q: %s", secret, serialized)
 		}
+	}
+}
+
+func TestProbeBillingReadsSubscriptionTierWhenBillingHasNoPlanEvidence(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	var seenSubscription bool
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath:
+			return jsonResponse(200, `{}`), nil
+		case BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{}`), nil
+		case SubscriptionTierPath:
+			seenSubscription = true
+			if got := req.Header.Get("Authorization"); got != "Bearer access-secret" {
+				t.Fatalf("subscription Authorization = %q, want Bearer token", got)
+			}
+			if got := req.Header.Get(HeaderXAITokenAuth); got != HeaderXAITokenAuthValue {
+				t.Fatalf("subscription %s = %q, want CLI identity", HeaderXAITokenAuth, got)
+			}
+			return jsonResponse(200, `{"user":{"subscriptionTier":"SuperGrok"}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("ProbeBilling err = %v", err)
+	}
+	if !seenSubscription {
+		t.Fatal("ProbeBilling did not query the subscription endpoint")
+	}
+	if got.Tier != "SuperGrok" {
+		t.Fatalf("Tier = %q, want SuperGrok", got.Tier)
+	}
+	if err := EvaluateMediaEligibility(mustBillingSnapshotJSON(t, got), 2000000000, 2000000000); err != nil {
+		t.Fatalf("known paid subscription tier must grant media, got %v", err)
+	}
+}
+
+func TestProbeBillingReadsSnakeCaseNestedSubscriptionTier(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath, BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{}`), nil
+		case SubscriptionTierPath:
+			return jsonResponse(200, `{"user":{"subscription_tier":"SuperGrokPro"}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("ProbeBilling err = %v", err)
+	}
+	if got.Tier != "SuperGrokPro" {
+		t.Fatalf("Tier = %q, want SuperGrokPro", got.Tier)
+	}
+}
+
+func TestProbeBillingPreservesNumericSubscriptionTier(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath, BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{}`), nil
+		case SubscriptionTierPath:
+			return jsonResponse(200, `{"user":{"subscriptionTier":3}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("ProbeBilling err = %v", err)
+	}
+	if got.Tier != "x_premium" {
+		t.Fatalf("Tier = %q, want x_premium", got.Tier)
+	}
+	if err := EvaluateMediaEligibility(mustBillingSnapshotJSON(t, got), 2000000000, 2000000000); err != nil {
+		t.Fatalf("known numeric paid tier must grant media, got %v", err)
+	}
+}
+
+func TestProbeBillingDerivesGrok2APICreditBalancesAndPeriods(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath:
+			return jsonResponse(200, `{"planName":"SuperGrok","config":{"monthlyLimit":{"val":100},"used":{"val":25},"onDemandCap":{"val":50},"onDemandUsed":{"val":12.5},"prepaidBalance":{"val":3},"billingPeriodStart":"2026-07-01T00:00:00Z","billingPeriodEnd":"2026-08-01T00:00:00Z"}}`), nil
+		case BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{"subscriptionTier":"SuperGrok Heavy","config":{"creditUsagePercent":42.5,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-07-08T00:00:00Z","end":"2026-07-15T00:00:00Z"}}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("ProbeBilling err = %v", err)
+	}
+	if got.Plan != "SuperGrok" || got.Tier != "SuperGrok Heavy" {
+		t.Fatalf("plan/tier = %q/%q, want SuperGrok/SuperGrok Heavy", got.Plan, got.Tier)
+	}
+	if got.Monthly.Limit == nil || *got.Monthly.Limit != 100 {
+		t.Fatalf("monthly limit = %v, want 100", got.Monthly.Limit)
+	}
+	if got.Monthly.Used == nil || *got.Monthly.Used != 25 {
+		t.Fatalf("monthly used = %v, want 25", got.Monthly.Used)
+	}
+	if got.Monthly.Remaining == nil || *got.Monthly.Remaining != 75 {
+		t.Fatalf("monthly remaining = %v, want 75", got.Monthly.Remaining)
+	}
+	if got.Monthly.OnDemandCap == nil || *got.Monthly.OnDemandCap != 50 {
+		t.Fatalf("on-demand cap = %v, want 50", got.Monthly.OnDemandCap)
+	}
+	if got.Monthly.OnDemandUsed == nil || *got.Monthly.OnDemandUsed != 12.5 {
+		t.Fatalf("on-demand used = %v, want 12.5", got.Monthly.OnDemandUsed)
+	}
+	if got.Monthly.OnDemandRemaining == nil || *got.Monthly.OnDemandRemaining != 37.5 {
+		t.Fatalf("on-demand remaining = %v, want 37.5", got.Monthly.OnDemandRemaining)
+	}
+	if got.Monthly.PrepaidBalance == nil || *got.Monthly.PrepaidBalance != 3 {
+		t.Fatalf("prepaid balance = %v, want 3", got.Monthly.PrepaidBalance)
+	}
+	if got.Monthly.PeriodStart != "2026-07-01T00:00:00Z" || got.Monthly.PeriodEnd != "2026-08-01T00:00:00Z" {
+		t.Fatalf("monthly period = %q/%q", got.Monthly.PeriodStart, got.Monthly.PeriodEnd)
+	}
+	if got.Weekly.Unit != "percent" || got.Weekly.Limit == nil || *got.Weekly.Limit != 100 {
+		t.Fatalf("weekly unit/limit = %q/%v, want percent/100", got.Weekly.Unit, got.Weekly.Limit)
+	}
+	if got.Weekly.Used == nil || *got.Weekly.Used != 42.5 || got.Weekly.Remaining == nil || *got.Weekly.Remaining != 57.5 {
+		t.Fatalf("weekly used/remaining = %v/%v, want 42.5/57.5", got.Weekly.Used, got.Weekly.Remaining)
+	}
+	if got.Weekly.PeriodType != "USAGE_PERIOD_TYPE_WEEKLY" || got.Weekly.PeriodEnd != "2026-07-15T00:00:00Z" {
+		t.Fatalf("weekly period = %q/%q, want weekly/2026-07-15", got.Weekly.PeriodType, got.Weekly.PeriodEnd)
+	}
+}
+
+func TestSnapshotFromUpstreamKeepsMonthlyCreditsWhenCurrentPeriodIsMonthly(t *testing.T) {
+	got, err := parseUpstreamBillingWindow([]byte(`{
+		"monthlyLimit": 100,
+		"used": 25,
+		"creditUsagePercent": 25,
+		"currentPeriod": {
+			"type": "USAGE_PERIOD_TYPE_MONTHLY",
+			"start": "2026-08-01T00:00:00Z",
+			"end": "2026-09-01T00:00:00Z"
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("parseUpstreamBillingWindow err = %v", err)
+	}
+	snapshot := snapshotFromUpstream(http.StatusOK, got)
+	if snapshot.Unit != "credits" || snapshot.Limit == nil || *snapshot.Limit != 100 {
+		t.Fatalf("monthly period must preserve credit limit, got unit=%q limit=%v", snapshot.Unit, snapshot.Limit)
+	}
+	if snapshot.Used == nil || *snapshot.Used != 25 || snapshot.Remaining == nil || *snapshot.Remaining != 75 {
+		t.Fatalf("monthly period must preserve credit balances, got used=%v remaining=%v", snapshot.Used, snapshot.Remaining)
+	}
+}
+
+func TestSnapshotFromUpstreamPreservesOverageAndClampsRemaining(t *testing.T) {
+	got, err := parseUpstreamBillingWindow([]byte(`{"monthlyLimit":100,"used":130,"creditUsagePercent":125}`))
+	if err != nil {
+		t.Fatalf("overage billing values should remain parseable: %v", err)
+	}
+	snapshot := snapshotFromUpstream(http.StatusOK, got)
+	if snapshot.Used == nil || *snapshot.Used != 130 {
+		t.Fatalf("overage used = %v, want 130", snapshot.Used)
+	}
+	if snapshot.Remaining == nil || *snapshot.Remaining != 0 {
+		t.Fatalf("overage remaining = %v, want 0", snapshot.Remaining)
+	}
+}
+
+func TestParseUpstreamBillingWindowRejectsInvalidCreditNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "negative monthly limit", body: `{"monthlyLimit":-1}`},
+		{name: "negative on demand cap", body: `{"onDemandCap":-1}`},
+		{name: "negative prepaid balance", body: `{"prepaidBalance":-1}`},
+		{name: "nan usage", body: `{"used":"NaN"}`},
+		{name: "infinite usage", body: `{"used":"Infinity"}`},
+		{name: "fractional monthly limit", body: `{"monthlyLimit":1.5}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseUpstreamBillingWindow([]byte(tc.body)); !errors.Is(err, ErrBillingSnapshotInvalid) {
+				t.Fatalf("parseUpstreamBillingWindow err = %v, want ErrBillingSnapshotInvalid", err)
+			}
+		})
+	}
+}
+
+func TestProbeBillingParsesObservedNestedBillingPayloads(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	requestCount := 0
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath:
+			return jsonResponse(200, `{"config":{"monthlyLimit":{"val":15000},"includedUsed":{"val":3000}}}`), nil
+		case BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{"subscriptionTier":"SuperGrokPlus","config":{"creditUsagePercent":42.5}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("ProbeBilling err = %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want two billing requests without user fallback", requestCount)
+	}
+	if got.Plan != "SuperGrok" || got.Tier != "SuperGrokPlus" {
+		t.Fatalf("plan/tier = %q/%q, want SuperGrok/SuperGrokPlus", got.Plan, got.Tier)
+	}
+	if got.Monthly.MonthlyLimitCents == nil || *got.Monthly.MonthlyLimitCents != 15000 {
+		t.Fatalf("monthly limit = %v, want 15000", got.Monthly.MonthlyLimitCents)
+	}
+	if got.Monthly.UsedPercent == nil || *got.Monthly.UsedPercent != 20 {
+		t.Fatalf("monthly used percent = %v, want 20", got.Monthly.UsedPercent)
+	}
+	if got.Weekly.UsagePercent == nil || *got.Weekly.UsagePercent != 42.5 {
+		t.Fatalf("weekly usage percent = %v, want 42.5", got.Weekly.UsagePercent)
+	}
+	if err := EvaluateMediaEligibility(mustBillingSnapshotJSON(t, got), 2000000000, 2000000000); err != nil {
+		t.Fatalf("observed paid billing payload must grant media, got %v", err)
+	}
+}
+
+func TestParseUpstreamBillingWindowSkipsEmptyAliases(t *testing.T) {
+	got, err := parseUpstreamBillingWindow([]byte(`{
+		"monthlyLimit": 7000,
+		"config": {
+			"monthlyLimit": null,
+			"monthly_limit": 15000,
+			"creditUsagePercent": "",
+			"credit_usage_percent": 12.5,
+			"usagePercent": {"value": 8},
+			"usage_percent": 7.5,
+			"includedUsed": {"val": null},
+			"included_used": 3000
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("parseUpstreamBillingWindow err = %v", err)
+	}
+	if got.MonthlyLimit == nil || *got.MonthlyLimit != 15000 {
+		t.Fatalf("monthly limit = %v, want later non-empty alias 15000", got.MonthlyLimit)
+	}
+	if got.CreditUsagePercent == nil || *got.CreditUsagePercent != 12.5 {
+		t.Fatalf("credit usage percent = %v, want later non-empty alias 12.5", got.CreditUsagePercent)
+	}
+	if got.UsagePercent == nil || *got.UsagePercent != 7.5 {
+		t.Fatalf("usage percent = %v, want later supported alias 7.5", got.UsagePercent)
+	}
+	if got.IncludedUsed == nil || *got.IncludedUsed != 3000 {
+		t.Fatalf("included used = %v, want later non-empty alias 3000", got.IncludedUsed)
+	}
+}
+
+func TestParseUpstreamBillingWindowFallsBackAfterEmptyConfigValue(t *testing.T) {
+	got, err := parseUpstreamBillingWindow([]byte(`{
+		"monthlyLimit": 7000,
+		"config": {"monthlyLimit": null}
+	}`))
+	if err != nil {
+		t.Fatalf("parseUpstreamBillingWindow err = %v", err)
+	}
+	if got.MonthlyLimit == nil || *got.MonthlyLimit != 7000 {
+		t.Fatalf("monthly limit = %v, want outer fallback 7000", got.MonthlyLimit)
+	}
+}
+
+func TestProbeBillingKeepsBillingSnapshotWhenOptionalSubscriptionLookupFails(t *testing.T) {
+	cred := Credential{AccessToken: "access-secret", TokenType: "Bearer"}
+	doer := doerFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.RequestURI() {
+		case BillingMonthlyPath, BillingWeeklyCreditsPath:
+			return jsonResponse(200, `{}`), nil
+		case SubscriptionTierPath:
+			return nil, errors.New("identity endpoint unavailable")
+		default:
+			return nil, fmt.Errorf("unexpected path %s", req.URL.RequestURI())
+		}
+	})
+
+	got, err := ProbeBilling(context.Background(), doer, cred)
+	if err != nil {
+		t.Fatalf("optional subscription failure must not discard billing evidence: %v", err)
+	}
+	if got.Version != billingSnapshotVersion || got.Monthly.StatusCode != 200 || got.Weekly.StatusCode != 200 {
+		t.Fatalf("billing snapshot not preserved: %+v", got)
 	}
 }
 
