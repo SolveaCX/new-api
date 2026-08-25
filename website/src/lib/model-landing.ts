@@ -767,6 +767,7 @@ export type ModelLandingKey =
   | "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing."
   | "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing."
   | "Prompt library"
+  | "Prompt template"
   | "{{model}} prompts that work"
   | "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there."
   | "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching."
@@ -1524,6 +1525,7 @@ const en: Record<ModelLandingKey, string> = {
   "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
   "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.",
   "Prompt library": "Prompt library",
+  "Prompt template": "Prompt template",
   "{{model}} prompts that work": "{{model}} prompts that work",
   "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.",
   "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.",
@@ -2158,6 +2160,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} 是图像生成模型，支持提示词生成和参考图变体，可控制尺寸、质量和输出格式。通过 Flatkey 用一个兼容 OpenAI 的密钥调用，按用量计费。",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} 是音频生成模型，支持配乐、旁白和时间对齐的变体，可控制时长和输出格式。通过 Flatkey 用一个兼容 OpenAI 的密钥调用，按用量计费。",
     "Prompt library": "提示词库",
+    "Prompt template": "提示词模板",
     "{{model}} prompts that work": "{{model}} 可直接复用的提示词",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "每个片段都是真实生成结果。复制它的提示词，或载入 Playground 继续调整。",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "它能做什么，以及相比 {{previous}} 有哪些变化 —— 帮你判断是否值得切换。",
@@ -2596,6 +2599,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} es un modelo de generación de imagen para visuales por prompt y variantes basadas en referencias, con control de tamaño, calidad y formato. Llámalo por Flatkey con una clave compatible con OpenAI y precio por uso.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} es un modelo de generación de audio para bases musicales, narración y variantes ajustadas al tiempo, con control de duración y formato. Llámalo por Flatkey con una clave compatible con OpenAI y precio por uso.",
     "Prompt library": "Biblioteca de prompts",
+    "Prompt template": "Plantilla de prompt",
     "{{model}} prompts that work": "Prompts de {{model}} que funcionan",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Cada clip es una generación real. Copia su prompt o cárgalo en el playground para editarlo.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Lo que puede hacer y qué cambió frente a {{previous}}, para decidir si conviene migrar.",
@@ -3042,6 +3046,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} est un modèle de génération d'images pour visuels par prompt et variantes guidées par références, avec contrôle de la taille, de la qualité et du format. Appelez-le via Flatkey avec une clé compatible OpenAI, facturée à l'usage.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} est un modèle de génération audio pour nappes musicales, narration et variantes calées sur le temps, avec contrôle de la durée et du format. Appelez-le via Flatkey avec une clé compatible OpenAI, facturée à l'usage.",
     "Prompt library": "Bibliothèque de prompts",
+    "Prompt template": "Modèle de prompt",
     "{{model}} prompts that work": "Des prompts {{model}} qui fonctionnent",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Chaque clip est une génération réelle. Copiez son prompt, ou chargez-le dans le playground pour le modifier.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Ce qu'il sait faire et ce qui a changé depuis {{previous}}, pour juger s'il faut migrer.",
@@ -3488,6 +3493,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} é um modelo de geração de imagem para visuais por prompt e variantes baseadas em referências, com controle de tamanho, qualidade e formato. Chame pela Flatkey com uma chave compatível com OpenAI e cobrança por uso.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} é um modelo de geração de áudio para bases musicais, narração e variantes ajustadas ao tempo, com controle de duração e formato. Chame pela Flatkey com uma chave compatível com OpenAI e cobrança por uso.",
     "Prompt library": "Biblioteca de prompts",
+    "Prompt template": "Modelo de prompt",
     "{{model}} prompts that work": "Prompts de {{model}} que funcionam",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Cada clipe é uma geração real. Copie o prompt ou carregue-o no playground para editar.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "O que ele faz e o que mudou em relação ao {{previous}}, para decidir se vale migrar.",
@@ -3934,6 +3940,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} — модель генерации изображений для визуалов по промпту и вариантов по референсам, с управлением размером, качеством и форматом. Вызывайте её через Flatkey по OpenAI-совместимому ключу с оплатой по использованию.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} — модель генерации аудио для музыкальных подложек, озвучки и вариантов с привязкой ко времени, с управлением длительностью и форматом. Вызывайте её через Flatkey по OpenAI-совместимому ключу с оплатой по использованию.",
     "Prompt library": "Библиотека промптов",
+    "Prompt template": "Шаблон промпта",
     "{{model}} prompts that work": "Рабочие промпты для {{model}}",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Каждый ролик — реальная генерация. Скопируйте промпт или откройте его в playground и правьте там.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Что он умеет и что изменилось относительно {{previous}} — чтобы решить, стоит ли переходить.",
@@ -4380,6 +4387,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} は画像生成モデルです。プロンプトからの生成と参照素材によるバリエーションに対応し、サイズ・品質・形式を指定できます。OpenAI 互換のキー 1 つで Flatkey から呼び出せ、従量課金です。",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} は音声生成モデルです。BGM・ナレーション・タイミングを合わせたバリエーションに対応し、長さと形式を指定できます。OpenAI 互換のキー 1 つで Flatkey から呼び出せ、従量課金です。",
     "Prompt library": "プロンプト集",
+    "Prompt template": "プロンプトテンプレート",
     "{{model}} prompts that work": "そのまま使える {{model}} のプロンプト",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "どの動画も実際の生成結果です。プロンプトをコピーするか、Playground に読み込んで調整できます。",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "できることと、{{previous}} からの変更点。移行する価値があるかを判断できます。",
@@ -4826,6 +4834,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} là mô hình tạo ảnh cho hình ảnh theo prompt và biến thể dựa trên tư liệu tham chiếu, có điều khiển kích thước, chất lượng và định dạng. Gọi qua Flatkey bằng khóa tương thích OpenAI, tính phí theo mức dùng.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} là mô hình tạo âm thanh cho nhạc nền, lời dẫn và các biến thể khớp thời gian, có điều khiển thời lượng và định dạng. Gọi qua Flatkey bằng khóa tương thích OpenAI, tính phí theo mức dùng.",
     "Prompt library": "Thư viện prompt",
+    "Prompt template": "Mẫu prompt",
     "{{model}} prompts that work": "Những prompt {{model}} dùng được ngay",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Mỗi đoạn phim đều là kết quả tạo thật. Sao chép prompt, hoặc nạp vào playground để chỉnh sửa.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Nó làm được gì và có gì thay đổi so với {{previous}} — để bạn cân nhắc có nên chuyển.",
@@ -5272,6 +5281,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} ist ein Bildgenerierungsmodell für Prompt-Visuals und referenzbasierte Varianten, mit Steuerung von Größe, Qualität und Format. Über Flatkey mit einem OpenAI-kompatiblen Key aufrufen, nutzungsbasiert abgerechnet.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} ist ein Audiogenerierungsmodell für Musikbetten, Sprecher und zeitlich abgestimmte Varianten, mit Steuerung von Dauer und Format. Über Flatkey mit einem OpenAI-kompatiblen Key aufrufen, nutzungsbasiert abgerechnet.",
     "Prompt library": "Prompt-Bibliothek",
+    "Prompt template": "Prompt-Vorlage",
     "{{model}} prompts that work": "{{model}}-Prompts, die funktionieren",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Jeder Clip ist eine echte Generierung. Prompt kopieren oder im Playground laden und anpassen.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Was es kann und was sich gegenüber {{previous}} geändert hat — als Grundlage für den Umstieg.",
@@ -6398,6 +6408,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "{{model}} is an image generation model for prompt-driven visuals and reference-based variants, with size, quality, and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} adalah model generasi gambar untuk visual dari prompt dan varian berbasis referensi, dengan kontrol ukuran, kualitas, dan format. Panggil lewat Flatkey dengan key kompatibel OpenAI, ditagih sesuai pemakaian.",
     "{{model}} is an audio generation model for music beds, narration, and timing-aware variants, with duration and format control. Call it through Flatkey on an OpenAI-compatible key with usage-based pricing.": "{{model}} adalah model generasi audio untuk musik latar, narasi, dan varian selaras waktu, dengan kontrol durasi dan format. Panggil lewat Flatkey dengan key kompatibel OpenAI, ditagih sesuai pemakaian.",
     "Prompt library": "Pustaka prompt",
+    "Prompt template": "Templat prompt",
     "{{model}} prompts that work": "Prompt {{model}} yang langsung bisa dipakai",
     "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.": "Setiap klip adalah hasil generasi nyata. Salin prompt-nya, atau muat ke playground untuk disunting.",
     "Its capabilities, and what changed from {{previous}} — so you can tell whether it is worth switching.": "Apa yang bisa dilakukan dan apa yang berubah dari {{previous}} — untuk menilai perlu tidaknya pindah.",

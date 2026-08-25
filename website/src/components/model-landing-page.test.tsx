@@ -723,22 +723,32 @@ describe("Image model workbench inputs", () => {
     expect(html).toContain("Reference media");
   });
 
-  test("puts use-case prompt templates in the image workbench", () => {
+  test("keeps one representative example in the image workbench", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
     const workbenchHtml = sectionHtml(html, "workbench", "performance");
 
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
-    expect(workbenchHtml).toContain('data-prompt-template-preview="true"');
-    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBeGreaterThanOrEqual(5);
-    expect(workbenchHtml).toContain("Create a premium ecommerce hero image for [product name]");
-    expect(workbenchHtml).toContain("Product mockups");
-    expect(workbenchHtml).toContain("skincare.png");
-    expect(workbenchHtml).toContain("4:5");
+    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
+    expect(workbenchHtml).not.toContain('data-prompt-template="true"');
+    expect(workbenchHtml).not.toContain("Create a premium ecommerce hero image for [product name]");
   });
 
-  test("gives newly discovered image model ids the same workbench templates", () => {
+  test("puts the five image scenario templates in the prompt library", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    );
+    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
+
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(5);
+    expect(showcaseHtml).toContain("Create a premium ecommerce hero image for [product name]");
+    expect(showcaseHtml).toContain("Product mockups");
+    expect(showcaseHtml).toContain("skincare.png");
+    expect(showcaseHtml).toContain("4:5");
+  });
+
+  test("gives newly discovered image model ids a prompt library and one workbench example", () => {
     const config = getModelLandingConfigForPricingModel({
       model_name: "qwen-image-2512",
       vendor_name: "Alibaba Qwen",
@@ -750,7 +760,9 @@ describe("Image model workbench inputs", () => {
 
     const html = renderToStaticMarkup(<ModelLandingPage config={config} locale="en" liveModels={[]} />);
     const workbenchHtml = sectionHtml(html, "workbench", "performance");
+    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
-    expect(workbenchHtml).toContain("Create a premium ecommerce hero image for [product name]");
+    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(5);
   });
 });
