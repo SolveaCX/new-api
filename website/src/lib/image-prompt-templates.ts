@@ -18,38 +18,165 @@ export type ImagePromptTemplate = {
 };
 
 const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
+const MODEL_EXAMPLES_ASSET_BASE = "/assets/model-examples";
+const MODEL_PAGES_ASSET_BASE = "/assets/model-pages";
 const AWESOME_IMAGE_ASSET_BASE = "/assets/prompts/awesome-images";
+const CLI_ASSET_BASE = "/assets/cli";
+const IMAGE_BUDDY_ASSET_BASE = "/use-case/image-buddy";
 
 /**
- * Poster variants stay inside the same industry lane as their prompt. The
- * model id only chooses between compatible references; it never turns a food
- * brief into a random medical or sci-fi thumbnail.
+ * Poster variants stay inside the same industry lane as their prompt. Every
+ * reference in these pools is a product, space, interface, food, or packaging
+ * still — never a real person, creator, model, portrait, hand, or workstation.
+ * The model id only chooses between compatible references; it never turns a
+ * food brief into a random medical or sci-fi thumbnail.
  */
 const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
   "product-hero": [
     `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
     `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
   ],
   "social-ad": [
-    `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
   ],
   "catalog-variant": [
     `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
     `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/streetwear-lookbook.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
   ],
   "editorial-portrait": [
-    `${IMAGE_TEMPLATE_ASSET_BASE}/portrait.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
   ],
   "product-ui": [
-    `${AWESOME_IMAGE_ASSET_BASE}/fitness-app.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
+    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gemini-api-hero.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
   ],
   "food-editorial": [
+    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
     `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+  ],
+};
+
+/**
+ * Canonical image pages get a curated six-poster set instead of a shared
+ * random-looking rotation. The six positions line up with the six industry
+ * templates above, and each model's set is intentionally different.
+ */
+const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
+  "gpt-image-2": [
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
+  ],
+  "gemini-2-5-flash-image": [
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+  ],
+  "gemini-3-pro-image": [
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+  ],
+  "gemini-3-1-flash-image": [
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+  ],
+  "gemini-3-1-flash-lite-image": [
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${MODEL_PAGES_ASSET_BASE}/gemini-api-hero.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+  ],
+  "grok-imagine-image": [
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+  ],
+  "grok-imagine-image-pro": [
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${CLI_ASSET_BASE}/product-reveal.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+  ],
+  "grok-imagine-image-quality": [
+    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
+    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
+    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+  ],
+  "nano-banana-pro-preview": [
+    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
   ],
 };
 
@@ -72,10 +199,10 @@ export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
     id: "social-ad",
     label: "Ad creatives",
     prompt:
-      "For consumer brands and growth teams, create a 9:16 UGC ad cover for [product] aimed at [audience] on TikTok or Reels. Show a real creator using it in [home, cafe, or everyday setting], with natural hands and skin, authentic phone-camera framing, and the product clearly visible. Keep the top 18% safe for a headline and CTA. No generated text, invented logos, exaggerated claims, plastic skin, or extra products.",
+      "For consumer brands and growth teams, create a 9:16 product-first social ad for [product] aimed at [audience] on TikTok or Reels. Build a clear still-life scene with the supplied packaging, a bold [background color], controlled shadow, and a clean product silhouette that reads at mobile size. Keep the top 18% safe for a headline and CTA. No people, hands, faces, invented logos, exaggerated claims, generated text, or extra products.",
     ratio: "9:16",
-    poster: `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
-    tags: ["social", "campaign", "variants"],
+    poster: `${CLI_ASSET_BASE}/localized-variants.png`,
+    tags: ["social", "campaign", "product-still-life"],
   },
   {
     id: "catalog-variant",
@@ -88,29 +215,29 @@ export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
   },
   {
     id: "editorial-portrait",
-    label: "Content creators & knowledge streamers",
+    label: "Hospitality and travel",
     prompt:
-      "For creator, community, and customer-facing teams, create a 4:5 professional avatar for [person or role] used on [profile, support, or about page]. Keep the face natural, eyes clear, skin and clothing texture realistic, and the background uncluttered with one subtle identity cue. Use soft key light and a centered chest-up crop. Preserve supplied identity details; no invented names, logos, text, or identifying information.",
+      "For hospitality and travel teams, create a 4:5 room or destination listing image for [hotel, resort, or rental]. Show the supplied interior or space with accurate architecture, materials, linens, and daylight direction; stage one clear focal area and leave safe space for room type and booking copy. No people, silhouettes, hands, invented signage, logos, text, or extra rooms.",
     ratio: "4:5",
-    poster: `${AWESOME_IMAGE_ASSET_BASE}/cyber-portrait.png`,
-    tags: ["portrait", "editorial", "people"],
+    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    tags: ["hospitality", "interior", "travel"],
   },
   {
     id: "product-ui",
     label: "Apps",
     prompt:
-      "For SaaS and mobile-product teams, create a 16:9 product-launch visual for [app name] showing [core workflow] on a realistic phone or laptop. Place the supplied UI in a clean branded scene, preserve its hierarchy and supplied text, use a restrained [brand palette], and leave the right side open for headline copy. No developer-tool interface, invented logo, readable code, fake metrics, or tiny unreadable interface text.",
+      "For SaaS and mobile-product teams, create a 16:9 product-launch visual for [app name] showing [core workflow] in a clean interface composition. Place the supplied UI in a restrained [brand palette], preserve its hierarchy and supplied labels, use clear cards and generous spacing, and leave the right side open for headline copy. No people, hands, faces, developer terminal, readable code, invented logo, fake metrics, or tiny unreadable interface text.",
     ratio: "16:9",
-    poster: `${AWESOME_IMAGE_ASSET_BASE}/fitness-app.png`,
+    poster: `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
     tags: ["app", "product", "launch"],
   },
   {
     id: "food-editorial",
     label: "Food and beverage",
     prompt:
-      "For restaurants and beverage brands, create a 4:5 menu and delivery-platform hero for [dish or drink] served by [restaurant type]. Show the requested portion and ingredients with believable texture, plated on [surface] from a top-down or three-quarter angle, with warm directional light and a clean area for dish name and price. Do not add unrequested ingredients, utensils, labels, text, or props.",
+      "For restaurants and beverage brands, create a 4:5 menu and delivery-platform hero for [dish or drink] served by [restaurant type]. Show the requested portion and ingredients with believable texture, plated on [surface] from a top-down or three-quarter angle, with warm directional light and a clean area for dish name and price. No people, hands, invented labels, text, unrequested ingredients, utensils, or props.",
     ratio: "4:5",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    poster: `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
     tags: ["food", "menu", "editorial"],
   },
 ];
@@ -135,6 +262,16 @@ export function getImagePromptTemplates(_modelId?: string): ImagePromptTemplate[
  * stable (for example, a food brief always gets a food image).
  */
 export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
+  const normalizedModelId = modelId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const curated = IMAGE_MODEL_POSTER_SETS[normalizedModelId];
+  if (curated && curated.length >= IMAGE_PROMPT_TEMPLATES.length) {
+    return curated.slice(0, IMAGE_PROMPT_TEMPLATES.length);
+  }
+
   const hashFor = (value: string) => {
     let hash = 0;
     for (const character of value.trim().toLowerCase()) {

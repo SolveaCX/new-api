@@ -746,10 +746,15 @@ describe("Image model workbench inputs", () => {
     expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
     expect(showcaseHtml).toContain("ecommerce and retail teams");
     expect(showcaseHtml).toContain("fashion and sports retailers");
+    expect(showcaseHtml).toContain("hospitality and travel teams");
     expect(showcaseHtml).toContain("SaaS and mobile-product teams");
     expect(showcaseHtml).toContain("restaurants and beverage brands");
     expect(showcaseHtml).toContain("ecommerce-skincare.png");
     expect(showcaseHtml).toContain("sports-shoe.png");
+    expect(showcaseHtml).not.toContain("ugc-coffee-ad.png");
+    expect(showcaseHtml).not.toContain("flatkey-image2-creator.png");
+    expect(showcaseHtml).not.toContain("portrait.png");
+    expect(showcaseHtml).not.toContain("fitness-app.png");
     expect(showcaseHtml).not.toContain("Scale and depth");
     expect(showcaseHtml).not.toContain("cinematic sci-fi realism");
   });
@@ -775,11 +780,13 @@ describe("Image model workbench inputs", () => {
     expect((geminiShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
     expect(geminiShowcase).toContain("template:gemini-3-pro-image:product-hero");
     expect(geminiShowcase).not.toContain("gpt-image-2-l1");
-    expect(gptShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)).not.toEqual(
-      geminiShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)
+    expect(gptShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)).not.toEqual(
+      geminiShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)
     );
     expect(gptShowcase).not.toContain("developer.png");
     expect(geminiShowcase).not.toContain("developer.png");
+    expect(gptShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
+    expect(geminiShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
   });
 
   test("renders the canonical Gemini 2.5 image page as an image generator", () => {
@@ -839,10 +846,12 @@ describe("Image model workbench inputs", () => {
 
     expect((qwenShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
     expect((fluxShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(qwenShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)).not.toEqual(
-      fluxShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)
+    expect(qwenShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)).not.toEqual(
+      fluxShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)
     );
     expect(qwenShowcase).not.toContain("cinematic sci-fi realism");
     expect(fluxShowcase).not.toContain("cinematic sci-fi realism");
+    expect(qwenShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
+    expect(fluxShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
   });
 });

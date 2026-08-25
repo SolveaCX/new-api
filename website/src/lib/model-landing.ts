@@ -795,6 +795,7 @@ export type ModelLandingKey =
   | "Edit and extend an existing clip in place"
   | "Product macro"
   | "Food and beverage"
+  | "Hospitality and travel"
   | "Fashion film"
   | "What {{model}} can do"
   | "Text and image to video"
@@ -1560,6 +1561,7 @@ const en: Record<ModelLandingKey, string> = {
   "Edit and extend an existing clip in place": "Edit and extend an existing clip in place",
   "Product macro": "Product macro",
   "Food and beverage": "Food and beverage",
+  "Hospitality and travel": "Hospitality and travel",
   "Fashion film": "Fashion film",
   "What {{model}} can do": "What {{model}} can do",
   "Text and image to video": "Text and image to video",
@@ -2195,6 +2197,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "可直接编辑并扩展已有片段",
     "Product macro": "产品微距",
     "Food and beverage": "餐饮广告",
+    "Hospitality and travel": "酒店与旅游",
     "Fashion film": "时尚短片",
     "What {{model}} can do": "{{model}} 能做什么",
     "Text and image to video": "文生视频与图生视频",
@@ -2634,6 +2637,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Editar y extender un clip existente sin rehacerlo",
     "Product macro": "Macro de producto",
     "Food and beverage": "Comida y bebida",
+    "Hospitality and travel": "Hostelería y viajes",
     "Fashion film": "Film de moda",
     "What {{model}} can do": "Qué puede hacer {{model}}",
     "Text and image to video": "De texto e imagen a video",
@@ -3081,6 +3085,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Modifier et prolonger un clip existant sur place",
     "Product macro": "Macro produit",
     "Food and beverage": "Gastronomie",
+    "Hospitality and travel": "Hôtellerie et voyage",
     "Fashion film": "Film de mode",
     "What {{model}} can do": "Ce que {{model}} sait faire",
     "Text and image to video": "Du texte et de l'image à la vidéo",
@@ -3528,6 +3533,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Editar e estender um clipe existente no lugar",
     "Product macro": "Macro de produto",
     "Food and beverage": "Alimentos e bebidas",
+    "Hospitality and travel": "Hotelaria e viagens",
     "Fashion film": "Filme de moda",
     "What {{model}} can do": "O que o {{model}} consegue fazer",
     "Text and image to video": "De texto e imagem para vídeo",
@@ -3975,6 +3981,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Редактирование и продление готового ролика на месте",
     "Product macro": "Продуктовое макро",
     "Food and beverage": "Еда и напитки",
+    "Hospitality and travel": "Гостиничный бизнес и путешествия",
     "Fashion film": "Модный ролик",
     "What {{model}} can do": "Что умеет {{model}}",
     "Text and image to video": "Из текста и изображения в видео",
@@ -4422,6 +4429,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "既存クリップをそのまま編集・延長",
     "Product macro": "プロダクトマクロ",
     "Food and beverage": "フード＆ドリンク",
+    "Hospitality and travel": "ホテル・旅行",
     "Fashion film": "ファッションフィルム",
     "What {{model}} can do": "{{model}} でできること",
     "Text and image to video": "テキストと画像から動画へ",
@@ -4869,6 +4877,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Chỉnh sửa và kéo dài đoạn có sẵn tại chỗ",
     "Product macro": "Macro sản phẩm",
     "Food and beverage": "Ẩm thực và đồ uống",
+    "Hospitality and travel": "Khách sạn và du lịch",
     "Fashion film": "Phim thời trang",
     "What {{model}} can do": "{{model}} làm được gì",
     "Text and image to video": "Từ văn bản và hình ảnh thành video",
@@ -5316,6 +5325,7 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Edit and extend an existing clip in place": "Vorhandenen Clip direkt bearbeiten und verlängern",
     "Product macro": "Produkt-Makro",
     "Food and beverage": "Food und Getränke",
+    "Hospitality and travel": "Gastgewerbe und Reisen",
     "Fashion film": "Modefilm",
     "What {{model}} can do": "Was {{model}} kann",
     "Text and image to video": "Von Text und Bild zu Video",
@@ -6443,6 +6453,7 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<string
     "Edit and extend an existing clip in place": "Sunting dan perpanjang klip yang ada langsung di tempat",
     "Product macro": "Makro produk",
     "Food and beverage": "Makanan dan minuman",
+    "Hospitality and travel": "Perhotelan dan perjalanan",
     "Fashion film": "Film mode",
     "What {{model}} can do": "Apa yang bisa dilakukan {{model}}",
     "Text and image to video": "Dari teks dan gambar ke video",

@@ -20,7 +20,8 @@ describe("image prompt templates", () => {
     for (const template of IMAGE_PROMPT_TEMPLATES) {
       expect(template.prompt.length).toBeGreaterThan(120);
       expect(template.prompt).toContain("[");
-      expect(template.poster).toMatch(/^\/assets\/(model-examples\/image2|prompts\/awesome-images)\//);
+      expect(template.poster).toMatch(/^(\/assets\/|\/use-case\/image-buddy\/)/);
+      expect(template.poster).not.toMatch(/creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i);
       expect(template.ratio).toMatch(/^\d+:\d+$/);
       expect(template.tags.length).toBeGreaterThan(0);
     }
@@ -28,9 +29,12 @@ describe("image prompt templates", () => {
     expect(IMAGE_PROMPT_TEMPLATES[0].prompt).toMatch(/ecommerce and retail teams/i);
     expect(IMAGE_PROMPT_TEMPLATES[1].prompt).toMatch(/consumer brands and growth teams/i);
     expect(IMAGE_PROMPT_TEMPLATES[2].prompt).toMatch(/fashion and sports retailers/i);
-    expect(IMAGE_PROMPT_TEMPLATES[3].prompt).toMatch(/creator, community, and customer-facing teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[3].prompt).toMatch(/hospitality and travel teams/i);
     expect(IMAGE_PROMPT_TEMPLATES[4].prompt).toMatch(/SaaS and mobile-product teams/i);
     expect(IMAGE_PROMPT_TEMPLATES[5].prompt).toMatch(/restaurants and beverage brands/i);
+    for (const template of IMAGE_PROMPT_TEMPLATES) {
+      expect(template.prompt).not.toMatch(/real creator|professional avatar|person or role|natural hands and skin/i);
+    }
   });
 
   test("returns an independent catalog for every image model", () => {
@@ -61,9 +65,32 @@ describe("image prompt templates", () => {
     expect(second).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
     expect(new Set(second).size).toBe(IMAGE_PROMPT_TEMPLATES.length);
     expect(first).not.toEqual(second);
-    expect(first[0]).toMatch(/ecommerce-skincare|skincare/);
-    expect(first[1]).toMatch(/ugc-coffee-ad|flatkey-image2-creator/);
-    expect(first[5]).toMatch(/coffee|ugc-coffee-ad/);
-    expect(first.some((poster) => poster.includes("developer"))).toBe(false);
+    expect(first[0]).toMatch(/ecommerce-skincare|skincare|product-reveal|localized-variants|marketplace-main-image/);
+    expect(first[1]).toMatch(/localized-variants|campaign-hero|product-reveal/);
+    expect(first[5]).toMatch(/coffee|food-motion|premium-product|hotel|marketplace|skincare/);
+    expect(first.some((poster) => /creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i.test(poster))).toBe(false);
+  });
+
+  test("gives every canonical image model a distinct non-human poster set", () => {
+    const modelIds = [
+      "gpt-image-2",
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.1-flash-lite-image",
+      "grok-imagine-image",
+      "grok-imagine-image-pro",
+      "grok-imagine-image-quality",
+      "nano-banana-pro-preview",
+    ];
+    const sets = modelIds.map((modelId) => getImagePromptTemplateFallbackPosters(modelId));
+    const serialized = sets.map((posters) => posters.join("\n"));
+
+    expect(new Set(serialized).size).toBe(modelIds.length);
+    for (const posters of sets) {
+      expect(posters).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
+      expect(new Set(posters).size).toBe(posters.length);
+      expect(posters.every((poster) => !/creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i.test(poster))).toBe(true);
+    }
   });
 });
