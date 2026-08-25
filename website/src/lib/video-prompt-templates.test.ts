@@ -18,11 +18,12 @@ describe("video industry prompt templates", () => {
       expect(template.ratio).toMatch(/^\d+:\d+$/);
       expect(template.duration).toBeGreaterThan(0);
       expect(template.tags.length).toBeGreaterThan(0);
+      expect(template.video).toMatch(/\.mp4$/);
       expect(template.prompt).not.toMatch(/\b(?:UGC|creator|presenter|portrait|selfie)\b/i);
     }
   });
 
-  test("gives every dedicated video model six independent non-human poster references", () => {
+  test("gives every dedicated video model six independent playable references", () => {
     const sets = VIDEO_MODEL_IDS.map((modelId) => getVideoPromptTemplateFallbackPosters(modelId));
 
     expect(VIDEO_MODEL_IDS).toHaveLength(10);
@@ -41,7 +42,9 @@ describe("video industry prompt templates", () => {
     const minimaxTemplates = getVideoPromptTemplates("MiniMax-H3");
     expect(seedanceTemplates).toHaveLength(6);
     expect(seedanceTemplates[0].poster).toBe("/assets/model-examples/product-macro.png");
+    expect(seedanceTemplates.every((template) => template.video.endsWith(".mp4"))).toBe(true);
     expect(seedanceTemplates[0].prompt).not.toBe(minimaxTemplates[0].prompt);
+    expect(seedanceTemplates.map((template) => template.video)).not.toEqual(minimaxTemplates.map((template) => template.video));
     expect(getVideoPromptTemplates("unknown-video-model")).toEqual([]);
   });
 });
