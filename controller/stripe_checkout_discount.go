@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -194,6 +195,7 @@ func UpdateStripeCheckoutDiscount(c *gin.Context) {
 		return
 	}
 	if errors.Is(err, errStripeCheckoutInvalidContext) {
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe checkout discount invalid context user_id=%d kind=%s expected_revision=%d claims_revision=%d", claims.UserID, claims.PurchaseKind, request.ExpectedRevision, claims.Revision))
 		writeStripeCheckoutDiscountError(c, http.StatusBadRequest, "checkout_context_invalid", nil)
 		return
 	}
@@ -202,6 +204,7 @@ func UpdateStripeCheckoutDiscount(c *gin.Context) {
 		return
 	}
 	if purchase.UserID != claims.UserID || purchase.TradeNo != strings.TrimSpace(claims.TradeNo) || purchase.Kind != claims.PurchaseKind {
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe checkout discount purchase mismatch user_id=%d kind=%s expected_revision=%d claims_revision=%d purchase_user_id=%d purchase_kind=%s purchase_revision=%d", claims.UserID, claims.PurchaseKind, request.ExpectedRevision, claims.Revision, purchase.UserID, purchase.Kind, purchase.Revision))
 		writeStripeCheckoutDiscountError(c, http.StatusBadRequest, "checkout_context_invalid", nil)
 		return
 	}
