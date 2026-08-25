@@ -43,11 +43,7 @@ describe('Playground media model profiles', () => {
     expect(resolvePlaygroundModelKind('bytedance/seedance-2.0-fast')).toBe(
       'video'
     )
-    expect(resolvePlaygroundModelKind('seedance-2.5')).toBe('video')
-    expect(resolvePlaygroundModelKind('seedance-2-5')).toBe('video')
-    expect(resolvePlaygroundModelKind('doubao-seedance-2-5-260628')).toBe(
-      'video'
-    )
+    expect(resolvePlaygroundModelKind('seedance-2-5')).toBe('unsupported')
     expect(resolvePlaygroundModelKind('grok-imagine-video')).toBe('video')
     expect(resolvePlaygroundModelKind('grok-imagine-video-1.5')).toBe('video')
     expect(resolvePlaygroundModelKind('minimax-h3')).toBe('unsupported')
