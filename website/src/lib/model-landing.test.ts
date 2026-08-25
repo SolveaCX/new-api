@@ -145,6 +145,24 @@ describe("model landing configuration", () => {
     expect(config.useCases).toEqual(["Product mockups", "Ad creatives", "Ecommerce images"]);
   });
 
+  test("lets an image variant outrank a broad text family prefix", () => {
+    const imageModel: PricingModel = {
+      model_name: "gemini-2.5-flash-image",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.04,
+      completion_ratio: 0,
+      supported_endpoint_types: ["gemini", "openai"],
+    };
+
+    const config = getModelLandingConfigForPricingModel(imageModel);
+
+    expect(config.generator?.kind).toBe("image");
+    expect(config.generator?.endpoint).toBe("/v1/images/generations");
+    expect(config.modelId).toBe("gemini-2.5-flash-image");
+  });
+
   test("builds text landing configs for generic live pricing models", () => {
     const kimi: PricingModel = {
       model_name: "kimi-k2.5",

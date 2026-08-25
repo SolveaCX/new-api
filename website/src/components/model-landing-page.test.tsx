@@ -735,20 +735,65 @@ describe("Image model workbench inputs", () => {
     expect(workbenchHtml).not.toContain("Create a premium ecommerce hero image for [product name]");
   });
 
-  test("puts the six image scenario templates in the prompt library", () => {
+  test("puts six model-specific image examples in the prompt library", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
     const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
 
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(showcaseHtml).toContain("Create a premium ecommerce hero image for [product name]");
-    expect(showcaseHtml).toContain("Product mockups");
-    expect(showcaseHtml).toContain("skincare.png");
-    expect(showcaseHtml).toContain("4:5");
-    expect(showcaseHtml).toContain("Food and beverage");
-    expect(showcaseHtml).toContain("coffee.png");
-    expect(showcaseHtml).not.toContain("Scale and depth");
+    expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(0);
+    expect(showcaseHtml).toContain("gpt-image-2-l1");
+    expect(showcaseHtml).toContain("gpt-image-2-l4");
+    expect(showcaseHtml).toContain("gpt-image-2-w2");
+    expect(showcaseHtml).toContain("gpt-image-2-w3");
+    expect(showcaseHtml).toContain("Scale and depth");
+    expect(showcaseHtml).not.toContain("skincare.png");
+  });
+
+  test("keeps image examples independent when the model changes", () => {
+    const gptHtml = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    );
+    const geminiConfig = getModelLandingConfigForPricingModel({
+      model_name: "gemini-3-pro-image",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.04,
+      completion_ratio: 0,
+      supported_endpoint_types: ["image-generation"],
+    });
+    const geminiHtml = renderToStaticMarkup(<ModelLandingPage config={geminiConfig} locale="en" liveModels={[]} />);
+    const gptShowcase = sectionHtml(gptHtml, "showcase", "why-flatkey");
+    const geminiShowcase = sectionHtml(geminiHtml, "showcase", "why-flatkey");
+
+    expect((geminiShowcase.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect(geminiShowcase).toContain("gemini-3-pro-image-l1");
+    expect(geminiShowcase).toContain("gemini-3-pro-image-w2");
+    expect(geminiShowcase).not.toContain("gpt-image-2-l1");
+    expect(gptShowcase.match(/https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-media\/sample\/[^"']+\.png/g)).not.toEqual(
+      geminiShowcase.match(/https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-media\/sample\/[^"']+\.png/g)
+    );
+  });
+
+  test("renders the canonical Gemini 2.5 image page as an image generator", () => {
+    const config = getModelLandingConfigForPricingModel({
+      model_name: "gemini-2.5-flash-image",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.04,
+      completion_ratio: 0,
+      supported_endpoint_types: ["gemini", "openai"],
+    });
+    const html = renderToStaticMarkup(<ModelLandingPage config={config} locale="en" liveModels={[]} />);
+    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
+
+    expect(config.generator?.kind).toBe("image");
+    expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect(showcaseHtml).toContain("gemini-2-5-flash-image-l1");
+    expect(showcaseHtml).toContain("gemini-2-5-flash-image-w2");
   });
 
   test("gives newly discovered image model ids a prompt library and one workbench example", () => {
@@ -767,5 +812,28 @@ describe("Image model workbench inputs", () => {
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
     expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
     expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+  });
+
+  test("keeps fallback image pages visually distinct until generated media is staged", () => {
+    const makeConfig = (model_name: string) =>
+      getModelLandingConfigForPricingModel({
+        model_name,
+        vendor_name: "Test vendor",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.04,
+        completion_ratio: 0,
+        supported_endpoint_types: [],
+      });
+    const qwenHtml = renderToStaticMarkup(<ModelLandingPage config={makeConfig("qwen-image-2512")} locale="en" liveModels={[]} />);
+    const fluxHtml = renderToStaticMarkup(<ModelLandingPage config={makeConfig("flux-image-1")} locale="en" liveModels={[]} />);
+    const qwenShowcase = sectionHtml(qwenHtml, "showcase", "why-flatkey");
+    const fluxShowcase = sectionHtml(fluxHtml, "showcase", "why-flatkey");
+
+    expect((qwenShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect((fluxShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect(qwenShowcase.match(/\/assets\/model-examples\/image2\/[^"']+\.png/g)).not.toEqual(
+      fluxShowcase.match(/\/assets\/model-examples\/image2\/[^"']+\.png/g)
+    );
   });
 });

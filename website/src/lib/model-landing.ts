@@ -1116,8 +1116,15 @@ export function getModelLandingConfigForModel(modelId: string): ModelConfig | nu
 }
 
 export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
+  const inferredKind = inferMediaKind(model);
   const explicitConfig = getModelLandingConfigForModel(model.model_name);
-  if (explicitConfig) return modelLandingConfigForModel(explicitConfig, model);
+  // Family pages use prefix matching (for example, "gemini-2.5-flash"). An
+  // image variant such as "gemini-2.5-flash-image" can therefore hit the
+  // text family before generic media inference gets a chance to classify it.
+  // Let the inferred image modality win over an incompatible text config while
+  // preserving the configured family copy for ordinary chat models.
+  const hasIncompatibleImageFamily = inferredKind === "image" && explicitConfig?.generator?.kind !== "image";
+  if (explicitConfig && !hasIncompatibleImageFamily) return modelLandingConfigForModel(explicitConfig, model);
   return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
 }
 

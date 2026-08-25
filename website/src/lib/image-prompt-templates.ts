@@ -18,6 +18,23 @@ export type ImagePromptTemplate = {
 
 const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
 
+// These local images are only a safety net for a newly catalogued model, or
+// for a generated CDN sample that has not finished publishing. A stable
+// model-specific rotation keeps fallback pages from showing the exact same
+// six thumbnails while the card remains clearly labelled as a prompt
+// template, not as that model's own generation.
+const IMAGE_TEMPLATE_POSTER_POOL = [
+  `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/portrait.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-developer.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-medical.png`,
+] as const;
+
 /**
  * Use-case prompts for the image prompt library. Bracketed values are
  * deliberate fill-in slots: a visitor can replace them without rewriting the
@@ -91,6 +108,24 @@ export function getImagePromptTemplates(_modelId?: string): ImagePromptTemplate[
     ...template,
     tags: [...template.tags],
   }));
+}
+
+/**
+ * Pick deterministic local fallback posters for one model's template cards.
+ *
+ * Explicit image models use their own generated CDN samples instead. This is
+ * for generic image model pages and CDN error recovery only; keeping the
+ * rotation stable avoids a server/client mismatch while making fallback pages
+ * visibly independent from one another.
+ */
+export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
+  let hash = 0;
+  for (const character of modelId.trim().toLowerCase()) {
+    hash = (hash * 31 + character.charCodeAt(0)) % IMAGE_TEMPLATE_POSTER_POOL.length;
+  }
+  return IMAGE_PROMPT_TEMPLATES.map((_, index) =>
+    IMAGE_TEMPLATE_POSTER_POOL[(hash + index) % IMAGE_TEMPLATE_POSTER_POOL.length]
+  );
 }
 
 export function getImagePromptTemplate(templateId: string): ImagePromptTemplate | undefined {

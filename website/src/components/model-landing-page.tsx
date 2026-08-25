@@ -93,8 +93,17 @@ import {
   type SnippetLanguage,
 } from "@/lib/model-snippets";
 import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
-import { getModelMedia, localModelSampleUrl, modelCoverUrl, modelMediaSlug, modelSampleImageUrl, modelSampleVideoUrl } from "@/lib/model-media";
-import { getImagePromptTemplates } from "@/lib/image-prompt-templates";
+import {
+  getImageModelLibrarySamples,
+  getImageModelWorkbenchSample,
+  getModelMedia,
+  localModelSampleUrl,
+  modelCoverUrl,
+  modelMediaSlug,
+  modelSampleImageUrl,
+  modelSampleVideoUrl,
+} from "@/lib/model-media";
+import { getImagePromptTemplateFallbackPosters, getImagePromptTemplates } from "@/lib/image-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -117,6 +126,8 @@ type DraftValue = Record<string, unknown>;
 
 type MediaExample = {
   poster: string;
+  /** Local image to use when a staged CDN sample is unavailable. */
+  fallbackPoster?: string;
   video?: string;
   // Selecting an example loads the exact request behind it into the editor, so
   // the workbench doubles as a request blueprint rather than a static gallery.
@@ -181,8 +192,8 @@ const SEEDANCE_SHOWCASE_ASSET_VERSION = "20260824";
 // a model-specific media row.
 /** Whether a model page renders the prompt library section. */
 function hasPromptLibrary(modelId: string, kind?: ModelReadmeKind): boolean {
-  // Image pages always have the six reusable scenario templates, even when a
-  // newly-discovered model has no generated media row yet.
+  // Image pages always have six cards: generated model examples when staged,
+  // or reusable scenario templates for a newly discovered model.
   if (kind === "image") return getImagePromptTemplates(modelId).length > 0;
   if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
   return Boolean(getModelMedia(modelId)?.library.length);
@@ -232,19 +243,24 @@ function examplesForModel(
   // editor's first screen about one concrete model request instead of a
   // second gallery.
   if (kind === "image") {
-    const generated = (media?.workbench ?? [])
-      .filter((sample) => sample.kind === "image")
-      .map((sample): MediaExample => ({
-        poster: modelSampleImageUrl(sample.slug),
-        label: sample.label,
-        prompt: sample.prompt,
-      }));
-    if (generated.length > 0) return generated.slice(0, 1);
+    const generated = getImageModelWorkbenchSample(modelId);
+    if (generated) {
+      return [
+        {
+          poster: modelSampleImageUrl(generated.slug),
+          fallbackPoster: getImagePromptTemplateFallbackPosters(modelId)[0],
+          label: generated.label,
+          prompt: generated.prompt,
+        },
+      ];
+    }
     const fallback = getImagePromptTemplates(modelId)[0];
+    const fallbackPoster = getImagePromptTemplateFallbackPosters(modelId)[0];
     return fallback
       ? [
           {
-            poster: fallback.poster,
+            poster: fallbackPoster,
+            fallbackPoster,
             label: fallback.label,
             prompt: fallback.prompt,
             isPromptTemplate: true,
@@ -356,6 +372,8 @@ type ShowcaseScene = {
   label: ModelLandingKey;
   prompt: string;
   poster?: string;
+  /** Local image to use when a staged CDN sample is unavailable. */
+  fallbackPoster?: string;
   video?: string;
   kind?: "image" | "video";
   isPromptTemplate?: boolean;
@@ -626,30 +644,32 @@ function ModelShowcase(props: {
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Image pages lead with six reusable scenario templates. Video/audio pages
-  // keep their model-generated library samples here. The templates are
-  // deliberately owned by this section rather than the workbench picker: they
-  // answer "what can I make?", while the single workbench card answers "what
-  // request does this model accept?".
+  // Image pages lead with six generated examples from the current model when
+  // those assets are staged. Video/audio pages keep their model-generated
+  // library samples here. The workbench still has exactly one representative
+  // request; the library answers "what output is worth copying?".
   //
   // There is deliberately no shared generated-media fallback across models.
   // This section used to render SHOWCASE_SCENES for every model, so a text
   // model like deepseek-v4-pro presented video generation as its own "prompts
   // that work", and an image model advertised video it cannot produce.
   //
-  // Image templates are the intentional shared exception: they are request
-  // blueprints, not claims that every model produced the same output.
-  // SHOWCASE_SCENES itself remains specific to Seedance 2.5; every other model
-  // uses its own generated library assets when available.
+  // Newly discovered image models fall back to clearly marked request
+  // templates until their own generated media row is published. SHOWCASE_SCENES
+  // itself remains specific to Seedance 2.5; every other model uses its own
+  // generated library assets when available.
   const media = getModelMedia(props.modelId);
   const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
+  const imageFallbackPosters = getImagePromptTemplateFallbackPosters(props.modelId);
+  const imageSamples = props.kind === "image" ? getImageModelLibrarySamples(props.modelId) : [];
   const templateScenes: ShowcaseScene[] =
-    props.kind === "image"
-      ? getImagePromptTemplates(props.modelId).map((template) => ({
-          id: `template:${template.id}`,
+    props.kind === "image" && imageSamples.length === 0
+      ? getImagePromptTemplates(props.modelId).map((template, index) => ({
+          id: `template:${modelMediaSlug(props.modelId)}:${template.id}`,
           label: template.label,
           prompt: template.prompt,
-          poster: template.poster,
+          poster: imageFallbackPosters[index] ?? template.poster,
+          fallbackPoster: imageFallbackPosters[index],
           kind: "image",
           isPromptTemplate: true,
           ratio: template.ratio,
@@ -657,7 +677,13 @@ function ModelShowcase(props: {
       : [];
   const generatedScenes: ShowcaseScene[] =
     props.kind === "image"
-      ? []
+      ? imageSamples.map((sample, index) => ({
+          id: sample.slug,
+          label: sample.label,
+          prompt: sample.prompt,
+          fallbackPoster: imageFallbackPosters[index],
+          kind: "image",
+        }))
       : usesOriginalScenes
         ? [...SHOWCASE_SCENES]
         : (media?.library ?? []).map((sample) => ({
@@ -717,6 +743,8 @@ function ModelShowcase(props: {
               <div
                 key={scene.id}
                 data-prompt-template-card={scene.isPromptTemplate ? "true" : undefined}
+                data-image-model-example-card={props.kind === "image" && !scene.isPromptTemplate ? "true" : undefined}
+                data-image-example-slug={props.kind === "image" ? scene.id : undefined}
                 className="grid items-stretch gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2 dark:border-white/10 dark:bg-white/[0.04]"
               >
                 <div className={`relative aspect-video overflow-hidden rounded-xl bg-[#10131a] ${mediaFirst ? "" : "lg:order-2"}`}>
@@ -746,7 +774,7 @@ function ModelShowcase(props: {
                       loading="lazy"
                       onError={(event) => {
                         if (!scene.isPromptTemplate) {
-                          event.currentTarget.src = localModelSampleUrl(scene.id, "png");
+                          event.currentTarget.src = scene.fallbackPoster ?? localModelSampleUrl(scene.id, "png");
                         }
                       }}
                       unoptimized
@@ -2738,7 +2766,18 @@ function ExamplePicker(props: {
  : "border-transparent opacity-80 hover:opacity-100"
  }`}
               >
-                <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
+                <Image
+                  src={example.poster}
+                  alt=""
+                  fill
+                  sizes="76px"
+                  className="object-cover"
+                  onError={(event) => {
+                    if (example.fallbackPoster && event.currentTarget.src !== example.fallbackPoster) {
+                      event.currentTarget.src = example.fallbackPoster;
+                    }
+                  }}
+                />
                 {example.video ? (
                   <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
                     {props.t("Video")}
@@ -2871,7 +2910,8 @@ function OutputPreview(props: {
               className="object-cover"
               onError={(event) => {
                 const local = primary.poster.match(/\/sample\/([^/]+)\.png$/)?.[1];
-                if (local) event.currentTarget.src = localModelSampleUrl(local, "png");
+                const fallback = primary.fallbackPoster ?? (local ? localModelSampleUrl(local, "png") : undefined);
+                if (fallback && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
               }}
             />
           </>
@@ -2932,6 +2972,11 @@ function GeneratedExamplesCarousel(props: {
               fill
               sizes="(min-width: 1280px) 820px, (min-width: 1024px) 62vw, 100vw"
               className="object-cover"
+              onError={(event) => {
+                if (activeExample.fallbackPoster && event.currentTarget.src !== activeExample.fallbackPoster) {
+                  event.currentTarget.src = activeExample.fallbackPoster;
+                }
+              }}
             />
           )}
         </div>
@@ -2992,6 +3037,11 @@ function GeneratedExamplesCarousel(props: {
                 fill
                 sizes="(min-width: 1024px) 90px, 30vw"
                 className="object-cover"
+                onError={(event) => {
+                  if (example.fallbackPoster && event.currentTarget.src !== example.fallbackPoster) {
+                    event.currentTarget.src = example.fallbackPoster;
+                  }
+                }}
               />
               {example.video ? (
                 <span className="absolute top-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-black/62 text-white">

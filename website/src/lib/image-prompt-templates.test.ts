@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   getImagePromptTemplate,
+  getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
   IMAGE_PROMPT_TEMPLATES,
 } from "./image-prompt-templates";
@@ -42,5 +43,16 @@ describe("image prompt templates", () => {
   test("resolves a template by its stable id", () => {
     expect(getImagePromptTemplate("product-hero")?.label).toBe("Product mockups");
     expect(getImagePromptTemplate("missing-template")).toBeUndefined();
+  });
+
+  test("rotates local fallback posters per model without changing the six scenarios", () => {
+    const first = getImagePromptTemplateFallbackPosters("qwen-image-2512");
+    const second = getImagePromptTemplateFallbackPosters("flux-image-1");
+
+    expect(first).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
+    expect(new Set(first).size).toBe(IMAGE_PROMPT_TEMPLATES.length);
+    expect(second).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
+    expect(new Set(second).size).toBe(IMAGE_PROMPT_TEMPLATES.length);
+    expect(first).not.toEqual(second);
   });
 });

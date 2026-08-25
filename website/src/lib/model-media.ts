@@ -47,7 +47,7 @@ export type ModelMedia = {
 
 // Keep the payload and network work bounded on the landing page.  A model
 // needs one representative playground asset; the prompt library can expose
-// up to five scene cards, but never ships a second workbench set.
+// up to six scene cards, but never ships a second workbench set.
 function normalizeModelMedia(media: ModelMedia): ModelMedia {
   const workbench = media.workbench.slice(0, 1);
   const library = [...media.library];
@@ -368,6 +368,50 @@ const KEEPS_ORIGINAL_ASSETS = new Set(["seedance-2-5"]);
 // fallbacks or claim that an unavailable generation is a real sample.
 const MEDIA_NOT_AVAILABLE = new Set(["veo-3-1-fast-generate-preview"]);
 
+const IMAGE_LIBRARY_SAMPLE_LIMIT = 6;
+const IMAGE_MEDIA_ALIASES: Record<string, string> = {
+  "gemini-3-pro-image-preview": "gemini-3-pro-image",
+  "gemini-3-1-flash-image-preview": "gemini-3-1-flash-image",
+  "gemini-3-1-flash-lite-image-preview": "gemini-3-1-flash-lite-image",
+};
+
+function stagedImageMedia(modelId: string): ModelMedia | undefined {
+  const slug = modelMediaSlug(modelId);
+  return MODEL_MEDIA[slug] ?? MODEL_MEDIA[IMAGE_MEDIA_ALIASES[slug]];
+}
+
+/**
+ * Return the generated image examples that belong to one explicit model.
+ *
+ * The public page intentionally keeps the workbench to one representative
+ * request, but the image prompt library needs six different outputs. The
+ * media table already has four library renders and four workbench renders for
+ * each image model, so use the four library renders plus workbench renders two
+ * and three. Reading the raw table here (rather than the normalized media
+ * returned by getModelMedia) preserves those extra workbench samples without
+ * changing the workbench contract for any other caller.
+ *
+ * Unknown image models return an empty list and let the page use its clearly
+ * labelled prompt-template fallback. They must not silently reuse another
+ * model's generated output.
+ */
+export function getImageModelLibrarySamples(modelId: string): ModelMediaSample[] {
+  const media = stagedImageMedia(modelId);
+  if (!media) return [];
+  return [
+    ...media.library.filter((sample) => sample.kind === "image"),
+    ...media.workbench.filter((sample) => sample.kind === "image").slice(1, 3),
+  ]
+    .slice(0, IMAGE_LIBRARY_SAMPLE_LIMIT)
+    .map((sample) => ({ ...sample }));
+}
+
+/** Return the first generated image request for the model, if one is staged. */
+export function getImageModelWorkbenchSample(modelId: string): ModelMediaSample | null {
+  const sample = stagedImageMedia(modelId)?.workbench.find((entry) => entry.kind === "image");
+  return sample ? { ...sample } : null;
+}
+
 export function getModelMedia(modelId: string): ModelMedia | null {
   const slug = modelMediaSlug(modelId);
   if (KEEPS_ORIGINAL_ASSETS.has(slug)) return null;
@@ -375,11 +419,11 @@ export function getModelMedia(modelId: string): ModelMedia | null {
   const media = MODEL_MEDIA[slug];
   if (media) return normalizeModelMedia(media);
 
-  // The catalog is larger than the set of generated samples. Reuse the
-  // existing, already-uploaded representative assets instead of generating a
-  // new image/video for every newly-added model. The model page still keeps
-  // the correct modality and prompt-library shape; only the visual sample is
-  // shared.
+  // The catalog is larger than the set of generated samples. Legacy consumers
+  // such as cover metadata can reuse an already-uploaded representative asset
+  // instead of generating a new image/video for every newly-added model. The
+  // image detail page does not use this shared branch for its examples: it
+  // calls the model-specific getter above and falls back to local templates.
   const isVideo = /(^|-)(video|seedance|kling|sora|veo|wan|minimax-h3)(-|$)/.test(slug);
   const isImage = /(^|-)(image|imagen|flux|banana|dall-e|gpt-image)(-|$)/.test(slug);
   if (!isVideo && !isImage) return null;
