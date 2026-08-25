@@ -148,8 +148,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
     modelName: "gpt-5.6-sol",
     displayName: "GPT-5.6 Sol",
     vendor: "OpenAI",
-    image: "/assets/models-featured/openai.jpg",
-    video: "/assets/models-featured/openai.mp4",
+    image: "/assets/models-featured/openai.png",
     tags: {
       en: ["Chat", "Reasoning", "Tool Use"],
       zh: ["对话", "推理", "工具调用"],
