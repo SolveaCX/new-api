@@ -260,7 +260,8 @@ describe("ModelLandingPage", () => {
     expect(workbenchHtml).not.toContain("打开控制台");
     expect(workbenchHtml).not.toContain("获取 API Key");
     expect(workbenchHtml).not.toContain("查看 API 文档");
-    expect(workbenchHtml).toContain("/assets/cli/ugc-ad-clips.mp4");
+    expect(workbenchHtml).toContain("/assets/cli/campaign-hero.png");
+    expect(workbenchHtml).not.toContain("ugc-ad-clips.mp4");
     expect(workbenchHtml).toContain('data-model-output-video="true"');
     expect(workbenchHtml).not.toMatch(/<video[^>]*\smuted(?:[\s=>]|$)/);
     expect(workbenchHtml).toContain("参考素材");
@@ -853,5 +854,51 @@ describe("Image model workbench inputs", () => {
     expect(fluxShowcase).not.toContain("cinematic sci-fi realism");
     expect(qwenShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
     expect(fluxShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
+  });
+});
+
+describe("Video model prompt library", () => {
+  test("keeps one playground example and six non-human industry templates", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
+    );
+    const workbenchHtml = sectionHtml(html, "workbench", "performance");
+    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
+
+    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
+    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
+    expect(workbenchHtml).toContain("product launch clip");
+    expect(workbenchHtml).toContain("campaign-hero.png");
+
+    expect((showcaseHtml.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect(showcaseHtml).toContain("ecommerce and consumer-brand teams");
+    expect(showcaseHtml).toContain("restaurant, beverage, and packaged-food teams");
+    expect(showcaseHtml).toContain("hotel, resort, and real-estate marketing teams");
+    expect(showcaseHtml).toContain("automotive and mobility teams");
+    expect(showcaseHtml).toContain("SaaS and product teams");
+    expect(showcaseHtml).toContain("architecture, urban-design, and film-previs teams");
+    expect(showcaseHtml).not.toContain("v1.1");
+    expect(showcaseHtml).not.toContain("fashion-walk");
+    expect(showcaseHtml).not.toContain("ugc-ad-clips");
+    expect(showcaseHtml).not.toContain("Each clip is a real generation");
+  });
+
+  test("uses a distinct six-poster set for another video model", () => {
+    const seedanceHtml = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
+    );
+    const minimaxHtml = renderToStaticMarkup(
+      <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="en" liveModels={[]} />
+    );
+    const seedanceShowcase = sectionHtml(seedanceHtml, "showcase", "why-flatkey");
+    const minimaxShowcase = sectionHtml(minimaxHtml, "showcase", "why-flatkey");
+
+    expect((minimaxShowcase.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
+    expect(seedanceShowcase.match(/\/assets\/[^"']+\.png/g)).not.toEqual(
+      minimaxShowcase.match(/\/assets\/[^"']+\.png/g)
+    );
+    expect(minimaxShowcase).not.toContain("fashion-walk");
+    expect(minimaxShowcase).not.toContain("v1.3");
   });
 });

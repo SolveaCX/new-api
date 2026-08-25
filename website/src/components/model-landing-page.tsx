@@ -102,6 +102,7 @@ import {
   modelSampleVideoUrl,
 } from "@/lib/model-media";
 import { getImagePromptTemplateFallbackPosters, getImagePromptTemplates } from "@/lib/image-prompt-templates";
+import { getVideoPromptTemplateFallbackPosters, getVideoPromptTemplates } from "@/lib/video-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -193,6 +194,7 @@ function hasPromptLibrary(modelId: string, kind?: ModelReadmeKind): boolean {
   // Image pages always have six industry cards; model-generated media is kept
   // separate in the workbench until matching industry assets are published.
   if (kind === "image") return getImagePromptTemplates(modelId).length > 0;
+  if (kind === "video" && getVideoPromptTemplates(modelId).length > 0) return true;
   if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
   return Boolean(getModelMedia(modelId)?.library.length);
 }
@@ -207,6 +209,10 @@ function promptLibraryVideoSchema(
   config: ModelConfig,
   t: (key: string, vars?: Record<string, string>) => string
 ) {
+  // The six video cards below are request blueprints paired with reference
+  // stills, not renders from this model. Do not publish VideoObject metadata
+  // for them or let search engines mistake a template poster for a clip.
+  if (getVideoPromptTemplates(config.modelId).length > 0) return [];
   const displayName = config.displayName;
   if (modelMediaSlug(config.modelId) === "seedance-2-5") {
     return SHOWCASE_SCENES.map((scene) => ({
@@ -235,6 +241,7 @@ function examplesForModel(
   kind: "image" | "video" | "audio"
 ): readonly MediaExample[] {
   const media = getModelMedia(modelId);
+  const videoTemplates = kind === "video" ? getVideoPromptTemplates(modelId) : [];
 
   // The workbench gets one representative industry request. The six scenario
   // templates live in the prompt library below; keeping one of them here lets
@@ -256,6 +263,22 @@ function examplesForModel(
           },
         ]
       : [];
+  }
+
+  if (kind === "video" && videoTemplates.length > 0) {
+    const template = videoTemplates[0];
+    return [
+      {
+        poster: template.poster,
+        fallbackPoster: template.poster,
+        label: template.label,
+        prompt: template.prompt,
+        isPromptTemplate: true,
+        templateId: template.id,
+        ratio: template.ratio,
+        fields: { ratio: template.ratio, duration: template.duration },
+      },
+    ];
   }
 
   if (!media || media.workbench.length === 0) {
@@ -290,47 +313,15 @@ const DEFAULT_HEALTH_TTFT_MS = 600;
 
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [],
+  // Keep the legacy fallback safe for an unclassified media page. Dedicated
+  // video pages use video-prompt-templates.ts and never reach this row.
   video: [
     {
-      // Real Seedance output paired with the exact prompt and reference that
-      // produced it. This is the F1 workbench sample from the latest Seedance
-      // page worktree and is also the output shown in the reference layout.
-      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.png",
-      video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
-      label: "Wet-track chase shot",
-      prompt:
-        "Create an ultra-realistic cinematic shot of a black-and-silver formula car racing at high speed on a wet forest circuit. Use a low rear three-quarter chase camera that keeps the full car in frame as it accelerates through the bend. The tires cut through standing water and throw white spray; the car has subtle high-speed vibration while the camera stays locked to its motion. Misty pine trees, distant grandstands, and a grey overcast sky fill the background. Use a blue-grey, mist-white, and deep-green palette, shallow motion blur on the surrounding track, deep focus on the car, realistic wet-surface reflections, and a strong sense of speed. No text, captions, logos, vehicle deformation, grass separating lanes, frame drops, or extra cars.",
-      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-      references: [
-        { kind: "image", name: "f1-wet-track-reference.png", url: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-reference.png" },
-      ],
-    },
-    {
-      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro.png",
-      video: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro.mp4",
+      poster: "/assets/model-examples/product-macro.png",
       label: "Product macro",
       prompt:
-        "Slow macro dolly across a matte-black wireless earbud case on a concrete surface, lid opening to reveal the buds, controlled studio key light with a soft rim, dust motes in the beam, shallow depth of field, premium product cinematography, subtle mechanical click.",
-      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-      references: [
-        { kind: "image", name: "product-reference.png", url: "https://cdn.shulex-voc.com/flatkey/model-examples/product-macro-reference.png" },
-      ],
-    },
-    {
-      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/food-motion.png",
-      video: "https://cdn.shulex-voc.com/flatkey/model-examples/food-motion.mp4",
-      label: "Food and beverage",
-      prompt:
-        "Overhead shot of espresso being poured into a glass of milk over ice, dark coffee blooming through the white in slow motion, condensation on the glass, warm cafe daylight, marble counter, appetising commercial food cinematography.",
-      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
-    },
-    {
-      poster: "https://cdn.shulex-voc.com/flatkey/model-examples/fashion-walk.png",
-      video: "https://cdn.shulex-voc.com/flatkey/model-examples/fashion-walk.mp4",
-      label: "Fashion film",
-      prompt:
-        "A model in a long camel coat walking toward camera down a wide city street at golden hour, coat moving with the stride, backlit rim light through the fabric, shallow depth of field with compressed background, editorial fashion film look.",
-      fields: { ratio: "16:9", resolution: "1080p", duration: 6, generate_audio: true },
+        "For a product marketing team, create a short object-only product motion clip with one controlled camera move, stable materials, clean studio light, and no people, hands, faces, text, or extra products.",
+      fields: { ratio: "16:9", duration: 6, generate_audio: false },
     },
   ],
   audio: [
@@ -344,9 +335,8 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
 // cases, above the FAQ so the last thing a reader sees before the questions is
 // an actionable prompt library.
 //
-// SHOWCASE_SCENES is empty until the Seedance assets exist -- the section still
-// renders nothing for video/text models without real samples. Image models get
-// their industry templates from image-prompt-templates.ts.
+// SHOWCASE_SCENES is intentionally empty. Image and dedicated video models get
+// their industry templates from their modality-specific data modules.
 type ShowcaseScene = {
   /** Stable slug for generated media, or a model/template key for industry cards. */
   id: string;
@@ -359,11 +349,11 @@ type ShowcaseScene = {
   kind?: "image" | "video";
   isPromptTemplate?: boolean;
   ratio?: string;
+  duration?: number;
 };
 
-// To add a scene: add the generated video and poster to the CDN, add the entry
-// here, and add its `label` to the copy maps in lib/model-landing.ts for all 10
-// locales.
+// Generated clips, when they are available and provenance is confirmed, stay
+// in model-media.ts. Prompt-template posters do not enter VideoObject schema.
 // The capabilities the clips below demonstrate, stated as text. A gallery shows
 // what the model did; this says what it can do -- which is what a reader
 // comparing models, and a crawler indexing the page, can actually read.
@@ -389,38 +379,10 @@ const SHOWCASE_CAPABILITIES: ReadonlyArray<{ title: ModelLandingKey; body: Model
   },
 ];
 
-const SHOWCASE_SCENES: readonly ShowcaseScene[] = [
-  {
-    id: "romance-scene",
-    label: "Micro-drama & audio/comic drama creators",
-    prompt:
-      "Prompt template — Micro-drama / audio-comic drama: Two original fictional actors in a rain-streaked cafe at dusk share a quiet turning point as one slides a folded note across the table and the other looks up. Begin with a wide window-and-table establishing shot, then a gentle handheld push-in to a medium two-shot and close reaction, one continuous readable beat, warm practical lamps against cool rain light, natural restrained dialogue and rain room tone, keep wardrobe, props, eyelines and screen direction consistent, live-action short-drama realism, no subtitles, no logos, no extra characters.",
-  },
-  {
-    id: "product-macro",
-    label: "Advertising & e-commerce marketing teams",
-    prompt:
-      "Prompt template — Advertising / e-commerce: A generic matte-black wireless earbud case on a pale stone plinth, a macro camera makes one slow orbit across the hinge and brushed metal, the lid opens to reveal the earbuds, then settles on a clean hero composition. Controlled studio key light, soft rim, precise reflections, shallow depth of field, one subtle mechanical click, stable geometry and materials, premium e-commerce product film, no brand marks, no readable text, no invented claims.",
-  },
-  {
-    id: "coastal-landmark",
-    label: "Film concept & production teams",
-    prompt:
-      "Prompt template — Film concept / previs: An original six-wheel exploration rover drives through a red-rock canyon after light rain, water spraying from the tires as it takes one sharp bend. Start wide, track in a low rear-chase path, hold the rover in frame through the turn, preserve scale, screen direction, contact shadows and lens perspective, one controlled mist cue, restrained amber-and-slate color design, clear action timing, live-action film previs, no text, no logos, no accidental cuts.",
-  },
-  {
-    id: "creature-closeup",
-    label: "Game artists & animators",
-    prompt:
-      "Prompt template — Game trailer / animation concept: An original bioluminescent quadruped creature enters an abandoned sky-bridge level and swipes through hanging vines, sending glowing spores into the air as distant silhouettes react. Readable silhouette, one primary action, believable weight and foot contact, camera arcs from a medium profile to a low hero angle, keep creature design, materials and motion arcs consistent, high-detail cinematic 3D game trailer animation, no UI text, no logos, no extra limbs.",
-  },
-  {
-    id: "ugc-creator",
-    label: "Content creators & knowledge streamers",
-    prompt:
-      "Prompt template — Content creator / knowledge stream: A fictional science presenter in a bright home studio explains how a lunar eclipse works, speaking directly to camera and gesturing toward a small desk globe. Start with a natural hook, make one slow handheld push-in, cut to a close illustrative detail of the globe in shadow, then return to the presenter, keep face, hands, wardrobe, room layout and screen direction stable, clean natural voice and room tone, authentic knowledge-stream style, no unsupported claims, no subtitles, no logos.",
-  },
-];
+// Kept empty intentionally. The old Seedance-only list mixed human scenes and
+// generated clips into unrelated pages. Dedicated video pages now use the
+// model-keyed industry templates from video-prompt-templates.ts instead.
+const SHOWCASE_SCENES: readonly ShowcaseScene[] = [];
 
 // Version comparison: what changed from the previous generation. A reader who
 // already uses 2.0 needs this to decide whether to move, and it is the one thing
@@ -636,11 +598,14 @@ function ModelShowcase(props: {
   // model like deepseek-v4-pro presented video generation as its own "prompts
   // that work", and an image model advertised video it cannot produce.
   //
-  // SHOWCASE_SCENES itself remains specific to Seedance 2.5; video/audio pages
-  // continue to use their model-generated library assets.
+  // Video pages now lead with six industry prompt templates and non-human
+  // reference stills. Legacy generated clips remain available only as a
+  // fallback for a model without a dedicated template set.
   const media = getModelMedia(props.modelId);
   const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
   const imageFallbackPosters = getImagePromptTemplateFallbackPosters(props.modelId);
+  const videoTemplates = getVideoPromptTemplates(props.modelId);
+  const videoFallbackPosters = getVideoPromptTemplateFallbackPosters(props.modelId);
   const templateScenes: ShowcaseScene[] =
     props.kind === "image"
       ? getImagePromptTemplates(props.modelId).map((template, index) => ({
@@ -653,9 +618,24 @@ function ModelShowcase(props: {
           isPromptTemplate: true,
           ratio: template.ratio,
         }))
+      : props.kind === "video"
+        ? videoTemplates.map((template, index) => ({
+            id: `template:${modelMediaSlug(props.modelId)}:${template.id}`,
+            label: template.label,
+            prompt: template.prompt,
+            poster: videoFallbackPosters[index] ?? template.poster,
+            fallbackPoster: videoFallbackPosters[index] ?? template.poster,
+            // The card is a reference still for a request blueprint. Marking
+            // it as an image prevents an absent mp4 from being presented as a
+            // generated output.
+            kind: "image",
+            isPromptTemplate: true,
+            ratio: template.ratio,
+            duration: template.duration,
+          }))
       : [];
   const generatedScenes: ShowcaseScene[] =
-    props.kind === "image"
+    props.kind === "image" || (props.kind === "video" && videoTemplates.length > 0)
       ? []
       : usesOriginalScenes
         ? [...SHOWCASE_SCENES]
@@ -692,7 +672,7 @@ function ModelShowcase(props: {
           eyebrow={props.t("Prompt library")}
           title={props.t("{{model}} prompts that work", { model: props.modelName })}
           description={
-            props.kind === "image"
+            props.kind === "image" || (props.kind === "video" && videoTemplates.length > 0)
               ? props.t("Explore different use cases and parameter configurations")
               : props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")
           }
@@ -717,6 +697,7 @@ function ModelShowcase(props: {
                 key={scene.id}
                 data-prompt-template-card={scene.isPromptTemplate ? "true" : undefined}
                 data-image-model-example-card={props.kind === "image" ? "true" : undefined}
+                data-video-model-example-card={props.kind === "video" ? "true" : undefined}
                 data-image-example-slug={props.kind === "image" ? scene.id : undefined}
                 className="grid items-stretch gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2 dark:border-white/10 dark:bg-white/[0.04]"
               >
@@ -765,6 +746,11 @@ function ModelShowcase(props: {
                         {scene.ratio ? (
                           <span className="ml-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] tracking-normal text-violet-700 normal-case dark:text-violet-300">
                             {scene.ratio}
+                          </span>
+                        ) : null}
+                        {scene.duration ? (
+                          <span className="ml-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] tracking-normal text-violet-700 normal-case dark:text-violet-300">
+                            {scene.duration}s
                           </span>
                         ) : null}
                       </>
@@ -2893,11 +2879,7 @@ function OutputPreview(props: {
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${props.kind === "video" ? "bg-white/10 text-white/78" : "bg-violet-500/10 text-violet-700 dark:text-violet-300"}`}>
             {props.t(
-              primary.isPromptTemplate && props.kind === "image"
-                ? "Prompt template"
-                : primary.isPromptTemplate
-                  ? "Examples"
-                  : "Example output"
+              primary.isPromptTemplate ? "Prompt template" : "Example output"
             )}
           </span>
           <b className="min-w-0 truncate">{primary.isPromptTemplate && primary.label ? props.t(primary.label) : props.modelName}</b>
