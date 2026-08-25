@@ -725,7 +725,7 @@ func createInitialStripeCheckoutRevision(
 	}
 	prepared, replay, err := currentStripeCheckoutDiscountRuntime.PrepareRevision(model.StripeCheckoutRevisionPrepare{
 		OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: purchase.UserID, ExpectedRevision: 0,
-		RequestID: "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo, SelectionDigest: digest,
+		RequestID: service.StripeCheckoutInitialRequestID(purchase.Kind, purchase.TradeNo), SelectionDigest: digest,
 		DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
 		PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
 		DiscountPayload: purchase.DiscountPayload, Currency: purchase.Currency, SubtotalMinor: purchase.SubtotalMinor, SummaryPayload: stripeCheckoutTopUpSummaryPayload(summary),
