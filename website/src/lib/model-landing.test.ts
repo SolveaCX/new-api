@@ -126,6 +126,25 @@ describe("model landing configuration", () => {
     expect(config?.generator?.storageKey).toBe("flatkey:model-generator-draft:sonilo-video-to-music");
   });
 
+  test("builds image landing configs for newly catalogued image model names", () => {
+    const imageModel: PricingModel = {
+      model_name: "qwen-image-2512",
+      vendor_name: "Alibaba Qwen",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.04,
+      completion_ratio: 0,
+      supported_endpoint_types: [],
+    };
+
+    const config = getModelLandingConfigForPricingModel(imageModel);
+
+    expect(config.generator?.kind).toBe("image");
+    expect(config.generator?.endpoint).toBe("/v1/images/generations");
+    expect(config.examplePrompt).toContain("Create a premium ecommerce hero image");
+    expect(config.useCases).toEqual(["Product mockups", "Ad creatives", "Ecommerce images"]);
+  });
+
   test("builds text landing configs for generic live pricing models", () => {
     const kimi: PricingModel = {
       model_name: "kimi-k2.5",
