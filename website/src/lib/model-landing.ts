@@ -1,5 +1,6 @@
 import type { Locale } from "./locales";
 import { withIdFallback } from "@/lib/locales";
+import { getImagePromptTemplates } from "./image-prompt-templates";
 import {
   buildEffectiveGroupRatio,
   getGroupModelRatioForModel,
@@ -1296,7 +1297,7 @@ function inferMediaKind(model: PricingModel): ModelGeneratorConfig["kind"] | nul
   }
   if (
     endpointText.includes("image-generation") ||
-    /(^|-)(image|imagen|banana|flux|ideogram)(-|$)/.test(name)
+    /(^|-)(image|imagen|banana|flux|ideogram|dall-e|gpt-image|stable-diffusion|sdxl|qwen-image|z-image|jimeng|midjourney)(-|$)/.test(name)
   ) {
     return "image";
   }
@@ -1326,7 +1327,7 @@ function examplePromptForMediaKind(kind: ModelGeneratorConfig["kind"], modelName
   if (kind === "video") {
     return `Create a short product video with ${modelName}: clear subject motion, realistic lighting, stable camera, and production-ready framing.`;
   }
-  return `Create a high-quality product image with ${modelName}: clean composition, precise lighting, strong subject focus, and realistic detail.`;
+  return getImagePromptTemplates(modelName)[0]?.prompt ?? `Create a high-quality product image with ${modelName}: clean composition, precise lighting, strong subject focus, and realistic detail.`;
 }
 
 function formatPriceLiteral(value: number): string {

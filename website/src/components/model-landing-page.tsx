@@ -94,6 +94,7 @@ import {
 } from "@/lib/model-snippets";
 import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
 import { getModelMedia, localModelSampleUrl, modelCoverUrl, modelMediaSlug, modelSampleImageUrl, modelSampleVideoUrl } from "@/lib/model-media";
+import { getImagePromptTemplates } from "@/lib/image-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -121,6 +122,10 @@ type MediaExample = {
   // the workbench doubles as a request blueprint rather than a static gallery.
   label?: ModelLandingKey;
   prompt?: string;
+  /** True when the card is a fill-in prompt template rather than a model render. */
+  isPromptTemplate?: boolean;
+  templateId?: string;
+  ratio?: string;
   fields?: Record<string, string | number | boolean>;
   // Reference assets the example used. These load into the workbench's own
   // reference list on selection, so the editor shows the complete request --
@@ -220,9 +225,33 @@ function examplesForModel(
   kind: "image" | "video" | "audio"
 ): readonly MediaExample[] {
   const media = getModelMedia(modelId);
+
+  // Image pages lead with practical, fill-in-ready scenarios.  A model's
+  // generated sample is retained as the final card when one exists, but the
+  // first card is always a usable prompt template so every image model has a
+  // meaningful workbench starting point -- including newly-added catalog IDs.
+  if (kind === "image") {
+    const templates: MediaExample[] = getImagePromptTemplates(modelId).map((template) => ({
+      poster: template.poster,
+      label: template.label,
+      prompt: template.prompt,
+      isPromptTemplate: true,
+      templateId: template.id,
+      ratio: template.ratio,
+    }));
+    const generated = (media?.workbench ?? [])
+      .filter((sample) => sample.kind === "image")
+      .map((sample) => ({
+        poster: modelSampleImageUrl(sample.slug),
+        label: sample.label,
+        prompt: sample.prompt,
+      }));
+    return [...templates, ...generated].slice(0, templates.length + (generated.length > 0 ? 1 : 0));
+  }
+
   if (!media || media.workbench.length === 0) {
     if (modelMediaSlug(modelId) === "veo-3-1-fast-generate-preview") return [];
-    return kind === "image" ? [imageExampleForModel(modelId)] : MEDIA_EXAMPLES[kind].slice(0, 1);
+    return MEDIA_EXAMPLES[kind].slice(0, 1);
   }
 
   const own: MediaExample[] = media.workbench.map((sample) => ({
@@ -313,17 +342,6 @@ type ShowcaseScene = {
   label: ModelLandingKey;
   prompt: string;
 };
-
-const IMAGE_SCENE_ASSETS = MEDIA_EXAMPLES.image;
-
-function imageExampleForModel(modelId: string): MediaExample {
-  const key = normalizeModelId(modelId);
-  const index = key.includes("image") || key.includes("banana") ? 0
-    : key.includes("vision") || key.includes("gemini") ? 3
-      : key.includes("grok") ? 4
-        : key.includes("qwen") || key.includes("flux") ? 2 : 1;
-  return IMAGE_SCENE_ASSETS[index];
-}
 
 // To add a scene: add the generated video and poster to the CDN, add the entry
 // here, and add its `label` to the copy maps in lib/model-landing.ts for all 10
@@ -1132,6 +1150,13 @@ function FlatkeyModelDetailPage(props: {
         {generator ? (
           <RevealSection id="workbench" className="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] px-6 py-6 bg-[#f8fafc] dark:bg-white/[0.02]">
             <div className="mx-auto max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
+              <ExamplePicker
+                examples={examples}
+                modelName={props.config.displayName}
+                selected={props.selectedExample}
+                onSelect={props.onExampleSelect}
+                t={props.t}
+              />
               <div className="grid gap-6 p-5 lg:grid-cols-2 lg:items-start">
                 <div className="min-w-0">
                   <PanelHeader title={props.t("Input")} right={props.t("Form")} />
@@ -2627,26 +2652,40 @@ function ExamplePicker(props: {
         {props.examples.map((example, index) => {
           const isActive = index === props.selected;
           return (
-            <button
-              key={example.poster}
-              type="button"
-              onClick={() => props.onSelect(index)}
-              aria-pressed={isActive}
-              data-active-example={isActive ? "true" : undefined}
-              className={`relative size-[76px] shrink-0 overflow-hidden rounded-lg border-2 transition active:scale-[0.97] ${
+            <div key={`${example.templateId ?? example.poster}-${index}`} className="w-[76px] shrink-0">
+              <button
+                type="button"
+                onClick={() => props.onSelect(index)}
+                aria-label={example.label ? props.t(example.label) : props.t("Examples")}
+                aria-pressed={isActive}
+                data-active-example={isActive ? "true" : undefined}
+                data-prompt-template={example.isPromptTemplate ? "true" : undefined}
+                title={example.label ? props.t(example.label) : undefined}
+                className={`relative block size-[76px] overflow-hidden rounded-lg border-2 transition active:scale-[0.97] ${
  isActive
  ? "border-blue-500"
  : "border-transparent opacity-80 hover:opacity-100"
  }`}
-            >
-              <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
-              {example.video ? (
-                <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
-                  {props.t("Video")}
+              >
+                <Image src={example.poster} alt="" fill sizes="76px" className="object-cover" />
+                {example.video ? (
+                  <span className="absolute bottom-1.5 left-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase">
+                    {props.t("Video")}
+                  </span>
+                ) : null}
+                {example.isPromptTemplate && example.ratio ? (
+                  <span className="absolute right-1.5 bottom-1.5 rounded bg-black/62 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white">
+                    {example.ratio}
+                  </span>
+                ) : null}
+                {isActive ? <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-white" /> : null}
+              </button>
+              {example.label ? (
+                <span className="mt-1 block truncate text-center text-[10px] font-semibold text-[#667080] dark:text-white/58">
+                  {props.t(example.label)}
                 </span>
               ) : null}
-              {isActive ? <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-white" /> : null}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -2739,7 +2778,10 @@ function OutputPreview(props: {
   }
 
   return (
-    <div className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F]"}>
+    <div
+      data-prompt-template-preview={primary.isPromptTemplate ? "true" : undefined}
+      className={props.kind === "video" ? "overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#10131a] p-2 text-white" : "overflow-hidden rounded-[1.35rem] border border-black/10 bg-white p-2 text-[#0B0B0F]"}
+    >
       <div className={`relative overflow-hidden rounded-[1.05rem] ${props.kind === "video" ? "aspect-video bg-[#171b24]" : "aspect-[16/10] bg-[#11131a]"}`}>
         {props.kind === "video" && primary?.video ? (
           <AutoplayVideo
@@ -2767,10 +2809,18 @@ function OutputPreview(props: {
       <div className={`grid gap-1 px-2 pt-3 pb-1 text-xs leading-5 ${props.kind === "video" ? "" : "text-[#3f3d46] dark:text-white/74"}`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${props.kind === "video" ? "bg-white/10 text-white/78" : "bg-violet-500/10 text-violet-700 dark:text-violet-300"}`}>
-            {props.t("Example output")}
+            {props.t(primary.isPromptTemplate ? "Examples" : "Example output")}
           </span>
-          <b className="min-w-0 truncate">{props.modelName}</b>
+          <b className="min-w-0 truncate">{primary.isPromptTemplate && primary.label ? props.t(primary.label) : props.modelName}</b>
+          {primary.isPromptTemplate && primary.ratio ? (
+            <span className="rounded-full bg-slate-500/10 px-2 py-0.5 text-[10px] font-semibold text-[#667080] dark:bg-white/[0.08] dark:text-white/62">
+              {primary.ratio}
+            </span>
+          ) : null}
         </div>
+        {primary.isPromptTemplate ? (
+          <span className="text-[11px] font-semibold text-[#706a74] dark:text-white/56">{props.modelName}</span>
+        ) : null}
         <span className={props.kind === "video" ? "text-white/72" : "text-[#706a74]"}>{props.prompt}</span>
       </div>
     </div>
@@ -4642,7 +4692,7 @@ function modelModalityKey(model: PricingModel) {
   const name = normalizeModelId(model.model_name);
   if (/audio|music|sound|tts|voice/.test(endpoints) || /(^|-)(audio|music|sound|sonilo|suno)(-|$)/.test(name)) return "audio";
   if (/video/.test(endpoints) || /(^|-)(video|seedance|kling|sora|veo|wan)(-|$)/.test(name)) return "video";
-  if (/image/.test(endpoints) || /(^|-)(image|imagen|flux|dall-e)(-|$)/.test(name)) return "image";
+  if (/image/.test(endpoints) || /(^|-)(image|imagen|flux|dall-e|gpt-image|stable-diffusion|sdxl|qwen-image|z-image|jimeng|midjourney)(-|$)/.test(name)) return "image";
   return "text";
 }
 
