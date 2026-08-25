@@ -160,6 +160,9 @@ export function usePayment() {
           summary: presentation?.summary ?? data?.topup_summary ?? null,
           title: presentation?.title,
           description: presentation?.description,
+          checkoutContext: opening.checkoutContext,
+          checkoutRevision: opening.checkoutRevision,
+          discountState: opening.discountState,
           fallbackUrl:
             normalizeCheckoutUrl(presentation?.fallbackUrl) ??
             opening.fallbackUrl,
