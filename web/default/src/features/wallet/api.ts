@@ -125,9 +125,11 @@ export async function updateStripeCheckoutDiscount(
     } as Record<string, unknown>)
     return res.data
   } catch (error) {
-    const response = (error as {
-      response?: { status?: unknown; data?: unknown }
-    })?.response
+    const response = (
+      error as {
+        response?: { status?: unknown; data?: unknown }
+      }
+    )?.response
     const responseData = response?.data
     if (
       (response?.status === 400 || response?.status === 409) &&
@@ -137,6 +139,14 @@ export async function updateStripeCheckoutDiscount(
     }
     throw error
   }
+}
+
+/** Best-effort termination for an unpaid in-console Stripe Checkout session. */
+export async function closeStripeCheckout(tradeNo: string): Promise<void> {
+  await api.post('/api/user/stripe/checkout/close', { trade_no: tradeNo }, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
 }
 
 /** Reopen the existing Stripe session for a pending top-up. */
@@ -355,9 +365,9 @@ function isStripeCheckoutRevisionFailureResponse(
 ): value is ApiResponse<StripeCheckoutRevisionData> {
   return Boolean(
     value &&
-      typeof value === 'object' &&
-      (value as ApiResponse).success === false &&
-      isStripeCheckoutDiscountErrorMessage((value as ApiResponse).message)
+    typeof value === 'object' &&
+    (value as ApiResponse).success === false &&
+    isStripeCheckoutDiscountErrorMessage((value as ApiResponse).message)
   )
 }
 

@@ -605,6 +605,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		// Amounts are trustworthy only in USD display mode (token display amounts are
 		// huge and unreadable in a headline), mirroring stripeCheckoutSubmitMessage.
 		data := gin.H{
+			"trade_no":        referenceId,
 			"client_secret":   checkoutSession.ClientSecret,
 			"publishable_key": setting.StripePublishableKey,
 			"topup_summary": StripeTopUpSummary{
@@ -680,6 +681,7 @@ func ResumeStripeTopUpCheckout(c *gin.Context) {
 	data := gin.H{}
 	if secret := strings.TrimSpace(checkoutSession.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
 		data["client_secret"] = secret
+		data["trade_no"] = topUp.TradeNo
 		data["publishable_key"] = setting.StripePublishableKey
 		data["topup_summary"] = StripeTopUpSummary{
 			PayAmount:    float64(topUp.Amount),

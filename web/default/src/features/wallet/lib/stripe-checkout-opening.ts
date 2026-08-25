@@ -16,12 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type {
-  StripeCheckoutDiscountState,
-  StripeTopupSummary,
-} from '../types'
+import type { StripeCheckoutDiscountState, StripeTopupSummary } from '../types'
 
 export type StripeCheckoutData = {
+  trade_no?: string
   client_secret?: string
   publishable_key?: string
   fallback_url?: string
@@ -37,6 +35,7 @@ export type StripeCheckoutData = {
 export type StripeCheckoutOpening =
   | {
       kind: 'elements'
+      tradeNo?: string
       clientSecret: string
       publishableKey: string
       fallbackUrl?: string
@@ -90,6 +89,7 @@ export function resolveStripeCheckoutOpening(
     const fallbackUrl = normalizeCheckoutUrl(data.fallback_url)
     return {
       kind: 'elements',
+      ...(data.trade_no ? { tradeNo: data.trade_no } : {}),
       clientSecret: data.client_secret,
       publishableKey: data.publishable_key,
       ...(fallbackUrl ? { fallbackUrl } : {}),

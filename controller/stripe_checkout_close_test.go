@@ -43,7 +43,7 @@ func TestCloseStripeCheckoutTopUpExpiresProviderAndFailsInvoice(t *testing.T) {
 			expired++
 			return &stripeCheckoutSessionSnapshot{ID: "cs_close_topup", Status: "expired", PaymentStatus: "unpaid"}, nil
 		},
-		FailTopUp: func(string) error { failed++; return nil },
+		FailTopUp:   func(string) error { failed++; return nil },
 		FailInvoice: func(string) error { invoiceFailed++; return nil },
 	})
 	t.Cleanup(restore)
@@ -99,7 +99,7 @@ func setupStripeCheckoutCloseTestDB(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:stripe-checkout-close-"+time.Now().Format("150405.000000000")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentInvoice{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentInvoice{}, &model.SubscriptionOrder{}))
 	t.Cleanup(func() { model.DB = originalDB })
 }
 

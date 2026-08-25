@@ -63,6 +63,7 @@ type SubscriptionSelfPaymentQuote struct {
 
 type SubscriptionSelfPurchaseResponse struct {
 	Status           string                            `json:"status"`
+	TradeNo          string                            `json:"trade_no,omitempty"`
 	Contract         *SubscriptionSelfContractDTO      `json:"contract,omitempty"`
 	Intent           *SubscriptionSelfPendingChangeDTO `json:"intent,omitempty"`
 	CheckoutURL      string                            `json:"checkout_url,omitempty"`
@@ -550,6 +551,9 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 		CheckoutURL:      checkoutURL,
 		HostedInvoiceURL: strings.TrimSpace(result.HostedInvoiceURL),
 		ClientSecret:     strings.TrimSpace(result.ClientSecret),
+	}
+	if result.Order != nil {
+		response.TradeNo = strings.TrimSpace(result.Order.TradeNo)
 	}
 	if response.ClientSecret != "" {
 		response.PublishableKey = strings.TrimSpace(setting.StripePublishableKey)

@@ -18,10 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { StripeCheckoutSession } from '@stripe/stripe-js'
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import type { StripeCheckoutSession } from '@stripe/stripe-js'
 import type {
   ApiResponse,
   StripeCheckoutDiscountState,
@@ -46,15 +46,11 @@ let latestPromotionControlProps:
     }
   | undefined
 
-let latestSessionChange:
-  | ((session: StripeCheckoutSession) => void)
-  | undefined
-let discountResponse:
-  | ApiResponse<StripeCheckoutRevisionData>
-  | null = null
-let discountResponsePromise:
-  | Promise<typeof discountResponse>
-  | null = null
+let latestSessionChange: ((session: StripeCheckoutSession) => void) | undefined
+let latestDialogCloseClick: (() => void) | undefined
+let latestDialogOpenChange: ((open: boolean) => void) | undefined
+let discountResponse: ApiResponse<StripeCheckoutRevisionData> | null = null
+let discountResponsePromise: Promise<typeof discountResponse> | null = null
 
 function checkoutSession(): StripeCheckoutSession {
   return {
@@ -85,6 +81,7 @@ const updateStripeCheckoutDiscount = mock(async (request: unknown) => {
   if (discountResponsePromise) return await discountResponsePromise
   return discountResponse
 })
+const closeStripeCheckout = mock(async (_tradeNo: string) => undefined)
 
 const mountStripeCheckoutElements = mock(
   async (options: {
@@ -106,10 +103,12 @@ const mountStripeCheckoutElements = mock(
 )
 
 mock.module('../../api', () => ({
+  closeStripeCheckout,
   updateStripeCheckoutDiscount,
 }))
 
 mock.module('../../api.ts', () => ({
+  closeStripeCheckout,
   updateStripeCheckoutDiscount,
 }))
 
@@ -138,9 +137,21 @@ mock.module('lucide-react', () => ({
 }))
 
 mock.module('@/components/ui/dialog', () => ({
-  Dialog: (props: { children: React.ReactNode; open?: boolean }) =>
-    props.open ? <>{props.children}</> : null,
-  DialogClose: (props: { children: React.ReactNode }) => <>{props.children}</>,
+  Dialog: (props: {
+    children: React.ReactNode
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+  }) => {
+    latestDialogOpenChange = props.onOpenChange
+    return props.open ? <>{props.children}</> : null
+  },
+  DialogClose: (props: { children: React.ReactNode; onClick?: () => void }) => {
+    latestDialogCloseClick = () => {
+      props.onClick?.()
+      latestDialogOpenChange?.(false)
+    }
+    return <>{props.children}</>
+  },
   DialogContent: (props: { children: React.ReactNode }) => (
     <div>{props.children}</div>
   ),
@@ -480,8 +491,11 @@ beforeEach(() => {
   }
   discountResponsePromise = null
   latestSessionChange = undefined
+  latestDialogCloseClick = undefined
+  latestDialogOpenChange = undefined
   mountStripeCheckoutElements.mockClear()
   updateStripeCheckoutDiscount.mockClear()
+  closeStripeCheckout.mockClear()
 })
 
 afterAll(() => {
@@ -490,6 +504,37 @@ afterAll(() => {
 })
 
 describe('StripeCheckoutDialog promotion code interactions', () => {
+  test('fires best-effort close termination and dismisses immediately', async () => {
+    const onOpenChange = mock(() => undefined)
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    React.act(() => {
+      root.render(
+        <I18nextProvider i18n={testI18n}>
+          <StripeCheckoutDialog
+            session={{
+              clientSecret: 'cs_initial',
+              publishableKey: 'pk_initial',
+              tradeNo: 'trade-close-1',
+              summary: null,
+            }}
+            onOpenChange={onOpenChange}
+          />
+        </I18nextProvider>
+      )
+    })
+
+    React.act(() => latestDialogCloseClick?.())
+    await React.act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(closeStripeCheckout).toHaveBeenCalledWith('trade-close-1')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    React.act(() => root.unmount())
+  })
+
   test('passes the active apply mutation as promotion control busy action', async () => {
     const { root } = renderDialog()
     const pending = pendingDiscountResponse()
@@ -526,7 +571,7 @@ describe('StripeCheckoutDialog promotion code interactions', () => {
   })
 
   test('submits a trimmed code and remounts Checkout Elements after success', async () => {
-    const { container, root } = renderDialog()
+    const { root } = renderDialog()
 
     try {
       await React.act(async () => {
