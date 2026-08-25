@@ -181,7 +181,7 @@ const SEEDANCE_SHOWCASE_ASSET_VERSION = "20260824";
 // a model-specific media row.
 /** Whether a model page renders the prompt library section. */
 function hasPromptLibrary(modelId: string, kind?: ModelReadmeKind): boolean {
-  // Image pages always have the five reusable scenario templates, even when a
+  // Image pages always have the six reusable scenario templates, even when a
   // newly-discovered model has no generated media row yet.
   if (kind === "image") return getImagePromptTemplates(modelId).length > 0;
   if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
@@ -626,11 +626,11 @@ function ModelShowcase(props: {
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Image pages lead with reusable scenario templates, then keep the model's
-  // generated library samples underneath them. The templates are deliberately
-  // owned by this section rather than the workbench picker: they answer
-  // "what can I make?", while the single workbench card answers "what request
-  // does this model accept?".
+  // Image pages lead with six reusable scenario templates. Video/audio pages
+  // keep their model-generated library samples here. The templates are
+  // deliberately owned by this section rather than the workbench picker: they
+  // answer "what can I make?", while the single workbench card answers "what
+  // request does this model accept?".
   //
   // There is deliberately no shared generated-media fallback across models.
   // This section used to render SHOWCASE_SCENES for every model, so a text
@@ -655,14 +655,17 @@ function ModelShowcase(props: {
           ratio: template.ratio,
         }))
       : [];
-  const generatedScenes: ShowcaseScene[] = usesOriginalScenes
-    ? [...SHOWCASE_SCENES]
-    : (media?.library ?? []).map((sample) => ({
-        id: sample.slug,
-        label: sample.label,
-        prompt: sample.prompt,
-        kind: sample.kind,
-      }));
+  const generatedScenes: ShowcaseScene[] =
+    props.kind === "image"
+      ? []
+      : usesOriginalScenes
+        ? [...SHOWCASE_SCENES]
+        : (media?.library ?? []).map((sample) => ({
+            id: sample.slug,
+            label: sample.label,
+            prompt: sample.prompt,
+            kind: sample.kind,
+          }));
   const scenes = [...templateScenes, ...generatedScenes];
   if (scenes.length === 0) return null;
 

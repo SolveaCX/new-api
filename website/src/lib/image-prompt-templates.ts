@@ -19,7 +19,7 @@ export type ImagePromptTemplate = {
 const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
 
 /**
- * Use-case prompts for the image generator workbench.  Bracketed values are
+ * Use-case prompts for the image prompt library. Bracketed values are
  * deliberate fill-in slots: a visitor can replace them without rewriting the
  * composition, lighting, and delivery constraints that make a prompt useful.
  */
@@ -68,6 +68,15 @@ export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
     ratio: "16:10",
     poster: `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
     tags: ["app", "product", "launch"],
+  },
+  {
+    id: "food-editorial",
+    label: "Food and beverage",
+    prompt:
+      "Create an editorial menu image for [dish or drink] served in [setting]. Show the hero item at a natural three-quarter angle with believable texture, controlled highlights, supporting ingredients used sparingly, warm directional light, and a clean area for menu copy. Keep the portion and colors appetizing, avoid invented labels, and do not add utensils or props that were not requested.",
+    ratio: "4:5",
+    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    tags: ["food", "menu", "editorial"],
   },
 ];
 

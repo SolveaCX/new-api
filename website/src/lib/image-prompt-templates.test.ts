@@ -7,10 +7,14 @@ import {
 
 describe("image prompt templates", () => {
   test("covers the main image-production scenarios", () => {
-    expect(IMAGE_PROMPT_TEMPLATES.length).toBeGreaterThanOrEqual(5);
+    expect(IMAGE_PROMPT_TEMPLATES).toHaveLength(6);
 
     const ids = new Set(IMAGE_PROMPT_TEMPLATES.map((template) => template.id));
     expect(ids.size).toBe(IMAGE_PROMPT_TEMPLATES.length);
+    const prompts = new Set(IMAGE_PROMPT_TEMPLATES.map((template) => template.prompt));
+    expect(prompts.size).toBe(IMAGE_PROMPT_TEMPLATES.length);
+    const posters = new Set(IMAGE_PROMPT_TEMPLATES.map((template) => template.poster));
+    expect(posters.size).toBe(IMAGE_PROMPT_TEMPLATES.length);
 
     for (const template of IMAGE_PROMPT_TEMPLATES) {
       expect(template.prompt.length).toBeGreaterThan(120);
