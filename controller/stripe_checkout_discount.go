@@ -719,7 +719,7 @@ func createInitialStripeCheckoutRevision(
 	if err != nil {
 		return nil, nil, err
 	}
-	digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
+	digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
 	if err != nil {
 		return nil, nil, err
 	}
