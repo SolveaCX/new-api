@@ -174,15 +174,16 @@ const MAX_REFERENCE_MEDIA_FILES = 10;
 // previously cached lower-resolution generation after a staging refresh.
 const SEEDANCE_SHOWCASE_ASSET_VERSION = "20260824";
 
-// Workbench examples for one model.
-//
-// MEDIA_EXAMPLES is keyed by modality, so every video model offered the same
-// seedance clips as "its" examples -- MiniMax-H3's page led with a Seedance F1
-// shot and that shot's reference image. A model with its own generated sample
-// leads with that sample instead, and the modality set follows as additional
-// examples so the picker still shows a range of parameter configurations.
+// Workbench examples for one model. Each page keeps this picker intentionally
+// small: one representative generated request, with a single prompt-template
+// fallback only for image models that have no generated workbench asset yet.
+// MEDIA_EXAMPLES remains the modality fallback for video/audio pages without
+// a model-specific media row.
 /** Whether a model page renders the prompt library section. */
-function hasPromptLibrary(modelId: string): boolean {
+function hasPromptLibrary(modelId: string, kind?: ModelReadmeKind): boolean {
+  // Image pages always have the five reusable scenario templates, even when a
+  // newly-discovered model has no generated media row yet.
+  if (kind === "image") return getImagePromptTemplates(modelId).length > 0;
   if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
   return Boolean(getModelMedia(modelId)?.library.length);
 }
@@ -226,27 +227,32 @@ function examplesForModel(
 ): readonly MediaExample[] {
   const media = getModelMedia(modelId);
 
-  // Image pages lead with practical, fill-in-ready scenarios.  A model's
-  // generated sample is retained as the final card when one exists, but the
-  // first card is always a usable prompt template so every image model has a
-  // meaningful workbench starting point -- including newly-added catalog IDs.
+  // The workbench gets one representative request.  Scenario templates live
+  // in the prompt library below; keeping them out of this picker makes the
+  // editor's first screen about one concrete model request instead of a
+  // second gallery.
   if (kind === "image") {
-    const templates: MediaExample[] = getImagePromptTemplates(modelId).map((template) => ({
-      poster: template.poster,
-      label: template.label,
-      prompt: template.prompt,
-      isPromptTemplate: true,
-      templateId: template.id,
-      ratio: template.ratio,
-    }));
     const generated = (media?.workbench ?? [])
       .filter((sample) => sample.kind === "image")
-      .map((sample) => ({
+      .map((sample): MediaExample => ({
         poster: modelSampleImageUrl(sample.slug),
         label: sample.label,
         prompt: sample.prompt,
       }));
-    return [...templates, ...generated].slice(0, templates.length + (generated.length > 0 ? 1 : 0));
+    if (generated.length > 0) return generated.slice(0, 1);
+    const fallback = getImagePromptTemplates(modelId)[0];
+    return fallback
+      ? [
+          {
+            poster: fallback.poster,
+            label: fallback.label,
+            prompt: fallback.prompt,
+            isPromptTemplate: true,
+            templateId: fallback.id,
+            ratio: fallback.ratio,
+          },
+        ]
+      : [];
   }
 
   if (!media || media.workbench.length === 0) {
@@ -337,18 +343,23 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
-// Showcase: what the model produces across use cases, above the FAQ so the last
-// thing a reader sees before the questions is the output itself.
+// Showcase: reusable prompt templates and model-generated samples across use
+// cases, above the FAQ so the last thing a reader sees before the questions is
+// an actionable prompt library.
 //
-// Each entry is real generated media plus the prompt behind it. SHOWCASE_SCENES
-// is empty until those assets exist -- the section renders nothing rather than
-// standing in with placeholder art, because a fabricated "fight scene" still
-// implies the model produced it.
+// SHOWCASE_SCENES is empty until the Seedance assets exist -- the section still
+// renders nothing for video/text models without real samples. Image models get
+// their model-neutral templates from image-prompt-templates.ts.
 type ShowcaseScene = {
   /** Slug used for the asset paths under https://cdn.shulex-voc.com/flatkey/model-showcase/. */
   id: string;
   label: ModelLandingKey;
   prompt: string;
+  poster?: string;
+  video?: string;
+  kind?: "image" | "video";
+  isPromptTemplate?: boolean;
+  ratio?: string;
 };
 
 // To add a scene: add the generated video and poster to the CDN, add the entry
@@ -609,39 +620,65 @@ function WhyFlatkey(props: {
 function ModelShowcase(props: {
   modelId: string;
   modelName: string;
+  kind: ModelReadmeKind;
   onUseScene: (scene: ShowcaseScene) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Each model shows its own generated output, or nothing at all.
+  // Image pages lead with reusable scenario templates, then keep the model's
+  // generated library samples underneath them. The templates are deliberately
+  // owned by this section rather than the workbench picker: they answer
+  // "what can I make?", while the single workbench card answers "what request
+  // does this model accept?".
   //
-  // There is deliberately no shared fallback across models. This section used
-  // to render SHOWCASE_SCENES for every model, so a text model like
-  // deepseek-v4-pro presented video generation as its own "prompts that work",
-  // and an image model advertised video it cannot produce.
+  // There is deliberately no shared generated-media fallback across models.
+  // This section used to render SHOWCASE_SCENES for every model, so a text
+  // model like deepseek-v4-pro presented video generation as its own "prompts
+  // that work", and an image model advertised video it cannot produce.
   //
-  // SHOWCASE_SCENES itself is not generic, though: those five clips are real
-  // Seedance 2.5 generations made for that page, so seedance-2.5 still uses
-  // them. Every other model uses the assets generated for it.
+  // Image templates are the intentional shared exception: they are request
+  // blueprints, not claims that every model produced the same output.
+  // SHOWCASE_SCENES itself remains specific to Seedance 2.5; every other model
+  // uses its own generated library assets when available.
   const media = getModelMedia(props.modelId);
   const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
-  const scenes: ShowcaseScene[] = usesOriginalScenes
+  const templateScenes: ShowcaseScene[] =
+    props.kind === "image"
+      ? getImagePromptTemplates(props.modelId).map((template) => ({
+          id: `template:${template.id}`,
+          label: template.label,
+          prompt: template.prompt,
+          poster: template.poster,
+          kind: "image",
+          isPromptTemplate: true,
+          ratio: template.ratio,
+        }))
+      : [];
+  const generatedScenes: ShowcaseScene[] = usesOriginalScenes
     ? [...SHOWCASE_SCENES]
     : (media?.library ?? []).map((sample) => ({
         id: sample.slug,
         label: sample.label,
         prompt: sample.prompt,
+        kind: sample.kind,
       }));
+  const scenes = [...templateScenes, ...generatedScenes];
   if (scenes.length === 0) return null;
 
-  const sampleKind = (id: string) =>
-    usesOriginalScenes ? "video" : media?.library.find((sample) => sample.slug === id)?.kind ?? "video";
-  const posterUrl = (id: string, index: number) => {
-    return usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.png?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : modelSampleImageUrl(id);
+  const sampleKind = (scene: ShowcaseScene) =>
+    scene.kind ?? (usesOriginalScenes ? "video" : media?.library.find((sample) => sample.slug === scene.id)?.kind ?? "video");
+  const posterUrl = (scene: ShowcaseScene) => {
+    if (scene.poster) return scene.poster;
+    return usesOriginalScenes
+      ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.png?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}`
+      : modelSampleImageUrl(scene.id);
   };
-  const videoUrl = (id: string) =>
-    usesOriginalScenes ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}` : modelSampleVideoUrl(id);
+  const videoUrl = (scene: ShowcaseScene) =>
+    scene.video ??
+    (usesOriginalScenes
+      ? `https://cdn.shulex-voc.com/flatkey/model-showcase/${scene.id}.mp4?v=${SEEDANCE_SHOWCASE_ASSET_VERSION}`
+      : modelSampleVideoUrl(scene.id));
 
   return (
     <RevealSection
@@ -652,7 +689,11 @@ function ModelShowcase(props: {
         <FlatkeySectionHeading
           eyebrow={props.t("Prompt library")}
           title={props.t("{{model}} prompts that work", { model: props.modelName })}
-          description={props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")}
+          description={
+            props.kind === "image"
+              ? props.t("Explore different use cases and parameter configurations")
+              : props.t("Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.")
+          }
         />
         {/* One row per scene, media on one side and its prompt on the other,
             alternating sides down the list.
@@ -668,10 +709,11 @@ function ModelShowcase(props: {
           {scenes.map((scene, index) => {
             const mediaFirst = index % 2 === 0;
             const copied = copiedId === scene.id;
-            const isVideo = sampleKind(scene.id) === "video";
+            const isVideo = sampleKind(scene) === "video";
             return (
               <div
                 key={scene.id}
+                data-prompt-template-card={scene.isPromptTemplate ? "true" : undefined}
                 className="grid items-stretch gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2 dark:border-white/10 dark:bg-white/[0.04]"
               >
                 <div className={`relative aspect-video overflow-hidden rounded-xl bg-[#10131a] ${mediaFirst ? "" : "lg:order-2"}`}>
@@ -682,9 +724,9 @@ function ModelShowcase(props: {
                       loop
                       muted
                       playsInline
-                      poster={posterUrl(scene.id, index)}
+                      poster={posterUrl(scene)}
                       preload="metadata"
-                      src={videoUrl(scene.id)}
+                      src={videoUrl(scene)}
                       onError={(event) => {
                         event.currentTarget.src = localModelSampleUrl(scene.id, "mp4");
                       }}
@@ -693,14 +735,16 @@ function ModelShowcase(props: {
                     // Image models get a still: an <img> is what they produce,
                     // and wrapping one in a <video> would imply otherwise.
                     <Image
-                      src={posterUrl(scene.id, index)}
+                      src={posterUrl(scene)}
                       alt={props.t(scene.label)}
                       fill
                       sizes="(min-width: 1024px) 560px, 100vw"
                       className="object-cover"
                       loading="lazy"
                       onError={(event) => {
-                        event.currentTarget.src = localModelSampleUrl(scene.id, "png");
+                        if (!scene.isPromptTemplate) {
+                          event.currentTarget.src = localModelSampleUrl(scene.id, "png");
+                        }
                       }}
                       unoptimized
                     />
@@ -710,6 +754,18 @@ function ModelShowcase(props: {
                 <div className={`flex min-w-0 flex-col justify-center ${mediaFirst ? "" : "lg:order-1"}`}>
                   <div className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     {props.t(scene.label)}
+                    {scene.isPromptTemplate ? (
+                      <>
+                        <span className="ml-2 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] tracking-normal text-violet-700 normal-case dark:text-violet-300">
+                          {props.t("Prompt template")}
+                        </span>
+                        {scene.ratio ? (
+                          <span className="ml-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] tracking-normal text-violet-700 normal-case dark:text-violet-300">
+                            {scene.ratio}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
                   {/* Sized to the text, not stretched to the clip: these prompts
                       are three or four lines, and a full-height box left most of
@@ -1152,7 +1208,7 @@ function FlatkeyModelDetailPage(props: {
         <ModelPageTabs
           t={props.t}
           generator={Boolean(generator)}
-          showcase={hasPromptLibrary(props.config.modelId)}
+          showcase={hasPromptLibrary(props.config.modelId, pageKind)}
         />
 
         {generator ? (
@@ -1253,6 +1309,7 @@ function FlatkeyModelDetailPage(props: {
         <ModelShowcase
           modelId={props.config.modelId}
           modelName={props.config.displayName}
+          kind={pageKind}
           onUseScene={props.onUseScene}
           t={props.t}
         />
