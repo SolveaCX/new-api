@@ -24,6 +24,8 @@ import { PaymentSettingsSection } from '../integrations/payment-settings-section
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { parseCostCalculation } from './cost-calculation-defaults'
+import { CostCalculationSection } from './cost-calculation-section'
 
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
@@ -125,6 +127,15 @@ const BILLING_SECTIONS = [
           'upstream-sync',
           'hidden-models',
         ]}
+      />
+    ),
+  },
+  {
+    id: 'cost-calculation',
+    titleKey: 'Cost Calculation',
+    build: (settings: BillingSettings) => (
+      <CostCalculationSection
+        defaultValue={parseCostCalculation(settings.FlatkeyCostCalculation)}
       />
     ),
   },

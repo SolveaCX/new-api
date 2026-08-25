@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { SettingsPage } from '../components/settings-page'
 import type { BillingSettings } from '../types'
+import { DEFAULT_COST_CALCULATION } from './cost-calculation-defaults'
 import {
   BILLING_DEFAULT_SECTION,
   getBillingSectionContent,
@@ -125,6 +126,7 @@ const defaultBillingSettings: BillingSettings = {
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,
+  FlatkeyCostCalculation: JSON.stringify(DEFAULT_COST_CALCULATION),
 }
 
 export function BillingSettings() {

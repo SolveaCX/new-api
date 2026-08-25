@@ -711,6 +711,9 @@ func validateAndNormalizeOptionValue(key string, value string) (string, error) {
 	if key == "payment_setting.amount_bonus_groups" {
 		return normalizeAmountBonusGroupsOptionValue(value)
 	}
+	if key == "FlatkeyCostCalculation" {
+		return normalizeCostCalculationOptionValue(value)
+	}
 	if key == "GroupModelRatio" || key == "group_ratio_setting.group_model_ratio" {
 		if err := ratio_setting.CheckGroupModelRatio(value); err != nil {
 			return "", err
@@ -727,6 +730,142 @@ func validateAndNormalizeOptionValue(key string, value string) (string, error) {
 		return strconv.Itoa(maxCount), nil
 	}
 	return value, nil
+}
+
+type costCalculationOption struct {
+	Assumptions costCalculationAssumptions   `json:"assumptions"`
+	Discounts   map[string]*float64          `json:"discounts"`
+	Fields      []string                     `json:"fields"`
+	Models      []costCalculationOptionModel `json:"models"`
+}
+
+type costCalculationAssumptions struct {
+	ListPrice          float64 `json:"listPrice"`
+	Bonus              float64 `json:"bonus"`
+	Coupon             float64 `json:"coupon"`
+	SeedanceSellFactor float64 `json:"seedanceSellFactor"`
+	OtherSellFactor    float64 `json:"otherSellFactor"`
+	InputTokens        float64 `json:"inputTokens"`
+	OutputTokens       float64 `json:"outputTokens"`
+	NonTokenUsage      float64 `json:"nonTokenUsage"`
+}
+
+type costCalculationOptionModel struct {
+	Name             string            `json:"name"`
+	Vendor           string            `json:"vendor"`
+	BillingUnit      string            `json:"billingUnit"`
+	OfficialInput    float64           `json:"officialInput"`
+	OfficialOutput   float64           `json:"officialOutput"`
+	OfficialNonToken float64           `json:"officialNonToken"`
+	CostDiscount     *float64          `json:"costDiscount"`
+	Note             string            `json:"note"`
+	CustomFields     map[string]string `json:"customFields"`
+}
+
+func normalizeCostCalculationOptionValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", errors.New("cost calculation configuration must be a JSON object")
+	}
+
+	var config costCalculationOption
+	if err := common.UnmarshalJsonStr(trimmed, &config); err != nil {
+		return "", errors.New("cost calculation configuration must be valid JSON")
+	}
+	if config.Discounts == nil {
+		config.Discounts = map[string]*float64{}
+	}
+	if config.Fields == nil {
+		config.Fields = []string{}
+	}
+	if config.Models == nil {
+		config.Models = []costCalculationOptionModel{}
+	}
+
+	assumptions := []struct {
+		name  string
+		value float64
+	}{
+		{"listPrice", config.Assumptions.ListPrice},
+		{"bonus", config.Assumptions.Bonus},
+		{"coupon", config.Assumptions.Coupon},
+		{"seedanceSellFactor", config.Assumptions.SeedanceSellFactor},
+		{"otherSellFactor", config.Assumptions.OtherSellFactor},
+		{"inputTokens", config.Assumptions.InputTokens},
+		{"outputTokens", config.Assumptions.OutputTokens},
+		{"nonTokenUsage", config.Assumptions.NonTokenUsage},
+	}
+	for _, item := range assumptions {
+		if item.value < 0 {
+			return "", errors.New("cost calculation assumptions cannot be negative: " + item.name)
+		}
+	}
+	if config.Assumptions.ListPrice+config.Assumptions.Bonus <= 0 {
+		return "", errors.New("cost calculation list price plus bonus must be greater than zero")
+	}
+
+	seenFields := make(map[string]struct{}, len(config.Fields))
+	for index, field := range config.Fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			return "", errors.New("cost calculation field names cannot be empty")
+		}
+		if len(field) > 100 {
+			return "", errors.New("cost calculation field names cannot exceed 100 characters")
+		}
+		if _, ok := seenFields[strings.ToLower(field)]; ok {
+			return "", errors.New("cost calculation field names must be unique")
+		}
+		config.Fields[index] = field
+		seenFields[strings.ToLower(field)] = struct{}{}
+	}
+
+	for name, discount := range config.Discounts {
+		if strings.TrimSpace(name) == "" {
+			return "", errors.New("cost calculation discount names cannot be empty")
+		}
+		if discount != nil && (*discount < 0 || *discount > 1.5) {
+			return "", errors.New("cost calculation discounts must be between 0 and 1.5")
+		}
+	}
+
+	seenModels := make(map[string]struct{}, len(config.Models))
+	for index := range config.Models {
+		model := &config.Models[index]
+		model.Name = strings.TrimSpace(model.Name)
+		model.Vendor = strings.TrimSpace(model.Vendor)
+		model.BillingUnit = strings.TrimSpace(model.BillingUnit)
+		if model.Name == "" || model.Vendor == "" || model.BillingUnit == "" {
+			return "", errors.New("cost calculation models require name, vendor, and billing unit")
+		}
+		modelKey := strings.ToLower(model.Name)
+		if _, ok := seenModels[modelKey]; ok {
+			return "", errors.New("cost calculation model names must be unique")
+		}
+		seenModels[modelKey] = struct{}{}
+		for _, price := range []float64{model.OfficialInput, model.OfficialOutput, model.OfficialNonToken} {
+			if price < 0 {
+				return "", errors.New("cost calculation model prices cannot be negative")
+			}
+		}
+		if model.CostDiscount != nil && (*model.CostDiscount < 0 || *model.CostDiscount > 1.5) {
+			return "", errors.New("cost calculation model discounts must be between 0 and 1.5")
+		}
+		if model.CustomFields == nil {
+			model.CustomFields = map[string]string{}
+		}
+		for field := range model.CustomFields {
+			if _, ok := seenFields[strings.ToLower(strings.TrimSpace(field))]; !ok {
+				return "", errors.New("cost calculation model contains an unknown custom field")
+			}
+		}
+	}
+
+	normalized, err := common.Marshal(config)
+	if err != nil {
+		return "", errors.New("failed to serialize cost calculation configuration")
+	}
+	return string(normalized), nil
 }
 
 func normalizeAmountBonusOptionValue(value string) (string, error) {
