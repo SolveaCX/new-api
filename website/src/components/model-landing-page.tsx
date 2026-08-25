@@ -94,8 +94,6 @@ import {
 } from "@/lib/model-snippets";
 import type { ModelUsage, ModelUsagePoint } from "@/lib/model-usage";
 import {
-  getImageModelLibrarySamples,
-  getImageModelWorkbenchSample,
   getModelMedia,
   localModelSampleUrl,
   modelCoverUrl,
@@ -186,14 +184,14 @@ const MAX_REFERENCE_MEDIA_FILES = 10;
 const SEEDANCE_SHOWCASE_ASSET_VERSION = "20260824";
 
 // Workbench examples for one model. Each page keeps this picker intentionally
-// small: one representative generated request, with a single prompt-template
-// fallback only for image models that have no generated workbench asset yet.
+// small: image pages show one representative industry prompt template, while
+// video/audio pages can show a generated request when one is available.
 // MEDIA_EXAMPLES remains the modality fallback for video/audio pages without
-// a model-specific media row.
+// a model-specific media row. Image pages use the industry template catalog.
 /** Whether a model page renders the prompt library section. */
 function hasPromptLibrary(modelId: string, kind?: ModelReadmeKind): boolean {
-  // Image pages always have six cards: generated model examples when staged,
-  // or reusable scenario templates for a newly discovered model.
+  // Image pages always have six industry cards; model-generated media is kept
+  // separate in the workbench until matching industry assets are published.
   if (kind === "image") return getImagePromptTemplates(modelId).length > 0;
   if (modelMediaSlug(modelId) === "seedance-2-5") return SHOWCASE_SCENES.length > 0;
   return Boolean(getModelMedia(modelId)?.library.length);
@@ -238,22 +236,11 @@ function examplesForModel(
 ): readonly MediaExample[] {
   const media = getModelMedia(modelId);
 
-  // The workbench gets one representative request.  Scenario templates live
-  // in the prompt library below; keeping them out of this picker makes the
-  // editor's first screen about one concrete model request instead of a
-  // second gallery.
+  // The workbench gets one representative industry request. The six scenario
+  // templates live in the prompt library below; keeping one of them here lets
+  // visitors start from a useful business brief without duplicating the full
+  // gallery.
   if (kind === "image") {
-    const generated = getImageModelWorkbenchSample(modelId);
-    if (generated) {
-      return [
-        {
-          poster: modelSampleImageUrl(generated.slug),
-          fallbackPoster: getImagePromptTemplateFallbackPosters(modelId)[0],
-          label: generated.label,
-          prompt: generated.prompt,
-        },
-      ];
-    }
     const fallback = getImagePromptTemplates(modelId)[0];
     const fallbackPoster = getImagePromptTemplateFallbackPosters(modelId)[0];
     return fallback
@@ -302,13 +289,7 @@ const DEFAULT_HEALTH_SUCCESS_RATE = 100;
 const DEFAULT_HEALTH_TTFT_MS = 600;
 
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
-  image: [
-    { poster: "/assets/model-examples/image2/flatkey-image2-hotel.png", label: "Product mockups", prompt: "A premium boutique hotel suite prepared for a booking campaign, warm morning light, layered textiles, room service tray, city view, architectural interior photography." },
-    { poster: "/assets/model-examples/image2/flatkey-image2-creator.png", label: "UGC ad clips", prompt: "A short-form video creator filming a beauty tutorial in a compact studio, phone on tripod, softbox lights, product props, energetic but polished social content aesthetic." },
-    { poster: "/assets/model-examples/image2/flatkey-image2-medical.png", label: "Portrait", prompt: "A clean modern medical clinic consultation room with doctor and patient reviewing a tablet chart, calm daylight, trustworthy editorial healthcare photography, no patient-identifying details." },
-    { poster: "/assets/model-examples/image2/flatkey-image2-developer.png", label: "Apps", prompt: "A developer workstation with code editor, terminal, architecture diagram and coffee, dark room with focused monitor glow, realistic editorial technology photography, no readable code text." },
-    { poster: "/assets/model-examples/image2/skincare.png", label: "Product mockups", prompt: "Premium skincare product photographed for an ecommerce hero image, clean studio background, soft directional daylight, accurate packaging details, generous negative space for price and call-to-action." },
-  ],
+  image: [],
   video: [
     {
       // Real Seedance output paired with the exact prompt and reference that
@@ -359,15 +340,15 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
-// Showcase: reusable prompt templates and model-generated samples across use
+// Showcase: industry prompt templates and model-generated samples across use
 // cases, above the FAQ so the last thing a reader sees before the questions is
 // an actionable prompt library.
 //
 // SHOWCASE_SCENES is empty until the Seedance assets exist -- the section still
 // renders nothing for video/text models without real samples. Image models get
-// their model-neutral templates from image-prompt-templates.ts.
+// their industry templates from image-prompt-templates.ts.
 type ShowcaseScene = {
-  /** Slug used for the asset paths under https://cdn.shulex-voc.com/flatkey/model-showcase/. */
+  /** Stable slug for generated media, or a model/template key for industry cards. */
   id: string;
   label: ModelLandingKey;
   prompt: string;
@@ -644,26 +625,24 @@ function ModelShowcase(props: {
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Image pages lead with six generated examples from the current model when
-  // those assets are staged. Video/audio pages keep their model-generated
-  // library samples here. The workbench still has exactly one representative
-  // request; the library answers "what output is worth copying?".
+  // Image pages lead with six industry prompt templates paired with
+  // industry-matched reference images. The workbench still has exactly one
+  // representative industry template. Keeping these surfaces
+  // separate prevents a sci-fi benchmark render from pretending to be a
+  // restaurant, retail, or SaaS deliverable.
   //
   // There is deliberately no shared generated-media fallback across models.
   // This section used to render SHOWCASE_SCENES for every model, so a text
   // model like deepseek-v4-pro presented video generation as its own "prompts
   // that work", and an image model advertised video it cannot produce.
   //
-  // Newly discovered image models fall back to clearly marked request
-  // templates until their own generated media row is published. SHOWCASE_SCENES
-  // itself remains specific to Seedance 2.5; every other model uses its own
-  // generated library assets when available.
+  // SHOWCASE_SCENES itself remains specific to Seedance 2.5; video/audio pages
+  // continue to use their model-generated library assets.
   const media = getModelMedia(props.modelId);
   const usesOriginalScenes = modelMediaSlug(props.modelId) === "seedance-2-5";
   const imageFallbackPosters = getImagePromptTemplateFallbackPosters(props.modelId);
-  const imageSamples = props.kind === "image" ? getImageModelLibrarySamples(props.modelId) : [];
   const templateScenes: ShowcaseScene[] =
-    props.kind === "image" && imageSamples.length === 0
+    props.kind === "image"
       ? getImagePromptTemplates(props.modelId).map((template, index) => ({
           id: `template:${modelMediaSlug(props.modelId)}:${template.id}`,
           label: template.label,
@@ -677,13 +656,7 @@ function ModelShowcase(props: {
       : [];
   const generatedScenes: ShowcaseScene[] =
     props.kind === "image"
-      ? imageSamples.map((sample, index) => ({
-          id: sample.slug,
-          label: sample.label,
-          prompt: sample.prompt,
-          fallbackPoster: imageFallbackPosters[index],
-          kind: "image",
-        }))
+      ? []
       : usesOriginalScenes
         ? [...SHOWCASE_SCENES]
         : (media?.library ?? []).map((sample) => ({
@@ -743,7 +716,7 @@ function ModelShowcase(props: {
               <div
                 key={scene.id}
                 data-prompt-template-card={scene.isPromptTemplate ? "true" : undefined}
-                data-image-model-example-card={props.kind === "image" && !scene.isPromptTemplate ? "true" : undefined}
+                data-image-model-example-card={props.kind === "image" ? "true" : undefined}
                 data-image-example-slug={props.kind === "image" ? scene.id : undefined}
                 className="grid items-stretch gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2 dark:border-white/10 dark:bg-white/[0.04]"
               >
@@ -773,9 +746,8 @@ function ModelShowcase(props: {
                       className="object-cover"
                       loading="lazy"
                       onError={(event) => {
-                        if (!scene.isPromptTemplate) {
-                          event.currentTarget.src = scene.fallbackPoster ?? localModelSampleUrl(scene.id, "png");
-                        }
+                        const fallback = scene.fallbackPoster ?? localModelSampleUrl(scene.id, "png");
+                        if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
                       }}
                       unoptimized
                     />
@@ -2920,7 +2892,13 @@ function OutputPreview(props: {
       <div className={`grid gap-1 px-2 pt-3 pb-1 text-xs leading-5 ${props.kind === "video" ? "" : "text-[#3f3d46] dark:text-white/74"}`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${props.kind === "video" ? "bg-white/10 text-white/78" : "bg-violet-500/10 text-violet-700 dark:text-violet-300"}`}>
-            {props.t(primary.isPromptTemplate ? "Examples" : "Example output")}
+            {props.t(
+              primary.isPromptTemplate && props.kind === "image"
+                ? "Prompt template"
+                : primary.isPromptTemplate
+                  ? "Examples"
+                  : "Example output"
+            )}
           </span>
           <b className="min-w-0 truncate">{primary.isPromptTemplate && primary.label ? props.t(primary.label) : props.modelName}</b>
           {primary.isPromptTemplate && primary.ratio ? (

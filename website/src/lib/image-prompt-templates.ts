@@ -3,9 +3,10 @@ import type { ModelLandingKey } from "./model-landing";
 /**
  * A prompt that can be copied into any image model's request editor.
  *
- * These are intentionally model-neutral.  The same scenario vocabulary makes
- * the image model pages comparable, while the model-specific output preview
- * remains owned by `model-media.ts` when one is available.
+ * These are intentionally industry-led rather than style-led. Each card tells
+ * a concrete team what deliverable to make, where it will be used, and which
+ * production constraints matter. Any real model-generated media remains owned
+ * by `model-media.ts`; these local posters are clearly marked as templates.
  */
 export type ImagePromptTemplate = {
   id: string;
@@ -17,26 +18,43 @@ export type ImagePromptTemplate = {
 };
 
 const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
-
-// These local images are only a safety net for a newly catalogued model, or
-// for a generated CDN sample that has not finished publishing. A stable
-// model-specific rotation keeps fallback pages from showing the exact same
-// six thumbnails while the card remains clearly labelled as a prompt
-// template, not as that model's own generation.
-const IMAGE_TEMPLATE_POSTER_POOL = [
-  `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/portrait.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-developer.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-  `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-medical.png`,
-] as const;
+const AWESOME_IMAGE_ASSET_BASE = "/assets/prompts/awesome-images";
 
 /**
- * Use-case prompts for the image prompt library. Bracketed values are
+ * Poster variants stay inside the same industry lane as their prompt. The
+ * model id only chooses between compatible references; it never turns a food
+ * brief into a random medical or sci-fi thumbnail.
+ */
+const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
+  "product-hero": [
+    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+  ],
+  "social-ad": [
+    `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+  ],
+  "catalog-variant": [
+    `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/streetwear-lookbook.png`,
+  ],
+  "editorial-portrait": [
+    `${IMAGE_TEMPLATE_ASSET_BASE}/portrait.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+  ],
+  "product-ui": [
+    `${AWESOME_IMAGE_ASSET_BASE}/fitness-app.png`,
+    `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
+  ],
+  "food-editorial": [
+    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
+  ],
+};
+
+/**
+ * Industry prompts for the image prompt library. Bracketed values are
  * deliberate fill-in slots: a visitor can replace them without rewriting the
  * composition, lighting, and delivery constraints that make a prompt useful.
  */
@@ -45,52 +63,52 @@ export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
     id: "product-hero",
     label: "Product mockups",
     prompt:
-      "Create a premium ecommerce hero image for [product name]. Place the product on a clean [surface] with [brand colors] as subtle accents, soft directional daylight, accurate materials and packaging details, a balanced three-quarter camera angle, and generous negative space for a headline and call to action. No logos or readable text unless supplied in the reference image.",
+      "For ecommerce and retail teams, create a marketplace hero image for [product] sold through [Amazon, Shopify, or store]. Show the supplied product exactly, preserving packaging, materials, proportions, and supplied brand marks. Use a clean [surface], a balanced three-quarter view, soft studio light, and 4:5 or 1:1 framing with safe space for price and CTA copy. No invented text, claims, accessories, watermark, or extra products.",
     ratio: "4:5",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    poster: `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
     tags: ["product", "ecommerce", "hero"],
   },
   {
     id: "social-ad",
     label: "Ad creatives",
     prompt:
-      "Design a scroll-stopping social ad for [product or offer] aimed at [audience]. Show one clear benefit in a natural, believable scene, use [brand colors] as a restrained accent, keep the subject large and legible at mobile size, leave safe space for a short headline and CTA, and return three visual variants with the same product identity. Avoid invented claims and tiny unreadable copy.",
-    ratio: "1:1",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-creator.png`,
+      "For consumer brands and growth teams, create a 9:16 UGC ad cover for [product] aimed at [audience] on TikTok or Reels. Show a real creator using it in [home, cafe, or everyday setting], with natural hands and skin, authentic phone-camera framing, and the product clearly visible. Keep the top 18% safe for a headline and CTA. No generated text, invented logos, exaggerated claims, plastic skin, or extra products.",
+    ratio: "9:16",
+    poster: `${AWESOME_IMAGE_ASSET_BASE}/ugc-coffee-ad.png`,
     tags: ["social", "campaign", "variants"],
   },
   {
     id: "catalog-variant",
     label: "Ecommerce images",
     prompt:
-      "Create a consistent catalog image set for [product line]. Keep the camera height, focal length, background tone, and shadow direction fixed across [number] variants; change only [color or configuration]. Show the full product, preserve exact proportions and surface texture, use a neutral studio background, and leave clean margins for marketplace cropping. No extra accessories or text.",
+      "For fashion and sports retailers, create a consistent catalog set for [product line] with [number] colorways. Lock camera height, lens, background tone, crop, and shadow direction across every variant; change only [color or configuration]. Preserve exact proportions, sole or fabric texture, and marketplace-safe margins. No extra accessories, invented text, or drifting product identity.",
     ratio: "1:1",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
+    poster: `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
     tags: ["catalog", "consistency", "marketplace"],
   },
   {
     id: "editorial-portrait",
-    label: "Portrait",
+    label: "Content creators & knowledge streamers",
     prompt:
-      "Create an editorial portrait of [person or role] in [location]. Use soft window light from camera left, a natural expression, realistic skin texture, an uncluttered background, and wardrobe in [color palette]. Frame from chest up with a 4:5 composition, keep hands and facial features anatomically correct, and remove identifying details that were not provided.",
+      "For creator, community, and customer-facing teams, create a 4:5 professional avatar for [person or role] used on [profile, support, or about page]. Keep the face natural, eyes clear, skin and clothing texture realistic, and the background uncluttered with one subtle identity cue. Use soft key light and a centered chest-up crop. Preserve supplied identity details; no invented names, logos, text, or identifying information.",
     ratio: "4:5",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/portrait.png`,
+    poster: `${AWESOME_IMAGE_ASSET_BASE}/cyber-portrait.png`,
     tags: ["portrait", "editorial", "people"],
   },
   {
     id: "product-ui",
     label: "Apps",
     prompt:
-      "Create a polished launch visual for [app name], showing [core workflow] on a realistic device at a developer workstation. Use a dark neutral desk, focused monitor glow, subtle reflections, and a clear visual hierarchy; keep interface text abstract or supplied by the reference, with no invented logos or readable code. Leave the upper-right area open for launch copy.",
-    ratio: "16:10",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/saas.png`,
+      "For SaaS and mobile-product teams, create a 16:9 product-launch visual for [app name] showing [core workflow] on a realistic phone or laptop. Place the supplied UI in a clean branded scene, preserve its hierarchy and supplied text, use a restrained [brand palette], and leave the right side open for headline copy. No developer-tool interface, invented logo, readable code, fake metrics, or tiny unreadable interface text.",
+    ratio: "16:9",
+    poster: `${AWESOME_IMAGE_ASSET_BASE}/fitness-app.png`,
     tags: ["app", "product", "launch"],
   },
   {
     id: "food-editorial",
     label: "Food and beverage",
     prompt:
-      "Create an editorial menu image for [dish or drink] served in [setting]. Show the hero item at a natural three-quarter angle with believable texture, controlled highlights, supporting ingredients used sparingly, warm directional light, and a clean area for menu copy. Keep the portion and colors appetizing, avoid invented labels, and do not add utensils or props that were not requested.",
+      "For restaurants and beverage brands, create a 4:5 menu and delivery-platform hero for [dish or drink] served by [restaurant type]. Show the requested portion and ingredients with believable texture, plated on [surface] from a top-down or three-quarter angle, with warm directional light and a clean area for dish name and price. Do not add unrequested ingredients, utensils, labels, text, or props.",
     ratio: "4:5",
     poster: `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
     tags: ["food", "menu", "editorial"],
@@ -111,21 +129,33 @@ export function getImagePromptTemplates(_modelId?: string): ImagePromptTemplate[
 }
 
 /**
- * Pick deterministic local fallback posters for one model's template cards.
- *
- * Explicit image models use their own generated CDN samples instead. This is
- * for generic image model pages and CDN error recovery only; keeping the
- * rotation stable avoids a server/client mismatch while making fallback pages
- * visibly independent from one another.
+ * Pick deterministic, industry-compatible posters for one model's template
+ * cards. The model id chooses a compatible variant so two model pages do not
+ * look like a copy-paste, while the scenario-to-industry relationship stays
+ * stable (for example, a food brief always gets a food image).
  */
 export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
-  let hash = 0;
-  for (const character of modelId.trim().toLowerCase()) {
-    hash = (hash * 31 + character.charCodeAt(0)) % IMAGE_TEMPLATE_POSTER_POOL.length;
-  }
-  return IMAGE_PROMPT_TEMPLATES.map((_, index) =>
-    IMAGE_TEMPLATE_POSTER_POOL[(hash + index) % IMAGE_TEMPLATE_POSTER_POOL.length]
-  );
+  const hashFor = (value: string) => {
+    let hash = 0;
+    for (const character of value.trim().toLowerCase()) {
+      hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    }
+    return hash;
+  };
+
+  const used = new Set<string>();
+  return IMAGE_PROMPT_TEMPLATES.map((template) => {
+    const variants = IMAGE_TEMPLATE_POSTER_VARIANTS[template.id] ?? [template.poster];
+    const start = hashFor(`${modelId}:${template.id}`) % variants.length;
+    for (let offset = 0; offset < variants.length; offset += 1) {
+      const candidate = variants[(start + offset) % variants.length];
+      if (candidate && !used.has(candidate)) {
+        used.add(candidate);
+        return candidate;
+      }
+    }
+    return variants[start] ?? template.poster;
+  });
 }
 
 export function getImagePromptTemplate(templateId: string): ImagePromptTemplate | undefined {

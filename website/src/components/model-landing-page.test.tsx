@@ -731,27 +731,30 @@ describe("Image model workbench inputs", () => {
 
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
     expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
-    expect(workbenchHtml).not.toContain('data-prompt-template="true"');
-    expect(workbenchHtml).not.toContain("Create a premium ecommerce hero image for [product name]");
+    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
+    expect(workbenchHtml).toContain("ecommerce and retail teams");
+    expect(workbenchHtml).toContain("ecommerce-skincare.png");
   });
 
-  test("puts six model-specific image examples in the prompt library", () => {
+  test("puts six industry prompt templates in the prompt library", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
     const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
 
     expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(0);
-    expect(showcaseHtml).toContain("gpt-image-2-l1");
-    expect(showcaseHtml).toContain("gpt-image-2-l4");
-    expect(showcaseHtml).toContain("gpt-image-2-w2");
-    expect(showcaseHtml).toContain("gpt-image-2-w3");
-    expect(showcaseHtml).toContain("Scale and depth");
-    expect(showcaseHtml).not.toContain("skincare.png");
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect(showcaseHtml).toContain("ecommerce and retail teams");
+    expect(showcaseHtml).toContain("fashion and sports retailers");
+    expect(showcaseHtml).toContain("SaaS and mobile-product teams");
+    expect(showcaseHtml).toContain("restaurants and beverage brands");
+    expect(showcaseHtml).toContain("ecommerce-skincare.png");
+    expect(showcaseHtml).toContain("sports-shoe.png");
+    expect(showcaseHtml).not.toContain("Scale and depth");
+    expect(showcaseHtml).not.toContain("cinematic sci-fi realism");
   });
 
-  test("keeps image examples independent when the model changes", () => {
+  test("keeps industry poster selections model-specific without mixing industries", () => {
     const gptHtml = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
@@ -769,12 +772,14 @@ describe("Image model workbench inputs", () => {
     const geminiShowcase = sectionHtml(geminiHtml, "showcase", "why-flatkey");
 
     expect((geminiShowcase.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect(geminiShowcase).toContain("gemini-3-pro-image-l1");
-    expect(geminiShowcase).toContain("gemini-3-pro-image-w2");
+    expect((geminiShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect(geminiShowcase).toContain("template:gemini-3-pro-image:product-hero");
     expect(geminiShowcase).not.toContain("gpt-image-2-l1");
-    expect(gptShowcase.match(/https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-media\/sample\/[^"']+\.png/g)).not.toEqual(
-      geminiShowcase.match(/https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-media\/sample\/[^"']+\.png/g)
+    expect(gptShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)).not.toEqual(
+      geminiShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)
     );
+    expect(gptShowcase).not.toContain("developer.png");
+    expect(geminiShowcase).not.toContain("developer.png");
   });
 
   test("renders the canonical Gemini 2.5 image page as an image generator", () => {
@@ -792,8 +797,9 @@ describe("Image model workbench inputs", () => {
 
     expect(config.generator?.kind).toBe("image");
     expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect(showcaseHtml).toContain("gemini-2-5-flash-image-l1");
-    expect(showcaseHtml).toContain("gemini-2-5-flash-image-w2");
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
+    expect(showcaseHtml).toContain("template:gemini-2-5-flash-image:product-hero");
+    expect(showcaseHtml).toContain("restaurants and beverage brands");
   });
 
   test("gives newly discovered image model ids a prompt library and one workbench example", () => {
@@ -811,6 +817,7 @@ describe("Image model workbench inputs", () => {
     const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
     expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
+    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
     expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
   });
 
@@ -832,8 +839,10 @@ describe("Image model workbench inputs", () => {
 
     expect((qwenShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
     expect((fluxShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(qwenShowcase.match(/\/assets\/model-examples\/image2\/[^"']+\.png/g)).not.toEqual(
-      fluxShowcase.match(/\/assets\/model-examples\/image2\/[^"']+\.png/g)
+    expect(qwenShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)).not.toEqual(
+      fluxShowcase.match(/\/assets\/(?:prompts\/awesome-images|model-examples\/image2)\/[^"']+\.png/g)
     );
+    expect(qwenShowcase).not.toContain("cinematic sci-fi realism");
+    expect(fluxShowcase).not.toContain("cinematic sci-fi realism");
   });
 });

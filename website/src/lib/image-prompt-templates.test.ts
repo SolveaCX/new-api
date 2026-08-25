@@ -20,10 +20,17 @@ describe("image prompt templates", () => {
     for (const template of IMAGE_PROMPT_TEMPLATES) {
       expect(template.prompt.length).toBeGreaterThan(120);
       expect(template.prompt).toContain("[");
-      expect(template.poster).toMatch(/^\/assets\/model-examples\/image2\//);
+      expect(template.poster).toMatch(/^\/assets\/(model-examples\/image2|prompts\/awesome-images)\//);
       expect(template.ratio).toMatch(/^\d+:\d+$/);
       expect(template.tags.length).toBeGreaterThan(0);
     }
+
+    expect(IMAGE_PROMPT_TEMPLATES[0].prompt).toMatch(/ecommerce and retail teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[1].prompt).toMatch(/consumer brands and growth teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[2].prompt).toMatch(/fashion and sports retailers/i);
+    expect(IMAGE_PROMPT_TEMPLATES[3].prompt).toMatch(/creator, community, and customer-facing teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[4].prompt).toMatch(/SaaS and mobile-product teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[5].prompt).toMatch(/restaurants and beverage brands/i);
   });
 
   test("returns an independent catalog for every image model", () => {
@@ -45,7 +52,7 @@ describe("image prompt templates", () => {
     expect(getImagePromptTemplate("missing-template")).toBeUndefined();
   });
 
-  test("rotates local fallback posters per model without changing the six scenarios", () => {
+  test("chooses industry-compatible poster variants per model", () => {
     const first = getImagePromptTemplateFallbackPosters("qwen-image-2512");
     const second = getImagePromptTemplateFallbackPosters("flux-image-1");
 
@@ -54,5 +61,9 @@ describe("image prompt templates", () => {
     expect(second).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
     expect(new Set(second).size).toBe(IMAGE_PROMPT_TEMPLATES.length);
     expect(first).not.toEqual(second);
+    expect(first[0]).toMatch(/ecommerce-skincare|skincare/);
+    expect(first[1]).toMatch(/ugc-coffee-ad|flatkey-image2-creator/);
+    expect(first[5]).toMatch(/coffee|ugc-coffee-ad/);
+    expect(first.some((poster) => poster.includes("developer"))).toBe(false);
   });
 });

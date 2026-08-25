@@ -141,7 +141,7 @@ describe("model landing configuration", () => {
 
     expect(config.generator?.kind).toBe("image");
     expect(config.generator?.endpoint).toBe("/v1/images/generations");
-    expect(config.examplePrompt).toContain("Create a premium ecommerce hero image");
+    expect(config.examplePrompt).toContain("For ecommerce and retail teams");
     expect(config.useCases).toEqual(["Product mockups", "Ad creatives", "Ecommerce images"]);
   });
 
