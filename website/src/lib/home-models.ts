@@ -151,6 +151,12 @@ export function buildRowsForModels(
       const usesParsedDisplayPrice = displayPrice?.source === "display";
       const discountedUsd = usesParsedDisplayPrice ? displayPrice.value : discountedPriceUsd(listed);
       const billingUnit = modelBillingUnit(model, displayPrice?.unit);
+      // Video models are billed per second rather than by input/output tokens.
+      // Their display contract therefore has no `input`/`output` dimensions;
+      // expose the billed per-second rate as our output price so the directory
+      // table does not render an empty output column for video rows.
+      const displayedOutputPrice = billingUnit === "second" ? displayPrice : outputPrice;
+      const displayedOfficialOutputPrice = billingUnit === "second" ? officialDisplayPrice : officialOutputPrice;
       const inputFilterUsd = billingUnit === "token" ? inputPrice?.value : discountedUsd;
       const outputFilterUsd = billingUnit === "token" ? outputPrice?.value : discountedUsd;
       const directoryMeta = model.directory_metadata;
@@ -164,10 +170,10 @@ export function buildRowsForModels(
         discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedUsd),
         officialUsd: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.value : official,
         discountedUsd,
-        input: inputPrice?.text ?? (usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedUsd)),
-        inputOfficial: officialInputPrice?.text ?? (usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official)),
-        output: outputPrice?.text,
-        outputOfficial: officialOutputPrice?.text,
+        input: inputPrice?.text,
+        inputOfficial: officialInputPrice?.text,
+        output: displayedOutputPrice?.text,
+        outputOfficial: displayedOfficialOutputPrice?.text,
         billingUnit,
         inputFilterUsd,
         outputFilterUsd,
