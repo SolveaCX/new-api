@@ -9,6 +9,13 @@ describe("ModelsFeaturedCarousel", () => {
     expect(FEATURED_SLIDES.slice(0, 2).map((slide) => slide.modelName)).toEqual(["seedance-2.5", "MiniMax-H3"]);
   });
 
+  test("loads the GPT-5.6 Sol artwork from the CDN", () => {
+    const slide = FEATURED_SLIDES.find((item) => item.modelName === "gpt-5.6-sol");
+
+    expect(slide?.image).toBe("https://cdn.shulex-voc.com/flatkey/models-featured/openai.jpg");
+    expect(slide?.video).toBe("https://cdn.shulex-voc.com/flatkey/models-featured/openai.mp4");
+  });
+
   test("renders the complete featured-model description without a line clamp", () => {
     const slide = FEATURED_SLIDES[0];
     const html = renderToStaticMarkup(
