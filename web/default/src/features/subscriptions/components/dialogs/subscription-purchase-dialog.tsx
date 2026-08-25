@@ -254,6 +254,7 @@ export function SubscriptionPurchaseDialog(props: Props) {
       if (opening?.kind === 'elements') {
         setStripeCheckoutSession({
           clientSecret: opening.clientSecret,
+          tradeNo: opening.tradeNo,
           publishableKey: opening.publishableKey,
           fallbackUrl: opening.fallbackUrl,
           checkoutContext: opening.checkoutContext,

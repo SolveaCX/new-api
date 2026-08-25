@@ -179,6 +179,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.RequestStripePay)
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
 				selfRoute.POST("/stripe/checkout/discount", middleware.CriticalRateLimit(), controller.UpdateStripeCheckoutDiscount)
+				selfRoute.POST("/stripe/checkout/close", middleware.CriticalRateLimit(), controller.CloseStripeCheckout)
 				selfRoute.GET("/stripe/card", controller.GetStripeCardStatus)
 				selfRoute.DELETE("/stripe/card", middleware.CriticalRateLimit(), controller.RemoveStripeCard)
 				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.RequestCreemPay)

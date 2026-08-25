@@ -88,6 +88,8 @@ export type StripeCheckoutDiscountRequest =
       action: 'restore'
     }
 export type StripePaymentResponse = ApiResponse<{
+  /** Local trade number used to terminate an unpaid in-console checkout. */
+  trade_no?: string
   /** Hosted checkout redirect link (hosted ui_mode) */
   pay_link?: string
   /** Checkout Elements session client secret (elements ui_mode) */

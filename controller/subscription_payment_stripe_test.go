@@ -72,10 +72,12 @@ func TestSubscriptionStripePayResponseDataIncludesElementsCredentials(t *testing
 	data := subscriptionStripePayResponseData(&service.PurchaseSubscriptionResult{
 		CheckoutURL:  "https://checkout.stripe.test/unused",
 		ClientSecret: "cs_secret_subscription",
+		Order:        &model.SubscriptionOrder{TradeNo: "subscription-trade-credentials"},
 	})
 
 	require.Equal(t, "cs_secret_subscription", data["client_secret"])
 	require.Equal(t, "pk_test_subscription_elements", data["publishable_key"])
+	require.Equal(t, "subscription-trade-credentials", data["trade_no"])
 	_, hasPayLink := data["pay_link"]
 	require.False(t, hasPayLink, "Elements credentials must take precedence over a hosted URL")
 }

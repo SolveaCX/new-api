@@ -1604,10 +1604,12 @@ func TestSubscriptionSelfPurchaseResponseIncludesClientSecretAndPublishableKey(t
 	response := subscriptionSelfPurchaseResponse(&service.PurchaseSubscriptionResult{
 		Status:       service.ChangePlanStatusCheckoutRequired,
 		ClientSecret: "cs_secret_self_purchase",
+		Order:        &model.SubscriptionOrder{TradeNo: "self-purchase-trade"},
 	}, "")
 
 	require.Equal(t, "cs_secret_self_purchase", response.ClientSecret)
 	require.Equal(t, "pk_test_embedded", response.PublishableKey)
+	require.Equal(t, "self-purchase-trade", response.TradeNo)
 	require.Empty(t, response.CheckoutURL)
 }
 

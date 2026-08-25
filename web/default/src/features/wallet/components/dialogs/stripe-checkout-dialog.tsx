@@ -48,6 +48,7 @@ import {
 } from './stripe-promotion-code-control'
 
 export interface StripeCheckoutDialogSession {
+  tradeNo?: string
   clientSecret: string
   publishableKey: string
   summary: StripeTopupSummary | null
@@ -66,25 +67,42 @@ interface StripeCheckoutDialogProps {
 
 export function StripeCheckoutDialog(props: StripeCheckoutDialogProps) {
   const { t } = useTranslation()
-  const title = props.session?.title ?? t('Confirm Payment')
+  const closeRequestedRef = useRef<string | null>(null)
+  const { onOpenChange, session } = props
+  const title = session?.title ?? t('Confirm Payment')
   const description =
-    props.session?.description ?? t('Payment is processed securely by Stripe.')
+    session?.description ?? t('Payment is processed securely by Stripe.')
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (
+        !open &&
+        session?.tradeNo &&
+        closeRequestedRef.current !== session.tradeNo
+      ) {
+        closeRequestedRef.current = session.tradeNo
+        void closeStripeCheckout(session.tradeNo).catch(() => undefined)
+      }
+      onOpenChange(open)
+    },
+    [onOpenChange, session]
+  )
 
   return (
-    <Dialog open={Boolean(props.session)} onOpenChange={props.onOpenChange}>
+    <Dialog open={Boolean(session)} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
         className='max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1120px] gap-0 overflow-y-auto rounded-[24px] p-0 ring-1 ring-[#dfe3e8] max-[520px]:top-0 max-[520px]:left-0 max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-screen max-[520px]:max-w-none max-[520px]:translate-x-0 max-[520px]:translate-y-0 max-[520px]:rounded-none sm:max-w-[1120px]'
       >
         <DialogTitle className='sr-only'>{title}</DialogTitle>
         <DialogDescription className='sr-only'>{description}</DialogDescription>
-        {props.session ? (
+        {session ? (
           <StripeCheckoutFrame
-            key={props.session.clientSecret}
-            session={props.session}
+            key={session.clientSecret}
+            session={session}
             title={title}
             description={description}
-            onOpenChange={props.onOpenChange}
+            onOpenChange={handleOpenChange}
           />
         ) : null}
       </DialogContent>

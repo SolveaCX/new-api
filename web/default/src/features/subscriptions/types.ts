@@ -140,6 +140,7 @@ export interface SubscriptionPayResponse {
   success: boolean
   message?: string
   data?: {
+    trade_no?: string
     // Stripe-style hosted checkout link.
     pay_link?: string
     client_secret?: string

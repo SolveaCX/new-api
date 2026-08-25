@@ -140,6 +140,9 @@ func subscriptionStripePayResponseData(result *service.PurchaseSubscriptionResul
 		return data
 	}
 	if secret := strings.TrimSpace(result.ClientSecret); secret != "" && strings.TrimSpace(setting.StripePublishableKey) != "" {
+		if result.Order != nil && strings.TrimSpace(result.Order.TradeNo) != "" {
+			data["trade_no"] = strings.TrimSpace(result.Order.TradeNo)
+		}
 		data["client_secret"] = secret
 		data["publishable_key"] = strings.TrimSpace(setting.StripePublishableKey)
 		if setting.StripePromotionCodeEnabled && result.Order != nil && result.Order.CheckoutRevision > 0 {

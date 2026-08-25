@@ -125,6 +125,14 @@ export async function updateStripeCheckoutDiscount(
   return res.data
 }
 
+/** Best-effort termination for an unpaid in-console Stripe Checkout session. */
+export async function closeStripeCheckout(tradeNo: string): Promise<void> {
+  await api.post('/api/user/stripe/checkout/close', { trade_no: tradeNo }, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
+}
+
 /** Reopen the existing Stripe session for a pending top-up. */
 export async function resumeStripeTopup(
   tradeNo: string

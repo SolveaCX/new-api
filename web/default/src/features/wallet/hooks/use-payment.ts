@@ -156,6 +156,7 @@ export function usePayment() {
       if (opening?.kind === 'elements') {
         setCheckoutDialog({
           clientSecret: opening.clientSecret,
+          tradeNo: opening.tradeNo,
           publishableKey: opening.publishableKey,
           summary: presentation?.summary ?? data?.topup_summary ?? null,
           title: presentation?.title,
