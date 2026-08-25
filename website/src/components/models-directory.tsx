@@ -318,17 +318,17 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
 
 function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["directoryMetadata"]>): FilterGroup[] {
   const copy = getDirectoryCopy(locale);
+  // Keep the sidebar compact on first load; visitors can open only the facets
+  // they need instead of pushing the model table below the fold.
   return [
     {
       key: "modalities",
       label: copy.groupModalities,
-      defaultOpen: true,
       options: MODALITIES.map((value) => ({ value, label: MODALITY_LABELS[locale][value] })),
     },
     {
       key: "context",
       label: copy.groupContext,
-      defaultOpen: true,
       options: CONTEXT_BUCKETS.map((value) => ({
         value,
         // The largest bucket is the ceiling, so "1M+" would overstate it.
@@ -338,7 +338,6 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
     {
       key: "inputPrice",
       label: copy.groupInputPrice,
-      defaultOpen: true,
       options: PRICE_BANDS.map((band) => ({ value: band.id, label: priceBandLabel(band) })),
     },
     {
@@ -349,7 +348,6 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
     {
       key: "vendors",
       label: copy.groupVendors,
-      defaultOpen: true,
       options: vendorsForModels(metadataRows).map((value) => ({ value, label: value })),
     },
     {
