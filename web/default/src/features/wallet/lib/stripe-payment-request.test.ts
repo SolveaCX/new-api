@@ -158,5 +158,8 @@ describe('usePayment Stripe checkout adapter', () => {
     expect(source).toContain('const openStripeCheckoutResponse = useCallback')
     expect(source).toContain('openStripeCheckout(response.data, {')
     expect(source).toContain('summary: response.data?.topup_summary ?? null')
+    expect(source).toContain('checkoutContext: opening.checkoutContext')
+    expect(source).toContain('checkoutRevision: opening.checkoutRevision')
+    expect(source).toContain('discountState: opening.discountState')
   })
 })
