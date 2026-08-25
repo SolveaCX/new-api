@@ -50,6 +50,45 @@ func TestRealPersonProviderForChannelSelectsExplicitTokenSpaceWithOneEnabledKey(
 	require.Nil(t, binding.StorageCredentials)
 }
 
+func TestRealPersonProviderForChannelSelectsSeedanceProxyWithOneEnabledKey(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeBytePlus, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderSeedanceProxy,
+		GatewayBaseURL: "https://gateway.example.invalid/v1",
+		GroupID:        "group-ordinary-material",
+	})
+	channel.Id = 156
+	channel.Key = "seedance-key"
+	channel.Status = common.ChannelStatusEnabled
+
+	binding, err := realPersonProviderForChannel(channel)
+
+	require.NoError(t, err)
+	require.Same(t, channel, binding.Channel)
+	require.IsType(t, seedanceProxyRealPersonProvider{}, binding.Provider)
+	require.False(t, binding.Provider.RequiresCallback())
+	require.Equal(t, int64(300), binding.Provider.VerificationTTLSeconds())
+	require.Nil(t, binding.StorageCredentials)
+}
+
+func TestRealPersonProviderForChannelRejectsSeedanceProxyWithMultipleEnabledKeys(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeBytePlus, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderSeedanceProxy,
+		GatewayBaseURL: "https://gateway.example.invalid/v1",
+		GroupID:        "group-ordinary-material",
+	})
+	channel.Key = "key-one\nkey-two"
+	channel.Status = common.ChannelStatusEnabled
+	channel.ChannelInfo.IsMultiKey = true
+	channel.ChannelInfo.MultiKeyStatusList = map[int]int{
+		0: common.ChannelStatusEnabled,
+		1: common.ChannelStatusEnabled,
+	}
+
+	_, err := realPersonProviderForChannel(channel)
+
+	require.Error(t, err)
+}
+
 func TestTokenSpaceRealPersonChannelIsUsableRequiresDoubaoVideo(t *testing.T) {
 	settings := dto.AssetMaterializationSettings{
 		Provider:       assetMaterializationProviderTokenSpaceMaterial,

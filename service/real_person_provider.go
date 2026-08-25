@@ -90,6 +90,23 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 		return nil, err
 	}
 	if explicit {
+		if config.Provider == assetMaterializationProviderSeedanceProxy {
+			if !bytePlusAssetChannelIsUsable(channel) {
+				return nil, errors.New("real person channel unavailable")
+			}
+			keys := enabledAssetMaterializeKeys(channel)
+			if len(keys) != 1 || strings.TrimSpace(keys[0].key) == "" {
+				return nil, errors.New("seedance proxy real person provider requires exactly one enabled key")
+			}
+			return &realPersonProviderBinding{
+				Channel: channel,
+				Provider: seedanceProxyRealPersonProvider{
+					channel:        channel,
+					apiKey:         strings.TrimSpace(keys[0].key),
+					gatewayBaseURL: config.GatewayBaseURL,
+				},
+			}, nil
+		}
 		if config.Provider != assetMaterializationProviderTokenSpaceMaterial {
 			return nil, errors.New("real person provider unavailable")
 		}
