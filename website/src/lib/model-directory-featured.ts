@@ -132,7 +132,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
       id: ["Gambar ke video", "Teks ke video", "Video ke video"],
     },
     blurb: {
-      en: "Raises the bar for controllable video: longer takes, multimodal references, precise shot editing and far stronger consistency across cuts for production-ready creative work.",
+      en: "Creates cinematic, high-motion videos from text or images, with strong prompt adherence, smooth camera movement, and polished visual consistency.",
       zh: "把可控视频生成推上新台阶：更长镜头、多模态参考、精确的分镜编辑，以及跨剪辑更强的一致性，可直接用于成片级创作。",
       es: "Eleva el listón del vídeo controlable: tomas más largas, referencias multimodales, edición precisa de planos y una consistencia mucho mayor entre cortes para trabajo creativo listo para producción.",
       fr: "Rehausse le niveau de la vidéo contrôlable : prises plus longues, références multimodales, montage précis des plans et bien plus de cohérence entre les coupes, pour un travail créatif prêt pour la production.",
