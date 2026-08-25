@@ -735,17 +735,20 @@ describe("Image model workbench inputs", () => {
     expect(workbenchHtml).not.toContain("Create a premium ecommerce hero image for [product name]");
   });
 
-  test("puts the five image scenario templates in the prompt library", () => {
+  test("puts the six image scenario templates in the prompt library", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
     const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
 
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(5);
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
     expect(showcaseHtml).toContain("Create a premium ecommerce hero image for [product name]");
     expect(showcaseHtml).toContain("Product mockups");
     expect(showcaseHtml).toContain("skincare.png");
     expect(showcaseHtml).toContain("4:5");
+    expect(showcaseHtml).toContain("Food and beverage");
+    expect(showcaseHtml).toContain("coffee.png");
+    expect(showcaseHtml).not.toContain("Scale and depth");
   });
 
   test("gives newly discovered image model ids a prompt library and one workbench example", () => {
@@ -763,6 +766,6 @@ describe("Image model workbench inputs", () => {
     const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
     expect(workbenchHtml).toContain('data-model-example-picker="true"');
     expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(5);
+    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
   });
 });
