@@ -101,7 +101,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
       id: ["Teks ke video", "Gambar ke video", "Audio native"],
     },
     blurb: {
-      en: "An omni-modal generation model that understands text, images, video and audio in one context, producing up to 15 seconds of 2K video with native stereo sound generated alongside the picture.",
+      en: "An omni-modal video model that understands text, images, video, and audio in one context, generating up to 15 seconds of 2K video with native stereo sound.",
       zh: "全模态生成模型，在同一上下文中理解文本、图像、视频与音频，可生成最长 15 秒的 2K 视频，并同步生成原生立体声。",
       es: "Un modelo de generación omnimodal que entiende texto, imágenes, vídeo y audio en un solo contexto, y produce hasta 15 segundos de vídeo 2K con sonido estéreo nativo generado junto con la imagen.",
       fr: "Un modèle de génération omnimodal qui comprend texte, images, vidéo et audio dans un même contexte, et produit jusqu'à 15 secondes de vidéo 2K avec un son stéréo natif généré en même temps que l'image.",
