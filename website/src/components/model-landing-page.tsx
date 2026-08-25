@@ -265,6 +265,14 @@ function examplesForModel(
   return own.slice(0, 1);
 }
 
+/**
+ * Prompt templates are useful request blueprints, but their poster art is not
+ * a render from the current model. Keep them out of sections whose copy says
+ * "generated" or whose structured content describes a real output.
+ */
+function generatedExamplesOnly(examples: readonly MediaExample[]): readonly MediaExample[] {
+  return examples.filter((example) => !example.isPromptTemplate);
+}
 
 // Mirrors models-directory-table.tsx so a model reads the same health on
 // its detail page as it does in the directory listing.
@@ -1467,7 +1475,7 @@ function MediaModelLanding(props: {
           </div>
           <div className="mt-5">
             <GeneratedExamplesCarousel
-              examples={examples}
+              examples={generatedExamplesOnly(examples)}
               kind={generator.kind}
               modelName={props.config.displayName}
               t={props.t}
@@ -2132,7 +2140,10 @@ function ModelReadmeSections(props: {
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const content = buildModelReadmeContent(props.config, props.kind, props.t);
-  const examples = props.kind === "text" ? [] : examplesForModel(props.config.modelId, props.kind);
+  const examples =
+    props.kind === "text"
+      ? []
+      : generatedExamplesOnly(examplesForModel(props.config.modelId, props.kind));
   const storyImages = [
     props.profile.heroImage,
     examples[0]?.poster ?? props.profile.heroImage,
@@ -2833,9 +2844,10 @@ function GeneratedExamplesCarousel(props: {
   modelName: string;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
+  const examples = generatedExamplesOnly(props.examples);
   const [activeIndex, setActiveIndex] = useState(0);
-  const activeExample = props.examples[activeIndex] ?? props.examples[0];
-  const total = props.examples.length;
+  const activeExample = examples[activeIndex] ?? examples[0];
+  const total = examples.length;
   const hasMultiple = total > 1;
   const goToPrevious = () => setActiveIndex((current) => (current + total - 1) % total);
   const goToNext = () => setActiveIndex((current) => (current + 1) % total);
@@ -2901,7 +2913,7 @@ function GeneratedExamplesCarousel(props: {
       </figcaption>
       {hasMultiple ? (
         <div className="grid grid-cols-3 gap-2 border-t border-black/10 bg-[#fbfaff] p-3">
-          {props.examples.map((example, index) => (
+          {examples.map((example, index) => (
             <button
               key={example.video ?? example.poster}
               type="button"
