@@ -112,7 +112,7 @@ export function ModelsFeaturedCarousel(props: Props) {
               type="button"
               aria-label={props.copy.previousSlide}
               onClick={() => go(index - 1)}
-              className="absolute top-1/2 left-3 z-10 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-sm transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-5"
+              className="absolute top-1/2 left-3 z-10 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-sm transition-all duration-150 ease-out hover:bg-black/50 active:scale-[0.94] active:bg-white/25 active:shadow-[0_0_0_4px_rgba(255,255,255,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-5"
             >
               <ArrowLeft className="size-4" aria-hidden="true" />
             </button>
@@ -120,7 +120,7 @@ export function ModelsFeaturedCarousel(props: Props) {
               type="button"
               aria-label={props.copy.nextSlide}
               onClick={() => go(index + 1)}
-              className="absolute top-1/2 right-3 z-10 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-sm transition-colors hover:bg-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-5"
+              className="absolute top-1/2 right-3 z-10 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-sm transition-all duration-150 ease-out hover:bg-black/50 active:scale-[0.94] active:bg-white/25 active:shadow-[0_0_0_4px_rgba(255,255,255,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-5"
             >
               <ArrowRight className="size-4" aria-hidden="true" />
             </button>
