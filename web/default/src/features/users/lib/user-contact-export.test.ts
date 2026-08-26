@@ -28,7 +28,7 @@ import {
 import { formatUserQuotaDisplay } from './user-quota-display'
 
 const CSV_HEADER =
-  'ID,Username,Display Name,Email,Status,Quota,Interface Language,Request Count,Group,Role,Acquisition Source,Source / Medium,Campaign / Keyword,Landing Page,Invited,Revenue,Inviter,WeChat ID,Telegram ID,Created At,Last Login'
+  'ID,Username,Display Name,Email,IP Address,Country,Status,Quota,Interface Language,Request Count,Group,Role,Acquisition Source,Source / Medium,Campaign / Keyword,Landing Page,Invited,Revenue,Inviter,WeChat ID,Telegram ID,Created At,Last Login'
 
 function makeUser(overrides: Partial<User> & { setting?: string }): User {
   return {
@@ -56,6 +56,8 @@ describe('user contact export', () => {
         request_count: 42,
         group: 'plg',
         email: 'alice@example.com',
+        registration_ip: '203.0.113.8',
+        ip_country: 'US',
         setting: '{"language":"ja"}',
         wechat_id: 'wx\nline',
         telegram_id: '@alice',
@@ -65,7 +67,7 @@ describe('user contact export', () => {
     assert.equal(
       csv,
       `\uFEFF${CSV_HEADER}\r\n` +
-        `7,"alice, admin","Alice ""A""",alice@example.com,Enabled,${formatQuota(500000)},ja,42,plg,User,No source,,,,0,${formatQuota(0)},,"wx\nline",'@alice,,\r\n`
+        `7,"alice, admin","Alice ""A""",alice@example.com,203.0.113.8,US,Enabled,${formatQuota(500000)},ja,42,plg,User,No source,,,,0,${formatQuota(0)},,"wx\nline",'@alice,,\r\n`
     )
   })
 
@@ -81,7 +83,7 @@ describe('user contact export', () => {
     assert.equal(
       csv,
       `\uFEFF${CSV_HEADER}\r\n` +
-        `8,bob,,,Enabled,${formatUserQuotaDisplay(makeUser({ quota: 0, used_quota: 0 }))},,0,default,User,No source,,,,0,${formatQuota(0)},,,,,\r\n`
+        `8,bob,,,,,Enabled,${formatUserQuotaDisplay(makeUser({ quota: 0, used_quota: 0 }))},,0,default,User,No source,,,,0,${formatQuota(0)},,,,,\r\n`
     )
   })
 
@@ -111,7 +113,7 @@ describe('user contact export', () => {
     assert.equal(
       csv,
       `\uFEFF${CSV_HEADER}\r\n` +
-        `9,"'=HYPERLINK(""https://example.com"",""click"")","'+SUM(1,1)",'-10+20@example.com,Enabled,${formatQuota(500000)},'=cmd,0,'@group,User,Paid Ads,adwords / cpc,'=campaign / +keyword,/signup,0,${formatQuota(0)},,'@wechat,'\t=cmd,,\r\n`
+        `9,"'=HYPERLINK(""https://example.com"",""click"")","'+SUM(1,1)",'-10+20@example.com,,,Enabled,${formatQuota(500000)},'=cmd,0,'@group,User,Paid Ads,adwords / cpc,'=campaign / +keyword,/signup,0,${formatQuota(0)},,'@wechat,'\t=cmd,,\r\n`
     )
   })
 
@@ -131,7 +133,13 @@ describe('user contact export', () => {
         calls.push({ page, pageSize })
 
         return {
-          items: [makeUser({ id: page, username: `user-${page}` })],
+          items: [
+            makeUser({
+              id: page,
+              username: `user-${page}`,
+              created_at: page * 1000,
+            }),
+          ],
           total: 3,
         }
       },
@@ -140,7 +148,7 @@ describe('user contact export', () => {
 
     assert.deepEqual(
       users.map((user) => user.id),
-      [1, 2, 3]
+      [3, 2, 1]
     )
     assert.deepEqual(calls, [
       { page: 1, pageSize: 1 },
@@ -152,9 +160,9 @@ describe('user contact export', () => {
   test('collects every row even when the server clamps the page size', async () => {
     // Request 2 rows per page, but the server only ever returns 1.
     const serverPages = [
-      [makeUser({ id: 3, username: 'user-3' })],
-      [makeUser({ id: 2, username: 'user-2' })],
-      [makeUser({ id: 1, username: 'user-1' })],
+      [makeUser({ id: 3, username: 'user-3', created_at: 3000 })],
+      [makeUser({ id: 2, username: 'user-2', created_at: 2000 })],
+      [makeUser({ id: 1, username: 'user-1', created_at: 1000 })],
     ]
 
     const users = await collectUserContactsForExport(
@@ -173,8 +181,14 @@ describe('user contact export', () => {
 
   test('deduplicates rows resent across pages by offset drift', async () => {
     const serverPages = [
-      [makeUser({ id: 5 }), makeUser({ id: 4 })],
-      [makeUser({ id: 4 }), makeUser({ id: 3 })],
+      [
+        makeUser({ id: 5, created_at: 5000 }),
+        makeUser({ id: 4, created_at: 4000 }),
+      ],
+      [
+        makeUser({ id: 4, created_at: 4000 }),
+        makeUser({ id: 3, created_at: 3000 }),
+      ],
     ]
 
     const users = await collectUserContactsForExport(
@@ -198,7 +212,7 @@ describe('user contact export', () => {
       calls.push(page)
 
       return {
-        items: page === 1 ? [makeUser({ id: 1 })] : [],
+        items: page === 1 ? [makeUser({ id: 1, created_at: 1000 })] : [],
         total: 10,
       }
     }, 1)
