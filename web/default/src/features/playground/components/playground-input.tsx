@@ -140,6 +140,12 @@ const suggestions: Array<{
   { icon: null, text: 'More' },
 ]
 
+const PLAYGROUND_CONTROL_CLASS_NAME =
+  'border-border bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700 dark:hover:text-white'
+
+const PLAYGROUND_SUBMIT_CLASS_NAME =
+  'bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-neutral-200'
+
 function PlaygroundAttachmentPreviews() {
   const attachments = usePromptInputAttachments()
   if (attachments.files.length === 0) return null
@@ -362,7 +368,7 @@ function PlaygroundSubmitButton({
   if (isGenerating && onStop) {
     return (
       <PromptInputButton
-        className='text-foreground font-medium'
+        className={`${PLAYGROUND_SUBMIT_CLASS_NAME} font-medium`}
         onClick={onStop}
         variant='secondary'
       >
@@ -375,7 +381,7 @@ function PlaygroundSubmitButton({
 
   return (
     <PromptInputButton
-      className='text-foreground font-medium'
+      className={`${PLAYGROUND_SUBMIT_CLASS_NAME} font-medium`}
       disabled={
         disabled ||
         isSubmitDisabled ||
@@ -475,9 +481,8 @@ export function PlaygroundInput({
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PromptInput
         accept={attachmentConfig.accept}
-        className='rounded-xl bg-white'
-        groupClassName='rounded-xl border-border !bg-white text-slate-900 shadow-sm overflow-hidden dark:!bg-white dark:!text-slate-900'
-        groupStyle={{ backgroundColor: '#fff', color: '#0f172a' }}
+        className='rounded-3xl bg-white dark:bg-[#2f2f2f]'
+        groupClassName='rounded-3xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 overflow-hidden dark:border-neutral-700 dark:bg-[#2f2f2f] dark:text-neutral-100 dark:has-disabled:!bg-[#2f2f2f]'
         maxFileSize={10 * 1024 * 1024}
         maxFiles={5}
         multiple
@@ -498,18 +503,17 @@ export function PlaygroundInput({
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='px-5 md:text-base'
+          className='px-5 text-slate-900 placeholder:text-slate-400 md:text-base dark:text-neutral-100 dark:placeholder:text-neutral-400'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
-          placeholder=''
-          style={{ backgroundColor: 'transparent', color: '#0f172a' }}
+          placeholder={t('Ask anything')}
           value={text}
         />
 
         <PromptInputFooter className='p-2.5'>
           <PromptInputTools>
             <PromptInputButton
-              className='border font-medium'
+              className={`${PLAYGROUND_CONTROL_CLASS_NAME} font-medium`}
               disabled={disabled}
               onClick={() => setIsAttachmentDialogOpen(true)}
               variant='outline'
@@ -520,7 +524,7 @@ export function PlaygroundInput({
             </PromptInputButton>
 
             <PromptInputButton
-              className='border font-medium'
+              className={`${PLAYGROUND_CONTROL_CLASS_NAME} font-medium`}
               disabled={disabled}
               onClick={() => toast.info(t('Search feature in development'))}
               variant='outline'
@@ -546,6 +550,7 @@ export function PlaygroundInput({
               selectedModel={modelValue}
               models={models}
               onModelChange={onModelChange}
+              triggerClassName={PLAYGROUND_CONTROL_CLASS_NAME}
               selectedGroup={groupValue}
               groups={groups}
               onGroupChange={onGroupChange}

@@ -553,6 +553,8 @@ export interface ModelGroupSelectorProps {
   showGroupSelector?: boolean
   // Common props
   className?: string
+  /** Optional classes applied to the model and group trigger buttons. */
+  triggerClassName?: string
   disabled?: boolean
 }
 
@@ -569,6 +571,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   onGroupChange,
   showGroupSelector = true,
   className,
+  triggerClassName,
   disabled = false,
 }) => {
   return (
@@ -578,6 +581,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
           selectedGroup={selectedGroup}
           groups={groups}
           onGroupChange={onGroupChange}
+          className={triggerClassName}
           disabled={disabled}
         />
       )}
@@ -585,6 +589,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
         selectedModel={selectedModel}
         models={models}
         onModelChange={onModelChange}
+        className={triggerClassName}
         disabled={disabled}
       />
     </div>
