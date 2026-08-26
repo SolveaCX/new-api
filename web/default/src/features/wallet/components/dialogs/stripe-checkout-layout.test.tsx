@@ -73,7 +73,7 @@ describe('StripeCheckoutLayout', () => {
             email: 'buyer@example.com',
             productDescription: '1 month subscription',
             productName: 'Flatkey Go',
-            primaryAmount: 'R$48.65',
+            primaryAmount: 'R$49.90',
             summaryLines: [
               { key: 'subtotal', amount: 'R$49.90' },
               { key: 'discount', amount: 'R$5.00' },
@@ -102,7 +102,8 @@ describe('StripeCheckoutLayout', () => {
     expect(html).toContain('value="buyer@example.com"')
     expect(html).toContain('readOnly=""')
     expect(html).toContain('Flatkey Go')
-    expect(html).toContain('R$48.65')
+    expect(html).toContain('R$49.90')
+    expect((html.match(/R\$48\.65/g) ?? []).length).toBe(2)
     expect(html).toContain('Surcharge')
     expect(html).toContain('bg-[#0576d7]')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Continue.*<\/button>/)
