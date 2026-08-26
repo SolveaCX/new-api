@@ -40,6 +40,8 @@ export type UserContactsCsvText = {
   displayName: string
   language: string
   email: string
+  ipAddress: string
+  country: string
   status: string
   quota: string
   requestCount: string
@@ -80,6 +82,8 @@ const DEFAULT_TEXT: UserContactsCsvText = {
   displayName: 'Display Name',
   language: 'Interface Language',
   email: 'Email',
+  ipAddress: 'IP Address',
+  country: 'Country',
   status: 'Status',
   quota: 'Quota',
   requestCount: 'Request Count',
@@ -143,6 +147,8 @@ export function buildUserContactsCsv(
       text.username,
       text.displayName,
       text.email,
+      text.ipAddress,
+      text.country,
       text.status,
       text.quota,
       text.language,
@@ -168,6 +174,8 @@ export function buildUserContactsCsv(
         user.username,
         user.display_name,
         user.email,
+        user.registration_ip || user.last_login_ip || '',
+        user.ip_country || '',
         getUserStatusLabel(user, translateLabel),
         formatUserQuotaDisplay(user, text.noQuota),
         getUserInterfaceLanguage(user),
@@ -249,5 +257,11 @@ export async function collectUserContactsForExport(
     }
   }
 
-  return [...usersById.values()]
+  return [...usersById.values()].sort((a, b) => {
+    const createdAtDiff = (b.created_at ?? 0) - (a.created_at ?? 0)
+    if (createdAtDiff !== 0) {
+      return createdAtDiff
+    }
+    return b.id - a.id
+  })
 }
