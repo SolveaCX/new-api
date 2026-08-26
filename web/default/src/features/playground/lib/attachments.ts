@@ -62,7 +62,10 @@ function normalizeFilename(filename: string | undefined): string {
 }
 
 function isImageAttachment(mediaType: string, filename: string): boolean {
-  return IMAGE_MEDIA_TYPES.has(mediaType) || IMAGE_EXTENSIONS.has(extensionOf(filename))
+  return (
+    IMAGE_MEDIA_TYPES.has(mediaType) ||
+    IMAGE_EXTENSIONS.has(extensionOf(filename))
+  )
 }
 
 function isTextAttachment(mediaType: string, filename: string): boolean {

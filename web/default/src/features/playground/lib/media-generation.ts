@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { PlaygroundAttachment } from '../types'
 
 export type PlaygroundModelKind = 'chat' | 'image' | 'video' | 'unsupported'
 
@@ -25,6 +26,7 @@ export type MediaGenerationFamily =
   | 'gemini-image-flash'
   | 'grok-image'
   | 'grok-video'
+  | 'veo-3.0'
   | 'veo-3.1'
   | 'seedance-2.0'
   | 'seedance-2.5'
@@ -97,6 +99,33 @@ export interface MediaGenerationRequest {
   kind: 'image' | 'video'
   endpoint: '/pg/chat/completions' | '/pg/images/generations' | '/pg/videos'
   payload: Record<string, unknown>
+}
+
+export function validateMediaGenerationAttachments(
+  model: unknown,
+  attachments: PlaygroundAttachment[]
+): string | undefined {
+  if (attachments.length === 0) return undefined
+  const profile = resolveMediaGenerationProfile(model)
+  if (!profile || profile.kind !== 'video') {
+    return 'Attachments are supported only for chat models'
+  }
+  if (attachments.some((attachment) => attachment.kind === 'text')) {
+    return 'Video generation accepts image or video references only'
+  }
+  if (
+    (profile.family === 'veo-3.0' || profile.family === 'veo-3.1') &&
+    attachments.some((attachment) => attachment.kind === 'video')
+  ) {
+    return 'Veo supports image-to-video, not video-to-video'
+  }
+  if (
+    profile.family === 'grok-video' &&
+    attachments.some((attachment) => attachment.kind === 'video')
+  ) {
+    return 'Grok video editing is not available in Playground yet'
+  }
+  return undefined
 }
 
 const imageRatios = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9']
@@ -275,6 +304,25 @@ const veoProfile: MediaGenerationProfile = {
   noteKey: 'Veo 1080p and 4K output requires an 8-second duration.',
 }
 
+const veo30Profile: MediaGenerationProfile = {
+  kind: 'video',
+  family: 'veo-3.0',
+  defaults: {
+    resolution: '720p',
+    duration: 8,
+    aspectRatio: '16:9',
+  },
+  fields: [
+    selectField('resolution', 'Resolution', ['720p']),
+    selectField('duration', 'Duration', [
+      { value: '4', labelKey: '4 seconds' },
+      { value: '6', labelKey: '6 seconds' },
+      { value: '8', labelKey: '8 seconds' },
+    ]),
+    selectField('aspectRatio', 'Aspect ratio', ['16:9', '9:16']),
+  ],
+}
+
 function createSeedance20Profile(
   resolutions: string[]
 ): MediaGenerationProfile {
@@ -414,6 +462,9 @@ export function resolveMediaGenerationProfile(
   }
   if (/(^|\/)veo-3(?:\.|-)1(?:$|[-_/])/.test(normalized)) {
     return cloneProfile(veoProfile)
+  }
+  if (/(^|\/)veo-3(?:\.|-)0(?:$|[-_/])/.test(normalized)) {
+    return cloneProfile(veo30Profile)
   }
   if (normalized.includes('seedance')) {
     if (/2(?:[.-]|-)?5/.test(normalized)) {
@@ -562,14 +613,41 @@ function buildVideoPayload(
   model: string,
   group: string,
   family: MediaGenerationFamily,
-  settings: MediaGenerationSettings
+  settings: MediaGenerationSettings,
+  attachments: PlaygroundAttachment[] = []
 ): Record<string, unknown> {
+  const media = attachments.filter(
+    (attachment) =>
+      (attachment.kind === 'image' || attachment.kind === 'video') &&
+      typeof attachment.url === 'string' &&
+      attachment.url.trim() !== ''
+  )
+
   if (family === 'seedance-2.0' || family === 'seedance-2.5') {
+    const imageCount = media.filter(
+      (attachment) => attachment.kind === 'image'
+    ).length
+    const content = [
+      ...(prompt ? [{ type: 'text', text: prompt }] : []),
+      ...media.map((attachment) =>
+        attachment.kind === 'image'
+          ? {
+              type: 'image_url',
+              image_url: { url: attachment.url!.trim() },
+              ...(imageCount > 1 ? { role: 'reference_image' } : {}),
+            }
+          : {
+              type: 'video_url',
+              video_url: { url: attachment.url!.trim() },
+              role: 'reference_video',
+            }
+      ),
+    ]
     return {
       model,
       group,
       prompt,
-      content: [{ type: 'text', text: prompt }],
+      content,
       resolution: settings.resolution,
       ratio: settings.aspectRatio,
       duration: settings.duration,
@@ -577,11 +655,12 @@ function buildVideoPayload(
     }
   }
 
-  if (family === 'veo-3.1') {
+  if (family === 'veo-3.1' || family === 'veo-3.0') {
     return {
       model,
       group,
       prompt,
+      ...(media[0]?.kind === 'image' ? { images: [media[0].url!.trim()] } : {}),
       duration: settings.duration,
       metadata: {
         resolution: settings.resolution,
@@ -595,6 +674,7 @@ function buildVideoPayload(
       model,
       group,
       prompt,
+      ...(media[0]?.kind === 'image' ? { images: [media[0].url!.trim()] } : {}),
       resolution: settings.resolution,
       aspect_ratio: settings.aspectRatio,
       duration: settings.duration,
@@ -615,7 +695,8 @@ export function buildMediaGenerationRequest(
   prompt: string,
   model: string,
   group: string,
-  settings: MediaGenerationSettings
+  settings: MediaGenerationSettings,
+  attachments: PlaygroundAttachment[] = []
 ): MediaGenerationRequest | undefined {
   const profile = resolveMediaGenerationProfile(model)
   if (!profile) return undefined
@@ -657,6 +738,13 @@ export function buildMediaGenerationRequest(
   return {
     kind: 'video',
     endpoint: '/pg/videos',
-    payload: buildVideoPayload(prompt, model, group, profile.family, settings),
+    payload: buildVideoPayload(
+      prompt,
+      model,
+      group,
+      profile.family,
+      settings,
+      attachments
+    ),
   }
 }
