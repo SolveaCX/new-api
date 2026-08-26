@@ -17,8 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { beforeAll, describe, expect, mock, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
 import { createInstance } from 'i18next'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
@@ -46,9 +46,9 @@ beforeAll(async () => {
 })
 
 function renderDialog(props: { balanceDisplay: string; loading?: boolean }) {
-  // The body is rendered inside a Dialog root but outside DialogContent:
-  // DialogTitle/DialogDescription need the dialog store for their aria
-  // wiring, while the real portal emits nothing under static rendering.
+  // The body is rendered inside a Dialog root but outside DialogContent so the
+  // title can use the dialog store for its aria wiring; the real portal emits
+  // nothing under static rendering.
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <Dialog open>
@@ -63,21 +63,20 @@ function renderDialog(props: { balanceDisplay: string; loading?: boolean }) {
 }
 
 describe('boost balance dialog', () => {
-  test('shows the balance and the guidance copy', () => {
+  test('shows the balance without extra guidance copy', () => {
     const html = renderDialog({ balanceDisplay: '$82.35' })
 
     expect(html).toContain('Current available balance')
     expect(html).toContain('$82.35')
-    expect(html).toContain(
-      'A healthy balance keeps your work and API calls from being interrupted'
-    )
+    expect(html).not.toContain('Invite friends to get high-value vouchers')
   })
 
   test('offers both ways to raise the balance', () => {
     const html = renderDialog({ balanceDisplay: '$82.35' })
 
     expect(html).toContain('Quick top-up')
-    expect(html).toContain('Earn credits')
+    expect(html).toContain('Invite a friend + 30$')
+    expect(html).not.toContain('Earn credits')
   })
 
   // The destinations are asserted on the exported constants the component
