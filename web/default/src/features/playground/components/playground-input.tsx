@@ -482,7 +482,7 @@ export function PlaygroundInput({
       <PromptInput
         accept={attachmentConfig.accept}
         className='rounded-xl bg-white dark:bg-violet-950/45'
-        groupClassName='rounded-xl border-border bg-white text-slate-900 shadow-sm overflow-hidden dark:bg-violet-950/45 dark:text-violet-50'
+        groupClassName='rounded-xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 dark:bg-violet-950/45 dark:text-violet-50 dark:has-disabled:!bg-violet-950/45 overflow-hidden'
         maxFileSize={10 * 1024 * 1024}
         maxFiles={5}
         multiple
@@ -503,10 +503,10 @@ export function PlaygroundInput({
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='px-5 text-slate-900 dark:text-violet-50 md:text-base'
+          className='px-5 text-slate-900 md:text-base dark:text-violet-50'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
-          placeholder=''
+          placeholder={t('Ask anything')}
           value={text}
         />
 
