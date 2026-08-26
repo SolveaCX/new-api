@@ -20,25 +20,30 @@ import { useNavigate } from '@tanstack/react-router'
 import { ArrowRight, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import {
+  FLATKEY_TRIAL_PROMPT,
+  isQuickStartModelAvailable,
+  QUICK_START_MODELS,
+  resolveQuickStartChatModel,
+} from '../lib'
+import type { ModelOption } from '../types'
 
 // Example prompts shown as one-click chips during the first run. They fill the
 // input and send immediately so a brand-new user can make their first API call
-// with zero typing. `text` is a translation key rendered via t(). An optional
-// `model` forces that example to run against a specific model — used for image
-// generation, which requires a chat-capable image model (nano-banana / Gemini
-// flash image) rather than the default text chat model.
+// with zero typing. `text` is a translation key rendered via t(). Media entries
+// carry their exact target model so they never silently switch model families.
 const FIRST_RUN_EXAMPLE_PROMPTS: ReadonlyArray<{
   text: string
   model?: string
 }> = [
-  { text: 'How do I try flatkey?' },
+  { text: FLATKEY_TRIAL_PROMPT },
   {
     text: 'Generate an image of a cat astronaut',
-    model: 'gemini-2.5-flash-image',
+    model: QUICK_START_MODELS.image,
   },
   {
     text: 'Generate a video of a cat astronaut',
-    model: 'veo-3.1-fast-generate-preview',
+    model: QUICK_START_MODELS.video,
   },
   { text: 'Write a quicksort in Python' },
   { text: 'Explain Transformers' },
@@ -46,6 +51,7 @@ const FIRST_RUN_EXAMPLE_PROMPTS: ReadonlyArray<{
 
 interface FirstRunWelcomeProps {
   onPickExample: (prompt: string, model?: string) => void
+  models: ModelOption[]
   disabled?: boolean
   // New users (via `?first=1`) get the "make your first call in 30s" banner;
   // everyone else lands here on an empty Playground and gets a neutral header
@@ -61,6 +67,7 @@ interface FirstRunWelcomeProps {
  */
 export function FirstRunWelcome({
   onPickExample,
+  models,
   disabled = false,
   firstRun = false,
   ptFirstCallSecondsRemaining,
@@ -78,6 +85,19 @@ export function FirstRunWelcome({
       { seconds: ptFirstCallSecondsRemaining }
     )
   }
+  const examples = FIRST_RUN_EXAMPLE_PROMPTS.reduce<
+    Array<{ text: string; model?: string }>
+  >((result, example) => {
+    if (!example.model) {
+      const textModel = resolveQuickStartChatModel(models)
+      if (textModel) result.push({ text: example.text, model: textModel })
+      return result
+    }
+    if (isQuickStartModelAvailable(models, example.model)) {
+      result.push({ text: example.text, model: example.model })
+    }
+    return result
+  }, [])
   return (
     <div className='mx-auto w-full max-w-4xl px-4 pt-6'>
       <div className='rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 dark:border-violet-900/40 dark:from-violet-950/30 dark:to-transparent'>
@@ -90,7 +110,7 @@ export function FirstRunWelcome({
           </p>
         </div>
         <div className='mt-4 flex flex-wrap gap-2'>
-          {FIRST_RUN_EXAMPLE_PROMPTS.map(({ text, model }) => (
+          {examples.map(({ text, model }) => (
             <button
               key={text}
               type='button'

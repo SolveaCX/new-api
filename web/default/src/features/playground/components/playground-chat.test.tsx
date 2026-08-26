@@ -90,4 +90,112 @@ describe('PlaygroundChat', () => {
       html.indexOf('aria-label="Copy"')
     )
   })
+
+  test('keeps generated media attached to its message version', () => {
+    const firstVersionSrc = 'https://cdn.example/first.png'
+    const secondVersionSrc = 'https://cdn.example/second.png'
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'assistant-versions',
+              from: 'assistant',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'first result',
+                  generatedMedia: [{ type: 'image', url: firstVersionSrc }],
+                },
+                {
+                  id: 'version-2',
+                  content: 'second result',
+                  generatedMedia: [{ type: 'image', url: secondVersionSrc }],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`src="${firstVersionSrc}"`)
+    expect(html).toContain(`src="${secondVersionSrc}"`)
+    expect(html.match(new RegExp(firstVersionSrc, 'g'))?.length).toBe(2)
+    expect(html.match(new RegExp(secondVersionSrc, 'g'))?.length).toBe(2)
+  })
+
+  test('does not render or download unsafe generated media URLs', () => {
+    const safeSrc = 'https://cdn.example/safe.png'
+    const unsafeSrc = 'javascript:alert(1)'
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'assistant-unsafe-media',
+              from: 'assistant',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'generated result',
+                  generatedMedia: [
+                    { type: 'image', url: unsafeSrc },
+                    { type: 'image', url: safeSrc },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`src="${safeSrc}"`)
+    expect(html).not.toContain(unsafeSrc)
+  })
+
+  test('renders user attachment previews alongside the prompt', () => {
+    const imageSrc = 'data:image/png;base64,QUJDRA=='
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'user-attachments',
+              from: 'user',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Describe these files',
+                  attachments: [
+                    {
+                      kind: 'image',
+                      filename: 'photo.png',
+                      mediaType: 'image/png',
+                      url: imageSrc,
+                    },
+                    {
+                      kind: 'text',
+                      filename: 'notes.txt',
+                      mediaType: 'text/plain',
+                      text: 'hello',
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`src="${imageSrc}"`)
+    expect(html).toContain('photo.png')
+    expect(html).toContain('notes.txt')
+    expect(html).toContain('Describe these files')
+  })
 })

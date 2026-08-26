@@ -43,7 +43,11 @@ describe('Playground media model profiles', () => {
     expect(resolvePlaygroundModelKind('bytedance/seedance-2.0-fast')).toBe(
       'video'
     )
-    expect(resolvePlaygroundModelKind('seedance-2-5')).toBe('unsupported')
+    expect(resolvePlaygroundModelKind('seedance-2.5')).toBe('video')
+    expect(resolvePlaygroundModelKind('seedance-2-5')).toBe('video')
+    expect(resolvePlaygroundModelKind('doubao-seedance-2-5-260628')).toBe(
+      'video'
+    )
     expect(resolvePlaygroundModelKind('grok-imagine-video')).toBe('video')
     expect(resolvePlaygroundModelKind('grok-imagine-video-1.5')).toBe('video')
     expect(resolvePlaygroundModelKind('minimax-h3')).toBe('unsupported')
@@ -79,17 +83,46 @@ describe('Playground media model profiles', () => {
     const profile = resolveMediaGenerationProfile('gpt-image-2')
 
     expect(profile?.family).toBe('gpt-image')
+    expect(profile?.defaults.size).toBe('1024x1024')
     expect(profile?.fields.map((field) => field.key)).toEqual([
-      'count',
-      'size',
       'quality',
       'outputFormat',
       'background',
       'compression',
     ])
     expect(
-      profile?.fields.find((field) => field.key === 'size')?.labelKey
-    ).toBe('Resolution')
+      profile?.fields.find((field) => field.key === 'size')
+    ).toBeUndefined()
+    expect(
+      profile?.fields
+        .find((field) => field.key === 'outputFormat')
+        ?.options.map((option) => option.value)
+    ).toEqual(['png', 'jpeg'])
+    expect(
+      profile?.fields
+        .find((field) => field.key === 'background')
+        ?.options.map((option) => option.value)
+    ).toEqual(['auto', 'opaque'])
+    expect(
+      profile?.fields.find((field) => field.key === 'compression')?.visibleWhen
+        ?.values
+    ).toEqual(['jpeg'])
+  })
+
+  test('GPT Image 2 normalizes stale unsupported settings to safe values', () => {
+    const profile = resolveMediaGenerationProfile('gpt-image-2')
+
+    const settings = normalizeMediaGenerationSettings(profile!, {
+      count: 2,
+      size: '1536x1024',
+      outputFormat: 'webp',
+      background: 'transparent',
+    })
+
+    expect(settings.count).toBe(1)
+    expect(settings.size).toBe('1024x1024')
+    expect(settings.outputFormat).toBe('png')
+    expect(settings.background).toBe('auto')
   })
 
   test('Seedance duration uses the shared localized seconds unit', () => {
@@ -98,6 +131,123 @@ describe('Playground media model profiles', () => {
     expect(
       profile?.fields.find((field) => field.key === 'duration')?.unitKey
     ).toBe('seconds')
+  })
+
+  test('Seedance Base and Pro expose the full supported parameter set', () => {
+    const modelNames = [
+      'seedance-2.0',
+      'seedance2.0-pro',
+      'seedance-2.0-pro',
+      'bytedance/seedance-2.0-pro-20260811',
+      'doubao/doubao-seedance-2-0-260128',
+    ]
+
+    for (const modelName of modelNames) {
+      const profile = resolveMediaGenerationProfile(modelName)
+
+      expect(profile?.defaults).toEqual({
+        resolution: '720p',
+        duration: 5,
+        aspectRatio: 'adaptive',
+        generateAudio: true,
+      })
+      expect(
+        profile?.fields
+          .find((field) => field.key === 'resolution')
+          ?.options.map((option) => option.value)
+      ).toEqual(['480p', '720p', '1080p', '4k'])
+      expect(
+        profile?.fields
+          .find((field) => field.key === 'aspectRatio')
+          ?.options.map((option) => option.value)
+      ).toEqual(['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16', '21:9'])
+      expect(profile?.fields.map((field) => field.key)).not.toContain('seed')
+    }
+  })
+
+  test('Seedance Fast and Mini expose only their supported resolutions', () => {
+    const modelNames = [
+      'bytedance/seedance-2.0-fast',
+      'seedance-2.0-fast-20260811',
+      'seedance-2.0-mini',
+      'seedance2.0-mini',
+      'doubao/doubao-seedance-2-0-fast-260128',
+    ]
+
+    for (const modelName of modelNames) {
+      const profile = resolveMediaGenerationProfile(modelName)
+
+      expect(profile?.defaults).toEqual({
+        resolution: '720p',
+        duration: 5,
+        aspectRatio: 'adaptive',
+        generateAudio: true,
+      })
+      expect(
+        profile?.fields
+          .find((field) => field.key === 'resolution')
+          ?.options.map((option) => option.value)
+      ).toEqual(['480p', '720p'])
+      expect(
+        profile?.fields
+          .find((field) => field.key === 'aspectRatio')
+          ?.options.map((option) => option.value)
+      ).toEqual(['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16', '21:9'])
+      expect(profile?.fields.map((field) => field.key)).not.toContain('seed')
+    }
+  })
+
+  test('Seedance Fast and Mini normalize stale unsupported resolutions', () => {
+    const fastProfile = resolveMediaGenerationProfile('seedance-2.0-fast')
+    const miniProfile = resolveMediaGenerationProfile('seedance-2.0-mini')
+
+    expect(
+      normalizeMediaGenerationSettings(fastProfile!, {
+        resolution: '1080p',
+      }).resolution
+    ).toBe('720p')
+    expect(
+      normalizeMediaGenerationSettings(miniProfile!, {
+        resolution: '4K',
+      }).resolution
+    ).toBe('720p')
+  })
+
+  test('Seedance 2.5 exposes only parameters accepted by the current relay', () => {
+    const profile = resolveMediaGenerationProfile('doubao-seedance-2-5-260628')
+
+    expect(profile?.family).toBe('seedance-2.5')
+    expect(profile?.defaults).toEqual({
+      resolution: '720p',
+      duration: 5,
+      aspectRatio: 'adaptive',
+      generateAudio: true,
+    })
+    expect(
+      profile?.fields
+        .find((field) => field.key === 'resolution')
+        ?.options.map((option) => option.value)
+    ).toEqual(['480p', '720p'])
+    expect(
+      profile?.fields
+        .find((field) => field.key === 'aspectRatio')
+        ?.options.map((option) => option.value)
+    ).toEqual(['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16'])
+    expect(
+      profile?.fields.find((field) => field.key === 'duration')
+    ).toMatchObject({ min: 4, max: 30, step: 1, unitKey: 'seconds' })
+    expect(profile?.fields.map((field) => field.key)).not.toContain('seed')
+  })
+
+  test('normalizes scalar media controls to values the relay can accept', () => {
+    const profile = resolveMediaGenerationProfile('seedance-2.5')
+
+    expect(
+      normalizeMediaGenerationSettings(profile!, {
+        duration: 4.5,
+        generateAudio: 'false',
+      })
+    ).toMatchObject({ duration: 5, generateAudio: true })
   })
 
   test('Grok image does not invent unsupported quality or resolution controls', () => {
@@ -177,7 +327,7 @@ describe('Playground media request building', () => {
       },
     })
   })
-  test('builds the GPT Image 2 image endpoint payload', () => {
+  test('builds a safe GPT Image 2 payload from stale unsupported settings', () => {
     const request = buildMediaGenerationRequest(
       'A red paper boat',
       'gpt-image-2',
@@ -199,14 +349,41 @@ describe('Playground media request building', () => {
         model: 'gpt-image-2',
         group: 'plg',
         prompt: 'A red paper boat',
-        n: 2,
-        size: '1536x1024',
+        n: 1,
+        size: '1024x1024',
         quality: 'high',
         response_format: 'b64_json',
-        output_format: 'webp',
-        background: 'transparent',
-        output_compression: 82,
+        output_format: 'png',
+        background: 'auto',
       },
+    })
+  })
+
+  test('keeps GPT Image 2 JPEG compression in the request', () => {
+    const request = buildMediaGenerationRequest(
+      'A red paper boat',
+      'gpt-image-2',
+      'plg',
+      {
+        count: 1,
+        quality: 'auto',
+        outputFormat: 'jpeg',
+        background: 'opaque',
+        compression: 50,
+      }
+    )
+
+    expect(request?.payload).toEqual({
+      model: 'gpt-image-2',
+      group: 'plg',
+      prompt: 'A red paper boat',
+      n: 1,
+      size: '1024x1024',
+      quality: 'auto',
+      response_format: 'b64_json',
+      output_format: 'jpeg',
+      background: 'opaque',
+      output_compression: 50,
     })
   })
 
@@ -272,13 +449,13 @@ describe('Playground media request building', () => {
     })
   })
 
-  test('builds the official Seedance content request and preserves explicit values', () => {
+  test('builds the official Seedance content request without stale seed', () => {
     const request = buildMediaGenerationRequest(
       'A dancer in the rain',
       'bytedance/seedance-2.0',
       'plg',
       {
-        resolution: '1080p',
+        resolution: '4k',
         aspectRatio: '9:16',
         duration: 12,
         seed: 0,
@@ -294,13 +471,46 @@ describe('Playground media request building', () => {
         group: 'plg',
         prompt: 'A dancer in the rain',
         content: [{ type: 'text', text: 'A dancer in the rain' }],
-        resolution: '1080p',
+        resolution: '4k',
         ratio: '9:16',
         duration: 12,
-        seed: 0,
         generate_audio: false,
       },
     })
+    expect(request?.payload).not.toHaveProperty('seed')
+  })
+
+  test('builds Seedance 2.5 through the official content request without seed', () => {
+    const request = buildMediaGenerationRequest(
+      'Clouds moving across a mountain ridge',
+      'seedance-2.5',
+      'plg',
+      {
+        resolution: '720p',
+        aspectRatio: '9:16',
+        duration: 30,
+        seed: -1,
+        generateAudio: true,
+      }
+    )
+
+    expect(request).toEqual({
+      kind: 'video',
+      endpoint: '/pg/videos',
+      payload: {
+        model: 'seedance-2.5',
+        group: 'plg',
+        prompt: 'Clouds moving across a mountain ridge',
+        content: [
+          { type: 'text', text: 'Clouds moving across a mountain ridge' },
+        ],
+        resolution: '720p',
+        ratio: '9:16',
+        duration: 30,
+        generate_audio: true,
+      },
+    })
+    expect(request?.payload).not.toHaveProperty('seed')
   })
 
   test('builds a Grok video request with the upstream field names', () => {

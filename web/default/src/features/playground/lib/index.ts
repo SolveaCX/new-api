@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export * from './message-utils'
+export * from './attachments'
 export * from './media-generation'
 export * from './media-response'
 export * from './model-parameter-profile'
@@ -27,6 +28,10 @@ export * from './first-run-topup'
 export * from './payload-builder'
 export * from './playground-handoff'
 export * from './playground-model-filter'
+export * from './playground-suggestions'
+export * from './playground-id'
+export * from './playground-persistence'
+export * from './playground-outbox'
 export * from './storage'
 export * from './message-styles'
 export * from './stream-event-parser'

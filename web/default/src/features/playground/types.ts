@@ -21,14 +21,31 @@ export type MessageRole = 'user' | 'assistant' | 'system'
 
 export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
-export interface MessageVersion {
-  id: string
-  content: string
-}
-
 export interface GeneratedMedia {
   type: 'image' | 'video'
   url: string
+}
+
+export interface MessageVersion {
+  id: string
+  content: string
+  attachments?: PlaygroundAttachment[]
+  generatedMedia?: GeneratedMedia[]
+}
+
+export interface PlaygroundAttachment {
+  kind: 'image' | 'text'
+  filename: string
+  mediaType: string
+  url?: string
+  text?: string
+}
+
+export interface PlaygroundResponseMetadata {
+  relayRequestId?: string
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
 }
 
 export interface Message {
@@ -45,6 +62,7 @@ export interface Message {
   isContentComplete?: boolean
   status?: MessageStatus
   errorCode?: string | null
+  responseMetadata?: PlaygroundResponseMetadata
   // Video-generation messages (veo models). `isVideo` marks the assistant bubble
   // as a video result so it renders a progress spinner while generating and an
   // inline `<video>` when done (instead of markdown text). `videoProgress` is the
@@ -54,6 +72,10 @@ export interface Message {
   isVideo?: boolean
   videoProgress?: number
   videoUrl?: string
+  // Unified media generation persists the public task id so an in-flight
+  // video can resume polling after navigation or a page reload.
+  videoTaskId?: string
+  /** @deprecated Media is stored on MessageVersion; kept for old saved sessions. */
   generatedMedia?: GeneratedMedia[]
 }
 
@@ -99,6 +121,13 @@ export interface ChatCompletionChunk {
     }
     finish_reason: string | null
   }>
+  usage?: ChatCompletionUsage
+}
+
+export interface ChatCompletionUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
 }
 
 export interface ChatCompletionResponse {
@@ -115,11 +144,7 @@ export interface ChatCompletionResponse {
     }
     finish_reason: string
   }>
-  usage?: {
-    prompt_tokens: number
-    completion_tokens: number
-    total_tokens: number
-  }
+  usage?: ChatCompletionUsage
 }
 
 // Video generation (async /v1/videos) task types
@@ -154,6 +179,32 @@ export interface ParameterEnabled {
   frequency_penalty: boolean
   presence_penalty: boolean
   seed: boolean
+}
+
+export type PlaygroundRecordStatus = 'complete' | 'error' | 'stopped'
+
+export interface PlaygroundRecordPayload {
+  record_id: string
+  conversation_id: string
+  user_message: Message
+  request_messages: ChatCompletionMessage[]
+  assistant_message: Message
+  reasoning_content: string
+  input_text: string
+  output_text: string
+  model_name: string
+  group_name: string
+  parameters: Record<string, unknown>
+  status: PlaygroundRecordStatus
+  error_code: string
+  error_message: string
+  relay_request_id: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  latency_ms: number
+  messages_snapshot: Message[]
+  client_completed_at: number
 }
 
 // Model and group options

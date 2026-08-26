@@ -50,14 +50,23 @@ import {
   SourcesTrigger,
 } from '@/components/ai-elements/sources'
 import { MESSAGE_ROLES } from '../constants'
+import { sanitizeGeneratedMediaUrl } from '../lib/media-response'
 import { getMessageContentStyles } from '../lib/message-styles'
 import {
   parseThinkTags,
   splitGeneratedImageMarkdown,
 } from '../lib/message-utils'
-import type { Message as MessageType } from '../types'
+import type {
+  Message as MessageType,
+  PlaygroundAttachment,
+} from '../types'
 import { MessageActions } from './message-actions'
 import { MessageError } from './message-error'
+
+function sanitizeAttachmentImageUrl(url: string | undefined): string | undefined {
+  const safeUrl = sanitizeGeneratedMediaUrl(url)
+  return safeUrl?.startsWith('data:image/') ? safeUrl : undefined
+}
 
 interface PlaygroundChatProps {
   messages: MessageType[]
@@ -123,7 +132,7 @@ export function PlaygroundChat({
                       from={message.from}
                       key={`${message.key}-${version.id}-${versionIndex}`}
                     >
-                      <div className='w-full min-w-0 flex-1 basis-full py-1'>
+                      <div className='flex w-full min-w-0 flex-1 basis-full flex-col items-start py-2 group-[.is-user]:items-end'>
                         {isEditing(message.key) ? (
                           <div className='space-y-2'>
                             <Textarea
@@ -175,11 +184,43 @@ export function PlaygroundChat({
                                 (message.status === 'loading' ||
                                   (message.status === 'streaming' &&
                                     !version.content))
+
+                              const generatedMedia = (
+                                version.generatedMedia ??
+                                (versionIndex === 0
+                                  ? message.generatedMedia
+                                  : undefined) ??
+                                []
+                              ).flatMap((media) => {
+                                const safeUrl = sanitizeGeneratedMediaUrl(
+                                  media.url
+                                )
+                                return safeUrl
+                                  ? [{ ...media, url: safeUrl }]
+                                  : []
+                              })
+
                               const showMessageContent =
                                 (message.from === MESSAGE_ROLES.USER ||
                                   !message.isReasoningStreaming) &&
                                 (!!version.content ||
-                                  !!message.generatedMedia?.length)
+                                  !!version.attachments?.length ||
+                                  !!generatedMedia.length)
+
+                              const attachmentPreviews: Array<{
+                                attachment: PlaygroundAttachment
+                                url?: string
+                              }> = (
+                                version.attachments ?? []
+                              ).flatMap((attachment) => {
+                                if (attachment.kind === 'image') {
+                                  const url = sanitizeAttachmentImageUrl(
+                                    attachment.url
+                                  )
+                                  return url ? [{ attachment, url }] : []
+                                }
+                                return [{ attachment }]
+                              })
 
                               // Extract visible content (remove <think> tags for assistant messages)
                               const displayContent = isAssistant
@@ -210,7 +251,7 @@ export function PlaygroundChat({
                                         fileName: image.downloadName,
                                       })
                                     ),
-                                    ...(message.generatedMedia ?? [])
+                                    ...generatedMedia
                                       .filter((media) => media.type === 'image')
                                       .map((media, mediaIndex) => ({
                                         href: media.url,
@@ -326,10 +367,33 @@ export function PlaygroundChat({
                                           )}
                                         >
                                           <div className='space-y-3'>
-                                            {!!message.generatedMedia
-                                              ?.length && (
+                                            {!!attachmentPreviews.length && (
+                                              <div className='flex flex-wrap gap-2'>
+                                                {attachmentPreviews.map(
+                                                  ({ attachment, url }) =>
+                                                    attachment.kind ===
+                                                      'image' && url ? (
+                                                      <img
+                                                        alt={attachment.filename}
+                                                        className='size-24 rounded-lg border object-cover'
+                                                        key={`${message.key}-${version.id}-${attachment.filename}`}
+                                                        src={url}
+                                                      />
+                                                    ) : (
+                                                      <span
+                                                        className='border-border bg-muted/50 text-muted-foreground inline-flex max-w-full items-center rounded-md border px-2 py-1 text-xs font-medium'
+                                                        key={`${message.key}-${version.id}-${attachment.filename}`}
+                                                        title={attachment.filename}
+                                                      >
+                                                        {attachment.filename}
+                                                      </span>
+                                                    )
+                                                )}
+                                              </div>
+                                            )}
+                                            {!!generatedMedia.length && (
                                               <div className='grid gap-3 sm:grid-cols-2'>
-                                                {message.generatedMedia.map(
+                                                {generatedMedia.map(
                                                   (media, mediaIndex) => {
                                                     if (
                                                       media.type === 'video'

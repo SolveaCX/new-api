@@ -39,7 +39,7 @@ import * as playgroundInputModule from './components/playground-input'
 import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from './constants'
 import * as playgroundHooksModule from './hooks'
 import { applyPlaygroundHandoffModel } from './lib/playground-handoff'
-import type { Message, PlaygroundConfig } from './types'
+import type { Message, PlaygroundAttachment, PlaygroundConfig } from './types'
 
 type CapturedInputProps = {
   initialText?: string
@@ -47,7 +47,11 @@ type CapturedInputProps = {
   modelValue: string
   onStop?: () => void
   submitDisabled?: boolean
-  onSubmit: (text: string) => void
+  onSubmit: (
+    text: string,
+    model?: string,
+    attachments?: PlaygroundAttachment[]
+  ) => void
 }
 
 type CapturedChatProps = {
@@ -67,11 +71,16 @@ const generateMediaMock = mock(
     _prompt: string,
     _model: string,
     _group: string,
-    _settings: Record<string, unknown>
+    _settings: Record<string, unknown>,
+    _assistantMessageKey: string
   ) => Promise.resolve()
 )
 const stopChatMock = mock(() => undefined)
 const stopMediaMock = mock(() => undefined)
+const startTurnMock = mock(() => undefined)
+const markActiveTurnStoppedMock = mock(() => undefined)
+const markCurrentConversationLocalOnlyMock = mock(() => undefined)
+const setConversationIdMock = mock(() => undefined)
 const updateConfigMock = mock(() => undefined)
 const updateMessagesMock = mock(() => undefined)
 const setModelsMock = mock(() => undefined)
@@ -140,6 +149,7 @@ spyOn(playgroundInputModule, 'PlaygroundInput').mockImplementation(((
 }) as never)
 
 spyOn(playgroundHooksModule, 'usePlaygroundState').mockImplementation(((
+  _userId?: number,
   initialModel?: string
 ) => {
   receivedInitialModel = initialModel
@@ -148,14 +158,26 @@ spyOn(playgroundHooksModule, 'usePlaygroundState').mockImplementation(((
     config,
     parameterEnabled: DEFAULT_PARAMETER_ENABLED,
     messages: playgroundMessages,
+    conversationId: 'conversation-test',
     models: [],
     groups: [],
     updateMessages: updateMessagesMock,
+    setConversationId: setConversationIdMock,
     setModels: setModelsMock,
     setGroups: setGroupsMock,
     updateConfig: updateConfigMock,
   }
 }) as never)
+
+spyOn(playgroundHooksModule, 'usePlaygroundPersistence').mockImplementation(
+  (() => ({
+    isRestoring: false,
+    startTurn: startTurnMock,
+    markActiveTurnStopped: markActiveTurnStoppedMock,
+    markCurrentConversationLocalOnly: markCurrentConversationLocalOnlyMock,
+    clearCurrentConversation: () => Promise.resolve(true),
+  })) as never
+)
 
 spyOn(playgroundHooksModule, 'useChatHandler').mockImplementation((({
   config,
@@ -222,6 +244,10 @@ beforeEach(() => {
   generateMediaMock.mockClear()
   stopChatMock.mockClear()
   stopMediaMock.mockClear()
+  startTurnMock.mockClear()
+  markActiveTurnStoppedMock.mockClear()
+  markCurrentConversationLocalOnlyMock.mockClear()
+  setConversationIdMock.mockClear()
   updateConfigMock.mockClear()
   updateMessagesMock.mockClear()
   setModelsMock.mockClear()
@@ -256,16 +282,57 @@ describe('Playground model landing handoff', () => {
     input.onSubmit('Draw a violet fox')
 
     expect(generateMediaMock).toHaveBeenCalledTimes(1)
+    expect(markCurrentConversationLocalOnlyMock).toHaveBeenCalledTimes(1)
     expect(generateMediaMock.mock.calls[0]?.[1]).toBe('gpt-image-2')
+    expect(generateMediaMock.mock.calls[0]?.[4]).toEqual(expect.any(String))
     expect(sendChatMock).not.toHaveBeenCalled()
   })
 
-  test('blocks a URL model missing from the user model list', () => {
+  test('routes a text quick start from a media model through gpt-5.5 chat', () => {
+    modelsQueryData = ['gpt-image-2', 'gpt-5.5']
+    isModelsQueryLoading = false
+    const input = renderHandoff()
+
+    expect(input.modelValue).toBe('gpt-image-2')
+    expect(input.submitDisabled).toBe(false)
+
+    input.onSubmit('Analyze data', 'gpt-5.5')
+
+    expect(updateConfigMock).toHaveBeenCalledWith('model', 'gpt-5.5')
+    expect(sendChatMock).toHaveBeenCalledTimes(1)
+    expect(sendChatMock.mock.calls[0]?.[0]).toMatchObject({
+      model: 'gpt-5.5',
+    })
+    expect(generateMediaMock).not.toHaveBeenCalled()
+  })
+
+  test('rejects attachments for media models without consuming the send gate', () => {
+    modelsQueryData = ['gpt-image-2']
+    isModelsQueryLoading = false
+    const input = renderHandoff()
+    const attachment: PlaygroundAttachment = {
+      kind: 'image',
+      filename: 'photo.png',
+      mediaType: 'image/png',
+      url: 'data:image/png;base64,AA==',
+    }
+
+    input.onSubmit('Draw a violet fox', undefined, [attachment])
+
+    expect(generateMediaMock).not.toHaveBeenCalled()
+    expect(updateMessagesMock).not.toHaveBeenCalled()
+
+    input.onSubmit('Draw a violet fox')
+
+    expect(generateMediaMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not lock the selector to a URL model missing from the user model list', () => {
     modelsQueryData = ['gpt-4o']
     isModelsQueryLoading = false
     const input = renderHandoff('not-a-real-model', 'Draw a violet fox')
 
-    expect(input.modelLocked).toBe(true)
+    expect(input.modelLocked).toBe(false)
     expect(input.submitDisabled).toBe(true)
 
     input.onSubmit('Draw a violet fox')
@@ -309,8 +376,8 @@ describe('Playground model landing handoff', () => {
     })
   })
 
-  test('keeps first-run example model overrides on the locked handoff model', () => {
-    modelsQueryData = ['gpt-image-2', 'gemini-2.5-flash-image']
+  test('uses an explicit first-run example model on a locked handoff', () => {
+    modelsQueryData = ['gpt-image-2', 'nano-banana-pro-preview']
     isModelsQueryLoading = false
     renderHandoff('gpt-image-2', 'Draw a violet fox')
     if (!capturedWelcomeProps)
@@ -318,16 +385,33 @@ describe('Playground model landing handoff', () => {
 
     capturedWelcomeProps.onPickExample(
       'Generate an image',
-      'gemini-2.5-flash-image'
+      'nano-banana-pro-preview'
     )
 
     expect(generateMediaMock).toHaveBeenCalledTimes(1)
-    expect(generateMediaMock.mock.calls[0]?.[1]).toBe('gpt-image-2')
+    expect(generateMediaMock.mock.calls[0]?.[1]).toBe('nano-banana-pro-preview')
     expect(sendChatMock).not.toHaveBeenCalled()
-    expect(updateConfigMock).not.toHaveBeenCalledWith(
+    expect(updateConfigMock).toHaveBeenCalledWith(
       'model',
-      'gemini-2.5-flash-image'
+      'nano-banana-pro-preview'
     )
+  })
+
+  test('switches to the model carried by a video prompt example', () => {
+    modelsQueryData = ['gpt-image-2', 'seedance-2.5']
+    isModelsQueryLoading = false
+    renderHandoff('gpt-image-2', 'Draw a violet fox')
+    if (!capturedWelcomeProps)
+      throw new Error('FirstRunWelcome was not rendered')
+
+    capturedWelcomeProps.onPickExample(
+      'Generate a video of a cat astronaut',
+      'seedance-2.5'
+    )
+
+    expect(generateMediaMock).toHaveBeenCalledTimes(1)
+    expect(generateMediaMock.mock.calls[0]?.[1]).toBe('seedance-2.5')
+    expect(updateConfigMock).toHaveBeenCalledWith('model', 'seedance-2.5')
   })
 
   test('allows a first-run handoff to an authorized filtered model', () => {
@@ -364,6 +448,41 @@ describe('Playground model landing handoff', () => {
 
     expect(capturedInputProps.modelLocked).toBe(false)
     expect(sendChatMock).not.toHaveBeenCalled()
+  })
+
+  test('rejects a second synchronous chat submission before React rerenders', () => {
+    modelsQueryData = ['gpt-4o']
+    isModelsQueryLoading = false
+    renderToStaticMarkup(<Playground />)
+    if (!capturedInputProps) throw new Error('PlaygroundInput was not rendered')
+
+    capturedInputProps.onSubmit('first prompt')
+    capturedInputProps.onSubmit('second prompt')
+
+    expect(sendChatMock).toHaveBeenCalledTimes(1)
+    expect(startTurnMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps submit available when regenerate has no earlier user prompt', () => {
+    playgroundMessages = [
+      {
+        key: 'assistant-message',
+        from: 'assistant',
+        versions: [{ id: 'assistant-version', content: 'orphan response' }],
+      },
+    ]
+    modelsQueryData = ['gpt-4o']
+    isModelsQueryLoading = false
+    renderToStaticMarkup(<Playground />)
+    if (!capturedInputProps || !capturedChatProps) {
+      throw new Error('Playground controls were not rendered')
+    }
+
+    capturedChatProps.onRegenerateMessage(playgroundMessages[0])
+    capturedInputProps.onSubmit('new prompt')
+
+    expect(sendChatMock).toHaveBeenCalledTimes(1)
+    expect(startTurnMock).toHaveBeenCalledTimes(1)
   })
 
   test('stops only the active chat generation', () => {

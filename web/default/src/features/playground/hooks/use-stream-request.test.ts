@@ -16,10 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export * from './use-playground-state'
-export * from './use-stream-request'
-export * from './use-chat-handler'
-export * from './use-video-generation'
-export * from './use-message-action-guard'
-export * from './use-media-generation'
-export * from './use-playground-persistence'
+import { expect, test } from 'bun:test'
+import { closeOwnedStreamSource } from './use-stream-request'
+
+test('a stale stream can close itself without clearing the newer stream', () => {
+  let firstClosed = false
+  let secondClosed = false
+  const first = { close: () => (firstClosed = true) }
+  const second = { close: () => (secondClosed = true) }
+  const current = { current: second }
+
+  closeOwnedStreamSource(current, first)
+
+  expect(firstClosed).toBe(true)
+  expect(secondClosed).toBe(false)
+  expect(current.current).toBe(second)
+
+  closeOwnedStreamSource(current, second)
+
+  expect(secondClosed).toBe(true)
+  expect(current.current).toBeNull()
+})

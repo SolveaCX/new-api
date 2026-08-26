@@ -27,6 +27,7 @@ export type MediaGenerationFamily =
   | 'grok-video'
   | 'veo-3.1'
   | 'seedance-2.0'
+  | 'seedance-2.5'
 
 export type MediaParameterKey =
   | 'count'
@@ -100,7 +101,19 @@ export interface MediaGenerationRequest {
 
 const imageRatios = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9']
 
-const videoRatios = ['16:9', '9:16', '1:1', '4:3', '3:4']
+const seedance20Ratios = [
+  'adaptive',
+  '16:9',
+  '4:3',
+  '1:1',
+  '3:4',
+  '9:16',
+  '21:9',
+]
+
+const seedance25Ratios = ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16']
+
+const GPT_IMAGE_SIZE = '1024x1024'
 
 function selectField(
   key: MediaParameterKey,
@@ -123,37 +136,22 @@ const gptImageProfile: MediaGenerationProfile = {
   family: 'gpt-image',
   defaults: {
     count: 1,
-    size: 'auto',
+    size: GPT_IMAGE_SIZE,
     quality: 'auto',
     outputFormat: 'png',
     background: 'auto',
     compression: 90,
   },
   fields: [
-    {
-      key: 'count',
-      labelKey: 'Image count',
-      control: 'number',
-      min: 1,
-      max: 10,
-      step: 1,
-    },
-    selectField('size', 'Resolution', [
-      'auto',
-      '1024x1024',
-      '1536x1024',
-      '1024x1536',
-    ]),
     selectField('quality', 'Quality', [
       { value: 'auto', labelKey: 'Auto' },
       { value: 'low', labelKey: 'Low' },
       { value: 'medium', labelKey: 'Medium' },
       { value: 'high', labelKey: 'High' },
     ]),
-    selectField('outputFormat', 'Output format', ['png', 'jpeg', 'webp']),
+    selectField('outputFormat', 'Output format', ['png', 'jpeg']),
     selectField('background', 'Background', [
       { value: 'auto', labelKey: 'Auto' },
-      { value: 'transparent', labelKey: 'Transparent' },
       { value: 'opaque', labelKey: 'Opaque' },
     ]),
     {
@@ -166,7 +164,7 @@ const gptImageProfile: MediaGenerationProfile = {
       unitKey: '%',
       visibleWhen: {
         key: 'outputFormat',
-        values: ['jpeg', 'webp'],
+        values: ['jpeg'],
       },
     },
   ],
@@ -277,35 +275,68 @@ const veoProfile: MediaGenerationProfile = {
   noteKey: 'Veo 1080p and 4K output requires an 8-second duration.',
 }
 
-const seedance20Profile: MediaGenerationProfile = {
+function createSeedance20Profile(
+  resolutions: string[]
+): MediaGenerationProfile {
+  return {
+    kind: 'video',
+    family: 'seedance-2.0',
+    defaults: {
+      resolution: '720p',
+      duration: 5,
+      aspectRatio: 'adaptive',
+      generateAudio: true,
+    },
+    fields: [
+      selectField('resolution', 'Resolution', resolutions),
+      selectField('aspectRatio', 'Aspect ratio', seedance20Ratios),
+      {
+        key: 'duration',
+        labelKey: 'Duration',
+        control: 'number',
+        min: 4,
+        max: 15,
+        step: 1,
+        unitKey: 'seconds',
+      },
+      {
+        key: 'generateAudio',
+        labelKey: 'Generate audio',
+        control: 'switch',
+      },
+    ],
+  }
+}
+
+const seedance20FullProfile = createSeedance20Profile([
+  '480p',
+  '720p',
+  '1080p',
+  '4k',
+])
+
+const seedance20EconomyProfile = createSeedance20Profile(['480p', '720p'])
+
+const seedance25Profile: MediaGenerationProfile = {
   kind: 'video',
-  family: 'seedance-2.0',
+  family: 'seedance-2.5',
   defaults: {
-    resolution: '1080p',
-    duration: 8,
-    aspectRatio: '16:9',
-    seed: -1,
+    resolution: '720p',
+    duration: 5,
+    aspectRatio: 'adaptive',
     generateAudio: true,
   },
   fields: [
-    selectField('resolution', 'Resolution', ['480p', '720p', '1080p', '4K']),
-    selectField('aspectRatio', 'Aspect ratio', videoRatios),
+    selectField('resolution', 'Resolution', ['480p', '720p']),
+    selectField('aspectRatio', 'Aspect ratio', seedance25Ratios),
     {
       key: 'duration',
       labelKey: 'Duration',
       control: 'number',
       min: 4,
-      max: 15,
+      max: 30,
       step: 1,
       unitKey: 'seconds',
-    },
-    {
-      key: 'seed',
-      labelKey: 'Seed',
-      control: 'number',
-      min: -1,
-      max: 2147483647,
-      step: 1,
     },
     {
       key: 'generateAudio',
@@ -385,8 +416,16 @@ export function resolveMediaGenerationProfile(
     return cloneProfile(veoProfile)
   }
   if (normalized.includes('seedance')) {
+    if (/2(?:[.-]|-)?5/.test(normalized)) {
+      return cloneProfile(seedance25Profile)
+    }
     if (/2(?:[.-]|-)?0/.test(normalized)) {
-      return cloneProfile(seedance20Profile)
+      const isEconomyVariant = /(?:^|[-_/])(?:fast|mini)(?:$|[-_/])/.test(
+        normalized
+      )
+      return cloneProfile(
+        isEconomyVariant ? seedance20EconomyProfile : seedance20FullProfile
+      )
     }
   }
   return undefined
@@ -411,11 +450,15 @@ function normalizedNumber(
   value: MediaParameterValue | undefined,
   fallback: number,
   min: number,
-  max: number
+  max: number,
+  step?: number
 ): number {
   const parsed = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(parsed)) return fallback
-  return Math.min(max, Math.max(min, parsed))
+  const clamped = Math.min(max, Math.max(min, parsed))
+  if (!step || step <= 0) return clamped
+  const snapped = min + Math.round((clamped - min) / step) * step
+  return Math.min(max, Math.max(min, snapped))
 }
 
 export function normalizeMediaGenerationSettings(
@@ -434,7 +477,8 @@ export function normalizeMediaGenerationSettings(
         normalized[field.key],
         fallback,
         field.min,
-        field.max
+        field.max,
+        field.step
       )
       return
     }
@@ -442,8 +486,20 @@ export function normalizeMediaGenerationSettings(
       const value = String(normalized[field.key] ?? '')
       const supported = field.options.some((option) => option.value === value)
       if (!supported) normalized[field.key] = profile.defaults[field.key]
+      return
+    }
+    if (field.control === 'switch') {
+      if (typeof normalized[field.key] !== 'boolean') {
+        const fallback = profile.defaults[field.key]
+        normalized[field.key] = typeof fallback === 'boolean' ? fallback : false
+      }
     }
   })
+
+  if (profile.family === 'gpt-image') {
+    normalized.count = 1
+    normalized.size = GPT_IMAGE_SIZE
+  }
 
   if (
     profile.family === 'veo-3.1' &&
@@ -460,18 +516,20 @@ function buildGptImagePayload(
   group: string,
   settings: MediaGenerationSettings
 ): Record<string, unknown> {
+  const outputFormat = settings.outputFormat === 'jpeg' ? 'jpeg' : 'png'
+  const background = settings.background === 'opaque' ? 'opaque' : 'auto'
   const payload: Record<string, unknown> = {
     model,
     group,
     prompt,
-    n: settings.count,
-    size: settings.size,
+    n: 1,
+    size: GPT_IMAGE_SIZE,
     quality: settings.quality,
     response_format: 'b64_json',
-    output_format: settings.outputFormat,
-    background: settings.background,
+    output_format: outputFormat,
+    background,
   }
-  if (settings.outputFormat === 'jpeg' || settings.outputFormat === 'webp') {
+  if (outputFormat === 'jpeg') {
     payload.output_compression = settings.compression
   }
   return payload
@@ -506,7 +564,7 @@ function buildVideoPayload(
   family: MediaGenerationFamily,
   settings: MediaGenerationSettings
 ): Record<string, unknown> {
-  if (family === 'seedance-2.0') {
+  if (family === 'seedance-2.0' || family === 'seedance-2.5') {
     return {
       model,
       group,
@@ -515,7 +573,6 @@ function buildVideoPayload(
       resolution: settings.resolution,
       ratio: settings.aspectRatio,
       duration: settings.duration,
-      seed: settings.seed,
       generate_audio: settings.generateAudio,
     }
   }

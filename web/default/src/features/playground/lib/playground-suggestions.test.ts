@@ -1,0 +1,117 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { describe, expect, test } from 'bun:test'
+import {
+  FLATKEY_TRIAL_INTERNAL_GUIDANCE,
+  QUICK_START_TEXT_MODEL,
+  QUICK_START_MODELS,
+  getQuickStartInternalGuidance,
+  isQuickStartModelAvailable,
+  isFlatkeyTrialPrompt,
+  resolveQuickStartChatModel,
+  shouldShowQuickStartSuggestions,
+} from './playground-suggestions'
+
+const models = [
+  { label: 'grok-imagine-image', value: 'grok-imagine-image' },
+  { label: 'gpt-image-2', value: 'gpt-image-2' },
+  { label: 'seedance-2.5', value: 'seedance-2.5' },
+  { label: 'seedance-2.0-fast', value: 'seedance-2.0-fast' },
+  { label: 'seedance-2.0', value: 'seedance-2.0' },
+]
+
+describe('quick-start model mapping', () => {
+  test('keeps each media prompt bound to its exact target model', () => {
+    expect(QUICK_START_MODELS).toEqual({
+      image: 'gpt-image-2',
+      video: 'seedance-2.5',
+    })
+  })
+
+  test('only reports a quick-start model as available on an exact match', () => {
+    expect(isQuickStartModelAvailable(models, QUICK_START_MODELS.image)).toBe(
+      true
+    )
+    expect(
+      isQuickStartModelAvailable(
+        [{ label: 'Seedance 2.0', value: 'seedance-2.0' }],
+        QUICK_START_MODELS.video
+      )
+    ).toBe(false)
+  })
+
+  test('does not treat another model in the same media family as a match', () => {
+    expect(
+      isQuickStartModelAvailable(
+        [{ label: 'Grok Imagine', value: 'grok-imagine-image' }],
+        QUICK_START_MODELS.image
+      )
+    ).toBe(false)
+  })
+
+  test('prefers gpt-5.5 for text quick starts and never returns a media model', () => {
+    expect(
+      resolveQuickStartChatModel([
+        { label: 'Seedance 2.5', value: 'seedance-2.5' },
+        { label: 'GPT-4o', value: 'gpt-4o' },
+        { label: 'GPT-5.5', value: QUICK_START_TEXT_MODEL },
+      ])
+    ).toBe('gpt-5.5')
+    expect(
+      resolveQuickStartChatModel([
+        { label: 'Seedance 2.5', value: 'seedance-2.5' },
+        { label: 'GPT-4o', value: 'gpt-4o' },
+      ])
+    ).toBe('gpt-4o')
+    expect(
+      resolveQuickStartChatModel([
+        { label: 'Seedance 2.5', value: 'seedance-2.5' },
+      ])
+    ).toBeUndefined()
+  })
+})
+
+describe('Flatkey trial quick start guidance', () => {
+  test('recognizes the localized trial question without changing its visible text', () => {
+    expect(isFlatkeyTrialPrompt('How do I try flatkey?')).toBe(true)
+    expect(isFlatkeyTrialPrompt('如何试用 flatkey？')).toBe(true)
+    expect(isFlatkeyTrialPrompt('Cómo pruebo Flatkey?')).toBe(true)
+    expect(isFlatkeyTrialPrompt('Explain what Flatkey does')).toBe(false)
+  })
+
+  test('provides internal onboarding guidance that points to Quickstart', () => {
+    const guidance = getQuickStartInternalGuidance('How do I try flatkey?')
+
+    expect(guidance).toBe(FLATKEY_TRIAL_INTERNAL_GUIDANCE)
+    expect(guidance).toContain('/quickstart')
+    expect(guidance).toContain('/flatkey-tools')
+    expect(guidance).toContain('/keys')
+    expect(guidance).toContain('30 seconds')
+    expect(guidance).toContain('OpenAI-compatible')
+    expect(guidance).toContain('Never reveal')
+  })
+})
+
+describe('shouldShowQuickStartSuggestions', () => {
+  test('shows suggestions only for a blank prompt', () => {
+    expect(shouldShowQuickStartSuggestions('')).toBe(true)
+    expect(shouldShowQuickStartSuggestions('   ')).toBe(true)
+    expect(shouldShowQuickStartSuggestions('draw a cat')).toBe(false)
+  })
+})

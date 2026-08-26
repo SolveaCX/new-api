@@ -23,15 +23,24 @@ import type {
   MessageVersion,
   ChatCompletionMessage,
   ContentPart,
+  GeneratedMedia,
+  PlaygroundAttachment,
 } from '../types'
+
+const SAFE_IMAGE_DATA_URL_PATTERN =
+  /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/\r\n]+={0,2}$/i
 
 /**
  * Create a new message version
  */
-export function createMessageVersion(content: string): MessageVersion {
+export function createMessageVersion(
+  content: string,
+  attachments?: PlaygroundAttachment[]
+): MessageVersion {
   return {
     id: nanoid(),
     content,
+    ...(attachments?.length ? { attachments: [...attachments] } : {}),
   }
 }
 
@@ -52,18 +61,44 @@ export function updateCurrentVersionContent(
   const currentVersion = getCurrentVersion(message)
   return {
     ...message,
-    versions: [{ ...currentVersion, content }],
+    versions: [{ ...currentVersion, content }, ...message.versions.slice(1)],
+  }
+}
+
+/**
+ * Attach generated media to the current message version.
+ *
+ * Older sessions stored media on the message itself. Remove that legacy field
+ * when writing new results so version switching cannot show media from another
+ * result while still allowing old sessions to be read by the UI fallback.
+ */
+export function updateCurrentVersionMedia(
+  message: Message,
+  generatedMedia?: GeneratedMedia[]
+): Message {
+  const currentVersion = getCurrentVersion(message)
+  const messageWithoutLegacyMedia = { ...message }
+  delete messageWithoutLegacyMedia.generatedMedia
+
+  return {
+    ...messageWithoutLegacyMedia,
+    versions: message.versions.length
+      ? [{ ...currentVersion, generatedMedia }, ...message.versions.slice(1)]
+      : [{ ...currentVersion, generatedMedia }],
   }
 }
 
 /**
  * Create a user message
  */
-export function createUserMessage(content: string): Message {
+export function createUserMessage(
+  content: string,
+  attachments: PlaygroundAttachment[] = []
+): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
-    versions: [createMessageVersion(content)],
+    versions: [createMessageVersion(content, attachments)],
   }
 }
 
@@ -104,11 +139,29 @@ export function createLoadingVideoMessage(): Message {
  */
 export function buildMessageContent(
   text: string,
-  imageUrls: string[] = []
+  attachments?: PlaygroundAttachment[]
+): string | ContentPart[]
+export function buildMessageContent(
+  text: string,
+  imageUrls: string[]
+): string | ContentPart[]
+export function buildMessageContent(
+  text: string,
+  attachmentsOrImageUrls: PlaygroundAttachment[] | string[] = []
 ): string | ContentPart[] {
-  const validImages = imageUrls.filter((url) => url.trim() !== '')
+  const attachments: PlaygroundAttachment[] = attachmentsOrImageUrls.map(
+    (attachment) =>
+      typeof attachment === 'string'
+        ? {
+            kind: 'image',
+            filename: 'image',
+            mediaType: 'image/*',
+            url: attachment,
+          }
+        : attachment
+  )
 
-  if (validImages.length === 0) {
+  if (attachments.length === 0) {
     return text
   }
 
@@ -117,13 +170,32 @@ export function buildMessageContent(
       type: 'text',
       text: text || '',
     },
-    ...validImages.map((url) => ({
-      type: 'image_url' as const,
-      image_url: { url: url.trim() },
-    })),
+    ...attachments.flatMap((attachment): ContentPart[] => {
+      if (
+        attachment.kind === 'image' &&
+        attachment.url?.trim() &&
+        SAFE_IMAGE_DATA_URL_PATTERN.test(attachment.url.trim())
+      ) {
+        return [
+          {
+            type: 'image_url' as const,
+            image_url: { url: attachment.url.trim() },
+          },
+        ]
+      }
+      if (attachment.kind === 'text' && attachment.text?.trim()) {
+        return [
+          {
+            type: 'text' as const,
+            text: `[Attached file: ${attachment.filename}]\n${attachment.text}`,
+          },
+        ]
+      }
+      return []
+    }),
   ]
 
-  return parts
+  return parts.length > 1 ? parts : text
 }
 
 /**
@@ -149,7 +221,10 @@ export function formatMessageForAPI(message: Message): ChatCompletionMessage {
   const currentVersion = getCurrentVersion(message)
   return {
     role: message.from,
-    content: currentVersion.content,
+    content: buildMessageContent(
+      currentVersion.content,
+      currentVersion.attachments
+    ),
   }
 }
 
@@ -364,13 +439,32 @@ export function finalizeMessage(
 }
 
 /**
- * Sanitize messages loaded from storage
- * Converts stuck loading/streaming messages to stable state
+ * Sanitize messages loaded from storage.
+ * Migrates legacy message-level media and converts stuck loading/streaming
+ * messages to a stable state.
  */
 export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
+  let sanitizedMessages = messages
+
+  messages.forEach((message, index) => {
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      !Object.prototype.hasOwnProperty.call(message, 'generatedMedia')
+    ) {
+      return
+    }
+
+    if (sanitizedMessages === messages) sanitizedMessages = [...messages]
+    sanitizedMessages[index] = updateCurrentVersionMedia(
+      message,
+      getCurrentVersion(message).generatedMedia ?? message.generatedMedia
+    )
+  })
+
   let targetIndex = -1
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
+  for (let i = sanitizedMessages.length - 1; i >= 0; i--) {
+    const m = sanitizedMessages[i]
     if (
       m?.from === MESSAGE_ROLES.ASSISTANT &&
       (m?.status === MESSAGE_STATUS.LOADING ||
@@ -381,9 +475,17 @@ export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
     }
   }
 
-  if (targetIndex === -1) return messages
+  if (targetIndex === -1) return sanitizedMessages
 
-  const finalized = finalizeMessage(messages[targetIndex])
+  const pendingMessage = sanitizedMessages[targetIndex]
+  if (
+    typeof pendingMessage.videoTaskId === 'string' &&
+    pendingMessage.videoTaskId.trim()
+  ) {
+    return sanitizedMessages
+  }
+
+  const finalized = finalizeMessage(pendingMessage)
   const hasContent = finalized.versions?.[0]?.content?.trim()
   const hasReasoning = finalized.reasoning?.content?.trim()
 
@@ -403,7 +505,7 @@ export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
           isReasoningStreaming: false,
         }
 
-  const result = [...messages]
+  const result = [...sanitizedMessages]
   result[targetIndex] = sanitized
   return result
 }
