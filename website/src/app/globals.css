@@ -1,4 +1,4 @@
-@import "tailwindcss" source("../");
+@import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -203,11 +203,6 @@
   --fk-site-frame-max-width: calc(
     var(--fk-site-max-width) + var(--fk-site-gutter) + var(--fk-site-gutter)
   );
-  --fk-site-header-height: 72px;
-  --fk-model-section-nav-height: 48px;
-  --fk-model-section-scroll-margin: calc(
-    var(--fk-site-header-height) + var(--fk-model-section-nav-height) + 16px
-  );
   --fk-copy-line-height: 1.62;
   --fk-font-latin:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -238,24 +233,6 @@
     radial-gradient(ellipse 70% 48% at 18% 8%, rgba(167, 139, 250, 0.34) 0%, transparent 68%),
     radial-gradient(ellipse 64% 42% at 82% 8%, rgba(217, 70, 239, 0.22) 0%, transparent 70%),
     linear-gradient(180deg, rgba(124, 58, 237, 0.08), transparent 48%);
-}
-
-@media (min-width: 901px) {
-  :root {
-    --fk-site-header-height: 76px;
-  }
-}
-
-@media (min-width: 1180px) {
-  :root {
-    --fk-site-header-height: 84px;
-  }
-}
-
-@media (min-width: 1480px) {
-  :root {
-    --fk-site-header-height: 88px;
-  }
 }
 
 html:lang(zh) {
@@ -434,6 +411,20 @@ html:lang(ru) {
     U+2212, U+2215, U+feff, U+fffd;
 }
 
+/* The approved model-detail handoff uses Inter. Keep it local to the public
+ * model shell so the rest of the website retains its existing typography. */
+@font-face {
+  font-family: "Flatkey Model Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/assets/fonts/inter-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00ff, U+0131, U+0152-0153, U+02bb-02bc, U+02c6, U+02da, U+02dc,
+    U+0304, U+0308, U+0329, U+2000-206f, U+20ac, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+feff, U+fffd;
+}
+
 html {
   font-size: 16px;
   line-height: 1.5;
@@ -460,64 +451,6 @@ body {
 .fk-site-header :is(a, button),
 .fk-site-footer :is(a, button, h2, h3, h4, h5) {
   font-family: inherit;
-}
-
-.fk-site-header-logo {
-  gap: 0.5rem;
-}
-
-.fk-site-header-logo img {
-  width: 2.25rem !important;
-  height: 2.25rem !important;
-}
-
-.fk-site-header-logo [data-flatkey-wordmark="true"] {
-  font-size: 28px !important;
-}
-
-.fk-site-footer-logo img {
-  width: 2.75rem;
-  height: 2.75rem;
-}
-
-.fk-site-footer-logo [data-flatkey-wordmark="true"] {
-  font-size: 30px;
-}
-
-@media (max-width: 700px) {
-  .fk-site-header-logo {
-    gap: 0;
-  }
-
-  .fk-site-header-logo [data-flatkey-wordmark="true"] {
-    display: none !important;
-  }
-}
-
-@media (min-width: 1180px) {
-  .fk-site-header-logo {
-    gap: 9px;
-  }
-
-  .fk-site-header-logo img {
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-  }
-
-  .fk-site-header-logo [data-flatkey-wordmark="true"] {
-    font-size: 32px !important;
-  }
-}
-
-@media (min-width: 1480px) {
-  .fk-site-header-logo img {
-    width: 2.75rem !important;
-    height: 2.75rem !important;
-  }
-
-  .fk-site-header-logo [data-flatkey-wordmark="true"] {
-    font-size: 36px !important;
-  }
 }
 
 .ja-gothic-landing {
@@ -586,6 +519,18 @@ a {
 
 .flatkey-primary-cta :is(svg, span) {
   color: inherit !important;
+}
+
+.blog-cta-button {
+  border: 1px solid #ffffff !important;
+  background: #ffffff !important;
+  color: #0b0b0f !important;
+  box-shadow: 0 12px 30px -18px rgb(255 255 255 / 0.85);
+}
+
+.blog-cta-button:hover {
+  background: #f1f1f3 !important;
+  color: #0b0b0f !important;
 }
 
 .flatkey-hero-cta {
@@ -818,60 +763,6 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
 
 .landing-animate-fade-up {
   animation: landing-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* Scroll-triggered variant of the above. The element holds its pre-state until
-   [data-revealed="true"] is set, so sections below the fold animate when the
-   reader reaches them rather than while they are still off screen.
-   No-JS and pre-hydration render the visible state, so content is never
-   trapped behind an observer that never runs. */
-.fk-reveal {
-  opacity: 1;
-  transform: none;
-}
-
-.fk-reveal[data-revealed="false"] {
-  opacity: 0;
-  transform: translateY(22px);
-}
-
-/* Interactive surfaces: a card that only changes border colour on hover does not
-   read as pressable. These give lift on hover and a small give on press, which
-   is what tells a pointer the thing is a control. */
-.fk-lift {
-  transition:
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.18s ease;
-}
-
-.fk-lift:active {
-  transform: translateY(0) scale(0.995);
-  transition-duration: 0.08s;
-}
-
-/* Staggered reveal for grids: children arrive in sequence rather than as one
-   block, which reads as the section assembling instead of blinking in. */
-.fk-reveal[data-revealed="true"] .fk-stagger > * {
-  animation: landing-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.fk-reveal[data-revealed="false"] .fk-stagger > * {
-  opacity: 0;
-}
-
-.fk-stagger > *:nth-child(1) { animation-delay: 0ms; }
-.fk-stagger > *:nth-child(2) { animation-delay: 60ms; }
-.fk-stagger > *:nth-child(3) { animation-delay: 120ms; }
-.fk-stagger > *:nth-child(4) { animation-delay: 180ms; }
-.fk-stagger > *:nth-child(5) { animation-delay: 240ms; }
-.fk-stagger > *:nth-child(n + 6) { animation-delay: 300ms; }
-
-.fk-reveal[data-revealed="true"] {
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .home-model-marquee-track {
@@ -1261,14 +1152,6 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fk-reveal,
-  .fk-reveal[data-revealed="false"],
-  .fk-lift,
-  .fk-lift:hover,
-  .fk-lift:active,
-  .fk-stagger > *,
-  .fk-reveal[data-revealed="true"] .fk-stagger > *,
-  .fk-reveal[data-revealed="false"] .fk-stagger > *,
   .landing-animate-fade-up,
   .home-model-marquee-track,
   .fk-page-loading,
@@ -1278,6 +1161,4653 @@ html:lang(ja) .fk-new-home :is(h1, h2, h3, h4, button, .fk-button-motion, .fk-ho
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
-    transition: none !important;
+  }
+}
+
+/* Model detail prototype parity ------------------------------------------------
+ * The public model pages use the same visual contract as the approved
+ * seedance-2.5 HTML handoff. Keep these rules scoped so the shared site shell
+ * and the rest of the marketing pages are unaffected.
+ */
+.model-prototype {
+  --model-ink: #171a21;
+  --model-muted: #616978;
+  --model-quiet: #8b919e;
+  --model-line: #edeff2;
+  --model-soft: #fafafc;
+  --model-lavender: #eeeaf9;
+  --model-purple: #6b38e6;
+  /* Keep the model-detail content on the same alignment grid as the global
+   * site header. The header's inner content is capped by --fk-site-max-width
+   * and uses --fk-site-gutter on both sides. */
+  --model-max: var(--fk-site-max-width);
+  color: var(--model-ink);
+  background: #fff;
+  /* The handoff declares Inter without bundling a webfont. Keep that exact
+   * stack so the browser resolves the same fallback metrics as the HTML
+   * prototype (not the site's separate variable font). */
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+
+html:has(.model-prototype) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.model-prototype) {
+    scroll-behavior: auto;
+  }
+}
+
+.model-prototype :is(h1, h2, h3, h4, button, a, input, textarea, select) {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.model-prototype :is(h1, h2, h3, h4) {
+  text-wrap: initial;
+}
+
+.model-prototype .model-container {
+  width: min(var(--model-max), calc(100% - var(--fk-site-gutter) - var(--fk-site-gutter)));
+  margin-inline: auto;
+}
+
+.model-prototype .model-hero {
+  box-sizing: border-box;
+  height: 370px;
+  padding: 20px 0 28px;
+  background: #fff;
+}
+
+.model-prototype .model-hero > .model-container {
+  display: flex;
+  height: 322px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-prototype .model-hero-top {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.model-prototype .model-breadcrumb {
+  display: flex;
+  width: auto;
+  max-width: calc(100% - 150px);
+  height: 20px;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.model-prototype .model-breadcrumb svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.model-prototype .model-breadcrumb > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-prototype .model-breadcrumb-sep {
+  color: var(--model-muted);
+}
+
+.model-prototype .model-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-prototype .model-back-link {
+  display: none;
+}
+
+.model-prototype .model-quick-start {
+  display: inline-flex;
+  width: 120px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 20px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff !important;
+  background: #0f121a !important;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.model-prototype .model-hero-row {
+  display: flex;
+  width: 100%;
+  height: 282px;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.model-prototype .model-hero-copy-block {
+  display: flex;
+  width: 650px;
+  height: 185px;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.model-prototype .model-title-line {
+  display: flex;
+  width: 361px;
+  max-width: 100%;
+  height: 43px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-prototype .model-title-line > span {
+  width: 40px !important;
+  height: 40px !important;
+  flex: 0 0 40px;
+  border-radius: 8px !important;
+  box-shadow: none;
+}
+
+.model-prototype .model-title-line > span img {
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.model-prototype .model-title-line > .model-custom-logo {
+  width: 40px !important;
+  height: 40px !important;
+  flex: 0 0 40px;
+  padding: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.model-prototype .model-title-line h1 {
+  width: 313px;
+  min-width: 0;
+  overflow: hidden;
+  height: 43px;
+  margin: 0;
+  color: var(--model-ink);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 43px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .model-id-line {
+  display: none;
+}
+
+.model-prototype .model-hero-copy {
+  width: 650px;
+  max-width: 650px;
+  height: 48px;
+  margin: 0;
+  padding: 8px 0 0;
+  color: var(--model-ink);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.model-prototype .model-hero-capabilities {
+  display: flex;
+  width: 475px;
+  height: 94px;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 0 12px;
+}
+
+.model-prototype .model-eyebrow {
+  height: 18px;
+  margin: 0;
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.model-prototype .model-hero-tags {
+  display: flex;
+  width: 100%;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.model-prototype .model-tag {
+  display: inline-flex;
+  height: 36px;
+  min-width: max-content;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 32px;
+  color: var(--model-ink);
+  background: #f5f5f7;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.model-prototype .model-tag:nth-child(1) { width: 126px; }
+.model-prototype .model-tag:nth-child(2) { width: 184px; }
+.model-prototype .model-tag:nth-child(3) { width: 141px; }
+
+.model-prototype .model-hero-stats {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 89px;
+  flex: none;
+  align-items: stretch;
+  gap: 20px;
+}
+
+.model-prototype .model-stat-card {
+  display: flex;
+  min-width: 0;
+  height: auto;
+  min-height: 89px;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 20px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: var(--model-soft);
+}
+
+.model-prototype .model-stat-label {
+  width: 100%;
+  height: 18px;
+  overflow: hidden;
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .model-stat-value {
+  width: 100%;
+  height: 27px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--model-ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 27px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .model-stat-reference {
+  width: 100%;
+  overflow: hidden;
+  color: var(--model-quiet);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .model-anchor-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 40px;
+  overflow: auto;
+  border-bottom: 1px solid var(--model-line);
+  background: #fff;
+  scrollbar-width: none;
+}
+
+.model-prototype .model-anchor-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.model-prototype .model-anchor-inner {
+  display: flex;
+  height: 40px;
+  min-height: 40px;
+  align-items: center;
+  gap: 24px;
+  white-space: nowrap;
+}
+
+.model-prototype .model-anchor-links {
+  display: flex;
+  height: 100%;
+  min-width: max-content;
+  align-items: center;
+  gap: 24px;
+}
+
+.model-prototype .model-anchor-link {
+  display: inline-flex;
+  position: relative;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.model-prototype .model-anchor-link[href="#workbench"] { width: 92px; }
+.model-prototype .model-anchor-link[href="#performance"] { width: 101px; }
+.model-prototype .model-anchor-link[href="#parameters"] { width: 92px; }
+.model-prototype .model-anchor-link[href="#activity"] { width: 68px; }
+.model-prototype .model-anchor-link[href="#api"] { width: 41px; }
+.model-prototype .model-anchor-link[href="#faq"] { width: 45px; }
+
+.model-prototype .model-anchor-link:hover,
+.model-prototype .model-anchor-link:focus-visible,
+.model-prototype .model-anchor-link.active {
+  color: var(--model-ink);
+}
+
+.model-prototype .model-anchor-link.active {
+  font-weight: 600;
+}
+
+.model-prototype .model-anchor-link::after {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 0;
+  background: var(--model-purple);
+  content: "";
+  opacity: 0;
+}
+
+.model-prototype .model-anchor-link.active::after,
+.model-prototype .model-anchor-link:focus-visible::after {
+  opacity: 1;
+}
+
+/* The model shell is also rendered as a server-first page. If a deep link is
+ * restored before its client rail hydrates, let the native :target state keep
+ * the visible tab in sync instead of leaving Playground underlined. */
+.model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"]),
+.model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"]),
+.model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"]),
+.model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"]),
+.model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"]) {
+  color: var(--model-muted);
+  font-weight: 500;
+}
+
+.model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"])::after,
+.model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"])::after,
+.model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"])::after,
+.model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"])::after,
+.model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"])::after {
+  opacity: 0;
+}
+
+.model-prototype:has(#performance:target) .model-anchor-link[href="#performance"],
+.model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"],
+.model-prototype:has(#activity:target) .model-anchor-link[href="#activity"],
+.model-prototype:has(#api:target) .model-anchor-link[href="#api"],
+.model-prototype:has(#faq:target) .model-anchor-link[href="#faq"] {
+  color: var(--model-ink);
+  font-weight: 600;
+}
+
+.model-prototype:has(#performance:target) .model-anchor-link[href="#performance"]::after,
+.model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"]::after,
+.model-prototype:has(#activity:target) .model-anchor-link[href="#activity"]::after,
+.model-prototype:has(#api:target) .model-anchor-link[href="#api"]::after,
+.model-prototype:has(#faq:target) .model-anchor-link[href="#faq"]::after {
+  opacity: 1;
+}
+
+.model-prototype .model-tab-icon {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+}
+
+.model-prototype .model-tab-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.model-prototype .model-playground {
+  height: 865px;
+  padding: 40px 0;
+  background: #fbfbfc;
+}
+
+.model-prototype .model-playground > .model-container {
+  height: 785px;
+}
+
+/* The prototype playground is intentionally flat: keep every control and
+ * panel free of elevation, including utility shadow classes from the shared
+ * generator components. */
+.model-prototype .model-playground * {
+  box-shadow: none !important;
+}
+
+.model-prototype .workbench {
+  display: flex;
+  width: 100%;
+  height: 785px;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.model-prototype .model-panel {
+  position: relative;
+  width: calc((100% - 20px) / 2);
+  height: 785px;
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 0;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.model-prototype .model-panel .panel-heading {
+  position: absolute;
+  top: 20px;
+  right: auto;
+  left: 32px;
+  z-index: 1;
+  display: flex;
+  height: 15px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.model-prototype .model-panel .panel-heading h2 {
+  height: 15px;
+  margin: 0;
+  color: var(--model-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+  text-transform: uppercase;
+}
+
+.model-prototype .model-panel .panel-note {
+  height: 15px;
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.model-prototype .input-fields {
+  position: absolute;
+  top: 47px;
+  right: 32px;
+  left: 32px;
+  display: flex;
+  height: 638px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.model-prototype .input-fields .prompt-field {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: 126px;
+  flex: none;
+  margin: 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.model-prototype .input-fields .prompt-field > .field-label {
+  display: flex;
+  width: 100%;
+  height: 20px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.model-prototype .input-fields .prompt-field > .field-label .counter {
+  position: static;
+  margin-left: auto;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.model-prototype .input-fields .prompt-field textarea {
+  width: 100%;
+  height: 100px;
+  min-height: 100px;
+  margin-top: 6px;
+  padding: 12px 12px 50px;
+  border: 1px solid #e0e3eb;
+  border-radius: 8px;
+  color: var(--model-ink);
+  background: var(--model-soft);
+  font-family: var(--fk-font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 17px;
+}
+
+.model-prototype .input-fields .counter {
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.model-prototype .input-fields .upload-field {
+  width: 100%;
+  height: 96px;
+  flex: none;
+  margin: 0;
+}
+
+.model-prototype .input-fields .upload-field .field-label {
+  width: 100%;
+  height: 20px;
+  margin: 0 0 6px;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.model-prototype .input-fields .upload-zone {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 70px;
+  min-height: 70px;
+  align-items: center;
+  justify-content: center;
+  padding: 25px 20px;
+  border: 1px solid #e0e3eb;
+  border-radius: 8px;
+  color: var(--model-muted);
+  background: var(--model-soft);
+  font-size: 13px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.model-prototype .input-fields .upload-zone:hover,
+.model-prototype .input-fields .upload-zone:focus-within,
+.model-prototype .input-fields .upload-zone.is-dragging {
+  border-color: var(--model-purple);
+  color: var(--model-purple);
+  background: #f7f3ff;
+}
+
+.model-prototype .input-fields .upload-zone:focus-within {
+  outline: 2px solid rgb(107 56 230 / 0.22);
+  outline-offset: 2px;
+}
+
+.model-prototype .input-fields .upload-example {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-prototype .input-fields .upload-example-media {
+  display: block;
+  width: 58px;
+  height: 44px;
+  flex: 0 0 58px;
+  object-fit: cover;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.model-prototype .input-fields .upload-example-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+}
+
+.model-prototype .input-fields .upload-example-copy strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: currentColor;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-example-copy span {
+  color: var(--model-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.model-prototype .input-fields .upload-zone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.model-prototype .quick-prompts {
+  display: none;
+}
+
+.model-prototype .advanced-options {
+  width: 100%;
+  margin: 0;
+}
+
+.model-prototype .advanced-options > div {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.model-prototype .advanced-options > div > div:first-child {
+  display: none;
+}
+
+.model-prototype .advanced-options .field-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px;
+}
+
+.model-prototype .advanced-options .field-grid > div {
+  min-width: 0;
+  grid-column: auto !important;
+}
+
+.model-prototype .advanced-options label,
+.model-prototype .advanced-options .field-grid > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-transform: none;
+}
+
+.model-prototype .advanced-options label > span:first-child,
+.model-prototype .advanced-options .field-grid > div > div > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .advanced-options input:not([type="checkbox"]),
+.model-prototype .advanced-options select,
+.model-prototype .advanced-options .field-grid > div > div > div {
+  min-height: 36px;
+  height: 36px;
+  border: 1px solid #e0e3eb;
+  border-radius: 8px;
+  color: var(--model-ink);
+  background: var(--model-soft);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 21px;
+  box-shadow: none;
+}
+
+.model-prototype .advanced-options select {
+  padding: 6px 12px;
+}
+
+.model-prototype .advanced-options .field-grid > div > div > div {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 3px;
+  background: var(--model-soft);
+}
+
+.model-prototype .advanced-options .field-grid > div > div > div button {
+  min-height: 28px;
+  border-radius: 6px;
+  color: var(--model-muted);
+  font-size: 12px;
+}
+
+.model-prototype .advanced-options .field-grid > div > div > div button + button,
+.model-prototype .advanced-options .field-grid > div > div > div input {
+  flex: 1;
+}
+
+.model-prototype .reference-images-field {
+  width: 100%;
+  margin: 0;
+}
+
+.model-prototype .reference-images-field > div:first-child {
+  margin: 0 0 6px;
+}
+
+.model-prototype .reference-images-field label {
+  height: 70px;
+  min-height: 70px;
+  justify-content: center;
+  border: 1px solid #e0e3eb;
+  border-radius: 8px;
+  color: var(--model-muted);
+  background: var(--model-soft);
+  font-size: 13px;
+}
+
+.model-prototype .reference-images-field > div:first-child > label {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.model-prototype .reference-images-field > div:first-child > label:hover,
+.model-prototype .reference-images-field > div:first-child > label:focus-within {
+  border-color: var(--model-purple);
+  color: var(--model-purple);
+  background: #f7f3ff;
+}
+
+.model-prototype .generate-button {
+  position: absolute;
+  right: 32px;
+  bottom: 40px;
+  left: 32px;
+  display: inline-flex;
+  width: auto;
+  height: 36px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff !important;
+  background: var(--model-purple) !important;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+  box-shadow: none;
+}
+
+.model-prototype .generate-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.model-prototype .output-preview {
+  position: static;
+}
+
+.model-prototype .output-preview .video-preview {
+  position: absolute;
+  top: 50px;
+  right: 32px;
+  left: 32px;
+  display: grid;
+  height: 300px;
+  aspect-ratio: auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #2e3840;
+}
+
+.model-prototype .output-preview .video-preview.image-preview {
+  background: #f5f5f7;
+}
+
+.model-prototype .output-preview .preview-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.model-prototype .output-preview .preview-label {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  color: #d1d6e6;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+.model-prototype .output-preview .image-preview .preview-label {
+  color: #616978;
+  text-shadow: 0 1px 2px rgb(255 255 255 / 0.6);
+}
+
+.model-prototype .summary {
+  position: absolute;
+  top: 370px;
+  right: 32px;
+  left: 32px;
+  display: flex;
+  height: 383px;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid #e0e3eb;
+  border-radius: 12px;
+  color: var(--model-ink);
+  background: var(--model-soft);
+}
+
+.model-prototype .summary h3 {
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  color: var(--model-ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.model-prototype .summary-list {
+  display: grid;
+  width: 100%;
+  height: 252px;
+  grid-template-columns: 1fr auto;
+  grid-auto-rows: 36px;
+  gap: 0;
+  margin: 0;
+  color: var(--model-muted);
+  font-size: 14px;
+}
+
+.model-prototype .summary-list dt,
+.model-prototype .summary-list dd {
+  height: 36px;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.model-prototype .summary-list dd {
+  color: var(--model-ink);
+  font-weight: 500;
+  text-align: right;
+}
+
+.model-prototype .summary-help {
+  width: 100%;
+  height: 53px;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--model-line);
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.model-prototype .model-output-actions,
+.model-prototype .request-preview {
+  display: none;
+}
+
+.model-prototype .text-parameters {
+  min-height: 300px;
+  padding: 80px 0 40px;
+  background: #fbfbfc;
+}
+
+.model-prototype .parameter-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.model-prototype .parameter-card {
+  min-height: 89px;
+  padding: 20px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: var(--model-soft);
+}
+
+.model-prototype .parameter-label {
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.model-prototype .parameter-value {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--model-ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 27px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .parameter-value.mono {
+  font-family: var(--fk-font-mono);
+  font-size: 15px;
+}
+
+.model-prototype .model-section .section-head {
+  display: flex;
+  width: 630px;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin: 0;
+}
+
+.model-prototype .model-section .section-head .eyebrow {
+  width: 100%;
+  height: 21px;
+  margin: 0 0 6px;
+  color: var(--model-muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 21px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.model-prototype .model-section .section-head .section-title {
+  width: 100%;
+  margin: 0 0 8px;
+  color: var(--model-ink);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 38px;
+  letter-spacing: 0;
+}
+
+.model-prototype .model-section .section-head .section-copy {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  color: var(--model-muted);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.model-prototype .performance {
+  min-height: 373px;
+  padding: 80px 0 40px;
+  background: #fff;
+}
+
+.model-prototype .performance > .model-container {
+  display: flex;
+  min-height: 253px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .performance .metrics {
+  display: flex;
+  width: 100%;
+  min-height: 128px;
+  align-items: stretch;
+  gap: 21px;
+}
+
+.model-prototype .performance .metric-card {
+  display: flex;
+  width: calc((100% - 42px) / 3);
+  min-height: 128px;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: var(--model-soft);
+}
+
+.model-prototype .metric-main {
+  display: flex;
+  width: 100%;
+  min-height: 57px;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.model-prototype .metric-icon {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 9px;
+  border: 1px solid var(--model-line);
+  border-radius: 8px;
+  color: var(--model-purple);
+  background: transparent;
+}
+
+.model-prototype .metric-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.model-prototype .metric-icon:not(:has(svg)) {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* Prototype performance icons already include their 36px frame and border.
+ * Let the supplied SVG occupy the full icon slot without a second wrapper
+ * border or the old 9px inset. */
+.model-prototype .metric-icon:has(svg) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.model-prototype .metric-icon:has(svg) svg {
+  width: 36px;
+  height: 36px;
+}
+
+.model-prototype .metric-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-prototype .metric-label {
+  width: 100%;
+  color: var(--model-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.model-prototype .metric-value {
+  width: 100%;
+  color: var(--model-ink);
+  font-family: var(--fk-font-mono);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 29px;
+}
+
+.model-prototype .metric-note {
+  padding-left: 48px;
+  color: var(--model-quiet);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.model-prototype .performance-chart {
+  display: none;
+}
+
+.model-prototype .usage {
+  min-height: 513px;
+  padding: 80px 0 40px;
+  color: var(--model-ink);
+  background: #fff;
+}
+
+.model-prototype .usage > .model-container {
+  display: flex;
+  min-height: 393px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .usage .chart-card {
+  position: relative;
+  width: 100%;
+  height: 268px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.model-prototype .usage .chart-stats {
+  position: absolute;
+  top: 32px;
+  right: 46px;
+  left: 46px;
+  display: flex;
+  gap: 40px;
+  margin: 0;
+}
+
+.model-prototype .usage .chart-stats .metric-card {
+  display: block;
+  width: auto;
+  min-height: 51px;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.model-prototype .usage .chart-stats .metric-main {
+  display: block;
+  min-height: 0;
+}
+
+.model-prototype .usage .chart-stats .metric-icon,
+.model-prototype .usage .chart-stats .metric-note {
+  display: none;
+}
+
+.model-prototype .usage .chart-stats .metric-copy {
+  display: flex;
+  gap: 6px;
+}
+
+.model-prototype .usage .chart-stats .metric-label {
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.model-prototype .usage .chart-stats .metric-value {
+  font-size: 24px;
+  line-height: 29px;
+}
+
+.model-prototype .usage .chart-wrap {
+  position: absolute;
+  top: 103px;
+  right: 40px;
+  left: 40px;
+  height: 125px;
+  overflow: hidden;
+  border-radius: 0;
+  background: #fff;
+}
+
+.model-prototype .usage .chart-grid {
+  position: absolute;
+  inset: 0;
+  border-top: 1px dashed #e0e3eb;
+  border-bottom: 1px solid var(--model-line);
+  background: transparent;
+}
+
+.model-prototype .usage .chart-grid::after {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed #e0e3eb;
+  content: "";
+}
+
+.model-prototype .usage-chart-content {
+  position: relative;
+  z-index: 1;
+  padding-top: 8px;
+}
+
+.model-prototype .usage-chart-content > div:first-child {
+  display: none;
+}
+
+.model-prototype .usage-chart-content .h-24 {
+  height: 116px;
+}
+
+.model-prototype .usage-chart-content .h-24 {
+  position: relative;
+}
+
+.model-prototype .usage-sample-chart {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.model-prototype .usage-chart-axis {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 28px;
+  color: var(--model-quiet);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.model-prototype .chart-stat-value-with-unit,
+.model-prototype .chart-stat-unit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.model-prototype .chart-stat-unit {
+  color: var(--model-muted);
+  font-family: var(--fk-font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.model-prototype .capabilities {
+  min-height: 463px;
+  padding: 80px 0 40px;
+  background: #fafafc;
+}
+
+.model-prototype .capabilities > .model-container,
+.model-prototype .why > .model-container {
+  display: flex;
+  min-height: 343px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .capability-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+
+.model-prototype .capability-card,
+.model-prototype .why-card {
+  display: flex;
+  min-width: 0;
+  min-height: 194px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--model-lavender);
+}
+
+.model-prototype .capability-card .card-icon,
+.model-prototype .why-card .card-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--model-ink);
+  background: rgb(255 255 255 / 0.4);
+}
+
+.model-prototype .why-card .card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.model-prototype .capability-card .card-icon svg {
+  width: 36px;
+  height: 36px;
+  flex: none;
+}
+
+.model-prototype .capability-copy {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-prototype .capability-card h3,
+.model-prototype .why-card h3 {
+  width: 100%;
+  margin: 0;
+  color: var(--model-ink);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 27px;
+}
+
+.model-prototype .capability-card p,
+.model-prototype .why-card p {
+  width: 100%;
+  margin: 0;
+  color: var(--model-ink);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+}
+
+.model-prototype .capabilities-comparison {
+  min-height: 654px;
+  padding: 80px 0 40px;
+  background: #fbfbfc;
+}
+
+.model-prototype .capabilities-comparison .comparison-block {
+  width: 100%;
+  margin-top: 28px;
+}
+
+.model-prototype .model-pricing {
+  min-height: 0;
+  padding: 80px 0 40px;
+  background: #fff;
+}
+
+.model-prototype .model-pricing > .model-container {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .model-pricing .pricing-block {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .model-pricing .pricing-card {
+  width: 100%;
+  overflow-x: auto;
+  padding: 32px 40px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.model-prototype .model-pricing table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.model-prototype .model-pricing th,
+.model-prototype .model-pricing td {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--model-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.model-prototype .model-pricing th {
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.model-prototype .model-pricing td {
+  color: var(--model-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.model-prototype .model-pricing td:first-child {
+  color: var(--model-ink);
+  font-weight: 600;
+}
+
+.model-prototype .model-pricing tr:last-child td {
+  border-bottom: 0;
+}
+
+.model-prototype .model-pricing .price-track > div:first-child {
+  margin: 0;
+  font-size: 14px;
+}
+
+.model-prototype .model-pricing .price-track > span:last-child {
+  display: none;
+}
+
+.model-prototype .model-pricing .price-track > div:first-child span:first-child {
+  display: none;
+}
+
+.model-prototype .comparison {
+  width: 100%;
+  overflow: hidden;
+  padding: 32px 40px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.model-prototype .comparison table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.model-prototype .comparison th,
+.model-prototype .comparison td {
+  padding: 12px 0;
+  border: 0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.model-prototype .comparison th {
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.model-prototype .comparison th:last-child {
+  color: var(--model-purple);
+}
+
+.model-prototype .comparison tbody tr:nth-child(even) {
+  background: #fafafc;
+}
+
+.model-prototype .comparison td {
+  color: var(--model-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.model-prototype .comparison td:first-child {
+  color: var(--model-ink);
+  font-weight: 600;
+}
+
+.model-prototype .comparison .check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #3ab964;
+  font-weight: 600;
+}
+
+.model-prototype .comparison .check::before {
+  content: "✓";
+}
+
+.model-prototype .comparison .price-track > div:first-child {
+  margin: 0;
+  font-size: 14px;
+}
+
+.model-prototype .comparison .price-track > span:last-child {
+  display: none;
+}
+
+.model-prototype .comparison .price-track > div:first-child span:first-child {
+  display: none;
+}
+
+.model-prototype .prompt-library {
+  min-height: 1209px;
+  padding: 80px 0 40px;
+  background: #fff;
+}
+
+.model-prototype .prompt-library > .model-container {
+  display: flex;
+  min-height: 1089px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .prompt-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 460px;
+  gap: 20px;
+  margin: 0;
+}
+
+.model-prototype .prompt-card {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 460px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid #e0e3eb;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.model-prototype .prompt-media {
+  position: relative;
+  width: 100%;
+  height: 205px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #f5f5f7;
+}
+
+.model-prototype .prompt-media .prompt-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.28s;
+}
+
+.model-prototype .prompt-card:hover .prompt-image {
+  transform: scale(1.04);
+}
+
+.model-prototype .prompt-media::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 36px;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0), rgb(0 0 0 / 0.4));
+  content: "";
+}
+
+.model-prototype .prompt-body {
+  display: flex;
+  width: 100%;
+  min-height: 221px;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.model-prototype .prompt-badge {
+  order: -1;
+  color: var(--model-ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.model-prototype .prompt-text {
+  display: block;
+  width: 100%;
+  height: 161px;
+  min-height: 161px;
+  overflow: hidden;
+  margin: 0;
+  padding: 0 4px;
+  color: var(--model-ink);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.model-prototype .prompt-actions {
+  display: grid;
+  width: 100%;
+  height: 36px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+}
+
+.model-prototype .prompt-actions .outline-button,
+.model-prototype .prompt-actions .dark-button {
+  display: inline-flex;
+  height: 36px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.model-prototype .prompt-actions .outline-button {
+  border: 1px solid var(--model-line);
+  color: var(--model-ink);
+  background: #fff;
+}
+
+.model-prototype .prompt-actions .dark-button {
+  border: 0;
+  color: #fff;
+  background: var(--model-ink);
+}
+
+.model-prototype .why {
+  min-height: 466px;
+  padding: 80px 0 40px;
+  background: #fafafc;
+}
+
+.model-prototype .why .why-grid {
+  display: flex;
+  width: 100%;
+  gap: 20px;
+  margin: 0;
+}
+
+.model-prototype .why .why-card {
+  width: calc((100% - 60px) / 4);
+  min-height: 221px;
+  flex: 1 1 0;
+}
+
+.model-prototype .api-section {
+  min-height: 600px;
+  padding: 80px 0 40px;
+  background: #fafafc;
+}
+
+.model-prototype .api-section > .model-container {
+  display: flex;
+  min-height: 480px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .api-section .api-layout {
+  display: flex;
+  width: 100%;
+  min-height: 358px;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 20px 0 40px;
+}
+
+.model-prototype .api-section .api-list {
+  display: flex;
+  width: calc((100% - 20px) / 2);
+  min-height: 298px;
+  flex-direction: column;
+  border: 0;
+}
+
+.model-prototype .api-section .api-item {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 61px;
+  border-bottom: 1px solid var(--model-line);
+}
+
+.model-prototype .api-section .api-item.open {
+  min-height: 115px;
+  padding: 16px 20px 16px 0;
+  border-top: 1px solid var(--model-line);
+}
+
+.model-prototype .api-section .api-item:not(.open) {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px 16px 0;
+}
+
+.model-prototype .api-section .api-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 27px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  color: var(--model-muted);
+  background: transparent;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  text-align: left;
+}
+
+.model-prototype .api-section .api-item.open .api-toggle {
+  color: #000;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 27px;
+}
+
+.model-prototype .api-section .api-toggle span:last-child {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--model-ink);
+  position: relative;
+  padding: 4px;
+  background: transparent;
+  font-size: 0;
+  line-height: 20px;
+}
+
+.model-prototype .api-section .api-toggle span:last-child::before,
+.model-prototype .api-section .api-toggle span:last-child::after {
+  position: absolute;
+  display: block;
+  border-radius: 1px;
+  background: var(--model-ink);
+  content: "";
+}
+
+.model-prototype .api-section .api-toggle span:last-child::before {
+  top: 13.1667px;
+  left: 7.3333px;
+  width: 13.3334px;
+  height: 1.6667px;
+}
+
+.model-prototype .api-section .api-item:not(.open) .api-toggle span:last-child::after {
+  top: 7.3333px;
+  left: 13.1667px;
+  width: 1.6667px;
+  height: 13.3334px;
+}
+
+.model-prototype .api-section .api-item.open .api-toggle span:last-child::after {
+  display: none;
+}
+
+.model-prototype .api-section .api-detail {
+  display: block;
+  width: calc(100% - 44px);
+  min-height: 42px;
+  padding: 12px 0 0;
+  color: #454545;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.model-prototype .api-section .api-item:not(.open) .api-detail {
+  display: none;
+}
+
+.model-prototype .api-section .code-shell {
+  position: relative;
+  display: block;
+  width: calc((100% - 20px) / 2);
+  height: 298px;
+  min-height: 298px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 24px;
+  color: #fff;
+  background: #1a1a1a;
+  box-shadow: none;
+}
+
+.model-prototype .api-section .code-tabs {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  height: 53px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.16);
+}
+
+.model-prototype .api-section .code-tab-group {
+  display: flex;
+  gap: 2px;
+}
+
+.model-prototype .api-section .code-tab {
+  height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: rgb(255 255 255 / 0.6);
+  background: transparent;
+  font-size: 13px;
+}
+
+.model-prototype .api-section .code-tab.active {
+  color: #fff;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.model-prototype .api-section .code-copy {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: transparent;
+}
+
+.model-prototype .api-section .code-copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+.model-prototype .api-section .code-panel {
+  position: absolute;
+  top: 53px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  padding: 23px 40px 20px;
+  overflow: auto;
+}
+
+.model-prototype .api-section .code-panel pre {
+  margin: 0;
+  color: #fff;
+  font: 400 14px/22px var(--fk-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .api-docs-link {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 6px;
+  color: var(--model-muted);
+  font-size: 13px;
+}
+
+.model-prototype .api-docs-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.model-prototype .api-section .section-head .eyebrow {
+  display: none;
+}
+
+.model-prototype .providers {
+  display: none;
+}
+
+.model-prototype .related {
+  min-height: 843px;
+  padding: 80px 0 40px;
+  background: #fff;
+}
+
+.model-prototype .related > .model-container {
+  display: flex;
+  min-height: 723px;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.model-prototype .related-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 305px;
+  gap: 20px;
+}
+
+.model-prototype .related-card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #f5f3f1;
+}
+
+.model-prototype .related-image {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  opacity: 0.92;
+  transition: transform 0.25s;
+}
+
+.model-prototype .related-card:hover .related-image {
+  transform: scale(1.05);
+}
+
+.model-prototype .related-card-top {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  left: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.model-prototype .related-card-top > span {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 10px !important;
+}
+
+.model-prototype .related-arrow {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+}
+
+.model-prototype .related-card::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(135deg, #b7a3ed, #6b38e6);
+  content: "";
+  opacity: 0.82;
+}
+
+.model-prototype .related-card:nth-child(2n)::before {
+  background: linear-gradient(135deg, #e3d6f5, #8a70c8);
+}
+
+.model-prototype .related-card:has(.related-image)::before {
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.55));
+  opacity: 1;
+}
+
+.model-prototype .related-copy {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  min-height: 110px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 24px 32px;
+  color: #fff;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0), rgb(0 0 0 / 0.4));
+}
+
+.model-prototype .related-card-top {
+  z-index: 2;
+}
+
+.model-prototype .related-card:not(:has(.related-card-top)) .related-copy {
+  z-index: 2;
+}
+
+.model-prototype .related-copy strong {
+  display: block;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 30px;
+}
+
+.model-prototype .related-copy span {
+  display: block;
+  color: rgb(255 255 255 / 0.9);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.model-prototype .faq {
+  min-height: 631px;
+  padding: 80px 0 40px;
+  background: #fafafc;
+}
+
+.model-prototype .faq-layout {
+  display: flex;
+  min-height: 511px;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.model-prototype .faq-intro,
+.model-prototype .faq-list {
+  width: calc((100% - 20px) / 2);
+  min-width: 0;
+  flex: 0 0 calc((100% - 20px) / 2);
+}
+
+.model-prototype .faq-list {
+  min-height: 511px;
+  overflow: hidden;
+  padding: 12px 24px 4px;
+  border: 1px solid var(--model-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.model-prototype .faq-item {
+  width: 100%;
+  min-height: 55px;
+  border-bottom: 1px solid var(--model-line);
+}
+
+.model-prototype .faq-item:last-child {
+  border-bottom: 0;
+}
+
+.model-prototype .faq-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 55px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 0;
+  color: var(--model-ink);
+  background: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 23px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.model-prototype .faq-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.model-prototype .faq-toggle svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  transition: transform 0.16s;
+}
+
+.model-prototype .faq-item[open] .faq-toggle svg {
+  transform: rotate(90deg);
+}
+
+/* FAQ replaced the pricing tab in the approved handoff. Keep its 14px slot
+ * but use the circular question-mark glyph shown by the HTML prototype. */
+.model-prototype .model-anchor-link[href="#faq"] .model-tab-icon svg {
+  display: none;
+}
+
+.model-prototype .model-anchor-link[href="#faq"] .model-tab-icon::before {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  content: "?";
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.model-prototype .faq-answer {
+  display: block;
+  padding: 0 0 14px;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Keep the desktop rhythm locked to the handoff even when a localized title
+ * or live model description is longer than the English copy. */
+.model-prototype .performance,
+.model-prototype .usage,
+.model-prototype .capabilities,
+.model-prototype .api-section,
+.model-prototype .related {
+  overflow: hidden;
+}
+
+.model-prototype .performance {
+  height: 373px;
+  min-height: 373px;
+}
+
+.model-prototype .performance > .model-container {
+  height: 253px;
+  min-height: 253px;
+}
+
+.model-prototype .performance .section-head,
+.model-prototype .usage .section-head,
+.model-prototype .capabilities .section-head,
+.model-prototype .why .section-head {
+  height: 97px;
+  overflow: hidden;
+}
+
+.model-prototype .performance .section-head .section-title,
+.model-prototype .usage .section-head .section-title,
+.model-prototype .capabilities .section-head .section-title,
+.model-prototype .why .section-head .section-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.model-prototype .performance .section-head .section-copy,
+.model-prototype .usage .section-head .section-copy,
+.model-prototype .capabilities .section-head .section-copy,
+.model-prototype .why .section-head .section-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The handoff reserves one title line and one copy line. Keep that rhythm
+ * stable for longer, data-driven model names without clipping glyphs halfway
+ * through a line or pushing the cards below the fold. */
+.model-prototype .performance .section-head .section-title,
+.model-prototype .usage .section-head .section-title,
+.model-prototype .capabilities .section-head .section-title,
+.model-prototype .why .section-head .section-title {
+  flex: 0 0 38px;
+  height: 38px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-prototype .performance .section-head .section-copy,
+.model-prototype .usage .section-head .section-copy,
+.model-prototype .capabilities .section-head .section-copy,
+.model-prototype .why .section-head .section-copy {
+  flex: 0 0 24px;
+  height: 24px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+}
+
+.model-prototype .performance .metrics {
+  height: 128px;
+  min-height: 128px;
+}
+
+.model-prototype .performance .metric-card {
+  height: 128px;
+  min-height: 128px;
+}
+
+.model-prototype .usage {
+  height: 513px;
+  min-height: 513px;
+}
+
+.model-prototype .usage > .model-container {
+  height: 393px;
+  min-height: 393px;
+}
+
+.model-prototype .usage .section-head {
+  flex: none;
+}
+
+.model-prototype .capabilities {
+  height: 463px;
+  min-height: 463px;
+}
+
+.model-prototype .capabilities > .model-container {
+  height: 343px;
+  min-height: 343px;
+}
+
+.model-prototype .capability-card {
+  height: 218px;
+  min-height: 218px;
+  overflow: hidden;
+}
+
+.model-prototype .api-section {
+  height: 600px;
+  min-height: 600px;
+}
+
+.model-prototype .api-section > .model-container {
+  height: 480px;
+  min-height: 480px;
+}
+
+.model-prototype .api-section .section-head {
+  height: 94px;
+  overflow: hidden;
+}
+
+.model-prototype .api-section .section-head .section-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.model-prototype .api-docs-link {
+  display: none;
+}
+
+.model-prototype .related {
+  height: 763px;
+  min-height: 763px;
+}
+
+.model-prototype .related > .model-container {
+  height: 643px;
+  min-height: 643px;
+}
+
+.model-prototype .related .section-head {
+  height: 65px;
+  overflow: hidden;
+}
+
+.model-prototype .related .section-head .section-copy {
+  display: none;
+}
+
+.model-prototype .related-grid {
+  grid-auto-rows: 275px;
+}
+
+.model-prototype .model-anchor-alias {
+  position: relative;
+  top: -40px;
+  height: 0;
+  scroll-margin-top: 48px;
+}
+
+/* The public site shell is sticky as well. Keep the model rail visible below
+ * it while scrolling instead of letting the shell's stacking context cover it. */
+@media (min-width: 901px) {
+  .model-prototype .model-anchor-bar {
+    top: 126px;
+    z-index: 40;
+  }
+}
+
+.model-prototype :is(#workbench, #parameters, #performance, #activity, #api, #faq) {
+  scroll-margin-top: 48px;
+}
+
+/* The public site shell (126px) and the model rail (40px) are both sticky.
+ * Give every prototype section the same anchor clearance, including sections
+ * that are not represented as rail tabs such as comparison and prompt library.
+ */
+.model-prototype .model-section {
+  scroll-margin-top: 166px;
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-section {
+    scroll-margin-top: 48px;
+  }
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-container {
+    width: calc(100% - 38px);
+  }
+
+  .model-prototype .model-hero {
+    height: auto;
+  }
+
+  .model-prototype .model-hero > .model-container {
+    height: auto;
+  }
+
+  .model-prototype .model-hero-row,
+  .model-prototype .model-hero-copy-block {
+    width: 100%;
+    height: auto;
+  }
+
+  .model-prototype .model-hero-stats {
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .model-prototype .model-stat-card {
+    min-width: calc(50% - 10px);
+  }
+
+  .model-prototype .model-playground,
+  .model-prototype .performance,
+  .model-prototype .usage,
+  .model-prototype .capabilities,
+  .model-prototype .capabilities-comparison,
+  .model-prototype .text-parameters,
+  .model-prototype .prompt-library,
+  .model-prototype .why,
+  .model-prototype .api-section,
+  .model-prototype .related,
+  .model-prototype .faq {
+    height: auto;
+    min-height: 0;
+    padding: 56px 0 32px;
+  }
+
+  .model-prototype .model-playground > .model-container,
+  .model-prototype .workbench,
+  .model-prototype .performance > .model-container,
+  .model-prototype .usage > .model-container,
+  .model-prototype .capabilities > .model-container,
+  .model-prototype .why > .model-container,
+  .model-prototype .api-section > .model-container,
+  .model-prototype .related > .model-container {
+    height: auto;
+    min-height: 0;
+  }
+
+  .model-prototype .workbench {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .model-prototype .model-panel {
+    width: 100%;
+    height: 785px;
+    min-height: 785px;
+  }
+
+  .model-prototype .performance .metrics,
+  .model-prototype .capability-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .model-prototype .performance .metric-card,
+  .model-prototype .capability-card {
+    width: auto;
+  }
+
+  .model-prototype .comparison {
+    overflow-x: auto;
+  }
+
+  .model-prototype .comparison table {
+    min-width: 720px;
+  }
+
+  .model-prototype .prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-prototype .why .why-grid,
+  .model-prototype .api-section .api-layout,
+  .model-prototype .faq-layout {
+    flex-direction: column;
+  }
+
+  .model-prototype .why .why-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-prototype .why .why-card,
+  .model-prototype .api-section .api-list,
+  .model-prototype .api-section .code-shell,
+  .model-prototype .faq-intro,
+  .model-prototype .faq-list {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+
+  .model-prototype .api-section .api-layout {
+    display: flex;
+    gap: 24px;
+  }
+
+  .model-prototype .related-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 260px;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-container {
+    width: calc(100% - 30px);
+  }
+
+  .model-prototype .model-hero {
+    padding: 17px 0 24px;
+  }
+
+  .model-prototype .model-hero-top {
+    height: auto;
+    align-items: flex-start;
+  }
+
+  .model-prototype .model-breadcrumb {
+    max-width: calc(100% - 130px);
+    font-size: 11px;
+  }
+
+  .model-prototype .model-title-line h1 {
+    overflow: hidden;
+    font-size: clamp(26px, 8vw, 36px);
+    text-overflow: ellipsis;
+  }
+
+  .model-prototype .model-hero-copy {
+    width: 100%;
+    height: auto;
+    min-height: 48px;
+  }
+
+  .model-prototype .model-hero-capabilities {
+    width: 100%;
+    max-width: 475px;
+  }
+
+  .model-prototype .model-hero-tags {
+    overflow-x: auto;
+  }
+
+  .model-prototype .model-hero-stats,
+  .model-prototype .performance .metrics,
+  .model-prototype .capability-grid,
+  .model-prototype .prompt-grid,
+  .model-prototype .why .why-grid,
+  .model-prototype .parameter-cards,
+  .model-prototype .related-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .model-hero-stats,
+  .model-prototype .performance .metrics {
+    display: grid;
+    gap: 10px;
+  }
+
+  .model-prototype .model-stat-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .model-prototype .model-panel {
+    height: 785px;
+    min-height: 785px;
+  }
+
+  .model-prototype .input-fields {
+    right: 22px;
+    left: 22px;
+  }
+
+  .model-prototype .generate-button {
+    right: 22px;
+    left: 22px;
+  }
+
+  .model-prototype .output-preview .video-preview,
+  .model-prototype .summary {
+    right: 22px;
+    left: 22px;
+  }
+
+  .model-prototype .advanced-options .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .usage .chart-card {
+    height: 390px;
+  }
+
+  .model-prototype .usage .chart-stats {
+    top: 24px;
+    right: 24px;
+    left: 24px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .model-prototype .usage .chart-wrap {
+    top: 205px;
+    right: 24px;
+    left: 24px;
+  }
+
+  .model-prototype .prompt-card {
+    min-height: 460px;
+  }
+
+  .model-prototype .api-section .code-shell {
+    height: 298px;
+    border-radius: 16px;
+  }
+
+  .model-prototype .api-section .code-panel {
+    padding: 23px 20px 20px;
+  }
+
+  .model-prototype .related-grid {
+    grid-auto-rows: 240px;
+  }
+
+  .model-prototype .faq-list {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .model-prototype .faq-toggle {
+    font-size: 13px;
+  }
+}
+
+/* Final desktop parity pass --------------------------------------------------
+ * Keep the shared model page on the same handoff rhythm as the approved
+ * prototype. These rules intentionally apply only above the mobile layout;
+ * the responsive rules above remain responsible for compact screens.
+ */
+@media (min-width: 901px) {
+  .model-prototype :is(#workbench, #parameters, #performance, #activity, #api, #faq) {
+    scroll-margin-top: 166px;
+  }
+
+  .model-prototype .capabilities > .model-container {
+    height: 343px;
+    min-height: 343px;
+  }
+
+  .model-prototype .capabilities > .model-container > .section-head {
+    display: flex;
+    width: 630px;
+    height: 121px;
+    min-height: 121px;
+    flex: 0 0 121px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .model-prototype .capabilities > .model-container > .section-head .eyebrow {
+    width: 630px;
+    height: 21px;
+    margin: 0 0 6px;
+  }
+
+  .model-prototype .capabilities > .model-container > .section-head .section-title {
+    width: 630px;
+    height: 38px;
+    flex: 0 0 38px;
+    margin: 0 0 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .model-prototype .capabilities > .model-container > .section-head .section-copy {
+    display: -webkit-box;
+    width: 630px;
+    height: 48px;
+    flex: 0 0 48px;
+    max-width: none;
+    margin: 0;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .model-prototype .capabilities .capability-grid {
+    display: grid;
+    width: 100%;
+    height: 194px;
+    min-height: 194px;
+    flex: 0 0 194px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 20px;
+    margin: 0;
+  }
+
+  .model-prototype .capabilities .capability-card {
+    height: 194px;
+    min-height: 194px;
+    overflow: visible;
+  }
+
+  .model-prototype .why {
+    height: 466px;
+    min-height: 466px;
+  }
+
+  .model-prototype .why > .model-container {
+    height: 346px;
+    min-height: 346px;
+  }
+
+  .model-prototype .why .why-grid {
+    height: 221px;
+    min-height: 221px;
+    flex: 0 0 221px;
+  }
+
+  .model-prototype .why .why-card {
+    height: 221px;
+    min-height: 221px;
+    overflow: visible;
+  }
+
+  .model-prototype .why .why-card h3 {
+    margin: 0 0 -8px;
+  }
+
+  .model-prototype .why .why-card p {
+    height: 51px;
+    min-height: 51px;
+    margin: 0;
+  }
+
+  .model-prototype .capabilities-comparison > .model-container {
+    display: flex;
+    height: 534px;
+    min-height: 534px;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block {
+    display: flex;
+    width: 100%;
+    height: 534px;
+    min-height: 534px;
+    flex: 0 0 534px;
+    flex-direction: column;
+    gap: 28px;
+    margin: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block > .section-head {
+    display: flex;
+    width: 630px;
+    height: 197px;
+    min-height: 197px;
+    flex: 0 0 197px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block > .section-head .eyebrow {
+    width: 630px;
+    height: 21px;
+    margin: 0 0 6px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block > .section-head .section-title {
+    width: 630px;
+    height: 114px;
+    flex: 0 0 114px;
+    margin: 0 0 8px;
+    overflow: hidden;
+    line-height: 38px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block > .section-head .section-copy {
+    display: -webkit-box;
+    width: 630px;
+    height: 48px;
+    flex: 0 0 48px;
+    max-width: none;
+    margin: 0;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .model-prototype .capabilities-comparison .comparison {
+    box-sizing: border-box;
+    width: 100%;
+    height: 309px;
+    min-height: 309px;
+    flex: 0 0 309px;
+    padding: 32px 40px;
+    overflow: hidden;
+  }
+
+  .model-prototype .capabilities-comparison .comparison table {
+    display: block;
+    width: 1200px;
+    height: 243px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    font-size: 14px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead {
+    display: block;
+    width: 1200px;
+    height: 40px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison tbody {
+    display: flex;
+    width: 1200px;
+    height: 195px;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 8px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead tr,
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    display: grid;
+    width: 1200px;
+    grid-template-columns: 240px 480px 480px;
+    align-items: stretch;
+    margin: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead tr {
+    height: 40px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    height: 39px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison th,
+  .model-prototype .capabilities-comparison .comparison td {
+    display: flex;
+    width: auto;
+    height: 100%;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison th {
+    padding: 10px 0;
+    line-height: 20px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison td {
+    padding: 8px 0;
+    line-height: 21px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison td:last-child .price-track {
+    width: 100%;
+  }
+
+  .model-prototype .capabilities-comparison .comparison td:last-child .check {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    color: var(--model-ink);
+    font-weight: 500;
+    line-height: 21px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison td:last-child .check::before {
+    display: grid;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    place-items: center;
+    color: #3ab964;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 16px;
+    content: "✓";
+  }
+
+  .model-prototype .prompt-library > .model-container {
+    height: 1089px;
+    min-height: 1089px;
+  }
+
+  .model-prototype .prompt-library-head {
+    display: flex;
+    width: 630px;
+    height: 121px;
+    min-height: 121px;
+    flex: 0 0 121px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+  }
+
+  .model-prototype .prompt-library-head > .section-head {
+    display: flex;
+    width: 630px;
+    height: 121px;
+    min-height: 121px;
+    flex: 0 0 121px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .model-prototype .prompt-library-head .eyebrow {
+    width: 630px;
+    height: 21px;
+    margin: 0 0 6px;
+  }
+
+  .model-prototype .prompt-library-head .section-title {
+    width: 630px;
+    height: 38px;
+    flex: 0 0 38px;
+    margin: 0 0 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .model-prototype .prompt-library-head .section-copy {
+    display: -webkit-box;
+    width: 630px;
+    height: 48px;
+    flex: 0 0 48px;
+    max-width: none;
+    margin: 0;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .model-prototype .prompt-library-link {
+    display: none;
+  }
+
+  .model-prototype .prompt-library .prompt-grid {
+    height: 940px;
+    min-height: 940px;
+    flex: 0 0 940px;
+    grid-template-rows: repeat(2, 460px);
+  }
+
+  .model-prototype .prompt-library .prompt-card {
+    height: 460px;
+    min-height: 460px;
+  }
+
+  .model-prototype .prompt-library .prompt-media .prompt-badge {
+    position: absolute;
+    z-index: 1;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    height: 36px;
+    align-items: center;
+    padding: 7px 16px;
+    color: #fff;
+    background: transparent;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 22px;
+    text-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+  }
+
+  .model-prototype .prompt-library .prompt-body {
+    height: 221px;
+    min-height: 221px;
+  }
+
+  .model-prototype .prompt-library .prompt-badge {
+    order: initial;
+  }
+
+  .model-prototype .related {
+    height: 843px;
+    min-height: 843px;
+  }
+
+  .model-prototype .related > .model-container {
+    height: 723px;
+    min-height: 723px;
+  }
+
+  .model-prototype .related .section-head {
+    width: 630px;
+    height: 65px;
+    min-height: 65px;
+    flex: 0 0 65px;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .model-prototype .related .section-head .section-title {
+    height: 38px;
+    margin: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .model-prototype .related-grid {
+    height: 630px;
+    min-height: 630px;
+    grid-template-rows: repeat(2, 305px);
+    grid-auto-rows: 305px;
+  }
+
+  .model-prototype .related-card {
+    height: 305px;
+  }
+
+  .model-prototype .faq {
+    height: 631px;
+    min-height: 631px;
+  }
+
+  .model-prototype .faq-layout {
+    height: 511px;
+    min-height: 511px;
+  }
+
+  .model-prototype .faq-intro {
+    display: flex;
+    height: 159px;
+    min-height: 159px;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .model-prototype .faq-intro > .section-head {
+    display: flex;
+    width: 100%;
+    height: 159px;
+    min-height: 159px;
+    flex: 0 0 159px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .model-prototype .faq-intro .eyebrow {
+    width: 100%;
+    height: 21px;
+    margin: 0;
+  }
+
+  .model-prototype .faq-intro .section-title {
+    width: 100%;
+    height: 76px;
+    min-height: 76px;
+    flex: 0 0 76px;
+    margin: 0;
+    overflow: hidden;
+    line-height: 38px;
+  }
+
+  .model-prototype .faq-intro .section-copy {
+    display: -webkit-box;
+    width: 100%;
+    height: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
+    max-width: none;
+    margin: 2px 0 0;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .model-prototype .faq-list {
+    height: 511px;
+    min-height: 511px;
+  }
+
+  .model-prototype .api-section .section-copy {
+    display: -webkit-box;
+    height: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
+    max-width: 630px;
+    margin: 0;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .model-prototype .api-section .code-panel pre {
+    width: 508px;
+    min-height: 138px;
+    font: 400 15px/22px "PingFang SC", var(--fk-font-sans), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  .model-prototype .api-section .api-item.open {
+    display: flex;
+    height: 115px;
+    min-height: 115px;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1439px) {
+  .model-prototype .related {
+    height: 763px;
+    min-height: 763px;
+  }
+
+  .model-prototype .related > .model-container {
+    height: 643px;
+    min-height: 643px;
+  }
+
+  .model-prototype .related-grid {
+    height: 550px;
+    min-height: 550px;
+    grid-template-rows: repeat(2, 265px);
+    grid-auto-rows: 265px;
+  }
+
+  .model-prototype .related-card {
+    height: 265px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison {
+    overflow-x: auto;
+  }
+}
+
+/* Final handoff details ------------------------------------------------------
+ * These selectors are deliberately last in the scoped model shell.  The page
+ * has a few older compatibility rules above it; keeping the final values here
+ * makes the React implementation follow the approved HTML at every breakpoint
+ * without changing the rest of the site.
+ */
+.model-prototype {
+  font-feature-settings: normal;
+  text-rendering: auto;
+}
+
+/* Playground controls */
+.model-prototype .model-panel .panel-heading h2 {
+  letter-spacing: 0;
+}
+
+.model-prototype .workbench > .model-panel:first-child .panel-note {
+  display: none;
+}
+
+.model-prototype .input-fields .field-label > span {
+  display: inline-block;
+}
+
+.model-prototype .input-fields .upload-zone {
+  padding: 25px 120px 26px 150px;
+}
+
+.model-prototype .input-fields .upload-copy {
+  display: block;
+  width: 151px;
+  height: 16px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-field .field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-prototype .input-fields .upload-field .field-label > span:first-child {
+  min-width: 0;
+}
+
+.model-prototype .input-fields .upload-name {
+  display: block;
+  max-width: 151px;
+  color: #5f42b4;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-limit {
+  display: inline-flex;
+  min-width: 42px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid #e5def1;
+  border-radius: 999px;
+  color: var(--model-quiet);
+  background: #f8f6fc;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.model-prototype .input-fields .upload-add-copy {
+  display: inline-flex;
+  width: auto;
+  min-width: 151px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: currentColor;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 10px;
+}
+
+.model-prototype .input-fields .upload-filled {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-prototype .input-fields .upload-file-list {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.model-prototype .input-fields .upload-file-item {
+  display: grid;
+  width: 190px;
+  min-width: 190px;
+  height: 52px;
+  grid-template-columns: 44px minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 1px solid var(--model-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.model-prototype .input-fields .upload-file-preview {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 6px;
+  color: var(--model-purple);
+  background: #f3effd;
+}
+
+.model-prototype .input-fields .upload-file-preview img,
+.model-prototype .input-fields .upload-file-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.model-prototype .input-fields .upload-file-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-prototype .input-fields .upload-file-info strong {
+  overflow: hidden;
+  color: var(--model-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-file-info span {
+  color: var(--model-quiet);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.model-prototype .input-fields .upload-file-remove {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--model-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.model-prototype .input-fields .upload-file-remove:hover,
+.model-prototype .input-fields .upload-file-remove:focus-visible {
+  color: var(--model-purple);
+  background: #f3effd;
+  outline: none;
+}
+
+.model-prototype .input-fields .upload-filled > .upload-add-copy {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 2px;
+  border-radius: 6px;
+  color: var(--model-muted);
+  font-size: 12px;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads:hover .upload-filled > .upload-add-copy,
+.model-prototype .input-fields .upload-zone.has-uploads:focus-within .upload-filled > .upload-add-copy {
+  color: var(--model-purple);
+}
+
+/* CDN model marks are logos, not photographic covers. Keep them contained in
+ * the card's neutral surface so the mark remains legible instead of being
+ * stretched edge-to-edge like a hero image. */
+.model-prototype .related-image-cdn {
+  padding: 64px;
+  object-fit: contain !important;
+  opacity: 1;
+  background: #f7f7f8;
+}
+
+.model-prototype .related-card:has(.related-image-cdn)::before {
+  background: linear-gradient(180deg, rgb(0 0 0 / 0), rgb(0 0 0 / 0.5)) !important;
+}
+
+.model-prototype .advanced-options select {
+  padding: 6px 36px 6px 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--model-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5' stroke='%23616978' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 8px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
+/* Performance/activity metric typography */
+.model-prototype .metric-icon:not(:has(svg)) {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.model-prototype .performance .metric-value,
+.model-prototype .usage .chart-stats .metric-value {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.model-prototype .performance .metric-note {
+  display: flex;
+  width: 100%;
+  height: 15px;
+  flex: none;
+  align-items: center;
+  margin: 0;
+  padding: 0 0 0 48px;
+  gap: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.model-prototype .usage .chart-stat-value-with-unit {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.model-prototype .usage .chart-stat-unit {
+  display: block;
+  height: 20px;
+  color: var(--model-quiet);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.model-prototype .usage-chart-axis {
+  right: 0;
+  bottom: 19px;
+  left: 0;
+  height: 15px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.model-prototype .usage-chart-axis span {
+  position: absolute;
+  top: 0;
+  display: flex;
+  width: 36px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+  color: var(--model-quiet);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.model-prototype .usage-chart-axis span:first-child { left: 22px; }
+.model-prototype .usage-chart-axis span:last-child { right: 22px; }
+
+/* Prompt action controls */
+.model-prototype .prompt-actions {
+  grid-template-columns: 1.0111fr 1fr;
+}
+
+.model-prototype .prompt-actions .outline-button,
+.model-prototype .prompt-actions .dark-button {
+  gap: 6px;
+  padding: 6px 16px;
+}
+
+.model-prototype .prompt-actions .outline-button::before {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--model-ink);
+  font-size: 14px;
+  line-height: 16px;
+  content: "⧉";
+}
+
+.model-prototype .prompt-actions .dark-button {
+  gap: 10px;
+}
+
+/* API accordions and code preview */
+.model-prototype .api-section .api-toggle {
+  letter-spacing: -0.01em;
+}
+
+.model-prototype .api-section .api-toggle span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .api-section .api-detail {
+  width: 566px;
+  height: 42px;
+  min-height: 42px;
+  flex: none;
+  padding: 0;
+  letter-spacing: -0.01em;
+}
+
+.model-prototype .api-section .code-tab-group {
+  display: flex;
+  width: 196px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.model-prototype .api-section .code-tab {
+  display: flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  font-family: "PingFang SC", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -0.01em;
+}
+
+.model-prototype .api-section .code-tab:nth-child(1) { width: 58px; }
+.model-prototype .api-section .code-tab:nth-child(2) { width: 69px; }
+.model-prototype .api-section .code-tab:nth-child(3) { width: 65px; }
+.model-prototype .api-section .code-tab.active {
+  font-weight: 500;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.04));
+}
+
+.model-prototype .api-section .code-copy {
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 7px;
+  font-size: 0;
+  line-height: 14px;
+}
+
+.model-prototype .api-section .code-copy::before,
+.model-prototype .api-section .code-copy::after {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1.25px solid #fff;
+  border-radius: 1px;
+  content: "";
+}
+
+.model-prototype .api-section .code-copy::before { top: 7px; left: 7px; }
+.model-prototype .api-section .code-copy::after { top: 10px; left: 10px; background: #1a1a1a; }
+
+.model-prototype .api-section .code-panel .code-keyword { color: #c293ff; }
+.model-prototype .api-section .code-panel .code-string { color: #9de38e; }
+.model-prototype .api-section .code-panel .code-url { color: #8ecf42; }
+.model-prototype .api-section .code-panel .code-header { color: #fff; }
+.model-prototype .api-section .code-panel .code-json { color: #c293ff; }
+
+/* Related cards */
+.model-prototype .related-image {
+  opacity: 1;
+}
+
+.model-prototype .related-card:has(.related-image)::before {
+  display: none;
+}
+
+.model-prototype .related-card:hover .related-image {
+  transform: scale(1.04);
+}
+
+.model-prototype .related-copy strong {
+  display: flex;
+  width: 100%;
+  height: 30px;
+  align-items: center;
+  letter-spacing: -0.02em;
+}
+
+.model-prototype .related-copy span {
+  display: flex;
+  width: 100%;
+  height: 20px;
+  align-items: center;
+  margin: 0;
+  color: #fff;
+  font-family: "PingFang SC", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: -0.02em;
+}
+
+/* FAQ exact DOM rhythm */
+.model-prototype .faq-list {
+  border-width: 0.5px;
+}
+
+.model-prototype .faq-item {
+  box-sizing: border-box;
+  height: 55px;
+  min-height: 55px;
+  flex: 0 0 55px;
+}
+
+.model-prototype .faq-toggle > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .faq-toggle > span:last-child {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: var(--model-ink);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 18px;
+  transition: transform 0.16s;
+}
+
+.model-prototype .faq-item:not([open]) .faq-answer {
+  display: none;
+}
+
+.model-prototype .faq-item[open] .faq-toggle > span:last-child {
+  transform: rotate(90deg);
+}
+
+@media (min-width: 901px) and (max-width: 1439px) {
+  /* The handoff uses square related tiles throughout this intermediate range. */
+  .model-prototype .related {
+    height: auto;
+    min-height: 0;
+  }
+
+  .model-prototype .related > .model-container {
+    height: auto;
+    min-height: 0;
+  }
+
+  .model-prototype .related-grid {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: none;
+    grid-auto-rows: auto;
+  }
+
+  .model-prototype .related-card {
+    height: auto;
+    aspect-ratio: 1 / 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-section .section-head .section-title {
+    font-size: clamp(26px, 4.8vw, 32px);
+    line-height: 1.2;
+  }
+
+  .model-prototype .model-section .section-head .section-copy {
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  .model-prototype .capability-card {
+    height: auto;
+    min-height: 194px;
+  }
+
+  .model-prototype .comparison table {
+    min-width: 1200px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison {
+    height: 309px;
+    overflow-x: auto;
+  }
+
+  .model-prototype .capabilities-comparison .comparison table {
+    display: block;
+    width: 1200px;
+    height: 243px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead {
+    display: block;
+    width: 1200px;
+    height: 40px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison tbody {
+    display: flex;
+    width: 1200px;
+    height: 195px;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 8px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead tr,
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    display: grid;
+    width: 1200px;
+    grid-template-columns: 240px 480px 480px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead tr {
+    height: 40px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    height: 39px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison th,
+  .model-prototype .capabilities-comparison .comparison td {
+    display: flex;
+    width: auto;
+    height: 100%;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .model-prototype .related-grid {
+    height: auto;
+    grid-auto-rows: auto;
+  }
+
+  .model-prototype .related-card {
+    height: auto;
+    aspect-ratio: 1 / 1;
+    border-radius: 16px;
+  }
+
+  .model-prototype .related-copy {
+    height: auto;
+    min-height: 92px;
+    padding: 18px 18px 22px;
+    gap: 2px;
+  }
+
+  .model-prototype .related-copy strong {
+    height: auto;
+    min-height: 24px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .model-prototype .related-copy span {
+    height: auto;
+    min-height: 16px;
+    font-size: 11px;
+    line-height: 16px;
+  }
+
+  .model-prototype .faq-list {
+    padding: 8px 18px 3px;
+  }
+
+  .model-prototype .faq-toggle {
+    font-size: 14px;
+    line-height: 22px;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-hero > .model-container {
+    gap: 15px;
+  }
+
+  .model-prototype .model-title-line h1 {
+    font-size: 36px;
+  }
+
+  .model-prototype .model-quick-start {
+    margin-top: 0;
+  }
+
+  .model-prototype .model-anchor-links {
+    gap: 18px;
+  }
+
+  .model-prototype .model-playground {
+    padding: 24px 0;
+  }
+
+  .model-prototype .performance,
+  .model-prototype .usage,
+  .model-prototype .capabilities,
+  .model-prototype .capabilities-comparison,
+  .model-prototype .prompt-library,
+  .model-prototype .why,
+  .model-prototype .related,
+  .model-prototype .faq {
+    padding-top: 42px;
+    padding-bottom: 28px;
+  }
+
+  .model-prototype .api-section {
+    padding-top: 42px;
+    padding-bottom: 32px;
+  }
+
+  .model-prototype .prompt-actions .outline-button,
+  .model-prototype .prompt-actions .dark-button {
+    padding-right: 10px;
+    padding-left: 10px;
+    font-size: 13px;
+  }
+
+  .model-prototype .comparison table {
+    min-width: 900px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison {
+    padding: 24px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison table,
+  .model-prototype .capabilities-comparison .comparison thead,
+  .model-prototype .capabilities-comparison .comparison tbody,
+  .model-prototype .capabilities-comparison .comparison thead tr,
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    width: 900px;
+  }
+
+  .model-prototype .capabilities-comparison .comparison thead tr,
+  .model-prototype .capabilities-comparison .comparison tbody tr {
+    grid-template-columns: 180px 360px 360px;
+  }
+
+  .model-prototype .comparison thead tr,
+  .model-prototype .comparison tbody tr {
+    grid-template-columns: 180px 360px 360px;
+    width: 900px;
+  }
+
+  .model-prototype .comparison table,
+  .model-prototype .comparison thead,
+  .model-prototype .comparison tbody {
+    width: 900px;
+  }
+
+  .model-prototype .related-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .model-prototype .related-card {
+    aspect-ratio: 1.2 / 1;
+    border-radius: 14px;
+  }
+
+  .model-prototype .faq-list {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .model-prototype .faq-toggle > span:first-child {
+    white-space: normal;
+  }
+
+  .model-prototype .performance .metric-note {
+    height: auto;
+    min-height: 15px;
+    white-space: normal;
+  }
+
+  .model-prototype .api-section .code-tab-group {
+    width: auto;
+  }
+
+  .model-prototype .api-section .code-tabs {
+    padding: 12px 10px;
+  }
+
+  .model-prototype .api-section .code-tab {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .model-prototype .api-section .code-tab:nth-child(1) { width: 54px; }
+  .model-prototype .api-section .code-tab:nth-child(2) { width: 66px; }
+  .model-prototype .api-section .code-tab:nth-child(3) { width: 62px; }
+
+  .model-prototype .api-section .code-panel pre {
+    font-size: 13px;
+    line-height: 20px;
+  }
+}
+
+/* Intermediate media and compact API overrides from the handoff. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .model-prototype .related {
+    height: auto;
+    min-height: 843px;
+  }
+
+  .model-prototype .related > .model-container {
+    height: auto;
+    min-height: 723px;
+  }
+
+  .model-prototype .related-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1101px) and (max-width: 1439px) {
+  .model-prototype .related-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-anchor-bar {
+    top: 132px;
+  }
+
+  .model-prototype :is(#workbench, #parameters, #performance, #activity, #api, #faq) {
+    scroll-margin-top: 180px;
+  }
+
+  .model-prototype .model-playground {
+    padding: 32px 0;
+  }
+
+  .model-prototype .text-parameters {
+    padding: 56px 0 32px;
+  }
+
+  .model-prototype .performance .metrics {
+    gap: 12px;
+  }
+
+  .model-prototype .performance .metric-card {
+    height: 128px;
+    min-height: 128px;
+  }
+
+  .model-prototype .capability-grid,
+  .model-prototype .prompt-grid,
+  .model-prototype .why .why-grid,
+  .model-prototype .related-grid {
+    gap: 16px;
+  }
+
+  .model-prototype .prompt-grid {
+    grid-template-rows: repeat(3, 460px);
+  }
+
+  .model-prototype .parameter-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .model-prototype .faq-layout {
+    gap: 25px;
+  }
+
+  .model-prototype .capability-card {
+    overflow: visible;
+  }
+
+  .model-prototype .api-section .api-detail {
+    width: calc(100% - 44px);
+    height: auto;
+    min-height: 42px;
+  }
+
+  .model-prototype .api-section .code-panel pre {
+    font-family: "PingFang SC", Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  .model-prototype .faq-item {
+    box-sizing: border-box;
+    height: 55px;
+    min-height: 55px;
+    flex: 0 0 55px;
+  }
+
+  /* The prototype keeps every responsive section heading fluid. The shared
+   * desktop handoff rules above intentionally use a 630px canvas, so release
+   * that width and fixed height before the two-column breakpoint. */
+  .model-prototype :is(
+    .performance > .model-container > .section-head,
+    .usage > .model-container > .section-head,
+    .capabilities > .model-container > .section-head,
+    .why > .model-container > .section-head,
+    .capabilities-comparison .comparison-block > .section-head,
+    .model-pricing .pricing-block > .section-head,
+    .prompt-library-head > .section-head,
+    .api-section > .model-container > .section-head,
+    .related > .model-container > .section-head,
+    .faq-intro > .section-head
+  ) {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .model-prototype :is(
+    .performance > .model-container > .section-head > .eyebrow,
+    .usage > .model-container > .section-head > .eyebrow,
+    .capabilities > .model-container > .section-head > .eyebrow,
+    .why > .model-container > .section-head > .eyebrow,
+    .capabilities-comparison .comparison-block > .section-head > .eyebrow,
+    .prompt-library-head > .section-head > .eyebrow,
+    .api-section > .model-container > .section-head > .eyebrow,
+    .related > .model-container > .section-head > .eyebrow,
+    .faq-intro > .section-head > .eyebrow,
+    .performance > .model-container > .section-head > .section-title,
+    .usage > .model-container > .section-head > .section-title,
+    .capabilities > .model-container > .section-head > .section-title,
+    .why > .model-container > .section-head > .section-title,
+    .capabilities-comparison .comparison-block > .section-head > .section-title,
+    .model-pricing .pricing-block > .section-head > .section-title,
+    .prompt-library-head > .section-head > .section-title,
+    .api-section > .model-container > .section-head > .section-title,
+    .related > .model-container > .section-head > .section-title,
+    .faq-intro > .section-head > .section-title,
+    .performance > .model-container > .section-head > .section-copy,
+    .usage > .model-container > .section-head > .section-copy,
+    .capabilities > .model-container > .section-head > .section-copy,
+    .why > .model-container > .section-head > .section-copy,
+    .capabilities-comparison .comparison-block > .section-head > .section-copy,
+    .prompt-library-head > .section-head > .section-copy,
+    .api-section > .model-container > .section-head > .section-copy,
+    .related > .model-container > .section-head > .section-copy,
+    .faq-intro > .section-head > .section-copy
+  ) {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+  }
+
+  .model-prototype :is(
+    .performance > .model-container > .section-head > .section-title,
+    .usage > .model-container > .section-head > .section-title,
+    .capabilities > .model-container > .section-head > .section-title,
+    .why > .model-container > .section-head > .section-title,
+    .capabilities-comparison .comparison-block > .section-head > .section-title,
+    .prompt-library-head > .section-head > .section-title,
+    .api-section > .model-container > .section-head > .section-title,
+    .related > .model-container > .section-head > .section-title,
+    .faq-intro > .section-head > .section-title
+  ) {
+    font-size: clamp(26px, 4.8vw, 32px);
+    line-height: 1.2;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  .model-prototype :is(
+    .performance > .model-container > .section-head > .section-title,
+    .usage > .model-container > .section-head > .section-title,
+    .capabilities > .model-container > .section-head > .section-title,
+    .why > .model-container > .section-head > .section-title
+  ) {
+    display: block;
+    overflow: visible;
+    -webkit-box-orient: initial;
+    -webkit-line-clamp: unset;
+  }
+
+  .model-prototype :is(
+    .performance > .model-container > .section-head > .section-copy,
+    .usage > .model-container > .section-head > .section-copy,
+    .capabilities > .model-container > .section-head > .section-copy,
+    .why > .model-container > .section-head > .section-copy,
+    .capabilities-comparison .comparison-block > .section-head > .section-copy,
+    .prompt-library-head > .section-head > .section-copy,
+    .api-section > .model-container > .section-head > .section-copy,
+    .related > .model-container > .section-head > .section-copy,
+    .faq-intro > .section-head > .section-copy
+  ) {
+    font-size: 15px;
+    line-height: 22px;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  .model-prototype .performance > .model-container,
+  .model-prototype .usage > .model-container,
+  .model-prototype .capabilities > .model-container,
+  .model-prototype .why > .model-container,
+  .model-prototype .prompt-library > .model-container,
+  .model-prototype .api-section > .model-container,
+  .model-prototype .related > .model-container {
+    gap: 24px;
+  }
+
+  .model-prototype .related > .model-container > .section-head {
+    display: block;
+  }
+
+  .model-prototype .related > .model-container > .section-head > .section-title {
+    margin: 0;
+  }
+
+  .model-prototype .performance .metrics {
+    height: 268px;
+    min-height: 268px;
+    flex: 0 0 268px;
+    grid-template-rows: repeat(2, 128px);
+  }
+
+  .model-prototype .model-breadcrumb {
+    width: 285px;
+    max-width: 285px;
+  }
+
+  .model-prototype .usage .chart-stats {
+    right: 24px;
+    left: 24px;
+    gap: 16px;
+  }
+
+  .model-prototype .usage .chart-wrap {
+    right: 24px;
+    left: 24px;
+  }
+
+  .model-prototype .capabilities-comparison > .model-container {
+    display: flex;
+    height: auto;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison-block {
+    display: flex;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 24px;
+    margin: 0;
+  }
+
+  .model-prototype .capabilities-comparison .comparison {
+    height: 309px;
+    min-height: 309px;
+    flex: 0 0 309px;
+    overflow-x: auto;
+  }
+
+  .model-prototype .api-section .api-layout {
+    height: auto;
+    min-height: 620px;
+    padding: 0;
+  }
+
+  .model-prototype .api-section .api-item.open {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .model-prototype .api-section .api-detail {
+    padding: 0;
+  }
+
+  .model-prototype .faq-layout {
+    gap: 24px;
+  }
+
+  .model-prototype .faq-list {
+    height: auto;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-playground {
+    padding: 24px 0;
+  }
+
+  .model-prototype .performance .metrics {
+    gap: 12px;
+  }
+
+  .model-prototype .performance .metric-card {
+    height: 128px;
+    min-height: 128px;
+  }
+
+  .model-prototype .performance .metrics {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    grid-template-rows: none;
+  }
+
+  .model-prototype .model-breadcrumb {
+    width: auto;
+    max-width: calc(100% - 130px);
+  }
+
+  .model-prototype .capability-grid,
+  .model-prototype .prompt-grid,
+  .model-prototype .why .why-grid {
+    gap: 14px;
+  }
+
+  .model-prototype .prompt-grid {
+    grid-template-rows: repeat(6, 460px);
+  }
+
+  .model-prototype .api-section {
+    padding-bottom: 28px;
+  }
+
+  .model-prototype .api-section .api-layout {
+    min-height: 620px;
+    padding: 0;
+  }
+
+  .model-prototype .related-grid {
+    gap: 14px;
+  }
+
+  .model-prototype .input-fields .upload-zone {
+    padding: 25px 20px 26px;
+  }
+
+  .model-prototype .text-parameters {
+    padding-top: 42px;
+    padding-bottom: 28px;
+  }
+
+  .model-prototype .parameter-cards {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .model-prototype .faq-item {
+    height: auto;
+    min-height: 55px;
+    flex-basis: auto;
+  }
+
+  .model-prototype .faq-toggle {
+    height: auto;
+    min-height: 55px;
+  }
+
+  .model-prototype .faq-layout {
+    gap: 20px;
+  }
+}
+
+/* Keep the prompt counter anchored to the textarea and preserve the 20px
+ * row rhythm from the prototype's advanced-options field grids. */
+.model-prototype .input-fields .prompt-field > .field-label {
+  align-items: flex-start;
+}
+
+.model-prototype .input-fields .prompt-field > .field-label .counter {
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  margin-left: 0;
+}
+
+.model-prototype .advanced-options > div {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Prompt labels sit on the image edge at every breakpoint, not in the body
+ * flow. This is especially visible in the one-column mobile grid. */
+.model-prototype .prompt-media .prompt-badge {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  padding: 7px 16px;
+  color: #fff;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  text-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+}
+
+@media (min-width: 901px) and (max-width: 1300px) {
+  .model-prototype .performance,
+  .model-prototype .performance > .model-container {
+    height: auto;
+    min-height: 373px;
+  }
+
+  .model-prototype .performance > .model-container {
+    min-height: 253px;
+  }
+
+  .model-prototype .performance .metrics {
+    height: auto;
+    min-height: 128px;
+    align-items: stretch;
+  }
+
+  .model-prototype .performance .metric-card {
+    height: auto;
+    min-height: 128px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+  .model-prototype .capabilities,
+  .model-prototype .capabilities > .model-container,
+  .model-prototype .why,
+  .model-prototype .why > .model-container {
+    height: auto;
+    min-height: 463px;
+  }
+
+  .model-prototype .capabilities > .model-container,
+  .model-prototype .why > .model-container {
+    min-height: 343px;
+  }
+
+  .model-prototype .capabilities .capability-grid,
+  .model-prototype .why .why-grid {
+    height: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-prototype .capabilities .capability-card,
+  .model-prototype .why .why-card {
+    height: auto;
+    min-height: 194px;
+  }
+
+  .model-prototype .why .why-card {
+    min-height: 221px;
+  }
+
+  .model-prototype .capabilities .capability-card h3,
+  .model-prototype .why .why-card h3 {
+    height: auto;
+    min-height: 27px;
+    margin-bottom: 0;
+  }
+
+  .model-prototype .capabilities .capability-card p,
+  .model-prototype .why .why-card p {
+    height: auto;
+    min-height: 51px;
+  }
+}
+
+.model-prototype .faq-item[open] {
+  height: auto;
+  min-height: 55px;
+  flex-basis: auto;
+}
+
+/* Model names are user-facing identifiers, not decorative labels. Keep the
+ * full value visible and let the hero/card rhythm grow for long model ids
+ * instead of clipping them with an ellipsis. */
+.model-prototype .model-title-line {
+  height: auto;
+  min-height: 43px;
+}
+
+.model-prototype .model-title-line h1 {
+  width: auto;
+  max-width: none;
+  height: auto;
+  min-height: 43px;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.model-prototype .model-breadcrumb,
+.model-prototype .model-breadcrumb > span:last-child {
+  height: auto;
+  min-height: 20px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .related-copy strong,
+.model-prototype .related-copy span {
+  height: auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 901px) {
+  .model-prototype .model-hero {
+    height: auto;
+    min-height: 370px;
+  }
+
+  .model-prototype .model-hero > .model-container {
+    height: auto;
+    min-height: 322px;
+  }
+
+  .model-prototype .model-hero-top {
+    height: auto;
+    min-height: 32px;
+    align-items: flex-start;
+  }
+
+  .model-prototype .model-hero-row {
+    height: auto;
+    min-height: 282px;
+  }
+
+  .model-prototype .model-hero-copy-block {
+    height: auto;
+    min-height: 185px;
+  }
+
+  /* Desktop model titles have enough horizontal room for the canonical id;
+   * keep them on one line instead of wrapping a name that should be scanned
+   * as a single identifier. */
+  .model-prototype .model-title-line {
+    width: 650px;
+    max-width: 100%;
+  }
+
+  .model-prototype .model-title-line h1 {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* Model identifiers are scanned as one value. Let the title run to its
+     * natural width on desktop rather than wrapping or truncating it. */
+    white-space: nowrap;
+  }
+}
+
+/* Section headings are content, not decorative labels. Keep every H2 fully
+ * readable when a model's localized or data-driven title is longer than the
+ * prototype copy: allow the heading block and its section to grow naturally
+ * instead of clipping it with an ellipsis. */
+.model-prototype :is(
+  .performance > .model-container > .section-head,
+  .usage > .model-container > .section-head,
+  .capabilities > .model-container > .section-head,
+  .why > .model-container > .section-head,
+  .capabilities-comparison .comparison-block > .section-head,
+  .model-pricing .pricing-block > .section-head,
+  .prompt-library-head > .section-head,
+  .api-section > .model-container > .section-head,
+  .related > .model-container > .section-head,
+  .faq-intro > .section-head
+) {
+  height: auto !important;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible !important;
+}
+
+.model-prototype :is(
+  .performance > .model-container > .section-head > .section-title,
+  .usage > .model-container > .section-head > .section-title,
+  .capabilities > .model-container > .section-head > .section-title,
+  .why > .model-container > .section-head > .section-title,
+  .capabilities-comparison .comparison-block > .section-head > .section-title,
+  .model-pricing .pricing-block > .section-head > .section-title,
+  .prompt-library-head > .section-head > .section-title,
+  .api-section > .model-container > .section-head > .section-title,
+  .related > .model-container > .section-head > .section-title,
+  .faq-intro > .section-head > .section-title
+) {
+  display: block;
+  width: 100%;
+  height: auto !important;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: initial;
+  -webkit-line-clamp: unset !important;
+}
+
+/* Catch the smaller playground/panel headings as well. No H2 in the model
+ * detail shell should inherit a single-line ellipsis from a shared utility. */
+.model-prototype h2 {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 901px) {
+  /* Match the shared site header's inner left/right edges at every desktop
+   * width instead of introducing a separate fixed 80px grid. */
+  .model-prototype .model-container {
+    width: min(var(--model-max), calc(100% - var(--fk-site-gutter) - var(--fk-site-gutter)));
+    max-width: none;
+  }
+
+  .model-prototype :is(
+    .performance,
+    .usage,
+    .capabilities,
+    .capabilities-comparison,
+    .model-pricing,
+    .why,
+    .prompt-library,
+    .api-section,
+    .related,
+    .faq
+  ) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .model-prototype :is(
+    .performance > .model-container,
+    .usage > .model-container,
+    .capabilities > .model-container,
+    .capabilities-comparison > .model-container,
+    .capabilities-comparison .comparison-block,
+    .model-pricing > .model-container,
+    .model-pricing .pricing-block,
+    .why > .model-container,
+    .prompt-library > .model-container,
+    .api-section > .model-container,
+    .related > .model-container,
+    .faq > .model-container
+  ) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .model-prototype .prompt-library-head {
+    height: auto;
+    min-height: 121px;
+  }
+
+  .model-prototype .faq-intro {
+    height: auto;
+    min-height: 159px;
+  }
+
+  /* Long generic capability titles should use the available desktop row so
+   * they remain complete without pushing the cards into a second rhythm. */
+  .model-prototype .capabilities > .model-container > .section-head,
+  .model-prototype .capabilities > .model-container > .section-head > .eyebrow,
+  .model-prototype .capabilities > .model-container > .section-head > .section-title,
+  .model-prototype .capabilities > .model-container > .section-head > .section-copy {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Capability copy is data-driven. Let a two-line title and three-line
+   * description determine the row height instead of letting the fixed
+   * prototype row clip the last line at the card's bottom edge. */
+  .model-prototype .capabilities .capability-grid {
+    height: auto;
+    min-height: 194px;
+    flex: 0 0 auto;
+    align-items: stretch;
+  }
+
+  .model-prototype .capabilities .capability-card {
+    height: auto;
+    min-height: 194px;
+    overflow: visible;
+  }
+
+  /* FAQ rows are 55px each. Let the card and section finish after the last
+   * actual question instead of preserving the media-model nine-row height on
+   * text models that only expose five questions. */
+  .model-prototype .faq,
+  .model-prototype .faq-layout,
+  .model-prototype .faq-list {
+    height: auto;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-pricing {
+    min-height: 0;
+    padding: 56px 0 32px;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-pricing {
+    padding: 42px 0 28px;
+  }
+
+  .model-prototype .model-pricing .pricing-card {
+    padding: 24px;
   }
 }

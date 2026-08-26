@@ -43,9 +43,9 @@ export function isLocale(value: string | undefined): value is Locale {
 }
 
 // Fill the `id` (Bahasa Indonesia) locale with the English value when a copy map
-// hasn't been translated to Indonesian yet. Lets us ship the Indonesian homepage +
-// market landing first, while every other surface falls back to English until
-// translated. Pass a map that already covers `en`; `id` is optional.
+// has not supplied an Indonesian translation yet. Pass a map that already covers
+// `en`; `id` is optional. Individual surfaces should provide an explicit `id`
+// entry whenever their user-visible copy is ready for localization.
 export function withIdFallback<T>(
   map: Record<Exclude<Locale, "id">, T> & Partial<Record<"id", T>>
 ): Record<Locale, T> {

@@ -1,17 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ModelLandingPage } from "./model-landing-page";
 import {
-  ModelLandingPage,
-  animateScrollToTop,
-  buildDraftFallbackRunHref,
-  buildPerformanceStats,
-  isMeasuredStatValue,
-  showsTimeToFirstTokenFootnote,
-} from "./model-landing-page";
-import {
+  DEEPSEEK_CONFIG,
   GPT_CONFIG,
   GPT_IMAGE_2_CONFIG,
   MINIMAX_H3_CONFIG,
+  SONILO_VIDEO_TO_MUSIC_CONFIG,
+  SEEDANCE_25_CONFIG,
   SEEDANCE_CONFIG,
   getModelLandingConfigForPricingModel,
 } from "@/lib/model-landing";
@@ -86,14 +82,6 @@ function hrefBeforeText(html: string, text: string): string {
   return matches[matches.length - 1][1].replaceAll("&amp;", "&");
 }
 
-function sectionHtml(html: string, id: string, nextId: string): string {
-  const start = html.indexOf(`<section id="${id}"`);
-  const end = html.indexOf(`<section id="${nextId}"`, start + 1);
-  expect(start).toBeGreaterThanOrEqual(0);
-  expect(end).toBeGreaterThan(start);
-  return html.slice(start, end);
-}
-
 describe("ModelLandingPage", () => {
   test("uses the exact configured model as the primary live model", () => {
     const liveModels: PricingModel[] = [
@@ -122,106 +110,28 @@ describe("ModelLandingPage", () => {
     expect(html).not.toContain("$0.2 in / $0.2 out");
   });
 
-  test("routes GPT-image-2 actions through console signup with a compact handoff entry", () => {
+  test("opens GPT-image-2 directly in Playground with its model and prompt", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
     );
-    const encodedHref = html.match(/href="([^"]*\/sign-up\?[^"]*redirect=[^"]*)"/)?.[1];
+    const encodedHref = html.match(/href="([^"]*\/playground\?[^"]*)"/)?.[1];
 
     expect(encodedHref).toBeDefined();
     const url = new URL(encodedHref!.replaceAll("&amp;", "&"));
-    expect(url.origin).toBe("https://console.flatkey.ai");
-    expect(url.pathname).toBe("/sign-up");
-    expect(url.searchParams.get("lng")).toBe("zh");
-    const redirect = new URL(url.searchParams.get("redirect")!, url.origin);
-    expect(redirect.pathname).toBe("/playground");
-    expect(redirect.searchParams.get("source")).toBe("model_landing");
-    expect(redirect.searchParams.get("model")).toBe("gpt-image-2");
-    expect(redirect.searchParams.get("media_kind")).toBe("image");
-    expect(redirect.searchParams.get("prompt")).toBeNull();
-    expect(redirect.searchParams.get("request")).toBeNull();
-    expect(redirect.searchParams.get("size")).toBeNull();
+    expect(url.pathname).toBe("/playground");
+    expect(url.searchParams.get("model")).toBe("gpt-image-2");
+    expect(url.searchParams.get("prompt")).toBe(GPT_IMAGE_2_CONFIG.examplePrompt);
+    expect(url.searchParams.has("redirect")).toBe(false);
   });
 
-  test("builds a bounded draft fallback URL when model handoff creation fails", () => {
-    const href = buildDraftFallbackRunHref(GPT_IMAGE_2_CONFIG, "zh", {
-      source: "model_landing",
-      model: "gpt-image-2",
-      mediaKind: "image",
-      storageKey: "flatkey:model-generator-draft:gpt-image-2",
-      prompt: "Create a purple sneaker product shot",
-      fields: { size: "1024x1024", quality: "high" },
-      request: {
-        model: "gpt-image-2",
-        prompt: "Create a purple sneaker product shot",
-        size: "1024x1024",
-      },
-    });
-
-    const url = new URL(href);
-    const redirect = new URL(url.searchParams.get("redirect")!, url.origin);
-    const draft = JSON.parse(redirect.searchParams.get("draft")!) as { prompt?: string; request?: { size?: string } };
-
-    expect(url.pathname).toBe("/sign-up");
-    expect(url.searchParams.get("lng")).toBe("zh");
-    expect(redirect.pathname).toBe("/playground");
-    expect(redirect.searchParams.get("model")).toBe("gpt-image-2");
-    expect(redirect.searchParams.get("media_kind")).toBe("image");
-    expect(draft.prompt).toBe("Create a purple sneaker product shot");
-    expect(draft.request?.size).toBe("1024x1024");
-  });
-
-  test("animates section scrolling across multiple frames", () => {
-    const scrollCalls: number[] = [];
-    const frameCallbacks: Array<(time: number) => void> = [];
-    const fakeWindow = {
-      scrollY: 120,
-      scrollTo: ({ top }: { top: number }) => {
-        scrollCalls.push(Math.round(top));
-      },
-      requestAnimationFrame: (callback: (time: number) => void) => {
-        frameCallbacks.push(callback);
-        return frameCallbacks.length;
-      },
-      cancelAnimationFrame: () => undefined,
-      matchMedia: () => ({ matches: false }),
-    } as unknown as Window;
-
-    animateScrollToTop(fakeWindow, 420, { durationMs: 200 });
-
-    expect(frameCallbacks.length).toBe(1);
-    frameCallbacks.shift()?.(0);
-    expect(scrollCalls.at(-1)).toBe(120);
-
-    expect(frameCallbacks.length).toBe(1);
-    frameCallbacks.shift()?.(100);
-    expect(scrollCalls.at(-1)).toBeGreaterThan(120);
-
-    expect(frameCallbacks.length).toBe(1);
-    frameCallbacks.shift()?.(200);
-    expect(scrollCalls.at(-1)).toBe(420);
-    expect(scrollCalls.length).toBeGreaterThan(2);
-  });
-
-  // The hero action used to be "Get API Key" pointing at the console
-  // dashboard. A reader on a model page wants to see how the call is made
-  // before being sent to a key form, so it now scrolls to the Quick Start
-  // section on this page.
-  test("routes the top hero action to the on-page Quick Start section", () => {
+  test("routes the top Get API Key action to the console overview", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(hrefBeforeText(html, "Quick Start")).toBe("#quick-start");
-    expect(html).not.toContain("Get API Key");
-  });
-
-  test("keeps the top hero action group aligned to the right", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
+    expect(hrefBeforeText(html, "Get API Key")).toBe(
+      "https://console.flatkey.ai/dashboard",
     );
-
-    expect(html).toContain("ml-auto flex flex-wrap items-center justify-end gap-2");
   });
 
   test("renders Flatkey homepage-style sections for video model landings", () => {
@@ -229,232 +139,20 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
     );
 
-    for (const id of ["workbench", "health", "providers", "related", "faq"]) {
+    for (const id of ["workbench", "health", "related", "faq"]) {
       expect(html).toContain(`id="${id}"`);
     }
+    expect(html).toContain("Playground (edit before sign-up)");
     expect(html).toContain("Generator setup");
-    expect(html).toContain("Create with this model");
-    expect(html).toContain("Start generating");
-    expect(html).toContain("Reset");
-    expect(html).not.toContain("Request preview");
-    expect(html).toContain("Model price comparison");
-    expect(html).toContain("Model catalog");
+    expect(html).toContain("Open in Playground");
+    expect(html).toContain("Request preview");
+    expect(html).toContain("$0.047 / second");
+    expect(html).toContain("Capabilities");
     expect(html).toContain("Related models");
     expect(html).toContain("Frequently asked questions");
     expect(html).toContain('type="application/ld+json"');
     expect(html).toContain('"@type":"Product"');
     expect(html).toContain('"@type":"FAQPage"');
-  });
-
-  test("renders a simplified brand-video generator workbench", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="zh" liveModels={[]} />
-    );
-    const workbenchHtml = sectionHtml(html, "workbench", "related");
-
-    expect(workbenchHtml).toContain("生成器配置");
-    expect(workbenchHtml).not.toContain("Playground 预览");
-    expect(workbenchHtml).not.toContain("在这里配置真实的");
-    expect(workbenchHtml).toContain("Reset");
-    expect(workbenchHtml).toContain("开始生成");
-    expect(workbenchHtml).not.toContain("打开控制台");
-    expect(workbenchHtml).not.toContain("获取 API Key");
-    expect(workbenchHtml).not.toContain("查看 API 文档");
-    expect(workbenchHtml).toContain("/assets/cli/campaign-hero.png");
-    expect(workbenchHtml).not.toContain("ugc-ad-clips.mp4");
-    expect(workbenchHtml).toContain('data-model-output-video="true"');
-    expect(workbenchHtml).not.toMatch(/<video[^>]*\smuted(?:[\s=>]|$)/);
-    expect(workbenchHtml).toContain("参考素材");
-    expect(workbenchHtml).toContain("上传素材");
-    expect(workbenchHtml).toContain("最多 10 个图片、视频或音频素材");
-    expect(workbenchHtml).toContain('accept="image/*,video/*,audio/*"');
-    expect(workbenchHtml).toContain('data-reference-media-limit="10"');
-    expect(workbenchHtml).toContain("<select");
-    expect(workbenchHtml).not.toContain('type="checkbox"');
-    expect(workbenchHtml).not.toContain('type="number"');
-    expect(workbenchHtml).not.toContain("Quick Prompts");
-    expect(workbenchHtml).not.toContain("Advanced Options");
-  });
-
-  test("marks the current model section link as active", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
-    );
-    const navStart = html.indexOf('aria-label="Model page sections"');
-    const navHtml = html.slice(navStart - 500, navStart + 3000);
-
-    expect(navHtml).toContain('data-section-id="workbench"');
-    expect(navHtml).toContain('aria-current="true"');
-    expect(navHtml).toContain("data-active-model-section");
-  });
-
-  test("renders the model section navigation as a responsive sticky subnav with smooth-scroll links", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
-    );
-    const navStart = html.indexOf('aria-label="Model page sections"');
-    expect(navStart).toBeGreaterThanOrEqual(0);
-    const navHtml = html.slice(navStart - 800, navStart + 3000);
-
-    expect(navHtml).toContain("sticky z-30");
-    expect(navHtml).toContain('style="top:var(--fk-model-sticky-offset, var(--fk-site-header-height))"');
-    expect(navHtml).toContain("max-w-[var(--fk-site-frame-max-width)]");
-    expect(navHtml).toContain("px-[var(--fk-site-gutter)]");
-    expect(navHtml).toContain('data-model-section-link="true"');
-    for (const href of ["#workbench", "#related", "#readme", "#providers"]) {
-      expect(navHtml).toContain(`href="${href}"`);
-    }
-    expect(html).toContain("scroll-mt-[var(--fk-model-section-scroll-margin)]");
-  });
-
-  test("renders model-specific README content sections for media model landings", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
-    );
-
-    for (const id of ["readme", "capabilities", "access", "use-cases"]) {
-      expect(html).toContain(`id="${id}"`);
-    }
-    expect(html).toContain("scroll-mt-[var(--fk-model-section-scroll-margin)]");
-    expect(html).toContain("Key features of Seedance 2.0 API");
-    expect(html).toContain("How to access Seedance 2.0 API on Flatkey");
-    expect(html).toContain("What you can build with Seedance 2.0 API");
-    expect(html).toContain("Reference-guided video generation");
-  });
-
-  test("keeps the model detail first screen compact with one model type and a row-style price comparison", () => {
-    const liveModel: PricingModel = {
-      model_name: "gpt-image-2",
-      vendor_name: "OpenAI",
-      quota_type: 1,
-      model_ratio: 0,
-      model_price: 0.06,
-      completion_ratio: 0,
-      supported_endpoint_types: ["image-generation"],
-      enable_groups: ["standard"],
-      group_ratio: { standard: 0.67 },
-    };
-    const html = renderToStaticMarkup(
-      <ModelLandingPage
-        config={GPT_IMAGE_2_CONFIG}
-        locale="en"
-        liveModels={[liveModel]}
-        allModels={[liveModel]}
-        groupRatio={{ standard: 0.67 }}
-      />
-    );
-    const heroStart = html.indexOf('<main class="home-landing');
-    const heroEnd = html.indexOf('aria-label="Model page sections"');
-    expect(heroStart).toBeGreaterThan(0);
-    expect(heroEnd).toBeGreaterThan(0);
-    const heroHtml = html.slice(heroStart, heroEnd);
-
-    expect(heroHtml).toContain('data-model-hero-price-row="true"');
-    expect(heroHtml).toContain('data-model-price-logo-cell="true"');
-    expect(heroHtml).toContain('data-model-health-cell="true"');
-    expect(heroHtml).toContain("GPT-image-2");
-    expect(heroHtml).toContain("OpenAI");
-    expect(heroHtml).toContain("Flatkey price");
-    expect(heroHtml).toContain("Reference price");
-    expect(heroHtml).toContain("Live model health");
-    expect(heroHtml).toContain("$0.04");
-    expect(heroHtml).toContain("$0.06");
-    expect(heroHtml).toContain("Image");
-    expect((heroHtml.match(/data-model-type-chip="true"/g) ?? []).length).toBe(1);
-    expect(heroHtml).not.toContain("Context");
-    expect(heroHtml).not.toContain("Released");
-    expect(heroHtml).not.toContain("model-pages/image-api-hero");
-    expect(heroHtml).not.toContain("%2Fassets%2Fmodel-pages%2Fimage-api-hero.png");
-  });
-
-  test("localizes the new video model detail copy on Chinese pages", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="zh" liveModels={[]} />
-    );
-
-    expect(html).toContain("Seedance 2.0 是通过 Flatkey 提供的视频生成模型");
-    expect(html).toContain("图生视频");
-    expect(html).toContain("参考图引导视频");
-    expect(html).toContain("短视频生成");
-    expect(html).toContain("参考图 / 首帧");
-    expect(html).toContain("用例和参数配置");
-    expect(html).toContain("视频草稿的一次性控制台接力");
-    expect(html).not.toContain("Configure a real Seedance 2.0 video request here");
-    expect(html).not.toContain("Reference-guided Video");
-  });
-
-  test("localizes image, audio, and text model detail copy on Chinese pages", () => {
-    const imageHtml = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
-    );
-    const audioConfig = getModelLandingConfigForPricingModel({
-      model_name: "sonilo-video-to-music",
-      vendor_name: "Sonilo",
-      quota_type: 1,
-      model_ratio: 0,
-      model_price: 0.009,
-      completion_ratio: 0,
-      supported_endpoint_types: ["video-to-music", "audio"],
-    });
-    const audioHtml = renderToStaticMarkup(
-      <ModelLandingPage config={audioConfig} locale="zh" liveModels={[]} />
-    );
-    const textHtml = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_CONFIG} locale="zh" liveModels={[]} />
-    );
-
-    expect(imageHtml).toContain("GPT-image-2 是用于 prompt 驱动视觉");
-    expect(imageHtml).toContain("文生图像");
-    expect(imageHtml).toContain("参考图准备");
-    expect(audioHtml).toContain("sonilo-video-to-music 是用于视频配乐");
-    expect(audioHtml).toContain("视频转音乐");
-    expect(audioHtml).toContain("语音、音乐和声音工作流控制");
-    expect(textHtml).toContain("使用 GPT-5 API 构建的主要方式");
-    expect(textHtml).toContain("聊天和 Agent 后端");
-    expect(textHtml).toContain("生产控制");
-    expect(imageHtml).not.toContain("Prepare a GPT-image-2 image request here");
-    expect(audioHtml).not.toContain("Prepare an audio request for sonilo-video-to-music here");
-    expect(textHtml).not.toContain("Main ways to build with GPT-5 API");
-  });
-
-  test("localizes new model detail README copy for non-English locales", () => {
-    const spanishHtml = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="es" liveModels={[]} />
-    );
-    const japaneseHtml = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="ja" liveModels={[]} />
-    );
-
-    expect(spanishHtml).toContain("Funciones clave de Seedance 2.0 API");
-    expect(spanishHtml).toContain("Generación de video guiada por referencias");
-    expect(spanishHtml).not.toContain("Key features of Seedance 2.0 API");
-    expect(spanishHtml).not.toContain("Reference-guided video generation");
-    expect(japaneseHtml).toContain("GPT-image-2 API の主な機能");
-    expect(japaneseHtml).toContain("参照画像の引き継ぎ");
-    expect(japaneseHtml).not.toContain("Key features of GPT-image-2 API");
-    expect(japaneseHtml).not.toContain("Reference image handoff");
-  });
-
-  test("renders audio model pages with audio-specific guidance instead of image guidance", () => {
-    const sonilo: PricingModel = {
-      model_name: "sonilo-video-to-music",
-      vendor_name: "Sonilo",
-      quota_type: 1,
-      model_ratio: 0,
-      model_price: 0.009,
-      completion_ratio: 0,
-      supported_endpoint_types: ["video-to-music", "audio"],
-    };
-    const config = getModelLandingConfigForPricingModel(sonilo);
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={config} locale="en" liveModels={[sonilo]} allModels={[sonilo]} />
-    );
-
-    expect(html).toContain("Key features of sonilo-video-to-music API");
-    expect(html).toContain("Voice, music, and sound workflow control");
-    expect(html).toContain("Studio-quality voiceover and narration");
-    expect(html).not.toContain("Text to Image with GPT Image-2 API");
-    expect(html).not.toContain("Image-to-video production");
   });
 
   test("renders breadcrumbs on media model landings", () => {
@@ -468,25 +166,38 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("Seedance 2.0");
   });
 
-  test("renders back and console actions on localized media model landings", () => {
+  test("renders the Seedance 2.5 contract in the request preview", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
+    );
+    const requestPreview = html.replaceAll("&quot;", '"');
+
+    expect(requestPreview).toContain('"model": "seedance-2.5"');
+    expect(requestPreview).toContain('"resolution": "720p"');
+    expect(requestPreview).toContain('"ratio": "adaptive"');
+    expect(requestPreview).toContain('"duration": 5');
+    expect(requestPreview).toContain('"generate_audio": true');
+    expect(requestPreview).not.toContain('"resolution": "1080p"');
+  });
+
+  test("renders back and playground actions on localized media model landings", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="zh" liveModels={[]} />
     );
 
     expect(html).toContain('href="/zh/models"');
     expect(html).toContain("返回模型列表");
-    expect(html).toContain("打开控制台");
+    expect(html).toContain("在 Playground 打开");
     expect(html).toContain("获取 API Key");
-    expect(html).toContain("https://console.flatkey.ai/sign-up");
-    expect(html).toContain("redirect=%2Fplayground%3Fsource%3Dmodel_landing");
-    expect(html).toContain("model%3DMiniMax-H3");
-    expect(html).not.toContain("prompt%3DA%2Bpaper%2Bboat");
+    expect(html).toContain("https://console.flatkey.ai/playground");
+    expect(html).toContain("model=MiniMax-H3");
   });
 
   test("renders Flatkey sections and related model links on localized Sonilo model pages", () => {
     const sonilo: PricingModel = {
       model_name: "sonilo-video-to-music",
       vendor_name: "Sonilo",
+      description: "Generate production-ready music from any video with synchronized timing.",
       quota_type: 1,
       model_ratio: 0,
       model_price: 0.009,
@@ -523,18 +234,65 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("价格");
     expect(html).toContain("性能");
     expect(html).toContain("可用性");
-    expect(html).toContain("模型价格对比");
-    expect(html).toContain("实时模型健康");
+    expect(html).toContain("/ 请求");
+    expect(html).not.toContain("实时模型健康");
     expect(html).toContain("生成器配置");
-    expect(html).toContain("用这个模型创建");
-    expect(html).toContain("打开控制台");
-    expect(html).not.toContain("请求预览");
-    expect(html).toContain("可用目录条目");
+    expect(html).toContain("Playground（注册前可编辑）");
+    expect(html).toContain("在 Playground 打开");
+    expect(html).toContain("请求预览");
     expect(html).toContain("常见问题");
-    expect(html).toContain("继续浏览 Flatkey");
-    expect(html).toContain('href="/zh/models/gpt-image-2"');
-    expect(html).toContain('href="/zh/models/seedance-api"');
+    expect(html).toContain("sonilo-video-to-music 可通过 Flatkey 使用");
+    expect(html).not.toContain("Generate production-ready music from any video with synchronized timing.");
+    // Related models are restricted to the current modality. Sonilo is an
+    // audio model, so the image and video entries in this mixed fixture must
+    // not leak into its related section.
+    expect(html).not.toContain("继续浏览 Flatkey");
+    expect(html).not.toContain('href="/zh/models/gpt-image-2"');
+    expect(html).not.toContain('href="/zh/models/seedance-api"');
     expect(html).toContain('"url":"https://flatkey.ai/zh/models/sonilo-video-to-music"');
+  });
+
+  test("uses a local default cover when a catalog icon key is not a real CDN asset", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={SONILO_VIDEO_TO_MUSIC_CONFIG}
+        locale="zh"
+        liveModels={[{
+          model_name: "sonilo-video-to-music",
+          vendor_name: "Sonilo",
+          quota_type: 1,
+          model_ratio: 0,
+          model_price: 0.009,
+          completion_ratio: 0,
+          supported_endpoint_types: ["video-to-music"],
+        }]}
+        allModels={[
+          {
+            model_name: "sonilo-video-to-music",
+            vendor_name: "Sonilo",
+            quota_type: 1,
+            model_ratio: 0,
+            model_price: 0.009,
+            completion_ratio: 0,
+            supported_endpoint_types: ["video-to-music"],
+          },
+          {
+            model_name: "eleven_sound_v1",
+            vendor_name: "AI",
+            icon: "ai",
+            quota_type: 1,
+            model_ratio: 0,
+            model_price: 0.01,
+            completion_ratio: 0,
+            supported_endpoint_types: ["audio"],
+          },
+        ]}
+      />
+    );
+
+    const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
+    expect(relatedSection).toContain("ai-agent-poster.png");
+    expect(relatedSection).not.toContain("cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/ai.svg");
   });
 
   test("renders GPT-series related model internal links on GPT model pages", () => {
@@ -554,12 +312,57 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('href="/models/gpt-5-mini"');
     expect(html).toContain('href="/models/gpt-4o"');
     expect(html).toContain("120K");
-    const relatedSection = sectionHtml(html, "related", "readme");
-    expect(relatedSection).toContain('class="relative z-10 scroll-mt-[var(--fk-model-section-scroll-margin)] border-b border-slate-200 bg-[#f8fafc] px-6 py-10 dark:border-white/10 dark:bg-white/[0.02]"');
-    expect(relatedSection).toContain("%2Fassets%2Fmodel-pages%2Ftext-api-hero.png");
-    expect(relatedSection).toContain("line-clamp-2 text-xs leading-5 text-muted-foreground");
-    expect(relatedSection).not.toContain("bg-white/72");
-    expect(relatedSection).not.toContain("backdrop-blur-sm");
+    const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
+    expect(relatedSection).toContain('class="model-section related"');
+    expect(relatedSection).toContain('class="related-grid"');
+    expect(relatedSection).toContain("cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/openai.svg");
+    expect(relatedSection).not.toContain("related-card-top");
+  });
+
+  test("filters related models by modality and uses catalog CDN covers", () => {
+    const catalog: PricingModel[] = [
+      {
+        model_name: "seedance-2.5",
+        vendor_name: "ByteDance",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.14,
+        completion_ratio: 0,
+        supported_endpoint_types: ["video"],
+      },
+      {
+        model_name: "kling-2.1",
+        vendor_name: "Kuaishou",
+        icon: "https://cdn.example.test/models/kling-2.1.png",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.08,
+        completion_ratio: 0,
+        supported_endpoint_types: ["video"],
+      },
+      {
+        model_name: "gpt-5.5",
+        vendor_name: "OpenAI",
+        icon: "https://cdn.example.test/models/gpt-5.5.png",
+        quota_type: 0,
+        model_ratio: 0.5,
+        completion_ratio: 8,
+        supported_endpoint_types: ["openai"],
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={SEEDANCE_25_CONFIG}
+        locale="en"
+        liveModels={[catalog[0]]}
+        allModels={catalog}
+      />
+    );
+    const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
+
+    expect(relatedSection).toContain("kling-2.1");
+    expect(relatedSection).toContain("cdn.example.test");
+    expect(relatedSection).not.toContain("gpt-5.5");
   });
 
   test("renders breadcrumbs on text model landings", () => {
@@ -575,334 +378,175 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('"url":"https://flatkey.ai/models/gpt-api"');
     expect(html).not.toContain('id="workbench"');
   });
-});
 
-// Async video/audio models are submit-then-poll: the relay call returns a task
-// id in well under a second, and the clip is fetched later. The relay-side
-// avg_latency_ms therefore measures submit-ack time, not generation time.
-describe("Performance metrics for async media models", () => {
-  const identity = (key: string, vars?: Record<string, string>) =>
-    vars ? key.replace(/\{\{(\w+)\}\}/g, (_, name) => vars[name] ?? "") : key;
-
-  const peers = [
-    { model_name: "a", avg_latency_ms: 4000, avg_ttft_ms: 1000, success_rate: 99.9, avg_tps: 40 },
-    { model_name: "b", avg_latency_ms: 5000, avg_ttft_ms: 2000, success_rate: 99.8, avg_tps: 35 },
-    { model_name: "c", avg_latency_ms: 6000, avg_ttft_ms: 3000, success_rate: 99.7, avg_tps: 30 },
-    { model_name: "d", avg_latency_ms: 7000, avg_ttft_ms: 4000, success_rate: 99.6, avg_tps: 25 },
-  ];
-
-  test("labels async media latency as submit time, not generation time", () => {
-    const stats = buildPerformanceStats({
-      kind: "video",
-      successRate: undefined,
-      ttftMs: undefined,
-      latencyMs: 838,
-      throughput: undefined,
-      requests: 6,
-      peers,
-      t: identity,
-    });
-
-    const latencyStat = stats.find((stat) => stat.value === "838ms");
-    expect(latencyStat).toBeDefined();
-    expect(latencyStat!.label).toBe("Submit latency");
-    expect(latencyStat!.hint).toBe("Task accepted; generation continues asynchronously");
-    expect(stats.some((stat) => stat.label === "Generation time")).toBe(false);
-  });
-
-  test("does not rank async media submit latency against streaming model latency", () => {
-    const stats = buildPerformanceStats({
-      kind: "video",
-      successRate: undefined,
-      ttftMs: undefined,
-      latencyMs: 838,
-      throughput: undefined,
-      requests: 6,
-      peers,
-      t: identity,
-    });
-
-    const latencyStat = stats.find((stat) => stat.value === "838ms");
-    expect(latencyStat!.rank).toBeNull();
-  });
-
-  test("still ranks streaming model latency against peers", () => {
-    const stats = buildPerformanceStats({
-      kind: "text",
-      successRate: 99.9,
-      ttftMs: 500,
-      latencyMs: 3000,
-      throughput: 50,
-      requests: 1000,
-      peers,
-      t: identity,
-    });
-
-    const latencyStat = stats.find((stat) => stat.label === "Latency");
-    expect(latencyStat!.value).toBe("500ms");
-    expect(latencyStat!.rank).toBe(100);
-  });
-
-  test("hides the time-to-first-token footnote for async media models", () => {
-    expect(showsTimeToFirstTokenFootnote({ kind: "video", latencyMs: 838, ttftMs: undefined })).toBe(false);
-    expect(showsTimeToFirstTokenFootnote({ kind: "audio", latencyMs: 838, ttftMs: undefined })).toBe(false);
-  });
-
-  test("keeps the time-to-first-token footnote for streaming models that report both", () => {
-    expect(showsTimeToFirstTokenFootnote({ kind: "text", latencyMs: 3000, ttftMs: 500 })).toBe(true);
-  });
-
-  test("drops the footnote when a streaming model reports no time to first token", () => {
-    expect(showsTimeToFirstTokenFootnote({ kind: "text", latencyMs: 3000, ttftMs: undefined })).toBe(false);
-  });
-});
-
-// seedance-2.5 reports avg_latency_ms and request_count but success_rate 0, so
-// the uptime cell has no reading. It used to render formatHealthSuccessRate's
-// em dash at 28px mono in emerald, which on the page read as a stray green
-// line rather than as missing data.
-describe("Performance cells with no reading", () => {
-  const identity = (key: string) => key;
-
-  test("marks an unreported metric as unmeasured rather than as a value", () => {
-    const stats = buildPerformanceStats({
-      kind: "video",
-      successRate: undefined,
-      ttftMs: undefined,
-      latencyMs: 996,
-      throughput: undefined,
-      requests: 3,
-      peers: [],
-      t: identity,
-    });
-
-    const uptime = stats.find((stat) => stat.label === "Uptime");
-    expect(uptime!.value).toBe("—");
-    expect(isMeasuredStatValue(uptime!.value)).toBe(false);
-  });
-
-  test("treats real readings as measured", () => {
-    expect(isMeasuredStatValue("99.9%")).toBe(true);
-    expect(isMeasuredStatValue("838ms")).toBe(true);
-    expect(isMeasuredStatValue("23.2K")).toBe(true);
-  });
-
-  test("does not render the emerald 28px value style for an unreported uptime", () => {
+  test("renders shared text model sections without media-only blocks", () => {
     const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
+      <ModelLandingPage
+        config={DEEPSEEK_CONFIG}
+        locale="en"
+        liveModels={[]}
+        initialHealth={{
+          model: "deepseek-v4-flash",
+          trend: [{ ts: 1, success_rate: 99.25, avg_ttft_ms: 7619 }],
+          summary: {
+            model_name: "deepseek-v4-flash",
+            avg_latency_ms: 22419,
+            avg_ttft_ms: 7619,
+            success_rate: 99.25,
+            avg_tps: 71.32,
+            request_count: 189734,
+          },
+        }}
+      />
     );
 
-    // The dash-in-a-value-cell combination is what produced the green line.
-    expect(html).not.toContain('class="mt-3 font-mono text-[28px] leading-none font-bold text-emerald-600 dark:text-emerald-400">—<');
-  });
-});
+    expect(html).toContain('data-model-kind="text"');
+    expect(html).not.toContain('id="parameters"');
+    expect(html).toContain('id="performance"');
+    expect(html).toContain('class="eyebrow">Performance</p>');
+    expect(html).not.toContain("Live model health");
+    expect(html).toContain('id="activity"');
+    expect(html).toContain('class="eyebrow">Activity</p>');
+    expect(html).not.toContain('class="eyebrow">Usage</p>');
+    expect(html).toContain("99.25%");
+    expect(html).toContain("190K");
+    expect(html).toContain("7.62s");
+    expect(html).toContain('id="api"');
+    expect(html).not.toContain('id="workbench"');
+    expect(html).not.toContain("Prompt library");
+    expect(html).toContain("deepseek-v3.2");
+    expect(html).toContain("What changed from the previous generation");
+    expect(html).not.toContain("Pricing vs official");
 
-// Image generation pages take a prompt and reference images only; the size,
-// quality, format, background, and moderation selects were removed from the
-// on-page form. The console playground still exposes the full parameter set.
-describe("Image model workbench inputs", () => {
-  test("GPT-image-2 exposes no parameter selects on the page", () => {
-    expect(GPT_IMAGE_2_CONFIG.generator?.fields).toEqual([]);
+    const performance = html.slice(html.indexOf('id="performance"'), html.indexOf('id="activity"'));
+    expect((performance.match(/stroke="#EDEFF2"/g) ?? []).length).toBe(3);
+    expect(performance).toContain('fill="#6B38E6"');
   });
 
-  test("renders no size or quality controls on the image workbench", () => {
+  test("shows token input and output prices in the model hero", () => {
     const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
+    );
+
+    expect(html).toContain('class="model-stat-label">Input /M</div>');
+    expect(html).toContain('class="model-stat-label">Output /M</div>');
+    expect(html).toContain("$0.83");
+    expect(html).toContain("$1.25");
+    expect(html).not.toContain('id="pricing"');
+  });
+
+  test("keeps image model hero prices aligned with the model directory", () => {
+    const imageModel: PricingModel = {
+      model_name: "gpt-image-2",
+      vendor_name: "OpenAI",
+      quota_type: 0,
+      model_ratio: 2.5,
+      completion_ratio: 6,
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 5, plg: 4 },
+          output: { configured: 30, plg: 24 },
+          image: { configured: 8, plg: 6.4 },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[imageModel]} allModels={[imageModel]} />
+    );
+
+    expect(html).toContain("Input /M");
+    expect(html).toContain("$4");
+    expect(html).toContain("$24");
+    expect(html).not.toContain("$6.4 / image");
+  });
+
+  test("uses previous-generation capability comparison and type-specific media pricing", () => {
+    const imageHtml = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
-
-    expect(html).not.toContain("1536x1024");
-    expect(html).not.toContain(">Moderation<");
-    expect(html).not.toContain(">Output format<");
-  });
-
-  test("keeps the prompt and reference-image inputs", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    const videoHtml = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(html).toContain("Prompt");
-    expect(html).toContain("Reference media");
+    expect(imageHtml).toContain("GPT-image-1");
+    expect(imageHtml).not.toContain("Pricing vs official");
+    expect(imageHtml).toContain("$0.04 / image");
+    expect(imageHtml).toContain("$0.06 / image");
+    expect(videoHtml).toContain("$0.14 / second");
+    expect(videoHtml).not.toContain("$0.14 / request");
   });
 
-  test("keeps one representative example in the image workbench", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
-    );
-    const workbenchHtml = sectionHtml(html, "workbench", "performance");
-
-    expect(workbenchHtml).toContain('data-model-example-picker="true"');
-    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
-    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
-    expect(workbenchHtml).toContain("ecommerce and retail teams");
-    expect(workbenchHtml).toContain("ecommerce-skincare.png");
-  });
-
-  test("puts six industry prompt templates in the prompt library", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
-    );
-    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
-
-    expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(showcaseHtml).toContain("ecommerce and retail teams");
-    expect(showcaseHtml).toContain("fashion and sports retailers");
-    expect(showcaseHtml).toContain("hospitality and travel teams");
-    expect(showcaseHtml).toContain("SaaS and mobile-product teams");
-    expect(showcaseHtml).toContain("restaurants and beverage brands");
-    expect(showcaseHtml).toContain("ecommerce-skincare.png");
-    expect(showcaseHtml).toContain("sports-shoe.png");
-    expect(showcaseHtml).not.toContain("ugc-coffee-ad.png");
-    expect(showcaseHtml).not.toContain("flatkey-image2-creator.png");
-    expect(showcaseHtml).not.toContain("portrait.png");
-    expect(showcaseHtml).not.toContain("fitness-app.png");
-    expect(showcaseHtml).not.toContain("Scale and depth");
-    expect(showcaseHtml).not.toContain("cinematic sci-fi realism");
-  });
-
-  test("keeps industry poster selections model-specific without mixing industries", () => {
-    const gptHtml = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
-    );
-    const geminiConfig = getModelLandingConfigForPricingModel({
-      model_name: "gemini-3-pro-image",
+  test("keeps request-priced media pages aligned with the model directory", () => {
+    const veoModel: PricingModel = {
+      model_name: "veo-3.1-generate-preview",
       vendor_name: "Google",
       quota_type: 1,
       model_ratio: 0,
-      model_price: 0.04,
       completion_ratio: 0,
-      supported_endpoint_types: ["image-generation"],
-    });
-    const geminiHtml = renderToStaticMarkup(<ModelLandingPage config={geminiConfig} locale="en" liveModels={[]} />);
-    const gptShowcase = sectionHtml(gptHtml, "showcase", "why-flatkey");
-    const geminiShowcase = sectionHtml(geminiHtml, "showcase", "why-flatkey");
-
-    expect((geminiShowcase.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((geminiShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(geminiShowcase).toContain("template:gemini-3-pro-image:product-hero");
-    expect(geminiShowcase).not.toContain("gpt-image-2-l1");
-    expect(gptShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)).not.toEqual(
-      geminiShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)
-    );
-    expect(gptShowcase).not.toContain("developer.png");
-    expect(geminiShowcase).not.toContain("developer.png");
-    expect(gptShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
-    expect(geminiShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
-  });
-
-  test("renders the canonical Gemini 2.5 image page as an image generator", () => {
-    const config = getModelLandingConfigForPricingModel({
-      model_name: "gemini-2.5-flash-image",
-      vendor_name: "Google",
-      quota_type: 1,
-      model_ratio: 0,
-      model_price: 0.04,
-      completion_ratio: 0,
-      supported_endpoint_types: ["gemini", "openai"],
-    });
-    const html = renderToStaticMarkup(<ModelLandingPage config={config} locale="en" liveModels={[]} />);
-    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
-
-    expect(config.generator?.kind).toBe("image");
-    expect((showcaseHtml.match(/data-image-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(showcaseHtml).toContain("template:gemini-2-5-flash-image:product-hero");
-    expect(showcaseHtml).toContain("restaurants and beverage brands");
-  });
-
-  test("gives newly discovered image model ids a prompt library and one workbench example", () => {
-    const config = getModelLandingConfigForPricingModel({
-      model_name: "qwen-image-2512",
-      vendor_name: "Alibaba Qwen",
-      quota_type: 1,
-      model_price: 0.04,
-      supported_endpoint_types: [],
-    });
-    expect(config.generator?.kind).toBe("image");
-
-    const html = renderToStaticMarkup(<ModelLandingPage config={config} locale="en" liveModels={[]} />);
-    const workbenchHtml = sectionHtml(html, "workbench", "performance");
-    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
-    expect(workbenchHtml).toContain('data-model-example-picker="true"');
-    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
-    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-  });
-
-  test("keeps fallback image pages visually distinct until generated media is staged", () => {
-    const makeConfig = (model_name: string) =>
-      getModelLandingConfigForPricingModel({
-        model_name,
-        vendor_name: "Test vendor",
-        quota_type: 1,
-        model_ratio: 0,
-        model_price: 0.04,
-        completion_ratio: 0,
-        supported_endpoint_types: [],
-      });
-    const qwenHtml = renderToStaticMarkup(<ModelLandingPage config={makeConfig("qwen-image-2512")} locale="en" liveModels={[]} />);
-    const fluxHtml = renderToStaticMarkup(<ModelLandingPage config={makeConfig("flux-image-1")} locale="en" liveModels={[]} />);
-    const qwenShowcase = sectionHtml(qwenHtml, "showcase", "why-flatkey");
-    const fluxShowcase = sectionHtml(fluxHtml, "showcase", "why-flatkey");
-
-    expect((qwenShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect((fluxShowcase.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect(qwenShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)).not.toEqual(
-      fluxShowcase.match(/(?:\/assets\/[^"']+\.(?:png|jpg)|\/use-case\/image-buddy\/[^"']+\.jpg)/g)
-    );
-    expect(qwenShowcase).not.toContain("cinematic sci-fi realism");
-    expect(fluxShowcase).not.toContain("cinematic sci-fi realism");
-    expect(qwenShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
-    expect(fluxShowcase).not.toMatch(/flatkey-image2-creator|cyber-portrait|ugc-coffee-ad|fitness-app|streetwear-lookbook/i);
-  });
-});
-
-describe("Video model prompt library", () => {
-  test("keeps one playground example and six non-human industry templates", () => {
+      model_price: 0.4,
+      supported_endpoint_types: ["video"],
+      display_pricing: {
+        billing_kind: "request",
+        prices: { request: { configured: 0.4, plg: 0.32 } },
+      },
+    };
+    const config = getModelLandingConfigForPricingModel(veoModel);
     const html = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
+      <ModelLandingPage config={config} locale="en" liveModels={[veoModel]} allModels={[veoModel]} />
     );
-    const workbenchHtml = sectionHtml(html, "workbench", "performance");
-    const showcaseHtml = sectionHtml(html, "showcase", "why-flatkey");
 
-    expect((workbenchHtml.match(/data-active-example="true"/g) ?? []).length).toBe(1);
-    expect((workbenchHtml.match(/data-prompt-template="true"/g) ?? []).length).toBe(1);
-    expect(workbenchHtml).toContain('data-model-output-video="true"');
-    expect(workbenchHtml).toContain("model-media/sample/seedance-2-0-w1.mp4");
-    expect(workbenchHtml).toContain("product launch clip");
-    expect(workbenchHtml).toContain("campaign-hero.png");
-
-    expect((showcaseHtml.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((showcaseHtml.match(/data-prompt-template-card="true"/g) ?? []).length).toBe(6);
-    expect((showcaseHtml.match(/<video\b/g) ?? []).length).toBe(6);
-    expect(showcaseHtml).toContain("ecommerce and consumer-brand teams");
-    expect(showcaseHtml).toContain("restaurant, beverage, and packaged-food teams");
-    expect(showcaseHtml).toContain("hotel, resort, and real-estate marketing teams");
-    expect(showcaseHtml).toContain("automotive and mobility teams");
-    expect(showcaseHtml).toContain("SaaS and product teams");
-    expect(showcaseHtml).toContain("architecture, urban-design, and film-previs teams");
-    expect(showcaseHtml).not.toContain("v1.1");
-    expect(showcaseHtml).not.toContain("fashion-walk");
-    expect(showcaseHtml).not.toContain("ugc-ad-clips");
-    expect(showcaseHtml).not.toContain("Each clip is a real generation");
+    expect(html).toContain("$0.32 / request");
+    expect(html).toContain("$0.4 / request");
+    expect(html).not.toContain("$0.32 / second");
   });
 
-  test("uses a distinct six-video set for another video model", () => {
-    const seedanceHtml = renderToStaticMarkup(
-      <ModelLandingPage config={SEEDANCE_CONFIG} locale="en" liveModels={[]} />
+  test("renders media-only prompt libraries for image and video models", () => {
+    const imageHtml = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
     );
-    const minimaxHtml = renderToStaticMarkup(
-      <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="en" liveModels={[]} />
+    const videoHtml = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
     );
-    const seedanceShowcase = sectionHtml(seedanceHtml, "showcase", "why-flatkey");
-    const minimaxShowcase = sectionHtml(minimaxHtml, "showcase", "why-flatkey");
 
-    expect((minimaxShowcase.match(/data-video-model-example-card="true"/g) ?? []).length).toBe(6);
-    expect((minimaxShowcase.match(/<video\b/g) ?? []).length).toBe(6);
-    expect(seedanceShowcase.match(/\/assets\/[^"']+\.png/g)).not.toEqual(
-      minimaxShowcase.match(/\/assets\/[^"']+\.png/g)
+    expect(imageHtml).toContain('data-model-kind="image"');
+    expect(imageHtml).toContain('id="prompt-library"');
+    expect(imageHtml).toContain("Prompt library");
+    expect(imageHtml).toContain("Reference Images");
+    expect(imageHtml).toContain("/v1/images/generations");
+    expect(imageHtml).toContain('type="number" min="1" max="10"');
+    expect(imageHtml).toContain('class="h-9 w-full min-w-0 appearance-none');
+    expect(imageHtml).toContain("resize-y");
+    expect(videoHtml).toContain('data-model-kind="video"');
+    expect(videoHtml).toContain('id="prompt-library"');
+    expect(videoHtml).toContain("Prompt library");
+    expect(videoHtml).toContain("/v1/videos");
+    expect(videoHtml).toContain('class="preview-media"');
+    expect(videoHtml).toContain("/assets/cli/product-reveal.mp4");
+    expect(videoHtml).toContain("/assets/cli/ugc-ad-clips.mp4");
+    expect(videoHtml).toContain("/assets/cli/localized-variants.mp4");
+    expect(videoHtml).toContain("/assets/cli/product-reveal.mp4");
+    expect(videoHtml).toContain("campaign-hero.png");
+    expect(videoHtml).toContain("storyboard-motion.png");
+    expect(videoHtml).toContain("thumbnail-test-set.png");
+    expect(videoHtml).not.toContain("prompt-high-speed-action");
+    expect(videoHtml).not.toContain("formula car at speed");
+    expect(videoHtml).not.toContain("upload-example");
+    expect(videoHtml).toContain("Upload or drag and drop");
+    expect(videoHtml).toContain("0 / 30");
+    expect(videoHtml).toContain("0 / 10");
+  });
+
+  test("keeps the audio playground without a prompt library", () => {
+    const audioHtml = renderToStaticMarkup(
+      <ModelLandingPage config={SONILO_VIDEO_TO_MUSIC_CONFIG} locale="en" liveModels={[]} />
     );
-    expect(minimaxShowcase).not.toContain("fashion-walk");
-    expect(minimaxShowcase).not.toContain("v1.3");
+
+    expect(audioHtml).toContain('data-model-kind="audio"');
+    expect(audioHtml).toContain('id="workbench"');
+    expect(audioHtml).toContain('href="#workbench"');
+    expect(audioHtml).toContain("Playground");
+    expect(audioHtml).not.toContain('id="prompt-library"');
+    expect(audioHtml).not.toContain("Prompt library");
   });
 });

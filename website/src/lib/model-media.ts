@@ -1,5 +1,3 @@
-import type { ModelLandingKey } from "./model-landing";
-
 /**
  * Per-model media for the landing pages.
  *
@@ -25,7 +23,7 @@ export type ModelMediaSample = {
   slug: string;
   kind: "image" | "video";
   /** Caption for the sample, translated through the model-landing copy maps. */
-  label: ModelLandingKey;
+  label: string;
   /** The prompt that produced this exact asset. */
   prompt: string;
 };
@@ -430,22 +428,22 @@ export function getModelMedia(modelId: string): ModelMedia | null {
   const shared: ModelMedia = isVideo
     ? {
         coverSlug: "seedance-2-0",
-        workbench: [{ slug: "seedance-2-0-w1", kind: "video" as const, label: "Walker crossing" as ModelLandingKey, prompt: "A survey walker crossing a violet salt flat at dusk, twin moons low on the horizon, dust curling off each footfall, slow tracking shot from the side, cinematic sci-fi realism." }],
+        workbench: [{ slug: "seedance-2-0-w1", kind: "video" as const, label: "Walker crossing", prompt: "A survey walker crossing a violet salt flat at dusk, twin moons low on the horizon, dust curling off each footfall, slow tracking shot from the side, cinematic sci-fi realism." }],
         library: [
-          { slug: "seedance-2-0-l1", kind: "video" as const, label: "Wide landscape motion" as ModelLandingKey, prompt: "A survey walker crossing a violet salt flat at dusk, twin moons low on the horizon, dust curling off each footfall, indigo and amber palette, cinematic sci-fi realism." },
-          { slug: "seedance-2-0-l2", kind: "video" as const, label: "Night crossing" as ModelLandingKey, prompt: "A survey walker moving across a dark salt flat at night, its running lights the only illumination, stars dense overhead, slow lateral tracking, cinematic sci-fi realism." },
-          { slug: "seedance-2-0-l3", kind: "video" as const, label: "Storm approach" as ModelLandingKey, prompt: "A survey walker halting as a dust wall approaches across a salt flat, light going brown, camera holding wide, cinematic sci-fi realism." },
-          { slug: "seedance-2-0-l4", kind: "video" as const, label: "Reflection crossing" as ModelLandingKey, prompt: "A survey walker crossing a thin layer of standing water on a salt flat, its shape mirrored below, twin moons reflected, cinematic sci-fi realism." },
+          { slug: "seedance-2-0-l1", kind: "video" as const, label: "Wide landscape motion", prompt: "A survey walker crossing a violet salt flat at dusk, twin moons low on the horizon, dust curling off each footfall, indigo and amber palette, cinematic sci-fi realism." },
+          { slug: "seedance-2-0-l2", kind: "video" as const, label: "Night crossing", prompt: "A survey walker moving across a dark salt flat at night, its running lights the only illumination, stars dense overhead, slow lateral tracking, cinematic sci-fi realism." },
+          { slug: "seedance-2-0-l3", kind: "video" as const, label: "Storm approach", prompt: "A survey walker halting as a dust wall approaches across a salt flat, light going brown, camera holding wide, cinematic sci-fi realism." },
+          { slug: "seedance-2-0-l4", kind: "video" as const, label: "Reflection crossing", prompt: "A survey walker crossing a thin layer of standing water on a salt flat, its shape mirrored below, twin moons reflected, cinematic sci-fi realism." },
         ],
       }
     : {
         coverSlug: "gpt-image-2",
-        workbench: [{ slug: "gpt-image-2-w1", kind: "image" as const, label: "Archive hall" as ModelLandingKey, prompt: "A vast archive hall of glowing data monoliths receding into darkness, teal light spilling from seams in each slab, polished floor reflections, volumetric haze, cinematic sci-fi realism." }],
+        workbench: [{ slug: "gpt-image-2-w1", kind: "image" as const, label: "Archive hall", prompt: "A vast archive hall of glowing data monoliths receding into darkness, teal light spilling from seams in each slab, polished floor reflections, volumetric haze, cinematic sci-fi realism." }],
         library: [
-          { slug: "gpt-image-2-l1", kind: "image" as const, label: "Scale and depth" as ModelLandingKey, prompt: "A vast archive hall of glowing data monoliths receding into darkness, teal light spilling from seams in each slab, a single figure walking between them for scale, polished floor reflections, volumetric haze, cinematic sci-fi realism." },
-          { slug: "gpt-image-2-l2", kind: "image" as const, label: "Reflected light" as ModelLandingKey, prompt: "A flooded server floor after a coolant leak, monoliths mirrored in still water, teal glow doubled in the reflection, silent and abandoned, cinematic sci-fi realism." },
-          { slug: "gpt-image-2-l3", kind: "image" as const, label: "Close detail" as ModelLandingKey, prompt: "Macro view of a data monolith's surface, etched circuitry glowing teal beneath frosted glass, condensation beading along the seam, shallow depth of field, cinematic sci-fi realism." },
-          { slug: "gpt-image-2-l4", kind: "image" as const, label: "Overhead geometry" as ModelLandingKey, prompt: "Overhead view down a data vault's central aisle, monoliths in strict rows forming a receding grid, one lit differently from the rest, teal palette, cinematic sci-fi realism." },
+          { slug: "gpt-image-2-l1", kind: "image" as const, label: "Scale and depth", prompt: "A vast archive hall of glowing data monoliths receding into darkness, teal light spilling from seams in each slab, a single figure walking between them for scale, polished floor reflections, volumetric haze, cinematic sci-fi realism." },
+          { slug: "gpt-image-2-l2", kind: "image" as const, label: "Reflected light", prompt: "A flooded server floor after a coolant leak, monoliths mirrored in still water, teal glow doubled in the reflection, silent and abandoned, cinematic sci-fi realism." },
+          { slug: "gpt-image-2-l3", kind: "image" as const, label: "Close detail", prompt: "Macro view of a data monolith's surface, etched circuitry glowing teal beneath frosted glass, condensation beading along the seam, shallow depth of field, cinematic sci-fi realism." },
+          { slug: "gpt-image-2-l4", kind: "image" as const, label: "Overhead geometry", prompt: "Overhead view down a data vault's central aisle, monoliths in strict rows forming a receding grid, one lit differently from the rest, teal palette, cinematic sci-fi realism." },
         ],
       };
   return normalizeModelMedia(shared);

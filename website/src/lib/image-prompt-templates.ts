@@ -1,5 +1,3 @@
-import type { ModelLandingKey } from "./model-landing";
-
 /**
  * A prompt that can be copied into any image model's request editor.
  *
@@ -10,7 +8,7 @@ import type { ModelLandingKey } from "./model-landing";
  */
 export type ImagePromptTemplate = {
   id: string;
-  label: ModelLandingKey;
+  label: string;
   prompt: string;
   ratio: string;
   poster: string;

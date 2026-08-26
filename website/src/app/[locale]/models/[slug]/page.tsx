@@ -5,14 +5,12 @@ import {
   getModelLandingConfig,
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
-  enrichPricingModelsForLanding,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
-import { fetchModelUsage } from "@/lib/model-usage";
 import { fetchRankingsData } from "@/lib/rankings-live";
-import { modelCoverImage } from "@/lib/model-media";
+import { fetchModelHealthData } from "@/lib/model-health-server";
 import { buildMetadata } from "@/lib/seo";
 import { getSkagLandingMetadataInput } from "@/lib/skag-landing";
 
@@ -37,14 +35,10 @@ export async function generateMetadata(props: Props) {
   }
   const config = getModelLandingConfig(params.slug);
   if (config) {
-    const isBrazilianSeedance = params.locale === "pt" && config.slug === "seedance-2-5";
     return buildMetadata({
-      title: isBrazilianSeedance ? "Seedance 2.5: Gerador de Vídeo com IA e API | Flatkey" : config.seo.title,
-      description: isBrazilianSeedance
-        ? "Use o Seedance 2.5 da ByteDance como gerador de vídeo com IA ou por uma API compatível com OpenAI. Crie vídeos a partir de texto e imagens, use áudio nativo e teste seus prompts na Flatkey."
-        : config.seo.description,
+      title: config.seo.title,
+      description: config.seo.description,
       pathname: `/models/${config.slug}`,
-      image: modelCoverImage(config.modelId),
       locale: params.locale,
     });
   }
@@ -60,7 +54,6 @@ export async function generateMetadata(props: Props) {
     title: modelSpecificConfig.seo.title,
     description: modelSpecificConfig.seo.description,
     pathname: modelPublicPath(model.model_name),
-    image: modelCoverImage(model.model_name),
     locale: params.locale,
   });
 }
@@ -72,30 +65,25 @@ export default async function Page(props: Props) {
   if (params.slug === "claude-api") redirect(localizePath("/claude-api", params.locale));
 
   const config = getModelLandingConfig(params.slug);
-  const [pricing, rankings] = await Promise.all([
-    getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
-    fetchRankingsData(),
-  ]);
-  // Keyed, server-only: WEBSITE_METRICS_KEY must not reach the browser, so the
-  // series is resolved here and passed down as a prop.
-  const usage = await fetchModelUsage(config?.modelId ?? params.slug);
-  const models = enrichPricingModelsForLanding(
-    pricing.models,
-    pricing.vendors,
-    pricing.groupRatio,
-    pricing.groupModelRatio
-  );
+  const [pricing, rankings] = await Promise.all([getPricingData(WEBSITE_PUBLIC_PRICING_GROUP), fetchRankingsData()]);
+  const models = pricing.models.map((model) => ({
+    ...model,
+    vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
+  }));
 
   if (config) {
+    const resolvedModels = resolveModelLandingModels(config, models);
+    const initialHealth = await fetchModelHealthData(resolvedModels[0]?.model_name ?? config.modelId);
     return (
       <ModelLandingPage
         config={config}
         locale={params.locale}
-        liveModels={resolveModelLandingModels(config, models)}
+        liveModels={resolvedModels}
         allModels={models}
         groupRatio={pricing.groupRatio}
+        groupModelRatio={pricing.groupModelRatio}
         rankings={rankings}
-        usage={usage}
+        initialHealth={initialHealth}
       />
     );
   }
@@ -108,15 +96,17 @@ export default async function Page(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
+  const initialHealth = await fetchModelHealthData(modelWithVendor.model_name);
   return (
     <ModelLandingPage
       config={modelSpecificConfig}
       locale={params.locale}
       liveModels={resolveModelLandingModels(modelSpecificConfig, [modelWithVendor])}
-      allModels={models}
-      groupRatio={pricing.groupRatio}
-      rankings={rankings}
-      usage={usage}
-    />
+    allModels={models}
+    groupRatio={pricing.groupRatio}
+    groupModelRatio={pricing.groupModelRatio}
+    rankings={rankings}
+    initialHealth={initialHealth}
+  />
   );
 }

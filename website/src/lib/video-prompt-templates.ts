@@ -1,5 +1,3 @@
-import type { ModelLandingKey } from "./model-landing";
-
 /**
  * Industry briefs for the video prompt library.
  *
@@ -11,7 +9,7 @@ import type { ModelLandingKey } from "./model-landing";
  */
 export type VideoPromptTemplate = {
   id: string;
-  label: ModelLandingKey;
+  label: string;
   prompt: string;
   ratio: string;
   duration: number;

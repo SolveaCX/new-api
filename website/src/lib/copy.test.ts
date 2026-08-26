@@ -16,9 +16,7 @@ describe("homepage copy", () => {
       expect(home.howItWorks.steps).toHaveLength(3);
       expect(home.stats.items).toHaveLength(4);
 
-      if (locale !== "en" && locale !== "id") {
-        // `id` is a staged locale: homepage + market landings are translated,
-        // other surfaces fall back to English until translated.
+      if (locale !== "en") {
         expect(home.hero.badge).not.toBe(english.hero.badge);
         expect(home.features.items[0]?.title).not.toBe(english.features.items[0]?.title);
       }
@@ -83,5 +81,15 @@ describe("documentation copy", () => {
     for (const locale of LOCALES) {
       expect(getCopy(locale).nav.docs).toBeTruthy();
     }
+  });
+
+  test("keeps Indonesian shared navigation and footer copy localized", () => {
+    const indonesian = getCopy("id");
+    expect(indonesian.nav.modelPricing).toBe("Model");
+    expect(indonesian.nav.docs).toBe("Dokumentasi");
+    expect(indonesian.nav.signIn).toBe("Masuk");
+    expect(indonesian.footer.tagline).toBe("Aman, andal, terjangkau");
+    expect(indonesian.nav.modelPricing).not.toBe(getCopy("en").nav.modelPricing);
+    expect(indonesian.nav.docs).not.toBe(getCopy("en").nav.docs);
   });
 });

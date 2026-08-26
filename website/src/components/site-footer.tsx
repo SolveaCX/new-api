@@ -59,7 +59,7 @@ const footerLabels = withIdFallback({
     socials: "Redes",
     tools: "Herramientas",
     playground: "Playground",
-    compute: "Compute",
+    compute: "Computación",
     usecases: "Casos de uso",
     status: "Estado de API",
     careers: "Carreras",
@@ -75,7 +75,7 @@ const footerLabels = withIdFallback({
     socials: "Réseaux",
     tools: "Outils",
     playground: "Playground",
-    compute: "Compute",
+    compute: "Calcul",
     usecases: "Cas d'usage",
     status: "Statut API",
     careers: "Carrières",
@@ -91,7 +91,7 @@ const footerLabels = withIdFallback({
     socials: "Redes",
     tools: "Ferramentas",
     playground: "Playground",
-    compute: "Compute",
+    compute: "Computação",
     usecases: "Casos de uso",
     status: "Status da API",
     careers: "Carreiras",
@@ -107,7 +107,7 @@ const footerLabels = withIdFallback({
     socials: "Соцсети",
     tools: "Инструменты",
     playground: "Playground",
-    compute: "Compute",
+    compute: "Вычисления",
     usecases: "Сценарии",
     status: "Статус API",
     careers: "Вакансии",
@@ -123,7 +123,7 @@ const footerLabels = withIdFallback({
     socials: "ソーシャル",
     tools: "ツール",
     playground: "Playground",
-    compute: "Compute",
+    compute: "コンピュート",
     usecases: "ユースケース",
     status: "API ステータス",
     careers: "採用情報",
@@ -137,10 +137,10 @@ const footerLabels = withIdFallback({
     developers: "Nhà phát triển",
     company: "Công ty",
     socials: "Mạng xã hội",
-    tools: "Tools",
+    tools: "Công cụ",
     playground: "Playground",
-    compute: "Compute",
-    usecases: "Use cases",
+    compute: "Tính toán",
+    usecases: "Trường hợp sử dụng",
     status: "Trạng thái API",
     careers: "Tuyển dụng",
     about: "Giới thiệu",
@@ -153,9 +153,9 @@ const footerLabels = withIdFallback({
     developers: "Entwickler",
     company: "Unternehmen",
     socials: "Socials",
-    tools: "Tools",
+    tools: "Werkzeuge",
     playground: "Playground",
-    compute: "Compute",
+    compute: "Rechenleistung",
     usecases: "Anwendungsfälle",
     status: "API-Status",
     careers: "Karriere",
@@ -163,6 +163,22 @@ const footerLabels = withIdFallback({
     contact: "Kontakt",
     trusted: "VERTRAUEN & VERIFIZIERUNG",
     zeroRetention: "Keine Speicherung von Anfrageinhalten",
+  },
+  id: {
+    product: "Produk",
+    developers: "Developer",
+    company: "Perusahaan",
+    socials: "Sosial",
+    tools: "Alat",
+    playground: "Playground",
+    compute: "Komputasi",
+    usecases: "Kasus penggunaan",
+    status: "Status API",
+    careers: "Karier",
+    about: "Tentang kami",
+    contact: "Hubungi kami",
+    trusted: "DIPERCAYA & TERVERIFIKASI OLEH",
+    zeroRetention: "Tidak menyimpan isi permintaan",
   },
 });
 
@@ -243,7 +259,7 @@ export function SiteFooter(props: SiteFooterProps) {
       <div className="fk-site-frame grid grid-cols-1 gap-8 pt-12 pb-2 sm:grid-cols-2 md:pt-14 lg:grid-cols-[2fr_repeat(4,1fr)] lg:gap-10">
         <div className="sm:col-span-2 lg:col-span-1">
           <Link href={localizePath("/", props.locale)} className="inline-flex items-center">
-            <FlatkeyBrandLogo className="fk-site-footer-logo" />
+            <FlatkeyBrandLogo className="[&_[data-flatkey-wordmark='true']]:text-[30px] [&_img]:h-11 [&_img]:w-11" />
             <span className="sr-only">flatkey.ai</span>
           </Link>
           <p className="mt-3 max-w-[300px] text-sm leading-7 text-[#43434C]">{copy.tagline}</p>
