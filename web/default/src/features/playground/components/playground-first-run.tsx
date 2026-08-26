@@ -100,7 +100,7 @@ export function FirstRunWelcome({
   }, [])
   return (
     <div className='mx-auto w-full max-w-4xl px-4 pt-6'>
-      <div className='rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 dark:border-violet-900/40 dark:from-violet-950/30 dark:to-transparent'>
+      <div className='rounded-xl border border-violet-200 bg-white p-5 text-slate-900 shadow-sm dark:border-violet-300/25 dark:bg-violet-950/40 dark:text-violet-50'>
         <div className='flex items-start gap-3'>
           <span className='mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white'>
             <Sparkles className='size-4' />
@@ -116,7 +116,7 @@ export function FirstRunWelcome({
               type='button'
               disabled={disabled}
               onClick={() => onPickExample(t(text), model)}
-              className='rounded-full border border-violet-200 bg-white px-3 py-1.5 text-sm text-violet-700 transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-900/40 dark:bg-transparent dark:text-violet-300 dark:hover:bg-violet-950/30'
+              className='rounded-full border border-violet-200 bg-white px-3 py-1.5 text-sm text-slate-900 transition-colors hover:bg-violet-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-300/30 dark:bg-violet-900/45 dark:text-violet-50 dark:hover:bg-violet-800/60 dark:hover:text-white'
             >
               {t(text)}
             </button>

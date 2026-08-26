@@ -113,7 +113,7 @@ export function PlaygroundParameters(props: PlaygroundParametersProps) {
       <PopoverTrigger
         render={
           <PromptInputButton
-            className='border font-medium'
+            className='border-border bg-white font-medium text-slate-900 hover:bg-violet-50 hover:text-slate-950 dark:border-violet-300/25 dark:bg-violet-900/35 dark:text-violet-50 dark:hover:bg-violet-800/55 dark:hover:text-white'
             disabled={props.disabled}
             variant='outline'
           />
