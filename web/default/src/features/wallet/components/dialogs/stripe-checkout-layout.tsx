@@ -162,7 +162,7 @@ export function StripeCheckoutLayout({
               {viewModel?.productName ?? 'Flatkey'}
             </p>
             <p className='text-[44px] leading-[0.98] font-extrabold tracking-tight break-words text-[#2a2e33] sm:text-[56px]'>
-              {viewModel?.primaryAmount ?? '—'}
+              {viewModel?.totalAmount ?? '—'}
             </p>
             <p className='mt-3 text-base font-medium text-[#646a73] sm:text-xl'>
               {viewModel?.productDescription || description}
