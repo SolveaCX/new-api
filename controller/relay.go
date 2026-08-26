@@ -382,6 +382,13 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
+		// 重试耗尽可选档位时本请求往往已带着真实的上游失败（如 429/5xx）。
+		// 必须把它原样还给客户端：换成合成 500 会让下游(LiteLLM 等)把限流
+		// 误判为服务器故障，退避/降级策略全部失灵。
+		if info != nil && info.LastError != nil {
+			// NewError 对深层 *NewAPIError 原样保留(含状态码)，仅追加 skipRetry。
+			return nil, types.NewError(info.LastError, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
