@@ -226,6 +226,7 @@ export type ModelSettings = {
 }
 
 export type BillingSettings = {
+  FlatkeyCostCalculation: string
   QuotaForNewUser: number
   PreConsumedQuota: number
   QuotaForInviter: number
