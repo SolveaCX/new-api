@@ -32,6 +32,9 @@ const SAFE_IMAGE_DATA_URL_PATTERN =
 
 const SAFE_VIDEO_DATA_URL_PATTERN =
   /^data:video\/mp4;base64,[a-z0-9+/\r\n]+={0,2}$/i
+const SAFE_AUDIO_DATA_URL_PATTERN =
+  /^data:audio\/(?:mpeg|mp3|wav|x-wav);base64,[a-z0-9+/\r\n]+={0,2}$/i
+const SAFE_FILE_URL_PATTERN = /^https?:\/\/[^\s\\]+$/i
 
 const TRUSTED_ATTACHMENT_URLS = new WeakSet<PlaygroundAttachment>()
 
@@ -70,6 +73,54 @@ export function isSafeAttachmentURL(
     )
   } catch {
     return false
+  }
+}
+
+function isSafeFileURL(
+  value: unknown,
+  attachment?: PlaygroundAttachment
+): value is string {
+  if (typeof value !== 'string') return false
+  const url = value.trim()
+  if (!url) return false
+  if (!SAFE_FILE_URL_PATTERN.test(url)) return false
+  if (!attachment || !isTrustedAttachmentURL(attachment)) return false
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' &&
+      !!parsed.hostname &&
+      !parsed.username &&
+      !parsed.password
+    )
+  } catch {
+    return false
+  }
+}
+
+function audioMimeToFormat(mediaType: string): string | undefined {
+  const normalized = mediaType.trim().toLowerCase()
+  if (normalized === 'audio/mpeg' || normalized === 'audio/mp3') return 'mp3'
+  if (normalized === 'audio/wav' || normalized === 'audio/x-wav') return 'wav'
+  return undefined
+}
+
+function extractAudioBase64(value: string):
+  | {
+      data: string
+      format: string
+    }
+  | undefined {
+  if (!SAFE_AUDIO_DATA_URL_PATTERN.test(value.trim())) return undefined
+  const match = /^data:audio\/([a-z0-9.+-]+);base64,([a-z0-9+/=\r\n]*)$/i.exec(
+    value.trim()
+  )
+  if (!match) return undefined
+  const format = audioMimeToFormat(`audio/${match[1]}`)
+  if (!format) return undefined
+  return {
+    data: match[2].replace(/[\r\n]/g, ''),
+    format,
   }
 }
 
@@ -235,6 +286,33 @@ export function buildMessageContent(
             video_url: { url: attachment.url.trim() },
           },
         ]
+      }
+      if (
+        attachment.kind === 'document' &&
+        isSafeFileURL(attachment.url, attachment)
+      ) {
+        return [
+          {
+            type: 'file' as const,
+            file: {
+              filename: attachment.filename,
+              file_url: attachment.url.trim(),
+            },
+          },
+        ]
+      }
+      if (attachment.kind === 'audio') {
+        const inlineAudio = extractAudioBase64(
+          attachment.dataUrl || attachment.url || ''
+        )
+        if (inlineAudio) {
+          return [
+            {
+              type: 'input_audio' as const,
+              input_audio: inlineAudio,
+            },
+          ]
+        }
       }
       if (attachment.kind === 'text' && attachment.text?.trim()) {
         return [

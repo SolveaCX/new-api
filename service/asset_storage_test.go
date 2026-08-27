@@ -30,6 +30,7 @@ func TestAssetStorageConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("ASSET_IMAGE_MAX_BYTES", "17")
 	t.Setenv("ASSET_VIDEO_MAX_BYTES", "18")
 	t.Setenv("ASSET_AUDIO_MAX_BYTES", "19")
+	t.Setenv("ASSET_DOCUMENT_MAX_BYTES", "21")
 	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "20")
 	t.Setenv("ASSET_KEY_PREFIX", "custom-prefix")
 	cfg = CurrentAssetStorageConfig()
@@ -39,12 +40,18 @@ func TestAssetStorageConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, int64(17), cfg.TypeLimits["Image"])
 	require.Equal(t, int64(18), cfg.TypeLimits["Video"])
 	require.Equal(t, int64(19), cfg.TypeLimits["Audio"])
+	require.Equal(t, int64(21), cfg.TypeLimits["Document"])
 	require.Equal(t, int64(20), cfg.MultipartMaxBytes)
 	require.Equal(t, "custom-prefix", cfg.KeyPrefix)
 
 	t.Setenv("ASSET_SIGNED_URL_TTL_SECONDS", "7200")
 	cfg = CurrentAssetStorageConfig()
 	require.Equal(t, time.Hour, cfg.SignedURLTTL, "asset signed URL TTL must be clamped to the one hour GCS V4 upload window")
+
+	require.Equal(t, int64(17), cfg.TypeLimits["Image"])
+	require.Equal(t, int64(18), cfg.TypeLimits["Video"])
+	require.Equal(t, int64(19), cfg.TypeLimits["Audio"])
+	require.Equal(t, int64(21), cfg.TypeLimits["Document"])
 }
 
 func TestAssetStorageConfigClampsFetchTimeout(t *testing.T) {

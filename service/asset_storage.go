@@ -30,6 +30,7 @@ const (
 	defaultAssetImageMaxBytes        = int64(20 << 20)
 	defaultAssetVideoMaxBytes        = int64(500 << 20)
 	defaultAssetAudioMaxBytes        = int64(100 << 20)
+	defaultAssetDocumentMaxBytes     = int64(100 << 20)
 	assetUploadGenerationMatchHeader = "x-goog-if-generation-match"
 )
 
@@ -109,9 +110,10 @@ func CurrentAssetStorageConfig() AssetStorageConfig {
 		FetchTimeout:        fetchTimeout,
 		MultipartMaxBytes:   int64(multipartMax),
 		TypeLimits: map[string]int64{
-			"Image": getPositiveEnvInt64("ASSET_IMAGE_MAX_BYTES", defaultAssetImageMaxBytes),
-			"Video": getPositiveEnvInt64("ASSET_VIDEO_MAX_BYTES", defaultAssetVideoMaxBytes),
-			"Audio": getPositiveEnvInt64("ASSET_AUDIO_MAX_BYTES", defaultAssetAudioMaxBytes),
+			"Image":    getPositiveEnvInt64("ASSET_IMAGE_MAX_BYTES", defaultAssetImageMaxBytes),
+			"Video":    getPositiveEnvInt64("ASSET_VIDEO_MAX_BYTES", defaultAssetVideoMaxBytes),
+			"Audio":    getPositiveEnvInt64("ASSET_AUDIO_MAX_BYTES", defaultAssetAudioMaxBytes),
+			"Document": getPositiveEnvInt64("ASSET_DOCUMENT_MAX_BYTES", defaultAssetDocumentMaxBytes),
 		},
 	}
 }

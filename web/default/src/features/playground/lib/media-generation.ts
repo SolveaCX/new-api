@@ -117,10 +117,19 @@ export function validateMediaGenerationAttachments(
   // request while still being unable to inspect video frames. Reject it
   // before upload/dispatch unless the model is known to expose video input.
   if (!profile) {
-    return attachments.some((attachment) => attachment.kind === 'video') &&
+    if (
+      attachments.some((attachment) => attachment.kind === 'audio') &&
+      !supportsPlaygroundAudioInput(model)
+    ) {
+      return 'This chat model does not support audio attachments'
+    }
+    if (
+      attachments.some((attachment) => attachment.kind === 'video') &&
       !supportsPlaygroundVideoInput(model)
-      ? 'This chat model does not support video attachments'
-      : undefined
+    ) {
+      return 'This chat model does not support video attachments'
+    }
+    return undefined
   }
   if (profile.kind === 'image') {
     if (profile.family === 'gpt-image') {
@@ -133,7 +142,11 @@ export function validateMediaGenerationAttachments(
   if (profile.kind !== 'video') {
     return 'Attachments are supported only for chat models'
   }
-  if (attachments.some((attachment) => attachment.kind === 'text')) {
+  if (
+    attachments.some(
+      (attachment) => attachment.kind !== 'image' && attachment.kind !== 'video'
+    )
+  ) {
     return 'Video generation accepts image or video references only'
   }
   if (
@@ -168,6 +181,36 @@ export function supportsPlaygroundVideoInput(model: unknown): boolean {
   return !/(?:image|tts|embedding|embed|audio|speech|transcrib)/.test(
     normalized
   )
+}
+
+/**
+ * Return whether an ordinary chat model is known to consume audio input.
+ *
+ * The Playground model endpoint currently returns names only. Keep this gate
+ * conservative and limited to model families whose upstream contracts expose
+ * audio content parts: Gemini multimodal chat models and the dedicated GPT
+ * Audio preview aliases. TTS/realtime/image specialisations are intentionally
+ * excluded because they use different endpoints or output-only contracts.
+ */
+export function supportsPlaygroundAudioInput(model: unknown): boolean {
+  const normalized = normalizeModelName(model)
+  if (!normalized) return false
+
+  if (
+    /(^|\/)gpt-(?:4o(?:-mini)?-audio-preview|audio(?:-mini)?)(?:$|[-_/])/.test(
+      normalized
+    )
+  ) {
+    return true
+  }
+
+  if (!normalized.includes('gemini')) return false
+  if (
+    /(?:image|tts|embedding|embed|speech|transcrib|robotics)/.test(normalized)
+  ) {
+    return false
+  }
+  return /(?:flash|pro)/.test(normalized)
 }
 
 const imageRatios = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9']
@@ -543,6 +586,11 @@ export function resolvePlaygroundModelKind(
 
   const mediaProfile = resolveMediaGenerationProfile(normalized)
   if (mediaProfile) return mediaProfile.kind
+
+  // Dedicated audio-understanding aliases are chat-completions models even
+  // though their names contain the generic `audio` marker used by the task
+  // model deny-list below.
+  if (supportsPlaygroundAudioInput(normalized)) return 'chat'
 
   if (unsupportedPatterns.some((pattern) => pattern.test(normalized))) {
     return 'unsupported'

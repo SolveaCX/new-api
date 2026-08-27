@@ -58,6 +58,55 @@ func TestShouldPassThroughTextRequestHonorsSettingsForOtherChannels(t *testing.T
 	require.True(t, shouldPassThroughTextRequest(info))
 }
 
+func TestRequestHasFileInputDetectsFileParts(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{
+						"type": "text",
+						"text": "read this",
+					},
+					map[string]any{
+						"type": "file",
+						"file": map[string]any{
+							"filename": "report.pdf",
+							"file_url": "https://cdn.example.com/report.pdf",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.True(t, requestHasFileInput(request))
+	require.False(t, requestHasFileInput(&dto.GeneralOpenAIRequest{Messages: []dto.Message{{Role: "user", Content: "hello"}}}))
+}
+
+func TestShouldForceResponsesBridgeForFileInputIsScopedToCompatibleApis(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{
+						"type": "file",
+						"file": map[string]any{
+							"filename": "report.pdf",
+							"file_url": "https://cdn.example.com/report.pdf",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}, request))
+	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex}}, request))
+	require.False(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGemini}}, request))
+}
+
 // TestShouldPassThroughTextRequestForcesGrokChatConversion 锁住 Chat 侧 PassThrough 挡板
 // 对 Grok Subscription 渠道的覆盖（与 claude_handler 侧 shouldClaudeUseResponsesBridge 对称）：
 // Grok 上游只有 /v1/responses 端点，chat 原文透传必然协议不匹配，即使全局/渠道透传

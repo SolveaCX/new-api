@@ -183,6 +183,58 @@ func TestSavePlaygroundRecordPersistsDurableAttachmentReferenceWithoutSignedURL(
 	require.Equal(t, "ast_controller_attachment", references[0].AssetID)
 }
 
+func TestSaveAndClearPlaygroundRecordPreservesDocumentAttachmentReferences(t *testing.T) {
+	setupPlaygroundControllerDB(t, 215)
+	now := time.Now().Unix()
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId: "ast_controller_pdf_attachment", UserId: 215, AssetType: "Document",
+		Status: model.AssetStatusActive, SourceStatus: model.AssetSourceStatusAvailable,
+		StorageBackend: "gcs", StorageBucket: "bucket", ObjectKey: "report.pdf", ObjectGeneration: 1,
+		ContentType: "application/pdf", SizeBytes: 1, SourceExpiresAt: now + 3600, CreatedAt: now, UpdatedAt: now,
+	}).Error)
+	saveBody := `{
+		"record_id":"550e8400-e29b-41d4-a716-446655440000",
+		"conversation_id":"550e8400-e29b-41d4-a716-446655440001",
+		"user_message":{"key":"u","from":"user","versions":[{"id":"uv","content":"hello","attachments":[{"kind":"pdf","filename":"report.pdf","mediaType":"application/pdf","assetId":"ast_controller_pdf_attachment","file_url":"https://signed.example/report.pdf"}]}]},
+		"request_messages":[{"role":"user","content":[{"type":"input_file","file_url":"https://signed.example/report.pdf"}]}],
+		"assistant_message":{"key":"a","from":"assistant","versions":[{"id":"av","content":"world"}],"status":"complete"},
+		"reasoning_content":"","input_text":"hello","output_text":"world","model_name":"gpt-test","group_name":"plg",
+		"parameters":{},"status":"complete","error_code":"","error_message":"","relay_request_id":"","prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"latency_ms":1,
+		"messages_snapshot":[{"key":"u","from":"user","versions":[{"id":"uv","content":"hello","attachments":[{"kind":"pdf","filename":"report.pdf","mediaType":"application/pdf","assetId":"ast_controller_pdf_attachment","file_url":"https://signed.example/report.pdf"}]}]},{"key":"a","from":"assistant","versions":[{"id":"av","content":"world"}],"status":"complete"}],
+		"client_completed_at":1000
+	}`
+	c, recorder := playgroundRecordTestContext(t, 215, http.MethodPost, saveBody)
+
+	SavePlaygroundRecord(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var stored model.PlaygroundRecord
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).First(&stored).Error)
+	// The durable attachment reference is represented by assetId in the
+	// message snapshot; the signed file URL is intentionally removed. The
+	// request copy below uses an asset:// URI so it can be replayed safely.
+	require.Contains(t, string(stored.UserMessage), "ast_controller_pdf_attachment")
+	require.NotContains(t, string(stored.UserMessage), "https://signed.example/report.pdf")
+	require.Contains(t, string(stored.RequestMessages), "asset://ast_controller_pdf_attachment")
+	require.NotContains(t, string(stored.RequestMessages), "https://signed.example/report.pdf")
+	var references []model.PlaygroundRecordAsset
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).Find(&references).Error)
+	require.Len(t, references, 1)
+	require.Equal(t, "ast_controller_pdf_attachment", references[0].AssetID)
+	var storedAsset model.Asset
+	require.NoError(t, model.DB.Where("public_id = ?", references[0].AssetID).First(&storedAsset).Error)
+	require.Equal(t, "Document", storedAsset.AssetType)
+
+	clearBody := `{"record_id":"550e8400-e29b-41d4-a716-446655440002","conversation_id":"550e8400-e29b-41d4-a716-446655440001","client_completed_at":2000}`
+	c, recorder = playgroundRecordTestContext(t, 215, http.MethodPost, clearBody)
+
+	ClearPlaygroundRecord(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).Find(&references).Error)
+	require.Empty(t, references)
+}
+
 func TestSavePlaygroundRecordRejectsInvalidIdentityAndStatus(t *testing.T) {
 	setupPlaygroundControllerDB(t, 205)
 	tests := []struct {

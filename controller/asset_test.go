@@ -24,6 +24,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAssetTypeFromContentTypeRecognizesPDF(t *testing.T) {
+	require.Equal(t, "Document", assetTypeFromContentType("application/pdf"))
+	require.Equal(t, "Document", assetTypeFromContentType("application/pdf; charset=binary"))
+}
+
 func TestCreateAssetFromURLUsesCanonicalServiceUserIDAndPublicShape(t *testing.T) {
 	originalCreate := createAssetFromURL
 	restoreReconcile := installAssetControllerReconcileStub(t)

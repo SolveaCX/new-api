@@ -106,6 +106,32 @@ describe('Playground message attachments', () => {
     })
   })
 
+  test('formats a trusted PDF attachment as a file URL without inline data', () => {
+    const attachment = markTrustedAttachmentURL({
+      kind: 'document',
+      filename: 'report.pdf',
+      mediaType: 'application/pdf',
+      assetId: 'ast_pdf',
+      url: 'https://storage.example/report.pdf?signature=1',
+    })
+
+    expect(
+      formatMessageForAPI(createUserMessage('read this', [attachment]))
+    ).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'read this' },
+        {
+          type: 'file',
+          file: {
+            filename: 'report.pdf',
+            file_url: 'https://storage.example/report.pdf?signature=1',
+          },
+        },
+      ],
+    })
+  })
+
   test('does not pass unsafe image attachment URLs to the API', () => {
     const message = createUserMessage('describe this', [
       {

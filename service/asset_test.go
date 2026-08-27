@@ -149,6 +149,49 @@ func TestUploadAssetEnforcesMultipartCapTypeLimitsAndMediaMIME(t *testing.T) {
 	require.True(t, strings.HasSuffix(store.puts[len(store.puts)-1].key, ".mp3"))
 }
 
+func TestCreateAssetUploadSessionSupportsPDFDocuments(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "32")
+	t.Setenv("ASSET_DOCUMENT_MAX_BYTES", "64")
+
+	_, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID:      7,
+		Owner:       "user-7",
+		AssetType:   "Document",
+		ContentType: "application/pdf",
+		SizeBytes:   17,
+	})
+	require.NoError(t, err)
+	require.Len(t, store.signed, 1)
+	require.Equal(t, "application/pdf", store.signed[0].ContentType)
+}
+
+func TestUploadAssetSupportsPDFDocumentsWithDocumentLimits(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_MULTIPART_MAX_BYTES", "32")
+	t.Setenv("ASSET_DOCUMENT_MAX_BYTES", "64")
+
+	result, err := UploadAsset(context.Background(), AssetUploadRequest{
+		UserID:    7,
+		AssetType: "Document",
+		Filename:  "report.pdf",
+		Body:      bytes.NewReader([]byte("%PDF-1.4\n1 0 obj")),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "application/pdf", result.ContentType)
+	require.True(t, strings.HasSuffix(store.puts[len(store.puts)-1].key, ".pdf"))
+
+	_, err = UploadAsset(context.Background(), AssetUploadRequest{
+		UserID:    7,
+		AssetType: "Document",
+		Filename:  "too-big.pdf",
+		Body:      bytes.NewReader(make([]byte, 65)),
+	})
+	require.ErrorIs(t, err, ErrAssetTooLarge)
+}
+
 func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAttrsAndHash(t *testing.T) {
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
@@ -194,6 +237,31 @@ func TestCreateAssetUploadSessionSignsBoundedPutAndCompleteValidatesOwnershipAtt
 	require.NoError(t, model.DB.First(&upload, "upload_id = ?", session.UploadID).Error)
 	require.Equal(t, model.AssetUploadStatusComplete, upload.Status)
 	require.EqualValues(t, 9, upload.ObjectGeneration)
+}
+
+func TestCompleteAssetUploadAcceptsEquivalentJpegContentTypeAlias(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	t.Setenv("ASSET_SERVICE_ACCOUNT_EMAIL", "asset-signer@example.iam.gserviceaccount.com")
+	jpeg := []byte{0xff, 0xd8, 0xff, 0xdb, 'j', 'p', 'e', 'g'}
+
+	session, err := CreateAssetUploadSession(context.Background(), AssetUploadSessionRequest{
+		UserID: 7, Owner: "user-7", AssetType: "Image", ContentType: "image/jpeg", SizeBytes: int64(len(jpeg)),
+	})
+	require.NoError(t, err)
+	store.objects["asset-test-bucket/"+session.ObjectKey] = jpeg
+	// Some object-store/browser combinations preserve the equivalent image/jpg
+	// alias even though the signed upload session was canonicalized to
+	// image/jpeg. Completion must compare semantic MIME types, not raw strings.
+	store.attrs["asset-test-bucket/"+session.ObjectKey] = AssetObjectAttrs{
+		ContentType: "image/jpg", Size: int64(len(jpeg)), Generation: 11,
+	}
+
+	result, err := CompleteAssetUpload(context.Background(), AssetCompleteUploadRequest{
+		UploadID: session.UploadID, Owner: "user-7",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "image/jpeg", result.ContentType)
 }
 
 func TestCreateAssetUploadSessionUsesTypeLimitInsteadOfMultipartCap(t *testing.T) {

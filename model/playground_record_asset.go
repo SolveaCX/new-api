@@ -41,14 +41,17 @@ func normalizePlaygroundAssetType(value string) string {
 		return AssetTypeImage
 	case "video":
 		return AssetTypeVideo
+	case "document", "pdf", "file":
+		return AssetTypeDocument
 	default:
 		return ""
 	}
 }
 
 const (
-	AssetTypeImage = "Image"
-	AssetTypeVideo = "Video"
+	AssetTypeImage    = "Image"
+	AssetTypeVideo    = "Video"
+	AssetTypeDocument = "Document"
 )
 
 func normalizePlaygroundAssetReferences(refs []PlaygroundAssetReference) ([]PlaygroundAssetReference, error) {

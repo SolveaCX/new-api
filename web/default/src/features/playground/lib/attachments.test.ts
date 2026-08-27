@@ -37,6 +37,37 @@ describe('normalizePlaygroundAttachments', () => {
     ])
   })
 
+  test('canonicalizes the image/jpg alias for image-to-video uploads', async () => {
+    await expect(
+      normalizePlaygroundAttachments([
+        file('frame.jpg', 'image/jpg', 'data:image/jpg;base64,/9j/2w=='),
+      ])
+    ).resolves.toEqual([
+      {
+        kind: 'image',
+        filename: 'frame.jpg',
+        mediaType: 'image/jpeg',
+        url: 'data:image/jpg;base64,/9j/2w==',
+      },
+    ])
+  })
+
+  test('normalizes supported audio attachments for audio-capable chat models', async () => {
+    await expect(
+      normalizePlaygroundAttachments([
+        file('voice.mp3', 'audio/mp3', 'data:audio/mp3;base64,AA=='),
+      ])
+    ).resolves.toEqual([
+      {
+        kind: 'audio',
+        filename: 'voice.mp3',
+        mediaType: 'audio/mpeg',
+        url: 'data:audio/mp3;base64,AA==',
+        dataUrl: 'data:audio/mp3;base64,AA==',
+      },
+    ])
+  })
+
   test('normalizes supported mp4 attachments as video files', async () => {
     await expect(
       normalizePlaygroundAttachments([
@@ -48,6 +79,41 @@ describe('normalizePlaygroundAttachments', () => {
         filename: 'reference.mp4',
         mediaType: 'video/mp4',
         url: videoDataUrl(),
+      },
+    ])
+  })
+
+  test('normalizes PDF attachments as durable document candidates', async () => {
+    await expect(
+      normalizePlaygroundAttachments([
+        file(
+          'report.pdf',
+          'application/pdf',
+          'data:application/pdf;base64,JVBERi0xLjQ='
+        ),
+      ])
+    ).resolves.toEqual([
+      {
+        kind: 'document',
+        filename: 'report.pdf',
+        mediaType: 'application/pdf',
+        url: 'data:application/pdf;base64,JVBERi0xLjQ=',
+      },
+    ])
+  })
+
+  test('normalizes audio attachments as durable audio candidates', async () => {
+    await expect(
+      normalizePlaygroundAttachments([
+        file('clip.mp3', 'audio/mpeg', 'data:audio/mpeg;base64,AA=='),
+      ])
+    ).resolves.toEqual([
+      {
+        kind: 'audio',
+        filename: 'clip.mp3',
+        mediaType: 'audio/mpeg',
+        url: 'data:audio/mpeg;base64,AA==',
+        dataUrl: 'data:audio/mpeg;base64,AA==',
       },
     ])
   })
@@ -77,7 +143,11 @@ describe('normalizePlaygroundAttachments', () => {
   test('rejects unsupported extensions and empty files', async () => {
     await expect(
       normalizePlaygroundAttachments([
-        file('archive.pdf', 'application/pdf', textDataUrl('x')),
+        file(
+          'archive.bin',
+          'application/octet-stream',
+          'data:application/octet-stream;base64,AA=='
+        ),
       ])
     ).rejects.toThrow('Unsupported attachment type')
 

@@ -43,6 +43,29 @@ func allowsChatCompletionsViaResponses(info *relaycommon.RelayInfo) bool {
 	return info == nil || info.ChannelType != constant.ChannelTypeCopilot
 }
 
+func requestHasFileInput(request *dto.GeneralOpenAIRequest) bool {
+	if request == nil {
+		return false
+	}
+	for _, message := range request.Messages {
+		for _, part := range message.ParseContent() {
+			if part.Type == dto.ContentTypeFile {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func shouldForceResponsesBridgeForFileInput(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) bool {
+	if info == nil || info.ChannelMeta == nil || !requestHasFileInput(request) {
+		return false
+	}
+	return info.ApiType == constant.APITypeOpenAI ||
+		info.ApiType == constant.APITypeCodex ||
+		info.ApiType == constant.APITypeGrokSubscription
+}
+
 func rejectCopilotNonChatFormat(info *relaycommon.RelayInfo, endpoint string) *types.NewAPIError {
 	if info == nil || info.ChannelType != constant.ChannelTypeCopilot {
 		return nil
@@ -113,8 +136,9 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	passThroughRequest := shouldPassThroughTextRequest(info)
 	if info.RelayMode == relayconstant.RelayModeChatCompletions &&
 		allowsChatCompletionsViaResponses(info) &&
-		!passThroughRequest &&
-		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+		(shouldForceResponsesBridgeForFileInput(info, request) ||
+			(!passThroughRequest &&
+				service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName))) {
 		applySystemPromptIfNeeded(c, info, request)
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, request)
 		if newApiErr != nil {

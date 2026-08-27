@@ -20,6 +20,10 @@ import { STORAGE_KEYS } from '../constants'
 import type { Message, ParameterEnabled, PlaygroundConfig } from '../types'
 import { sanitizeMessagesOnLoad } from './message-utils'
 
+function isEmbeddedBase64DataUrl(value: unknown): boolean {
+  return typeof value === 'string' && /^data:[^,]+;base64,/i.test(value.trim())
+}
+
 function scopedKey(base: string, userId: number): string {
   return `${base}:v2:${userId}`
 }
@@ -47,13 +51,22 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
       const attachments = version.attachments.map((attachment) => {
         const isDurableMedia =
           !!attachment.assetId &&
-          (attachment.kind === 'image' || attachment.kind === 'video')
+          (attachment.kind === 'image' ||
+            attachment.kind === 'video' ||
+            attachment.kind === 'audio' ||
+            attachment.kind === 'document')
         const isTransientVideoURL =
           attachment.kind === 'video' && attachment.url?.startsWith('blob:')
-        if (!isDurableMedia && !isTransientVideoURL) return attachment
+        const isTransientBase64 =
+          isEmbeddedBase64DataUrl(attachment.url) ||
+          isEmbeddedBase64DataUrl(attachment.dataUrl)
+        if (!isDurableMedia && !isTransientVideoURL && !isTransientBase64) {
+          return attachment
+        }
 
         const sanitized = { ...attachment }
         delete sanitized.url
+        delete sanitized.dataUrl
         messageChanged = true
         return sanitized
       })

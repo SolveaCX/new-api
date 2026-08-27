@@ -14,8 +14,32 @@ const IMAGE_MEDIA_TYPES = new Set([
 ])
 const TEXT_EXTENSIONS = new Set(['.csv', '.json', '.md', '.txt'])
 const IMAGE_EXTENSIONS = new Set(['.gif', '.jpeg', '.jpg', '.png', '.webp'])
+const DOCUMENT_MEDIA_TYPES = new Set(['application/pdf'])
+const DOCUMENT_EXTENSIONS = new Set(['.pdf'])
 const VIDEO_MEDIA_TYPES = new Set(['video/mp4'])
 const VIDEO_EXTENSIONS = new Set(['.mp4'])
+const AUDIO_MEDIA_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+])
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
+
+/** Normalize equivalent browser/object-store MIME aliases at the UI boundary. */
+export function normalizePlaygroundMediaType(value: string): string {
+  const mediaType = value.split(';', 1)[0].trim().toLowerCase()
+  switch (mediaType) {
+    case 'image/jpg':
+      return 'image/jpeg'
+    case 'audio/mp3':
+      return 'audio/mpeg'
+    case 'audio/x-wav':
+      return 'audio/wav'
+    default:
+      return mediaType
+  }
+}
 
 interface ParsedDataUrl {
   mediaType: string
@@ -84,6 +108,20 @@ function isVideoAttachment(mediaType: string, filename: string): boolean {
   )
 }
 
+function isDocumentAttachment(mediaType: string, filename: string): boolean {
+  return (
+    DOCUMENT_MEDIA_TYPES.has(mediaType) ||
+    DOCUMENT_EXTENSIONS.has(extensionOf(filename))
+  )
+}
+
+function isAudioAttachment(mediaType: string, filename: string): boolean {
+  return (
+    AUDIO_MEDIA_TYPES.has(mediaType) ||
+    AUDIO_EXTENSIONS.has(extensionOf(filename))
+  )
+}
+
 export async function normalizePlaygroundAttachments(
   files: (FileUIPart & { assetId?: string })[]
 ): Promise<PlaygroundAttachment[]> {
@@ -94,7 +132,7 @@ export async function normalizePlaygroundAttachments(
   const attachments: PlaygroundAttachment[] = []
   for (const file of files) {
     const filename = normalizeFilename(file.filename)
-    const declaredMediaType = file.mediaType?.trim().toLowerCase() ?? ''
+    const declaredMediaType = normalizePlaygroundMediaType(file.mediaType ?? '')
     const assetId = file.assetId?.trim()
 
     // Restored drafts carry a durable server asset and a short-lived preview
@@ -103,12 +141,20 @@ export async function normalizePlaygroundAttachments(
     if (
       assetId &&
       (declaredMediaType.startsWith('image/') ||
-        declaredMediaType.startsWith('video/'))
+        declaredMediaType.startsWith('video/') ||
+        declaredMediaType.startsWith('audio/') ||
+        declaredMediaType === 'application/pdf')
     ) {
       const durableAttachment: PlaygroundAttachment = {
-        kind: declaredMediaType.startsWith('image/') ? 'image' : 'video',
+        kind: declaredMediaType.startsWith('image/')
+          ? 'image'
+          : declaredMediaType.startsWith('video/')
+            ? 'video'
+            : declaredMediaType.startsWith('audio/')
+              ? 'audio'
+              : 'document',
         filename,
-        mediaType: declaredMediaType,
+        mediaType: normalizePlaygroundMediaType(declaredMediaType),
         assetId,
         ...(file.url ? { url: file.url } : {}),
       }
@@ -117,7 +163,10 @@ export async function normalizePlaygroundAttachments(
     }
 
     const parsed = parseDataUrl(file.url)
-    const mediaType = (declaredMediaType || parsed.mediaType).toLowerCase()
+    const parsedMediaType = normalizePlaygroundMediaType(parsed.mediaType)
+    const mediaType = normalizePlaygroundMediaType(
+      declaredMediaType || parsedMediaType
+    )
 
     if (parsed.bytes.length === 0) {
       throw new Error('Attachment is empty')
@@ -127,18 +176,55 @@ export async function normalizePlaygroundAttachments(
     }
 
     if (isImageAttachment(mediaType, filename)) {
-      if (!IMAGE_MEDIA_TYPES.has(parsed.mediaType)) {
+      if (!IMAGE_MEDIA_TYPES.has(parsedMediaType)) {
         throw new Error('Attachment data is invalid')
       }
-      attachments.push({ kind: 'image', filename, mediaType, url: file.url })
+      attachments.push({
+        kind: 'image',
+        filename,
+        mediaType: parsedMediaType,
+        url: file.url,
+      })
       continue
     }
 
     if (isVideoAttachment(mediaType, filename)) {
-      if (!VIDEO_MEDIA_TYPES.has(parsed.mediaType)) {
+      if (!VIDEO_MEDIA_TYPES.has(parsedMediaType)) {
         throw new Error('Attachment data is invalid')
       }
-      attachments.push({ kind: 'video', filename, mediaType, url: file.url })
+      attachments.push({
+        kind: 'video',
+        filename,
+        mediaType: parsedMediaType,
+        url: file.url,
+      })
+      continue
+    }
+
+    if (isDocumentAttachment(mediaType, filename)) {
+      if (!DOCUMENT_MEDIA_TYPES.has(parsedMediaType)) {
+        throw new Error('Attachment data is invalid')
+      }
+      attachments.push({
+        kind: 'document',
+        filename,
+        mediaType: parsedMediaType,
+        url: file.url,
+      })
+      continue
+    }
+
+    if (isAudioAttachment(mediaType, filename)) {
+      if (!AUDIO_MEDIA_TYPES.has(parsedMediaType)) {
+        throw new Error('Attachment data is invalid')
+      }
+      attachments.push({
+        kind: 'audio',
+        filename,
+        mediaType: parsedMediaType,
+        url: file.url,
+        dataUrl: file.url,
+      })
       continue
     }
 

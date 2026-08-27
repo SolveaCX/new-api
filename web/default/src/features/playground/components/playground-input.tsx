@@ -250,8 +250,9 @@ export function PlaygroundInput({
           }
         : {
             accept:
-              'application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4',
-            extensions: '.pdf, .csv, .jpg, .jpeg, .png, .webp, .mp4',
+              'application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,audio/mpeg,audio/wav,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav',
+            extensions:
+              '.pdf, .csv, .jpg, .jpeg, .png, .webp, .mp4, .mp3, .wav',
           }
 
   const handleSubmit = async (message: PromptInputMessage) => {

@@ -61,14 +61,15 @@ function sanitizeAttachment(
   attachment: PlaygroundAttachment
 ): PlaygroundAttachment {
   const sanitized = { ...attachment }
-  if (
-    sanitized.assetId &&
-    (sanitized.kind === 'image' || sanitized.kind === 'video')
-  ) {
+  if (sanitized.assetId) {
     // Persist the stable reference; signed URLs are transport-only and expire.
     delete sanitized.url
-  } else if (isEmbeddedBase64DataUrl(sanitized.url)) {
+  }
+  if (isEmbeddedBase64DataUrl(sanitized.url)) {
     delete sanitized.url
+  }
+  if (isEmbeddedBase64DataUrl(sanitized.dataUrl)) {
+    delete sanitized.dataUrl
   }
   return sanitized
 }
@@ -121,11 +122,7 @@ function collectPlaygroundAssetURLs(
   messages.forEach((message) => {
     message.versions.forEach((version) => {
       version.attachments?.forEach((attachment) => {
-        if (
-          (attachment.kind === 'image' || attachment.kind === 'video') &&
-          attachment.assetId?.trim() &&
-          attachment.url?.trim()
-        ) {
+        if (attachment.assetId?.trim() && attachment.url?.trim()) {
           assetURLs.set(
             attachment.url.trim(),
             `asset://${attachment.assetId.trim()}`
@@ -171,11 +168,43 @@ function sanitizeRequestMessage(
       if (isEmbeddedBase64DataUrl(url)) return []
     }
 
+    if (part.type === 'file' && part.file) {
+      const file = part.file
+      const url = file.file_url?.trim()
+      if (url) {
+        const assetURL = assetURLs.get(url)
+        if (assetURL) {
+          const sanitizedFile = { ...file, file_url: assetURL }
+          delete sanitizedFile.file_data
+          return [
+            {
+              ...part,
+              file: sanitizedFile,
+            },
+          ]
+        }
+        if (isEmbeddedBase64DataUrl(url)) return []
+        const sanitizedFile = { ...file }
+        delete sanitizedFile.file_data
+        return [
+          {
+            ...part,
+            file: sanitizedFile,
+          },
+        ]
+      }
+      return []
+    }
+
+    if (part.type === 'input_audio') return []
+
     return [
       {
         ...part,
         ...(part.image_url ? { image_url: { ...part.image_url } } : {}),
         ...(part.video_url ? { video_url: { ...part.video_url } } : {}),
+        ...(part.file ? { file: { ...part.file } } : {}),
+        ...(part.input_audio ? { input_audio: { ...part.input_audio } } : {}),
       },
     ]
   })
@@ -353,6 +382,8 @@ function hasAttachmentData(attachment: PlaygroundAttachment): boolean {
     (typeof attachment.assetId === 'string' &&
       attachment.assetId.trim().length > 0) ||
     (typeof attachment.url === 'string' && attachment.url.length > 0) ||
+    (typeof attachment.dataUrl === 'string' &&
+      attachment.dataUrl.trim().length > 0) ||
     (typeof attachment.text === 'string' && attachment.text.length > 0)
   )
 }
