@@ -102,6 +102,7 @@ export function usePlaygroundPersistence({
 }: UsePlaygroundPersistenceOptions) {
   const activeTurnRef = useRef<UserActiveTurn | null>(null)
   const stoppedRef = useRef(false)
+  const messagesRef = useRef(messages)
   const conversationIdRef = useRef(conversationId)
   const drainPromisesRef = useRef(
     new Map<number, Promise<PlaygroundRecordPayload[]>>()
@@ -111,8 +112,9 @@ export function usePlaygroundPersistence({
   const isRestoring = hasUser && settledUserId !== userId
 
   useEffect(() => {
+    messagesRef.current = messages
     conversationIdRef.current = conversationId
-  }, [conversationId])
+  }, [conversationId, messages])
 
   const clearDeliveredLocalPriority = useCallback(
     (targetUserId: number, deliveredRecords: PlaygroundRecordPayload[]) => {

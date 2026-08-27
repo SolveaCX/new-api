@@ -26,6 +26,7 @@ import type {
   GroupOption,
   VideoTask,
   PlaygroundRecordPayload,
+  PlaygroundConversationSummary,
 } from './types'
 
 export interface PlaygroundAttachmentUploadSession {
@@ -234,6 +235,53 @@ export async function clearCurrentPlaygroundRecord(
     res.data,
     'Failed to clear Playground conversation'
   )
+}
+
+export async function listPlaygroundConversations(): Promise<
+  PlaygroundConversationSummary[]
+> {
+  const res = await api.get(API_ENDPOINTS.PLAYGROUND_CONVERSATIONS)
+  const response = res.data as PlaygroundApiResponse<
+    PlaygroundConversationSummary[]
+  >
+  assertPlaygroundApiSuccess(
+    response,
+    'Failed to load Playground conversations'
+  )
+  return Array.isArray(response.data) ? response.data : []
+}
+
+export async function getPlaygroundConversation(
+  conversationId: string
+): Promise<PlaygroundConversationSnapshot | null> {
+  const res = await api.get(
+    `${API_ENDPOINTS.PLAYGROUND_CONVERSATIONS}/${encodeURIComponent(conversationId)}`
+  )
+  const response =
+    res.data as PlaygroundApiResponse<PlaygroundConversationSnapshot | null>
+  assertPlaygroundApiSuccess(response, 'Failed to load Playground conversation')
+  return response.data ?? null
+}
+
+export async function renamePlaygroundConversation(
+  conversationId: string,
+  name: string
+): Promise<void> {
+  const res = await api.patch(
+    `${API_ENDPOINTS.PLAYGROUND_CONVERSATIONS}/${encodeURIComponent(conversationId)}`,
+    { name }
+  )
+  assertPlaygroundApiSuccess(res.data, 'Failed to rename conversation')
+}
+
+export async function deletePlaygroundConversations(
+  conversationIds: string[]
+): Promise<void> {
+  const res = await api.post(
+    `${API_ENDPOINTS.PLAYGROUND_CONVERSATIONS}/delete`,
+    { conversation_ids: conversationIds }
+  )
+  assertPlaygroundApiSuccess(res.data, 'Failed to delete conversations')
 }
 
 function playgroundApiErrorMessage(

@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,6 +39,7 @@ type PlaygroundRecord struct {
 	RecordID          string              `json:"record_id" gorm:"type:varchar(64);not null;uniqueIndex:idx_playground_user_record,priority:2"`
 	RecordType        string              `json:"record_type" gorm:"type:varchar(16);not null"`
 	ConversationID    string              `json:"conversation_id" gorm:"type:varchar(64);not null;index:idx_playground_conversation,priority:2"`
+	ConversationName  string              `json:"conversation_name" gorm:"type:varchar(255)"`
 	UserMessage       PlaygroundLargeText `json:"user_message"`
 	RequestMessages   PlaygroundLargeText `json:"request_messages"`
 	AssistantMessage  PlaygroundLargeText `json:"assistant_message"`
@@ -67,10 +69,45 @@ type PlaygroundRecord struct {
 	AssetReferences []PlaygroundAssetReference `json:"-" gorm:"-"`
 }
 
+type PlaygroundConversationSummary struct {
+	ConversationID string    `json:"conversation_id"`
+	Name           string    `json:"name"`
+	Preview        string    `json:"preview"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	CreatedAt      time.Time `json:"created_at"`
+	IsCurrent      bool      `json:"is_current"`
+}
+
+func normalizePlaygroundConversationName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "New conversation"
+	}
+	runes := []rune(name)
+	if len(runes) > 120 {
+		return string(runes[:120])
+	}
+	return name
+}
+
 func SavePlaygroundRecord(record *PlaygroundRecord) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockPlaygroundUser(tx, record.UserID); err != nil {
 			return err
+		}
+
+		var namedRecord PlaygroundRecord
+		nameErr := tx.Where(
+			"user_id = ? AND conversation_id = ? AND conversation_name <> ''",
+			record.UserID,
+			record.ConversationID,
+		).Order("created_at ASC").First(&namedRecord).Error
+		if nameErr == nil {
+			record.ConversationName = namedRecord.ConversationName
+		} else if !errors.Is(nameErr, gorm.ErrRecordNotFound) {
+			return nameErr
+		} else {
+			record.ConversationName = normalizePlaygroundConversationName(string(record.InputText))
 		}
 
 		var existing PlaygroundRecord
@@ -155,6 +192,77 @@ func GetCurrentPlaygroundRecord(userID int) (*PlaygroundRecord, error) {
 		return nil, err
 	}
 	return &record, nil
+}
+
+func ListPlaygroundConversations(userID int) ([]PlaygroundConversationSummary, error) {
+	var records []PlaygroundRecord
+	if err := DB.Where(
+		"user_id = ? AND record_type = ? AND is_latest = ?",
+		userID,
+		PlaygroundRecordTypeTurn,
+		true,
+	).Order("client_completed_at DESC").Order("record_id DESC").Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	conversations := make([]PlaygroundConversationSummary, 0, len(records))
+	for _, record := range records {
+		name := record.ConversationName
+		if strings.TrimSpace(name) == "" {
+			name = normalizePlaygroundConversationName(string(record.InputText))
+		}
+		conversations = append(conversations, PlaygroundConversationSummary{
+			ConversationID: record.ConversationID,
+			Name:           name,
+			Preview:        string(record.InputText),
+			UpdatedAt:      record.UpdatedAt,
+			CreatedAt:      record.CreatedAt,
+			IsCurrent:      record.IsCurrent,
+		})
+	}
+	return conversations, nil
+}
+
+func GetPlaygroundConversation(userID int, conversationID string) (*PlaygroundRecord, error) {
+	var record PlaygroundRecord
+	err := DB.Where(
+		"user_id = ? AND conversation_id = ? AND record_type = ? AND is_latest = ?",
+		userID,
+		conversationID,
+		PlaygroundRecordTypeTurn,
+		true,
+	).First(&record).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func RenamePlaygroundConversation(userID int, conversationID, name string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockPlaygroundUser(tx, userID); err != nil {
+			return err
+		}
+		return tx.Model(&PlaygroundRecord{}).
+			Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+			Update("conversation_name", normalizePlaygroundConversationName(name)).Error
+	})
+}
+
+func DeletePlaygroundConversations(userID int, conversationIDs []string) error {
+	if len(conversationIDs) == 0 {
+		return nil
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockPlaygroundUser(tx, userID); err != nil {
+			return err
+		}
+		return tx.Where("user_id = ? AND conversation_id IN ?", userID, conversationIDs).
+			Delete(&PlaygroundRecord{}).Error
+	})
 }
 
 // ListPlaygroundRecordsForExport returns durable Playground records in a

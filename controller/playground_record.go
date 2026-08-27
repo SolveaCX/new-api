@@ -125,6 +125,99 @@ func GetCurrentPlaygroundRecord(c *gin.Context) {
 	})
 }
 
+type renamePlaygroundConversationRequest struct {
+	Name string `json:"name"`
+}
+
+type deletePlaygroundConversationsRequest struct {
+	ConversationIDs []string `json:"conversation_ids"`
+}
+
+func ListPlaygroundConversations(c *gin.Context) {
+	conversations, err := model.ListPlaygroundConversations(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, conversations)
+}
+
+func GetPlaygroundConversation(c *gin.Context) {
+	conversationID := c.Param("conversation_id")
+	if _, err := uuid.Parse(conversationID); err != nil {
+		playgroundRecordBadRequest(c, errors.New("conversation_id must be a UUID"))
+		return
+	}
+	record, err := model.GetPlaygroundConversation(c.GetInt("id"), conversationID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if record == nil {
+		common.ApiSuccess(c, nil)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"conversation_id": record.ConversationID,
+		"messages":        json.RawMessage(record.MessagesSnapshot),
+	})
+}
+
+func RenamePlaygroundConversation(c *gin.Context) {
+	conversationID := c.Param("conversation_id")
+	if _, err := uuid.Parse(conversationID); err != nil {
+		playgroundRecordBadRequest(c, errors.New("conversation_id must be a UUID"))
+		return
+	}
+	var request renamePlaygroundConversationRequest
+	if err := decodePlaygroundRecordRequest(c, &request); err != nil {
+		playgroundRecordBadRequest(c, err)
+		return
+	}
+	if strings.TrimSpace(request.Name) == "" {
+		playgroundRecordBadRequest(c, errors.New("name must not be empty"))
+		return
+	}
+	if len([]rune(request.Name)) > 120 {
+		playgroundRecordBadRequest(c, errors.New("name must not exceed 120 characters"))
+		return
+	}
+	if err := model.RenamePlaygroundConversation(c.GetInt("id"), conversationID, request.Name); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+func DeletePlaygroundConversations(c *gin.Context) {
+	var request deletePlaygroundConversationsRequest
+	if err := decodePlaygroundRecordRequest(c, &request); err != nil {
+		playgroundRecordBadRequest(c, err)
+		return
+	}
+	if len(request.ConversationIDs) == 0 || len(request.ConversationIDs) > 100 {
+		playgroundRecordBadRequest(c, errors.New("conversation_ids must contain 1 to 100 items"))
+		return
+	}
+	seen := make(map[string]struct{}, len(request.ConversationIDs))
+	for _, conversationID := range request.ConversationIDs {
+		if _, err := uuid.Parse(conversationID); err != nil {
+			playgroundRecordBadRequest(c, errors.New("conversation_id must be a UUID"))
+			return
+		}
+		seen[conversationID] = struct{}{}
+	}
+	conversationIDs := make([]string, 0, len(seen))
+	for conversationID := range seen {
+		conversationIDs = append(conversationIDs, conversationID)
+	}
+	if err := model.DeletePlaygroundConversations(c.GetInt("id"), conversationIDs); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
 // ExportPlaygroundRecords downloads durable Playground records for
 // administrators. Without a user_id query parameter it includes all users;
 // otherwise it is restricted to the requested positive user ID.
