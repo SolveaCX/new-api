@@ -238,7 +238,7 @@ describe('PlaygroundChat', () => {
     )
 
     expect(html).toContain(`<video aria-label="reference.mp4"`)
-    expect(html.match(/bg-secondary/g)?.length).toBe(2)
+    expect(html.match(/group-\[\.is-user\]:bg-muted/g)?.length).toBe(2)
     expect(html.indexOf(imageSrc)).toBeLessThan(
       html.indexOf('Describe the media')
     )
@@ -277,7 +277,6 @@ describe('PlaygroundChat', () => {
     expect(html).toContain('Attachment preview unavailable')
     expect(html).not.toContain('<video')
   })
-
   test('renders a durable image attachment when its signed preview URL is available', () => {
     const imageSrc =
       'https://storage.googleapis.com/vocai-gemini-prod-flatkey-assets/assets/photo.jpg?sig=test'

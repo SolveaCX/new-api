@@ -147,11 +147,17 @@ export function OverviewDashboard({
     return getPreferredKey(apiKeys)
   }, [apiKeys, selectedKeyId])
 
-  // Only the key backing the open dialog is ever resolved to its real value;
-  // the rest of the list stays masked.
-  const resolvedKeys = useResolvedApiKeys(
+  // The selected key is resolved when the dialog opens; other keys are
+  // resolved only when their own copy button is used.
+  // The CLI quick start authenticates through `flatkey login` and never
+  // renders an API-key snippet. Avoid resolving plaintext key material just
+  // because that dialog is open; the API/SDK/Agent dialogs still resolve the
+  // selected key on open and other rows on demand.
+  const keyResolutionEnabled =
+    openIntegration !== null && openIntegration !== 'cli'
+  const { resolvedKeys, loadingKeys, resolveKey } = useResolvedApiKeys(
     selectedKey?.id ?? null,
-    openIntegration !== null
+    keyResolutionEnabled
   )
 
   // Scope the model list to the group the selected key actually routes with,
@@ -268,6 +274,8 @@ export function OverviewDashboard({
         keysLoading={apiKeysQuery.isPending}
         selectedKeyId={selectedKey?.id ?? null}
         resolvedKeys={resolvedKeys}
+        loadingKeys={loadingKeys}
+        resolveKey={resolveKey}
         onSelectKey={setSelectedKeyId}
         models={availableModels}
         selectedModel={exampleModel}

@@ -43,6 +43,7 @@ export const API_ENDPOINTS = {
   PLAYGROUND_RECORDS: '/api/playground/records',
   PLAYGROUND_RECORDS_CURRENT: '/api/playground/records/current',
   PLAYGROUND_RECORDS_CLEAR: '/api/playground/records/clear',
+  PLAYGROUND_CONVERSATIONS: '/api/playground/records',
   PLAYGROUND_ATTACHMENT_UPLOADS: '/api/playground/attachments/uploads',
   PLAYGROUND_ATTACHMENT_PREVIEW: '/api/playground/attachments',
 } as const

@@ -22,6 +22,10 @@ import { createInstance } from 'i18next'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import type {
   PlanRecord,
@@ -1156,16 +1160,104 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Media generation credits')
   })
 
-  test('labels plan card monthly quota without media or short-window quotas', () => {
+  test('does not present a lower quota value as an old price', () => {
     const html = renderWalletCard()
 
-    expect(html).toContain('Monthly model quota: $0.02')
+    expect(html).not.toContain('data-subscription-reference-price=')
+    expect(html).not.toContain('Monthly model quota:')
     expect(html).not.toContain('Media generation credits')
     expect(html).not.toContain('5-hour limit')
     expect(html).not.toContain('7-day limit')
     expect(html).not.toContain('5-hour: $0.002')
     expect(html).not.toContain('7-day: $0.005')
     expect(html).not.toContain('Image + video: 10 credits')
+  })
+
+  test('uses total quota units for a monetary reference and keeps the payable price current', () => {
+    const valuePlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        total_amount: 22_500_000,
+      },
+    }
+    const html = renderWalletCardWithPlans([valuePlan])
+
+    expect(html).toContain('data-subscription-reference-price="$45"')
+    expect(html).toContain('$10')
+    expect(html).not.toContain('Monthly model quota:')
+  })
+
+  test('keeps the model-value reference in USD when quota display uses another currency', async () => {
+    const previousCurrency = useSystemConfigStore.getState().config.currency
+    useSystemConfigStore.setState((state) => ({
+      config: {
+        ...state.config,
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          ...state.config.currency,
+          quotaDisplayType: 'CNY',
+          usdExchangeRate: 7,
+        },
+      },
+    }))
+
+    await testI18n.changeLanguage('pt-BR')
+    try {
+      const valuePlan = {
+        ...localizedPlans[0],
+        plan: {
+          ...localizedPlans[0].plan,
+          total_amount: 22_500_000,
+        },
+      }
+      const html = renderWalletCardWithPlans([
+        valuePlan,
+        ...localizedPlans.slice(1),
+      ])
+
+      expect(html).toContain('data-subscription-reference-price="$45"')
+      expect(html).not.toContain('¥315')
+      expect(html).toContain('R$')
+    } finally {
+      await testI18n.changeLanguage('en')
+      useSystemConfigStore.setState((state) => ({
+        config: {
+          ...state.config,
+          currency: previousCurrency,
+        },
+      }))
+    }
+  })
+
+  test('omits the reference price when a custom plan has no positive quota value', () => {
+    const zeroValuePlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        total_amount: 0,
+      },
+    }
+    const html = renderWalletCardWithPlans([zeroValuePlan])
+
+    expect(html).not.toContain('data-subscription-reference-price=')
+    expect(html).toContain('$10')
+    expect(html).not.toContain('Monthly model quota:')
+  })
+
+  test('omits a reference price for a free plan', () => {
+    const freePlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        price_amount: 0,
+        total_amount: 22_500_000,
+      },
+    }
+    const html = renderWalletCardWithPlans([freePlan])
+
+    expect(html).not.toContain('data-subscription-reference-price=')
+    expect(html).toContain('$0')
   })
 
   test('keeps media generation credits hidden when the plan field is absent', () => {
@@ -1230,6 +1322,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('OFF')
     expect(html).toContain('line-through')
+    expect(html).toContain('data-subscription-discount-original-price="$10"')
     expect(html).toContain('$10')
     expect(html).toContain('$5')
     expect(html).toContain('Save $5')
@@ -1330,6 +1423,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(goSlice).toContain('$10')
     expect(goSlice).not.toContain('20% OFF')
     expect(goSlice).not.toContain('line-through')
+    expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('$8')
     expect(proSlice).not.toContain('20% OFF')
     expect(maxSlice).not.toContain('20% OFF')
@@ -1361,6 +1455,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const goSlice = html.slice(goStart, proStart)
 
     expect(goSlice).toContain('$10')
+    expect(goSlice).not.toContain('line-through')
+    expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('50% OFF')
     expect(goSlice).not.toContain('$5')
     expect(html).not.toContain('signed-recall-claim')
@@ -1436,9 +1532,7 @@ describe('PlanPurchaseDialog payment choices', () => {
     expect(source).toContain(
       '<Dialog open={props.open} onOpenChange={props.onOpenChange}>'
     )
-    expect(source).toContain(
-      "className='border-border shadow-xl sm:max-w-xl'"
-    )
+    expect(source).toContain("className='border-border shadow-xl sm:max-w-xl'")
   })
 
   test('defaults to Stripe recurring and hides the month selector', () => {

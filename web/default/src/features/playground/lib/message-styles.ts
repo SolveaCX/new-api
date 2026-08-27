@@ -28,13 +28,10 @@ export function getMessageContentStyles() {
     'group-[.is-user]:w-fit',
     // User bubble: a soft surface with enough breathing room for media and text.
     'group-[.is-user]:text-foreground',
-    'group-[.is-user]:bg-secondary/70',
-    'group-[.is-user]:rounded-3xl',
+    'group-[.is-user]:bg-muted',
+    'group-[.is-user]:rounded-2xl',
     'group-[.is-user]:px-4',
-    'group-[.is-user]:py-3',
-    'group-[.is-user]:shadow-sm',
-    'group-[.is-user]:ring-1',
-    'group-[.is-user]:ring-border/60',
+    'group-[.is-user]:py-2.5',
     // Assistant content stays flat and blends into the conversation surface.
     'group-[.is-assistant]:text-foreground',
     'group-[.is-assistant]:bg-transparent',
