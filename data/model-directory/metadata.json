@@ -18,7 +18,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 101,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "bytedance/seedance-2.0-fast",
@@ -39,7 +43,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 102,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "claude-3-5-haiku-20241022",
@@ -67,7 +75,11 @@
     "released_at": "2024-10-22",
     "distillable": false,
     "popularity_rank": 103,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "claude-fable-5",
@@ -101,7 +113,11 @@
     "distillable": false,
     "popularity_rank": 95,
     "top_ten_rank": 5,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-haiku-4-5-20251001",
@@ -128,7 +144,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 19,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "claude-opus-4-5",
@@ -158,7 +178,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 77,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-opus-4-6",
@@ -188,7 +212,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 76,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-opus-4-7",
@@ -218,7 +246,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 17,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-opus-4-8",
@@ -248,7 +280,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 16,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-opus-5",
@@ -283,7 +319,11 @@
     "distillable": false,
     "popularity_rank": 14,
     "top_ten_rank": 9,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-sonnet-4-5",
@@ -313,7 +353,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 20,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-sonnet-4-5-20250929",
@@ -343,7 +387,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 96,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-sonnet-4-6",
@@ -373,7 +421,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 18,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "claude-sonnet-5",
@@ -406,7 +458,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 15,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "deepseek-v3",
@@ -433,7 +489,11 @@
     "released_at": "2025-05-26",
     "distillable": true,
     "popularity_rank": 75,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "deepseek-v3.1",
@@ -462,7 +522,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 13,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "deepseek-v3.2",
@@ -491,7 +555,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 12,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "deepseek-v3.2-thinking",
@@ -521,7 +589,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 11,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "deepseek-v4-flash",
@@ -552,7 +624,11 @@
     "distillable": true,
     "popularity_rank": 9,
     "top_ten_rank": 1,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "deepseek-v4-pro",
@@ -584,7 +660,11 @@
     "distillable": true,
     "popularity_rank": 10,
     "top_ten_rank": 4,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "deepseek-v4-pro-0813",
@@ -613,7 +693,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 91,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "doubao/doubao-seedance-2-0-260128",
@@ -634,7 +718,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 104,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.0-flash",
@@ -665,7 +753,11 @@
     "released_at": "2025-02-05",
     "distillable": false,
     "popularity_rank": 105,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.5-flash",
@@ -696,7 +788,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 62,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-2.5-flash-image",
@@ -717,7 +813,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 60,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.5-flash-lite",
@@ -746,7 +846,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 66,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-2.5-flash-preview-tts",
@@ -766,7 +870,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 89,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.5-flash-tts",
@@ -786,7 +894,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 74,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.5-pro",
@@ -819,7 +931,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 59,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-2.5-pro-preview-tts",
@@ -839,7 +955,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 90,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-2.5-pro-tts",
@@ -859,7 +979,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 73,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-3-flash-preview",
@@ -890,7 +1014,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 61,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3-pro-image",
@@ -911,7 +1039,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 47,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-3.1-flash-image",
@@ -932,7 +1064,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 29,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-3.1-flash-lite",
@@ -961,7 +1097,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 27,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.1-flash-lite-image",
@@ -982,7 +1122,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 30,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-3.1-flash-lite-preview",
@@ -1010,7 +1154,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 28,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.1-flash-tts-preview",
@@ -1030,7 +1178,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 31,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-3.1-pro-preview",
@@ -1063,7 +1215,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 25,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.1-pro-preview-customtools",
@@ -1095,7 +1251,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 26,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.5-flash",
@@ -1126,7 +1286,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 42,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.5-flash-lite",
@@ -1155,7 +1319,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 54,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.6-flash",
@@ -1186,7 +1354,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 43,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-3.7-flash",
@@ -1217,7 +1389,11 @@
     "released_at": "2026-08-20",
     "distillable": false,
     "popularity_rank": 44,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gemini-embedding-001",
@@ -1237,7 +1413,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 65,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-flash-latest",
@@ -1268,7 +1448,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 55,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-flash-lite-latest",
@@ -1297,7 +1481,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 64,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-pro-latest",
@@ -1327,7 +1515,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 50,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemini-robotics-er-1.6-preview",
@@ -1350,7 +1542,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 88,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemma-4-26b-a4b-it",
@@ -1375,7 +1571,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 83,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gemma-4-31b-it",
@@ -1400,7 +1600,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 82,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "glm-4.7",
@@ -1428,7 +1632,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 57,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "glm-5",
@@ -1457,7 +1665,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 49,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "glm-5-turbo",
@@ -1484,7 +1696,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 52,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "glm-5.1",
@@ -1513,7 +1729,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 48,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "glm-5.2",
@@ -1544,7 +1764,11 @@
     "distillable": true,
     "popularity_rank": 37,
     "top_ten_rank": 10,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "glm-5.3",
@@ -1573,7 +1797,11 @@
     "distillable": true,
     "popularity_rank": 92,
     "top_ten_rank": 3,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-4.1-mini",
@@ -1599,7 +1827,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 79,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gpt-4o",
@@ -1622,7 +1854,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 78,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gpt-4o-mini",
@@ -1648,7 +1884,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 24,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "gpt-5-mini",
@@ -1674,7 +1914,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 45,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.4",
@@ -1706,7 +1950,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 41,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.4-mini",
@@ -1734,7 +1982,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 39,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.4-nano",
@@ -1760,7 +2012,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 51,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.5",
@@ -1792,7 +2048,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 22,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.6-luna",
@@ -1819,7 +2079,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 21,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.6-sol",
@@ -1852,7 +2116,11 @@
     "distillable": false,
     "popularity_rank": 23,
     "top_ten_rank": 2,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-5.6-terra",
@@ -1883,7 +2151,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 40,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "gpt-image-2",
@@ -1903,7 +2175,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 44,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "grok-imagine-image",
@@ -1923,7 +2199,11 @@
     "released_at": "2025-05-26",
     "distillable": false,
     "popularity_rank": 71,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "grok-imagine-image-pro",
@@ -1943,7 +2223,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 69,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "grok-imagine-image-quality",
@@ -1963,7 +2247,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 68,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "grok-imagine-video",
@@ -1984,7 +2272,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 72,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "grok-imagine-video-1.5",
@@ -2005,7 +2297,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 70,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-image-4.5",
@@ -2025,7 +2321,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 106,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-image-5.0-lite",
@@ -2045,7 +2345,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 107,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-video-3.0-fast",
@@ -2066,7 +2370,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 108,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-video-3.0-pro",
@@ -2087,7 +2395,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 109,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-video-seedance-2.0",
@@ -2108,7 +2420,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 110,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-video-seedance-2.0-fast",
@@ -2129,7 +2445,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 111,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "jimeng-video-seedance-2.0-mini",
@@ -2150,7 +2470,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 112,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "kimi-k2.5",
@@ -2178,7 +2502,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 7,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "kimi-k2.6",
@@ -2206,7 +2534,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 6,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "kimi-k3",
@@ -2235,7 +2567,11 @@
     "distillable": true,
     "popularity_rank": 5,
     "top_ten_rank": 6,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "macaron-v1-coding-venti",
@@ -2257,7 +2593,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 84,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "macaron-v1-tall",
@@ -2281,7 +2621,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 86,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "macaron-v1-venti",
@@ -2305,7 +2649,11 @@
     "released_at": "2026-08-04",
     "distillable": false,
     "popularity_rank": 85,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "MiniMax-H3",
@@ -2333,7 +2681,11 @@
     "distillable": false,
     "popularity_rank": 1,
     "top_ten_rank": 7,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "minimax-m2",
@@ -2361,7 +2713,11 @@
     "released_at": "2025-11-22",
     "distillable": true,
     "popularity_rank": 4,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "minimax-m2.5",
@@ -2388,7 +2744,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 3,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "minimax-m2.7",
@@ -2416,7 +2776,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 2,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "mirothinker-1-7-deepresearch",
@@ -2438,7 +2802,11 @@
     "released_at": "2026-08-01",
     "distillable": true,
     "popularity_rank": 113,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "mirothinker-1-7-deepresearch-mini",
@@ -2460,7 +2828,11 @@
     "released_at": "2026-08-01",
     "distillable": true,
     "popularity_rank": 114,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "nano-banana-pro-preview",
@@ -2481,7 +2853,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 38,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "image"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "qwen3.5-27b",
@@ -2506,7 +2882,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 56,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.5-35b-a3b",
@@ -2530,7 +2910,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 81,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.5-397b-a17b",
@@ -2554,7 +2938,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 58,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.5-flash",
@@ -2579,7 +2967,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 67,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.5-plus",
@@ -2606,7 +2998,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 63,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.5-plus-2026-02-15",
@@ -2633,7 +3029,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 80,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.6-max-preview",
@@ -2659,7 +3059,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 35,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.6-plus",
@@ -2686,7 +3090,11 @@
     "released_at": "2026-04-06",
     "distillable": true,
     "popularity_rank": 36,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.7-max",
@@ -2713,7 +3121,11 @@
     "released_at": "2026-06-20",
     "distillable": true,
     "popularity_rank": 33,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.7-plus",
@@ -2740,7 +3152,11 @@
     "released_at": "2026-06-20",
     "distillable": true,
     "popularity_rank": 34,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "qwen3.8-max",
@@ -2767,7 +3183,11 @@
     "released_at": "2026-08-04",
     "distillable": true,
     "popularity_rank": 32,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "text"
+    ],
+    "reasoning": true
   },
   {
     "model_name": "seedance-2.0",
@@ -2788,7 +3208,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 115,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "seedance-2.0-fast",
@@ -2809,7 +3233,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 116,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "seedance-2.0-mini",
@@ -2830,7 +3258,11 @@
     "released_at": "2026-01-28",
     "distillable": false,
     "popularity_rank": 117,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "seedance-2.0-pro",
@@ -2851,7 +3283,11 @@
     "released_at": "2026-04-06",
     "distillable": false,
     "popularity_rank": 93,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "seedance-2.5",
@@ -2873,7 +3309,11 @@
     "distillable": false,
     "popularity_rank": 94,
     "top_ten_rank": 8,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "sonilo-video-to-music",
@@ -2893,7 +3333,11 @@
     "released_at": "2026-06-20",
     "distillable": false,
     "popularity_rank": 87,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "audio"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "veo-3.1-fast-generate-preview",
@@ -2914,7 +3358,11 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 53,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   },
   {
     "model_name": "veo-3.1-generate-preview",
@@ -2935,6 +3383,10 @@
     "released_at": "2025-11-22",
     "distillable": false,
     "popularity_rank": 46,
-    "status": 1
+    "status": 1,
+    "output_modalities": [
+      "video"
+    ],
+    "reasoning": false
   }
 ]

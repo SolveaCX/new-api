@@ -34,18 +34,20 @@ func validModelDirectoryMetadata(t *testing.T, modelName string) ModelDirectoryM
 	popularityRank := 7
 	topTenRank := 3
 	return ModelDirectoryMetadata{
-		ModelName:      modelName,
-		Author:         "OpenAI",
-		ProvidersJSON:  mustModelDirectoryArrayJSON(t, []string{"Flatkey", "OpenAI"}),
-		ModalitiesJSON: mustModelDirectoryArrayJSON(t, []string{"text", "image"}),
-		ContextTokens:  &contextTokens,
-		Series:         "GPT",
-		CategoriesJSON: mustModelDirectoryArrayJSON(t, []string{"reasoning", "coding"}),
-		ReleasedAt:     "2026-08-01",
-		Distillable:    true,
-		PopularityRank: &popularityRank,
-		TopTenRank:     &topTenRank,
-		Status:         1,
+		ModelName:            modelName,
+		Author:               "OpenAI",
+		ProvidersJSON:        mustModelDirectoryArrayJSON(t, []string{"Flatkey", "OpenAI"}),
+		ModalitiesJSON:       mustModelDirectoryArrayJSON(t, []string{"text", "image"}),
+		OutputModalitiesJSON: mustModelDirectoryArrayJSON(t, []string{"text"}),
+		ContextTokens:        &contextTokens,
+		Series:               "GPT",
+		CategoriesJSON:       mustModelDirectoryArrayJSON(t, []string{"reasoning", "coding"}),
+		ReleasedAt:           "2026-08-01",
+		Distillable:          true,
+		Reasoning:            true,
+		PopularityRank:       &popularityRank,
+		TopTenRank:           &topTenRank,
+		Status:               1,
 	}
 }
 
@@ -86,17 +88,19 @@ func TestModelDirectoryMetadataNormalizeAndValidate(t *testing.T) {
 	popularityRank := 12
 	topTenRank := 4
 	metadata := ModelDirectoryMetadata{
-		ModelName:      "  gpt-5  ",
-		Author:         "  OpenAI  ",
-		ProvidersJSON:  mustModelDirectoryArrayJSON(t, []string{" OpenAI ", "", "OpenAI", " Azure "}),
-		ModalitiesJSON: mustModelDirectoryArrayJSON(t, []string{" text ", "image", "text", ""}),
-		ContextTokens:  &contextTokens,
-		Series:         " GPT ",
-		CategoriesJSON: mustModelDirectoryArrayJSON(t, []string{" coding ", "reasoning", "coding", ""}),
-		ReleasedAt:     "2026-08-21",
-		Distillable:    true,
-		PopularityRank: &popularityRank,
-		TopTenRank:     &topTenRank,
+		ModelName:            "  gpt-5  ",
+		Author:               "  OpenAI  ",
+		ProvidersJSON:        mustModelDirectoryArrayJSON(t, []string{" OpenAI ", "", "OpenAI", " Azure "}),
+		ModalitiesJSON:       mustModelDirectoryArrayJSON(t, []string{" text ", "image", "text", ""}),
+		OutputModalitiesJSON: mustModelDirectoryArrayJSON(t, []string{" text ", "file", "text", ""}),
+		ContextTokens:        &contextTokens,
+		Series:               " GPT ",
+		CategoriesJSON:       mustModelDirectoryArrayJSON(t, []string{" coding ", "reasoning", "coding", ""}),
+		ReleasedAt:           "2026-08-21",
+		Distillable:          true,
+		Reasoning:            true,
+		PopularityRank:       &popularityRank,
+		TopTenRank:           &topTenRank,
 	}
 
 	require.NoError(t, metadata.NormalizeAndValidate())
@@ -108,8 +112,10 @@ func TestModelDirectoryMetadataNormalizeAndValidate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"OpenAI", "Azure"}, view.Providers)
 	require.Equal(t, []string{"text", "image"}, view.Modalities)
+	require.Equal(t, []string{"text", "file"}, view.OutputModalities)
 	require.Equal(t, []string{"coding", "reasoning"}, view.Categories)
 	require.Equal(t, &contextTokens, view.ContextTokens)
+	require.True(t, view.Reasoning)
 	require.Equal(t, &popularityRank, view.PopularityRank)
 	require.Equal(t, &topTenRank, view.TopTenRank)
 }
@@ -124,8 +130,10 @@ func TestModelDirectoryMetadataValidateRejectsInvalidBoundaries(t *testing.T) {
 		{name: "empty series", mutate: func(m *ModelDirectoryMetadata) { m.Series = "  " }},
 		{name: "empty providers", mutate: func(m *ModelDirectoryMetadata) { m.ProvidersJSON = `[" "]` }},
 		{name: "empty modalities", mutate: func(m *ModelDirectoryMetadata) { m.ModalitiesJSON = `[]` }},
+		{name: "empty output modalities", mutate: func(m *ModelDirectoryMetadata) { m.OutputModalitiesJSON = `[]` }},
 		{name: "empty categories", mutate: func(m *ModelDirectoryMetadata) { m.CategoriesJSON = `[]` }},
 		{name: "invalid modality", mutate: func(m *ModelDirectoryMetadata) { m.ModalitiesJSON = `["text","3d"]` }},
+		{name: "invalid output modality", mutate: func(m *ModelDirectoryMetadata) { m.OutputModalitiesJSON = `["text","3d"]` }},
 		{name: "invalid released date shape", mutate: func(m *ModelDirectoryMetadata) { m.ReleasedAt = "2026-8-21" }},
 		{name: "invalid released date calendar", mutate: func(m *ModelDirectoryMetadata) { m.ReleasedAt = "2026-02-30" }},
 		{name: "non-positive context tokens", mutate: func(m *ModelDirectoryMetadata) { value := int64(0); m.ContextTokens = &value }},
@@ -177,8 +185,26 @@ func TestGetEnabledModelDirectoryMetadataMapFiltersAndNormalizesRequests(t *test
 	view, ok := result["gpt-5"]
 	require.True(t, ok)
 	require.Equal(t, "OpenAI", view.Author)
+	require.Equal(t, []string{"text"}, view.OutputModalities)
+	require.True(t, view.Reasoning)
 	require.NotContains(t, result, "claude-4")
 	require.NotContains(t, result, "gemini-3")
+}
+
+func TestGetEnabledModelDirectoryMetadataMapSkipsRowsAwaitingReviewedBackfill(t *testing.T) {
+	setupModelDirectoryMetadataTestDB(t)
+	pending := validModelDirectoryMetadata(t, "gpt-5")
+	require.NoError(t, DB.Create(&pending).Error)
+	reviewed := validModelDirectoryMetadata(t, "claude-5")
+	require.NoError(t, DB.Create(&reviewed).Error)
+	require.NoError(t, DB.Model(&ModelDirectoryMetadata{}).
+		Where("model_name = ?", pending.ModelName).
+		UpdateColumn("output_modalities_json", `[]`).Error)
+
+	result, err := GetEnabledModelDirectoryMetadataMap([]string{pending.ModelName, reviewed.ModelName})
+	require.NoError(t, err)
+	require.NotContains(t, result, pending.ModelName)
+	require.Contains(t, result, reviewed.ModelName)
 }
 
 func TestGetEnabledModelDirectoryMetadataMapEmptyInputDoesNotQuery(t *testing.T) {
@@ -202,11 +228,13 @@ func TestModelDirectoryMetadataViewJSONFields(t *testing.T) {
 	require.Equal(t, "author", fields["Author"])
 	require.Equal(t, "providers", fields["Providers"])
 	require.Equal(t, "modalities", fields["Modalities"])
+	require.Equal(t, "output_modalities", fields["OutputModalities"])
 	require.Equal(t, "context_tokens", fields["ContextTokens"])
 	require.Equal(t, "series", fields["Series"])
 	require.Equal(t, "categories", fields["Categories"])
 	require.Equal(t, "released_at", fields["ReleasedAt"])
 	require.Equal(t, "distillable", fields["Distillable"])
+	require.Equal(t, "reasoning", fields["Reasoning"])
 	require.Equal(t, "popularity_rank,omitempty", fields["PopularityRank"])
 	require.Equal(t, "top_ten_rank,omitempty", fields["TopTenRank"])
 }
@@ -236,7 +264,8 @@ func TestModelDirectoryMetadataImportDryRunPlansWithoutWrites(t *testing.T) {
 	existing := validModelDirectoryMetadata(t, "existing")
 	require.NoError(t, DB.Create(&existing).Error)
 	updated := existing
-	updated.Author = "Updated Author"
+	updated.OutputModalitiesJSON = mustModelDirectoryArrayJSON(t, []string{"image"})
+	updated.Reasoning = false
 	inserted := validModelDirectoryMetadata(t, "inserted")
 
 	result, err := PlanModelDirectoryMetadataImport(DB, []ModelDirectoryMetadata{existing, updated, inserted})
@@ -270,6 +299,19 @@ func TestModelDirectoryMetadataImportApplyIsTransactionalAndIdempotent(t *testin
 	require.Empty(t, second.Inserts)
 	require.Empty(t, second.Updates)
 	require.Equal(t, []string{"claude-5", "gpt-5"}, second.Unchanged)
+
+	rows[0].OutputModalitiesJSON = mustModelDirectoryArrayJSON(t, []string{"image"})
+	rows[0].Reasoning = false
+	third, err := ApplyModelDirectoryMetadataImport(DB, rows)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gpt-5"}, third.Updates)
+
+	var stored ModelDirectoryMetadata
+	require.NoError(t, DB.Where("model_name = ?", "gpt-5").First(&stored).Error)
+	view, err := stored.ToView()
+	require.NoError(t, err)
+	require.Equal(t, []string{"image"}, view.OutputModalities)
+	require.False(t, view.Reasoning)
 }
 
 func TestModelDirectoryMetadataImportNotifiesAfterChangedRowsCommit(t *testing.T) {

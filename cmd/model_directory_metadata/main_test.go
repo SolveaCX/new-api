@@ -40,7 +40,7 @@ func TestParseCommandOptionsRequiresFile(t *testing.T) {
 func TestDryRunUsesDatabaseConnectionWithoutMigration(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "dry-run.db")
 	metadataPath := filepath.Join(t.TempDir(), "metadata.json")
-	require.NoError(t, os.WriteFile(metadataPath, []byte(`[{"model_name":"gpt-5","author":"OpenAI","providers":["OpenAI"],"modalities":["text"],"context_tokens":128000,"series":"GPT","categories":["coding"],"released_at":"2026-08-01","distillable":true}]`), 0600))
+	require.NoError(t, os.WriteFile(metadataPath, []byte(`[{"model_name":"gpt-5","author":"OpenAI","providers":["OpenAI"],"modalities":["text","image"],"output_modalities":["text"],"context_tokens":128000,"series":"GPT","categories":["coding"],"released_at":"2026-08-01","distillable":true,"reasoning":true}]`), 0600))
 	t.Setenv("SQL_DSN", "local")
 	t.Setenv("SQLITE_PATH", databasePath)
 	t.Setenv("NODE_TYPE", "")
@@ -69,4 +69,40 @@ func TestDryRunUsesDatabaseConnectionWithoutMigration(t *testing.T) {
 	require.NotNil(t, model.DB)
 	require.True(t, model.DB.Migrator().HasTable(&model.ModelDirectoryMetadata{}))
 	require.False(t, model.DB.Migrator().HasTable(&model.User{}))
+}
+
+func TestDecodeImportFileMapsOutputModalitiesAndReasoning(t *testing.T) {
+	metadataPath := filepath.Join(t.TempDir(), "metadata.json")
+	require.NoError(t, os.WriteFile(metadataPath, []byte(`[{"model_name":"gpt-5","author":"OpenAI","providers":["OpenAI"],"modalities":["text","image"],"output_modalities":["text"],"context_tokens":128000,"series":"GPT","categories":["coding"],"released_at":"2026-08-01","distillable":true,"reasoning":true}]`), 0600))
+
+	rows, err := decodeImportFile(metadataPath)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.JSONEq(t, `["text","image"]`, rows[0].ModalitiesJSON)
+	require.JSONEq(t, `["text"]`, rows[0].OutputModalitiesJSON)
+	require.True(t, rows[0].Reasoning)
+}
+
+func TestDecodeImportFileRequiresExplicitReasoning(t *testing.T) {
+	metadataPath := filepath.Join(t.TempDir(), "metadata.json")
+	require.NoError(t, os.WriteFile(metadataPath, []byte(`[{"model_name":"gpt-5","author":"OpenAI","providers":["OpenAI"],"modalities":["text"],"output_modalities":["text"],"context_tokens":128000,"series":"GPT","categories":["coding"],"released_at":"2026-08-01","distillable":true}]`), 0600))
+
+	_, err := decodeImportFile(metadataPath)
+	require.ErrorContains(t, err, "reasoning is required")
+}
+
+func TestReviewedImportFilesCarryOutputModalitiesAndReasoning(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "..", "data", "model-directory", "metadata.json"),
+		filepath.Join("..", "..", "data", "model-directory", "production-candidate.json"),
+	} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			rows, err := decodeImportFile(path)
+			require.NoError(t, err)
+			require.NotEmpty(t, rows)
+			for index := range rows {
+				require.NoError(t, rows[index].NormalizeAndValidate(), "row %d %s", index+1, rows[index].ModelName)
+			}
+		})
+	}
 }

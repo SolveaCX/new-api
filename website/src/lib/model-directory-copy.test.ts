@@ -83,4 +83,14 @@ describe("directory copy", () => {
     expect(getDirectoryCopy("ja").filter).toBe("絞り込み");
     expect(getDirectoryCopy("en").filter).toBe("Filter");
   });
+
+  test("labels output modalities and reasoning capability in every locale", () => {
+    for (const locale of LOCALES) {
+      const copy = getDirectoryCopy(locale);
+      expect(copy.groupOutputModalities.trim(), `${locale}.groupOutputModalities`).not.toBe("");
+      expect(copy.groupCapabilities.trim(), `${locale}.groupCapabilities`).not.toBe("");
+      expect(copy.reasoningModel.trim(), `${locale}.reasoningModel`).not.toBe("");
+      expect(copy.nonReasoningModel.trim(), `${locale}.nonReasoningModel`).not.toBe("");
+    }
+  });
 });

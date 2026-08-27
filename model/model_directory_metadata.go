@@ -45,34 +45,38 @@ var allowedModelDirectoryModalities = map[string]struct{}{
 }
 
 type ModelDirectoryMetadata struct {
-	ID             int64  `json:"id" gorm:"primaryKey"`
-	ModelName      string `json:"model_name" gorm:"size:191;not null;uniqueIndex"`
-	Author         string `json:"author" gorm:"size:128;not null"`
-	ProvidersJSON  string `json:"providers_json" gorm:"column:providers_json;type:text;not null"`
-	ModalitiesJSON string `json:"modalities_json" gorm:"column:modalities_json;type:text;not null"`
-	CategoriesJSON string `json:"categories_json" gorm:"column:categories_json;type:text;not null"`
-	ContextTokens  *int64 `json:"context_tokens"`
-	Series         string `json:"series" gorm:"size:128;not null"`
-	ReleasedAt     string `json:"released_at" gorm:"type:varchar(10);not null"`
-	Distillable    bool   `json:"distillable" gorm:"not null"`
-	PopularityRank *int   `json:"popularity_rank"`
-	TopTenRank     *int   `json:"top_ten_rank"`
-	Status         int    `json:"status" gorm:"not null;index"`
-	CreatedTime    int64  `json:"created_time" gorm:"bigint"`
-	UpdatedTime    int64  `json:"updated_time" gorm:"bigint"`
+	ID                   int64  `json:"id" gorm:"primaryKey"`
+	ModelName            string `json:"model_name" gorm:"size:191;not null;uniqueIndex"`
+	Author               string `json:"author" gorm:"size:128;not null"`
+	ProvidersJSON        string `json:"providers_json" gorm:"column:providers_json;type:text;not null"`
+	ModalitiesJSON       string `json:"modalities_json" gorm:"column:modalities_json;type:text;not null"`
+	OutputModalitiesJSON string `json:"output_modalities_json" gorm:"column:output_modalities_json;type:text;not null;default:'[]'"`
+	CategoriesJSON       string `json:"categories_json" gorm:"column:categories_json;type:text;not null"`
+	ContextTokens        *int64 `json:"context_tokens"`
+	Series               string `json:"series" gorm:"size:128;not null"`
+	ReleasedAt           string `json:"released_at" gorm:"type:varchar(10);not null"`
+	Distillable          bool   `json:"distillable" gorm:"not null"`
+	Reasoning            bool   `json:"reasoning" gorm:"not null;default:false"`
+	PopularityRank       *int   `json:"popularity_rank"`
+	TopTenRank           *int   `json:"top_ten_rank"`
+	Status               int    `json:"status" gorm:"not null;index"`
+	CreatedTime          int64  `json:"created_time" gorm:"bigint"`
+	UpdatedTime          int64  `json:"updated_time" gorm:"bigint"`
 }
 
 type ModelDirectoryMetadataView struct {
-	Author         string   `json:"author"`
-	Providers      []string `json:"providers"`
-	Modalities     []string `json:"modalities"`
-	ContextTokens  *int64   `json:"context_tokens"`
-	Series         string   `json:"series"`
-	Categories     []string `json:"categories"`
-	ReleasedAt     string   `json:"released_at"`
-	Distillable    bool     `json:"distillable"`
-	PopularityRank *int     `json:"popularity_rank,omitempty"`
-	TopTenRank     *int     `json:"top_ten_rank,omitempty"`
+	Author           string   `json:"author"`
+	Providers        []string `json:"providers"`
+	Modalities       []string `json:"modalities"`
+	OutputModalities []string `json:"output_modalities"`
+	ContextTokens    *int64   `json:"context_tokens"`
+	Series           string   `json:"series"`
+	Categories       []string `json:"categories"`
+	ReleasedAt       string   `json:"released_at"`
+	Distillable      bool     `json:"distillable"`
+	Reasoning        bool     `json:"reasoning"`
+	PopularityRank   *int     `json:"popularity_rank,omitempty"`
+	TopTenRank       *int     `json:"top_ten_rank,omitempty"`
 }
 
 type ModelDirectoryMetadataImportResult struct {
@@ -142,6 +146,9 @@ func (m *ModelDirectoryMetadata) NormalizeAndValidate() error {
 	if m.ModalitiesJSON, err = normalizeModelDirectoryArrayJSON(m.ModalitiesJSON, "modalities", allowedModelDirectoryModalities); err != nil {
 		return err
 	}
+	if m.OutputModalitiesJSON, err = normalizeModelDirectoryArrayJSON(m.OutputModalitiesJSON, "output_modalities", allowedModelDirectoryModalities); err != nil {
+		return err
+	}
 	if m.CategoriesJSON, err = normalizeModelDirectoryArrayJSON(m.CategoriesJSON, "categories", nil); err != nil {
 		return err
 	}
@@ -160,21 +167,27 @@ func (m ModelDirectoryMetadata) ToView() (ModelDirectoryMetadataView, error) {
 	if err != nil {
 		return ModelDirectoryMetadataView{}, err
 	}
+	outputModalities, err := parseModelDirectoryStringArray(m.OutputModalitiesJSON, "output_modalities")
+	if err != nil {
+		return ModelDirectoryMetadataView{}, err
+	}
 	categories, err := parseModelDirectoryStringArray(m.CategoriesJSON, "categories")
 	if err != nil {
 		return ModelDirectoryMetadataView{}, err
 	}
 	return ModelDirectoryMetadataView{
-		Author:         m.Author,
-		Providers:      providers,
-		Modalities:     modalities,
-		ContextTokens:  m.ContextTokens,
-		Series:         m.Series,
-		Categories:     categories,
-		ReleasedAt:     m.ReleasedAt,
-		Distillable:    m.Distillable,
-		PopularityRank: m.PopularityRank,
-		TopTenRank:     m.TopTenRank,
+		Author:           m.Author,
+		Providers:        providers,
+		Modalities:       modalities,
+		OutputModalities: outputModalities,
+		ContextTokens:    m.ContextTokens,
+		Series:           m.Series,
+		Categories:       categories,
+		ReleasedAt:       m.ReleasedAt,
+		Distillable:      m.Distillable,
+		Reasoning:        m.Reasoning,
+		PopularityRank:   m.PopularityRank,
+		TopTenRank:       m.TopTenRank,
 	}, nil
 }
 
@@ -193,6 +206,16 @@ func GetEnabledModelDirectoryMetadataMap(modelNames []string) (map[string]ModelD
 		return nil, err
 	}
 	for _, row := range rows {
+		// Auto-migration initializes the new output column to [] on older rows.
+		// Until the reviewed importer backfills one, omit that row's metadata so
+		// the default reasoning=false cannot be mistaken for reviewed data.
+		outputModalities, err := parseModelDirectoryStringArray(row.OutputModalitiesJSON, "output_modalities")
+		if err != nil {
+			return nil, err
+		}
+		if len(outputModalities) == 0 {
+			continue
+		}
 		view, err := row.ToView()
 		if err != nil {
 			return nil, err
@@ -245,8 +268,9 @@ func ApplyModelDirectoryMetadataImport(db *gorm.DB, rows []ModelDirectoryMetadat
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "model_name"}},
 				DoUpdates: clause.AssignmentColumns([]string{
-					"author", "providers_json", "modalities_json", "context_tokens", "series",
-					"categories_json", "released_at", "distillable", "popularity_rank",
+					"author", "providers_json", "modalities_json", "output_modalities_json",
+					"context_tokens", "series", "categories_json", "released_at", "distillable",
+					"reasoning", "popularity_rank",
 					"top_ten_rank", "status", "updated_time",
 				}),
 			}).Create(&row).Error; err != nil {
@@ -324,11 +348,13 @@ func modelDirectoryMetadataImportEqual(left ModelDirectoryMetadata, right ModelD
 		left.Author == right.Author &&
 		left.ProvidersJSON == right.ProvidersJSON &&
 		left.ModalitiesJSON == right.ModalitiesJSON &&
+		left.OutputModalitiesJSON == right.OutputModalitiesJSON &&
 		equalOptionalInt64(left.ContextTokens, right.ContextTokens) &&
 		left.Series == right.Series &&
 		left.CategoriesJSON == right.CategoriesJSON &&
 		left.ReleasedAt == right.ReleasedAt &&
 		left.Distillable == right.Distillable &&
+		left.Reasoning == right.Reasoning &&
 		equalOptionalInt(left.PopularityRank, right.PopularityRank) &&
 		equalOptionalInt(left.TopTenRank, right.TopTenRank) &&
 		left.Status == right.Status

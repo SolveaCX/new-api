@@ -82,6 +82,8 @@ export function buildDirectorySeo(locale: Locale, params?: DirectorySearchParams
 function countActiveGroups(parsed: ReturnType<typeof parseDirectorySearch>): number {
   const groups = [
     parsed.modalities,
+    parsed.outputModalities,
+    parsed.reasoning,
     parsed.context,
     parsed.inputPrice,
     parsed.outputPrice,

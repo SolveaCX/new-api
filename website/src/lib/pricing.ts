@@ -16,6 +16,8 @@ export type ModelDirectoryMetadata = {
   author: string;
   providers: string[];
   modalities: Array<"text" | "image" | "file" | "audio" | "video">;
+  output_modalities: Array<"text" | "image" | "file" | "audio" | "video">;
+  reasoning: boolean;
   context_tokens: number | null;
   series: string;
   categories: string[];
@@ -502,6 +504,7 @@ function parseModelDirectoryMetadata(value: unknown): ModelDirectoryMetadata | n
   const author = parseRequiredString(value.author);
   const providers = parseRequiredStringArray(value.providers);
   const modalities = parseRequiredStringArray(value.modalities);
+  const outputModalities = parseRequiredStringArray(value.output_modalities);
   const series = parseRequiredString(value.series);
   const categories = parseRequiredStringArray(value.categories);
   const releasedAt = parseRequiredString(value.released_at);
@@ -511,6 +514,9 @@ function parseModelDirectoryMetadata(value: unknown): ModelDirectoryMetadata | n
     !providers ||
     !modalities ||
     !modalities.every(isDirectoryModality) ||
+    !outputModalities ||
+    !outputModalities.every(isDirectoryModality) ||
+    typeof value.reasoning !== "boolean" ||
     !series ||
     !categories ||
     !releasedAt ||
@@ -528,6 +534,8 @@ function parseModelDirectoryMetadata(value: unknown): ModelDirectoryMetadata | n
     author,
     providers,
     modalities: modalities as ModelDirectoryMetadata["modalities"],
+    output_modalities: outputModalities as ModelDirectoryMetadata["output_modalities"],
+    reasoning: value.reasoning,
     context_tokens: contextTokens,
     series,
     categories,

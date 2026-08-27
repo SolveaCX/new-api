@@ -498,17 +498,21 @@ func TestCachedWebsiteMetadataDoesNotShareMutableFields(t *testing.T) {
 	withModelDirectoryMetadataLoader(t, func([]string) (map[string]model.ModelDirectoryMetadataView, error) {
 		contextTokens := int64(128000)
 		return map[string]model.ModelDirectoryMetadataView{
-			"gpt-5": {Providers: []string{"OpenAI"}, ContextTokens: &contextTokens},
+			"gpt-5": {Providers: []string{"OpenAI"}, OutputModalities: []string{"text"}, ContextTokens: &contextTokens, Reasoning: true},
 		}, nil
 	})
 	pricing := []model.Pricing{{ModelName: "gpt-5", EnableGroup: []string{"plg"}}}
 
 	first := attachModelDirectoryMetadata(pricing)
 	first[0].DirectoryMetadata.Providers[0] = "Mutated"
+	first[0].DirectoryMetadata.OutputModalities[0] = "image"
+	first[0].DirectoryMetadata.Reasoning = false
 	*first[0].DirectoryMetadata.ContextTokens = 1
 	second := attachModelDirectoryMetadata(pricing)
 
 	require.Equal(t, "OpenAI", second[0].DirectoryMetadata.Providers[0])
+	require.Equal(t, []string{"text"}, second[0].DirectoryMetadata.OutputModalities)
+	require.True(t, second[0].DirectoryMetadata.Reasoning)
 	require.EqualValues(t, 128000, *second[0].DirectoryMetadata.ContextTokens)
 }
 

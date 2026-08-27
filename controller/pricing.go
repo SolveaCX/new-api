@@ -413,6 +413,7 @@ func cloneWebsiteMetadataView(source model.ModelDirectoryMetadataView) model.Mod
 	clone := source
 	clone.Providers = append([]string(nil), source.Providers...)
 	clone.Modalities = append([]string(nil), source.Modalities...)
+	clone.OutputModalities = append([]string(nil), source.OutputModalities...)
 	clone.Categories = append([]string(nil), source.Categories...)
 	if source.ContextTokens != nil {
 		value := *source.ContextTokens
