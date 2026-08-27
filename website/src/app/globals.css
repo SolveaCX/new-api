@@ -2821,12 +2821,28 @@ html:has(.model-prototype) {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transition: transform 0.28s;
+}
+
+/* Posters are supplied in several deliberate ratios (4:5, 9:16, and 16:9).
+ * Keep the complete artwork visible inside the card; only motion previews are
+ * allowed to crop to the media frame. */
+.model-prototype .prompt-media img.prompt-image {
+  background: #f5f5f7;
+  object-fit: contain;
+}
+
+.model-prototype .prompt-media video.prompt-image {
+  object-fit: cover;
 }
 
 .model-prototype .prompt-card:hover .prompt-image {
   transform: scale(1.04);
+}
+
+.model-prototype .prompt-card:hover img.prompt-image {
+  transform: none;
 }
 
 .model-prototype .prompt-media::after {
@@ -5766,7 +5782,8 @@ html:has(.model-prototype) {
 
   .model-prototype .prompt-library-head {
     height: auto;
-    min-height: 121px;
+    min-height: 0;
+    flex: 0 0 auto;
   }
 
   .model-prototype .faq-intro {
@@ -5825,5 +5842,78 @@ html:has(.model-prototype) {
 
   .model-prototype .model-pricing .pricing-card {
     padding: 24px;
+  }
+}
+
+/* Prompt-library content is data-driven: localized headings and profession
+ * briefs can be longer than the original prototype handoff. Keep the heading
+ * in normal flow, preserve complete poster artwork, and let cards grow with
+ * their prompt instead of allowing text or actions to disappear behind a
+ * fixed-height sibling. */
+.model-prototype .prompt-library-head {
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.model-prototype .prompt-library .prompt-grid {
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+  grid-template-rows: none;
+  grid-auto-rows: minmax(460px, auto);
+}
+
+.model-prototype .prompt-library .prompt-card {
+  height: 100%;
+  min-height: 460px;
+  overflow: visible;
+}
+
+.model-prototype .prompt-library .prompt-body {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 221px;
+}
+
+.model-prototype .prompt-library .prompt-text {
+  height: auto;
+  min-height: 161px;
+  overflow: visible;
+}
+
+/* Keep both card actions on the same bottom edge even when a localized
+ * prompt wraps to a different number of lines. The body fills the remaining
+ * card height and the action row consumes the auto margin at the bottom. */
+.model-prototype .prompt-library .prompt-actions {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+.model-prototype .prompt-actions > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+  .model-prototype .prompt-library .prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 621px) and (max-width: 699px) {
+  .model-prototype .prompt-library .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .prompt-library .prompt-actions {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .prompt-library .prompt-actions > * {
+    width: 100%;
   }
 }

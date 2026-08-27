@@ -70,6 +70,8 @@ import {
 } from "@/lib/pricing";
 import {
   getImagePlaygroundExample,
+  getImagePromptTemplateFallbackPosters,
+  getImagePromptTemplates,
   type ImagePlaygroundExample,
 } from "@/lib/image-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
@@ -1933,7 +1935,8 @@ function OutputPreview(props: {
             alt={props.t("Image preview")}
             fill
             sizes="(min-width: 1280px) 40vw, (min-width: 1024px) 45vw, 100vw"
-            className="preview-media object-cover"
+            className="preview-media object-contain"
+            style={{ objectFit: "contain" }}
           />
         ) : (
           <span className="preview-label">
@@ -2662,7 +2665,7 @@ function PromptLibrarySection(props: {
                     playsInline
                   />
                 ) : (
-                  <Image src={item.example.poster} alt={item.alt ?? item.label} fill sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="prompt-image object-cover" />
+                  <Image src={item.example.poster} alt={item.alt ?? item.label} fill sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="prompt-image object-contain" />
                 )}
                 <div className="prompt-badge">{item.label}</div>
               </div>
@@ -2701,6 +2704,17 @@ function buildPromptLibraryItems(
   examples: readonly MediaExample[],
   t: (key: string, vars?: Record<string, string>) => string
 ): PromptLibraryItem[] {
+  if (config.generator?.kind === "image") {
+    const templates = getImagePromptTemplates(config.modelId);
+    const posters = getImagePromptTemplateFallbackPosters(config.modelId);
+    return templates.map((template, index) => ({
+      key: template.id,
+      label: t(template.label),
+      prompt: template.prompt,
+      alt: t(template.label),
+      example: { poster: posters[index] ?? template.poster },
+    }));
+  }
   const configured = config.landingContent?.promptLibrary;
   if (configured && configured.length > 0) {
     return configured.map((item) => ({
