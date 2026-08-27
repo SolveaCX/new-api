@@ -176,6 +176,27 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("model=MiniMax-H3");
   });
 
+  test("keeps audio model detail pages free of the public playground", () => {
+    const audio: PricingModel = {
+      model_name: "sonilo-video-to-music",
+      vendor_name: "Sonilo",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.009,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video-to-music"],
+    };
+    const config = getModelLandingConfigForPricingModel(audio);
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={config} locale="en" liveModels={[audio]} allModels={[audio]} />
+    );
+    const pageHtml = html.slice(html.indexOf("<main"), html.indexOf("</main>"));
+
+    expect(pageHtml).not.toContain('id="workbench"');
+    expect(pageHtml).not.toContain("Playground");
+    expect(pageHtml).not.toContain("Start generating");
+  });
+
   test("renders Flatkey sections and related model links on localized Sonilo model pages", () => {
     const sonilo: PricingModel = {
       model_name: "sonilo-video-to-music",
@@ -218,10 +239,10 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("可用性");
     expect(html).toContain("模型价格对比");
     expect(html).toContain("实时模型健康");
-    expect(html).toContain("生成器配置");
-    expect(html).toContain("Playground（注册前可编辑）");
-    expect(html).toContain("在 Playground 打开");
-    expect(html).toContain("请求预览");
+    expect(html).not.toContain("生成器配置");
+    expect(html).not.toContain("Playground（注册前可编辑）");
+    expect(html).not.toContain("在 Playground 打开");
+    expect(html).not.toContain("请求预览");
     expect(html).toContain("可用目录条目");
     expect(html).toContain("常见问题");
     expect(html).toContain("继续浏览 Flatkey");

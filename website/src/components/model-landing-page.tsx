@@ -236,8 +236,12 @@ function FlatkeyModelDetailPage(props: {
   const providerRows = buildCatalogProviderRows(props.config, props.liveModels, providerName);
   const priceRows = buildFlatkeyPriceRows(props.config, model, props.groupRatio, props.t);
   const modalityLabels = buildModalityLabels(props.config, model, props.t);
-  const generator = props.config.generator;
-  const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
+  const configuredGenerator = props.config.generator;
+  // Audio detail pages expose API and pricing information without the public
+  // prompt playground. Keep the configured generator kind for metadata while
+  // disabling the interactive workbench itself.
+  const generator = configuredGenerator?.kind === "audio" ? undefined : configuredGenerator;
+  const examples = configuredGenerator ? MEDIA_EXAMPLES[configuredGenerator.kind] : [];
   const releasedAt = formatModelDate(model?.availability_detected_at ?? model?.availability_checked_at);
   const contextValue = inferContextValue(model);
   const modelDescription = buildModelDescription(props.config, model, props.t);
