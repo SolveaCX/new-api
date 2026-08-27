@@ -236,10 +236,10 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("可用性");
     expect(html).toContain("/ 请求");
     expect(html).not.toContain("实时模型健康");
-    expect(html).toContain("生成器配置");
-    expect(html).toContain("Playground（注册前可编辑）");
-    expect(html).toContain("在 Playground 打开");
-    expect(html).toContain("请求预览");
+    expect(html).not.toContain("生成器配置");
+    expect(html).not.toContain("Playground（注册前可编辑）");
+    expect(html).not.toContain("在 Playground 打开");
+    expect(html).not.toContain('id="workbench"');
     expect(html).toContain("常见问题");
     expect(html).toContain("sonilo-video-to-music 可通过 Flatkey 使用");
     expect(html).not.toContain("Generate production-ready music from any video with synchronized timing.");
@@ -537,15 +537,15 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("0 / 10");
   });
 
-  test("keeps the audio playground without a prompt library", () => {
+  test("keeps audio model detail pages free of the public playground", () => {
     const audioHtml = renderToStaticMarkup(
       <ModelLandingPage config={SONILO_VIDEO_TO_MUSIC_CONFIG} locale="en" liveModels={[]} />
     );
 
     expect(audioHtml).toContain('data-model-kind="audio"');
-    expect(audioHtml).toContain('id="workbench"');
-    expect(audioHtml).toContain('href="#workbench"');
-    expect(audioHtml).toContain("Playground");
+    expect(audioHtml).not.toContain('id="workbench"');
+    expect(audioHtml).not.toContain('href="#workbench"');
+    expect(audioHtml).not.toContain("Start generating");
     expect(audioHtml).not.toContain('id="prompt-library"');
     expect(audioHtml).not.toContain("Prompt library");
   });
