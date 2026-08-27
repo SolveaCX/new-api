@@ -1391,7 +1391,7 @@ func TestCreateInitialStripeCheckoutRevisionSkipsAbandonedRevision(t *testing.T)
 	require.NoError(t, model.DB.Where("order_type = ? AND trade_no = ?", purchase.OrderType, purchase.TradeNo).Delete(&model.StripeCheckoutRevision{}).Error)
 	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", fixture.tradeNo).
 		Updates(map[string]any{"checkout_revision": 0, "gateway_trade_no": ""}).Error)
-	digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
+	digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
 	require.NoError(t, err)
 	prepared, replay, err := model.PrepareStripeCheckoutRevision(model.StripeCheckoutRevisionPrepare{
 		OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: fixture.userID,
@@ -1528,7 +1528,7 @@ func TestCreateInitialStripeCheckoutRevisionRejectsRecoveredTerminalCandidate(t 
 						PaymentProvider: model.PaymentProviderStripe, PaymentMethod: model.PaymentMethodStripe,
 					}).Error)
 				}
-				digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
+				digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
 				require.NoError(t, err)
 				prepared, replay, err := model.PrepareStripeCheckoutRevision(model.StripeCheckoutRevisionPrepare{
 					OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: fixture.userID, ExpectedRevision: 0,
@@ -1701,7 +1701,7 @@ func TestStripeRecurringInitialRevisionRecoversEveryDurableStage(t *testing.T) {
 			}
 			require.NoError(t, model.DB.Create(order).Error)
 			selection := service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
-			digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+tradeNo, 1, selection)
+			digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:subscription:"+tradeNo, 1, selection)
 			require.NoError(t, err)
 			providerID := "cs_recurring_recovery"
 			state := model.StripeCheckoutRevisionStatePreparing
@@ -1782,7 +1782,7 @@ func TestStripeRecurringInitialRevisionRejectsRecoveredTerminalCandidate(t *test
 				PaymentCurrency: "USD", PaymentAmountMinor: 2000,
 			}).Error)
 			selection := service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
-			digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:subscription:"+tradeNo, 1, selection)
+			digest, err := service.StripeCheckoutSelectionDigest("stripe-checkout-initial:subscription:"+tradeNo, 1, selection)
 			require.NoError(t, err)
 			candidateID := "cs_recurring_terminal_" + terminal.name
 			require.NoError(t, model.DB.Create(&model.StripeCheckoutRevision{

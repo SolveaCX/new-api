@@ -153,3 +153,17 @@ func TestStripeCheckoutInitialRequestIDBoundsLongTradeNumbers(t *testing.T) {
 	require.Equal(t, "initial:recurring_subscription:trade-7", StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, "trade-7"))
 	require.Equal(t, "initial:recurring_subscription:trade-7:retry:2", StripeCheckoutRetryRequestID("initial:recurring_subscription:trade-7", 2))
 }
+
+func TestStripeCheckoutSelectionDigestBoundsLongPrefixesWithoutChangingShortKeys(t *testing.T) {
+	selection := StripeCheckoutDiscountSelection{Source: StripeCheckoutDiscountNone}
+
+	shortKey, err := StripeCheckoutSelectionDigest("topup:7", 1, selection)
+	require.NoError(t, err)
+	require.Equal(t, "topup:7:rev:1:discount:9168512c279a14f4153648e9e9d08a64", shortKey)
+
+	longPrefix := "stripe-checkout-initial:subscription:" + strings.Repeat("20260825-", 12)
+	longKey, err := StripeCheckoutSelectionDigest(longPrefix, 1, selection)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(longKey), 64)
+	require.NotEqual(t, shortKey, longKey)
+}
