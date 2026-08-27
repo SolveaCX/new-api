@@ -104,3 +104,10 @@ test('GitHub Copilot channel is selectable with its official endpoint', () => {
     'Copilot authorization is available after saving the channel'
   )
 })
+
+test('OxAlpha channel is selectable without model auto-discovery', () => {
+  expect(CHANNEL_TYPES[114]).toBe('OxAlpha')
+  expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 114)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(114)).toBe(false)
+  expect(getDefaultBaseUrl(114)).toBe('https://oxalpha.run/api')
+})

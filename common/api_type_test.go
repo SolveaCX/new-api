@@ -40,3 +40,13 @@ func TestGrokSubscriptionAPITypeMapping(t *testing.T) {
 		t.Fatalf("GrokSubscription API type = %d, want %d", apiType, constant.APITypeGrokSubscription)
 	}
 }
+
+func TestOxAlphaChannelTypeUsesDedicatedAPIType(t *testing.T) {
+	apiType, ok := ChannelType2APIType(constant.ChannelTypeOxAlpha)
+	if !ok {
+		t.Fatalf("OxAlpha channel type should be recognized")
+	}
+	if apiType != constant.APITypeOxAlpha {
+		t.Fatalf("OxAlpha api type = %d, want %d", apiType, constant.APITypeOxAlpha)
+	}
+}

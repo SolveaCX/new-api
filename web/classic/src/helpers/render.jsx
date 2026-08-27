@@ -335,6 +335,7 @@ export function getChannelIcon(channelType) {
     case 1: // OpenAI
     case 3: // Azure OpenAI
     case 57: // Codex
+    case 114: // OxAlpha
       return <OpenAI size={iconSize} />;
     case 2: // Midjourney Proxy
     case 5: // Midjourney Proxy Plus
@@ -405,6 +406,8 @@ export function getChannelIcon(channelType) {
       return <Doubao.Color size={iconSize} />;
     case 58: // 筷子科技 丽帧（封装 Seedance）
       return <Doubao.Color size={iconSize} />;
+    case 105: // TechMobiVideo
+    case 107: // BytePlus
     case 111: // ModelAPISeedance
       return <Doubao.Color size={iconSize} />;
     case 56: // Replicate

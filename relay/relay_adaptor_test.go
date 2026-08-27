@@ -146,3 +146,13 @@ func TestGetTaskAdaptor_ModelAPISeedance(t *testing.T) {
 		t.Fatalf("channel name = %q, want modelapi-seedance", got)
 	}
 }
+
+func TestGetAdaptor_OxAlpha(t *testing.T) {
+	adaptor := GetAdaptor(constant.APITypeOxAlpha)
+	if adaptor == nil {
+		t.Fatal("expected OxAlpha adaptor")
+	}
+	if got := adaptor.GetChannelName(); got != "oxalpha" {
+		t.Fatalf("channel name = %q, want oxalpha", got)
+	}
+}

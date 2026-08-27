@@ -30,6 +30,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/moonshot"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	"github.com/QuantumNous/new-api/relay/channel/oxalpha"
 	"github.com/QuantumNous/new-api/relay/channel/palm"
 	"github.com/QuantumNous/new-api/relay/channel/perplexity"
 	"github.com/QuantumNous/new-api/relay/channel/replicate"
@@ -170,6 +171,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &blockrun.Adaptor{}
 	case constant.APITypeCopilot:
 		return &copilot.Adaptor{}
+	case constant.APITypeOxAlpha:
+		return &oxalpha.Adaptor{}
 	}
 	return nil
 }

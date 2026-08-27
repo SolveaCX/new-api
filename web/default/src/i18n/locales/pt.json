@@ -654,6 +654,7 @@
     "Block email aliases (e.g., user+alias@domain.com)": "Bloquear aliases de e-mail (por exemplo, user+alias@domain.com)",
     "Blocked keywords": "Palavras-chave bloqueadas",
     "BlockRun": "BlockRun",
+    "OxAlpha": "OxAlpha",
     "Blocks messages when sensitive keywords are detected.": "Bloqueia mensagens quando palavras-chave confidenciais são detectadas.",
     "Body param": "Parâmetro do corpo",
     "Bonus claim limit per user": "Limite de bônus por usuário",

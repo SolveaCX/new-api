@@ -654,6 +654,7 @@
     "Block email aliases (e.g., user+alias@domain.com)": "Chặn bí danh email (ví dụ: user+alias@domain.com)",
     "Blocked keywords": "Blocked keyword",
     "BlockRun": "BlockRun",
+    "OxAlpha": "OxAlpha",
     "Blocks messages when sensitive keywords are detected.": "Chặn tin nhắn khi phát hiện từ khóa nhạy cảm.",
     "Body param": "Tham số body",
     "Bonus claim limit per user": "Giới hạn nhận thưởng mỗi người dùng",

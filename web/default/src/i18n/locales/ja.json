@@ -654,6 +654,7 @@
     "Block email aliases (e.g., user+alias@domain.com)": "メールエイリアスをブロック (例: user+alias@domain.com)",
     "Blocked keywords": "ブロックされたキーワード",
     "BlockRun": "BlockRun",
+    "OxAlpha": "OxAlpha",
     "Blocks messages when sensitive keywords are detected.": "機密性の高いキーワードが検出された場合にメッセージをブロックします。",
     "Body param": "ボディパラメータ",
     "Bonus claim limit per user": "ユーザーごとのボーナス受取上限",

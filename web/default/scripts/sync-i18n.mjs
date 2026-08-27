@@ -38,6 +38,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'Baidu V2',
   'Base64',
   'BlockRun',
+  'OxAlpha',
   'ChatGPT',
   'Claude',
   'Client ID',
