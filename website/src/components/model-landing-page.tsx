@@ -254,13 +254,19 @@ function FlatkeyModelDetailPage(props: {
     : props.groupRatio;
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.t);
   const priceRows = buildFlatkeyPriceRows(props.config, model, effectiveGroupRatio, props.t);
-  const generator = props.config.generator;
-  const mediaKind = generator?.kind ?? "text";
-  const mediaReferenceCount = generator?.kind === "video"
+  const configuredGenerator = props.config.generator;
+  // Audio detail pages expose API and pricing information without the public
+  // prompt playground. Keep the configured kind for metadata while disabling
+  // the interactive workbench itself.
+  const generator = configuredGenerator?.kind === "audio" ? undefined : configuredGenerator;
+  const mediaKind = configuredGenerator?.kind ?? "text";
+  const mediaReferenceCount = configuredGenerator?.kind === "video"
     ? Object.values(props.mediaUploadCounts).reduce((total, count) => total + count, 0)
-    : props.referenceImages.length;
+    : configuredGenerator?.kind === "image"
+      ? props.referenceImages.length
+      : 0;
   const hasPromptLibrary = mediaKind === "image" || mediaKind === "video";
-  const examples = generator ? MEDIA_EXAMPLES[generator.kind] : [];
+  const examples = configuredGenerator ? MEDIA_EXAMPLES[configuredGenerator.kind] : [];
   const modelDescription = buildModelDescription(props.config, model, props.t, props.locale);
   const faqItems = buildModelFaq(props.config, props.t);
   const schema = buildModelSchema({
