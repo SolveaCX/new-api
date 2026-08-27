@@ -28,6 +28,8 @@ type StripeCheckoutDiscountSelection struct {
 
 const stripeCheckoutRevisionRequestIDMaxLength = 64
 
+const stripeCheckoutSelectionDigestMaxLength = 64
+
 // StripeCheckoutInitialRequestID returns the stable request key used for the
 // first revision. Keep the legacy readable form when it fits the database
 // column, and compact longer trade numbers into a deterministic key.
@@ -124,4 +126,20 @@ func StripeCheckoutIdempotencyKey(prefix string, checkoutRevision int64, selecti
 	}, "\x00")
 	digest := sha256.Sum256([]byte(identity))
 	return fmt.Sprintf("%s:rev:%d:discount:%s", strings.TrimSpace(prefix), checkoutRevision, hex.EncodeToString(digest[:16])), nil
+}
+
+// StripeCheckoutSelectionDigest returns the stable identity stored in the
+// checkout revision ledger. Provider idempotency keys keep their readable
+// prefix, while the persisted digest stays within the historical varchar(64)
+// schema bound.
+func StripeCheckoutSelectionDigest(prefix string, checkoutRevision int64, selection StripeCheckoutDiscountSelection) (string, error) {
+	key, err := StripeCheckoutIdempotencyKey(prefix, checkoutRevision, selection)
+	if err != nil {
+		return "", err
+	}
+	if len(key) <= stripeCheckoutSelectionDigestMaxLength {
+		return key, nil
+	}
+	digest := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(digest[:]), nil
 }
