@@ -130,6 +130,7 @@ export interface SubscriptionPayRequest {
   plan_id: number
   payment_method?: string
   request_id?: string
+  ui_mode?: 'elements'
   recall_claim?: string
   ga_client_id?: string
   ga_session_id?: string
@@ -139,8 +140,20 @@ export interface SubscriptionPayResponse {
   success: boolean
   message?: string
   data?: {
+    trade_no?: string
     // Stripe-style hosted checkout link.
     pay_link?: string
+    client_secret?: string
+    publishable_key?: string
+    fallback_url?: string
+    checkout_context?: string
+    checkout_revision?: number
+    discount_state?: {
+      source: 'none' | 'invitation' | 'recall' | 'manual'
+      display_name?: string
+      promotion_code_masked?: string
+      replaced_source?: 'none' | 'invitation' | 'recall'
+    }
     // Waffo Pancake / Creem hosted checkout URL.
     checkout_url?: string
     // Pancake-only: order metadata + self-service buyer session token,
@@ -180,7 +193,7 @@ export interface FlexiblePurchaseRequest {
   quote_id?: string
   order_id?: string
   recall_claim?: string
-  ui_mode?: 'embedded'
+  ui_mode?: 'elements'
   ga_client_id?: string
   ga_session_id?: string
 }

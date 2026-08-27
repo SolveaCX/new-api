@@ -6801,6 +6801,20 @@
     "Failed to enter user view": "Failed to enter user view",
     "You will temporarily see the console as {{username}}. Actions and billing remain subject to the user account.": "You will temporarily see the console as {{username}}. Actions and billing remain subject to the user account.",
     "Currently viewing as {{username}} (administrator {{administrator}})": "Currently viewing as {{username}} (administrator {{administrator}})",
-    "Return to administrator": "Return to administrator"
+    "Return to administrator": "Return to administrator",
+    "Promotion code": "Promotion code",
+    "Enter promotion code": "Enter promotion code",
+    "Apply": "Apply",
+    "Applying promotion code...": "Applying promotion code...",
+    "Promotion code applied.": "Promotion code applied.",
+    "Promotion code applied. Previous discount replaced.": "Promotion code applied. Previous discount replaced.",
+    "Remove promotion code": "Remove promotion code",
+    "Restoring previous discount...": "Restoring previous discount...",
+    "Previous discount restored.": "Previous discount restored.",
+    "This promotion code is invalid.": "This promotion code is invalid.",
+    "This promotion code is not eligible for this purchase.": "This promotion code is not eligible for this purchase.",
+    "Multiple promotion codes match. Contact support.": "Multiple promotion codes match. Contact support.",
+    "Checkout changed in another request. The latest checkout was restored.": "Checkout changed in another request. The latest checkout was restored.",
+    "Unable to update the checkout. Please try again.": "Unable to update the checkout. Please try again."
   }
 }

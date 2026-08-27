@@ -24,6 +24,7 @@ type TopUp struct {
 	PaymentAmountMinor int64   `json:"payment_amount_minor" gorm:"default:0"`
 	TradeNo            string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	GatewayTradeNo     string  `json:"gateway_trade_no" gorm:"type:varchar(255);index"`
+	CheckoutRevision   int64   `json:"checkout_revision" gorm:"not null;default:0"`
 	PaymentMethod      string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider    string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	GAClientID         string  `json:"ga_client_id,omitempty" gorm:"type:varchar(128);default:''"`
@@ -177,6 +178,47 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 			SourceRef:  "UpdatePendingTopUpStatus",
 		})
 		return err
+	})
+}
+
+// FailPendingStripeTopUpAndInvoice moves a Stripe top-up and its optional
+// invoice to their terminal failed state in one transaction. Keeping the two
+// writes together prevents a dismissal retry from leaving a failed recharge
+// paired with a still-requested invoice when a database error occurs.
+func FailPendingStripeTopUpAndInvoice(tradeNo string) error {
+	if strings.TrimSpace(tradeNo) == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockQuery(tx).Where("trade_no = ?", tradeNo).First(topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		if topUp.PaymentProvider != PaymentProviderStripe {
+			return ErrPaymentMethodMismatch
+		}
+		if _, err := PersistPurchaseLifecycleTransition(tx, PurchaseLifecycleTransition{
+			Kind:       PurchaseLifecycleKindTopUp,
+			SourceID:   int64(topUp.Id),
+			TradeNo:    topUp.TradeNo,
+			UserID:     topUp.UserId,
+			FromStatus: []string{common.TopUpStatusPending},
+			ToStatus:   common.TopUpStatusFailed,
+			OccurredAt: common.GetTimestamp(),
+			SourceRef:  "FailPendingStripeTopUpAndInvoice",
+		}); err != nil {
+			return err
+		}
+		// The invoice is optional for top-ups. A missing row is therefore a
+		// successful no-op, while any actual database error aborts the transaction.
+		result := tx.Model(&PaymentInvoice{}).
+			Where("trade_no = ?", tradeNo).
+			Update("invoice_status", PaymentInvoiceStatusFailed)
+		return result.Error
 	})
 }
 

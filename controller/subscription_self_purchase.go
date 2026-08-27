@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -63,12 +64,16 @@ type SubscriptionSelfPaymentQuote struct {
 
 type SubscriptionSelfPurchaseResponse struct {
 	Status           string                            `json:"status"`
+	TradeNo          string                            `json:"trade_no,omitempty"`
 	Contract         *SubscriptionSelfContractDTO      `json:"contract,omitempty"`
 	Intent           *SubscriptionSelfPendingChangeDTO `json:"intent,omitempty"`
 	CheckoutURL      string                            `json:"checkout_url,omitempty"`
 	HostedInvoiceURL string                            `json:"hosted_invoice_url,omitempty"`
 	ClientSecret     string                            `json:"client_secret,omitempty"`
 	PublishableKey   string                            `json:"publishable_key,omitempty"`
+	CheckoutContext  string                            `json:"checkout_context,omitempty"`
+	CheckoutRevision int64                             `json:"checkout_revision,omitempty"`
+	DiscountState    *StripeCheckoutDiscountState      `json:"discount_state,omitempty"`
 }
 
 func QuoteSubscriptionSelfPurchase(c *gin.Context) {
@@ -290,14 +295,24 @@ func respondSubscriptionSelfPurchaseResult(c *gin.Context, result *service.Purch
 			common.ApiError(c, err)
 			return
 		}
-		common.ApiSuccess(c, subscriptionSelfPurchaseResponse(result, checkoutURL))
+		response, err := subscriptionSelfPurchaseResponseWithError(result, checkoutURL)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, response)
 		return
 	}
 	if err := syncSubscriptionSelfRecurringCheckoutHistory(result); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, subscriptionSelfPurchaseResponse(result, ""))
+	response, err := subscriptionSelfPurchaseResponseWithError(result, "")
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, response)
 }
 
 func validateSubscriptionSelfEpayPaymentMethod(choice string, paymentMethod string) error {
@@ -515,9 +530,9 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 	if checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) == "" {
 		return "", errors.New("Stripe checkout session ID is missing")
 	}
-	if presentation.Embedded {
+	if presentation.UsesClientSecret() {
 		if strings.TrimSpace(checkoutSession.ClientSecret) == "" {
-			return "", errors.New("Stripe embedded checkout session client secret is missing")
+			return "", errors.New("Stripe client checkout session client secret is missing")
 		}
 	} else if strings.TrimSpace(checkoutSession.URL) == "" {
 		return "", errors.New("Stripe checkout session URL is missing")
@@ -535,8 +550,13 @@ func ensureSubscriptionSelfOneTimeCheckout(c *gin.Context, result *service.Purch
 }
 
 func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult, checkoutURL string) SubscriptionSelfPurchaseResponse {
+	response, _ := subscriptionSelfPurchaseResponseWithError(result, checkoutURL)
+	return response
+}
+
+func subscriptionSelfPurchaseResponseWithError(result *service.PurchaseSubscriptionResult, checkoutURL string) (SubscriptionSelfPurchaseResponse, error) {
 	if result == nil {
-		return SubscriptionSelfPurchaseResponse{}
+		return SubscriptionSelfPurchaseResponse{}, nil
 	}
 	checkoutURL = strings.TrimSpace(checkoutURL)
 	if checkoutURL == "" {
@@ -548,8 +568,33 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 		HostedInvoiceURL: strings.TrimSpace(result.HostedInvoiceURL),
 		ClientSecret:     strings.TrimSpace(result.ClientSecret),
 	}
+	if result.Order != nil {
+		response.TradeNo = strings.TrimSpace(result.Order.TradeNo)
+	}
 	if response.ClientSecret != "" {
 		response.PublishableKey = strings.TrimSpace(setting.StripePublishableKey)
+		if setting.StripePromotionCodeEnabled && result.Order != nil && result.Order.CheckoutRevision > 0 {
+			active, err := model.GetActiveStripeCheckoutRevision(model.StripeCheckoutOrderSubscription, result.Order.TradeNo)
+			if err != nil || active == nil {
+				if active == nil {
+					err = model.ErrStripeCheckoutRevisionConflict
+				}
+				return SubscriptionSelfPurchaseResponse{}, fmt.Errorf("Stripe checkout revision lookup failed: %w", err)
+			}
+			purchaseKind := service.StripeCheckoutPurchaseRecurringSubscription
+			if isOneTimePlanStripeMethod(result.Order.PaymentMethod) {
+				purchaseKind = service.StripeCheckoutPurchaseOneTimeSubscription
+			}
+			revisionResponse, responseErr := stripeCheckoutRevisionResponse(purchaseKind, active, &stripeCheckoutSessionSnapshot{
+				ID: result.Order.ProviderSessionId, URL: checkoutURL, ClientSecret: response.ClientSecret,
+			})
+			if responseErr != nil {
+				return SubscriptionSelfPurchaseResponse{}, fmt.Errorf("Stripe checkout revision response failed: %w", responseErr)
+			}
+			response.CheckoutContext = revisionResponse.CheckoutContext
+			response.CheckoutRevision = revisionResponse.CheckoutRevision
+			response.DiscountState = &revisionResponse.DiscountState
+		}
 	}
 	if result.Contract != nil && result.Contract.Id > 0 {
 		response.Contract = subscriptionSelfContractDTO(result.Contract)
@@ -557,7 +602,7 @@ func subscriptionSelfPurchaseResponse(result *service.PurchaseSubscriptionResult
 	if result.Intent != nil && result.Intent.Id > 0 {
 		response.Intent = subscriptionSelfPendingChangeDTO(result.Intent)
 	}
-	return response
+	return response, nil
 }
 
 func normalizeSubscriptionSelfPaymentChoice(paymentMethod string, paymentChoice string) string {

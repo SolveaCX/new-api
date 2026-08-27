@@ -11,7 +11,11 @@ import {
 } from 'bun:test'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import type { PlanRecord, SubscriptionPayResponse } from '../../types'
+import type {
+  PlanRecord,
+  SubscriptionPayRequest,
+  SubscriptionPayResponse,
+} from '../../types'
 
 type ButtonProps = {
   children?: React.ReactNode
@@ -33,9 +37,22 @@ const epayCalls: Array<{
 const stripeCalls: Array<{
   plan_id: number
   request_id?: string
+  ui_mode?: 'elements'
 }> = []
 let latestSelectProps: SelectProps | undefined
 let latestButtonProps: ButtonProps[] = []
+let latestStripeCheckoutSession: {
+  clientSecret: string
+  publishableKey: string
+  checkoutContext?: string
+  checkoutRevision?: number
+  discountState?: {
+    source: string
+    display_name?: string
+    promotion_code_masked?: string
+    replaced_source?: string
+  }
+} | null = null
 let requestIdSeed = 0
 
 const paySubscriptionEpay = mock(
@@ -54,7 +71,7 @@ const paySubscriptionEpay = mock(
   }
 )
 const paySubscriptionStripe = mock(
-  async (data: { plan_id: number; request_id?: string }) => {
+  async (data: SubscriptionPayRequest) => {
     stripeCalls.push(data)
     return {
       success: true,
@@ -203,7 +220,11 @@ function setupDom() {
   defineTestGlobal(
     'window',
     Object.assign(globalThis, {
-      location: { href: 'http://localhost/subscriptions' },
+      location: {
+        href: 'http://localhost/subscriptions',
+        origin: 'http://localhost',
+        assign: mock(() => undefined),
+      },
     }) as unknown as Window & typeof globalThis
   )
   defineTestGlobal('navigator', { userAgent: 'Chrome' } as Navigator)
@@ -267,6 +288,10 @@ mock.module('@/lib/analytics/gtag', () => ({
   getGAMeasurementIdentifiers: () => ({}),
 }))
 
+mock.module('@/lib/analytics/gtag', () => ({
+  getGAMeasurementIdentifiers: () => ({}),
+}))
+
 mock.module('../../lib', () => ({
   formatDuration: () => '1 month',
   formatResetPeriod: () => 'No Reset',
@@ -276,6 +301,21 @@ mock.module('@/features/wallet/lib/recall-claim', () => ({
   isRecallPriceEligible: () => false,
   validateRecallClaim: mock(async () => ({ success: false })),
 }))
+
+mock.module(
+  '@/features/wallet/components/dialogs/stripe-checkout-dialog',
+  () => ({
+    StripeCheckoutDialog: (props: {
+      session: {
+        clientSecret: string
+        publishableKey: string
+      } | null
+    }) => {
+      latestStripeCheckoutSession = props.session
+      return null
+    },
+  })
+)
 
 mock.module('sonner', () => ({
   toast: {
@@ -367,6 +407,7 @@ beforeEach(() => {
   stripeCalls.length = 0
   latestSelectProps = undefined
   latestButtonProps = []
+  latestStripeCheckoutSession = null
   requestIdSeed = 0
   paySubscriptionEpay.mockClear()
   paySubscriptionStripe.mockClear()
@@ -459,6 +500,48 @@ function latestStripeButton() {
 }
 
 describe('SubscriptionPurchaseDialog', () => {
+  test('forwards a complete Stripe checkout revision contract to the shared dialog', async () => {
+    paySubscriptionStripe.mockImplementationOnce(async (data) => {
+      stripeCalls.push(data)
+      return {
+        success: true,
+        message: 'success',
+        data: {
+          client_secret: 'cs_subscription_elements',
+          publishable_key: 'pk_subscription_elements',
+          checkout_context: 'signed-context',
+          checkout_revision: 2,
+          discount_state: {
+            source: 'manual',
+            display_name: 'SAVE20',
+            promotion_code_masked: 'SAVE20',
+            replaced_source: 'invitation',
+          },
+        },
+      }
+    })
+    const { root } = renderDialog()
+
+    await React.act(async () => {
+      await latestStripeButton().onClick?.()
+    })
+
+    expect(latestStripeCheckoutSession).toMatchObject({
+      clientSecret: 'cs_subscription_elements',
+      publishableKey: 'pk_subscription_elements',
+      checkoutContext: 'signed-context',
+      checkoutRevision: 2,
+      discountState: {
+        source: 'manual',
+        display_name: 'SAVE20',
+        promotion_code_masked: 'SAVE20',
+        replaced_source: 'invitation',
+      },
+    })
+
+    dispose(root)
+  })
+
   test('passes a stable request id to direct Stripe subscription checkout', async () => {
     const { root } = renderDialog()
 
@@ -472,6 +555,7 @@ describe('SubscriptionPurchaseDialog', () => {
     expect(stripeCalls).toHaveLength(2)
     expect(stripeCalls[0]?.request_id).toBe('request-1')
     expect(stripeCalls[1]?.request_id).toBe(stripeCalls[0]?.request_id)
+    expect(stripeCalls[0]?.ui_mode).toBe('elements')
 
     dispose(root)
   })
@@ -496,6 +580,33 @@ describe('SubscriptionPurchaseDialog', () => {
     expect(stripeCalls).toHaveLength(2)
     expect(stripeCalls[0]?.request_id).toBe('request-1')
     expect(stripeCalls[1]?.request_id).toBe('request-2')
+
+    dispose(root)
+  })
+
+  test('opens the shared Checkout Elements dialog for a client secret response', async () => {
+    paySubscriptionStripe.mockImplementationOnce(async (data) => {
+      stripeCalls.push(data)
+      return {
+        success: true,
+        message: 'success',
+        data: {
+          client_secret: 'cs_subscription_elements',
+          publishable_key: 'pk_subscription_elements',
+        },
+      }
+    })
+    const { root } = renderDialog()
+
+    await React.act(async () => {
+      await latestStripeButton().onClick?.()
+    })
+
+    expect(latestStripeCheckoutSession).toMatchObject({
+      clientSecret: 'cs_subscription_elements',
+      publishableKey: 'pk_subscription_elements',
+    })
+    expect(stripeCalls[0]?.ui_mode).toBe('elements')
 
     dispose(root)
   })

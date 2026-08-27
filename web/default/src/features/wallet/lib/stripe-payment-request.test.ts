@@ -18,8 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import {
+  normalizeCheckoutUrl,
+  resolveStripeCheckoutOpening,
+} from './stripe-checkout-opening'
 import { buildStripePaymentRequest } from './stripe-payment-request'
-import { resolveStripeCheckoutOpening } from '../hooks/use-payment'
 
 const redirectUrls = {
   success_url: 'https://app.example.com/wallet?show_history=true',
@@ -27,6 +30,16 @@ const redirectUrls = {
 }
 
 describe('buildStripePaymentRequest', () => {
+  test('requests Checkout Elements when the in-console checkout is preferred', () => {
+    const request = buildStripePaymentRequest({
+      amount: 20,
+      redirectUrls,
+      preferElementsCheckout: true,
+    })
+
+    expect(request.ui_mode).toBe('elements')
+  })
+
   test('sends USD as the default Stripe checkout currency', () => {
     const request = buildStripePaymentRequest({
       amount: 20,
@@ -85,7 +98,84 @@ describe('buildStripePaymentRequest', () => {
 })
 
 describe('resolveStripeCheckoutOpening', () => {
-  test('prefers embedded client secret before hosted URLs', () => {
+  test('keeps root-relative fallback URLs usable without a browser origin', () => {
+    expect(normalizeCheckoutUrl('/checkout/session')).toBe('/checkout/session')
+  })
+
+  test('uses an explicit safe fallback URL for an Elements session', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_fallback',
+        publishable_key: 'pk_test_fallback',
+        fallback_url: 'https://checkout.example.com/fallback',
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_fallback',
+      publishableKey: 'pk_test_fallback',
+      fallbackUrl: 'https://checkout.example.com/fallback',
+    })
+  })
+
+  test('preserves a complete revision contract for an Elements session', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_revision',
+        publishable_key: 'pk_test_revision',
+        fallback_url: 'https://checkout.example.com/fallback',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+        discount_state: {
+          source: 'manual',
+          display_name: 'SAVE20',
+          promotion_code_masked: 'SAVE20',
+          replaced_source: 'invitation',
+        },
+        topup_summary: {
+          pay_amount: 30,
+          bonus_amount: 0,
+          credit_amount: 30,
+          show_amounts: true,
+        },
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_revision',
+      publishableKey: 'pk_test_revision',
+      fallbackUrl: 'https://checkout.example.com/fallback',
+      checkoutContext: 'signed-context',
+      checkoutRevision: 2,
+      discountState: {
+        source: 'manual',
+        display_name: 'SAVE20',
+        promotion_code_masked: 'SAVE20',
+        replaced_source: 'invitation',
+      },
+      summary: {
+        pay_amount: 30,
+        bonus_amount: 0,
+        credit_amount: 30,
+        show_amounts: true,
+      },
+    })
+  })
+
+  test('drops incomplete revision contracts so legacy responses cannot show the control', () => {
+    expect(
+      resolveStripeCheckoutOpening({
+        client_secret: 'cs_test_partial',
+        publishable_key: 'pk_test_partial',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+      })
+    ).toEqual({
+      kind: 'elements',
+      clientSecret: 'cs_test_partial',
+      publishableKey: 'pk_test_partial',
+    })
+  })
+
+  test('does not infer an Elements fallback from legacy hosted fields', () => {
     expect(
       resolveStripeCheckoutOpening({
         client_secret: 'cs_test_1',
@@ -93,10 +183,9 @@ describe('resolveStripeCheckoutOpening', () => {
         pay_link: 'https://pay.example.com/hosted',
       })
     ).toEqual({
-      kind: 'embedded',
+      kind: 'elements',
       clientSecret: 'cs_test_1',
       publishableKey: 'pk_test_1',
-      fallbackUrl: 'https://pay.example.com/hosted',
     })
   })
 
@@ -134,5 +223,8 @@ describe('usePayment Stripe checkout adapter', () => {
     expect(source).toContain('const openStripeCheckoutResponse = useCallback')
     expect(source).toContain('openStripeCheckout(response.data, {')
     expect(source).toContain('summary: response.data?.topup_summary ?? null')
+    expect(source).toContain('checkoutContext: opening.checkoutContext')
+    expect(source).toContain('checkoutRevision: opening.checkoutRevision')
+    expect(source).toContain('discountState: opening.discountState')
   })
 })

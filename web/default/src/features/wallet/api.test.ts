@@ -80,3 +80,166 @@ describe('refundable subscription term API', () => {
     )
   })
 })
+
+describe('stripe checkout discount API', () => {
+  test('posts discount mutations through the locked checkout route', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: true,
+      data: {
+        client_secret: 'cs_next',
+        publishable_key: 'pk_next',
+        checkout_context: 'signed-context',
+        checkout_revision: 2,
+      },
+    }
+    const post = spyOn(api, 'post').mockResolvedValue({
+      data: response,
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'SAVE20',
+      })
+    ).resolves.toEqual(response)
+
+    expect(post).toHaveBeenCalledWith(
+      '/api/user/stripe/checkout/discount',
+      {
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'SAVE20',
+      },
+      expect.objectContaining({
+        skipBusinessError: true,
+        skipErrorHandler: true,
+      })
+    )
+  })
+
+  test('returns a rejected invalid promotion-code envelope', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: false,
+      message: 'promotion_code_invalid',
+    }
+    spyOn(api, 'post').mockRejectedValue({
+      response: { status: 400, data: response },
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 1,
+        request_id: 'request-1',
+        action: 'apply',
+        promotion_code: 'BADCODE',
+      })
+    ).resolves.toEqual(response)
+  })
+
+  test('returns a rejected checkout conflict envelope with latest revision data', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const response = {
+      success: false,
+      message: 'checkout_revision_conflict',
+      data: {
+        client_secret: 'cs_latest',
+        publishable_key: 'pk_latest',
+        fallback_url: 'https://checkout.example.test/latest',
+        checkout_context: 'ctx-latest',
+        checkout_revision: 3,
+        discount_state: { source: 'invitation', display_name: 'Invite' },
+        topup_summary: null,
+      },
+    }
+    spyOn(api, 'post').mockRejectedValue({
+      response: { status: 409, data: response },
+    } as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 2,
+        request_id: 'request-2',
+        action: 'restore',
+      })
+    ).resolves.toEqual(response)
+  })
+
+  test('rejects a server-error response even when it has a message field', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const error = {
+      response: {
+        status: 500,
+        data: {
+          message: 'server_error',
+        },
+      },
+    }
+    spyOn(api, 'post').mockRejectedValue(error as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 2,
+        request_id: 'request-3',
+        action: 'restore',
+      })
+    ).rejects.toBe(error)
+  })
+
+  test('rejects a malformed bad-request response without a failure envelope', async () => {
+    const updateStripeCheckoutDiscount = (walletApi as {
+      updateStripeCheckoutDiscount?: (request: unknown) => Promise<unknown>
+    }).updateStripeCheckoutDiscount
+    expect(updateStripeCheckoutDiscount).toBeFunction()
+    if (!updateStripeCheckoutDiscount) return
+
+    const error = {
+      response: {
+        status: 400,
+        data: {
+          message: 'promotion_code_invalid',
+        },
+      },
+    }
+    spyOn(api, 'post').mockRejectedValue(error as never)
+
+    await expect(
+      updateStripeCheckoutDiscount({
+        checkout_context: 'signed-context',
+        expected_revision: 2,
+        request_id: 'request-4',
+        action: 'apply',
+        promotion_code: 'BADCODE',
+      })
+    ).rejects.toBe(error)
+  })
+})

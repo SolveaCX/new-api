@@ -39,8 +39,8 @@ interface BuildStripePaymentRequestParams {
   saveCard?: boolean
   invoiceRequested?: boolean
   invoiceProfile?: InvoiceProfile
-  /** Ask the server for an embedded Checkout session (client_secret) instead of a hosted link */
-  preferEmbeddedCheckout?: boolean
+  /** Ask the server for a Checkout Elements session (client_secret) instead of a hosted link */
+  preferElementsCheckout?: boolean
   recallClaim?: string
 }
 
@@ -52,7 +52,7 @@ export function buildStripePaymentRequest({
   saveCard,
   invoiceRequested,
   invoiceProfile,
-  preferEmbeddedCheckout,
+  preferElementsCheckout,
   recallClaim,
 }: BuildStripePaymentRequestParams): PaymentRequest {
   const request: PaymentRequest = {
@@ -67,8 +67,8 @@ export function buildStripePaymentRequest({
     request.save_card = true
   }
 
-  if (preferEmbeddedCheckout) {
-    request.ui_mode = 'embedded'
+  if (preferElementsCheckout) {
+    request.ui_mode = 'elements'
   }
 
   if (invoiceRequested && invoiceProfile) {

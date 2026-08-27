@@ -6788,6 +6788,20 @@
     "Failed to enter user view": "Impossible d’accéder à la vue utilisateur",
     "You will temporarily see the console as {{username}}. Actions and billing remain subject to the user account.": "Vous verrez temporairement la console en tant que {{username}}. Les actions et la facturation resteront associées au compte utilisateur.",
     "Currently viewing as {{username}} (administrator {{administrator}})": "Vue actuelle : {{username}} (administrateur {{administrator}})",
-    "Return to administrator": "Revenir à l’administrateur"
+    "Return to administrator": "Revenir à l’administrateur",
+    "Promotion code": "Code promotionnel",
+    "Enter promotion code": "Saisir le code promotionnel",
+    "Apply": "Appliquer",
+    "Applying promotion code...": "Application du code promotionnel...",
+    "Promotion code applied.": "Code promotionnel appliqué.",
+    "Promotion code applied. Previous discount replaced.": "Code promotionnel appliqué. La remise précédente a été remplacée.",
+    "Remove promotion code": "Retirer le code promotionnel",
+    "Restoring previous discount...": "Restauration de la remise précédente...",
+    "Previous discount restored.": "Remise précédente restaurée.",
+    "This promotion code is invalid.": "Ce code promotionnel est invalide.",
+    "This promotion code is not eligible for this purchase.": "Ce code promotionnel n'est pas éligible pour cet achat.",
+    "Multiple promotion codes match. Contact support.": "Plusieurs codes promotionnels correspondent. Contactez le support.",
+    "Checkout changed in another request. The latest checkout was restored.": "Le paiement a changé dans une autre requête. Le paiement le plus récent a été restauré.",
+    "Unable to update the checkout. Please try again.": "Impossible de mettre à jour le paiement. Réessayez."
   }
 }

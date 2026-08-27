@@ -26,6 +26,26 @@ func TestTopUpLifecyclePendingCreationEmitsDelayedEngagementEvent(t *testing.T) 
 	requireTopUpLifecycleEventCount(t, topUp.TradeNo, RecallLifecycleTriggerPaymentPending, 1)
 }
 
+func TestFailPendingStripeTopUpAndInvoiceMovesBothStatesTogether(t *testing.T) {
+	setupTopUpLifecycleTestDB(t, 1)
+	require.NoError(t, DB.AutoMigrate(&PaymentInvoice{}))
+	user := createLifecycleQuotaTestUser(t, "topup-close-atomic", 0, 100)
+	topUp := insertTopUpLifecycleOrder(t, user.Id, "topup-close-atomic", PaymentProviderStripe, common.TopUpStatusPending, 1_700_001_100, 0)
+	require.NoError(t, DB.Create(&PaymentInvoice{
+		TradeNo: topUp.TradeNo, UserId: user.Id, OrderType: PaymentOrderTypeTopUp,
+		PaymentProvider: PaymentProviderStripe, InvoiceRequested: true,
+		InvoiceStatus: PaymentInvoiceStatusRequested,
+	}).Error)
+
+	require.NoError(t, FailPendingStripeTopUpAndInvoice(topUp.TradeNo))
+
+	storedTopUp := GetTopUpByTradeNo(topUp.TradeNo)
+	require.Equal(t, common.TopUpStatusFailed, storedTopUp.Status)
+	var invoice PaymentInvoice
+	require.NoError(t, DB.Where("trade_no = ?", topUp.TradeNo).First(&invoice).Error)
+	require.Equal(t, PaymentInvoiceStatusFailed, invoice.InvoiceStatus)
+}
+
 func TestTopUpLifecycleTerminalFailureAndReplayEmitOneServiceEvent(t *testing.T) {
 	setupTopUpLifecycleTestDB(t, 1)
 	user := createLifecycleQuotaTestUser(t, "topup-failure", 0, 100)

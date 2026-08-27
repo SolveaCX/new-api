@@ -63,6 +63,27 @@ func TestSubscriptionPurchaseRoutesUseUnifiedHandlersWhileLegacyProvidersRemainB
 	}
 }
 
+func TestStripeCheckoutDiscountRouteIsAuthenticatedAndCriticalLimited(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+
+	SetApiRouter(engine)
+
+	routes := map[string]string{}
+	for _, route := range engine.Routes() {
+		routes[route.Method+" "+route.Path] = route.Handler
+	}
+	handler, ok := routes["POST /api/user/stripe/checkout/discount"]
+	require.True(t, ok, "missing unified Stripe checkout discount route")
+	require.Contains(t, handler, "controller.UpdateStripeCheckoutDiscount")
+
+	source, err := os.ReadFile("api-router.go")
+	require.NoError(t, err)
+	routerSource := string(source)
+	require.Contains(t, routerSource, `selfRoute.Use(middleware.UserAuth())`)
+	require.Contains(t, routerSource, `selfRoute.POST("/stripe/checkout/discount", middleware.CriticalRateLimit(), controller.UpdateStripeCheckoutDiscount)`)
+}
+
 func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

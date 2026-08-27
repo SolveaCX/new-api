@@ -41,6 +41,8 @@ import type {
   RequestInvoiceResponse,
   RefundableSubscriptionTermsResponse,
   RefundSubscriptionTermResponse,
+  StripeCheckoutDiscountRequest,
+  StripeCheckoutRevisionData,
 } from './types'
 
 // ============================================================================
@@ -111,6 +113,40 @@ export async function requestStripePayment(
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data
+}
+
+export async function updateStripeCheckoutDiscount(
+  request: StripeCheckoutDiscountRequest
+): Promise<ApiResponse<StripeCheckoutRevisionData>> {
+  try {
+    const res = await api.post('/api/user/stripe/checkout/discount', request, {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    } as Record<string, unknown>)
+    return res.data
+  } catch (error) {
+    const response = (
+      error as {
+        response?: { status?: unknown; data?: unknown }
+      }
+    )?.response
+    const responseData = response?.data
+    if (
+      (response?.status === 400 || response?.status === 409) &&
+      isStripeCheckoutRevisionFailureResponse(responseData)
+    ) {
+      return responseData
+    }
+    throw error
+  }
+}
+
+/** Best-effort termination for an unpaid in-console Stripe Checkout session. */
+export async function closeStripeCheckout(tradeNo: string): Promise<void> {
+  await api.post('/api/user/stripe/checkout/close', { trade_no: tradeNo }, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  } as Record<string, unknown>)
 }
 
 /** Reopen the existing Stripe session for a pending top-up. */
@@ -322,4 +358,26 @@ export async function completeOrder(
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/topup/complete', request)
   return res.data
+}
+
+function isStripeCheckoutRevisionFailureResponse(
+  value: unknown
+): value is ApiResponse<StripeCheckoutRevisionData> {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    (value as ApiResponse).success === false &&
+    isStripeCheckoutDiscountErrorMessage((value as ApiResponse).message)
+  )
+}
+
+function isStripeCheckoutDiscountErrorMessage(
+  message: unknown
+): message is string {
+  return (
+    message === 'promotion_code_invalid' ||
+    message === 'promotion_code_ineligible' ||
+    message === 'promotion_code_ambiguous' ||
+    message === 'checkout_revision_conflict'
+  )
 }
