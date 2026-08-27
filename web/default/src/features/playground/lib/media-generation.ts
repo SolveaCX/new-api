@@ -429,7 +429,7 @@ function createSeedance20Profile(
       resolution: '720p',
       duration: 5,
       aspectRatio: 'adaptive',
-      generateAudio: true,
+      generateAudio: false,
     },
     fields: [
       selectField('resolution', 'Resolution', resolutions),
@@ -468,7 +468,7 @@ const seedance25Profile: MediaGenerationProfile = {
     resolution: '720p',
     duration: 5,
     aspectRatio: 'adaptive',
-    generateAudio: true,
+    generateAudio: false,
   },
   fields: [
     selectField('resolution', 'Resolution', ['480p', '720p']),
