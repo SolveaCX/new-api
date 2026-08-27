@@ -77,7 +77,7 @@ function PlaygroundConversationListContent(
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const [isBatchMode, setIsBatchMode] = useState(false)
   const [loadingConversationId, setLoadingConversationId] = useState<
     string | null
