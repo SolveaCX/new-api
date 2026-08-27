@@ -31,6 +31,7 @@ export default async function RootLayout({ children, params }: Props) {
   return (
     <RootDocument
       docsUrl={publicSiteSettings.docsUrl}
+      announcements={publicSiteSettings.announcements}
       hasConsoleSessionHint={hasConsoleSessionHint}
       googleOneTap={publicSiteSettings.googleOneTap}
       lang={locale}

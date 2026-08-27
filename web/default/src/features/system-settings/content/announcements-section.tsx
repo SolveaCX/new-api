@@ -76,6 +76,7 @@ type Announcement = {
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  link?: string
 }
 
 type AnnouncementsSectionProps = {
@@ -93,6 +94,10 @@ const announcementSchema = z.object({
   extra: z
     .string()
     .max(100, 'Extra must be less than 100 characters')
+    .optional(),
+  link: z
+    .string()
+    .max(500, 'Link URL must be less than 500 characters')
     .optional(),
 })
 
@@ -156,6 +161,7 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      link: '',
     },
   })
 
@@ -199,6 +205,7 @@ export function AnnouncementsSection({
       publishDate: new Date().toISOString(),
       type: 'default',
       extra: '',
+      link: '',
     })
     setShowDialog(true)
   }
@@ -210,6 +217,7 @@ export function AnnouncementsSection({
       publishDate: announcement.publishDate,
       type: announcement.type,
       extra: announcement.extra || '',
+      link: announcement.link || '',
     })
     setShowDialog(true)
   }
@@ -367,13 +375,14 @@ export function AnnouncementsSection({
                 <TableHead>{t('Publish Date')}</TableHead>
                 <TableHead>{t('Type')}</TableHead>
                 <TableHead>{t('Extra')}</TableHead>
+                <TableHead>{t('Link URL')}</TableHead>
                 <TableHead className='w-32'>{t('Actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedAnnouncements.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className='h-24 text-center'>
+                  <TableCell colSpan={7} className='h-24 text-center'>
                     {t(
                       'No announcements yet. Click "Add Announcement" to create one.'
                     )}
@@ -428,6 +437,12 @@ export function AnnouncementsSection({
                       title={announcement.extra}
                     >
                       {announcement.extra || '-'}
+                    </TableCell>
+                    <TableCell
+                      className='text-muted-foreground max-w-xs truncate'
+                      title={announcement.link}
+                    >
+                      {announcement.link || '-'}
                     </TableCell>
                     <TableCell>
                       <div className='flex gap-2'>
@@ -599,6 +614,25 @@ export function AnnouncementsSection({
                     {t(
                       'Optional supplementary information (max 100 characters)'
                     )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='link'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Link URL')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('Optional destination URL')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Optional link for the homepage advertisement banner')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
