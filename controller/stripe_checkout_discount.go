@@ -723,7 +723,7 @@ func createInitialStripeCheckoutRevision(
 	if err != nil {
 		return nil, nil, err
 	}
-	initialRequestID := "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo
+	initialRequestID := service.StripeCheckoutInitialRequestID(purchase.Kind, purchase.TradeNo)
 	var prepared *model.StripeCheckoutRevision
 	var replay bool
 	for {
@@ -743,7 +743,7 @@ func createInitialStripeCheckoutRevision(
 		// A deterministic first request can replay an abandoned candidate after
 		// a provider timeout. Reserve a fresh request key so PrepareRevision can
 		// skip the abandoned row and issue the next monotonic revision.
-		initialRequestID = fmt.Sprintf("%s:retry:%d", initialRequestID, prepared.Revision)
+		initialRequestID = service.StripeCheckoutRetryRequestID(initialRequestID, prepared.Revision)
 	}
 	if prepared.Revision <= 0 {
 		return nil, nil, model.ErrStripeCheckoutRevisionConflict
