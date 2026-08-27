@@ -57,7 +57,7 @@ import { ChatPresetsItem } from './chat-presets-item'
 import { getNavBadgeClassName, getNavItemTitleClassName } from './nav-badge'
 
 const SIDEBAR_NAV_ITEM_CLASS_NAME =
-  'rounded-xl transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/50 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-sm'
+  'rounded-xl transition-[width,height,padding,background-color,color] duration-150 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/40 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:hover:bg-sidebar-accent data-active:hover:text-sidebar-accent-foreground'
 
 /**
  * Sidebar navigation group component
@@ -72,7 +72,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
       <SidebarGroupLabel className='text-muted-foreground/70 px-2 text-[11px] font-medium tracking-wider uppercase'>
         {title}
       </SidebarGroupLabel>
-      <SidebarMenu>
+      <SidebarMenu className='gap-2'>
         {items.map((item) => {
           const key = `${item.title}-${item.url || item.type}`
 
@@ -213,7 +213,7 @@ function SidebarMenuCollapsible({
         <ChevronRight className='ms-auto size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]/collapsible-trigger:rotate-90' />
       </CollapsibleTrigger>
       <CollapsibleContent className='CollapsibleContent'>
-        <SidebarMenuSub>
+        <SidebarMenuSub className='gap-2'>
           {item.items.map((subItem) => (
             <SidebarMenuSubItem key={subItem.title}>
               <SidebarMenuSubButton
