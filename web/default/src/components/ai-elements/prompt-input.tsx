@@ -723,6 +723,8 @@ export const PromptInput = ({
     if (event.currentTarget.files) {
       add(event.currentTarget.files)
     }
+    // Reset the native input so choosing the same file again emits change.
+    event.currentTarget.value = ''
   }
 
   const convertBlobUrlToDataUrl = async (url: string): Promise<string> => {

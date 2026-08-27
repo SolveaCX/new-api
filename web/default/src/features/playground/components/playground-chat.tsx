@@ -305,11 +305,13 @@ export function PlaygroundChat({
                                 if (message.videoUrl) {
                                   return (
                                     <>
-                                      <video
-                                        src={message.videoUrl}
-                                        controls
-                                        className='max-w-full rounded-lg'
-                                      />
+                                      <div className='-my-1'>
+                                        <video
+                                          src={message.videoUrl}
+                                          controls
+                                          className='max-w-full rounded-lg'
+                                        />
+                                      </div>
                                       {actions}
                                     </>
                                   )
@@ -389,10 +391,11 @@ export function PlaygroundChat({
                                           <MessageContent
                                             variant='flat'
                                             className={cn(
-                                              getMessageContentStyles()
+                                              getMessageContentStyles(),
+                                              '!p-0'
                                             )}
                                           >
-                                            <div className='flex flex-wrap gap-2'>
+                                            <div className='-my-1 flex flex-wrap gap-2'>
                                               {mediaAttachmentPreviews.map(
                                                 ({ attachment, url }) =>
                                                   attachment.kind === 'image' &&
@@ -429,7 +432,12 @@ export function PlaygroundChat({
                                           <MessageContent
                                             variant='flat'
                                             className={cn(
-                                              getMessageContentStyles()
+                                              getMessageContentStyles(),
+                                              generatedMedia.length > 0 ||
+                                                generatedImageContent.images
+                                                  .length > 0
+                                                ? '!p-0'
+                                                : undefined
                                             )}
                                           >
                                             <div className='space-y-3'>
@@ -449,7 +457,7 @@ export function PlaygroundChat({
                                                 </div>
                                               )}
                                             {!!generatedMedia.length && (
-                                              <div className='grid gap-3 sm:grid-cols-2'>
+                                              <div className='-my-1 grid gap-3 sm:grid-cols-2'>
                                                 {generatedMedia.map(
                                                   (media, mediaIndex) => {
                                                     if (
@@ -492,6 +500,7 @@ export function PlaygroundChat({
                                             {generatedImageContent.images.map(
                                               (image, imageIndex) => (
                                                 <div
+                                                  className='-my-1'
                                                   key={`${message.key}-${version.id}-generated-image-${imageIndex}`}
                                                 >
                                                   <img
