@@ -278,9 +278,19 @@ describe('PlaygroundInput attachments', () => {
     const markup = renderPlaygroundMarkup()
 
     expect(markup).toContain(
-      'accept="application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,audio/mpeg,audio/wav,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav"'
+      'accept="application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,audio/*,audio/mpeg,audio/wav,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav,.m4a,.ogg,.flac,.aac"'
     )
     expect(markup).toContain('aria-label="Upload files"')
+  })
+
+  test('includes audio wildcards and common audio extensions in the picker accept filter', () => {
+    const markup = renderPlaygroundMarkup()
+
+    expect(markup).toContain('audio/*')
+    expect(markup).toContain('.m4a')
+    expect(markup).toContain('.ogg')
+    expect(markup).toContain('.flac')
+    expect(markup).toContain('.aac')
   })
 
   test('uses model-specific image and video filters', () => {
