@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, it } from 'vitest'
 import {
   calculateModel,
+  calculateSummary,
   getCashInputs,
   getDiscountForModel,
 } from './cost-calculation'
@@ -39,11 +40,11 @@ const assumptions: CostCalculationAssumptions = {
 }
 
 const discounts: CostCalculationDiscounts = {
-  openai: 0.6,
-  anthropic: 0.7,
-  moonshot: 0.7,
+  openai: 0.75,
+  anthropic: 0.75,
+  moonshot: 0.75,
   national: 0.8,
-  bytedance: 0.95,
+  bytedance: 0.85,
   other: null,
 }
 
@@ -139,5 +140,40 @@ describe('cost calculation', () => {
     }
 
     expect(config.models[0].customFields[config.fields[0]]).toBe('US')
+  })
+
+  it('reports weighted margin and excludes models without a cost discount', () => {
+    const summary = calculateSummary(
+      [
+        {
+          name: 'gpt-5.4-mini',
+          vendor: 'OpenAI',
+          billingUnit: 'USD/1M tokens',
+          officialInput: 0.75,
+          officialOutput: 4.5,
+          officialNonToken: 0,
+          costDiscount: 0.6,
+          note: '',
+        },
+        {
+          name: 'unknown-model',
+          vendor: 'Unknown',
+          billingUnit: 'USD/1M tokens',
+          officialInput: 1,
+          officialOutput: 1,
+          officialNonToken: 0,
+          costDiscount: null,
+          note: '',
+        },
+      ],
+      assumptions,
+      discounts
+    )
+
+    expect(summary.priced).toBe(2)
+    expect(summary.loss).toBe(1)
+    expect(summary.missingDiscount).toBe(1)
+    expect(summary.totalProfit).toBeCloseTo(-2.6833333333)
+    expect(summary.margin).toBeCloseTo(-2.6833333333 / (4.2 * (5 / 45)))
   })
 })

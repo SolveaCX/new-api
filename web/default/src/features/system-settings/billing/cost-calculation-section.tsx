@@ -433,9 +433,12 @@ export function CostCalculationSection(props: CostCalculationSectionProps) {
                     </Button>
                   </TableHead>
                 ))}
+                <TableHead>{t('Official fee')}</TableHead>
+                <TableHead>{t('Flatkey price')}</TableHead>
                 <TableHead>{t('Cash income')}</TableHead>
                 <TableHead>{t('Upstream cost')}</TableHead>
                 <TableHead>{t('Profit')}</TableHead>
+                <TableHead>{t('Margin')}</TableHead>
                 <TableHead>{t('Status')}</TableHead>
                 <TableHead className='text-right'>{t('Actions')}</TableHead>
               </TableRow>
@@ -530,6 +533,8 @@ export function CostCalculationSection(props: CostCalculationSectionProps) {
                         />
                       </TableCell>
                     ))}
+                    <TableCell>{currency(result.officialFee)}</TableCell>
+                    <TableCell>{currency(result.flatkeyPrice)}</TableCell>
                     <TableCell>{currency(result.cashIncome)}</TableCell>
                     <TableCell>{currency(result.upstreamCost)}</TableCell>
                     <TableCell
@@ -541,6 +546,7 @@ export function CostCalculationSection(props: CostCalculationSectionProps) {
                     >
                       {currency(result.profit)}
                     </TableCell>
+                    <TableCell>{percent(result.margin)}</TableCell>
                     <TableCell className='whitespace-nowrap'>
                       {status}
                     </TableCell>
@@ -565,7 +571,9 @@ export function CostCalculationSection(props: CostCalculationSectionProps) {
         <div className='text-muted-foreground text-sm'>
           {t('Models')}: {summary.priced} · {t('Profit')}: {summary.profit} ·{' '}
           {t('Loss')}: {summary.loss} · {t('Missing discount')}:{' '}
-          {summary.missingDiscount}
+          {summary.missingDiscount} · {t('Total profit')}:{' '}
+          {currency(summary.totalProfit)} · {t('Margin')}:{' '}
+          {percent(summary.margin)}
         </div>
       </SettingsSection>
     </div>

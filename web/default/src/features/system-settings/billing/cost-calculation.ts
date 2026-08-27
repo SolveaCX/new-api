@@ -96,6 +96,21 @@ export function calculateSummary(
   const results = models.map((model) =>
     calculateModel(model, assumptions, discounts)
   )
+  const pricedResults = results.filter(
+    (result) => result.upstreamCost !== null && result.profit !== null
+  )
+  const totalCashIncome = pricedResults.reduce(
+    (total, result) => total + result.cashIncome,
+    0
+  )
+  const totalUpstreamCost = pricedResults.reduce(
+    (total, result) => total + (result.upstreamCost ?? 0),
+    0
+  )
+  const totalProfit = pricedResults.reduce(
+    (total, result) => total + (result.profit ?? 0),
+    0
+  )
   return {
     priced: models.length,
     profit: results.filter((result) => result.status === 'profit').length,
@@ -103,5 +118,9 @@ export function calculateSummary(
     missingDiscount: results.filter(
       (result) => result.status === 'missing-discount'
     ).length,
+    totalCashIncome,
+    totalUpstreamCost,
+    totalProfit,
+    margin: totalCashIncome === 0 ? null : totalProfit / totalCashIncome,
   }
 }

@@ -32,12 +32,12 @@ export const DEFAULT_COST_CALCULATION: CostCalculationConfig = {
     nonTokenUsage: 1,
   },
   discounts: {
-    openai: 0.6,
-    anthropic: 0.7,
-    moonshot: 0.7,
+    openai: 0.75,
+    anthropic: 0.75,
+    moonshot: 0.75,
     national: 0.8,
-    bytedance: 0.95,
-    other: null,
+    bytedance: 0.85,
+    other: 0,
   },
   fields: [],
   models: [
