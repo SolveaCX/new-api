@@ -1,15 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import {
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Globe2,
-  Menu,
-  X,
-} from "lucide-react";
+import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
@@ -27,7 +20,13 @@ import {
   withIdFallback,
 } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
-import type { PublicAnnouncement } from "@/lib/public-site-settings";
+import {
+  localizeAnnouncementLink,
+  resolveAnnouncementContent,
+  resolveAnnouncementIntro,
+  resolveAnnouncementLinkLabel,
+  type PublicAnnouncement,
+} from "@/lib/public-site-settings";
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
   clearConsoleSessionHint,
@@ -540,14 +539,27 @@ export function SiteHeader(props: Props) {
     content: promoBannerCopy.message,
     extra: "DeepSeek V4",
     link: promoBannerHref,
+    link_label: promoBannerCopy.linkLabel,
   };
   const promoItems =
     announcements === undefined ? [fallbackPromo] : announcements;
   const hasPromoBanner = promoBannerVisible && promoItems.length > 0;
   const safePromoIndex = promoItems.length ? promoIndex % promoItems.length : 0;
   const activePromo = promoItems[safePromoIndex] ?? promoItems[0];
+  const activePromoContent = activePromo
+    ? resolveAnnouncementContent(activePromo, props.locale)
+    : "";
+  const activePromoIntro = activePromo
+    ? resolveAnnouncementIntro(activePromo, props.locale)
+    : "";
+  const activePromoLinkLabel = activePromo
+    ? resolveAnnouncementLinkLabel(activePromo, props.locale)
+    : "";
+  const activePromoLink = activePromo
+    ? localizeAnnouncementLink(activePromo.link, props.locale)
+    : undefined;
   const mobileMenuOffsetClass = hasPromoBanner
-    ? "top-[132px] max-h-[calc(100dvh-132px)] min-[700px]:top-[112px] min-[700px]:max-h-[calc(100dvh-112px)]"
+    ? "top-[168px] max-h-[calc(100dvh-168px)] min-[901px]:top-[112px] min-[901px]:max-h-[calc(100dvh-112px)]"
     : "top-[72px] max-h-[calc(100dvh-72px)]";
 
   const productItems = useMemo<NavItem[]>(
@@ -873,71 +885,136 @@ export function SiteHeader(props: Props) {
       </nav>
 
       {hasPromoBanner && activePromo && (
-        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F]">
-          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
-            <div className="flex min-w-0 max-w-[min(100%,48rem)] items-center justify-center gap-2 text-center">
-              {activePromo.extra ? (
-                <span className="inline-flex max-w-[7rem] shrink-0 truncate rounded-full border border-[#D8C9FF] bg-white/80 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-[#6B46C1] uppercase min-[700px]:max-w-none">
-                  {activePromo.extra}
+        <div className="relative isolate overflow-hidden border-b border-violet-200/80 bg-[linear-gradient(105deg,#eef7ff_0%,#f3f2ff_48%,#fbf5ff_100%)] text-[#0B0B0F] shadow-[0_8px_24px_-22px_rgba(79,70,229,0.9)]">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-10 left-[12%] size-32 rounded-full bg-sky-300/30 blur-3xl"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-8 -bottom-16 size-44 rounded-full bg-violet-300/35 blur-3xl"
+          />
+          <div className="relative z-10 mx-auto flex min-h-[84px] w-full max-w-[100vw] flex-col items-center justify-center px-3 pt-2 pb-4 text-center min-[901px]:h-10 min-[901px]:min-h-10 min-[901px]:max-w-[var(--fk-site-frame-max-width)] min-[901px]:flex-row min-[901px]:px-[var(--fk-site-gutter)] min-[901px]:py-0 min-[901px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
+            <div
+              className="flex min-w-0 max-w-[min(100%,54rem)] flex-wrap items-center justify-center gap-2.5 text-center max-[900px]:w-full max-[900px]:max-w-none max-[900px]:flex-col max-[900px]:items-center max-[900px]:gap-y-1.5 max-[900px]:text-center"
+              aria-live={promoItems.length > 1 ? "polite" : undefined}
+            >
+              {activePromoIntro ? (
+                <span
+                  className="inline-flex max-w-[7rem] shrink-0 items-center gap-1 truncate rounded-full border border-white/85 bg-white/65 px-2.5 py-1 text-[10px] font-bold tracking-[0.08em] text-[#5B3AA8] uppercase shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md max-[900px]:max-w-full max-[900px]:self-center min-[901px]:max-w-none"
+                  data-promo-intro="true"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 shrink-0 rounded-full bg-gradient-to-r from-sky-500 to-violet-500"
+                  />
+                  {activePromoIntro}
                 </span>
               ) : null}
-              {activePromo.link ? (
+              {activePromoLink ? (
                 <Link
-                  className="min-w-0 text-xs leading-snug font-normal text-[#0B0B0F] no-underline min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium"
-                  href={activePromo.link}
+                  className="group inline-grid min-w-0 max-w-full grid-cols-[auto_minmax(0,1fr)] grid-rows-[auto_auto] items-center gap-x-2 text-center text-xs leading-snug font-normal text-[#0B0B0F] no-underline max-[900px]:w-fit max-[900px]:max-w-[calc(100%-1rem)] max-[900px]:leading-5 min-[901px]:inline-flex min-[901px]:gap-x-2 min-[901px]:text-[14px] min-[901px]:leading-tight min-[901px]:font-medium"
+                  href={activePromoLink}
                 >
-                  {activePromo.content}{" "}
-                  <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
-                    {promoBannerCopy.linkLabel}
+                  {activePromo.logo ? (
+                    <span
+                      className="row-start-1 col-start-1 inline-flex size-6 self-start items-center justify-center rounded-full border border-white/85 bg-white/70 pt-0.5 shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md min-[901px]:size-7 min-[901px]:self-center min-[901px]:pt-0"
+                      aria-hidden="true"
+                      data-promo-logo="true"
+                    >
+                      <Image
+                        src={activePromo.logo}
+                        alt=""
+                        width={22}
+                        height={22}
+                        unoptimized
+                        className="size-[18px] object-contain min-[901px]:size-[22px]"
+                        data-promo-logo-image="true"
+                      />
+                    </span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      "row-start-1 min-w-0 max-[900px]:whitespace-normal max-[900px]:break-words",
+                      activePromo.logo ? "col-start-2" : "col-span-2",
+                    )}
+                  >
+                    {activePromoContent}
                   </span>
+                  {activePromoLinkLabel ? (
+                    <span
+                      className={cn(
+                        "row-start-2 justify-self-center whitespace-nowrap font-semibold text-[#4C1D95] underline decoration-violet-300 underline-offset-4 transition-colors group-hover:text-[#2563EB] group-hover:decoration-sky-400 min-[901px]:row-auto min-[901px]:col-auto min-[901px]:justify-self-auto min-[901px]:text-[13px]",
+                        activePromo.logo ? "col-start-2" : "col-span-2",
+                      )}
+                      data-promo-cta="true"
+                    >
+                      {activePromoLinkLabel}
+                    </span>
+                  ) : null}
                 </Link>
               ) : (
-                <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
-                  {activePromo.content}
+                <span className="inline-grid min-w-0 max-w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 text-center text-xs leading-snug font-normal max-[900px]:w-fit max-[900px]:max-w-[calc(100%-1rem)] max-[900px]:leading-5 min-[901px]:inline-flex min-[901px]:text-[14px] min-[901px]:leading-tight min-[901px]:font-medium">
+                  {activePromo.logo ? (
+                    <span
+                      className="inline-flex size-6 self-start items-center justify-center rounded-full border border-white/85 bg-white/70 pt-0.5 shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md min-[901px]:size-7 min-[901px]:self-center min-[901px]:pt-0"
+                      aria-hidden="true"
+                      data-promo-logo="true"
+                    >
+                      <Image
+                        src={activePromo.logo}
+                        alt=""
+                        width={22}
+                        height={22}
+                        unoptimized
+                        className="size-[18px] object-contain min-[901px]:size-[22px]"
+                        data-promo-logo-image="true"
+                      />
+                    </span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      "min-w-0 max-[900px]:whitespace-normal max-[900px]:break-words",
+                      activePromo.logo ? "col-start-2" : "col-span-2",
+                    )}
+                  >
+                    {activePromoContent}
+                  </span>
                 </span>
               )}
             </div>
             {promoItems.length > 1 ? (
-              <div className="absolute left-2.5 flex items-center gap-1 min-[700px]:left-[max(12px,var(--fk-site-gutter))]">
-                <button
-                  type="button"
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
-                  aria-label={promoBannerCopy.previousLabel}
-                  onClick={() =>
-                    setPromoIndex(
-                      (safePromoIndex - 1 + promoItems.length) %
-                        promoItems.length,
-                    )
-                  }
+              <div className="absolute top-1/2 left-[max(12px,var(--fk-site-gutter))] hidden -translate-y-1/2 items-center gap-1.5 text-[#6B46C1] min-[901px]:flex">
+                <span
+                  aria-hidden="true"
+                  className="flex items-center gap-1.5"
+                  data-promo-dots="true"
                 >
-                  <ChevronLeft className="size-4" aria-hidden="true" />
-                </button>
-                <span className="hidden text-[10px] font-semibold tabular-nums text-[#81758E] min-[430px]:inline">
-                  {safePromoIndex + 1}/{promoItems.length}
+                  {promoItems.map((_, index) => (
+                    <span
+                      key={`promo-dot-${index}`}
+                      className={cn(
+                        "size-1.5 rounded-full transition-[transform,background-color] duration-300",
+                        index === safePromoIndex
+                          ? "scale-125 bg-[#6B46C1]"
+                          : "bg-violet-300/90",
+                      )}
+                    />
+                  ))}
                 </span>
-                <button
-                  type="button"
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
-                  aria-label={promoBannerCopy.nextLabel}
-                  onClick={() =>
-                    setPromoIndex((safePromoIndex + 1) % promoItems.length)
-                  }
-                >
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                </button>
               </div>
             ) : null}
             <button
               type="button"
-              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
+              className="absolute top-2 right-2.5 z-10 inline-flex size-7 items-center justify-center rounded-full border border-white/75 bg-white/40 text-[#0B0B0F] shadow-[0_6px_18px_-12px_rgba(76,29,149,0.8)] backdrop-blur-xl transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[901px]:top-1/2 min-[901px]:right-[max(12px,var(--fk-site-gutter))] min-[901px]:-translate-y-1/2"
               aria-label={
                 announcements === undefined
                   ? promoBannerCopy.dismissLabel
-                  : `Dismiss ${activePromo.extra || "advertisement"}`
+                  : `Dismiss ${activePromoIntro || activePromoContent || "advertisement"}`
               }
               onClick={dismissPromoBanner}
             >
-              <X className="size-4" aria-hidden="true" />
+              <X className="size-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>

@@ -6839,6 +6839,27 @@
     "Delete this conversation?": "删除此会话？",
     "Collapse conversations": "收起会话列表",
     "Expand conversations": "展开会话列表",
-    "Deleted conversations cannot be recovered.": "删除后无法恢复。"
+    "Deleted conversations cannot be recovered.": "删除后无法恢复。",
+    "At least one language must have announcement content": "至少需要填写一种语言的公告内容",
+    "Configure announcement copy for every language supported by the website": "为官网支持的每种语言配置公告文案",
+    "Enter content in the source language first": "请先填写源语言内容",
+    "Intro / summary (Optional)": "简介 / 摘要（可选）",
+    "Intro must be less than 200 characters": "简介不能超过 200 个字符",
+    "Link text": "链接文案",
+    "Link text must be less than 100 characters": "链接文案不能超过 100 个字符",
+    "Optional call-to-action text": "可选的行动按钮文案",
+    "This text is shown for the announcement link.": "该文案会显示在公告链接上",
+    "Translate all languages": "翻译全部语言",
+    "Translating...": "正在翻译…",
+    "Translation completed": "翻译完成",
+    "Translation failed": "翻译失败",
+    "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.": "一键翻译只会更新公告正文和链接文案；简介、Logo、URL、日期和类型保持不变。",
+    "Logo data is too large": "Logo 数据过大",
+    "Logo file must be 64 KB or smaller": "Logo 文件不能超过 64 KB",
+    "Logo must be a supported image file": "Logo 必须是支持的图片文件",
+    "Use a site path such as /pricing or a full https:// URL.": "请输入 /pricing 这样的站内路径，或完整的 https:// URL。",
+    "Optional logo shown before the announcement content (64 KB max).": "可选 Logo，会显示在公告内容前（最大 64 KB）。",
+    "Choose a model logo": "选择模型 Logo",
+    "Custom upload": "自定义上传"
   }
 }

@@ -6837,6 +6837,27 @@
     "Delete this conversation?": "Удалить этот диалог?",
     "Collapse conversations": "Свернуть диалоги",
     "Expand conversations": "Развернуть диалоги",
-    "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить."
+    "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить.",
+    "At least one language must have announcement content": "Введите содержание объявления хотя бы на одном языке",
+    "Configure announcement copy for every language supported by the website": "Настройте текст объявления для всех языков, поддерживаемых сайтом",
+    "Enter content in the source language first": "Сначала введите текст на исходном языке",
+    "Intro / summary (Optional)": "Введение / краткое описание (необязательно)",
+    "Intro must be less than 200 characters": "Введение должно содержать менее 200 символов",
+    "Link text": "Текст ссылки",
+    "Link text must be less than 100 characters": "Текст ссылки должен содержать менее 100 символов",
+    "Optional call-to-action text": "Необязательный текст призыва к действию",
+    "This text is shown for the announcement link.": "Этот текст отображается в ссылке объявления.",
+    "Translate all languages": "Перевести все языки",
+    "Translating...": "Переводим…",
+    "Translation completed": "Перевод завершён",
+    "Translation failed": "Не удалось выполнить перевод",
+    "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.": "Переводятся только содержание объявления и текст ссылки; введение, логотип, URL, дата и тип не изменяются.",
+    "Logo data is too large": "Данные логотипа слишком велики",
+    "Logo file must be 64 KB or smaller": "Размер файла логотипа не должен превышать 64 КБ",
+    "Logo must be a supported image file": "Логотип должен быть файлом поддерживаемого изображения",
+    "Use a site path such as /pricing or a full https:// URL.": "Используйте путь сайта, например /pricing, или полный URL https://.",
+    "Optional logo shown before the announcement content (64 KB max).": "Необязательный логотип перед содержанием объявления (не более 64 КБ).",
+    "Choose a model logo": "Выберите логотип модели",
+    "Custom upload": "Пользовательская загрузка"
   }
 }

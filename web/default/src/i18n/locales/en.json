@@ -6839,6 +6839,27 @@
     "Delete this conversation?": "Delete this conversation?",
     "Collapse conversations": "Collapse conversations",
     "Expand conversations": "Expand conversations",
-    "Deleted conversations cannot be recovered.": "Deleted conversations cannot be recovered."
+    "Deleted conversations cannot be recovered.": "Deleted conversations cannot be recovered.",
+    "At least one language must have announcement content": "At least one language must have announcement content",
+    "Configure announcement copy for every language supported by the website": "Configure announcement copy for every language supported by the website",
+    "Enter content in the source language first": "Enter content in the source language first",
+    "Intro / summary (Optional)": "Intro / summary (Optional)",
+    "Intro must be less than 200 characters": "Intro must be less than 200 characters",
+    "Link text": "Link text",
+    "Link text must be less than 100 characters": "Link text must be less than 100 characters",
+    "Optional call-to-action text": "Optional call-to-action text",
+    "This text is shown for the announcement link.": "This text is shown for the announcement link.",
+    "Translate all languages": "Translate all languages",
+    "Translating...": "Translating...",
+    "Translation completed": "Translation completed",
+    "Translation failed": "Translation failed",
+    "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.": "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.",
+    "Logo data is too large": "Logo data is too large",
+    "Logo file must be 64 KB or smaller": "Logo file must be 64 KB or smaller",
+    "Logo must be a supported image file": "Logo must be a supported image file",
+    "Use a site path such as /pricing or a full https:// URL.": "Use a site path such as /pricing or a full https:// URL.",
+    "Optional logo shown before the announcement content (64 KB max).": "Optional logo shown before the announcement content (64 KB max).",
+    "Choose a model logo": "Choose a model logo",
+    "Custom upload": "Custom upload"
   }
 }
