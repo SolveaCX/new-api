@@ -22,6 +22,7 @@ export default async function RootLayout({
   return (
     <RootDocument
       docsUrl={publicSiteSettings.docsUrl}
+      announcements={publicSiteSettings.announcements}
       hasConsoleSessionHint={hasConsoleSessionHint}
       googleOneTap={publicSiteSettings.googleOneTap}
       lang={DEFAULT_LOCALE}
