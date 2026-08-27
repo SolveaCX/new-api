@@ -1801,7 +1801,7 @@ export function getModelLandingConfig(slug: string): ModelConfig | null {
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
   const normalized = normalizeModelId(modelId);
   const config = getModelLandingConfigs().find((candidate) =>
-    candidate.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
+    matchesModelConfig(candidate, normalized)
   ) ?? null;
   const priorityOverride = PRIORITY_MODEL_OVERRIDES[normalized];
   if (!config || !priorityOverride) return config;
@@ -1892,10 +1892,7 @@ export function getPriorityModelLandingPathnames(): string[] {
 }
 
 export function resolveModelLandingModels(config: ModelConfig, models: PricingModel[]): PricingModel[] {
-  return models.filter((model) => {
-    const normalized = normalizeModelId(model.model_name);
-    return config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId));
-  });
+  return models.filter((model) => matchesModelConfig(config, normalizeModelId(model.model_name)));
 }
 
 export function normalizeModelId(modelId: string): string {
@@ -1908,6 +1905,18 @@ function matchesModelId(normalizedModelId: string, configuredId: string): boolea
     normalizedModelId === normalizedConfiguredId ||
     normalizedModelId.startsWith(`${normalizedConfiguredId}-`)
   );
+}
+
+function isImageModelId(normalizedModelId: string): boolean {
+  return /(^|-)(image|imagen|banana)(-|$)/.test(normalizedModelId);
+}
+
+function matchesModelConfig(config: ModelConfig, normalizedModelId: string): boolean {
+  // A model such as gemini-2.5-flash-image shares a text-family prefix with
+  // gemini-2.5-flash. Let the image suffix select the generic image landing
+  // config instead of silently rendering a text-only page.
+  if (isImageModelId(normalizedModelId) && config.generator?.kind !== "image") return false;
+  return config.modelIds.some((configuredId) => matchesModelId(normalizedModelId, configuredId));
 }
 
 function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null {

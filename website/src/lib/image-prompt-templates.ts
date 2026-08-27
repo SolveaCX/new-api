@@ -15,6 +15,20 @@ export type ImagePromptTemplate = {
   tags: readonly string[];
 };
 
+/**
+ * The first image a visitor sees in an image model's public Playground.
+ *
+ * Playground starters are deliberately scoped to one business scenario for
+ * this release (ecommerce and retail), while each model gets its own product
+ * brief and its own local poster.  These are starter references, not claims
+ * that the current model generated the poster.
+ */
+export type ImagePlaygroundExample = {
+  industry: "ecommerce-retail";
+  prompt: string;
+  poster: string;
+};
+
 const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
 const MODEL_EXAMPLES_ASSET_BASE = "/assets/model-examples";
 const MODEL_PAGES_ASSET_BASE = "/assets/model-pages";
@@ -179,6 +193,68 @@ const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
 };
 
 /**
+ * One distinct ecommerce/retail starter for each canonical image page. The
+ * object keys use the same punctuation-free form as the model ids returned by
+ * the pricing catalog (for example, `gemini-3.1-*` becomes `gemini-3-1-*`).
+ */
+const IMAGE_PLAYGROUND_EXAMPLES: Record<string, ImagePlaygroundExample> = {
+  "gpt-image-2": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["gpt-image-2"][0],
+    prompt:
+      "For an ecommerce skincare listing, create a 4:5 premium hero image of a frosted glass serum dropper on a pale aqua stone surface with fine water droplets. Keep the bottle proportions and cap shape exact, use soft daylight and a clean reflection, leave generous negative space for price and CTA copy, and deliver a product-only composition with no readable text, invented logo, extra products, hands, or watermark.",
+  },
+  "gemini-2-5-flash-image": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["gemini-2-5-flash-image"][0],
+    prompt:
+      "For a beauty marketplace listing, create a warm 1:1 hero still of a matte skincare bottle and matching cream jar on a travertine shelf. Preserve the supplied packaging, cap geometry, materials, and neutral palette; use soft window shadows, a clear front-facing silhouette, and safe margins for listing controls. No people, hands, invented labels, extra products, claims, or watermark.",
+  },
+  "gemini-3-pro-image": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-pro-image"][0],
+    prompt:
+      "For a sustainable retail catalog, create a clean 1:1 marketplace product photo of a brushed stainless-steel bottle centered on seamless white. Show the exact cylindrical body, lid, and metal grain with a soft grounded shadow, neutral color balance, and enough empty margin for catalog overlays. No text, logos, accessories, reflections of people, or additional objects.",
+  },
+  "gemini-3-1-flash-image": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-1-flash-image"][0],
+    prompt:
+      "For a premium skincare launch, create a 4:5 retail campaign image of a deep-green glass pump bottle on sculptural white stone. Keep the pump, bottle proportions, and glass reflections consistent; use directional botanical shadows, bright natural daylight, and a quiet upper-left area for campaign copy. No readable text, invented branding, people, hands, extra products, or watermark.",
+  },
+  "gemini-3-1-flash-lite-image": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-1-flash-lite-image"][0],
+    prompt:
+      "For a beauty brand product reveal, create a square ecommerce hero of a translucent emerald pump bottle on a dark graphite pedestal. Use a controlled rim light, crisp silhouette, subtle contact shadow, and premium contrast that survives a small mobile thumbnail. Preserve the product shape and color; no text, logo changes, props, people, or watermark.",
+  },
+  "grok-imagine-image": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image"][0],
+    prompt:
+      "For an electronics retailer, create a 16:9 product-detail hero of an open matte-black wireless earbud case on dark slate. Show both earbuds seated correctly, crisp hinge and material texture, a low three-quarter camera, and a single soft key light with a controlled cast shadow. No hands, people, readable text, invented logo, extra accessories, or watermark.",
+  },
+  "grok-imagine-image-pro": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image-pro"][0],
+    prompt:
+      "For a consumer-electronics catalog, create a 1:1 front-facing listing image of a closed matte-black wireless earbud charging case on a light concrete surface. Preserve the rounded lid, seam, indicator light, and subtle brand mark exactly; use diffuse studio light and a soft natural shadow with marketplace-safe margins. No invented text, extra products, hands, or watermark.",
+  },
+  "grok-imagine-image-quality": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image-quality"][0],
+    prompt:
+      "For a lifestyle retail shop, create a 4:5 hero image of a handmade ceramic travel mug on a sunlit coastal stone ledge. Keep the glaze pattern, handle, and proportions stable; use a softly blurred ocean background, warm morning light, and clear negative space for product title and price. No people, hands, text, invented logo, extra props, or watermark.",
+  },
+  "nano-banana-pro-preview": {
+    industry: "ecommerce-retail",
+    poster: IMAGE_MODEL_POSTER_SETS["nano-banana-pro-preview"][0],
+    prompt:
+      "For a beauty marketplace variant set, create three coordinated 9:16 product panels for the same pump bottle in magenta, sky blue, and amber colorways. Lock camera height, bottle proportions, cap geometry, lighting direction, and crop; change only the liquid and background color. Keep every panel text-free with no invented logos, extra products, hands, or watermark.",
+  },
+};
+
+/**
  * Industry prompts for the image prompt library. Bracketed values are
  * deliberate fill-in slots: a visitor can replace them without rewriting the
  * composition, lighting, and delivery constraints that make a prompt useful.
@@ -291,6 +367,26 @@ export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
     }
     return variants[start] ?? template.poster;
   });
+}
+
+/**
+ * Resolve a model-specific Playground starter, including catalog aliases such
+ * as `gemini-3.1-flash-image-preview`. A fresh object keeps callers from
+ * accidentally mutating the shared catalog entry.
+ */
+export function getImagePlaygroundExample(modelId = ""): ImagePlaygroundExample | undefined {
+  const normalizedModelId = modelId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const exact = IMAGE_PLAYGROUND_EXAMPLES[normalizedModelId];
+  if (exact) return { ...exact };
+
+  const alias = Object.keys(IMAGE_PLAYGROUND_EXAMPLES).find(
+    (candidate) => normalizedModelId.startsWith(`${candidate}-`) || candidate.startsWith(`${normalizedModelId}-`)
+  );
+  return alias ? { ...IMAGE_PLAYGROUND_EXAMPLES[alias] } : undefined;
 }
 
 export function getImagePromptTemplate(templateId: string): ImagePromptTemplate | undefined {

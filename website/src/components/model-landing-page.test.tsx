@@ -10,6 +10,7 @@ import {
   SEEDANCE_CONFIG,
   getModelLandingConfigForPricingModel,
 } from "@/lib/model-landing";
+import { getImagePlaygroundExample } from "@/lib/image-prompt-templates";
 import type { PricingModel } from "@/lib/pricing";
 import type { RankingsData } from "@/lib/rankings-live";
 
@@ -119,8 +120,21 @@ describe("ModelLandingPage", () => {
     const url = new URL(encodedHref!.replaceAll("&amp;", "&"));
     expect(url.pathname).toBe("/playground");
     expect(url.searchParams.get("model")).toBe("gpt-image-2");
-    expect(url.searchParams.get("prompt")).toBe(GPT_IMAGE_2_CONFIG.examplePrompt);
+    expect(url.searchParams.get("prompt")).toBe(getImagePlaygroundExample("gpt-image-2")?.prompt);
     expect(url.searchParams.has("redirect")).toBe(false);
+  });
+
+  test("shows the model-specific ecommerce starter in the image Playground", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
+    );
+    const starter = getImagePlaygroundExample("gpt-image-2");
+
+    expect(starter).toBeDefined();
+    expect(html).toContain(`data-playground-industry="${starter!.industry}"`);
+    expect(html).toContain(`data-playground-poster="${starter!.poster}"`);
+    expect(html).toContain(starter!.prompt);
+    expect(html).toContain("preview-media");
   });
 
   test("routes the top Get API Key action to the console overview", () => {

@@ -68,6 +68,10 @@ import {
   type GroupModelRatio,
   type PricingModel,
 } from "@/lib/pricing";
+import {
+  getImagePlaygroundExample,
+  type ImagePlaygroundExample,
+} from "@/lib/image-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -155,7 +159,10 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
     () => getLocalizedModelLandingConfig(inputConfig, locale),
     [inputConfig, locale],
   );
-  const [prompt, setPrompt] = useState(config.examplePrompt);
+  const imagePlaygroundExample = config.generator?.kind === "image"
+    ? getImagePlaygroundExample(config.modelId)
+    : undefined;
+  const [prompt, setPrompt] = useState(() => imagePlaygroundExample?.prompt ?? config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
@@ -224,6 +231,7 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
       groupModelRatio={groupModelRatio}
       rankings={rankings}
       initialHealth={initialHealth}
+      playgroundExample={imagePlaygroundExample}
       t={t}
     />
   );
@@ -248,6 +256,7 @@ function FlatkeyModelDetailPage(props: {
   groupModelRatio: GroupModelRatio;
   rankings: RankingsData | null;
   initialHealth?: HomeModelHealth;
+  playgroundExample?: ImagePlaygroundExample;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
@@ -524,6 +533,7 @@ function FlatkeyModelDetailPage(props: {
                     endpoint={generator.endpoint}
                     fieldValues={props.fieldValues}
                     referenceCount={mediaReferenceCount}
+                    playgroundExample={props.playgroundExample}
                     t={props.t}
                   />
                   <div className="model-output-actions">
@@ -1868,6 +1878,7 @@ function OutputPreview(props: {
   endpoint: string;
   fieldValues: Record<string, string | number | boolean>;
   referenceCount: number;
+  playgroundExample?: ImagePlaygroundExample;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const endpoint = props.endpoint;
@@ -1900,7 +1911,11 @@ function OutputPreview(props: {
         ];
   return (
     <div className="output-preview">
-      <div className={`video-preview ${props.kind === "image" ? "image-preview" : ""}`}>
+      <div
+        className={`video-preview ${props.kind === "image" ? "image-preview" : ""}`}
+        data-playground-industry={props.playgroundExample?.industry}
+        data-playground-poster={props.playgroundExample?.poster}
+      >
         {videoExample?.video ? (
           <video
             className="preview-media"
@@ -1911,6 +1926,14 @@ function OutputPreview(props: {
             loop
             playsInline
             aria-label={props.t("Video preview")}
+          />
+        ) : props.kind === "image" && props.playgroundExample ? (
+          <Image
+            src={props.playgroundExample.poster}
+            alt={props.t("Image preview")}
+            fill
+            sizes="(min-width: 1280px) 40vw, (min-width: 1024px) 45vw, 100vw"
+            className="preview-media object-cover"
           />
         ) : (
           <span className="preview-label">
