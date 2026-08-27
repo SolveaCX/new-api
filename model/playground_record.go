@@ -103,6 +103,12 @@ func SavePlaygroundRecord(record *PlaygroundRecord) error {
 			if err := tx.Create(record).Error; err != nil {
 				return err
 			}
+			// A clear marker is authoritative for the conversation. A delayed
+			// turn may still be persisted for idempotent history, but its
+			// attachment edges must not resurrect media that the clear removed.
+			if blockedByClear {
+				return nil
+			}
 			return ReplacePlaygroundRecordAssets(tx, record)
 		}
 

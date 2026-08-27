@@ -162,10 +162,17 @@ func TestClearKeepsHistoryButRemovesCurrentConversation(t *testing.T) {
 }
 
 func TestDelayedTurnAfterClearCannotRestoreConversation(t *testing.T) {
-	setupPlaygroundRecordTestDBWithUsers(t, 106)
+	setupPlaygroundAssetRelationTestDB(t, 106)
+	asset := playgroundAssetForTest(106, "ast_delayed_after_clear", AssetTypeImage)
+	require.NoError(t, DB.Create(&asset).Error)
 	require.NoError(t, SavePlaygroundRecord(samplePlaygroundTurn(106, "turn", "conversation-a", 1000)))
 	require.NoError(t, ClearPlaygroundConversation(106, "clear", "conversation-a", 2000))
-	require.NoError(t, SavePlaygroundRecord(samplePlaygroundTurn(106, "late", "conversation-a", 3000)))
+	late := samplePlaygroundTurn(106, "late", "conversation-a", 3000)
+	late.AssetReferences = []PlaygroundAssetReference{{
+		AssetID:   asset.PublicId,
+		AssetType: AssetTypeImage,
+	}}
+	require.NoError(t, SavePlaygroundRecord(late))
 
 	current, err := GetCurrentPlaygroundRecord(106)
 	require.NoError(t, err)
@@ -176,6 +183,11 @@ func TestDelayedTurnAfterClearCannotRestoreConversation(t *testing.T) {
 	require.False(t, delayed.IsLatest)
 	require.False(t, delayed.IsCurrent)
 	require.Empty(t, delayed.MessagesSnapshot)
+	var edgeCount int64
+	require.NoError(t, DB.Model(&PlaygroundRecordAsset{}).
+		Where("record_id = ?", late.RecordID).
+		Count(&edgeCount).Error)
+	require.Zero(t, edgeCount)
 }
 
 func TestOlderClearCannotReplaceNewerTargetTurn(t *testing.T) {
