@@ -47,14 +47,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -84,7 +76,7 @@ function PlaygroundConversationListContent(
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [isManageOpen, setIsManageOpen] = useState(false)
+  const [isBatchMode, setIsBatchMode] = useState(false)
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(
     null
   )
@@ -120,7 +112,7 @@ function PlaygroundConversationListContent(
     mutationFn: deletePlaygroundConversations,
     onSuccess: (_data, deletedIds) => {
       setSelectedIds(new Set())
-      setIsManageOpen(false)
+      setIsBatchMode(false)
       void queryClient.invalidateQueries({ queryKey: conversationsQueryKey })
       toast.success(t('Conversations deleted'))
       if (deletedIds.includes(props.currentConversationId)) props.onNew()
@@ -171,17 +163,7 @@ function PlaygroundConversationListContent(
 
   const deleteSelected = () => {
     const ids = [...selectedIds]
-    if (ids.length === 0) return
-    deleteMutation.mutate(ids)
-  }
-
-  const requestDeleteCurrent = () => {
-    const isSaved = conversations.some(
-      (conversation) =>
-        conversation.conversation_id === props.currentConversationId
-    )
-    if (!isSaved) return
-    requestDelete([props.currentConversationId])
+    if (ids.length > 0) requestDelete(ids)
   }
 
   const startRename = (conversation: PlaygroundConversationSummary) => {
@@ -199,20 +181,15 @@ function PlaygroundConversationListContent(
     <>
       <aside
         className={cn(
-          'bg-background border-border flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
+          'bg-sidebar text-sidebar-foreground border-sidebar-border relative flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
           isCollapsed ? 'w-10' : 'w-52'
         )}
       >
-        <div
-          className={cn(
-            'flex h-14 items-center px-2',
-            isCollapsed ? 'justify-center' : 'justify-end'
-          )}
-        >
+        <div className='h-14 shrink-0'>
           <Button
             variant='ghost'
             size='icon'
-            className='text-muted-foreground hover:bg-muted rounded-md'
+            className='text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-sidebar-border bg-sidebar pointer-events-auto absolute top-3 right-0 z-20 size-8 translate-x-1/2 rounded-full border shadow-sm'
             onClick={() => setIsCollapsed((collapsed) => !collapsed)}
             aria-expanded={!isCollapsed}
             aria-label={
@@ -244,35 +221,59 @@ function PlaygroundConversationListContent(
             </Button>
             <Button
               variant='ghost'
-              className='text-muted-foreground hover:bg-muted hover:text-destructive h-9 w-full justify-start rounded-md px-2.5 text-sm'
-              onClick={requestDeleteCurrent}
-              disabled={
-                deleteMutation.isPending ||
-                !conversations.some(
-                  (conversation) =>
-                    conversation.conversation_id === props.currentConversationId
-                )
-              }
-            >
-              <Trash2 data-icon='inline-start' aria-hidden='true' />
-              {t('Delete')}
-            </Button>
-            <Button
-              variant='ghost'
-              className='text-muted-foreground hover:bg-muted h-9 w-full justify-start rounded-md px-2.5 text-sm'
-              onClick={() => setIsManageOpen(true)}
+              className='text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-9 w-full justify-start rounded-md px-2.5 text-sm'
+              onClick={() => {
+                setIsBatchMode((mode) => !mode)
+                setSelectedIds(new Set())
+              }}
               disabled={conversations.length === 0}
+              aria-pressed={isBatchMode}
             >
               <ListChecks data-icon='inline-start' aria-hidden='true' />
-              {t('Delete selected conversations')}
+              {isBatchMode ? t('Done') : t('Batch operations')}
             </Button>
           </nav>
         )}
         {!isCollapsed && (
-          <section className='border-border/70 mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t px-2 pt-4'>
-            <h2 className='text-muted-foreground px-2 text-xs font-medium'>
-              {t('Conversations')}
-            </h2>
+          <section className='border-sidebar-border mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t px-2 pt-4'>
+            <div className='flex items-center justify-between px-2'>
+              <h2 className='text-sidebar-foreground/60 text-xs font-medium'>
+                {t('Conversations')}
+              </h2>
+              {isBatchMode && (
+                <Button
+                  className='h-6 rounded-md px-2 text-xs'
+                  onClick={() =>
+                    setSelectedIds(
+                      allSelected
+                        ? new Set()
+                        : new Set(
+                            conversations.map(
+                              (conversation) => conversation.conversation_id
+                            )
+                          )
+                    )
+                  }
+                  variant='ghost'
+                >
+                  {allSelected ? t('Deselect all') : t('Select all')}
+                </Button>
+              )}
+            </div>
+            {isBatchMode && (
+              <div className='flex items-center gap-2 px-2'>
+                <Button
+                  className='h-7 flex-1 text-xs'
+                  disabled={selectedIds.size === 0 || deleteMutation.isPending}
+                  onClick={deleteSelected}
+                  variant='destructive'
+                >
+                  <Trash2 data-icon='inline-start' aria-hidden='true' />
+                  {t('Delete')}
+                  {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                </Button>
+              </div>
+            )}
             <ScrollArea className='min-h-0 flex-1'>
               <div className='flex flex-col gap-0.5'>
                 {conversationsQuery.isLoading && (
@@ -296,17 +297,21 @@ function PlaygroundConversationListContent(
                       className={cn(
                         'group flex min-h-9 items-center gap-2 rounded-lg px-2',
                         isActive
-                          ? 'bg-muted text-foreground'
-                          : 'hover:bg-muted/70'
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          : 'hover:bg-sidebar-accent/70'
                       )}
                     >
-                      <Checkbox
-                        checked={selectedIds.has(conversation.conversation_id)}
-                        onCheckedChange={() =>
-                          toggleSelected(conversation.conversation_id)
-                        }
-                        aria-label={t('Select conversation')}
-                      />
+                      {isBatchMode && (
+                        <Checkbox
+                          checked={selectedIds.has(
+                            conversation.conversation_id
+                          )}
+                          onCheckedChange={() =>
+                            toggleSelected(conversation.conversation_id)
+                          }
+                          aria-label={t('Select conversation')}
+                        />
+                      )}
                       {isEditing ? (
                         <div className='flex min-w-0 flex-1 items-center gap-1'>
                           <Input
@@ -344,13 +349,17 @@ function PlaygroundConversationListContent(
                         <button
                           type='button'
                           className='min-w-0 flex-1 truncate text-left text-sm'
-                          onClick={() => props.onSelect(conversation)}
+                          onClick={() =>
+                            isBatchMode
+                              ? toggleSelected(conversation.conversation_id)
+                              : props.onSelect(conversation)
+                          }
                           disabled={props.disabled}
                         >
                           {conversation.name}
                         </button>
                       )}
-                      {!isEditing && (
+                      {!isEditing && !isBatchMode && (
                         <div className='flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100'>
                           <Button
                             size='icon-xs'
@@ -381,78 +390,6 @@ function PlaygroundConversationListContent(
           </section>
         )}
       </aside>
-      <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>
-        <DialogContent className='sm:max-w-md'>
-          <DialogHeader>
-            <DialogTitle>{t('Delete selected conversations')}</DialogTitle>
-            <DialogDescription>
-              {t('Deleted conversations cannot be recovered.')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className='bg-muted/40 flex items-center rounded-lg border px-3 py-2'>
-            <label className='flex items-center gap-2 text-sm'>
-              <Checkbox
-                checked={allSelected}
-                onCheckedChange={(checked) =>
-                  setSelectedIds(
-                    checked
-                      ? new Set(
-                          conversations.map((item) => item.conversation_id)
-                        )
-                      : new Set()
-                  )
-                }
-                aria-label={t('Select all')}
-              />
-              {t('Select all')}
-            </label>
-          </div>
-          <ScrollArea className='max-h-72'>
-            <div className='flex flex-col gap-1 pr-3'>
-              {conversationsQuery.isLoading && (
-                <p className='text-muted-foreground py-6 text-center text-sm'>
-                  {t('Loading conversations...')}
-                </p>
-              )}
-              {!conversationsQuery.isLoading && conversations.length === 0 && (
-                <p className='text-muted-foreground py-6 text-center text-sm'>
-                  {t('No conversations yet')}
-                </p>
-              )}
-              {conversations.map((conversation) => (
-                <label
-                  key={conversation.conversation_id}
-                  className='hover:bg-muted flex items-center gap-3 rounded-lg px-3 py-2.5'
-                >
-                  <Checkbox
-                    checked={selectedIds.has(conversation.conversation_id)}
-                    onCheckedChange={() =>
-                      toggleSelected(conversation.conversation_id)
-                    }
-                    aria-label={t('Select conversation')}
-                  />
-                  <span className='min-w-0 flex-1 truncate text-sm'>
-                    {conversation.name}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </ScrollArea>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setIsManageOpen(false)}>
-              {t('Cancel')}
-            </Button>
-            <Button
-              variant='destructive'
-              onClick={deleteSelected}
-              disabled={selectedIds.size === 0 || deleteMutation.isPending}
-            >
-              <Trash2 data-icon='inline-start' aria-hidden='true' />
-              {t('Delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <AlertDialog
         open={pendingDeleteIds !== null}
         onOpenChange={(open) => {
