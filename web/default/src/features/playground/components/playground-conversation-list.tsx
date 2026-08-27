@@ -161,7 +161,7 @@ function PlaygroundConversationListContent(
       <aside
         className={cn(
           'bg-sidebar border-sidebar-border flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
-          isCollapsed ? 'w-14' : 'w-52'
+          isCollapsed ? 'w-10' : 'w-52'
         )}
       >
         <div
@@ -189,89 +189,46 @@ function PlaygroundConversationListContent(
             )}
           </Button>
         </div>
-        <nav
-          className='flex flex-1 flex-col gap-1 px-2'
-          aria-label={t('Conversations')}
-        >
-          {isCollapsed ? (
-            <>
-              <Button
-                variant='ghost'
-                size='icon'
-                className='rounded-lg'
-                onClick={props.onNew}
-                disabled={props.disabled}
-                aria-label={t('New')}
-              >
-                <Plus aria-hidden='true' />
-              </Button>
-              <Button
-                variant='ghost'
-                size='icon'
-                className='text-muted-foreground hover:text-destructive rounded-lg'
-                onClick={requestDeleteCurrent}
-                disabled={
-                  deleteMutation.isPending ||
-                  !conversations.some(
-                    (conversation) =>
-                      conversation.conversation_id ===
-                      props.currentConversationId
-                  )
-                }
-                aria-label={t('Delete this conversation?')}
-              >
-                <Trash2 aria-hidden='true' />
-              </Button>
-              <Button
-                variant='ghost'
-                size='icon'
-                className='text-muted-foreground rounded-lg'
-                onClick={() => setIsManageOpen(true)}
-                disabled={conversations.length === 0}
-                aria-label={t('Delete selected conversations')}
-              >
-                <ListChecks aria-hidden='true' />
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant='ghost'
-                className='h-10 w-full justify-start rounded-lg px-3'
-                onClick={props.onNew}
-                disabled={props.disabled}
-              >
-                <Plus data-icon='inline-start' aria-hidden='true' />
-                {t('New')}
-              </Button>
-              <Button
-                variant='ghost'
-                className='text-muted-foreground hover:text-destructive h-10 w-full justify-start rounded-lg px-3'
-                onClick={requestDeleteCurrent}
-                disabled={
-                  deleteMutation.isPending ||
-                  !conversations.some(
-                    (conversation) =>
-                      conversation.conversation_id ===
-                      props.currentConversationId
-                  )
-                }
-              >
-                <Trash2 data-icon='inline-start' aria-hidden='true' />
-                {t('Delete')}
-              </Button>
-              <Button
-                variant='ghost'
-                className='text-muted-foreground h-10 w-full justify-start rounded-lg px-3'
-                onClick={() => setIsManageOpen(true)}
-                disabled={conversations.length === 0}
-              >
-                <ListChecks data-icon='inline-start' aria-hidden='true' />
-                {t('Delete selected conversations')}
-              </Button>
-            </>
-          )}
-        </nav>
+        {!isCollapsed && (
+          <nav
+            className='flex flex-1 flex-col gap-1 px-2'
+            aria-label={t('Conversations')}
+          >
+            <Button
+              variant='ghost'
+              className='h-10 w-full justify-start rounded-lg px-3'
+              onClick={props.onNew}
+              disabled={props.disabled}
+            >
+              <Plus data-icon='inline-start' aria-hidden='true' />
+              {t('New')}
+            </Button>
+            <Button
+              variant='ghost'
+              className='text-muted-foreground hover:text-destructive h-10 w-full justify-start rounded-lg px-3'
+              onClick={requestDeleteCurrent}
+              disabled={
+                deleteMutation.isPending ||
+                !conversations.some(
+                  (conversation) =>
+                    conversation.conversation_id === props.currentConversationId
+                )
+              }
+            >
+              <Trash2 data-icon='inline-start' aria-hidden='true' />
+              {t('Delete')}
+            </Button>
+            <Button
+              variant='ghost'
+              className='text-muted-foreground h-10 w-full justify-start rounded-lg px-3'
+              onClick={() => setIsManageOpen(true)}
+              disabled={conversations.length === 0}
+            >
+              <ListChecks data-icon='inline-start' aria-hidden='true' />
+              {t('Delete selected conversations')}
+            </Button>
+          </nav>
+        )}
       </aside>
       <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>
         <DialogContent className='sm:max-w-md'>
