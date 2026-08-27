@@ -22,6 +22,10 @@ import { createInstance } from 'i18next'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import type {
   PlanRecord,
@@ -1182,6 +1186,48 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('$10')
     expect(html).not.toContain('Monthly model quota:')
+  })
+
+  test('keeps the model-value reference in USD when quota display uses another currency', async () => {
+    const previousCurrency = useSystemConfigStore.getState().config.currency
+    useSystemConfigStore.setState((state) => ({
+      config: {
+        ...state.config,
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          ...state.config.currency,
+          quotaDisplayType: 'CNY',
+          usdExchangeRate: 7,
+        },
+      },
+    }))
+
+    await testI18n.changeLanguage('pt-BR')
+    try {
+      const valuePlan = {
+        ...localizedPlans[0],
+        plan: {
+          ...localizedPlans[0].plan,
+          total_amount: 22_500_000,
+        },
+      }
+      const html = renderWalletCardWithPlans([
+        valuePlan,
+        ...localizedPlans.slice(1),
+      ])
+
+      expect(html).toContain('data-subscription-reference-price="$45"')
+      expect(html).not.toContain('¥315')
+      expect(html).toContain('R$')
+    } finally {
+      await testI18n.changeLanguage('en')
+      useSystemConfigStore.setState((state) => ({
+        config: {
+          ...state.config,
+          currency: previousCurrency,
+        },
+      }))
+    }
   })
 
   test('omits the reference price when a custom plan has no positive quota value', () => {
