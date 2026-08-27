@@ -23,6 +23,7 @@ import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import { type TopNavLink } from '../types'
+import { ConsoleCliCta } from './console-cli-cta'
 import { Header } from './header'
 import { SystemBrand } from './system-brand'
 import { TopNav } from './top-nav'
@@ -108,6 +109,7 @@ export function AppHeader({
                 <TopNav links={links} />
               </div>
             )}
+            <ConsoleCliCta />
             {showNotifications && (
               <NotificationPopover
                 open={notifications.popoverOpen}
