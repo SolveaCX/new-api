@@ -21,10 +21,7 @@ import { Crown, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
-import {
-  formatBillingCurrencyFromUSD,
-  getCurrencyDisplay,
-} from '@/lib/currency'
+import { getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -285,9 +282,9 @@ function buildRenewalLifecyclePrecondition(
  * `total_amount` is stored in quota units, not major currency units.  Keep
  * the conversion here (rather than changing the plan or payment fields) so
  * the value is presentation-only and remains correct when an administrator
- * changes the configured quota-per-dollar ratio.  Billing formatting is used
- * intentionally so token-only display mode cannot turn this price into a raw
- * token count.
+ * changes the configured quota-per-dollar ratio. The reference is the plan's
+ * model value in USD, so it must stay in USD even when the payable price is
+ * localized or the admin chooses CNY/custom/token quota display elsewhere.
  */
 function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
   const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
@@ -326,7 +323,7 @@ function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
     return null
   }
 
-  const formatted = formatBillingCurrencyFromUSD(referenceAmountUSD)
+  const formatted = formatPlanPrice(referenceAmountUSD, 'USD')
   return formatted === '-' ? null : formatted
 }
 
