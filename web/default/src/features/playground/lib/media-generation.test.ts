@@ -291,7 +291,7 @@ describe('Playground media model profiles', () => {
         resolution: '720p',
         duration: 5,
         aspectRatio: 'adaptive',
-        generateAudio: true,
+        generateAudio: false,
       })
       expect(
         profile?.fields
@@ -323,7 +323,7 @@ describe('Playground media model profiles', () => {
         resolution: '720p',
         duration: 5,
         aspectRatio: 'adaptive',
-        generateAudio: true,
+        generateAudio: false,
       })
       expect(
         profile?.fields
@@ -359,12 +359,12 @@ describe('Playground media model profiles', () => {
     const profile = resolveMediaGenerationProfile('doubao-seedance-2-5-260628')
 
     expect(profile?.family).toBe('seedance-2.5')
-    expect(profile?.defaults).toEqual({
-      resolution: '720p',
-      duration: 5,
-      aspectRatio: 'adaptive',
-      generateAudio: true,
-    })
+      expect(profile?.defaults).toEqual({
+        resolution: '720p',
+        duration: 5,
+        aspectRatio: 'adaptive',
+        generateAudio: false,
+      })
     expect(
       profile?.fields
         .find((field) => field.key === 'resolution')
@@ -389,7 +389,7 @@ describe('Playground media model profiles', () => {
         duration: 4.5,
         generateAudio: 'false',
       })
-    ).toMatchObject({ duration: 5, generateAudio: true })
+    ).toMatchObject({ duration: 5, generateAudio: false })
   })
 
   test('Grok image does not invent unsupported quality or resolution controls', () => {
