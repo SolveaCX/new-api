@@ -59,27 +59,6 @@ spyOn(modelGroupSelectorModule, 'ModelGroupSelector').mockImplementation(((
   return null
 }) as never)
 
-// Render the closed dropdown contents in the server-rendered test markup so
-// attachment menu entries can be asserted without a browser interaction.
-mock.module('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: ({ children }: { children?: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  DropdownMenuContent: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuItem: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuTrigger: ({
-    render,
-    children,
-  }: {
-    render?: React.ReactNode
-    children?: React.ReactNode
-  }) => <>{render ?? children}</>,
-}))
-
 const { PlaygroundInput } = await import('./playground-input')
 const testI18n = createInstance()
 
@@ -287,6 +266,14 @@ describe('PlaygroundInput quick starts', () => {
 })
 
 describe('PlaygroundInput attachments', () => {
+  test('opens the native picker directly and keeps multi-file selection enabled', () => {
+    const markup = renderPlaygroundMarkup()
+
+    expect(markup).toContain('multiple=""')
+    expect(markup).not.toContain('Choose files')
+    expect(markup).not.toContain('Drag and drop files here')
+  })
+
   test('advertises the supported text-model attachment types', () => {
     const markup = renderPlaygroundMarkup()
 

@@ -56,6 +56,9 @@ import {
 import { ChatPresetsItem } from './chat-presets-item'
 import { getNavBadgeClassName, getNavItemTitleClassName } from './nav-badge'
 
+const SIDEBAR_NAV_ITEM_CLASS_NAME =
+  'rounded-xl transition-[background-color,color,box-shadow] duration-150 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/50 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-sm'
+
 /**
  * Sidebar navigation group component
  * Renders a group of navigation items, supporting regular links and collapsible submenus
@@ -143,6 +146,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
+        className={SIDEBAR_NAV_ITEM_CLASS_NAME}
         isActive={checkIsActive(href, item)}
         tooltip={item.badge ? `${item.title} — ${item.badge}` : item.title}
         render={<Link to={item.url} onClick={() => setOpenMobile(false)} />}
@@ -192,7 +196,12 @@ function SidebarMenuCollapsible({
     >
       <CollapsibleTrigger
         className='group/collapsible-trigger'
-        render={<SidebarMenuButton tooltip={item.title} />}
+        render={
+          <SidebarMenuButton
+            className={SIDEBAR_NAV_ITEM_CLASS_NAME}
+            tooltip={item.title}
+          />
+        }
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className={getNavItemTitleClassName(item.badgeVariant)}>
@@ -208,6 +217,7 @@ function SidebarMenuCollapsible({
           {item.items.map((subItem) => (
             <SidebarMenuSubItem key={subItem.title}>
               <SidebarMenuSubButton
+                className={SIDEBAR_NAV_ITEM_CLASS_NAME}
                 isActive={checkIsActive(href, subItem)}
                 render={
                   <Link to={subItem.url} onClick={() => setOpenMobile(false)} />
@@ -250,6 +260,7 @@ function SidebarMenuCollapsedDropdown({
           className='group/dropdown-trigger'
           render={
             <SidebarMenuButton
+              className={SIDEBAR_NAV_ITEM_CLASS_NAME}
               tooltip={item.title}
               isActive={checkIsActive(href, item)}
             />
