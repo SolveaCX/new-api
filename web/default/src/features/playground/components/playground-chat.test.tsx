@@ -277,4 +277,41 @@ describe('PlaygroundChat', () => {
     expect(html).toContain('Attachment preview unavailable')
     expect(html).not.toContain('<video')
   })
+
+  test('renders a durable image attachment when its signed preview URL is available', () => {
+    const imageSrc =
+      'https://storage.googleapis.com/vocai-gemini-prod-flatkey-assets/assets/photo.jpg?sig=test'
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'user-durable-image',
+              from: 'user',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Describe this image',
+                  attachments: [
+                    {
+                      kind: 'image',
+                      filename: 'photo.jpg',
+                      mediaType: 'image/jpeg',
+                      assetId: 'ast_photo',
+                      url: imageSrc,
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`<img alt="photo.jpg"`)
+    expect(html).toContain(imageSrc)
+    expect(html).not.toContain('Attachment preview unavailable')
+  })
 })

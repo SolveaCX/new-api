@@ -61,10 +61,17 @@ import { MessageActions } from './message-actions'
 import { MessageError } from './message-error'
 
 function sanitizeAttachmentImageUrl(
-  url: string | undefined
+  attachment: PlaygroundAttachment
 ): string | undefined {
-  const safeUrl = sanitizeGeneratedMediaUrl(url)
-  return safeUrl?.startsWith('data:image/') ? safeUrl : undefined
+  const safeUrl = sanitizeGeneratedMediaUrl(attachment.url)
+  if (!safeUrl) return undefined
+  if (safeUrl.startsWith('data:image/')) return safeUrl
+
+  // A durable asset ID comes from the server-side upload/preview flow. Its
+  // refreshed HTTPS URL is safe to render after the generic URL sanitizer has
+  // rejected credentials and non-HTTP schemes. Attachments without that
+  // server identity remain restricted to inline image data.
+  return attachment.assetId?.trim() ? safeUrl : undefined
 }
 
 function sanitizeAttachmentVideoUrl(
@@ -223,9 +230,8 @@ export function PlaygroundChat({
                               }> = (version.attachments ?? []).flatMap(
                                 (attachment) => {
                                   if (attachment.kind === 'image') {
-                                    const url = sanitizeAttachmentImageUrl(
-                                      attachment.url
-                                    )
+                                    const url =
+                                      sanitizeAttachmentImageUrl(attachment)
                                     return [
                                       { attachment, ...(url ? { url } : {}) },
                                     ]
