@@ -33,11 +33,14 @@ import * as authStoreModule from '@/stores/auth-store'
 import * as onboardingStoreModule from '@/stores/onboarding-store'
 import * as enterpriseModule from '@/hooks/use-enterprise'
 import * as systemConfigModule from '@/hooks/use-system-config'
+import * as playgroundApiModule from './api'
 import * as playgroundChatModule from './components/playground-chat'
+import * as playgroundConversationListModule from './components/playground-conversation-list'
 import * as playgroundFirstRunModule from './components/playground-first-run'
 import * as playgroundInputModule from './components/playground-input'
 import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from './constants'
 import * as playgroundHooksModule from './hooks'
+import * as playgroundLibModule from './lib'
 import { applyPlaygroundHandoffModel } from './lib/playground-handoff'
 import type { Message, PlaygroundAttachment, PlaygroundConfig } from './types'
 
@@ -56,6 +59,10 @@ type CapturedInputProps = {
 
 type CapturedChatProps = {
   onRegenerateMessage: (message: Message) => void
+}
+
+type CapturedConversationListProps = {
+  onSelect: (conversation: { conversation_id: string }) => Promise<void> | void
 }
 
 type CapturedWelcomeProps = {
@@ -88,6 +95,7 @@ const setModelsMock = mock(() => undefined)
 const setGroupsMock = mock(() => undefined)
 let capturedInputProps: CapturedInputProps | undefined
 let capturedChatProps: CapturedChatProps | undefined
+let capturedConversationListProps: CapturedConversationListProps | undefined
 let capturedWelcomeProps: CapturedWelcomeProps | undefined
 let receivedInitialModel: string | undefined
 let modelsQueryData: string[] | undefined
@@ -128,6 +136,14 @@ spyOn(playgroundChatModule, 'PlaygroundChat').mockImplementation(((
   props: CapturedChatProps
 ) => {
   capturedChatProps = props
+  return null
+}) as never)
+
+spyOn(
+  playgroundConversationListModule,
+  'PlaygroundConversationList'
+).mockImplementation(((props: CapturedConversationListProps) => {
+  capturedConversationListProps = props
   return null
 }) as never)
 
@@ -233,6 +249,7 @@ function renderHandoff(
 beforeEach(() => {
   capturedInputProps = undefined
   capturedChatProps = undefined
+  capturedConversationListProps = undefined
   capturedWelcomeProps = undefined
   receivedInitialModel = undefined
   modelsQueryData = undefined
@@ -533,6 +550,75 @@ describe('Playground model landing handoff', () => {
 
     expect(stopMediaMock).toHaveBeenCalledTimes(1)
     expect(stopChatMock).not.toHaveBeenCalled()
+  })
+
+  test('hydrates attachment previews when loading a saved conversation', async () => {
+    const hydratedMessages: Message[] = [
+      {
+        key: 'user-message',
+        from: 'user',
+        versions: [
+          {
+            id: 'user-version',
+            content: 'Describe this file',
+            attachments: [
+              {
+                kind: 'image',
+                filename: 'photo.png',
+                mediaType: 'image/png',
+                assetId: 'ast_saved',
+                url: 'https://storage.example/fresh-preview',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    const snapshotMessages: Message[] = [
+      {
+        key: 'user-message',
+        from: 'user',
+        versions: [
+          {
+            id: 'user-version',
+            content: 'Describe this file',
+            attachments: [
+              {
+                kind: 'image',
+                filename: 'photo.png',
+                mediaType: 'image/png',
+                assetId: 'ast_saved',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    spyOn(playgroundApiModule, 'getPlaygroundConversation').mockResolvedValue(
+      {
+        conversation_id: 'conversation-saved',
+        messages: snapshotMessages,
+      } as never
+    )
+    const hydrateSpy = spyOn(
+      playgroundLibModule,
+      'hydratePlaygroundMessages'
+    ).mockResolvedValue(hydratedMessages as never)
+
+    renderToStaticMarkup(<Playground />)
+    if (!capturedConversationListProps)
+      throw new Error('PlaygroundConversationList was not rendered')
+
+    await capturedConversationListProps.onSelect({
+      conversation_id: 'conversation-saved',
+    })
+
+    expect(hydrateSpy).toHaveBeenCalledTimes(1)
+    expect(hydrateSpy).toHaveBeenCalledWith(snapshotMessages)
+    expect(updateMessagesMock).toHaveBeenCalledWith(hydratedMessages)
+    expect(setConversationIdMock).toHaveBeenCalledWith('conversation-saved')
+    hydrateSpy.mockRestore()
   })
 })
 

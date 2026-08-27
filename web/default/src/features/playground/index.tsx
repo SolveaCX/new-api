@@ -68,6 +68,7 @@ import {
   isSupportedPlaygroundModelName,
   pickFirstRunModel,
   normalizeMediaGenerationSettings,
+  hydratePlaygroundMessages,
   resolveMediaGenerationProfile,
   validateMediaGenerationAttachments,
   shouldOpenFirstRunTopupPrompt,
@@ -992,8 +993,11 @@ export function Playground({
           conversation.conversation_id
         )
         if (!snapshot) return
+        const hydratedMessages = await hydratePlaygroundMessages(
+          snapshot.messages
+        )
         startTransition(() => {
-          updateMessages(snapshot.messages)
+          updateMessages(hydratedMessages)
           setConversationId(snapshot.conversation_id)
         })
       } catch (error) {
