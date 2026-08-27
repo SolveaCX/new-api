@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -137,4 +138,18 @@ func TestStripeCheckoutIdempotencyKeyUsesRevisionAndHashedSelectionIdentity(t *t
 	require.Equal(t, key, normalizedKey)
 	require.NotEqual(t, key, nextRevisionKey)
 	require.NotEqual(t, key, noneKey)
+}
+
+func TestStripeCheckoutInitialRequestIDBoundsLongTradeNumbers(t *testing.T) {
+	tradeNo := strings.Repeat("x", 200)
+
+	requestID := StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, tradeNo)
+	retryID := StripeCheckoutRetryRequestID(requestID, 1)
+
+	require.LessOrEqual(t, len(requestID), 64)
+	require.LessOrEqual(t, len(retryID), 64)
+	require.Equal(t, requestID, StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, tradeNo))
+	require.NotEqual(t, requestID, StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, tradeNo+"-other"))
+	require.Equal(t, "initial:recurring_subscription:trade-7", StripeCheckoutInitialRequestID(StripeCheckoutPurchaseRecurringSubscription, "trade-7"))
+	require.Equal(t, "initial:recurring_subscription:trade-7:retry:2", StripeCheckoutRetryRequestID("initial:recurring_subscription:trade-7", 2))
 }

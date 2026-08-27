@@ -26,6 +26,30 @@ type StripeCheckoutDiscountSelection struct {
 	ReplacedSource  StripeCheckoutDiscountSource
 }
 
+const stripeCheckoutRevisionRequestIDMaxLength = 64
+
+// StripeCheckoutInitialRequestID returns the stable request key used for the
+// first revision. Keep the legacy readable form when it fits the database
+// column, and compact longer trade numbers into a deterministic key.
+func StripeCheckoutInitialRequestID(kind StripeCheckoutPurchaseKind, tradeNo string) string {
+	return boundStripeCheckoutRevisionRequestID(fmt.Sprintf("initial:%s:%s", kind, strings.TrimSpace(tradeNo)))
+}
+
+// StripeCheckoutRetryRequestID returns a stable bounded key for retrying an
+// abandoned initial revision.
+func StripeCheckoutRetryRequestID(requestID string, revision int64) string {
+	return boundStripeCheckoutRevisionRequestID(fmt.Sprintf("%s:retry:%d", strings.TrimSpace(requestID), revision))
+}
+
+func boundStripeCheckoutRevisionRequestID(requestID string) string {
+	requestID = strings.TrimSpace(requestID)
+	if len(requestID) <= stripeCheckoutRevisionRequestIDMaxLength {
+		return requestID
+	}
+	digest := sha256.Sum256([]byte("stripe-checkout-request-id:v1\x00" + requestID))
+	return "initial:" + hex.EncodeToString(digest[:])[:56]
+}
+
 func NormalizeStripeCheckoutDiscountSelection(selection StripeCheckoutDiscountSelection) StripeCheckoutDiscountSelection {
 	selection.Source = StripeCheckoutDiscountSource(strings.ToLower(strings.TrimSpace(string(selection.Source))))
 	selection.CouponID = strings.TrimSpace(selection.CouponID)
