@@ -6820,6 +6820,25 @@
     "This promotion code is not eligible for this purchase.": "This promotion code is not eligible for this purchase.",
     "Multiple promotion codes match. Contact support.": "Multiple promotion codes match. Contact support.",
     "Checkout changed in another request. The latest checkout was restored.": "Checkout changed in another request. The latest checkout was restored.",
-    "Unable to update the checkout. Please try again.": "Unable to update the checkout. Please try again."
+    "Unable to update the checkout. Please try again.": "Unable to update the checkout. Please try again.",
+    "Conversations": "Conversations",
+    "New": "New",
+    "Conversation renamed": "Conversation renamed",
+    "Conversations deleted": "Conversations deleted",
+    "Failed to rename conversation": "Failed to rename conversation",
+    "Failed to delete conversations": "Failed to delete conversations",
+    "Failed to load Playground conversation": "Failed to load Playground conversation",
+    "Failed to load Playground conversations": "Failed to load Playground conversations",
+    "Delete selected conversations?": "Delete selected conversations?",
+    "Batch operations": "Batch operations",
+    "Deselect all": "Deselect all",
+    "Delete selected conversations": "Delete selected conversations",
+    "Select conversation": "Select conversation",
+    "Loading conversations...": "Loading conversations...",
+    "No conversations yet": "No conversations yet",
+    "Delete this conversation?": "Delete this conversation?",
+    "Collapse conversations": "Collapse conversations",
+    "Expand conversations": "Expand conversations",
+    "Deleted conversations cannot be recovered.": "Deleted conversations cannot be recovered."
   }
 }
