@@ -509,6 +509,8 @@
     "Attachment exceeds the maximum size": "Attachment exceeds the maximum size",
     "Attachment is empty": "Attachment is empty",
     "Attachments are supported only for chat models": "Attachments are supported only for chat models",
+    "This chat model does not support video attachments": "This chat model does not support video attachments",
+    "Attachment preview unavailable": "Attachment preview unavailable",
     "Attach": "Attach",
     "Audio": "Audio",
     "Audio comp.": "Audio comp.",

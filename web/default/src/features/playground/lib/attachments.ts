@@ -1,5 +1,6 @@
 import type { FileUIPart } from 'ai'
 import type { PlaygroundAttachment } from '../types'
+import { markTrustedAttachmentURL } from './message-utils'
 
 export const MAX_ATTACHMENTS = 5
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -84,7 +85,7 @@ function isVideoAttachment(mediaType: string, filename: string): boolean {
 }
 
 export async function normalizePlaygroundAttachments(
-  files: FileUIPart[]
+  files: (FileUIPart & { assetId?: string })[]
 ): Promise<PlaygroundAttachment[]> {
   if (files.length > MAX_ATTACHMENTS) {
     throw new Error('Too many attachments')
@@ -93,8 +94,30 @@ export async function normalizePlaygroundAttachments(
   const attachments: PlaygroundAttachment[] = []
   for (const file of files) {
     const filename = normalizeFilename(file.filename)
+    const declaredMediaType = file.mediaType?.trim().toLowerCase() ?? ''
+    const assetId = file.assetId?.trim()
+
+    // Restored drafts carry a durable server asset and a short-lived preview
+    // URL. They are intentionally not converted back to base64: the upload
+    // layer refreshes the preview by asset ID immediately before dispatch.
+    if (
+      assetId &&
+      (declaredMediaType.startsWith('image/') ||
+        declaredMediaType.startsWith('video/'))
+    ) {
+      const durableAttachment: PlaygroundAttachment = {
+        kind: declaredMediaType.startsWith('image/') ? 'image' : 'video',
+        filename,
+        mediaType: declaredMediaType,
+        assetId,
+        ...(file.url ? { url: file.url } : {}),
+      }
+      attachments.push(markTrustedAttachmentURL(durableAttachment))
+      continue
+    }
+
     const parsed = parseDataUrl(file.url)
-    const mediaType = (file.mediaType || parsed.mediaType).toLowerCase()
+    const mediaType = (declaredMediaType || parsed.mediaType).toLowerCase()
 
     if (parsed.bytes.length === 0) {
       throw new Error('Attachment is empty')

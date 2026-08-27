@@ -509,6 +509,8 @@
     "Attachment exceeds the maximum size": "附件超过最大尺寸",
     "Attachment is empty": "附件为空",
     "Attachments are supported only for chat models": "附件仅支持聊天模型",
+    "This chat model does not support video attachments": "当前聊天模型不支持视频附件",
+    "Attachment preview unavailable": "附件预览不可用",
     "Attach": "附加",
     "Audio": "音频",
     "Audio comp.": "音频补全",

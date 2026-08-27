@@ -143,6 +143,45 @@ describe('Playground durable attachments', () => {
     get.mockRestore()
   })
 
+  test('keeps video metadata visible when preview hydration fails', async () => {
+    enableBrowserUpload()
+    const get = spyOn(api, 'get').mockRejectedValue(new Error('preview 404'))
+    const messages: Message[] = [
+      {
+        key: 'user-video-unavailable',
+        from: 'user',
+        versions: [
+          {
+            id: 'v1',
+            content: 'describe this',
+            attachments: [
+              {
+                kind: 'video',
+                filename: 'reference.mp4',
+                mediaType: 'video/mp4',
+                assetId: 'ast_missing_preview',
+                url: 'https://storage.example/expired-preview',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const hydrated = await hydratePlaygroundMessages(messages)
+
+    expect(hydrated[0]?.versions[0]?.attachments).toEqual([
+      {
+        kind: 'video',
+        filename: 'reference.mp4',
+        mediaType: 'video/mp4',
+        assetId: 'ast_missing_preview',
+      },
+    ])
+    expect(get).toHaveBeenCalledTimes(1)
+    get.mockRestore()
+  })
+
   test('refreshes a durable asset preview before a later send', async () => {
     enableBrowserUpload()
     const get = spyOn(api, 'get').mockResolvedValue({

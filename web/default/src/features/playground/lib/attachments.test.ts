@@ -1,9 +1,6 @@
-import { describe, expect, spyOn, test } from 'bun:test'
 import type { FileUIPart } from 'ai'
-import {
-  MAX_FILE_BYTES,
-  normalizePlaygroundAttachments,
-} from './attachments'
+import { describe, expect, spyOn, test } from 'bun:test'
+import { MAX_FILE_BYTES, normalizePlaygroundAttachments } from './attachments'
 
 function textDataUrl(text: string): string {
   return `data:text/plain;base64,${Buffer.from(text, 'utf8').toString('base64')}`
@@ -13,11 +10,7 @@ function videoDataUrl(): string {
   return 'data:video/mp4;base64,AA=='
 }
 
-function file(
-  filename: string,
-  mediaType: string,
-  url: string
-): FileUIPart {
+function file(filename: string, mediaType: string, url: string): FileUIPart {
   return { type: 'file', filename, mediaType, url }
 }
 
@@ -59,6 +52,28 @@ describe('normalizePlaygroundAttachments', () => {
     ])
   })
 
+  test('keeps durable asset references when a draft is restored', async () => {
+    await expect(
+      normalizePlaygroundAttachments([
+        {
+          type: 'file',
+          filename: 'reference.mp4',
+          mediaType: 'video/mp4',
+          assetId: 'ast_video',
+          url: 'https://storage.example/preview',
+        },
+      ])
+    ).resolves.toEqual([
+      {
+        kind: 'video',
+        filename: 'reference.mp4',
+        mediaType: 'video/mp4',
+        assetId: 'ast_video',
+        url: 'https://storage.example/preview',
+      },
+    ])
+  })
+
   test('rejects unsupported extensions and empty files', async () => {
     await expect(
       normalizePlaygroundAttachments([
@@ -89,11 +104,7 @@ describe('normalizePlaygroundAttachments', () => {
 
     await expect(
       normalizePlaygroundAttachments([
-        file(
-          'large.png',
-          'image/png',
-          `data:image/png;base64,${encoded}`
-        ),
+        file('large.png', 'image/png', `data:image/png;base64,${encoded}`),
       ])
     ).rejects.toThrow('Attachment exceeds the maximum size')
     expect(atobSpy).not.toHaveBeenCalled()

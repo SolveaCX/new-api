@@ -22,6 +22,7 @@ import {
   normalizeMediaGenerationSettings,
   resolveMediaGenerationProfile,
   resolvePlaygroundModelKind,
+  supportsPlaygroundVideoInput,
   validateMediaGenerationAttachments,
 } from './media-generation'
 import { markTrustedAttachmentURL } from './message-utils'
@@ -101,6 +102,30 @@ describe('Playground media model profiles', () => {
         images: ['data:image/png;base64,AA=='],
       }),
     })
+  })
+
+  test('recognizes chat models that can consume video input', () => {
+    expect(supportsPlaygroundVideoInput('gemini-2.5-flash')).toBe(true)
+    expect(supportsPlaygroundVideoInput('gemini-2.5-pro')).toBe(true)
+    expect(supportsPlaygroundVideoInput('google/gemini-2.0-flash')).toBe(true)
+    expect(supportsPlaygroundVideoInput('gemini-2.5-flash-image')).toBe(false)
+    expect(supportsPlaygroundVideoInput('gpt-5.5')).toBe(false)
+  })
+
+  test('rejects video input before dispatching to a text-only chat model', () => {
+    const video = {
+      kind: 'video' as const,
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      url: 'data:video/mp4;base64,AA==',
+    }
+
+    expect(validateMediaGenerationAttachments('gpt-5.5', [video])).toBe(
+      'This chat model does not support video attachments'
+    )
+    expect(
+      validateMediaGenerationAttachments('gemini-2.5-flash', [video])
+    ).toBeUndefined()
   })
 
   test('drops forged remote media URLs from media payloads', () => {

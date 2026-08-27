@@ -113,9 +113,15 @@ export function validateMediaGenerationAttachments(
   if (attachments.length === 0) return undefined
   const profile = resolveMediaGenerationProfile(model)
   // Ordinary chat models already accept multimodal attachments through the
-  // chat-completions path. Only validate attachments when the selected model
-  // has a dedicated media profile.
-  if (!profile) return undefined
+  // chat-completions path. Video is different: a chat model may accept the
+  // request while still being unable to inspect video frames. Reject it
+  // before upload/dispatch unless the model is known to expose video input.
+  if (!profile) {
+    return attachments.some((attachment) => attachment.kind === 'video') &&
+      !supportsPlaygroundVideoInput(model)
+      ? 'This chat model does not support video attachments'
+      : undefined
+  }
   if (profile.kind === 'image') {
     if (profile.family === 'gpt-image') {
       return attachments.some((attachment) => attachment.kind !== 'image')
@@ -143,6 +149,25 @@ export function validateMediaGenerationAttachments(
     return 'Grok video editing is not available in Playground yet'
   }
   return undefined
+}
+
+/**
+ * Return whether an ordinary chat model is known to consume video input.
+ *
+ * The Playground model endpoint currently returns names only, so this is a
+ * deliberately conservative capability gate. Gemini chat models are the
+ * only family we have verified end-to-end in this UI; dedicated video
+ * generation profiles are handled separately by resolveMediaGenerationProfile.
+ */
+export function supportsPlaygroundVideoInput(model: unknown): boolean {
+  const normalized = normalizeModelName(model)
+  if (!normalized || !normalized.includes('gemini')) return false
+
+  // Image/audio/speech specialisations share the Gemini name but do not
+  // provide the video-understanding chat contract used by this input.
+  return !/(?:image|tts|embedding|embed|audio|speech|transcrib)/.test(
+    normalized
+  )
 }
 
 const imageRatios = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '21:9']

@@ -703,7 +703,10 @@ export function Playground({
       )
       if (attachmentError) {
         toast.error(i18next.t(attachmentError))
-        return
+        // Reject the submission so PromptInput keeps the staged attachment
+        // available for a model switch/retry instead of clearing it as if the
+        // request had succeeded.
+        return Promise.reject(new Error(attachmentError))
       }
       if (!prepareSend(targetModel)) return
 
@@ -879,6 +882,14 @@ export function Playground({
       const chatOverride = getFirstRunChatOverride()
       const targetModel = chatOverride?.model ?? config.model
       const attachments = updated[index].versions[0]?.attachments ?? []
+      const attachmentError = validateMediaGenerationAttachments(
+        targetModel,
+        attachments
+      )
+      if (attachmentError) {
+        toast.error(i18next.t(attachmentError))
+        return
+      }
       if (!prepareSend(targetModel)) return
 
       const finishEdit = (durableAttachments: PlaygroundAttachment[]) => {
