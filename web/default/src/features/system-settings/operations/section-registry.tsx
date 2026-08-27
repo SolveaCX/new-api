@@ -20,6 +20,7 @@ import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { CodexIdentitySettingsSection } from '../integrations/codex-identity-settings-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { PaymentNotificationSettingsSection } from '../integrations/payment-notification-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -121,6 +122,22 @@ const OPERATIONS_SECTIONS = [
             settings['codex_model_governance_setting.official_lifecycle_terms'],
           'codex_model_governance_setting.alert_cooldown_minutes':
             settings['codex_model_governance_setting.alert_cooldown_minutes'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'payment-notifications',
+    titleKey: 'Payment Notifications',
+    build: (settings: OperationsSettings) => (
+      <PaymentNotificationSettingsSection
+        defaultValues={{
+          'payment_notify_setting.dingtalk_alert_enabled':
+            settings['payment_notify_setting.dingtalk_alert_enabled'],
+          'payment_notify_setting.dingtalk_alert_webhook_url':
+            settings['payment_notify_setting.dingtalk_alert_webhook_url'],
+          'payment_notify_setting.dingtalk_alert_secret':
+            settings['payment_notify_setting.dingtalk_alert_secret'],
         }}
       />
     ),

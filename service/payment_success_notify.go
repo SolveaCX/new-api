@@ -20,7 +20,7 @@ func NotifyDingTalkPaymentSuccess(topUp *model.TopUp) {
 	if topUp == nil {
 		return
 	}
-	setting := operation_setting.GetMonitorSetting()
+	setting := operation_setting.GetPaymentNotifySetting()
 	if setting == nil || !setting.DingTalkAlertEnabled || strings.TrimSpace(setting.DingTalkAlertWebhookURL) == "" {
 		return
 	}
