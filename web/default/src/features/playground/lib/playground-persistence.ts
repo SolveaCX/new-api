@@ -61,7 +61,15 @@ function sanitizeAttachment(
   attachment: PlaygroundAttachment
 ): PlaygroundAttachment {
   const sanitized = { ...attachment }
-  if (isEmbeddedBase64DataUrl(sanitized.url)) delete sanitized.url
+  if (
+    sanitized.assetId &&
+    (sanitized.kind === 'image' || sanitized.kind === 'video')
+  ) {
+    // Persist the stable reference; signed URLs are transport-only and expire.
+    delete sanitized.url
+  } else if (isEmbeddedBase64DataUrl(sanitized.url)) {
+    delete sanitized.url
+  }
   return sanitized
 }
 
@@ -98,19 +106,69 @@ function sanitizeMessage(message: Message): Message {
   return sanitized
 }
 
+type PlaygroundAssetURLMap = Map<string, string>
+
+/**
+ * Capture the URL that was used by the live request before persistence strips
+ * signed preview URLs from message attachments. The request and message
+ * snapshots are built from different representations, so this mapping is the
+ * bridge that lets us persist `asset://...` references in both places.
+ */
+function collectPlaygroundAssetURLs(
+  messages: Message[],
+  assetURLs: PlaygroundAssetURLMap
+): void {
+  messages.forEach((message) => {
+    message.versions.forEach((version) => {
+      version.attachments?.forEach((attachment) => {
+        if (
+          (attachment.kind === 'image' || attachment.kind === 'video') &&
+          attachment.assetId?.trim() &&
+          attachment.url?.trim()
+        ) {
+          assetURLs.set(
+            attachment.url.trim(),
+            `asset://${attachment.assetId.trim()}`
+          )
+        }
+      })
+    })
+  })
+}
+
 function sanitizeRequestMessage(
-  message: ChatCompletionMessage
+  message: ChatCompletionMessage,
+  assetURLs: PlaygroundAssetURLMap = new Map()
 ): ChatCompletionMessage {
   if (!Array.isArray(message.content)) return { ...message }
 
   const content = message.content.flatMap((part): ContentPart[] => {
-    if (
-      (part.type === 'image_url' &&
-        isEmbeddedBase64DataUrl(part.image_url?.url)) ||
-      (part.type === 'video_url' &&
-        isEmbeddedBase64DataUrl(part.video_url?.url))
-    ) {
-      return []
+    if (part.type === 'image_url' && part.image_url) {
+      const url = part.image_url.url.trim()
+      const assetURL = assetURLs.get(url)
+      if (assetURL) {
+        return [
+          {
+            ...part,
+            image_url: { ...part.image_url, url: assetURL },
+          },
+        ]
+      }
+      if (isEmbeddedBase64DataUrl(url)) return []
+    }
+
+    if (part.type === 'video_url' && part.video_url) {
+      const url = part.video_url.url.trim()
+      const assetURL = assetURLs.get(url)
+      if (assetURL) {
+        return [
+          {
+            ...part,
+            video_url: { ...part.video_url, url: assetURL },
+          },
+        ]
+      }
+      if (isEmbeddedBase64DataUrl(url)) return []
     }
 
     return [
@@ -138,13 +196,24 @@ function sanitizePersistedRecordValue(value: unknown): unknown {
   return sanitized
 }
 
-function sanitizePlaygroundRecordPayload(
+export function sanitizePlaygroundRecordPayload(
   payload: PlaygroundRecordPayload
 ): PlaygroundRecordPayload {
+  const assetURLs: PlaygroundAssetURLMap = new Map()
+  collectPlaygroundAssetURLs(
+    [
+      payload.user_message,
+      payload.assistant_message,
+      ...payload.messages_snapshot,
+    ],
+    assetURLs
+  )
   const normalized = {
     ...payload,
     user_message: sanitizeMessage(payload.user_message),
-    request_messages: payload.request_messages.map(sanitizeRequestMessage),
+    request_messages: payload.request_messages.map((message) =>
+      sanitizeRequestMessage(message, assetURLs)
+    ),
     assistant_message: sanitizeMessage(payload.assistant_message),
     messages_snapshot: payload.messages_snapshot.map(sanitizeMessage),
   }
@@ -281,6 +350,8 @@ export interface PlaygroundConversationSnapshot {
 
 function hasAttachmentData(attachment: PlaygroundAttachment): boolean {
   return (
+    (typeof attachment.assetId === 'string' &&
+      attachment.assetId.trim().length > 0) ||
     (typeof attachment.url === 'string' && attachment.url.length > 0) ||
     (typeof attachment.text === 'string' && attachment.text.length > 0)
   )

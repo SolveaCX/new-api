@@ -61,6 +61,10 @@ type PlaygroundRecord struct {
 	ClientCompletedAt int64               `json:"client_completed_at" gorm:"not null;default:0"`
 	CreatedAt         time.Time           `json:"created_at" gorm:"index:idx_playground_conversation,priority:3"`
 	UpdatedAt         time.Time           `json:"updated_at"`
+	// AssetReferences is populated by the authenticated Playground controller
+	// and maintained in playground_record_assets; it is not serialized into the
+	// large record row itself.
+	AssetReferences []PlaygroundAssetReference `json:"-" gorm:"-"`
 }
 
 func SavePlaygroundRecord(record *PlaygroundRecord) error {
@@ -96,7 +100,16 @@ func SavePlaygroundRecord(record *PlaygroundRecord) error {
 			record.IsLatest = false
 			record.IsCurrent = false
 			record.MessagesSnapshot = ""
-			return tx.Create(record).Error
+			if err := tx.Create(record).Error; err != nil {
+				return err
+			}
+			// A clear marker is authoritative for the conversation. A delayed
+			// turn may still be persisted for idempotent history, but its
+			// attachment edges must not resurrect media that the clear removed.
+			if blockedByClear {
+				return nil
+			}
+			return ReplacePlaygroundRecordAssets(tx, record)
 		}
 
 		if err := tx.Model(&PlaygroundRecord{}).
@@ -120,7 +133,10 @@ func SavePlaygroundRecord(record *PlaygroundRecord) error {
 
 		record.IsLatest = true
 		record.IsCurrent = true
-		return tx.Create(record).Error
+		if err := tx.Create(record).Error; err != nil {
+			return err
+		}
+		return ReplacePlaygroundRecordAssets(tx, record)
 	})
 }
 
@@ -162,7 +178,17 @@ func ListPlaygroundRecordsForExport(userID *int) ([]PlaygroundRecord, error) {
 }
 
 func ClearPlaygroundConversation(userID int, recordID, conversationID string, clientCompletedAt int64) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	_, err := ClearPlaygroundConversationWithAssets(userID, recordID, conversationID, clientCompletedAt)
+	return err
+}
+
+// ClearPlaygroundConversationWithAssets applies the clear marker and removes
+// all durable attachment edges for the conversation in the same transaction.
+// The returned public IDs are suitable for best-effort orphan cleanup by the
+// service layer; shared assets remain in storage while another edge exists.
+func ClearPlaygroundConversationWithAssets(userID int, recordID, conversationID string, clientCompletedAt int64) ([]string, error) {
+	var removedAssetIDs []string
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockPlaygroundUser(tx, userID); err != nil {
 			return err
 		}
@@ -220,6 +246,10 @@ func ClearPlaygroundConversation(userID int, recordID, conversationID string, cl
 			return err
 		}
 
+		removedAssetIDs, err = DeletePlaygroundConversationAssetReferences(tx, userID, conversationID)
+		if err != nil {
+			return err
+		}
 		return tx.Create(&PlaygroundRecord{
 			UserID:            userID,
 			RecordID:          recordID,
@@ -231,6 +261,7 @@ func ClearPlaygroundConversation(userID int, recordID, conversationID string, cl
 			ClientCompletedAt: clientCompletedAt,
 		}).Error
 	})
+	return removedAssetIDs, err
 }
 
 func lockPlaygroundUser(tx *gorm.DB, userID int) error {
@@ -244,7 +275,7 @@ func updateExistingPlaygroundRecord(tx *gorm.DB, existing, record *PlaygroundRec
 		messagesSnapshot = record.MessagesSnapshot
 	}
 
-	return tx.Model(existing).Updates(map[string]interface{}{
+	if err := tx.Model(existing).Updates(map[string]interface{}{
 		"user_message":        record.UserMessage,
 		"request_messages":    record.RequestMessages,
 		"assistant_message":   record.AssistantMessage,
@@ -264,5 +295,13 @@ func updateExistingPlaygroundRecord(tx *gorm.DB, existing, record *PlaygroundRec
 		"latency_ms":          record.LatencyMS,
 		"messages_snapshot":   messagesSnapshot,
 		"client_completed_at": record.ClientCompletedAt,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	// Record identity (including its conversation) is immutable across retries.
+	// Use the stored conversation when replacing attachment edges so a malformed
+	// retry cannot move those edges into a different conversation.
+	assetRecord := *record
+	assetRecord.ConversationID = existing.ConversationID
+	return ReplacePlaygroundRecordAssets(tx, &assetRecord)
 }

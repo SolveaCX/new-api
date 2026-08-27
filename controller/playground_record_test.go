@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -29,7 +30,7 @@ func setupPlaygroundControllerDB(t *testing.T, userIDs ...int) {
 		&gorm.Config{},
 	)
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.PlaygroundRecord{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Asset{}, &model.AssetBinding{}, &model.PlaygroundRecord{}, &model.PlaygroundRecordAsset{}))
 	model.DB = db
 	t.Cleanup(func() {
 		model.DB = previous
@@ -144,6 +145,42 @@ func TestSavePlaygroundRecordAcceptsURLMedia(t *testing.T) {
 	SavePlaygroundRecord(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
+func TestSavePlaygroundRecordPersistsDurableAttachmentReferenceWithoutSignedURL(t *testing.T) {
+	setupPlaygroundControllerDB(t, 214)
+	now := time.Now().Unix()
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId: "ast_controller_attachment", UserId: 214, AssetType: model.AssetTypeImage,
+		Status: model.AssetStatusActive, SourceStatus: model.AssetSourceStatusAvailable,
+		StorageBackend: "gcs", StorageBucket: "bucket", ObjectKey: "object.png", ObjectGeneration: 1,
+		ContentType: "image/png", SizeBytes: 1, SourceExpiresAt: now + 3600, CreatedAt: now, UpdatedAt: now,
+	}).Error)
+	body := `{
+		"record_id":"550e8400-e29b-41d4-a716-446655440000",
+		"conversation_id":"550e8400-e29b-41d4-a716-446655440001",
+		"user_message":{"key":"u","from":"user","versions":[{"id":"uv","content":"hello","attachments":[{"kind":"image","filename":"frame.png","mediaType":"image/png","assetId":"ast_controller_attachment","url":"https://signed.example/frame.png"}]}]},
+		"request_messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://signed.example/frame.png"}}]}],
+		"assistant_message":{"key":"a","from":"assistant","versions":[{"id":"av","content":"world"}],"status":"complete"},
+		"reasoning_content":"","input_text":"hello","output_text":"world","model_name":"gpt-test","group_name":"plg",
+		"parameters":{},"status":"complete","error_code":"","error_message":"","relay_request_id":"","prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"latency_ms":1,
+		"messages_snapshot":[{"key":"u","from":"user","versions":[{"id":"uv","content":"hello","attachments":[{"kind":"image","filename":"frame.png","mediaType":"image/png","assetId":"ast_controller_attachment","url":"https://signed.example/frame.png"}]}]},{"key":"a","from":"assistant","versions":[{"id":"av","content":"world"}],"status":"complete"}],
+		"client_completed_at":1000
+	}`
+	c, recorder := playgroundRecordTestContext(t, 214, http.MethodPost, body)
+
+	SavePlaygroundRecord(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var stored model.PlaygroundRecord
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).First(&stored).Error)
+	require.NotContains(t, string(stored.UserMessage), "https://signed.example/frame.png")
+	require.Contains(t, string(stored.RequestMessages), "asset://ast_controller_attachment")
+	require.NotContains(t, string(stored.RequestMessages), "https://signed.example/frame.png")
+	var references []model.PlaygroundRecordAsset
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).Find(&references).Error)
+	require.Len(t, references, 1)
+	require.Equal(t, "ast_controller_attachment", references[0].AssetID)
 }
 
 func TestSavePlaygroundRecordRejectsInvalidIdentityAndStatus(t *testing.T) {

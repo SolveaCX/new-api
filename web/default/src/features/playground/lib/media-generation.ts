@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { PlaygroundAttachment } from '../types'
+import { isSafeAttachmentURL } from './message-utils'
 
 export type PlaygroundModelKind = 'chat' | 'image' | 'video' | 'unsupported'
 
@@ -174,6 +175,17 @@ function selectField(
       return value
     }),
   }
+}
+
+function getPlayableAttachmentURL(
+  attachment: PlaygroundAttachment
+): string | undefined {
+  if (attachment.kind !== 'image' && attachment.kind !== 'video') {
+    return undefined
+  }
+  return isSafeAttachmentURL(attachment.url, attachment.kind, attachment)
+    ? attachment.url.trim()
+    : undefined
 }
 
 const gptImageProfile: MediaGenerationProfile = {
@@ -603,11 +615,9 @@ function buildGptImagePayload(
   const images = attachments
     .filter(
       (attachment) =>
-        attachment.kind === 'image' &&
-        typeof attachment.url === 'string' &&
-        attachment.url.trim() !== ''
+        attachment.kind === 'image' && !!getPlayableAttachmentURL(attachment)
     )
-    .map((attachment) => attachment.url!.trim())
+    .map((attachment) => getPlayableAttachmentURL(attachment)!)
   if (images.length > 0) payload.images = images
   return payload
 }
@@ -645,8 +655,7 @@ function buildVideoPayload(
   const media = attachments.filter(
     (attachment) =>
       (attachment.kind === 'image' || attachment.kind === 'video') &&
-      typeof attachment.url === 'string' &&
-      attachment.url.trim() !== ''
+      !!getPlayableAttachmentURL(attachment)
   )
 
   if (family === 'seedance-2.0' || family === 'seedance-2.5') {
@@ -659,12 +668,12 @@ function buildVideoPayload(
         attachment.kind === 'image'
           ? {
               type: 'image_url',
-              image_url: { url: attachment.url!.trim() },
+              image_url: { url: getPlayableAttachmentURL(attachment)! },
               ...(imageCount > 1 ? { role: 'reference_image' } : {}),
             }
           : {
               type: 'video_url',
-              video_url: { url: attachment.url!.trim() },
+              video_url: { url: getPlayableAttachmentURL(attachment)! },
               role: 'reference_video',
             }
       ),
@@ -734,9 +743,7 @@ export function buildMediaGenerationRequest(
   if (profile.family === 'gpt-image') {
     const hasImageAttachments = attachments.some(
       (attachment) =>
-        attachment.kind === 'image' &&
-        typeof attachment.url === 'string' &&
-        attachment.url.trim() !== ''
+        attachment.kind === 'image' && !!getPlayableAttachmentURL(attachment)
     )
     return {
       kind: 'image',

@@ -24,6 +24,7 @@ import {
   resolvePlaygroundModelKind,
   validateMediaGenerationAttachments,
 } from './media-generation'
+import { markTrustedAttachmentURL } from './message-utils'
 import { isSupportedPlaygroundModelName } from './playground-model-filter'
 
 describe('Playground media model profiles', () => {
@@ -100,6 +101,48 @@ describe('Playground media model profiles', () => {
         images: ['data:image/png;base64,AA=='],
       }),
     })
+  })
+
+  test('drops forged remote media URLs from media payloads', () => {
+    const forgedImage = {
+      kind: 'image' as const,
+      filename: 'forged.png',
+      mediaType: 'image/png',
+      assetId: 'ast_123',
+      url: 'https://evil.example/forged.png',
+    }
+    const trustedVideo = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      assetId: 'ast_456',
+      url: 'https://storage.example/reference.mp4',
+    })
+
+    expect(
+      buildMediaGenerationRequest(
+        'Make it cinematic',
+        'seedance-2.0',
+        'plg',
+        {},
+        [forgedImage, trustedVideo]
+      )
+    ).toEqual(
+      expect.objectContaining({
+        kind: 'video',
+        endpoint: '/pg/videos',
+        payload: expect.objectContaining({
+          content: [
+            { type: 'text', text: 'Make it cinematic' },
+            {
+              type: 'video_url',
+              video_url: { url: 'https://storage.example/reference.mp4' },
+              role: 'reference_video',
+            },
+          ],
+        }),
+      })
+    )
   })
 
   test('does not apply a concrete model profile to adjacent image families', () => {

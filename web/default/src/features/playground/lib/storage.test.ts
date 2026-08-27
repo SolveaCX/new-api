@@ -118,6 +118,60 @@ describe('Playground user-scoped storage', () => {
     expect(persisted).toEqual(loaded)
   })
 
+  test('does not persist expiring attachment previews or blob video URLs', () => {
+    const durableMessages: Message[] = [
+      {
+        key: 'media-message',
+        from: 'user',
+        versions: [
+          {
+            id: 'media-version',
+            content: 'reference',
+            attachments: [
+              {
+                kind: 'image',
+                filename: 'frame.png',
+                mediaType: 'image/png',
+                assetId: 'ast_storage',
+                url: 'https://storage.example/signed-expiring-url',
+              },
+              {
+                kind: 'video',
+                filename: 'clip.mp4',
+                mediaType: 'video/mp4',
+                url: 'blob:http://localhost/video-1',
+              },
+            ],
+          },
+        ],
+        videoUrl: 'blob:http://localhost/video-result',
+      },
+    ]
+
+    saveMessages(10, durableMessages)
+    const persisted = JSON.parse(
+      localStorage.getItem(`${STORAGE_KEYS.MESSAGES}:v2:10`) ?? 'null'
+    ) as Message[]
+
+    expect(persisted[0]?.versions[0]?.attachments).toEqual([
+      {
+        kind: 'image',
+        filename: 'frame.png',
+        mediaType: 'image/png',
+        assetId: 'ast_storage',
+      },
+      {
+        kind: 'video',
+        filename: 'clip.mp4',
+        mediaType: 'video/mp4',
+      },
+    ])
+    expect(persisted[0]?.videoUrl).toBeUndefined()
+    expect(durableMessages[0]?.versions[0]?.attachments?.[0]?.url).toContain(
+      'signed-expiring-url'
+    )
+  })
+
   test('isolates messages and config by user', () => {
     saveMessages(10, [aliceMessage])
     saveMessages(20, [bobMessage])

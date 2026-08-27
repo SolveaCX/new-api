@@ -32,6 +32,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * Signed preview URLs are transport-only and can expire while a conversation
+ * sits in localStorage. Keep the durable asset ID, then let restore hydration
+ * request a fresh preview URL. Blob URLs are process-local and must not be
+ * revived after a reload; an in-flight video task can still resume via its
+ * persisted task ID.
+ */
+function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    let messageChanged = false
+    const versions = message.versions.map((version) => {
+      if (!version.attachments?.length) return version
+      const attachments = version.attachments.map((attachment) => {
+        const isDurableMedia =
+          !!attachment.assetId &&
+          (attachment.kind === 'image' || attachment.kind === 'video')
+        const isTransientVideoURL =
+          attachment.kind === 'video' && attachment.url?.startsWith('blob:')
+        if (!isDurableMedia && !isTransientVideoURL) return attachment
+
+        const sanitized = { ...attachment }
+        delete sanitized.url
+        messageChanged = true
+        return sanitized
+      })
+      return messageChanged ? { ...version, attachments } : version
+    })
+
+    let sanitizedMessage = message
+    if (messageChanged) sanitizedMessage = { ...message, versions }
+    if (message.videoUrl?.startsWith('blob:')) {
+      if (sanitizedMessage === message) sanitizedMessage = { ...message }
+      delete sanitizedMessage.videoUrl
+    }
+    return sanitizedMessage
+  })
+}
+
 export interface LocalConversationPriority {
   conversationId: string
   markedAt: number
@@ -149,7 +187,7 @@ export function saveMessages(userId: number, messages: Message[]): void {
   try {
     localStorage.setItem(
       scopedKey(STORAGE_KEYS.MESSAGES, userId),
-      JSON.stringify(messages)
+      JSON.stringify(sanitizeMessagesForLocalStorage(messages))
     )
   } catch (error) {
     // eslint-disable-next-line no-console

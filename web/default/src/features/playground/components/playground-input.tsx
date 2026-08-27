@@ -64,7 +64,7 @@ interface PlaygroundInputProps {
     text: string,
     model?: string,
     attachments?: PlaygroundAttachment[]
-  ) => void
+  ) => void | Promise<void>
   onStop?: () => void
   disabled?: boolean
   submitDisabled?: boolean
@@ -259,18 +259,21 @@ export function PlaygroundInput({
       return
     }
 
+    let attachments: PlaygroundAttachment[]
     try {
-      const attachments = await normalizePlaygroundAttachments(
-        message.files ?? []
-      )
-      onSubmit(message.text ?? '', undefined, attachments)
-      setText('')
+      attachments = await normalizePlaygroundAttachments(message.files ?? [])
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unable to process attachment'
       toast.error(t(errorMessage))
       throw error
     }
+
+    // Submission failures are handled by the owning generation path. Keeping
+    // this boundary free of a second toast avoids duplicate notifications
+    // while still allowing PromptInput to retain staged files on rejection.
+    await onSubmit(message.text ?? '', undefined, attachments)
+    setText('')
   }
 
   const handleSuggestionClick = (suggestion: string, model?: string) => {

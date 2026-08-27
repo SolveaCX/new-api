@@ -61,6 +61,19 @@ func SavePlaygroundRecord(c *gin.Context) {
 		playgroundRecordBadRequest(c, err)
 		return
 	}
+	assetReferences, err := extractPlaygroundAssetReferences(&request)
+	if err != nil {
+		playgroundRecordBadRequest(c, err)
+		return
+	}
+	if err := model.ValidatePlaygroundAssetReferences(c.GetInt("id"), assetReferences); err != nil {
+		playgroundRecordBadRequest(c, err)
+		return
+	}
+	if err := sanitizePlaygroundRecordMedia(&request); err != nil {
+		playgroundRecordBadRequest(c, err)
+		return
+	}
 
 	record := &model.PlaygroundRecord{
 		UserID:            c.GetInt("id"),
@@ -86,6 +99,7 @@ func SavePlaygroundRecord(c *gin.Context) {
 		LatencyMS:         request.LatencyMS,
 		MessagesSnapshot:  model.PlaygroundLargeText(request.MessagesSnapshot),
 		ClientCompletedAt: request.ClientCompletedAt,
+		AssetReferences:   assetReferences,
 	}
 	if err := model.SavePlaygroundRecord(record); err != nil {
 		common.ApiError(c, err)
@@ -175,15 +189,17 @@ func ClearPlaygroundRecord(c *gin.Context) {
 		return
 	}
 
-	if err := model.ClearPlaygroundConversation(
+	removedAssetIDs, err := model.ClearPlaygroundConversationWithAssets(
 		c.GetInt("id"),
 		request.RecordID,
 		request.ConversationID,
 		request.ClientCompletedAt,
-	); err != nil {
+	)
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	schedulePlaygroundAttachmentCleanup(c.GetInt("id"), removedAssetIDs)
 	common.ApiSuccess(c, nil)
 }
 
@@ -298,6 +314,222 @@ func isBase64DataURL(value string) bool {
 		header = lower[:comma]
 	}
 	return strings.Contains(header, ";base64")
+}
+
+type playgroundAssetJSONContext struct {
+	assetType string
+	assetID   string
+}
+
+// extractPlaygroundAssetReferences accepts both camelCase (browser message
+// shape) and snake_case (API shape), while deriving an expected asset type from
+// attachment kind or image/video content parts.
+func extractPlaygroundAssetReferences(request *savePlaygroundRecordRequest) ([]model.PlaygroundAssetReference, error) {
+	if request == nil {
+		return nil, nil
+	}
+	refs := make([]model.PlaygroundAssetReference, 0)
+	for _, raw := range []json.RawMessage{
+		request.UserMessage,
+		request.RequestMessages,
+		request.AssistantMessage,
+		request.MessagesSnapshot,
+	} {
+		var value any
+		if err := common.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		if err := walkPlaygroundAssetReferences(value, playgroundAssetJSONContext{}, &refs); err != nil {
+			return nil, err
+		}
+	}
+	return refs, nil
+}
+
+func walkPlaygroundAssetReferences(value any, context playgroundAssetJSONContext, refs *[]model.PlaygroundAssetReference) error {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			if err := walkPlaygroundAssetReferences(child, context, refs); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		local := context
+		if kind, ok := stringValueForKey(typed, "kind"); ok {
+			switch strings.ToLower(strings.TrimSpace(kind)) {
+			case "image":
+				local.assetType = "Image"
+			case "video":
+				local.assetType = "Video"
+			}
+		}
+		if assetID, ok := playgroundAssetIDFromMap(typed); ok {
+			if assetID == "" {
+				return model.ErrPlaygroundAssetInvalidID
+			}
+			local.assetID = assetID
+			*refs = append(*refs, model.PlaygroundAssetReference{AssetID: assetID, AssetType: local.assetType})
+		}
+		for key, child := range typed {
+			childContext := local
+			switch strings.ToLower(strings.TrimSpace(key)) {
+			case "image_url":
+				childContext.assetType = "Image"
+			case "video_url":
+				childContext.assetType = "Video"
+			}
+			if keyLower := strings.ToLower(strings.TrimSpace(key)); keyLower == "url" {
+				if rawURL, ok := child.(string); ok && strings.HasPrefix(strings.TrimSpace(rawURL), "asset://") {
+					assetID, err := parsePlaygroundAssetURI(rawURL)
+					if err != nil {
+						return err
+					}
+					*refs = append(*refs, model.PlaygroundAssetReference{AssetID: assetID, AssetType: local.assetType})
+				}
+			}
+			if err := walkPlaygroundAssetReferences(child, childContext, refs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func stringValueForKey(values map[string]any, wanted string) (string, bool) {
+	for key, value := range values {
+		if strings.EqualFold(strings.TrimSpace(key), wanted) {
+			result, ok := value.(string)
+			return result, ok
+		}
+	}
+	return "", false
+}
+
+func playgroundAssetIDFromMap(values map[string]any) (string, bool) {
+	for key, value := range values {
+		normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", ""))
+		if normalized != "assetid" {
+			continue
+		}
+		assetID, ok := value.(string)
+		if !ok {
+			return "", true
+		}
+		return strings.TrimSpace(assetID), true
+	}
+	return "", false
+}
+
+func parsePlaygroundAssetURI(value string) (string, error) {
+	assetID := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "asset://"))
+	if assetID == "" || strings.ContainsAny(assetID, "/?#") || !strings.HasPrefix(assetID, "ast_") {
+		return "", model.ErrPlaygroundAssetInvalidID
+	}
+	return assetID, nil
+}
+
+func sanitizePlaygroundRecordMedia(request *savePlaygroundRecordRequest) error {
+	if request == nil {
+		return nil
+	}
+	urlToAsset := make(map[string]string)
+	for _, raw := range []json.RawMessage{request.UserMessage, request.RequestMessages, request.AssistantMessage, request.MessagesSnapshot} {
+		var value any
+		if err := common.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		collectPlaygroundAssetURLs(value, urlToAsset)
+	}
+	sanitize := func(raw json.RawMessage) (json.RawMessage, error) {
+		var value any
+		if err := common.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		sanitizePlaygroundValue(value, urlToAsset, playgroundAssetJSONContext{})
+		data, err := common.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(data), nil
+	}
+	var err error
+	if request.UserMessage, err = sanitize(request.UserMessage); err != nil {
+		return err
+	}
+	if request.RequestMessages, err = sanitize(request.RequestMessages); err != nil {
+		return err
+	}
+	if request.AssistantMessage, err = sanitize(request.AssistantMessage); err != nil {
+		return err
+	}
+	if request.MessagesSnapshot, err = sanitize(request.MessagesSnapshot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func collectPlaygroundAssetURLs(value any, urls map[string]string) {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			collectPlaygroundAssetURLs(child, urls)
+		}
+	case map[string]any:
+		assetID, hasAssetID := playgroundAssetIDFromMap(typed)
+		if hasAssetID {
+			if rawURL, ok := stringValueForKey(typed, "url"); ok && rawURL != "" && assetID != "" {
+				urls[strings.TrimSpace(rawURL)] = assetID
+			}
+		}
+		for _, child := range typed {
+			collectPlaygroundAssetURLs(child, urls)
+		}
+	}
+}
+
+func sanitizePlaygroundValue(value any, urls map[string]string, context playgroundAssetJSONContext) {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			sanitizePlaygroundValue(child, urls, context)
+		}
+	case map[string]any:
+		local := context
+		if kind, ok := stringValueForKey(typed, "kind"); ok {
+			switch strings.ToLower(strings.TrimSpace(kind)) {
+			case "image":
+				local.assetType = "Image"
+			case "video":
+				local.assetType = "Video"
+			}
+		}
+		if assetID, ok := playgroundAssetIDFromMap(typed); ok && assetID != "" {
+			local.assetID = assetID
+		}
+		for key, child := range typed {
+			keyLower := strings.ToLower(strings.TrimSpace(key))
+			if keyLower == "url" {
+				if rawURL, ok := child.(string); ok {
+					if local.assetID != "" && (local.assetType == "Image" || local.assetType == "Video") {
+						delete(typed, key)
+						continue
+					}
+					if assetID := urls[strings.TrimSpace(rawURL)]; assetID != "" {
+						typed[key] = "asset://" + assetID
+						continue
+					}
+				}
+			}
+			childContext := local
+			if keyLower == "image_url" {
+				childContext.assetType = "Image"
+			} else if keyLower == "video_url" {
+				childContext.assetType = "Video"
+			}
+			sanitizePlaygroundValue(child, urls, childContext)
+		}
+	}
 }
 
 func playgroundRecordBadRequest(c *gin.Context, err error) {

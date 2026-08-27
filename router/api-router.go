@@ -141,6 +141,13 @@ func SetApiRouter(router *gin.Engine) {
 			playgroundRecordRoute.GET("/current", controller.GetCurrentPlaygroundRecord)
 			playgroundRecordRoute.POST("/clear", controller.ClearPlaygroundRecord)
 		}
+		playgroundAttachmentRoute := apiRouter.Group("/playground/attachments")
+		playgroundAttachmentRoute.Use(middleware.RouteTag("playground-attachments"), middleware.UserAuth())
+		{
+			playgroundAttachmentRoute.POST("/uploads", middleware.UploadRateLimit(), controller.CreatePlaygroundAttachmentUpload)
+			playgroundAttachmentRoute.POST("/uploads/:upload_id/complete", middleware.UploadRateLimit(), controller.CompletePlaygroundAttachmentUpload)
+			playgroundAttachmentRoute.GET("/:asset_id/preview", controller.GetPlaygroundAttachmentPreview)
+		}
 		playgroundRecordExportRoute := apiRouter.Group("/playground/records")
 		playgroundRecordExportRoute.Use(middleware.RouteTag("playground-records-export"), middleware.AdminAuth())
 		{
