@@ -30,7 +30,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Edit,
   Image as ImageIcon,
-  Languages,
   Plus,
   Trash2,
   Upload,
@@ -95,18 +94,14 @@ import {
   isSupportedAnnouncementLogo,
   normalizeAnnouncement,
   serializeAnnouncement,
+  type Announcement,
+  type AnnouncementType,
+  type WebsiteLocale,
 } from "./announcement-config";
-import type {
-  Announcement,
-  AnnouncementType,
-  WebsiteLocale,
-} from "./announcement-config";
-import { translateAnnouncement } from "./announcement-translation";
 
 type AnnouncementsSectionProps = {
   enabled: boolean;
   data: string;
-  playgroundDefaultModel?: string;
 };
 
 const ANNOUNCEMENT_FORM_ID = "announcement-form";
@@ -231,7 +226,6 @@ function localizedPath(
 export function AnnouncementsSectionV2({
   enabled,
   data,
-  playgroundDefaultModel = "gpt-4o",
 }: AnnouncementsSectionProps) {
   const { t, i18n } = useTranslation();
   const updateOption = useUpdateOption();
@@ -246,8 +240,6 @@ export function AnnouncementsSectionV2({
     "single",
   );
   const [activeLocale, setActiveLocale] = useState<WebsiteLocale>("en");
-  const [sourceLocale, setSourceLocale] = useState<WebsiteLocale>("en");
-  const [isTranslating, setIsTranslating] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const schema = useMemo(() => createAnnouncementSchema(t), [t]);
@@ -285,7 +277,6 @@ export function AnnouncementsSectionV2({
     const current = i18n.resolvedLanguage?.split("-")[0] as WebsiteLocale;
     if (WEBSITE_LOCALES.includes(current)) {
       setActiveLocale(current);
-      setSourceLocale(current);
     }
   }, [i18n.resolvedLanguage]);
 
@@ -319,7 +310,6 @@ export function AnnouncementsSectionV2({
       logo: "",
     });
     setActiveLocale("en");
-    setSourceLocale("en");
     setShowDialog(true);
   };
 
@@ -327,7 +317,6 @@ export function AnnouncementsSectionV2({
     setEditingAnnouncement(announcement);
     form.reset(announcementToFormValues(announcement));
     setActiveLocale("en");
-    setSourceLocale("en");
     setShowDialog(true);
   };
 
@@ -374,55 +363,6 @@ export function AnnouncementsSectionV2({
     if (await persistAnnouncements(next)) {
       setShowDialog(false);
       setEditingAnnouncement(null);
-    }
-  };
-
-  const handleTranslate = async () => {
-    const values = form.getValues();
-    const content = values.content_i18n[sourceLocale]?.trim() ?? "";
-    if (!content) {
-      toast.error(t("Enter content in the source language first"));
-      return;
-    }
-    setIsTranslating(true);
-    try {
-      const translated = await translateAnnouncement(
-        {
-          content,
-          linkLabel: values.link_label_i18n[sourceLocale]?.trim() || undefined,
-        },
-        { model: playgroundDefaultModel },
-      );
-      const nextContent = { ...values.content_i18n };
-      for (const locale of WEBSITE_LOCALES) {
-        if (locale !== sourceLocale && translated.content[locale]) {
-          nextContent[locale] = translated.content[locale];
-        }
-      }
-      form.setValue("content_i18n", nextContent, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      if (translated.linkLabel) {
-        const nextLinkLabels = { ...values.link_label_i18n };
-        for (const locale of WEBSITE_LOCALES) {
-          if (locale !== sourceLocale && translated.linkLabel[locale]) {
-            nextLinkLabels[locale] = translated.linkLabel[locale];
-          }
-        }
-        form.setValue("link_label_i18n", nextLinkLabels, {
-          shouldDirty: true,
-          shouldValidate: true,
-        });
-      }
-      toast.success(t("Translation completed"));
-    } catch {
-      // Keep transport/model details out of the user-facing toast. The
-      // translation helper can return provider-specific English errors, but
-      // all visible copy in the console must go through the locale catalog.
-      toast.error(t("Translation failed"));
-    } finally {
-      setIsTranslating(false);
     }
   };
 
@@ -634,7 +574,7 @@ export function AnnouncementsSectionV2({
       <Dialog
         open={showDialog}
         onOpenChange={(open) => {
-          if (!updateOption.isPending && !isTranslating) setShowDialog(open);
+          if (!updateOption.isPending) setShowDialog(open);
         }}
         title={
           editingAnnouncement ? t("Edit Announcement") : t("Add Announcement")
@@ -650,7 +590,7 @@ export function AnnouncementsSectionV2({
             <Button
               type="button"
               variant="outline"
-              disabled={updateOption.isPending || isTranslating}
+              disabled={updateOption.isPending}
               onClick={() => setShowDialog(false)}
             >
               {t("Cancel")}
@@ -658,7 +598,7 @@ export function AnnouncementsSectionV2({
             <Button
               type="submit"
               form={ANNOUNCEMENT_FORM_ID}
-              disabled={updateOption.isPending || isTranslating}
+              disabled={updateOption.isPending}
             >
               {updateOption.isPending
                 ? t("Saving...")
@@ -675,59 +615,138 @@ export function AnnouncementsSectionV2({
             onSubmit={form.handleSubmit(handleSubmitForm)}
             className="space-y-5"
           >
-            <div className="bg-muted/20 rounded-lg border p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-48 flex-1 space-y-1.5">
-                  <FormLabel>{t("Source language")}</FormLabel>
-                  <Select
-                    value={sourceLocale}
-                    onValueChange={(value) =>
-                      setSourceLocale(value as WebsiteLocale)
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {WEBSITE_LOCALES.map((locale) => (
-                          <SelectItem key={locale} value={locale}>
-                            {WEBSITE_LOCALE_LABELS[locale]}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleTranslate}
-                  disabled={isTranslating || updateOption.isPending}
-                >
-                  <Languages className="mr-2 h-4 w-4" />
-                  {isTranslating
-                    ? t("Translating...")
-                    : t("Translate all languages")}
-                </Button>
-              </div>
-              <p className="text-muted-foreground mt-2 text-xs">
-                {t(
-                  "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.",
-                )}
-              </p>
-            </div>
+            <FormField
+              control={form.control}
+              name="logo"
+              render={({ field }) => {
+                const selectedLogoValue = BUILT_IN_MODEL_LOGOS.some(
+                  (option) => option.value === logo,
+                )
+                  ? logo
+                  : logo
+                    ? "custom"
+                    : undefined;
+
+                return (
+                  <FormItem className="bg-muted/20 rounded-lg border p-3">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,auto)] sm:items-center">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {logo ? (
+                          <img
+                            src={logoPreview}
+                            alt={t("Logo")}
+                            className="h-10 w-10 shrink-0 rounded border bg-background object-contain p-1"
+                          />
+                        ) : (
+                          <div className="bg-background text-muted-foreground flex h-10 w-10 shrink-0 items-center justify-center rounded border">
+                            <ImageIcon className="h-4 w-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <FormLabel>{t("Logo")}</FormLabel>
+                          <p className="text-muted-foreground text-xs">
+                            {t(
+                              "Optional logo shown before the announcement content (64 KB max).",
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid min-w-0 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                        <Select
+                          items={[
+                            { value: "custom", label: t("Custom upload") },
+                            ...BUILT_IN_MODEL_LOGOS.map((option) => ({
+                              value: option.value,
+                              label: option.label,
+                            })),
+                          ]}
+                          value={selectedLogoValue}
+                          onValueChange={(value) =>
+                            field.onChange(
+                              value && value !== "custom" ? value : "",
+                            )
+                          }
+                        >
+                          <SelectTrigger
+                            aria-label={t("Logo")}
+                            className="w-full min-w-0 sm:w-56"
+                          >
+                            <SelectValue
+                              placeholder={t("Choose a model logo")}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="custom">
+                                {t("Custom upload")}
+                              </SelectItem>
+                              {BUILT_IN_MODEL_LOGOS.map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <img
+                                      src={officialWebsiteUrl(option.value)}
+                                      alt=""
+                                      className="h-4 w-4 object-contain"
+                                    />
+                                    {option.label}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FormControl>
+                          <input
+                            ref={logoInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                            className="hidden"
+                            onChange={handleLogoFileChange}
+                          />
+                        </FormControl>
+                        <div className="flex min-w-0 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="min-w-0 flex-1 sm:flex-none"
+                            onClick={() => logoInputRef.current?.click()}
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            {t("Upload")}
+                          </Button>
+                          {logo ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="min-w-0 flex-1 sm:flex-none"
+                              onClick={() => field.onChange("")}
+                            >
+                              {t("Clear")}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
 
             <Tabs
               value={activeLocale}
               onValueChange={(value) => setActiveLocale(value as WebsiteLocale)}
             >
-              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+              <TabsList className="flex h-auto w-full max-w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
                 {WEBSITE_LOCALES.map((locale) => (
                   <TabsTrigger
                     key={locale}
                     value={locale}
-                    className="px-2 py-1"
+                    className="flex-none px-2 py-1"
                   >
                     {WEBSITE_LOCALE_LABELS[locale]}
                   </TabsTrigger>
@@ -892,95 +911,6 @@ export function AnnouncementsSectionV2({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="logo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("Logo")}</FormLabel>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {logo ? (
-                      <img
-                        src={logoPreview}
-                        alt={t("Logo")}
-                        className="h-10 w-10 rounded border object-contain p-1"
-                      />
-                    ) : (
-                      <div className="bg-muted text-muted-foreground flex h-10 w-10 items-center justify-center rounded border">
-                        <ImageIcon className="h-4 w-4" />
-                      </div>
-                    )}
-                    <Select
-                      value={
-                        BUILT_IN_MODEL_LOGOS.some(
-                          (option) => option.value === logo,
-                        )
-                          ? logo
-                          : "custom"
-                      }
-                      onValueChange={(value) => {
-                        if (value !== "custom") field.onChange(value);
-                      }}
-                    >
-                      <SelectTrigger className="min-w-52 flex-1">
-                        <SelectValue placeholder={t("Choose a model logo")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="custom">
-                            {t("Custom upload")}
-                          </SelectItem>
-                          {BUILT_IN_MODEL_LOGOS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <span className="flex items-center gap-2">
-                                <img
-                                  src={officialWebsiteUrl(option.value)}
-                                  alt=""
-                                  className="h-4 w-4 object-contain"
-                                />
-                                {t(option.label)}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormControl>
-                      <input
-                        ref={logoInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                        className="hidden"
-                        onChange={handleLogoFileChange}
-                      />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      {t("Upload")}
-                    </Button>
-                    {logo ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => field.onChange("")}
-                      >
-                        {t("Clear")}
-                      </Button>
-                    ) : null}
-                  </div>
-                  <FormDescription>
-                    {t(
-                      "Optional logo shown before the announcement content (64 KB max).",
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
           </form>
         </Form>
       </Dialog>
