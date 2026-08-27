@@ -102,9 +102,10 @@ func TestShouldForceResponsesBridgeForFileInputIsScopedToCompatibleApis(t *testi
 		},
 	}
 
-	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}, request))
-	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex}}, request))
-	require.False(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGemini}}, request))
+	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{IsPlayground: true, ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}, request))
+	require.True(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{IsPlayground: true, ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex}}, request))
+	require.False(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{IsPlayground: true, ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeGemini}}, request))
+	require.False(t, shouldForceResponsesBridgeForFileInput(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}}, request))
 }
 
 // TestShouldPassThroughTextRequestForcesGrokChatConversion 锁住 Chat 侧 PassThrough 挡板

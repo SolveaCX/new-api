@@ -58,7 +58,7 @@ func requestHasFileInput(request *dto.GeneralOpenAIRequest) bool {
 }
 
 func shouldForceResponsesBridgeForFileInput(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) bool {
-	if info == nil || info.ChannelMeta == nil || !requestHasFileInput(request) {
+	if info == nil || info.ChannelMeta == nil || !info.IsPlayground || !requestHasFileInput(request) {
 		return false
 	}
 	return info.ApiType == constant.APITypeOpenAI ||
