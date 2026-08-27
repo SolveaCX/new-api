@@ -81,14 +81,14 @@ function sanitizeAttachmentVideoUrl(
 interface PlaygroundChatProps {
   messages: MessageType[]
   onCopyMessage?: (message: MessageType) => void
-  onRegenerateMessage?: (message: MessageType) => void
+  onRegenerateMessage?: (message: MessageType) => void | Promise<void>
   onEditMessage?: (message: MessageType) => void
   onDeleteMessage?: (message: MessageType) => void
   isGenerating?: boolean
   editingKey?: string | null
-  onSaveEdit?: (newContent: string) => void
+  onSaveEdit?: (newContent: string) => void | Promise<void>
   onCancelEdit?: (open: boolean) => void
-  onSaveEditAndSubmit?: (newContent: string) => void
+  onSaveEditAndSubmit?: (newContent: string) => void | Promise<void>
 }
 
 export function PlaygroundChat({

@@ -283,6 +283,7 @@ describe('Playground model landing handoff', () => {
     input.onSubmit('Draw a violet fox')
 
     expect(generateMediaMock).toHaveBeenCalledTimes(1)
+    expect(startTurnMock).toHaveBeenCalledTimes(1)
     expect(markCurrentConversationLocalOnlyMock).toHaveBeenCalledTimes(1)
     expect(generateMediaMock.mock.calls[0]?.[1]).toBe('gpt-image-2')
     expect(generateMediaMock.mock.calls[0]?.[4]).toEqual(expect.any(String))

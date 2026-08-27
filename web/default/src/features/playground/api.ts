@@ -28,6 +28,25 @@ import type {
   PlaygroundRecordPayload,
 } from './types'
 
+export interface PlaygroundAttachmentUploadSession {
+  upload_id: string
+  asset_id: string
+  object: string
+  status: string
+  upload_url: string
+  upload_headers?: Record<string, string>
+  expires_at: number
+}
+
+export interface PlaygroundAttachmentPreview {
+  asset_id: string
+  asset_type: string
+  content_type: string
+  size_bytes: number
+  preview_url: string
+  expires_at: number
+}
+
 interface PlaygroundApiResponse<T = unknown> {
   success: boolean
   data?: T
@@ -215,4 +234,136 @@ export async function clearCurrentPlaygroundRecord(
     res.data,
     'Failed to clear Playground conversation'
   )
+}
+
+function playgroundApiErrorMessage(
+  error: unknown,
+  fallbackMessage: string
+): string {
+  const responseData = (error as { response?: { data?: unknown } } | undefined)
+    ?.response?.data
+  if (responseData && typeof responseData === 'object') {
+    const body = responseData as Record<string, unknown>
+    if (typeof body.message === 'string' && body.message.trim()) {
+      return body.message
+    }
+    const nested = body.error
+    if (nested && typeof nested === 'object') {
+      const message = (nested as Record<string, unknown>).message
+      if (typeof message === 'string' && message.trim()) return message
+    }
+  }
+  if (error instanceof Error && error.message.trim()) return error.message
+  return fallbackMessage
+}
+
+/** Create a short-lived signed upload session for a Playground attachment. */
+export async function createPlaygroundAttachmentUploadSession(
+  request: {
+    assetType: 'Image' | 'Video'
+    contentType: string
+    sizeBytes: number
+  },
+  signal?: AbortSignal
+): Promise<PlaygroundAttachmentUploadSession> {
+  try {
+    const res = await api.post(
+      API_ENDPOINTS.PLAYGROUND_ATTACHMENT_UPLOADS,
+      {
+        asset_type: request.assetType,
+        content_type: request.contentType,
+        size_bytes: request.sizeBytes,
+      },
+      { skipErrorHandler: true, signal } as Record<string, unknown>
+    )
+    const response =
+      res.data as PlaygroundApiResponse<PlaygroundAttachmentUploadSession>
+    assertPlaygroundApiSuccess(
+      response,
+      'Failed to create Playground attachment upload session'
+    )
+    if (
+      !response.data ||
+      typeof response.data.upload_id !== 'string' ||
+      typeof response.data.asset_id !== 'string' ||
+      typeof response.data.upload_url !== 'string'
+    ) {
+      throw new Error('Invalid Playground attachment upload session response')
+    }
+    return response.data
+  } catch (error) {
+    throw new Error(
+      playgroundApiErrorMessage(
+        error,
+        'Failed to create Playground attachment upload session'
+      ),
+      { cause: error }
+    )
+  }
+}
+
+/** Mark an uploaded object complete and return its first signed preview URL. */
+export async function completePlaygroundAttachmentUpload(
+  uploadId: string,
+  signal?: AbortSignal
+): Promise<PlaygroundAttachmentPreview> {
+  try {
+    const res = await api.post(
+      `${API_ENDPOINTS.PLAYGROUND_ATTACHMENT_UPLOADS}/${encodeURIComponent(uploadId)}/complete`,
+      undefined,
+      { skipErrorHandler: true, signal } as Record<string, unknown>
+    )
+    const response =
+      res.data as PlaygroundApiResponse<PlaygroundAttachmentPreview>
+    assertPlaygroundApiSuccess(
+      response,
+      'Failed to complete Playground attachment upload'
+    )
+    if (!response.data || typeof response.data.asset_id !== 'string') {
+      throw new Error('Invalid Playground attachment completion response')
+    }
+    return response.data
+  } catch (error) {
+    throw new Error(
+      playgroundApiErrorMessage(
+        error,
+        'Failed to complete Playground attachment upload'
+      ),
+      { cause: error }
+    )
+  }
+}
+
+/** Resolve a fresh signed preview URL for a durable asset reference. */
+export async function getPlaygroundAttachmentPreview(
+  assetId: string,
+  signal?: AbortSignal
+): Promise<PlaygroundAttachmentPreview> {
+  try {
+    const res = await api.get(
+      `${API_ENDPOINTS.PLAYGROUND_ATTACHMENT_PREVIEW}/${encodeURIComponent(assetId)}/preview`,
+      { skipErrorHandler: true, disableDuplicate: true, signal } as Record<
+        string,
+        unknown
+      >
+    )
+    const response =
+      res.data as PlaygroundApiResponse<PlaygroundAttachmentPreview>
+    assertPlaygroundApiSuccess(
+      response,
+      'Failed to restore Playground attachment preview'
+    )
+    if (!response.data || typeof response.data.asset_id !== 'string') {
+      throw new Error('Invalid Playground attachment preview response')
+    }
+    return response.data
+  } catch (error) {
+    throw new Error(
+      playgroundApiErrorMessage(
+        error,
+        'Failed to restore Playground attachment preview'
+      ),
+      { cause: error }
+    )
+  }
 }

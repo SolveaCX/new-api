@@ -171,6 +171,137 @@ describe('Playground persistence payloads', () => {
     )
   })
 
+  test('keeps the durable asset id and drops its expiring preview URL', () => {
+    const attachment = {
+      kind: 'image' as const,
+      filename: 'photo.png',
+      mediaType: 'image/png',
+      assetId: 'ast_123',
+      url: 'https://storage.example/signed?expires=1',
+    }
+    const message: Message = {
+      ...userMessage,
+      versions: [{ ...userMessage.versions[0], attachments: [attachment] }],
+    }
+    const active = { ...activeTurn(), userMessage }
+    const payload = buildPlaygroundRecordPayload(
+      { ...active, userMessage: message },
+      [message, completeAssistant],
+      false,
+      2500
+    )
+
+    expect(payload.user_message.versions[0]?.attachments).toEqual([
+      {
+        kind: 'image',
+        filename: 'photo.png',
+        mediaType: 'image/png',
+        assetId: 'ast_123',
+      },
+    ])
+  })
+
+  test('writes asset references into the persisted relay request', () => {
+    const previewURL = 'https://storage.example/signed?expires=1'
+    const message: Message = {
+      ...userMessage,
+      versions: [
+        {
+          ...userMessage.versions[0],
+          attachments: [
+            {
+              kind: 'image',
+              filename: 'photo.png',
+              mediaType: 'image/png',
+              assetId: 'ast_123',
+              url: previewURL,
+            },
+          ],
+        },
+      ],
+    }
+    const active = {
+      ...activeTurn(),
+      userMessage: message,
+      request: {
+        ...activeTurn().request,
+        messages: [
+          {
+            role: 'user' as const,
+            content: [
+              {
+                type: 'image_url' as const,
+                image_url: { url: previewURL },
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      active,
+      [message, completeAssistant],
+      false,
+      2500
+    )
+
+    expect(payload.request_messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: 'asset://ast_123' },
+          },
+        ],
+      },
+    ])
+  })
+
+  test('does not restore stale local inline bytes over a durable server reference', () => {
+    const serverMessages: Message[] = [
+      {
+        ...userMessage,
+        versions: [
+          {
+            ...userMessage.versions[0],
+            attachments: [
+              {
+                kind: 'image',
+                filename: 'photo.png',
+                mediaType: 'image/png',
+                assetId: 'ast_123',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+    const localMessages: Message[] = [
+      {
+        ...userMessage,
+        versions: [
+          {
+            ...userMessage.versions[0],
+            attachments: [
+              {
+                kind: 'image',
+                filename: 'photo.png',
+                mediaType: 'image/png',
+                url: 'data:image/png;base64,AA==',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    expect(mergeRestoredMessages(serverMessages, localMessages)).toEqual(
+      serverMessages
+    )
+  })
+
   test('captures the normalized relay request when a turn starts', () => {
     const active = createActivePlaygroundTurn(
       '550e8400-e29b-41d4-a716-446655440001',

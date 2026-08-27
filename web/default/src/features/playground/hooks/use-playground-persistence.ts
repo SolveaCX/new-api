@@ -31,6 +31,7 @@ import {
   createActivePlaygroundTurn,
   createPlaygroundId,
   drainPlaygroundOutbox,
+  hydratePlaygroundMessages,
   loadLocalConversationPriority,
   mergeRestoredMessages,
   restorePlaygroundSession,
@@ -210,16 +211,36 @@ export function usePlaygroundPersistence({
         attemptedRecords.slice(0, deliveredCount)
       )
 
-      if (cancelled || !result.shouldApplyCurrent) return
+      if (cancelled) return
+      if (!result.shouldApplyCurrent) {
+        // When the browser outbox is authoritative, still refresh durable
+        // attachment previews so a reload never leaves only an expired URL.
+        try {
+          const hydratedLocal = await hydratePlaygroundMessages(
+            messagesRef.current
+          )
+          if (!cancelled && hydratedLocal !== messagesRef.current) {
+            updateMessages(hydratedLocal)
+          }
+        } catch {
+          // Keep local state intact when the preview endpoint is unavailable.
+        }
+        return
+      }
 
       if (result.current) {
+        let hydratedMessages = result.current.messages
+        try {
+          hydratedMessages = await hydratePlaygroundMessages(
+            result.current.messages
+          )
+        } catch {
+          // A preview outage must not hide an otherwise restorable conversation.
+        }
         const restoredMessages =
           result.current.conversation_id === conversationIdRef.current
-            ? mergeRestoredMessages(
-                result.current.messages,
-                messagesRef.current
-              )
-            : result.current.messages
+            ? mergeRestoredMessages(hydratedMessages, messagesRef.current)
+            : hydratedMessages
         setConversationId(result.current.conversation_id)
         updateMessages(restoredMessages)
       } else {

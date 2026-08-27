@@ -28,8 +28,9 @@ func setupPlaygroundRecordTestDB(t *testing.T) *gorm.DB {
 
 func TestPlaygroundRecordMigration(t *testing.T) {
 	db := setupPlaygroundRecordTestDB(t)
-	require.NoError(t, db.AutoMigrate(&User{}, &PlaygroundRecord{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &PlaygroundRecord{}, &PlaygroundRecordAsset{}))
 	require.True(t, db.Migrator().HasTable(&PlaygroundRecord{}))
+	require.True(t, db.Migrator().HasTable(&PlaygroundRecordAsset{}))
 	require.True(t, db.Migrator().HasIndex(&PlaygroundRecord{}, "idx_playground_user_record"))
 }
 
@@ -42,7 +43,7 @@ func setupPlaygroundRecordTestDBWithUsers(t *testing.T, userIDs ...int) *gorm.DB
 	t.Helper()
 
 	db := setupPlaygroundRecordTestDB(t)
-	require.NoError(t, db.AutoMigrate(&User{}, &PlaygroundRecord{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &PlaygroundRecord{}, &PlaygroundRecordAsset{}))
 	for _, userID := range userIDs {
 		require.NoError(t, db.Create(&User{
 			Id:       userID,

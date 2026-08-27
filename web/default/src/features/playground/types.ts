@@ -37,6 +37,8 @@ export interface PlaygroundAttachment {
   kind: 'image' | 'video' | 'text'
   filename: string
   mediaType: string
+  /** Stable server-side asset identity. URLs are short-lived previews only. */
+  assetId?: string
   url?: string
   text?: string
 }

@@ -12,6 +12,15 @@ resource "google_storage_bucket" "flatkey_assets" {
   public_access_prevention    = "enforced"
   force_destroy               = false
 
+  # Playground uploads use a browser-side signed PUT. Keep the allow-list
+  # limited to the production console origin; GCS handles the preflight.
+  cors {
+    origin          = ["https://console.flatkey.ai"]
+    method          = ["PUT"]
+    response_header = ["Content-Type", "x-goog-if-generation-match"]
+    max_age_seconds = 3600
+  }
+
   versioning {
     enabled = true
   }
@@ -50,6 +59,15 @@ resource "google_storage_bucket" "flatkey_assets_staging" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
   force_destroy               = false
+
+  # Staging has its own signed-upload origin and must not inherit production
+  # browser permissions.
+  cors {
+    origin          = ["https://staging-console.flatkey.ai"]
+    method          = ["PUT"]
+    response_header = ["Content-Type", "x-goog-if-generation-match"]
+    max_age_seconds = 3600
+  }
 
   versioning {
     enabled = true

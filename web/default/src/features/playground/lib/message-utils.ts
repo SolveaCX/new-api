@@ -33,6 +33,46 @@ const SAFE_IMAGE_DATA_URL_PATTERN =
 const SAFE_VIDEO_DATA_URL_PATTERN =
   /^data:video\/mp4;base64,[a-z0-9+/\r\n]+={0,2}$/i
 
+const TRUSTED_ATTACHMENT_URLS = new WeakSet<PlaygroundAttachment>()
+
+export function markTrustedAttachmentURL(
+  attachment: PlaygroundAttachment
+): PlaygroundAttachment {
+  TRUSTED_ATTACHMENT_URLS.add(attachment)
+  return attachment
+}
+
+export function isTrustedAttachmentURL(
+  attachment: PlaygroundAttachment
+): boolean {
+  return TRUSTED_ATTACHMENT_URLS.has(attachment)
+}
+
+export function isSafeAttachmentURL(
+  value: unknown,
+  kind: 'image' | 'video',
+  attachment?: PlaygroundAttachment
+): value is string {
+  if (typeof value !== 'string') return false
+  const url = value.trim()
+  if (!url) return false
+  const dataPattern =
+    kind === 'image' ? SAFE_IMAGE_DATA_URL_PATTERN : SAFE_VIDEO_DATA_URL_PATTERN
+  if (dataPattern.test(url)) return true
+  if (!attachment || !isTrustedAttachmentURL(attachment)) return false
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' &&
+      !!parsed.hostname &&
+      !parsed.username &&
+      !parsed.password
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
  * Create a new message version
  */
@@ -176,8 +216,7 @@ export function buildMessageContent(
     ...attachments.flatMap((attachment): ContentPart[] => {
       if (
         attachment.kind === 'image' &&
-        attachment.url?.trim() &&
-        SAFE_IMAGE_DATA_URL_PATTERN.test(attachment.url.trim())
+        isSafeAttachmentURL(attachment.url, 'image', attachment)
       ) {
         return [
           {
@@ -188,8 +227,7 @@ export function buildMessageContent(
       }
       if (
         attachment.kind === 'video' &&
-        attachment.url?.trim() &&
-        SAFE_VIDEO_DATA_URL_PATTERN.test(attachment.url.trim())
+        isSafeAttachmentURL(attachment.url, 'video', attachment)
       ) {
         return [
           {

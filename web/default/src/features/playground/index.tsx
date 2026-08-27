@@ -68,6 +68,8 @@ import {
   markFirstRunStarted,
   resolvePlaygroundHandoff,
   resolvePlaygroundHandoffModel,
+  isPlaygroundAttachmentUploadAvailable,
+  uploadPlaygroundAttachments,
   type MediaGenerationSettings,
   type MediaParameterKey,
   type MediaParameterValue,
@@ -152,13 +154,16 @@ export function Playground({
     useMediaGeneration({ messages, onMessageUpdate: updateMessages })
   const isGenerating = isGeneratingChat || isGeneratingMedia
   const generationDispatchRef = useRef(false)
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [mediaSettingsByModel, setMediaSettingsByModel] = useState<
     Record<string, MediaGenerationSettings>
   >({})
 
   useEffect(() => {
-    if (!isGenerating) generationDispatchRef.current = false
-  }, [isGenerating])
+    if (!isGenerating && !isUploadingAttachments) {
+      generationDispatchRef.current = false
+    }
+  }, [isGenerating, isUploadingAttachments])
 
   const stopGeneration = useCallback(() => {
     if (isGeneratingChat) {
@@ -379,6 +384,18 @@ export function Playground({
           .reverse()
           .find((message) => message.from === MESSAGE_ROLES.USER)
           ?.versions[0]?.attachments
+        // Media generations used to be local-only because their result URLs
+        // were ephemeral. The input attachment is now server-backed, so
+        // track the turn through the same durable record pipeline as chat.
+        // Keep the local-priority marker until the record outbox confirms the
+        // write; this also preserves in-flight video task recovery on reload.
+        startTurn(
+          requestMessages,
+          { ...config, ...configOverride },
+          parameterEnabled,
+          firstRun,
+          assistantMessageKey
+        )
         markCurrentConversationLocalOnly()
         void generateMedia(
           prompt,
@@ -590,7 +607,12 @@ export function Playground({
 
   const prepareSend = useCallback(
     (targetModel: string) => {
-      if (generationDispatchRef.current || isGenerating || isRestoring) {
+      if (
+        generationDispatchRef.current ||
+        isGenerating ||
+        isUploadingAttachments ||
+        isRestoring
+      ) {
         return false
       }
       const isTargetModelValid = handoff.models.some(
@@ -608,7 +630,34 @@ export function Playground({
       if (firstRun) setSentThisSession(true)
       return true
     },
-    [firstRun, handoff.models, isFirstRunModelReady, isGenerating, isRestoring]
+    [
+      firstRun,
+      handoff.models,
+      isFirstRunModelReady,
+      isGenerating,
+      isRestoring,
+      isUploadingAttachments,
+    ]
+  )
+
+  const uploadAttachmentsIfNeeded = useCallback(
+    (
+      attachments: PlaygroundAttachment[]
+    ): PlaygroundAttachment[] | Promise<PlaygroundAttachment[]> => {
+      const hasMediaAttachment = attachments.some(
+        (attachment) =>
+          attachment.kind === 'image' || attachment.kind === 'video'
+      )
+      if (!hasMediaAttachment || !isPlaygroundAttachmentUploadAvailable()) {
+        return attachments
+      }
+
+      setIsUploadingAttachments(true)
+      return uploadPlaygroundAttachments(attachments).finally(() => {
+        setIsUploadingAttachments(false)
+      })
+    },
+    []
   )
 
   const clearModelGeneratorDraft = useCallback(() => {
@@ -642,7 +691,7 @@ export function Playground({
       text: string,
       model?: string,
       attachments: PlaygroundAttachment[] = []
-    ) => {
+    ): void | Promise<void> => {
       // A handoff keeps ordinary text submissions on its requested model, but
       // an explicit quick-start/PE selection is a deliberate model choice and
       // must be carried through to this generation.
@@ -657,23 +706,46 @@ export function Playground({
         return
       }
       if (!prepareSend(targetModel)) return
-      clearModelGeneratorDraft()
-      clearPlaygroundHandoffSearch()
-      const userMessage = createUserMessage(text, attachments)
 
-      // An example prompt (or the picker) can force a specific model. Persist the
-      // selection so the picker reflects it, and mark it as an explicit user choice
-      // so the first-run cheap default never overrides it.
-      if (modelOverride) {
-        setUserPickedModel(true)
-        updateConfig('model', modelOverride)
+      const finishSend = (durableAttachments: PlaygroundAttachment[]) => {
+        clearModelGeneratorDraft()
+        clearPlaygroundHandoffSearch()
+        const userMessage = createUserMessage(text, durableAttachments)
+
+        // An example prompt (or the picker) can force a specific model. Persist the
+        // selection so the picker reflects it, and mark it as an explicit user choice
+        // so the first-run cheap default never overrides it.
+        if (modelOverride) {
+          setUserPickedModel(true)
+          updateConfig('model', modelOverride)
+        }
+
+        const assistantMessage = createLoadingAssistantMessage()
+        const newMessages = [...messages, userMessage, assistantMessage]
+        updateMessages(newMessages)
+
+        dispatchGeneration(
+          text,
+          newMessages,
+          assistantMessage.key,
+          modelOverride
+        )
+      }
+      const handleUploadFailure = (error: unknown): never => {
+        generationDispatchRef.current = false
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Unable to upload Playground attachment')
+        )
+        throw error
       }
 
-      const assistantMessage = createLoadingAssistantMessage()
-      const newMessages = [...messages, userMessage, assistantMessage]
-      updateMessages(newMessages)
-
-      dispatchGeneration(text, newMessages, assistantMessage.key, modelOverride)
+      const uploadResult = uploadAttachmentsIfNeeded(attachments)
+      if (uploadResult instanceof Promise) {
+        return uploadResult.then(finishSend, handleUploadFailure)
+      }
+      finishSend(uploadResult)
     },
     [
       clearModelGeneratorDraft,
@@ -683,6 +755,7 @@ export function Playground({
       messages,
       prepareSend,
       setUserPickedModel,
+      uploadAttachmentsIfNeeded,
       updateConfig,
       updateMessages,
     ]
@@ -694,39 +767,87 @@ export function Playground({
     console.log('Message copied:', message.key)
   }
 
-  const handleRegenerateMessage = (message: MessageType) => {
-    // Find the message index and regenerate from there
-    const messageIndex = messages.findIndex((m) => m.key === message.key)
-    if (messageIndex === -1) return
+  const handleRegenerateMessage = useCallback(
+    (message: MessageType) => {
+      // Find the message index and regenerate from there
+      const messageIndex = messages.findIndex((m) => m.key === message.key)
+      if (messageIndex === -1) return
 
-    const messagesUpToHere = messages.slice(0, messageIndex)
-    const userMessage = [...messagesUpToHere]
-      .reverse()
-      .find((item) => item.from === MESSAGE_ROLES.USER)
-    const prompt = userMessage?.versions[0]?.content ?? ''
-    const attachments = userMessage?.versions[0]?.attachments ?? []
-    const hasAttachments = attachments.length > 0
-    if (!prompt && !hasAttachments) return
+      const messagesUpToHere = messages.slice(0, messageIndex)
+      const userMessage = [...messagesUpToHere]
+        .reverse()
+        .find((item) => item.from === MESSAGE_ROLES.USER)
+      const prompt = userMessage?.versions[0]?.content ?? ''
+      const attachments = userMessage?.versions[0]?.attachments ?? []
+      const hasAttachments = attachments.length > 0
+      if (!prompt && !hasAttachments) return
 
-    const chatOverride = getFirstRunChatOverride()
-    const targetModel = chatOverride?.model ?? config.model
-    const attachmentError = validateMediaGenerationAttachments(
-      targetModel,
-      attachments
-    )
-    if (attachmentError) {
-      toast.error(i18next.t(attachmentError))
-      return
-    }
-    if (!prepareSend(targetModel)) return
+      const chatOverride = getFirstRunChatOverride()
+      const targetModel = chatOverride?.model ?? config.model
+      const attachmentError = validateMediaGenerationAttachments(
+        targetModel,
+        attachments
+      )
+      if (attachmentError) {
+        toast.error(i18next.t(attachmentError))
+        return
+      }
+      if (!prepareSend(targetModel)) return
 
-    // Remove messages after this one and regenerate
-    const loadingMessage = createLoadingAssistantMessage()
-    const newMessages = [...messagesUpToHere, loadingMessage]
+      const finishRegeneration = (
+        durableAttachments: PlaygroundAttachment[]
+      ) => {
+        const replayMessages = messagesUpToHere.map((item) => {
+          if (!userMessage || item.key !== userMessage.key) return item
+          const currentVersion = item.versions[0]
+          if (!currentVersion) return item
+          return {
+            ...item,
+            versions: [
+              {
+                ...currentVersion,
+                ...(durableAttachments.length
+                  ? { attachments: durableAttachments }
+                  : { attachments: undefined }),
+              },
+              ...item.versions.slice(1),
+            ],
+          }
+        })
 
-    updateMessages(newMessages)
-    dispatchGeneration(prompt, newMessages, loadingMessage.key)
-  }
+        // Remove messages after this one and regenerate only after any legacy
+        // local-only media has been uploaded successfully.
+        const loadingMessage = createLoadingAssistantMessage()
+        const newMessages = [...replayMessages, loadingMessage]
+        updateMessages(newMessages)
+        dispatchGeneration(prompt, newMessages, loadingMessage.key)
+      }
+
+      const handleUploadFailure = (error: unknown) => {
+        generationDispatchRef.current = false
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Unable to upload Playground attachment')
+        )
+      }
+      const uploadResult = uploadAttachmentsIfNeeded(attachments)
+      if (uploadResult instanceof Promise) {
+        void uploadResult.then(finishRegeneration).catch(handleUploadFailure)
+        return
+      }
+      finishRegeneration(uploadResult)
+    },
+    [
+      config.model,
+      dispatchGeneration,
+      getFirstRunChatOverride,
+      messages,
+      prepareSend,
+      updateMessages,
+      uploadAttachmentsIfNeeded,
+    ]
+  )
 
   const handleEditMessage = useCallback((message: MessageType) => {
     setEditingMessageKey(message.key)
@@ -749,20 +870,57 @@ export function Playground({
           : m
       )
 
-      setEditingMessageKey(null)
-
       if (!submit || updated[index].from !== 'user') {
+        setEditingMessageKey(null)
         updateMessages(updated)
         return
       }
 
-      const loadingMessage = createLoadingAssistantMessage()
-      const toSubmit = [...updated.slice(0, index + 1), loadingMessage]
       const chatOverride = getFirstRunChatOverride()
       const targetModel = chatOverride?.model ?? config.model
+      const attachments = updated[index].versions[0]?.attachments ?? []
       if (!prepareSend(targetModel)) return
-      updateMessages(toSubmit)
-      dispatchGeneration(newContent, toSubmit, loadingMessage.key)
+
+      const finishEdit = (durableAttachments: PlaygroundAttachment[]) => {
+        const editedMessages = updated.map((item, itemIndex) => {
+          if (itemIndex !== index) return item
+          const currentVersion = item.versions[0]
+          if (!currentVersion) return item
+          return {
+            ...item,
+            versions: [
+              {
+                ...currentVersion,
+                content: newContent,
+                ...(durableAttachments.length
+                  ? { attachments: durableAttachments }
+                  : { attachments: undefined }),
+              },
+              ...item.versions.slice(1),
+            ],
+          }
+        })
+        const loadingMessage = createLoadingAssistantMessage()
+        const toSubmit = [...editedMessages.slice(0, index + 1), loadingMessage]
+        setEditingMessageKey(null)
+        updateMessages(toSubmit)
+        dispatchGeneration(newContent, toSubmit, loadingMessage.key)
+      }
+
+      const handleUploadFailure = (error: unknown) => {
+        generationDispatchRef.current = false
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Unable to upload Playground attachment')
+        )
+      }
+      const uploadResult = uploadAttachmentsIfNeeded(attachments)
+      if (uploadResult instanceof Promise) {
+        void uploadResult.then(finishEdit).catch(handleUploadFailure)
+        return
+      }
+      finishEdit(uploadResult)
     },
     [
       editingMessageKey,
@@ -772,6 +930,7 @@ export function Playground({
       prepareSend,
       updateMessages,
       dispatchGeneration,
+      uploadAttachmentsIfNeeded,
     ]
   )
 
@@ -795,7 +954,9 @@ export function Playground({
           ptFirstCallSecondsRemaining={
             isPtFirstCallExperiment ? ptFirstCallSecondsRemaining : undefined
           }
-          disabled={!isFirstRunModelReady || isRestoring}
+          disabled={
+            !isFirstRunModelReady || isRestoring || isUploadingAttachments
+          }
           onPickExample={handleSendMessage}
         />
       )}
@@ -807,7 +968,7 @@ export function Playground({
           onRegenerateMessage={handleRegenerateMessage}
           onEditMessage={handleEditMessage}
           onDeleteMessage={handleDeleteMessage}
-          isGenerating={isGenerating || isRestoring}
+          isGenerating={isGenerating || isRestoring || isUploadingAttachments}
           editingKey={editingMessageKey}
           onCancelEdit={handleEditOpenChange}
           onSaveEdit={(newContent) => applyEdit(newContent, false)}
@@ -824,10 +985,13 @@ export function Playground({
       <div className='mx-auto w-full max-w-4xl'>
         <PlaygroundInput
           key={handoff.prompt || 'playground-input'}
-          disabled={isGenerating || isRestoring}
+          disabled={isGenerating || isRestoring || isUploadingAttachments}
           initialText={handoff.prompt}
           submitDisabled={
-            !isCurrentModelValid || !isFirstRunModelReady || isRestoring
+            !isCurrentModelValid ||
+            !isFirstRunModelReady ||
+            isRestoring ||
+            isUploadingAttachments
           }
           showGroupSelector={canUseGroups}
           groups={groups}

@@ -20,6 +20,7 @@ import type { Message } from '../types'
 import {
   createUserMessage,
   formatMessageForAPI,
+  markTrustedAttachmentURL,
   sanitizeMessagesOnLoad,
   updateCurrentVersionContent,
   updateCurrentVersionMedia,
@@ -112,6 +113,60 @@ describe('Playground message attachments', () => {
         filename: 'unsafe.png',
         mediaType: 'image/png',
         url: 'javascript:alert(1)',
+      },
+    ])
+
+    expect(formatMessageForAPI(message)).toEqual({
+      role: 'user',
+      content: 'describe this',
+    })
+  })
+
+  test('keeps trusted preview URLs and rejects forged remote media URLs', () => {
+    const trustedImage = markTrustedAttachmentURL({
+      kind: 'image',
+      filename: 'frame.png',
+      mediaType: 'image/png',
+      assetId: 'ast_123',
+      url: 'https://storage.example/preview.png',
+    })
+    const forgedVideo = {
+      kind: 'video' as const,
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      assetId: 'ast_999',
+      url: 'https://evil.example/video.mp4',
+    }
+
+    expect(
+      formatMessageForAPI(
+        createUserMessage('compare these', [trustedImage, forgedVideo])
+      )
+    ).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'compare these' },
+        {
+          type: 'image_url',
+          image_url: { url: 'https://storage.example/preview.png' },
+        },
+      ],
+    })
+  })
+
+  test('rejects unsupported data URL MIME types for media attachments', () => {
+    const message = createUserMessage('describe this', [
+      {
+        kind: 'image',
+        filename: 'vector.svg',
+        mediaType: 'image/svg+xml',
+        url: 'data:image/svg+xml;base64,PHN2Zy8+',
+      },
+      {
+        kind: 'video',
+        filename: 'clip.webm',
+        mediaType: 'video/webm',
+        url: 'data:video/webm;base64,AAAA',
       },
     ])
 

@@ -94,6 +94,10 @@ type AssetUploadSessionRequest struct {
 type AssetCompleteUploadRequest struct {
 	UploadID string
 	Owner    string
+	// UserID is optional for the token-facing completion path. Playground's
+	// session adapter supplies it so it can issue a user-scoped preview URL
+	// after completion without trusting a client-supplied owner.
+	UserID int
 }
 
 type CleanupExpiredAssetSourcesRequest struct {

@@ -28,7 +28,10 @@ const post = spyOn(api, 'post').mockResolvedValue({
 } as never)
 
 const {
+  completePlaygroundAttachmentUpload,
   clearCurrentPlaygroundRecord,
+  createPlaygroundAttachmentUploadSession,
+  getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
   savePlaygroundRecord,
@@ -120,5 +123,92 @@ describe('Playground model API', () => {
     expect(get).toHaveBeenCalledWith('/api/user/models', {
       params: { group: 'plg', exclude_hidden: true },
     })
+  })
+})
+
+describe('Playground attachment API', () => {
+  beforeEach(() => {
+    get.mockClear()
+    post.mockClear()
+  })
+
+  test('creates an authenticated upload session', async () => {
+    post.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          upload_id: 'upl_1',
+          asset_id: 'ast_1',
+          object: 'asset.upload',
+          status: 'pending',
+          upload_url: 'https://storage.example/put',
+          upload_headers: { 'Content-Type': 'image/png' },
+          expires_at: 100,
+        },
+      },
+    })
+
+    await expect(
+      createPlaygroundAttachmentUploadSession({
+        assetType: 'Image',
+        contentType: 'image/png',
+        sizeBytes: 42,
+      })
+    ).resolves.toMatchObject({ upload_id: 'upl_1', asset_id: 'ast_1' })
+    expect(post).toHaveBeenCalledWith(
+      '/api/playground/attachments/uploads',
+      {
+        asset_type: 'Image',
+        content_type: 'image/png',
+        size_bytes: 42,
+      },
+      expect.any(Object)
+    )
+  })
+
+  test('completes an upload and restores a preview by durable asset id', async () => {
+    post.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_1',
+          asset_type: 'Image',
+          content_type: 'image/png',
+          size_bytes: 42,
+          preview_url: 'https://storage.example/read',
+          expires_at: 200,
+        },
+      },
+    })
+    get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_1',
+          asset_type: 'Image',
+          content_type: 'image/png',
+          size_bytes: 42,
+          preview_url: 'https://storage.example/read-2',
+          expires_at: 300,
+        },
+      },
+    })
+
+    await expect(
+      completePlaygroundAttachmentUpload('upl_1')
+    ).resolves.toMatchObject({
+      asset_id: 'ast_1',
+    })
+    await expect(
+      getPlaygroundAttachmentPreview('ast_1')
+    ).resolves.toMatchObject({
+      preview_url: 'https://storage.example/read-2',
+    })
+    expect(post.mock.calls[0]?.[0]).toBe(
+      '/api/playground/attachments/uploads/upl_1/complete'
+    )
+    expect(get.mock.calls[0]?.[0]).toBe(
+      '/api/playground/attachments/ast_1/preview'
+    )
   })
 })

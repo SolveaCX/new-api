@@ -64,7 +64,7 @@ interface PlaygroundInputProps {
     text: string,
     model?: string,
     attachments?: PlaygroundAttachment[]
-  ) => void
+  ) => void | Promise<void>
   onStop?: () => void
   disabled?: boolean
   submitDisabled?: boolean
@@ -263,7 +263,7 @@ export function PlaygroundInput({
       const attachments = await normalizePlaygroundAttachments(
         message.files ?? []
       )
-      onSubmit(message.text ?? '', undefined, attachments)
+      await onSubmit(message.text ?? '', undefined, attachments)
       setText('')
     } catch (error) {
       const errorMessage =
