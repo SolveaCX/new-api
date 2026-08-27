@@ -18,21 +18,93 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus } from 'lucide-react'
+import { Check, Copy, Loader2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CopyButton } from '@/components/copy-button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import type { ApiKey } from '@/features/keys/types'
 import { CreateApiKeyDialog } from './create-api-key-dialog'
+
+function ApiKeyCopyButton(props: {
+  keyId: number
+  fullKey?: string
+  loading: boolean
+  resolveKey: (id: number) => Promise<string | null>
+}) {
+  const { t } = useTranslation()
+  const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
+  const [copying, setCopying] = useState(false)
+  const busy = props.loading || copying
+  const copied = props.fullKey !== undefined && copiedText === props.fullKey
+
+  const handleCopy = async () => {
+    if (busy) return
+
+    setCopying(true)
+    try {
+      const value = props.fullKey ?? (await props.resolveKey(props.keyId))
+      if (!value) return
+      await copyToClipboard(value)
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  let tooltip: string
+  if (busy) {
+    tooltip = t('Loading...')
+  } else if (copied) {
+    tooltip = t('Copied!')
+  } else {
+    tooltip = t('Copy API key')
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon'
+            className='size-6 shrink-0'
+            onClick={() => void handleCopy()}
+            disabled={busy}
+            // Keep the accessible name stable while the value is resolving;
+            // callers can still discover every row by its copy affordance.
+            aria-label={t('Copy API key')}
+            aria-busy={busy || undefined}
+          />
+        }
+      >
+        {busy ? (
+          <Loader2 className='size-3.5 animate-spin' aria-hidden='true' />
+        ) : copied ? (
+          <Check className='text-success size-3.5' aria-hidden='true' />
+        ) : (
+          <Copy className='size-3.5' aria-hidden='true' />
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function ApiKeyPicker(props: {
   keys: ApiKey[]
   loading: boolean
   selectedKeyId: number | null
   resolvedKeys: Record<number, string>
+  loadingKeys: Record<number, boolean>
+  resolveKey: (id: number) => Promise<string | null>
   onSelect: (keyId: number) => void
 }) {
   const { t } = useTranslation()
@@ -109,27 +181,12 @@ export function ApiKeyPicker(props: {
                 >
                   {`sk-${key.key}`}
                 </button>
-                {fullKey ? (
-                  <CopyButton
-                    value={fullKey}
-                    className='size-6 shrink-0'
-                    iconClassName='size-3.5'
-                    tooltip={t('Copy API key')}
-                    successTooltip={t('Copied!')}
-                    aria-label={t('Copy API key')}
-                  />
-                ) : selected ? (
-                  // Only the selected key is ever resolved to its real value,
-                  // so only it gets a resolving indicator.
-                  <Loader2
-                    className='text-muted-foreground size-3.5 shrink-0 animate-spin'
-                    aria-label={t('Loading...')}
-                  />
-                ) : (
-                  // Holds the column so unresolved rows stay aligned with
-                  // the ones that render a copy button.
-                  <span className='size-6 shrink-0' aria-hidden='true' />
-                )}
+                <ApiKeyCopyButton
+                  keyId={key.id}
+                  fullKey={fullKey}
+                  loading={Boolean(props.loadingKeys[key.id])}
+                  resolveKey={props.resolveKey}
+                />
                 <div className='ml-1 hidden min-w-0 flex-1 items-center gap-3 sm:flex'>
                   <span className='text-muted-foreground min-w-0 flex-1 truncate text-xs'>
                     {key.name}
