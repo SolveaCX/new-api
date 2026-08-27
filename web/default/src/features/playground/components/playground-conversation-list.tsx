@@ -23,11 +23,14 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   ListChecks,
-  Plus,
+  Pencil,
+  SquarePen,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -52,10 +55,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   deletePlaygroundConversations,
   listPlaygroundConversations,
+  renamePlaygroundConversation,
 } from '../api'
 import type { PlaygroundConversationSummary } from '../types'
 
@@ -65,6 +70,7 @@ interface PlaygroundConversationListProps {
   refreshKey?: number
   draftConversation?: PlaygroundConversationSummary | null
   onNew: () => void
+  onSelect: (conversation: PlaygroundConversationSummary) => void
 }
 
 const conversationsQueryKey = ['playground-conversations']
@@ -75,6 +81,8 @@ function PlaygroundConversationListContent(
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isManageOpen, setIsManageOpen] = useState(false)
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(
@@ -88,6 +96,26 @@ function PlaygroundConversationListContent(
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: conversationsQueryKey })
   }, [props.refreshKey, queryClient])
+  const renameMutation = useMutation({
+    mutationFn: ({
+      conversationId,
+      name,
+    }: {
+      conversationId: string
+      name: string
+    }) => renamePlaygroundConversation(conversationId, name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: conversationsQueryKey })
+      setEditingId(null)
+      toast.success(t('Conversation renamed'))
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('Failed to rename conversation')
+      ),
+  })
   const deleteMutation = useMutation({
     mutationFn: deletePlaygroundConversations,
     onSuccess: (_data, deletedIds) => {
@@ -156,11 +184,22 @@ function PlaygroundConversationListContent(
     requestDelete([props.currentConversationId])
   }
 
+  const startRename = (conversation: PlaygroundConversationSummary) => {
+    setEditingId(conversation.conversation_id)
+    setEditingName(conversation.name)
+  }
+
+  const submitRename = () => {
+    const name = editingName.trim()
+    if (!editingId || !name) return
+    renameMutation.mutate({ conversationId: editingId, name })
+  }
+
   return (
     <>
       <aside
         className={cn(
-          'bg-sidebar border-sidebar-border flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
+          'bg-background border-border flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
           isCollapsed ? 'w-10' : 'w-52'
         )}
       >
@@ -173,7 +212,7 @@ function PlaygroundConversationListContent(
           <Button
             variant='ghost'
             size='icon'
-            className='text-muted-foreground rounded-lg'
+            className='text-muted-foreground hover:bg-muted rounded-md'
             onClick={() => setIsCollapsed((collapsed) => !collapsed)}
             aria-expanded={!isCollapsed}
             aria-label={
@@ -191,21 +230,21 @@ function PlaygroundConversationListContent(
         </div>
         {!isCollapsed && (
           <nav
-            className='flex flex-1 flex-col gap-1 px-2'
+            className='flex flex-col gap-0.5 px-2'
             aria-label={t('Conversations')}
           >
             <Button
               variant='ghost'
-              className='h-10 w-full justify-start rounded-lg px-3'
+              className='h-9 w-full justify-start rounded-md px-2.5 text-sm'
               onClick={props.onNew}
               disabled={props.disabled}
             >
-              <Plus data-icon='inline-start' aria-hidden='true' />
+              <SquarePen data-icon='inline-start' aria-hidden='true' />
               {t('New')}
             </Button>
             <Button
               variant='ghost'
-              className='text-muted-foreground hover:text-destructive h-10 w-full justify-start rounded-lg px-3'
+              className='text-muted-foreground hover:bg-muted hover:text-destructive h-9 w-full justify-start rounded-md px-2.5 text-sm'
               onClick={requestDeleteCurrent}
               disabled={
                 deleteMutation.isPending ||
@@ -220,7 +259,7 @@ function PlaygroundConversationListContent(
             </Button>
             <Button
               variant='ghost'
-              className='text-muted-foreground h-10 w-full justify-start rounded-lg px-3'
+              className='text-muted-foreground hover:bg-muted h-9 w-full justify-start rounded-md px-2.5 text-sm'
               onClick={() => setIsManageOpen(true)}
               disabled={conversations.length === 0}
             >
@@ -228,6 +267,118 @@ function PlaygroundConversationListContent(
               {t('Delete selected conversations')}
             </Button>
           </nav>
+        )}
+        {!isCollapsed && (
+          <section className='border-border/70 mt-4 flex min-h-0 flex-1 flex-col gap-2 border-t px-2 pt-4'>
+            <h2 className='text-muted-foreground px-2 text-xs font-medium'>
+              {t('Conversations')}
+            </h2>
+            <ScrollArea className='min-h-0 flex-1'>
+              <div className='flex flex-col gap-0.5'>
+                {conversationsQuery.isLoading && (
+                  <p className='text-muted-foreground px-2 py-4 text-center text-xs'>
+                    {t('Loading conversations...')}
+                  </p>
+                )}
+                {!conversationsQuery.isLoading &&
+                  conversations.length === 0 && (
+                    <p className='text-muted-foreground px-2 py-4 text-center text-xs'>
+                      {t('No conversations yet')}
+                    </p>
+                  )}
+                {conversations.map((conversation) => {
+                  const isEditing = editingId === conversation.conversation_id
+                  const isActive =
+                    props.currentConversationId === conversation.conversation_id
+                  return (
+                    <div
+                      key={conversation.conversation_id}
+                      className={cn(
+                        'group flex min-h-9 items-center gap-2 rounded-lg px-2',
+                        isActive
+                          ? 'bg-muted text-foreground'
+                          : 'hover:bg-muted/70'
+                      )}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(conversation.conversation_id)}
+                        onCheckedChange={() =>
+                          toggleSelected(conversation.conversation_id)
+                        }
+                        aria-label={t('Select conversation')}
+                      />
+                      {isEditing ? (
+                        <div className='flex min-w-0 flex-1 items-center gap-1'>
+                          <Input
+                            autoFocus
+                            value={editingName}
+                            maxLength={120}
+                            onChange={(event) =>
+                              setEditingName(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') submitRename()
+                              if (event.key === 'Escape') setEditingId(null)
+                            }}
+                            className='h-7'
+                          />
+                          <Button
+                            size='icon-xs'
+                            variant='ghost'
+                            onClick={submitRename}
+                            disabled={renameMutation.isPending}
+                            aria-label={t('Save')}
+                          >
+                            <Check aria-hidden='true' />
+                          </Button>
+                          <Button
+                            size='icon-xs'
+                            variant='ghost'
+                            onClick={() => setEditingId(null)}
+                            aria-label={t('Cancel')}
+                          >
+                            <X aria-hidden='true' />
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          type='button'
+                          className='min-w-0 flex-1 truncate text-left text-sm'
+                          onClick={() => props.onSelect(conversation)}
+                          disabled={props.disabled}
+                        >
+                          {conversation.name}
+                        </button>
+                      )}
+                      {!isEditing && (
+                        <div className='flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100'>
+                          <Button
+                            size='icon-xs'
+                            variant='ghost'
+                            onClick={() => startRename(conversation)}
+                            aria-label={t('Rename')}
+                          >
+                            <Pencil aria-hidden='true' />
+                          </Button>
+                          <Button
+                            size='icon-xs'
+                            variant='ghost'
+                            className='hover:text-destructive'
+                            onClick={() =>
+                              requestDelete([conversation.conversation_id])
+                            }
+                            aria-label={t('Delete')}
+                          >
+                            <Trash2 aria-hidden='true' />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </ScrollArea>
+          </section>
         )}
       </aside>
       <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>

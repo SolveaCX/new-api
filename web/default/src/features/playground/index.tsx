@@ -990,6 +990,38 @@ export function Playground({
     ]
   )
 
+  const handleSelectConversation = useCallback(
+    async (conversation: { conversation_id: string }) => {
+      if (
+        isGenerating ||
+        isRestoring ||
+        conversation.conversation_id === conversationId
+      )
+        return
+      try {
+        const snapshot = await getPlaygroundConversation(
+          conversation.conversation_id
+        )
+        if (!snapshot) return
+        updateMessages(snapshot.messages)
+        setConversationId(snapshot.conversation_id)
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Failed to load Playground conversation')
+        )
+      }
+    },
+    [
+      conversationId,
+      isGenerating,
+      isRestoring,
+      setConversationId,
+      updateMessages,
+    ]
+  )
+
   return (
     <div className='relative flex size-full overflow-hidden'>
       <PlaygroundConversationList
