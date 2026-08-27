@@ -170,11 +170,13 @@ func TestBuildDingTalkPaymentSuccessContentOmitsInviterWhenMissing(t *testing.T)
 
 func TestNotifyDingTalkPaymentSuccessPostsMessage(t *testing.T) {
 	allowDingTalkTestServer(t)
-	originalSetting := *operation_setting.GetMonitorSetting()
+	originalMonitorSetting := *operation_setting.GetMonitorSetting()
+	originalPaymentSetting := *operation_setting.GetPaymentNotifySetting()
 	originalDB := model.DB
 	originalHTTPClient := httpClient
 	t.Cleanup(func() {
-		*operation_setting.GetMonitorSetting() = originalSetting
+		*operation_setting.GetMonitorSetting() = originalMonitorSetting
+		*operation_setting.GetPaymentNotifySetting() = originalPaymentSetting
 		model.DB = originalDB
 		httpClient = originalHTTPClient
 	})
@@ -193,20 +195,32 @@ func TestNotifyDingTalkPaymentSuccessPostsMessage(t *testing.T) {
 	}).Error)
 
 	done := make(chan string, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	paymentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		done <- string(body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
 	}))
-	defer server.Close()
+	defer paymentServer.Close()
 
-	httpClient = server.Client()
-	setting := operation_setting.GetMonitorSetting()
-	setting.DingTalkAlertEnabled = true
-	setting.DingTalkAlertWebhookURL = server.URL
-	setting.DingTalkAlertSecret = ""
+	var monitorRequests int32
+	monitorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&monitorRequests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer monitorServer.Close()
+
+	httpClient = paymentServer.Client()
+	monitorSetting := operation_setting.GetMonitorSetting()
+	monitorSetting.DingTalkAlertEnabled = true
+	monitorSetting.DingTalkAlertWebhookURL = monitorServer.URL
+	monitorSetting.DingTalkAlertSecret = ""
+	paymentSetting := operation_setting.GetPaymentNotifySetting()
+	paymentSetting.DingTalkAlertEnabled = true
+	paymentSetting.DingTalkAlertWebhookURL = paymentServer.URL
+	paymentSetting.DingTalkAlertSecret = "payment-secret"
 
 	NotifyDingTalkPaymentSuccess(&model.TopUp{
 		UserId:          7020,
@@ -223,6 +237,63 @@ func TestNotifyDingTalkPaymentSuccessPostsMessage(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for DingTalk payment success request")
 	}
+	require.Zero(t, atomic.LoadInt32(&monitorRequests))
+}
+
+func TestNotifyDingTalkPaymentSuccessIgnoresMonitorDingTalkConfig(t *testing.T) {
+	allowDingTalkTestServer(t)
+	originalMonitorSetting := *operation_setting.GetMonitorSetting()
+	originalPaymentSetting := *operation_setting.GetPaymentNotifySetting()
+	originalHTTPClient := httpClient
+	t.Cleanup(func() {
+		*operation_setting.GetMonitorSetting() = originalMonitorSetting
+		*operation_setting.GetPaymentNotifySetting() = originalPaymentSetting
+		httpClient = originalHTTPClient
+	})
+
+	var monitorRequests int32
+	monitorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&monitorRequests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer monitorServer.Close()
+
+	done := make(chan string, 1)
+	paymentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		done <- string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer paymentServer.Close()
+
+	httpClient = paymentServer.Client()
+	monitorSetting := operation_setting.GetMonitorSetting()
+	monitorSetting.DingTalkAlertEnabled = true
+	monitorSetting.DingTalkAlertWebhookURL = monitorServer.URL
+	monitorSetting.DingTalkAlertSecret = ""
+	paymentSetting := operation_setting.GetPaymentNotifySetting()
+	paymentSetting.DingTalkAlertEnabled = true
+	paymentSetting.DingTalkAlertWebhookURL = paymentServer.URL
+	paymentSetting.DingTalkAlertSecret = ""
+
+	NotifyDingTalkPaymentSuccess(&model.TopUp{
+		UserId:          0,
+		TradeNo:         "trade-success-ignored-monitor",
+		Money:           1,
+		PaymentCurrency: "usd",
+		PaymentMethod:   "stripe",
+		PaymentProvider: "stripe",
+	})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for DingTalk payment success request")
+	}
+	require.Zero(t, atomic.LoadInt32(&monitorRequests))
 }
 
 func TestNotifyDingTalkPaymentProcessingFailureUsesMonitorDingTalk(t *testing.T) {
