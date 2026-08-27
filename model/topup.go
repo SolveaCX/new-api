@@ -331,6 +331,7 @@ func CompleteEpayTopUp(tradeNo string, actualPaymentMethod string, callerIp stri
 		syncTopUpQuotaCacheAfterCommit(topUp.UserId, int64(quotaToAdd), "epay topup")
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, "epay")
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	} else if topUp.Status == common.TopUpStatusSuccess {
 		if err := TryGrantInviteRewardAfterTopUpSucceeded(topUp.UserId, topUp.Id); err != nil {
 			common.SysError(fmt.Sprintf("epay invite reward retry failed trade_no=%s user_id=%d error=%q", topUp.TradeNo, topUp.UserId, err.Error()))
@@ -452,6 +453,7 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 		logMsg := fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%.2f", logger.FormatQuota(quotaToAdd), topUp.Money)
 		RecordTopupLog(topUp.UserId, logMsg, callerIp, topUp.PaymentMethod, PaymentMethodStripe)
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
 	return credited, nil
@@ -810,6 +812,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		syncTopUpQuotaCacheAfterCommit(topUp.UserId, quota, "creem topup")
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem)
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
 	return nil
@@ -904,6 +907,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (bool, error) {
 		syncTopUpQuotaCacheAfterCommit(topUp.UserId, int64(quotaToAdd), "waffo topup")
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo)
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
 	return credited, nil
@@ -996,6 +1000,7 @@ func RechargeWaffoPancake(tradeNo string) (bool, error) {
 		syncTopUpQuotaCacheAfterCommit(topUp.UserId, int64(quotaToAdd), "waffo pancake topup")
 		RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money))
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
 	return credited, nil
@@ -1112,6 +1117,7 @@ func RechargePaddle(tradeNo string, expectedUserId int, expectedGatewayTradeNo s
 		syncTopUpQuotaCacheAfterCommit(topUp.UserId, int64(quotaToAdd), "paddle topup")
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("Paddle充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodPaddle)
 		runInviteRewardPostCommitHooks(rewardResult)
+		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
 	return credited, nil
