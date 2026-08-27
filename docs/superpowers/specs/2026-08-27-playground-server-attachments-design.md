@@ -19,7 +19,7 @@ Use the existing Asset object store and add a Playground-scoped session-authenti
 1. The browser stages a file locally for its immediate thumbnail.
 2. On send, binary image/video files are uploaded through a Playground endpoint that creates a signed upload session, accepts the direct object-store PUT, and completes the upload.
 3. The response supplies a stable `asset_id` and a short-lived signed preview URL. The live message keeps the preview URL only for rendering; its durable attachment shape keeps `asset_id`, filename, media type, and kind.
-4. The chat payload builder sends `asset://<asset_id>` for binary references. The existing relay asset-reference machinery can then materialize the user-owned asset for channels that support it. Text attachments remain inline text because they are already bounded and safe to persist.
+4. The Playground chat payload builder sends a fresh signed preview URL for binary references because ordinary `/pg/chat/completions` channels expect HTTPS media URLs. Provider-specific task routes may continue to use `asset://<asset_id>` and the existing relay asset-reference machinery. Text attachments remain inline text because they are already bounded and safe to persist.
 5. The Playground record stores the attachment metadata plus `asset_id`; it never stores base64 or a signed URL.
 6. On restore, the server returns the asset references. The browser requests fresh short-lived preview URLs and hydrates the message before rendering.
 7. Clearing a Playground conversation removes its asset references and deletes an asset only when no other user-owned reference remains.
@@ -37,7 +37,7 @@ interface PlaygroundAttachment {
 }
 ```
 
-`assetId` is the only binary identifier allowed in a persisted Playground record. `url` is stripped when it is a data URL or a signed URL is no longer valid.
+`assetId` is the only binary identifier allowed in a persisted Playground record. `url` is a transient local/blob/signed preview used for rendering and request construction; it is stripped before record persistence and rehydrated from `assetId` after restore.
 
 ## API and data changes
 
@@ -66,7 +66,7 @@ Save-record and clear-conversation operations update this table transactionally 
 
 - Extend the attachment normalizer and `PlaygroundInput` submit contract to support an async upload phase.
 - Upload image/video files before creating the user message. If any upload fails, do not send the chat request; keep the staged files and show the upstream-safe error.
-- Keep a local object URL or returned preview URL for the current render, but make request construction prefer `asset://assetId`.
+- Keep a local object URL or returned preview URL for the current render, and make request construction use the returned/fresh signed preview URL (with `asset://assetId` reserved for provider-specific task payloads).
 - Persist only the durable message shape through `buildPlaygroundRecordPayload` and the browser outbox.
 - During `usePlaygroundPersistence` restore, resolve preview URLs for returned `assetId` values, then apply the existing same-conversation local merge only for legacy records that still contain local data URLs.
 - If preview resolution fails, retain the attachment metadata and show a retryable unavailable-preview state rather than silently deleting the attachment.
@@ -105,4 +105,3 @@ Save-record and clear-conversation operations update this table transactionally 
 ## Rollout and migration
 
 Ship the server API and reference table before enabling the frontend upload path. Existing local-only messages remain readable through the current compatibility merge; they cannot be recovered after browser data is already deleted because their bytes were never uploaded. New binary attachments become server-durable at send time. Orphan cleanup should run after a grace period so transient upload/record retries are safe.
-
