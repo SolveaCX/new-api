@@ -153,6 +153,8 @@ export interface IntegrationDialogProps {
   keysLoading: boolean
   selectedKeyId: number | null
   resolvedKeys: Record<number, string>
+  loadingKeys: Record<number, boolean>
+  resolveKey: (id: number) => Promise<string | null>
   onSelectKey: (keyId: number) => void
   models: string[]
   selectedModel: string
@@ -236,6 +238,8 @@ export function IntegrationDialog(props: IntegrationDialogProps) {
         loading={props.keysLoading}
         selectedKeyId={props.selectedKeyId}
         resolvedKeys={props.resolvedKeys}
+        loadingKeys={props.loadingKeys}
+        resolveKey={props.resolveKey}
         onSelect={props.onSelectKey}
       />
     </div>

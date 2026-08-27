@@ -10,6 +10,7 @@ describe("OnlinePricingPage", () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const html = renderToStaticMarkup(<OnlinePricingPage locale="en" />);
 
+    const goReferencePrice = html.indexOf('<del class="toldprice">$45</del>');
     const goPrice = html.indexOf("<b>$10</b>");
     const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div><div class="tname">Pro</div>');
     const enterpriseCustom = html.indexOf(">Custom<");
@@ -17,7 +18,9 @@ describe("OnlinePricingPage", () => {
     const enterpriseCta = html.indexOf("Contact sales", enterpriseCustom);
 
     expect(goCta).toBeGreaterThanOrEqual(0);
+    expect(goReferencePrice).toBeGreaterThanOrEqual(0);
     expect(goPrice).toBeGreaterThanOrEqual(0);
+    expect(goReferencePrice).toBeLessThan(goPrice);
     expect(goCta).toBeGreaterThan(goPrice);
     expect(proBadge).toBeGreaterThanOrEqual(0);
     expect(html).not.toContain('<div class="tier hot"><div class="badge">MOST POPULAR</div><div class="tname">Go</div>');
@@ -35,6 +38,11 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain("%2Fassets%2Flogos%2Fpayment%2Fupi.jpg");
     expect(html).toContain('src="/assets/logos/payment/alipay.svg"');
     expect(html).toContain("All models");
+    expect(html).toContain('<del class="toldprice">$90</del>');
+    expect(html).toContain('<del class="toldprice">$300</del>');
+    expect(html).not.toContain("Up to $45 model usage / mo");
+    expect(html).not.toContain("Up to $90 model usage / mo");
+    expect(html).not.toContain("Up to $300 model usage / mo");
     expect(html).not.toContain("Text models");
     expect(html).not.toContain("B2B");
   });
@@ -55,15 +63,15 @@ describe("OnlinePricingPage", () => {
   test("localizes pricing plan details outside English", async () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const localizedCases = [
-      { locale: "zh", snippets: ["灵活定价", "适合个人与轻量日常使用", "全部模型", "每月最多 $45 模型用量", "定制", "/月"] },
-      { locale: "es", snippets: ["Precios flexibles", "Para uso individual y diario ligero", "Todos los modelos", "Hasta $45 de uso de modelos / mes", "Personalizado", "/mes"] },
-      { locale: "fr", snippets: ["Tarifs flexibles", "Pour les particuliers", "Tous les modèles", "Jusqu", "$45", "Sur mesure", "/mois"] },
-      { locale: "pt", snippets: ["Preços flexíveis", "Para uso individual", "Todos os modelos", "Até $45 de uso de modelos / mês", "Personalizado", "/mês"] },
-      { locale: "ru", snippets: ["Гибкие тарифы", "Для индивидуального", "Все модели", "До $45 использования моделей / мес.", "Индивидуально", "/мес."] },
-      { locale: "ja", snippets: ["柔軟な料金", "個人利用と軽い日常利用向け", "すべてのモデル", "月あたり最大 $45 のモデル利用", "カスタム", "/月"] },
-      { locale: "vi", snippets: ["Giá linh hoạt", "Cho cá nhân", "Tất cả model", "Tối đa $45 mức sử dụng model / tháng", "Tùy chỉnh", "/tháng"] },
-      { locale: "de", snippets: ["Flexible Preise", "Für Einzelpersonen", "Alle Modelle", "Bis zu $45 Modellnutzung / Monat", "Individuell", "/Monat"] },
-      { locale: "id", snippets: ["Harga fleksibel", "Untuk individu", "Semua model", "Hingga $45 penggunaan model / bulan", "Kustom", "/bulan"] },
+      { locale: "zh", snippets: ["灵活定价", "适合个人与轻量日常使用", "全部模型", "短期上限", "定制", "/月"], legacyQuota: "每月最多 $45 模型用量" },
+      { locale: "es", snippets: ["Precios flexibles", "Para uso individual y diario ligero", "Todos los modelos", "Límites a corto plazo", "Personalizado", "/mes"], legacyQuota: "Hasta $45 de uso de modelos / mes" },
+      { locale: "fr", snippets: ["Tarifs flexibles", "Pour les particuliers", "Tous les modèles", "Limites court terme", "Sur mesure", "/mois"], legacyQuota: "Jusqu'à $45 d'utilisation de modèles / mois" },
+      { locale: "pt", snippets: ["Preços flexíveis", "Para uso individual", "Todos os modelos", "Limites de curto prazo", "Personalizado", "/mês"], legacyQuota: "Até $45 de uso de modelos / mês" },
+      { locale: "ru", snippets: ["Гибкие тарифы", "Для индивидуального", "Все модели", "Краткосрочные лимиты", "Индивидуально", "/мес."], legacyQuota: "До $45 использования моделей / мес." },
+      { locale: "ja", snippets: ["柔軟な料金", "個人利用と軽い日常利用向け", "すべてのモデル", "短期上限", "カスタム", "/月"], legacyQuota: "月あたり最大 $45 のモデル利用" },
+      { locale: "vi", snippets: ["Giá linh hoạt", "Cho cá nhân", "Tất cả model", "Giới hạn ngắn hạn", "Tùy chỉnh", "/tháng"], legacyQuota: "Tối đa $45 mức sử dụng model / tháng" },
+      { locale: "de", snippets: ["Flexible Preise", "Für Einzelpersonen", "Alle Modelle", "Kurzfristige Limits", "Individuell", "/Monat"], legacyQuota: "Bis zu $45 Modellnutzung / Monat" },
+      { locale: "id", snippets: ["Harga fleksibel", "Untuk individu", "Semua model", "Batas jangka pendek", "Kustom", "/bulan"], legacyQuota: "Hingga $45 penggunaan model / bulan" },
     ] as const;
 
     for (const item of localizedCases) {
@@ -71,6 +79,10 @@ describe("OnlinePricingPage", () => {
       for (const snippet of item.snippets) {
         expect(html).toContain(snippet);
       }
+      for (const referencePrice of ["$45", "$90", "$300"]) {
+        expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
+      }
+      expect(html).not.toContain(item.legacyQuota);
       expect(html).not.toContain("For individuals & light daily use");
       expect(html).not.toContain("Text models");
       expect(html).not.toMatch(/media credits|media quota|media credit|crédit(?:s)? média|créditos multimedia|медиакредит|メディアクレジット|媒体额度|მედиа/i);
@@ -103,13 +115,11 @@ describe("OnlinePricingPage", () => {
         locale: "pt",
         prices: ["R$ 49,90", "R$ 149,90", "R$ 499"],
         cta: "Assine Pro por R$ 149,90/mês e entre",
-        retainedUsdCopy: "Até $45 de uso de modelos / mês",
       },
       {
         locale: "ja",
         prices: ["¥1,500", "¥4,500", "¥15,000"],
         cta: "Pro を ¥4,500/月で登録してログイン",
-        retainedUsdCopy: "月あたり最大 $45 のモデル利用",
       },
     ] as const;
 
@@ -119,7 +129,9 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(`<b>${price}</b>`);
       }
       expect(html).toContain(item.cta);
-      expect(html).toContain(item.retainedUsdCopy);
+      expect(html).toContain('<del class="toldprice">$45</del>');
+      expect(html).toContain('<del class="toldprice">$90</del>');
+      expect(html).toContain('<del class="toldprice">$300</del>');
       if (item.locale === "pt") expect(html).not.toContain("<b>R$ 499,90</b>");
       expect(html).not.toContain("<b>$10</b>");
       expect(html).not.toContain("<b>$30</b>");
