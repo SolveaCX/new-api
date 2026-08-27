@@ -29,6 +29,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
 import { HomeModelLogo } from "@/components/home-model-logo";
+import { ModelCover } from "@/components/model-cover";
 import {
   fetchHealthSummary,
   fetchModelTrend,
@@ -3550,21 +3551,10 @@ const DEFAULT_RELATED_MODEL_ASSET = "/assets/prompts/awesome-images/ai-agent-pos
 
 function RelatedModelCover({ src, alt, sizes }: { src: string; alt: string; sizes: string }) {
   const originalSrc = src || DEFAULT_RELATED_MODEL_ASSET;
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const imageSrc = failedSrc === originalSrc ? DEFAULT_RELATED_MODEL_ASSET : originalSrc;
-
-  const isCdnAsset = imageSrc.includes("cdn.jsdelivr.net");
   return (
-    <Image
-      src={imageSrc}
-      alt={alt}
-      fill
-      sizes={sizes}
-      className={`related-image ${isCdnAsset ? "related-image-cdn" : "object-cover"}`}
-      onError={() => {
-        setFailedSrc(originalSrc);
-      }}
-    />
+    <div data-cover-source={originalSrc} data-cover-sizes={sizes} className="absolute inset-0">
+      <ModelCover modelName={alt} className="related-image !aspect-auto size-full" />
+    </div>
   );
 }
 

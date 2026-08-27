@@ -3846,6 +3846,21 @@ html:has(.model-prototype) {
   }
 }
 
+/* Related model APIs now use the light Flatkey cover artwork. Keep the card
+ * metadata legible against its pale lavender lower edge. */
+.model-prototype .related-card:has(.related-image) .related-copy {
+  color: #17151d;
+  background: linear-gradient(180deg, transparent 0%, rgb(247 243 255 / 0.88) 34%, rgb(247 243 255 / 0.98) 100%);
+}
+
+.model-prototype .related-card:has(.related-image) .related-copy strong {
+  color: #17151d;
+}
+
+.model-prototype .related-card:has(.related-image) .related-copy span {
+  color: #6d5aa8;
+}
+
 /* Final desktop parity pass --------------------------------------------------
  * Keep the shared model page on the same handoff rhythm as the approved
  * prototype. These rules intentionally apply only above the mobile layout;
