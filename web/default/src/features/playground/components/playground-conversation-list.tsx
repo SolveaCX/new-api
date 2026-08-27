@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -176,17 +177,31 @@ function PlaygroundConversationListContent(
   return (
     <>
       <aside
-        className={`bg-muted/20 flex h-full shrink-0 flex-col border-r transition-[width] duration-200 ${isCollapsed ? 'w-12' : 'w-64'}`}
+        className={cn(
+          'bg-background flex h-full shrink-0 flex-col border-r shadow-sm transition-[width] duration-200',
+          isCollapsed ? 'w-14' : 'w-72'
+        )}
       >
         <div
-          className={`flex items-center gap-2 border-b p-3 ${isCollapsed ? 'justify-center' : 'justify-between'}`}
+          className={cn(
+            'bg-muted/20 flex h-16 items-center gap-2 border-b px-3',
+            isCollapsed ? 'justify-center' : 'justify-between'
+          )}
         >
           {!isCollapsed && (
-            <h2 className='text-sm font-semibold'>{t('Conversations')}</h2>
+            <div className='min-w-0'>
+              <h2 className='truncate text-base font-semibold'>
+                {t('Conversations')}
+              </h2>
+              <p className='text-muted-foreground text-xs'>
+                {conversations.length} {t('Conversations').toLowerCase()}
+              </p>
+            </div>
           )}
           <Button
             variant='ghost'
-            size='icon-sm'
+            size='icon'
+            className='rounded-lg'
             onClick={() => setIsCollapsed((collapsed) => !collapsed)}
             aria-expanded={!isCollapsed}
             aria-label={
@@ -196,26 +211,37 @@ function PlaygroundConversationListContent(
             }
           >
             {isCollapsed ? (
-              <ChevronRight className='size-4' aria-hidden='true' />
+              <ChevronRight aria-hidden='true' />
             ) : (
-              <ChevronLeft className='size-4' aria-hidden='true' />
+              <ChevronLeft aria-hidden='true' />
             )}
           </Button>
         </div>
-        {!isCollapsed && (
-          <>
-            <div className='flex items-center justify-end gap-2 border-b p-3'>
-              <Button
-                size='sm'
-                className='gap-1'
-                onClick={props.onNew}
-                disabled={props.disabled}
-              >
-                <Plus className='size-4' aria-hidden='true' />
-                {t('New')}
-              </Button>
-            </div>
-            <div className='flex items-center justify-between border-b px-3 py-2'>
+        {isCollapsed ? (
+          <div className='flex flex-1 flex-col items-center gap-2 p-2'>
+            <Button
+              variant='outline'
+              size='icon'
+              className='rounded-lg'
+              onClick={props.onNew}
+              disabled={props.disabled}
+              aria-label={t('New')}
+            >
+              <Plus aria-hidden='true' />
+            </Button>
+          </div>
+        ) : (
+          <div className='flex min-h-0 flex-1 flex-col gap-3 p-3'>
+            <Button
+              variant='default'
+              className='w-full justify-start rounded-lg'
+              onClick={props.onNew}
+              disabled={props.disabled}
+            >
+              <Plus data-icon='inline-start' aria-hidden='true' />
+              {t('New')}
+            </Button>
+            <div className='bg-muted/40 flex items-center justify-between rounded-lg border px-2.5 py-1.5'>
               <label className='text-muted-foreground flex items-center gap-2 text-xs'>
                 <Checkbox
                   checked={allSelected}
@@ -235,16 +261,16 @@ function PlaygroundConversationListContent(
               <Button
                 variant='ghost'
                 size='icon-xs'
-                className='text-muted-foreground hover:text-destructive'
+                className='text-muted-foreground hover:text-destructive rounded-md'
                 onClick={deleteSelected}
                 disabled={selectedIds.size === 0 || deleteMutation.isPending}
                 aria-label={t('Delete selected conversations')}
               >
-                <Trash2 className='size-4' aria-hidden='true' />
+                <Trash2 aria-hidden='true' />
               </Button>
             </div>
             <ScrollArea className='min-h-0 flex-1'>
-              <div className='space-y-1 p-2'>
+              <div className='flex flex-col gap-1.5'>
                 {conversationsQuery.isLoading && (
                   <p className='text-muted-foreground px-2 py-4 text-center text-xs'>
                     {t('Loading conversations...')}
@@ -263,7 +289,12 @@ function PlaygroundConversationListContent(
                   return (
                     <div
                       key={conversation.conversation_id}
-                      className={`group flex items-start gap-2 rounded-lg px-2 py-2 ${isActive ? 'bg-accent' : 'hover:bg-accent/60'}`}
+                      className={cn(
+                        'group flex items-start gap-2 rounded-xl border px-2.5 py-2.5 transition-colors',
+                        isActive
+                          ? 'border-primary/20 bg-primary/10 shadow-sm'
+                          : 'hover:border-border hover:bg-muted/50 border-transparent'
+                      )}
                     >
                       <Checkbox
                         checked={selectedIds.has(conversation.conversation_id)}
@@ -291,19 +322,21 @@ function PlaygroundConversationListContent(
                           <Button
                             size='icon-xs'
                             variant='ghost'
+                            className='rounded-md'
                             onClick={submitRename}
                             disabled={renameMutation.isPending}
                             aria-label={t('Save')}
                           >
-                            <Check className='size-3.5' aria-hidden='true' />
+                            <Check aria-hidden='true' />
                           </Button>
                           <Button
                             size='icon-xs'
                             variant='ghost'
+                            className='rounded-md'
                             onClick={() => setEditingId(null)}
                             aria-label={t('Cancel')}
                           >
-                            <X className='size-3.5' aria-hidden='true' />
+                            <X aria-hidden='true' />
                           </Button>
                         </div>
                       ) : (
@@ -326,21 +359,22 @@ function PlaygroundConversationListContent(
                           <Button
                             size='icon-xs'
                             variant='ghost'
+                            className='rounded-md'
                             onClick={() => startRename(conversation)}
                             aria-label={t('Rename')}
                           >
-                            <Pencil className='size-3.5' aria-hidden='true' />
+                            <Pencil aria-hidden='true' />
                           </Button>
                           <Button
                             size='icon-xs'
                             variant='ghost'
-                            className='hover:text-destructive'
+                            className='hover:text-destructive rounded-md'
                             onClick={() => {
                               requestDelete([conversation.conversation_id])
                             }}
                             aria-label={t('Delete')}
                           >
-                            <Trash2 className='size-3.5' aria-hidden='true' />
+                            <Trash2 aria-hidden='true' />
                           </Button>
                         </div>
                       )}
@@ -349,7 +383,7 @@ function PlaygroundConversationListContent(
                 })}
               </div>
             </ScrollArea>
-          </>
+          </div>
         )}
       </aside>
       <AlertDialog
@@ -376,7 +410,7 @@ function PlaygroundConversationListContent(
               onClick={confirmDelete}
               disabled={deleteMutation.isPending}
             >
-              <Trash2 className='size-4' aria-hidden='true' />
+              <Trash2 data-icon='inline-start' aria-hidden='true' />
               {t('Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
