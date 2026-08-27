@@ -57,7 +57,7 @@ import { ChatPresetsItem } from './chat-presets-item'
 import { getNavBadgeClassName, getNavItemTitleClassName } from './nav-badge'
 
 const SIDEBAR_NAV_ITEM_CLASS_NAME =
-  'rounded-xl transition-[width,height,padding,background-color,color] duration-150 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/40 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:hover:bg-sidebar-accent data-active:hover:text-sidebar-accent-foreground'
+  'rounded-xl transition-[width,height,padding,background-color,color] duration-150 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:!ring-1 focus-visible:ring-sidebar-ring/40 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:hover:bg-sidebar-accent data-active:hover:text-sidebar-accent-foreground'
 
 /**
  * Sidebar navigation group component
