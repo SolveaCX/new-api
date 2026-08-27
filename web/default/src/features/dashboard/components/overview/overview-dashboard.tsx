@@ -98,7 +98,9 @@ export type OverviewDashboardProps = {
   handoffModel?: string
 }
 
-export function OverviewDashboard({ handoffModel }: OverviewDashboardProps = {}) {
+export function OverviewDashboard({
+  handoffModel,
+}: OverviewDashboardProps = {}) {
   const user = useAuthStore((state) => state.auth.user)
   const { status } = useApiInfo()
   const [openIntegration, setOpenIntegration] = useState<IntegrationId | null>(
