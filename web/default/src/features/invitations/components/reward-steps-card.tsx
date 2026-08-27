@@ -51,7 +51,7 @@ export function RewardStepsCard(props: RewardStepsCardProps) {
         {
           title: t('Your friend registers'),
           description: t(
-            'Your friend gets {{inviteeReward}} package discount immediately after registering.',
+            'Your friend gets {{inviteeReward}} off their package right after signing up.',
             {
               inviteeReward: formatInvitationUSD(
                 props.summary?.invitee_reward_usd ?? 0

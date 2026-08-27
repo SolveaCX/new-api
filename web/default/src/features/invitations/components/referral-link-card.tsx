@@ -34,7 +34,7 @@ export function ReferralLinkCard({
   let shareMessage = t('Share your referral link to get started.')
   if (rewardMode === 'subscription') {
     shareMessage = t(
-      'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
+      'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!'
     )
   } else if (rewardMode === 'topup') {
     shareMessage = t(
