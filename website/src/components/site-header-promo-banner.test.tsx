@@ -18,13 +18,58 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain(">Learn more →<");
     expect(html).toContain('aria-label="Dismiss DeepSeek V4 announcement"');
     expect(html).toContain('href="/blog/deepseek-v4-pro-vs-flash"');
-    expect(html).toContain('src="/assets/logos/deepseek.svg"');
-    expect(html).not.toContain('src="/assets/logos/bytedance.svg"');
+    expect(html).toContain("DeepSeek V4");
+    expect(html).not.toContain("Seedance");
     expect(
-      html.indexOf("DeepSeek V4 is here. Join our Discord get $5 free credits."),
+      html.indexOf(
+        "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+      ),
     ).toBeLessThan(
       html.indexOf('aria-label="Dismiss DeepSeek V4 announcement"'),
     );
+  });
+
+  test("uses configured ads below the navigation and exposes carousel controls", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        announcements={[
+          {
+            id: 1,
+            content: "Seedance 2.5 is available",
+            extra: "Video models",
+            link: "/models/seedance-2-5",
+          },
+          {
+            id: 2,
+            content: "New model pricing",
+            extra: "Pricing update",
+          },
+        ]}
+      >
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).toContain("Seedance 2.5 is available");
+    expect(html).toContain("Video models");
+    expect(html).toContain('href="/models/seedance-2-5"');
+    expect(html).toContain('aria-label="Previous advertisement"');
+    expect(html).toContain('aria-label="Next advertisement"');
+    expect(html.indexOf("Product")).toBeLessThan(
+      html.indexOf("Seedance 2.5 is available"),
+    );
+  });
+
+  test("hides the banner when the backend has no configured ads", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider docsUrl={null} announcements={[]}>
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).not.toContain("DeepSeek V4 is here");
+    expect(html).not.toContain("Next advertisement");
   });
 
   test("renders the localized DeepSeek V4 announcement for zh visitors", () => {

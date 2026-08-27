@@ -180,6 +180,22 @@ func validateAnnouncements(announcementsStr string) error {
 				return fmt.Errorf("第%d个公告的说明长度不能超过200字符", i+1)
 			}
 		}
+		if link, exists := ann["link"]; exists {
+			if linkStr, ok := link.(string); ok && strings.TrimSpace(linkStr) != "" {
+				linkStr = strings.TrimSpace(linkStr)
+				if !strings.HasPrefix(linkStr, "/") || strings.HasPrefix(linkStr, "//") {
+					if err := validateURL(linkStr, i+1, "公告链接"); err != nil {
+						return err
+					}
+				}
+				if len(linkStr) > 500 {
+					return fmt.Errorf("第%d个公告链接长度不能超过500字符", i+1)
+				}
+				if err := checkDangerousContent(linkStr, i+1, "公告链接"); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }

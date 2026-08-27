@@ -6,7 +6,10 @@ import { SiteConfigProvider } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
 import { localeLanguageTag, type Locale } from "@/lib/locales";
 import { SITE_ORIGIN, consoleUrl } from "@/lib/origins";
-import type { PublicSiteSettings } from "@/lib/public-site-settings";
+import type {
+  PublicAnnouncement,
+  PublicSiteSettings,
+} from "@/lib/public-site-settings";
 
 const GTM_IDS = ["GTM-NKH9LPX9", "GTM-5T5LPLSZ"] as const;
 
@@ -133,6 +136,7 @@ type RootDocumentProps = {
   bodyStart?: ReactNode;
   children: ReactNode;
   docsUrl: string | null;
+  announcements?: PublicAnnouncement[];
   hasConsoleSessionHint: boolean;
   googleOneTap: PublicSiteSettings["googleOneTap"];
   lang: Locale;
@@ -142,6 +146,7 @@ export function RootDocument({
   bodyStart,
   children,
   docsUrl,
+  announcements,
   hasConsoleSessionHint,
   googleOneTap,
   lang,
@@ -210,7 +215,9 @@ export function RootDocument({
             googleOneTapSearch.toString(),
           )}
         />
-        <SiteConfigProvider docsUrl={docsUrl}>{children}</SiteConfigProvider>
+        <SiteConfigProvider docsUrl={docsUrl} announcements={announcements}>
+          {children}
+        </SiteConfigProvider>
         <Script
           id="solvea-livechat-bootstrap"
           strategy={ROOT_DOCUMENT_PERFORMANCE_POLICY.livechatStrategy}
