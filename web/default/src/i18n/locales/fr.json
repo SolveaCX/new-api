@@ -6856,6 +6856,20 @@
     "Field name is required": "Field name is required",
     "Field already exists": "Field already exists",
     "Model already exists": "Model already exists",
-    "Remove model confirmation": "Remove this model from the cost calculation table?"
+    "Remove model confirmation": "Remove this model from the cost calculation table?",
+    "Conversations": "Conversations",
+    "New": "Nouveau",
+    "Conversation renamed": "Conversation renommée",
+    "Conversations deleted": "Conversations supprimées",
+    "Failed to rename conversation": "Échec du changement de nom",
+    "Failed to delete conversations": "Échec de la suppression",
+    "Failed to load Playground conversation": "Échec du chargement de la conversation Playground",
+    "Failed to load Playground conversations": "Échec du chargement des conversations Playground",
+    "Delete selected conversations?": "Supprimer les conversations sélectionnées ?",
+    "Delete selected conversations": "Supprimer les conversations sélectionnées",
+    "Select conversation": "Sélectionner la conversation",
+    "Loading conversations...": "Chargement des conversations...",
+    "No conversations yet": "Aucune conversation",
+    "Delete this conversation?": "Supprimer cette conversation ?"
   }
 }

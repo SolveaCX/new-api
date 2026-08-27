@@ -36,8 +36,9 @@ import {
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { useCanUseGroups } from '@/hooks/use-enterprise'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { getUserModels, getUserGroups } from './api'
+import { getPlaygroundConversation, getUserModels, getUserGroups } from './api'
 import { PlaygroundChat } from './components/playground-chat'
+import { PlaygroundConversationList } from './components/playground-conversation-list'
 import { FirstRunWelcome, GetKeyCard } from './components/playground-first-run'
 import { PlaygroundInput } from './components/playground-input'
 import {
@@ -54,6 +55,7 @@ import {
 import {
   createUserMessage,
   createLoadingAssistantMessage,
+  createPlaygroundId,
   getFirstRunChatOverride as resolveFirstRunChatOverride,
   isPlaygroundChatModelName,
   isSupportedPlaygroundModelName,
@@ -775,8 +777,62 @@ export function Playground({
     updateMessages(newMessages)
   }
 
+  const handleNewConversation = useCallback(() => {
+    if (isGenerating || isRestoring) return
+    const nextConversationId = createPlaygroundId()
+    markCurrentConversationLocalOnly(nextConversationId)
+    updateMessages([])
+    setConversationId(nextConversationId)
+  }, [
+    isGenerating,
+    isRestoring,
+    markCurrentConversationLocalOnly,
+    setConversationId,
+    updateMessages,
+  ])
+
+  const handleSelectConversation = useCallback(
+    async (conversation: { conversation_id: string }) => {
+      if (
+        isGenerating ||
+        isRestoring ||
+        conversation.conversation_id === conversationId
+      )
+        return
+      try {
+        const snapshot = await getPlaygroundConversation(
+          conversation.conversation_id
+        )
+        if (!snapshot) return
+        updateMessages(snapshot.messages)
+        setConversationId(snapshot.conversation_id)
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Failed to load Playground conversation')
+        )
+      }
+    },
+    [
+      conversationId,
+      isGenerating,
+      isRestoring,
+      setConversationId,
+      updateMessages,
+    ]
+  )
+
   return (
-    <div className='relative flex size-full flex-col overflow-hidden'>
+    <div className='relative flex size-full overflow-hidden'>
+      <PlaygroundConversationList
+        currentConversationId={conversationId}
+        disabled={isGenerating || isRestoring}
+        refreshKey={messages.length}
+        onNew={handleNewConversation}
+        onSelect={handleSelectConversation}
+      />
+      <div className='relative flex min-w-0 flex-1 flex-col overflow-hidden'>
       {/* Welcome banner + example prompts — shown on an empty Playground for
           every user (new users get the first-run banner, returning users get a
           neutral "try one of these" header with the same one-click prompts). */}
@@ -842,6 +898,7 @@ export function Playground({
           onStop={stopGeneration}
           onSubmit={handleSendMessage}
         />
+      </div>
       </div>
     </div>
   )

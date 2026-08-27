@@ -43,6 +43,9 @@ export const API_ENDPOINTS = {
   PLAYGROUND_RECORDS: '/api/playground/records',
   PLAYGROUND_RECORDS_CURRENT: '/api/playground/records/current',
   PLAYGROUND_RECORDS_CLEAR: '/api/playground/records/clear',
+  PLAYGROUND_CONVERSATION: (conversationId: string) =>
+    `/api/playground/records/${encodeURIComponent(conversationId)}`,
+  PLAYGROUND_CONVERSATION_DELETE: '/api/playground/records/delete',
 } as const
 
 // Poll the video task status roughly every 6s while it generates (veo-fast is

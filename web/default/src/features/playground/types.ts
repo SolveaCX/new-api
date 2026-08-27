@@ -184,6 +184,15 @@ export interface ParameterEnabled {
   seed: boolean
 }
 
+export interface PlaygroundConversationSummary {
+  conversation_id: string
+  name: string
+  preview: string
+  updated_at: string
+  created_at: string
+  is_current: boolean
+}
+
 export type PlaygroundRecordStatus = 'complete' | 'error' | 'stopped'
 
 export interface PlaygroundRecordPayload {

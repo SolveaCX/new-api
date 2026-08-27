@@ -6856,6 +6856,20 @@
     "Field name is required": "Field name is required",
     "Field already exists": "Field already exists",
     "Model already exists": "Model already exists",
-    "Remove model confirmation": "Remove this model from the cost calculation table?"
+    "Remove model confirmation": "Remove this model from the cost calculation table?",
+    "Conversations": "Cuộc trò chuyện",
+    "New": "Mới",
+    "Conversation renamed": "Đã đổi tên cuộc trò chuyện",
+    "Conversations deleted": "Đã xóa các cuộc trò chuyện",
+    "Failed to rename conversation": "Không thể đổi tên cuộc trò chuyện",
+    "Failed to delete conversations": "Không thể xóa các cuộc trò chuyện",
+    "Failed to load Playground conversation": "Không thể tải cuộc trò chuyện Playground",
+    "Failed to load Playground conversations": "Không thể tải các cuộc trò chuyện Playground",
+    "Delete selected conversations?": "Xóa các cuộc trò chuyện đã chọn?",
+    "Delete selected conversations": "Xóa các cuộc trò chuyện đã chọn",
+    "Select conversation": "Chọn cuộc trò chuyện",
+    "Loading conversations...": "Đang tải cuộc trò chuyện...",
+    "No conversations yet": "Chưa có cuộc trò chuyện nào",
+    "Delete this conversation?": "Xóa cuộc trò chuyện này?"
   }
 }

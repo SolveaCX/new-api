@@ -140,6 +140,10 @@ func SetApiRouter(router *gin.Engine) {
 			playgroundRecordRoute.POST("", controller.SavePlaygroundRecord)
 			playgroundRecordRoute.GET("/current", controller.GetCurrentPlaygroundRecord)
 			playgroundRecordRoute.POST("/clear", controller.ClearPlaygroundRecord)
+			playgroundRecordRoute.GET("", controller.ListPlaygroundConversations)
+			playgroundRecordRoute.POST("/delete", controller.DeletePlaygroundConversations)
+			playgroundRecordRoute.GET("/:conversation_id", controller.GetPlaygroundConversation)
+			playgroundRecordRoute.PATCH("/:conversation_id", controller.RenamePlaygroundConversation)
 		}
 
 		userRoute := apiRouter.Group("/user")

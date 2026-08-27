@@ -6869,6 +6869,20 @@
     "Field name is required": "字段名不能为空",
     "Field already exists": "字段已存在",
     "Model already exists": "模型已存在",
-    "Remove model confirmation": "确定从成本核算表中删除这个模型吗？"
+    "Remove model confirmation": "确定从成本核算表中删除这个模型吗？",
+    "Conversations": "会话",
+    "New": "新建",
+    "Conversation renamed": "会话已重命名",
+    "Conversations deleted": "会话已删除",
+    "Failed to rename conversation": "会话重命名失败",
+    "Failed to delete conversations": "会话删除失败",
+    "Failed to load Playground conversation": "加载 Playground 会话失败",
+    "Failed to load Playground conversations": "加载 Playground 会话列表失败",
+    "Delete selected conversations?": "删除选中的会话？",
+    "Delete selected conversations": "删除选中的会话",
+    "Select conversation": "选择会话",
+    "Loading conversations...": "正在加载会话...",
+    "No conversations yet": "暂无会话",
+    "Delete this conversation?": "删除此会话？"
   }
 }
