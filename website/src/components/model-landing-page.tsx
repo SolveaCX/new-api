@@ -1653,7 +1653,11 @@ function MediaUploadField(props: {
                     {props.kind === "video" ? (
                       <video src={upload.previewUrl} muted loop autoPlay playsInline />
                     ) : props.kind === "image" ? (
-                      <Image src={upload.previewUrl} alt="" fill sizes="44px" className="object-cover" unoptimized />
+                      // Blob URLs are client-local preview sources. A native
+                      // image element renders them immediately without going
+                      // through Next's remote image loader.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={upload.previewUrl} alt="" className="object-cover" />
                     ) : (
                       <Music2 aria-hidden="true" className="size-4" />
                     )}
