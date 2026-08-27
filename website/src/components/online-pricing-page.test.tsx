@@ -115,13 +115,11 @@ describe("OnlinePricingPage", () => {
         locale: "pt",
         prices: ["R$ 49,90", "R$ 149,90", "R$ 499"],
         cta: "Assine Pro por R$ 149,90/mês e entre",
-        retainedUsdCopy: "Até $45 de uso de modelos / mês",
       },
       {
         locale: "ja",
         prices: ["¥1,500", "¥4,500", "¥15,000"],
         cta: "Pro を ¥4,500/月で登録してログイン",
-        retainedUsdCopy: "月あたり最大 $45 のモデル利用",
       },
     ] as const;
 
@@ -131,7 +129,9 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(`<b>${price}</b>`);
       }
       expect(html).toContain(item.cta);
-      expect(html).toContain(item.retainedUsdCopy);
+      expect(html).toContain('<del class="toldprice">$45</del>');
+      expect(html).toContain('<del class="toldprice">$90</del>');
+      expect(html).toContain('<del class="toldprice">$300</del>');
       if (item.locale === "pt") expect(html).not.toContain("<b>R$ 499,90</b>");
       expect(html).not.toContain("<b>$10</b>");
       expect(html).not.toContain("<b>$30</b>");

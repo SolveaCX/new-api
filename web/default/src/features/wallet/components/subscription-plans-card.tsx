@@ -21,8 +21,8 @@ import { Crown, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
-import { cn } from '@/lib/utils'
 import { getCurrencyDisplay } from '@/lib/currency'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -872,8 +872,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const currency =
                 discountPreview?.currency || configuredDisplayPrice.currency
               const originalPrice = formatPlanPrice(
-                discountPreview?.originalTotal ??
-                  configuredDisplayPrice.amount,
+                discountPreview?.originalTotal ?? configuredDisplayPrice.amount,
                 currency
               )
               const displayPrice = discountPreview
