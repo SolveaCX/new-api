@@ -36,7 +36,7 @@ import {
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { useCanUseGroups } from '@/hooks/use-enterprise'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { getUserModels, getUserGroups } from './api'
+import { getPlaygroundConversation, getUserModels, getUserGroups } from './api'
 import { PlaygroundChat } from './components/playground-chat'
 import { PlaygroundConversationList } from './components/playground-conversation-list'
 import { FirstRunWelcome, GetKeyCard } from './components/playground-first-run'
@@ -800,6 +800,38 @@ export function Playground({
     }
   }, [conversationId, messages])
 
+  const handleSelectConversation = useCallback(
+    async (conversation: { conversation_id: string }) => {
+      if (
+        isGenerating ||
+        isRestoring ||
+        conversation.conversation_id === conversationId
+      )
+        return
+      try {
+        const snapshot = await getPlaygroundConversation(
+          conversation.conversation_id
+        )
+        if (!snapshot) return
+        updateMessages(snapshot.messages)
+        setConversationId(snapshot.conversation_id)
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : i18next.t('Failed to load Playground conversation')
+        )
+      }
+    },
+    [
+      conversationId,
+      isGenerating,
+      isRestoring,
+      setConversationId,
+      updateMessages,
+    ]
+  )
+
   return (
     <div className='relative flex size-full overflow-hidden'>
       <PlaygroundConversationList
@@ -808,6 +840,7 @@ export function Playground({
         draftConversation={draftConversation}
         refreshKey={messages.length}
         onNew={handleNewConversation}
+        onSelect={handleSelectConversation}
       />
       <div className='relative flex min-w-0 flex-1 flex-col overflow-hidden'>
         {/* Welcome banner + example prompts — shown on an empty Playground for
