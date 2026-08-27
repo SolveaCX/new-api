@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
-import type { ComponentType } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import {
   Claude,
   DeepSeek,

@@ -56,19 +56,20 @@ import {
   parseThinkTags,
   splitGeneratedImageMarkdown,
 } from '../lib/message-utils'
-import type {
-  Message as MessageType,
-  PlaygroundAttachment,
-} from '../types'
+import type { Message as MessageType, PlaygroundAttachment } from '../types'
 import { MessageActions } from './message-actions'
 import { MessageError } from './message-error'
 
-function sanitizeAttachmentImageUrl(url: string | undefined): string | undefined {
+function sanitizeAttachmentImageUrl(
+  url: string | undefined
+): string | undefined {
   const safeUrl = sanitizeGeneratedMediaUrl(url)
   return safeUrl?.startsWith('data:image/') ? safeUrl : undefined
 }
 
-function sanitizeAttachmentVideoUrl(url: string | undefined): string | undefined {
+function sanitizeAttachmentVideoUrl(
+  url: string | undefined
+): string | undefined {
   if (typeof url !== 'string') return undefined
   const trimmedUrl = url.trim()
   if (/^data:video\/mp4;base64,[a-z0-9+/\r\n]+={0,2}$/i.test(trimmedUrl)) {
@@ -219,23 +220,23 @@ export function PlaygroundChat({
                               const attachmentPreviews: Array<{
                                 attachment: PlaygroundAttachment
                                 url?: string
-                              }> = (
-                                version.attachments ?? []
-                              ).flatMap((attachment) => {
-                                if (attachment.kind === 'image') {
-                                  const url = sanitizeAttachmentImageUrl(
-                                    attachment.url
-                                  )
-                                  return url ? [{ attachment, url }] : []
+                              }> = (version.attachments ?? []).flatMap(
+                                (attachment) => {
+                                  if (attachment.kind === 'image') {
+                                    const url = sanitizeAttachmentImageUrl(
+                                      attachment.url
+                                    )
+                                    return url ? [{ attachment, url }] : []
+                                  }
+                                  if (attachment.kind === 'video') {
+                                    const url = sanitizeAttachmentVideoUrl(
+                                      attachment.url
+                                    )
+                                    return url ? [{ attachment, url }] : []
+                                  }
+                                  return [{ attachment }]
                                 }
-                                if (attachment.kind === 'video') {
-                                  const url = sanitizeAttachmentVideoUrl(
-                                    attachment.url
-                                  )
-                                  return url ? [{ attachment, url }] : []
-                                }
-                                return [{ attachment }]
-                              })
+                              )
                               const mediaAttachmentPreviews =
                                 attachmentPreviews.filter(
                                   ({ attachment }) =>
@@ -448,7 +449,9 @@ export function PlaygroundChat({
                                                       <span
                                                         className='border-border bg-muted/50 text-muted-foreground inline-flex max-w-full items-center rounded-md border px-2 py-1 text-xs font-medium'
                                                         key={`${message.key}-${version.id}-${attachment.filename}`}
-                                                        title={attachment.filename}
+                                                        title={
+                                                          attachment.filename
+                                                        }
                                                       >
                                                         {attachment.filename}
                                                       </span>
@@ -456,77 +459,77 @@ export function PlaygroundChat({
                                                   )}
                                                 </div>
                                               )}
-                                            {!!generatedMedia.length && (
-                                              <div className='-my-1 grid gap-3 sm:grid-cols-2'>
-                                                {generatedMedia.map(
-                                                  (media, mediaIndex) => {
-                                                    if (
-                                                      media.type === 'video'
-                                                    ) {
+                                              {!!generatedMedia.length && (
+                                                <div className='-my-1 grid gap-3 sm:grid-cols-2'>
+                                                  {generatedMedia.map(
+                                                    (media, mediaIndex) => {
+                                                      if (
+                                                        media.type === 'video'
+                                                      ) {
+                                                        return (
+                                                          <video
+                                                            className='bg-muted max-h-[32rem] w-full rounded-xl object-contain'
+                                                            controls
+                                                            key={`${message.key}-video-${mediaIndex}`}
+                                                            preload='metadata'
+                                                            src={media.url}
+                                                          >
+                                                            {t(
+                                                              'Your browser does not support video playback.'
+                                                            )}
+                                                          </video>
+                                                        )
+                                                      }
                                                       return (
-                                                        <video
-                                                          className='bg-muted max-h-[32rem] w-full rounded-xl object-contain'
-                                                          controls
-                                                          key={`${message.key}-video-${mediaIndex}`}
-                                                          preload='metadata'
-                                                          src={media.url}
-                                                        >
-                                                          {t(
-                                                            'Your browser does not support video playback.'
+                                                        <img
+                                                          alt={t(
+                                                            'Generated image'
                                                           )}
-                                                        </video>
+                                                          className='bg-muted max-h-[32rem] w-full rounded-xl object-contain'
+                                                          key={`${message.key}-image-${mediaIndex}`}
+                                                          loading='lazy'
+                                                          src={media.url}
+                                                        />
                                                       )
                                                     }
-                                                    return (
-                                                      <img
-                                                        alt={t(
-                                                          'Generated image'
-                                                        )}
-                                                        className='bg-muted max-h-[32rem] w-full rounded-xl object-contain'
-                                                        key={`${message.key}-image-${mediaIndex}`}
-                                                        loading='lazy'
-                                                        src={media.url}
-                                                      />
-                                                    )
-                                                  }
-                                                )}
-                                              </div>
-                                            )}
-                                            {generatedImageContent.text && (
-                                              <Response>
-                                                {generatedImageContent.text}
-                                              </Response>
-                                            )}
-                                            {generatedImageContent.images.map(
-                                              (image, imageIndex) => (
-                                                <div
-                                                  className='-my-1'
-                                                  key={`${message.key}-${version.id}-generated-image-${imageIndex}`}
-                                                >
-                                                  <img
-                                                    alt={
-                                                      image.alt ||
-                                                      t('Generated image')
-                                                    }
-                                                    className='h-auto max-w-full rounded-lg'
-                                                    decoding='async'
-                                                    src={image.src}
-                                                  />
+                                                  )}
                                                 </div>
-                                              )
-                                            )}
-                                            {generatedImageContent.hasPendingImage && (
-                                              <div className='flex items-center gap-2 py-2'>
-                                                <Loader />
-                                                <Shimmer
-                                                  className='text-sm'
-                                                  duration={1}
-                                                >
-                                                  {t('Responding...')}
-                                                </Shimmer>
-                                              </div>
-                                            )}
-                                          </div>
+                                              )}
+                                              {generatedImageContent.text && (
+                                                <Response>
+                                                  {generatedImageContent.text}
+                                                </Response>
+                                              )}
+                                              {generatedImageContent.images.map(
+                                                (image, imageIndex) => (
+                                                  <div
+                                                    className='-my-1'
+                                                    key={`${message.key}-${version.id}-generated-image-${imageIndex}`}
+                                                  >
+                                                    <img
+                                                      alt={
+                                                        image.alt ||
+                                                        t('Generated image')
+                                                      }
+                                                      className='h-auto max-w-full rounded-lg'
+                                                      decoding='async'
+                                                      src={image.src}
+                                                    />
+                                                  </div>
+                                                )
+                                              )}
+                                              {generatedImageContent.hasPendingImage && (
+                                                <div className='flex items-center gap-2 py-2'>
+                                                  <Loader />
+                                                  <Shimmer
+                                                    className='text-sm'
+                                                    duration={1}
+                                                  >
+                                                    {t('Responding...')}
+                                                  </Shimmer>
+                                                </div>
+                                              )}
+                                            </div>
                                           </MessageContent>
                                         )}
                                         {actions}
