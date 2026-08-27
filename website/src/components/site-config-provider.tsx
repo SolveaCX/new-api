@@ -5,10 +5,12 @@ import {
   defaultPromoBannerSettings,
   type PromoBannerSettings,
 } from "@/lib/promo-banner";
+import type { PublicAnnouncement } from "@/lib/public-site-settings";
 
 type SiteConfig = {
   docsUrl: string | null;
   promoBanner: PromoBannerSettings;
+  announcements?: PublicAnnouncement[];
 };
 
 const SiteConfigContext = createContext<SiteConfig>({
@@ -24,6 +26,7 @@ export function SiteConfigProvider(
       value={{
         docsUrl: props.docsUrl ?? null,
         promoBanner: props.promoBanner ?? defaultPromoBannerSettings(),
+        announcements: props.announcements,
       }}
     >
       {props.children}

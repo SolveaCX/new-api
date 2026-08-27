@@ -18,7 +18,19 @@ type StatusPayload = {
     official_website_banner_enabled?: unknown;
     official_website_banner_href?: unknown;
     official_website_banner_icon?: unknown;
+    announcements_enabled?: unknown;
+    announcements?: unknown;
   } | null;
+};
+
+export type PublicAnnouncement = {
+  id?: string | number;
+  content: string;
+  extra?: string;
+  icon?: string;
+  link?: string;
+  publishDate?: string;
+  type?: string;
 };
 
 export type PublicSiteSettings = {
@@ -28,6 +40,8 @@ export type PublicSiteSettings = {
     enabled: boolean;
   };
   promoBanner: PromoBannerSettings;
+  /** Undefined means the status endpoint was unavailable; an empty array means no ads are configured. */
+  announcements?: PublicAnnouncement[];
 };
 
 export function normalizeDocsUrl(value: unknown): string | null {
@@ -65,7 +79,9 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
     ) {
       return emptyPublicSiteSettings();
     }
-    const googleClientId = normalizeGoogleClientId(payload.data.google_client_id);
+    const googleClientId = normalizeGoogleClientId(
+      payload.data.google_client_id,
+    );
     return {
       docsUrl: normalizeDocsUrl(payload.data.docs_link),
       googleOneTap: {
@@ -73,6 +89,13 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
         enabled: payload.data.google_oauth === true && googleClientId !== null,
       },
       promoBanner: normalizePromoBannerSettings(payload.data),
+      announcements:
+        payload.data.announcements_enabled === true &&
+        Array.isArray(payload.data.announcements)
+          ? payload.data.announcements
+              .map(normalizeAnnouncement)
+              .filter((item): item is PublicAnnouncement => item !== null)
+          : [],
     };
   } catch {
     return emptyPublicSiteSettings();
@@ -93,5 +116,49 @@ function emptyPublicSiteSettings(): PublicSiteSettings {
       enabled: false,
     },
     promoBanner: defaultPromoBannerSettings(),
+    announcements: undefined,
   };
+}
+
+function normalizeAnnouncement(value: unknown): PublicAnnouncement | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const content = typeof item.content === "string" ? item.content.trim() : "";
+  if (!content) return null;
+
+  const link = normalizeAnnouncementLink(item.link ?? item.url);
+  const extra = typeof item.extra === "string" ? item.extra.trim() : "";
+  const icon = typeof item.icon === "string" ? item.icon.trim() : "";
+  const publishDate =
+    typeof item.publishDate === "string" ? item.publishDate : undefined;
+  const type = typeof item.type === "string" ? item.type : undefined;
+  const id =
+    typeof item.id === "string" || typeof item.id === "number"
+      ? item.id
+      : undefined;
+
+  return {
+    content,
+    ...(extra ? { extra } : {}),
+    ...(icon ? { icon } : {}),
+    ...(link ? { link } : {}),
+    ...(publishDate ? { publishDate } : {}),
+    ...(type ? { type } : {}),
+    ...(id !== undefined ? { id } : {}),
+  };
+}
+
+function normalizeAnnouncementLink(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
 }

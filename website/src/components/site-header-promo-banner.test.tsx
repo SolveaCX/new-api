@@ -210,4 +210,43 @@ describe("SiteHeader promo banner", () => {
 
     expect(html).not.toContain('aria-label="Dismiss website banner"');
   });
+
+  test("renders configured ads below navigation with carousel controls", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        announcements={[
+          {
+            id: 1,
+            content: "Seedance 2.5 is available",
+            extra: "Video models",
+            link: "/models/seedance-2-5",
+          },
+          { id: 2, content: "New model pricing", extra: "Pricing update" },
+        ]}
+      >
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).toContain("Seedance 2.5 is available");
+    expect(html).toContain("Video models");
+    expect(html).toContain('href="/models/seedance-2-5"');
+    expect(html).toContain('aria-label="Previous advertisement"');
+    expect(html).toContain('aria-label="Next advertisement"');
+    expect(html.indexOf("Product")).toBeLessThan(
+      html.indexOf("Seedance 2.5 is available"),
+    );
+  });
+
+  test("hides the banner when configured ads are empty", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider docsUrl={null} announcements={[]}>
+        <SiteHeader locale="en" pathname="/" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).not.toContain("DeepSeek V4 is here");
+    expect(html).not.toContain("Next advertisement");
+  });
 });
