@@ -17,10 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState } from 'react'
+import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Branch,
@@ -616,17 +622,29 @@ export function PlaygroundChat({
         open={!!previewImage}
       >
         <DialogContent
-          className='h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none border-0 bg-black/90 p-4 shadow-2xl sm:max-w-none'
-          showCloseButton
+          className='h-screen max-h-screen w-screen max-w-none rounded-none border-0 bg-black/75 p-0 shadow-none sm:max-w-none'
+          showCloseButton={false}
         >
           <DialogTitle className='sr-only'>
             {previewImage?.alt || t('Generated image')}
           </DialogTitle>
+          <DialogClose
+            aria-label={t('Close')}
+            render={
+              <Button
+                className='absolute top-4 right-4 z-10 size-10 rounded-full border border-white/20 bg-white/10 text-white shadow-lg backdrop-blur-sm hover:bg-white/20 hover:text-white'
+                size='icon'
+                variant='ghost'
+              />
+            }
+          >
+            <X aria-hidden='true' className='size-5' strokeWidth={2.25} />
+          </DialogClose>
           {previewImage && (
-            <div className='flex min-h-0 items-center justify-center'>
+            <div className='flex min-h-0 items-center justify-center p-6 sm:p-10'>
               <img
                 alt={previewImage.alt}
-                className='max-h-[calc(100vh-5rem)] max-w-full object-contain'
+                className='max-h-[calc(100vh-3rem)] max-w-[calc(100vw-3rem)] object-contain sm:max-h-[calc(100vh-5rem)] sm:max-w-[calc(100vw-5rem)]'
                 src={previewImage.src}
               />
             </div>

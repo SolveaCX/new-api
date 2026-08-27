@@ -6866,6 +6866,8 @@
     "Failed to load Playground conversation": "Falha ao carregar a conversa do Playground",
     "Failed to load Playground conversations": "Falha ao carregar as conversas do Playground",
     "Delete selected conversations?": "Excluir as conversas selecionadas?",
+    "Batch operations": "Operações em lote",
+    "Deselect all": "Desmarcar tudo",
     "Delete selected conversations": "Excluir conversas selecionadas",
     "Select conversation": "Selecionar conversa",
     "Loading conversations...": "Carregando conversas...",

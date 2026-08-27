@@ -6866,6 +6866,8 @@
     "Failed to load Playground conversation": "Không thể tải cuộc trò chuyện Playground",
     "Failed to load Playground conversations": "Không thể tải các cuộc trò chuyện Playground",
     "Delete selected conversations?": "Xóa các cuộc trò chuyện đã chọn?",
+    "Batch operations": "Thao tác hàng loạt",
+    "Deselect all": "Bỏ chọn tất cả",
     "Delete selected conversations": "Xóa các cuộc trò chuyện đã chọn",
     "Select conversation": "Chọn cuộc trò chuyện",
     "Loading conversations...": "Đang tải cuộc trò chuyện...",

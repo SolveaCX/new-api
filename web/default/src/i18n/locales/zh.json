@@ -6879,6 +6879,8 @@
     "Failed to load Playground conversation": "加载 Playground 会话失败",
     "Failed to load Playground conversations": "加载 Playground 会话列表失败",
     "Delete selected conversations?": "删除选中的会话？",
+    "Batch operations": "批量操作",
+    "Deselect all": "取消全选",
     "Delete selected conversations": "删除选中的会话",
     "Select conversation": "选择会话",
     "Loading conversations...": "正在加载会话...",

@@ -126,7 +126,7 @@ const suggestions: Array<{
 ]
 
 const PLAYGROUND_CONTROL_CLASS_NAME =
-  'border-border bg-white text-slate-900 hover:bg-violet-50 hover:text-slate-950 dark:border-violet-300/25 dark:bg-violet-900/35 dark:text-violet-50 dark:hover:bg-violet-800/55 dark:hover:text-white'
+  'border-border bg-white text-slate-900 hover:bg-muted hover:text-foreground dark:bg-card dark:text-foreground dark:hover:bg-muted dark:hover:text-foreground'
 
 function PlaygroundAttachmentPreviews() {
   const attachments = usePromptInputAttachments()
@@ -293,8 +293,8 @@ export function PlaygroundInput({
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PromptInput
         accept={attachmentConfig.accept}
-        className='rounded-xl bg-white dark:bg-violet-950/45'
-        groupClassName='rounded-xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 dark:bg-violet-950/45 dark:text-violet-50 dark:has-disabled:!bg-violet-950/45 overflow-hidden'
+        className='dark:bg-card rounded-xl bg-white'
+        groupClassName='rounded-xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 dark:bg-card dark:text-foreground dark:has-disabled:!bg-card overflow-hidden'
         maxFileSize={10 * 1024 * 1024}
         maxFiles={5}
         multiple
@@ -309,7 +309,7 @@ export function PlaygroundInput({
           autoCorrect='off'
           autoCapitalize='off'
           spellCheck={false}
-          className='px-5 text-slate-900 md:text-base dark:text-violet-50'
+          className='dark:text-foreground px-5 text-slate-900 md:text-base'
           disabled={disabled}
           onChange={(event) => setText(event.target.value)}
           placeholder={t('Ask anything')}

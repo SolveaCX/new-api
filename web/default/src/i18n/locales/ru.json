@@ -6866,6 +6866,8 @@
     "Failed to load Playground conversation": "Не удалось загрузить диалог Playground",
     "Failed to load Playground conversations": "Не удалось загрузить диалоги Playground",
     "Delete selected conversations?": "Удалить выбранные диалоги?",
+    "Batch operations": "Пакетные операции",
+    "Deselect all": "Снять выделение со всех",
     "Delete selected conversations": "Удалить выбранные диалоги",
     "Select conversation": "Выбрать диалог",
     "Loading conversations...": "Загрузка диалогов...",

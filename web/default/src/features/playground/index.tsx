@@ -842,7 +842,7 @@ export function Playground({
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
       />
-      <div className='relative flex min-w-0 flex-1 flex-col overflow-hidden'>
+      <div className='playground-chat-surface bg-background relative flex min-w-0 flex-1 flex-col overflow-hidden'>
         {/* Welcome banner + example prompts — shown on an empty Playground for
           every user (new users get the first-run banner, returning users get a
           neutral "try one of these" header with the same one-click prompts). */}

@@ -6879,6 +6879,8 @@
     "Failed to load Playground conversation": "Failed to load Playground conversation",
     "Failed to load Playground conversations": "Failed to load Playground conversations",
     "Delete selected conversations?": "Delete selected conversations?",
+    "Batch operations": "Batch operations",
+    "Deselect all": "Deselect all",
     "Delete selected conversations": "Delete selected conversations",
     "Select conversation": "Select conversation",
     "Loading conversations...": "Loading conversations...",
