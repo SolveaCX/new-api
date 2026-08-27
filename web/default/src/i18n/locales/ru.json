@@ -6870,6 +6870,9 @@
     "Select conversation": "Выбрать диалог",
     "Loading conversations...": "Загрузка диалогов...",
     "No conversations yet": "Диалогов пока нет",
-    "Delete this conversation?": "Удалить этот диалог?"
+    "Delete this conversation?": "Удалить этот диалог?",
+    "Collapse conversations": "Свернуть диалоги",
+    "Expand conversations": "Развернуть диалоги",
+    "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить."
   }
 }

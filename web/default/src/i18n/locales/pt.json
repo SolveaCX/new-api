@@ -6870,6 +6870,9 @@
     "Select conversation": "Selecionar conversa",
     "Loading conversations...": "Carregando conversas...",
     "No conversations yet": "Nenhuma conversa ainda",
-    "Delete this conversation?": "Excluir esta conversa?"
+    "Delete this conversation?": "Excluir esta conversa?",
+    "Collapse conversations": "Recolher conversas",
+    "Expand conversations": "Expandir conversas",
+    "Deleted conversations cannot be recovered.": "As conversas excluídas não podem ser recuperadas."
   }
 }

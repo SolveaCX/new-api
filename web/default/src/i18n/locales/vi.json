@@ -6870,6 +6870,9 @@
     "Select conversation": "Chọn cuộc trò chuyện",
     "Loading conversations...": "Đang tải cuộc trò chuyện...",
     "No conversations yet": "Chưa có cuộc trò chuyện nào",
-    "Delete this conversation?": "Xóa cuộc trò chuyện này?"
+    "Delete this conversation?": "Xóa cuộc trò chuyện này?",
+    "Collapse conversations": "Thu gọn cuộc trò chuyện",
+    "Expand conversations": "Mở rộng cuộc trò chuyện",
+    "Deleted conversations cannot be recovered.": "Không thể khôi phục các cuộc trò chuyện đã xóa."
   }
 }

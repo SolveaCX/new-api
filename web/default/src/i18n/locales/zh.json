@@ -6883,6 +6883,9 @@
     "Select conversation": "选择会话",
     "Loading conversations...": "正在加载会话...",
     "No conversations yet": "暂无会话",
-    "Delete this conversation?": "删除此会话？"
+    "Delete this conversation?": "删除此会话？",
+    "Collapse conversations": "收起会话列表",
+    "Expand conversations": "展开会话列表",
+    "Deleted conversations cannot be recovered.": "删除后无法恢复。"
   }
 }

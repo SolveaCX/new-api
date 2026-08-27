@@ -73,10 +73,7 @@ import {
   type MediaParameterKey,
   type MediaParameterValue,
 } from './lib'
-import type {
-  Message as MessageType,
-  PlaygroundAttachment,
-} from './types'
+import type { Message as MessageType, PlaygroundAttachment } from './types'
 
 // PLG users are always pinned to the single `plg` group.
 const PLG_GROUP = 'plg'
@@ -648,9 +645,7 @@ export function Playground({
       const modelOverride = model
       const targetModel = modelOverride || config.model
       if (attachments.length && resolveMediaGenerationProfile(targetModel)) {
-        toast.error(
-          i18next.t('Attachments are supported only for chat models')
-        )
+        toast.error(i18next.t('Attachments are supported only for chat models'))
         return
       }
       if (!prepareSend(targetModel)) return
@@ -707,9 +702,7 @@ export function Playground({
     const chatOverride = getFirstRunChatOverride()
     const targetModel = chatOverride?.model ?? config.model
     if (hasAttachments && resolveMediaGenerationProfile(targetModel)) {
-      toast.error(
-        i18next.t('Attachments are supported only for chat models')
-      )
+      toast.error(i18next.t('Attachments are supported only for chat models'))
       return
     }
     if (!prepareSend(targetModel)) return
@@ -823,82 +816,99 @@ export function Playground({
     ]
   )
 
+  const draftConversation = useMemo(() => {
+    const firstUserMessage = messages.find(
+      (message) => message.from === MESSAGE_ROLES.USER
+    )
+    const preview = firstUserMessage?.versions[0]?.content?.trim() ?? ''
+    if (!preview || !conversationId) return null
+    return {
+      conversation_id: conversationId,
+      name: preview.slice(0, 120),
+      preview,
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      is_current: true,
+    }
+  }, [conversationId, messages])
+
   return (
     <div className='relative flex size-full overflow-hidden'>
       <PlaygroundConversationList
         currentConversationId={conversationId}
         disabled={isGenerating || isRestoring}
+        draftConversation={draftConversation}
         refreshKey={messages.length}
         onNew={handleNewConversation}
         onSelect={handleSelectConversation}
       />
       <div className='relative flex min-w-0 flex-1 flex-col overflow-hidden'>
-      {/* Welcome banner + example prompts — shown on an empty Playground for
+        {/* Welcome banner + example prompts — shown on an empty Playground for
           every user (new users get the first-run banner, returning users get a
           neutral "try one of these" header with the same one-click prompts). */}
-      {messages.length === 0 && (
-        <FirstRunWelcome
-          firstRun={firstRun}
-          models={handoff.models}
-          ptFirstCallSecondsRemaining={
-            isPtFirstCallExperiment ? ptFirstCallSecondsRemaining : undefined
-          }
-          disabled={!isFirstRunModelReady || isRestoring}
-          onPickExample={handleSendMessage}
-        />
-      )}
-      {/* Full-width scroll container: scrolling works even over side whitespace */}
-      <div className='flex flex-1 flex-col overflow-hidden'>
-        <PlaygroundChat
-          messages={messages}
-          onCopyMessage={handleCopyMessage}
-          onRegenerateMessage={handleRegenerateMessage}
-          onEditMessage={handleEditMessage}
-          onDeleteMessage={handleDeleteMessage}
-          isGenerating={isGenerating || isRestoring}
-          editingKey={editingMessageKey}
-          onCancelEdit={handleEditOpenChange}
-          onSaveEdit={(newContent) => applyEdit(newContent, false)}
-          onSaveEditAndSubmit={(newContent) => applyEdit(newContent, true)}
-        />
-      </div>
+        {messages.length === 0 && (
+          <FirstRunWelcome
+            firstRun={firstRun}
+            models={handoff.models}
+            ptFirstCallSecondsRemaining={
+              isPtFirstCallExperiment ? ptFirstCallSecondsRemaining : undefined
+            }
+            disabled={!isFirstRunModelReady || isRestoring}
+            onPickExample={handleSendMessage}
+          />
+        )}
+        {/* Full-width scroll container: scrolling works even over side whitespace */}
+        <div className='flex flex-1 flex-col overflow-hidden'>
+          <PlaygroundChat
+            messages={messages}
+            onCopyMessage={handleCopyMessage}
+            onRegenerateMessage={handleRegenerateMessage}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            isGenerating={isGenerating || isRestoring}
+            editingKey={editingMessageKey}
+            onCancelEdit={handleEditOpenChange}
+            onSaveEdit={(newContent) => applyEdit(newContent, false)}
+            onSaveEditAndSubmit={(newContent) => applyEdit(newContent, true)}
+          />
+        </div>
 
-      {/* "Get your API key" card after the first successful response */}
-      {showGetKeyCard && (
-        <GetKeyCard onDismiss={() => setShowGetKeyCard(false)} />
-      )}
+        {/* "Get your API key" card after the first successful response */}
+        {showGetKeyCard && (
+          <GetKeyCard onDismiss={() => setShowGetKeyCard(false)} />
+        )}
 
-      {/* Input area: center content and constrain to the same container width */}
-      <div className='mx-auto w-full max-w-4xl'>
-        <PlaygroundInput
-          key={handoff.prompt || 'playground-input'}
-          disabled={isGenerating || isRestoring}
-          initialText={handoff.prompt}
-          submitDisabled={
-            !isCurrentModelValid || !isFirstRunModelReady || isRestoring
-          }
-          showGroupSelector={canUseGroups}
-          groups={groups}
-          groupValue={config.group}
-          isGenerating={isGenerating}
-          isModelLoading={isLoadingModels}
-          modelLocked={isHandoffModelLocked}
-          modelValue={config.model}
-          models={models}
-          mediaProfile={mediaProfile}
-          mediaSettings={mediaSettings}
-          onMediaParameterChange={handleMediaParameterChange}
-          onGroupChange={(value) => updateConfig('group', value)}
-          onModelChange={(value) => {
-            // Mark that the user explicitly chose a model so the first-run cheap
-            // default never overrides their choice.
-            setUserPickedModel(true)
-            updateConfig('model', value)
-          }}
-          onStop={stopGeneration}
-          onSubmit={handleSendMessage}
-        />
-      </div>
+        {/* Input area: center content and constrain to the same container width */}
+        <div className='mx-auto w-full max-w-4xl'>
+          <PlaygroundInput
+            key={handoff.prompt || 'playground-input'}
+            disabled={isGenerating || isRestoring}
+            initialText={handoff.prompt}
+            submitDisabled={
+              !isCurrentModelValid || !isFirstRunModelReady || isRestoring
+            }
+            showGroupSelector={canUseGroups}
+            groups={groups}
+            groupValue={config.group}
+            isGenerating={isGenerating}
+            isModelLoading={isLoadingModels}
+            modelLocked={isHandoffModelLocked}
+            modelValue={config.model}
+            models={models}
+            mediaProfile={mediaProfile}
+            mediaSettings={mediaSettings}
+            onMediaParameterChange={handleMediaParameterChange}
+            onGroupChange={(value) => updateConfig('group', value)}
+            onModelChange={(value) => {
+              // Mark that the user explicitly chose a model so the first-run cheap
+              // default never overrides their choice.
+              setUserPickedModel(true)
+              updateConfig('model', value)
+            }}
+            onStop={stopGeneration}
+            onSubmit={handleSendMessage}
+          />
+        </div>
       </div>
     </div>
   )
