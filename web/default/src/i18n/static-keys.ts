@@ -718,6 +718,8 @@ export const STATIC_I18N_KEYS = [
   'Attachment exceeds the maximum size',
   'Attachment is empty',
   'Attachments are supported only for chat models',
+  'This chat model does not support video attachments',
+  'Attachment preview unavailable',
   'Too many attachments',
   'Text attachment exceeds the maximum size',
   'Text attachment is not valid UTF-8',

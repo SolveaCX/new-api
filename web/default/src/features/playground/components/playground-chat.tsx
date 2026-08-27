@@ -226,13 +226,17 @@ export function PlaygroundChat({
                                     const url = sanitizeAttachmentImageUrl(
                                       attachment.url
                                     )
-                                    return url ? [{ attachment, url }] : []
+                                    return [
+                                      { attachment, ...(url ? { url } : {}) },
+                                    ]
                                   }
                                   if (attachment.kind === 'video') {
                                     const url = sanitizeAttachmentVideoUrl(
                                       attachment.url
                                     )
-                                    return url ? [{ attachment, url }] : []
+                                    return [
+                                      { attachment, ...(url ? { url } : {}) },
+                                    ]
                                   }
                                   return [{ attachment }]
                                 }
@@ -418,7 +422,25 @@ export function PlaygroundChat({
                                                       preload='metadata'
                                                       src={url}
                                                     />
-                                                  ) : null
+                                                  ) : (
+                                                    <div
+                                                      aria-label={t(
+                                                        'Attachment preview unavailable'
+                                                      )}
+                                                      className='border-border bg-muted/50 text-muted-foreground flex min-h-16 max-w-full items-center rounded-lg border px-3 py-2 text-xs'
+                                                      key={`${message.key}-${version.id}-${attachment.filename}`}
+                                                      title={
+                                                        attachment.filename
+                                                      }
+                                                    >
+                                                      <span className='truncate'>
+                                                        {attachment.filename} ·{' '}
+                                                        {t(
+                                                          'Attachment preview unavailable'
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                  )
                                               )}
                                             </div>
                                           </MessageContent>

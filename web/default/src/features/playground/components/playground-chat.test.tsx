@@ -34,6 +34,7 @@ beforeAll(async () => {
           Copy: 'Copy',
           Download: 'Download',
           'Generated image': 'Generated image',
+          'Attachment preview unavailable': 'Attachment preview unavailable',
         },
       },
     },
@@ -241,5 +242,39 @@ describe('PlaygroundChat', () => {
     expect(html.indexOf(imageSrc)).toBeLessThan(
       html.indexOf('Describe the media')
     )
+  })
+
+  test('keeps a durable media attachment visible when its preview cannot be refreshed', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'user-unavailable-video',
+              from: 'user',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Analyze this video',
+                  attachments: [
+                    {
+                      kind: 'video',
+                      filename: 'reference.mp4',
+                      mediaType: 'video/mp4',
+                      assetId: 'ast_video',
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('reference.mp4')
+    expect(html).toContain('Attachment preview unavailable')
+    expect(html).not.toContain('<video')
   })
 })
