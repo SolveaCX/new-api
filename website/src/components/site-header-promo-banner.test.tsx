@@ -54,11 +54,53 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("Seedance 2.5 is available");
     expect(html).toContain("Video models");
     expect(html).toContain('href="/models/seedance-2-5"');
-    expect(html).toContain('aria-label="Previous advertisement"');
-    expect(html).toContain('aria-label="Next advertisement"');
+    expect(html).not.toContain("Learn more →");
+    expect(html).toContain('data-promo-dots="true"');
+    expect(html).not.toContain('aria-label="Previous advertisement"');
+    expect(html).not.toContain('aria-label="Next advertisement"');
+    expect(html).not.toContain('data-promo-progress="true"');
+    expect(html).not.toMatch(/>\s*\d+\s*\/\s*\d+\s*</);
     expect(html.indexOf("Product")).toBeLessThan(
       html.indexOf("Seedance 2.5 is available"),
     );
+  });
+
+  test("renders localized intro, logo, content, and CTA in order", () => {
+    const html = renderToStaticMarkup(
+      <SiteConfigProvider
+        docsUrl={null}
+        announcements={[
+          {
+            id: 10,
+            content: "Legacy content",
+            content_i18n: { en: "English content", zh: "中文内容" },
+            extra: "Legacy intro",
+            intro_i18n: { en: "English intro", zh: "中文简介" },
+            link: "/pricing?source=announcement#plans",
+            link_label: "Legacy CTA",
+            link_label_i18n: { en: "View pricing", zh: "查看价格" },
+            logo: "/assets/logos/deepseek.svg",
+          },
+        ]}
+      >
+        <SiteHeader locale="zh" pathname="/zh" />
+      </SiteConfigProvider>,
+    );
+
+    expect(html).toContain("中文简介");
+    expect(html).toContain("中文内容");
+    expect(html).toContain("查看价格");
+    expect(html).toContain('data-promo-cta="true"');
+    expect(html).toContain('src="/assets/logos/deepseek.svg"');
+    expect(html).toContain('href="/zh/pricing?source=announcement#plans"');
+    expect(html.indexOf('data-promo-intro="true"')).toBeLessThan(
+      html.indexOf('data-promo-logo="true"'),
+    );
+    expect(html.indexOf('data-promo-logo="true"')).toBeLessThan(
+      html.indexOf("中文内容"),
+    );
+    expect(html).not.toContain("English content");
+    expect(html).not.toContain("View pricing");
   });
 
   test("hides the banner when the backend has no configured ads", () => {

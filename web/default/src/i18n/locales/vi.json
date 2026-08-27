@@ -6837,6 +6837,27 @@
     "Delete this conversation?": "Xóa cuộc trò chuyện này?",
     "Collapse conversations": "Thu gọn cuộc trò chuyện",
     "Expand conversations": "Mở rộng cuộc trò chuyện",
-    "Deleted conversations cannot be recovered.": "Không thể khôi phục các cuộc trò chuyện đã xóa."
+    "Deleted conversations cannot be recovered.": "Không thể khôi phục các cuộc trò chuyện đã xóa.",
+    "At least one language must have announcement content": "Hãy nhập nội dung thông báo bằng ít nhất một ngôn ngữ",
+    "Configure announcement copy for every language supported by the website": "Cấu hình nội dung thông báo cho mọi ngôn ngữ được website hỗ trợ",
+    "Enter content in the source language first": "Trước tiên hãy nhập nội dung bằng ngôn ngữ nguồn",
+    "Intro / summary (Optional)": "Giới thiệu / tóm tắt (Tùy chọn)",
+    "Intro must be less than 200 characters": "Phần giới thiệu phải dưới 200 ký tự",
+    "Link text": "Nội dung liên kết",
+    "Link text must be less than 100 characters": "Nội dung liên kết phải dưới 100 ký tự",
+    "Optional call-to-action text": "Nội dung kêu gọi hành động tùy chọn",
+    "This text is shown for the announcement link.": "Nội dung này được hiển thị trên liên kết thông báo.",
+    "Translate all languages": "Dịch tất cả ngôn ngữ",
+    "Translating...": "Đang dịch…",
+    "Translation completed": "Đã dịch xong",
+    "Translation failed": "Dịch thất bại",
+    "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.": "Chỉ nội dung thông báo và nội dung liên kết được dịch; phần giới thiệu, logo, URL, ngày và loại sẽ giữ nguyên.",
+    "Logo data is too large": "Dữ liệu logo quá lớn",
+    "Logo file must be 64 KB or smaller": "Tệp logo phải có kích thước từ 64 KB trở xuống",
+    "Logo must be a supported image file": "Logo phải là tệp hình ảnh được hỗ trợ",
+    "Use a site path such as /pricing or a full https:// URL.": "Dùng đường dẫn trang như /pricing hoặc URL https:// đầy đủ.",
+    "Optional logo shown before the announcement content (64 KB max).": "Logo tùy chọn hiển thị trước nội dung thông báo (tối đa 64 KB).",
+    "Choose a model logo": "Chọn logo mô hình",
+    "Custom upload": "Tải lên tùy chỉnh"
   }
 }

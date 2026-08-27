@@ -1,13 +1,15 @@
 package console_setting
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 var (
@@ -24,7 +26,7 @@ var (
 
 func parseJSONArray(jsonStr string, typeName string) ([]map[string]interface{}, error) {
 	var list []map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &list); err != nil {
+	if err := common.Unmarshal([]byte(jsonStr), &list); err != nil {
 		return nil, fmt.Errorf("%s格式错误：%s", typeName, err.Error())
 	}
 	return list, nil
@@ -55,7 +57,7 @@ func getJSONList(jsonStr string) []map[string]interface{} {
 		return []map[string]interface{}{}
 	}
 	var list []map[string]interface{}
-	json.Unmarshal([]byte(jsonStr), &list)
+	_ = common.Unmarshal([]byte(jsonStr), &list)
 	return list
 }
 
@@ -150,9 +152,38 @@ func validateAnnouncements(announcementsStr string) error {
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
 	for i, ann := range list {
-		content, ok := ann["content"].(string)
-		if !ok || content == "" {
-			return fmt.Errorf("第%d个公告缺少内容字段", i+1)
+		content, contentPresent, err := announcementStringField(ann, "content", i+1, "公告内容")
+		if err != nil {
+			return err
+		}
+		contentMapPresent, contentMapNonEmpty, err := validateAnnouncementLocalizedField(
+			ann,
+			"content_i18n",
+			announcementContentMaxRunes,
+			i+1,
+			"公告内容",
+		)
+		if err != nil {
+			return err
+		}
+		for _, field := range []string{"contentI18n", "contentByLocale"} {
+			aliasPresent, aliasNonEmpty, err := validateAnnouncementLocalizedField(
+				ann,
+				field,
+				announcementContentMaxRunes,
+				i+1,
+				"公告内容",
+			)
+			if err != nil {
+				return err
+			}
+			contentMapPresent = contentMapPresent || aliasPresent
+			contentMapNonEmpty = contentMapNonEmpty || aliasNonEmpty
+		}
+		if !contentPresent || strings.TrimSpace(content) == "" {
+			if !contentMapPresent || !contentMapNonEmpty {
+				return fmt.Errorf("第%d个公告缺少内容字段", i+1)
+			}
 		}
 		publishDateAny, exists := ann["publishDate"]
 		if !exists {
@@ -172,26 +203,100 @@ func validateAnnouncements(announcementsStr string) error {
 				}
 			}
 		}
-		if len(content) > 500 {
+		// Keep the legacy scalar limit for backwards compatibility. The
+		// localized field above uses a rune limit so CJK text is counted as
+		// users perceive it rather than by its UTF-8 byte length.
+		// The scalar is a compatibility fallback emitted alongside the
+		// localized map by the console. Once at least one localized copy is
+		// present, enforce the rune limit above and do not reject a UTF-8
+		// fallback merely because its byte length exceeds the old scalar limit.
+		if contentPresent && !contentMapNonEmpty && len(content) > announcementLegacyContentMaxBytes {
 			return fmt.Errorf("第%d个公告的内容长度不能超过500字符", i+1)
 		}
-		if extra, exists := ann["extra"]; exists {
-			if extraStr, ok := extra.(string); ok && len(extraStr) > 200 {
-				return fmt.Errorf("第%d个公告的说明长度不能超过200字符", i+1)
+
+		for _, field := range []string{
+			"intro_i18n",
+			"introI18n",
+			"summary_i18n",
+			"summaryI18n",
+			"extra_i18n",
+			"extraI18n",
+		} {
+			if _, _, err := validateAnnouncementLocalizedField(
+				ann,
+				field,
+				announcementIntroMaxRunes,
+				i+1,
+				"公告简介",
+			); err != nil {
+				return err
 			}
 		}
-		if link, exists := ann["link"]; exists {
-			if linkStr, ok := link.(string); ok && strings.TrimSpace(linkStr) != "" {
-				linkStr = strings.TrimSpace(linkStr)
-				if !strings.HasPrefix(linkStr, "/") || strings.HasPrefix(linkStr, "//") {
-					if err := validateURL(linkStr, i+1, "公告链接"); err != nil {
-						return err
-					}
+		for _, field := range []string{"intro", "extra", "summary"} {
+			value, present, err := announcementStringField(ann, field, i+1, "公告简介")
+			if err != nil {
+				return err
+			}
+			if present {
+				if utf8.RuneCountInString(strings.TrimSpace(value)) > announcementIntroMaxRunes {
+					return fmt.Errorf("第%d个公告的说明长度不能超过200字符", i+1)
 				}
-				if len(linkStr) > 500 {
-					return fmt.Errorf("第%d个公告链接长度不能超过500字符", i+1)
+				if err := checkDangerousContent(value, i+1, "公告简介"); err != nil {
+					return err
 				}
-				if err := checkDangerousContent(linkStr, i+1, "公告链接"); err != nil {
+			}
+		}
+
+		for _, field := range []string{
+			"link_label_i18n",
+			"linkLabelI18n",
+			"link_text_i18n",
+			"linkTextI18n",
+		} {
+			if _, _, err := validateAnnouncementLocalizedField(
+				ann,
+				field,
+				announcementLinkLabelMaxRunes,
+				i+1,
+				"公告链接文案",
+			); err != nil {
+				return err
+			}
+		}
+		for _, field := range []string{"link_label", "linkLabel", "link_text", "linkText"} {
+			value, present, err := announcementStringField(ann, field, i+1, "公告链接文案")
+			if err != nil {
+				return err
+			}
+			if present {
+				if utf8.RuneCountInString(strings.TrimSpace(value)) > announcementLinkLabelMaxRunes {
+					return fmt.Errorf("第%d个公告的链接文案长度不能超过100字符", i+1)
+				}
+				if err := checkDangerousContent(value, i+1, "公告链接文案"); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, field := range []string{"link", "href", "url"} {
+			link, present, err := announcementStringField(ann, field, i+1, "公告链接")
+			if err != nil {
+				return err
+			}
+			if present {
+				if err := validateAnnouncementLink(link, i+1); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, field := range []string{"logo", "icon", "logo_url", "icon_url"} {
+			logo, present, err := announcementStringField(ann, field, i+1, "公告 Logo")
+			if err != nil {
+				return err
+			}
+			if present {
+				if err := validateAnnouncementLogo(logo, i+1); err != nil {
 					return err
 				}
 			}

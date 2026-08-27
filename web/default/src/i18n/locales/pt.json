@@ -6837,6 +6837,27 @@
     "Delete this conversation?": "Excluir esta conversa?",
     "Collapse conversations": "Recolher conversas",
     "Expand conversations": "Expandir conversas",
-    "Deleted conversations cannot be recovered.": "As conversas excluídas não podem ser recuperadas."
+    "Deleted conversations cannot be recovered.": "As conversas excluídas não podem ser recuperadas.",
+    "At least one language must have announcement content": "Preencha o conteúdo do anúncio em pelo menos um idioma",
+    "Configure announcement copy for every language supported by the website": "Configure o texto do anúncio para todos os idiomas compatíveis com o site",
+    "Enter content in the source language first": "Digite primeiro o conteúdo no idioma de origem",
+    "Intro / summary (Optional)": "Introdução / resumo (opcional)",
+    "Intro must be less than 200 characters": "A introdução deve ter menos de 200 caracteres",
+    "Link text": "Texto do link",
+    "Link text must be less than 100 characters": "O texto do link deve ter menos de 100 caracteres",
+    "Optional call-to-action text": "Texto opcional de chamada para ação",
+    "This text is shown for the announcement link.": "Este texto é exibido no link do anúncio.",
+    "Translate all languages": "Traduzir todos os idiomas",
+    "Translating...": "Traduzindo...",
+    "Translation completed": "Tradução concluída",
+    "Translation failed": "Falha na tradução",
+    "Only announcement content and link text are translated; intro, logo, URL, date, and type stay unchanged.": "Somente o conteúdo do anúncio e o texto do link são traduzidos; a introdução, o logo, a URL, a data e o tipo permanecem inalterados.",
+    "Logo data is too large": "Os dados do logo são muito grandes",
+    "Logo file must be 64 KB or smaller": "O arquivo do logo deve ter no máximo 64 KB",
+    "Logo must be a supported image file": "O logo deve ser um arquivo de imagem compatível",
+    "Use a site path such as /pricing or a full https:// URL.": "Use um caminho do site, como /pricing, ou uma URL https:// completa.",
+    "Optional logo shown before the announcement content (64 KB max).": "Logo opcional exibido antes do conteúdo do anúncio (máximo de 64 KB).",
+    "Choose a model logo": "Escolher um logo de modelo",
+    "Custom upload": "Upload personalizado"
   }
 }
