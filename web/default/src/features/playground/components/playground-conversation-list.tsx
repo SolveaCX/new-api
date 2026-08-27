@@ -181,33 +181,31 @@ function PlaygroundConversationListContent(
     <>
       <aside
         className={cn(
-          'bg-sidebar text-sidebar-foreground border-sidebar-border relative flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
-          isCollapsed ? 'w-10' : 'w-52'
+          'bg-sidebar text-sidebar-foreground border-sidebar-border relative flex h-full shrink-0 flex-col overflow-visible transition-[width] duration-200',
+          isCollapsed ? 'w-0 border-r-0' : 'w-52 border-r'
         )}
       >
-        <div className='h-14 shrink-0'>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-sidebar-border bg-sidebar pointer-events-auto absolute top-3 right-0 z-20 size-8 translate-x-1/2 rounded-full border shadow-sm'
-            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
-            aria-expanded={!isCollapsed}
-            aria-label={
-              isCollapsed
-                ? t('Expand conversations')
-                : t('Collapse conversations')
-            }
-          >
-            {isCollapsed ? (
-              <ChevronRight aria-hidden='true' />
-            ) : (
-              <ChevronLeft aria-hidden='true' />
-            )}
-          </Button>
-        </div>
+        <Button
+          variant='ghost'
+          size='icon'
+          className='text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-sidebar-border bg-sidebar pointer-events-auto absolute top-3 left-full z-20 ml-3 size-8 rounded-full border shadow-sm'
+          onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+          aria-expanded={!isCollapsed}
+          aria-label={
+            isCollapsed
+              ? t('Expand conversations')
+              : t('Collapse conversations')
+          }
+        >
+          {isCollapsed ? (
+            <ChevronRight aria-hidden='true' />
+          ) : (
+            <ChevronLeft aria-hidden='true' />
+          )}
+        </Button>
         {!isCollapsed && (
           <nav
-            className='flex flex-col gap-0.5 px-2'
+            className='flex flex-col gap-0.5 px-2 pt-3'
             aria-label={t('Conversations')}
           >
             <Button
