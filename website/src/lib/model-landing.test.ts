@@ -123,6 +123,34 @@ describe("model landing configuration", () => {
     expect(getModelLandingConfigForModel("unknown-model")).toBeNull();
   });
 
+  test("keeps Gemini image models out of the text-family prefix match", () => {
+    const imageModel: PricingModel = {
+      model_name: "gemini-2.5-flash-image",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.04,
+      completion_ratio: 0,
+      supported_endpoint_types: ["image-generation"],
+    };
+
+    expect(getModelLandingConfigForModel(imageModel.model_name)).toBeNull();
+    expect(getModelLandingConfigForPricingModel(imageModel).generator?.kind).toBe("image");
+
+    const chatModel: PricingModel = {
+      model_name: "gemini-2.5-flash",
+      vendor_name: "Google",
+      quota_type: 0,
+      model_ratio: 0.3,
+      model_price: 0,
+      completion_ratio: 2.5,
+      supported_endpoint_types: ["gemini"],
+    };
+    expect(resolveModelLandingModels(GEMINI_CONFIG, [imageModel, chatModel]).map((model) => model.model_name)).toEqual([
+      "gemini-2.5-flash",
+    ]);
+  });
+
   test("keeps Seedance 2.5 generation defaults separate from Seedance 2.0", () => {
     expect(getModelLandingConfig("seedance-2.5")).toBe(SEEDANCE_25_CONFIG);
     expect(SEEDANCE_25_CONFIG.modelId).toBe("seedance-2.5");

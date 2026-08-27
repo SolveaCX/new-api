@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  getImagePlaygroundExample,
   getImagePromptTemplate,
   getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
@@ -92,5 +93,31 @@ describe("image prompt templates", () => {
       expect(new Set(posters).size).toBe(posters.length);
       expect(posters.every((poster) => !/creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i.test(poster))).toBe(true);
     }
+  });
+
+  test("gives every canonical image model a distinct ecommerce Playground starter", () => {
+    const modelIds = [
+      "gpt-image-2",
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.1-flash-lite-image",
+      "grok-imagine-image",
+      "grok-imagine-image-pro",
+      "grok-imagine-image-quality",
+      "nano-banana-pro-preview",
+    ];
+    const examples = modelIds.map((modelId) => getImagePlaygroundExample(modelId));
+
+    expect(examples.every(Boolean)).toBe(true);
+    expect(new Set(examples.map((example) => example?.poster)).size).toBe(modelIds.length);
+    expect(new Set(examples.map((example) => example?.prompt)).size).toBe(modelIds.length);
+    expect(examples.every((example) => example?.industry === "ecommerce-retail")).toBe(true);
+  });
+
+  test("resolves image model aliases used by the pricing catalog", () => {
+    expect(getImagePlaygroundExample("gemini-3.1-flash-image-preview")?.poster).toContain("campaign-hero");
+    expect(getImagePlaygroundExample("gemini_2_5_flash_image_preview")?.poster).toContain("skincare");
+    expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
   });
 });
