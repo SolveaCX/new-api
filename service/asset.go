@@ -890,7 +890,10 @@ func normalizeAssetContentType(assetType string, contentType string) (string, st
 		switch contentType {
 		case "audio/mpeg", "audio/mp3":
 			return "audio/mpeg", ".mp3"
-		case "audio/wav", "audio/x-wav":
+		// net/http.DetectContentType reports RIFF/WAVE files as audio/wave.
+		// Normalize that equivalent spelling before comparing the uploaded
+		// object metadata so valid WAV attachments are not rejected.
+		case "audio/wav", "audio/wave", "audio/x-wav":
 			return "audio/wav", ".wav"
 		case "audio/ogg":
 			return "audio/ogg", ".ogg"

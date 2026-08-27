@@ -264,6 +264,13 @@ func TestCompleteAssetUploadAcceptsEquivalentJpegContentTypeAlias(t *testing.T) 
 	require.Equal(t, "image/jpeg", result.ContentType)
 }
 
+func TestNormalizeAssetContentTypeAcceptsGoWaveSnifferAlias(t *testing.T) {
+	contentType, extension := normalizeAssetContentType("Audio", "audio/wave")
+
+	require.Equal(t, "audio/wav", contentType)
+	require.Equal(t, ".wav", extension)
+}
+
 func TestCreateAssetUploadSessionUsesTypeLimitInsteadOfMultipartCap(t *testing.T) {
 	newAssetServiceTestDB(t)
 	installAssetServiceTestDeps(t)
