@@ -145,7 +145,7 @@ describe('InvitationView', () => {
     const topupShareMessage =
       'Share your referral link with friends. Referral rewards are processed after their first successful top-up.'
     const subscriptionShareMessage =
-      'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
+      'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!'
 
     expect(html).toContain(
       'Invite friends to subscribe: they get $5 package discount immediately, and you receive $5 package discount after their first successful paid package purchase.'
@@ -157,7 +157,7 @@ describe('InvitationView', () => {
     expect(html).toContain('Send your unique referral link to a friend.')
     expect(html).toContain('Your friend registers')
     expect(html).toContain(
-      'Your friend gets $5 package discount immediately after registering.'
+      'Your friend gets $5 off their package right after signing up.'
     )
     expect(html).toContain('You receive $5 package discount')
     expect(html).toContain(
@@ -259,7 +259,7 @@ describe('InvitationView', () => {
     expect(html).toContain('Friends get $6.25 package discount')
     expect(html).toContain('Share your referral link')
     expect(html).toContain(
-      'Your friend gets $6.25 package discount immediately after registering.'
+      'Your friend gets $6.25 off their package right after signing up.'
     )
     expect(html).toContain(
       'You receive $5 package discount immediately after their first successful paid package purchase.'
@@ -287,7 +287,7 @@ describe('InvitationView', () => {
     )
     expect(html).not.toContain(
       encodeURIComponent(
-        'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
+        'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!'
       )
     )
   })
@@ -485,7 +485,7 @@ describe('InvitationView', () => {
     const pageDescription =
       'Share your referral link with friends. Referral rewards are processed after their first successful top-up.'
     const shareMessage =
-      'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
+      'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!'
 
     expect(html).toContain(pageDescription)
     expect(html).not.toContain(shareMessage)

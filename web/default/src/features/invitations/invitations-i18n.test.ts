@@ -109,9 +109,9 @@ const invitationKeys = [
   'Friends get {{reward}} package discount',
   'You receive {{reward}} package discount',
   'Your friend registers',
-  'Your friend gets {{inviteeReward}} package discount immediately after registering.',
+  'Your friend gets {{inviteeReward}} off their package right after signing up.',
   'You receive {{reward}} package discount immediately after their first successful paid package purchase. Package discounts never expire and can only be used for package purchases or renewals.',
-  'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.',
+  'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!',
   'Your friend gets {{inviteeReward}} package discount, and you receive {{inviterReward}} package discount.',
   'Package discounts never expire and can only be used for package purchases or renewals.',
   'Awaiting subscription',
@@ -148,9 +148,9 @@ const affectedPackageCreditKeys = [
   'Friends get {{reward}} package discount',
   'You receive {{reward}} package discount',
   'Your friend registers',
-  'Your friend gets {{inviteeReward}} package discount immediately after registering.',
+  'Your friend gets {{inviteeReward}} off their package right after signing up.',
   'You receive {{reward}} package discount immediately after their first successful paid package purchase. Package discounts never expire and can only be used for package purchases or renewals.',
-  'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.',
+  'I found a pretty useful AI API gateway. One key gives you access to GPT, Claude, Gemini, Seedance, and more. Sign up through my link to help me earn more credits, and get a package discount for yourself!',
   'Your friend gets {{inviteeReward}} package discount, and you receive {{inviterReward}} package discount.',
   'Package discounts never expire and can only be used for package purchases or renewals.',
 ] as const
@@ -211,7 +211,7 @@ describe('invitation i18n', () => {
       'You receive {{reward}} package discount': ['{{reward}}'],
       'You receive {{reward}} package discount immediately after their first successful paid package purchase. Package discounts never expire and can only be used for package purchases or renewals.':
         ['{{reward}}'],
-      'Your friend gets {{inviteeReward}} package discount immediately after registering.':
+      'Your friend gets {{inviteeReward}} off their package right after signing up.':
         ['{{inviteeReward}}'],
       'Your friend gets {{inviteeReward}} package discount, and you receive {{inviterReward}} package discount.':
         ['{{inviteeReward}}', '{{inviterReward}}'],
