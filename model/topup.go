@@ -181,6 +181,47 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 	})
 }
 
+// FailPendingStripeTopUpAndInvoice moves a Stripe top-up and its optional
+// invoice to their terminal failed state in one transaction. Keeping the two
+// writes together prevents a dismissal retry from leaving a failed recharge
+// paired with a still-requested invoice when a database error occurs.
+func FailPendingStripeTopUpAndInvoice(tradeNo string) error {
+	if strings.TrimSpace(tradeNo) == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockQuery(tx).Where("trade_no = ?", tradeNo).First(topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		if topUp.PaymentProvider != PaymentProviderStripe {
+			return ErrPaymentMethodMismatch
+		}
+		if _, err := PersistPurchaseLifecycleTransition(tx, PurchaseLifecycleTransition{
+			Kind:       PurchaseLifecycleKindTopUp,
+			SourceID:   int64(topUp.Id),
+			TradeNo:    topUp.TradeNo,
+			UserID:     topUp.UserId,
+			FromStatus: []string{common.TopUpStatusPending},
+			ToStatus:   common.TopUpStatusFailed,
+			OccurredAt: common.GetTimestamp(),
+			SourceRef:  "FailPendingStripeTopUpAndInvoice",
+		}); err != nil {
+			return err
+		}
+		// The invoice is optional for top-ups. A missing row is therefore a
+		// successful no-op, while any actual database error aborts the transaction.
+		result := tx.Model(&PaymentInvoice{}).
+			Where("trade_no = ?", tradeNo).
+			Update("invoice_status", PaymentInvoiceStatusFailed)
+		return result.Error
+	})
+}
+
 func AttachPaddleGatewayTradeNo(tradeNo string, userId int, gatewayTradeNo string) error {
 	tradeNo = strings.TrimSpace(tradeNo)
 	gatewayTradeNo = strings.TrimSpace(gatewayTradeNo)

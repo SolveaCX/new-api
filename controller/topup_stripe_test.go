@@ -3558,3 +3558,19 @@ func TestStripeInvoiceProfileForUserInjectsAccountEmail(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "account@example.com", fields.BillingEmail)
 }
+
+func TestPersistStripeTopUpCheckoutBindingPersistsRevisionAndSession(t *testing.T) {
+	setupStripeFulfillmentTestDB(t)
+	topUp := &model.TopUp{
+		UserId: 9901, TradeNo: "topup-binding-persist", PaymentProvider: model.PaymentProviderStripe,
+		PaymentMethod: model.PaymentMethodStripe, Status: common.TopUpStatusPending,
+	}
+	require.NoError(t, topUp.Insert())
+	revision := &model.StripeCheckoutRevision{Revision: 3}
+
+	require.NoError(t, persistStripeTopUpCheckoutBinding(topUp, &stripe.CheckoutSession{ID: "cs_binding_persist"}, revision))
+
+	stored := model.GetTopUpByTradeNo(topUp.TradeNo)
+	require.Equal(t, "cs_binding_persist", stored.GatewayTradeNo)
+	require.EqualValues(t, 3, stored.CheckoutRevision)
+}

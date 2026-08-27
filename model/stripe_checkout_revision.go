@@ -232,6 +232,17 @@ func ActivateStripeCheckoutRevision(input StripeCheckoutRevisionActivation) (*St
 			}
 			return err
 		}
+		if candidate.State == StripeCheckoutRevisionStateActive {
+			matches, err := stripeCheckoutRevisionPointerMatches(tx, candidate)
+			if err != nil {
+				return err
+			}
+			if !matches {
+				return ErrStripeCheckoutRevisionConflict
+			}
+			active = candidate
+			return nil
+		}
 		if candidate.State != StripeCheckoutRevisionStatePreparing ||
 			candidate.Revision <= input.ExpectedRevision ||
 			candidate.ProviderSessionId == nil || strings.TrimSpace(*candidate.ProviderSessionId) == "" {
@@ -297,6 +308,17 @@ func ConvergePaidStripeCheckoutRevision(input StripeCheckoutRevisionActivation) 
 			}
 			return err
 		}
+		if candidate.State == StripeCheckoutRevisionStateActive {
+			matches, err := stripeCheckoutRevisionPointerMatches(tx, candidate)
+			if err != nil {
+				return err
+			}
+			if !matches {
+				return ErrStripeCheckoutRevisionConflict
+			}
+			active = candidate
+			return nil
+		}
 		if candidate.State != StripeCheckoutRevisionStatePreparing ||
 			candidate.Revision <= input.ExpectedRevision ||
 			candidate.ProviderSessionId == nil || strings.TrimSpace(*candidate.ProviderSessionId) == "" {
@@ -344,6 +366,41 @@ func ConvergePaidStripeCheckoutRevision(input StripeCheckoutRevisionActivation) 
 		return nil, err
 	}
 	return &active, nil
+}
+
+// stripeCheckoutRevisionPointerMatches verifies that an already-active
+// revision is still the provider session selected by its owning order. This
+// makes webhook and request retries idempotent without treating an unrelated
+// active revision as success.
+func stripeCheckoutRevisionPointerMatches(tx *gorm.DB, candidate StripeCheckoutRevision) (bool, error) {
+	if tx == nil || candidate.ProviderSessionId == nil {
+		return false, nil
+	}
+	providerSessionID := strings.TrimSpace(*candidate.ProviderSessionId)
+	if providerSessionID == "" {
+		return false, nil
+	}
+	successfulStatuses := []string{common.TopUpStatusPending, common.TopUpStatusSuccess}
+	switch candidate.OrderType {
+	case StripeCheckoutOrderTopUp:
+		var order TopUp
+		err := tx.Where("trade_no = ? AND user_id = ? AND checkout_revision = ? AND gateway_trade_no = ? AND status IN ?",
+			candidate.TradeNo, candidate.UserId, candidate.Revision, providerSessionID, successfulStatuses).First(&order).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	case StripeCheckoutOrderSubscription:
+		var order SubscriptionOrder
+		err := tx.Where("trade_no = ? AND user_id = ? AND checkout_revision = ? AND provider_session_id = ? AND status IN ?",
+			candidate.TradeNo, candidate.UserId, candidate.Revision, providerSessionID, successfulStatuses).First(&order).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	default:
+		return false, fmt.Errorf("unsupported Stripe checkout order type %q", candidate.OrderType)
+	}
 }
 
 // AbandonStripeCheckoutRevision is called only after the caller has expired a

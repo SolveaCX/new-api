@@ -1381,6 +1381,43 @@ func TestCreateInitialStripeCheckoutRevisionActivatesTopUpAndOneTime(t *testing.
 	}
 }
 
+func TestCreateInitialStripeCheckoutRevisionSkipsAbandonedRevision(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	purchase := stripeCheckoutPurchase{
+		Kind: service.StripeCheckoutPurchaseTopUp, OrderType: model.StripeCheckoutOrderTopUp,
+		TradeNo: fixture.tradeNo, UserID: fixture.userID, Currency: "USD", SubtotalMinor: 2000,
+	}
+	selection := service.StripeCheckoutDiscountSelection{Source: service.StripeCheckoutDiscountNone}
+	require.NoError(t, model.DB.Where("order_type = ? AND trade_no = ?", purchase.OrderType, purchase.TradeNo).Delete(&model.StripeCheckoutRevision{}).Error)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", fixture.tradeNo).
+		Updates(map[string]any{"checkout_revision": 0, "gateway_trade_no": ""}).Error)
+	digest, err := service.StripeCheckoutIdempotencyKey("stripe-checkout-initial:"+purchase.OrderType+":"+purchase.TradeNo, 1, selection)
+	require.NoError(t, err)
+	prepared, replay, err := model.PrepareStripeCheckoutRevision(model.StripeCheckoutRevisionPrepare{
+		OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: fixture.userID,
+		ExpectedRevision: 0, RequestID: "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo,
+		SelectionDigest: digest, DiscountSource: string(selection.Source), Currency: "USD", SubtotalMinor: 2000,
+	})
+	require.NoError(t, err)
+	require.False(t, replay)
+	require.NoError(t, model.AbandonStripeCheckoutRevision(prepared.Id))
+
+	created, active, err := createInitialStripeCheckoutRevision(context.Background(), purchase, selection, nil,
+		func(revision int64) (*stripeCheckoutSessionSnapshot, error) {
+			require.EqualValues(t, 2, revision)
+			return &stripeCheckoutSessionSnapshot{ID: "cs_initial_after_abandon", Status: "open", PaymentStatus: "unpaid"}, nil
+		})
+	require.NoError(t, err)
+	require.Equal(t, "cs_initial_after_abandon", created.ID)
+	require.EqualValues(t, 2, active.Revision)
+}
+
+func TestStripeCheckoutSessionCompletedRequiresPaidOrNoPaymentRequired(t *testing.T) {
+	require.False(t, stripeCheckoutSessionCompleted(&stripeCheckoutSessionSnapshot{Status: "complete", PaymentStatus: "unpaid"}))
+	require.True(t, stripeCheckoutSessionCompleted(&stripeCheckoutSessionSnapshot{Status: "complete", PaymentStatus: "paid"}))
+	require.True(t, stripeCheckoutSessionCompleted(&stripeCheckoutSessionSnapshot{Status: "complete", PaymentStatus: "no_payment_required"}))
+}
+
 func TestCreateInitialStripeCheckoutRevisionRecoversEveryInterruptedStage(t *testing.T) {
 	stages := []string{"prepare", "create", "record", "activate"}
 	for _, kind := range []service.StripeCheckoutPurchaseKind{service.StripeCheckoutPurchaseTopUp, service.StripeCheckoutPurchaseOneTimeSubscription} {
@@ -1976,6 +2013,26 @@ func TestSubscriptionSelfPurchaseInitialResponsesExposeRevisionContract(t *testi
 	oneTimeClaims, err := service.VerifyStripeCheckoutContext(oneTime.CheckoutContext, time.Now())
 	require.NoError(t, err)
 	require.Equal(t, service.StripeCheckoutPurchaseOneTimeSubscription, oneTimeClaims.PurchaseKind)
+}
+
+func TestSubscriptionSelfPurchaseResponseReportsMissingRevisionContract(t *testing.T) {
+	fixture := newStripeCheckoutDiscountFixture(t, service.StripeCheckoutDiscountNone)
+	originalPromotionFlag := setting.StripePromotionCodeEnabled
+	setting.StripePromotionCodeEnabled = true
+	t.Cleanup(func() { setting.StripePromotionCodeEnabled = originalPromotionFlag })
+	order := &model.SubscriptionOrder{
+		UserId: fixture.userID, TradeNo: "trade-response-missing-contract", Status: common.TopUpStatusPending,
+		PaymentProvider: model.PaymentProviderStripe, PaymentMethod: model.PaymentMethodStripe,
+		CheckoutRevision: 1, ProviderSessionId: "cs_missing_contract",
+	}
+	require.NoError(t, model.DB.Create(order).Error)
+
+	response, err := subscriptionSelfPurchaseResponseWithError(&service.PurchaseSubscriptionResult{
+		Order: order, ClientSecret: "cs_response_secret",
+	}, "")
+
+	require.ErrorIs(t, err, model.ErrStripeCheckoutRevisionConflict)
+	require.Empty(t, response)
 }
 
 func TestCreateStripeTopUpCheckoutSessionKeepsLegacyPathWhenFeatureDisabled(t *testing.T) {

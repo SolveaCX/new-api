@@ -568,10 +568,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 	if checkoutSession != nil {
-		topUp.GatewayTradeNo = strings.TrimSpace(checkoutSession.ID)
-		if initialRevision != nil {
-			topUp.CheckoutRevision = initialRevision.Revision
-		} else if err := topUp.Update(); err != nil {
+		if err := persistStripeTopUpCheckoutBinding(topUp, checkoutSession, initialRevision); err != nil {
 			logger.LogWarn(c.Request.Context(), fmt.Sprintf("Stripe 更新充值订单支付网关信息失败 trade_no=%s session_id=%s error=%q", referenceId, checkoutSession.ID, err.Error()))
 		}
 	}
@@ -638,6 +635,17 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 			"pay_link": checkoutSession.URL,
 		},
 	})
+}
+
+func persistStripeTopUpCheckoutBinding(topUp *model.TopUp, checkoutSession *stripe.CheckoutSession, initialRevision *model.StripeCheckoutRevision) error {
+	if topUp == nil || checkoutSession == nil || strings.TrimSpace(checkoutSession.ID) == "" {
+		return errors.New("Stripe top-up checkout binding is incomplete")
+	}
+	topUp.GatewayTradeNo = strings.TrimSpace(checkoutSession.ID)
+	if initialRevision != nil {
+		topUp.CheckoutRevision = initialRevision.Revision
+	}
+	return topUp.Update()
 }
 
 // ResumeStripeTopUpCheckout returns the still-open Stripe Checkout session for
@@ -1145,6 +1153,9 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 						logger.LogInfo(ctx, fmt.Sprintf("Stripe 充值成功 trade_no=%s amount_total=%.2f currency=%s event_type=%s client_ip=%s", referenceId, snapshot.Money, snapshot.Currency, string(event.Type), callerIp))
 						return nil
 					}
+				} else {
+					logger.LogError(ctx, fmt.Sprintf("Stripe 充值纠偏入账失败 trade_no=%s event_type=%s error=%q", referenceId, string(event.Type), rechargeErr.Error()))
+					return rechargeErr
 				}
 			}
 		}
@@ -1366,6 +1377,9 @@ func handleStripeOneTimePlanPaid(ctx context.Context, event stripe.Event, refere
 	if err := validateOneTimePlanStripeSessionEvent(event, order); err != nil {
 		if reconcileStripeCheckoutWinnerFromEvent(ctx, service.StripeCheckoutPurchaseOneTimeSubscription, referenceId, stripeEventObjectValue(event, "id")) {
 			order = model.GetSubscriptionOrderByTradeNo(referenceId)
+			if order == nil {
+				return permanentStripeWebhookProcessingError(model.ErrSubscriptionOrderNotFound)
+			}
 			if validateErr := validateOneTimePlanStripeSessionEvent(event, order); validateErr != nil {
 				return permanentStripeWebhookProcessingError(validateErr)
 			}

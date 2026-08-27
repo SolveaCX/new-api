@@ -20,6 +20,18 @@ var (
 	ErrStripePromotionLookup      = errors.New("promotion code lookup failed")
 )
 
+type stripePromotionLookupError struct {
+	cause error
+}
+
+func (e stripePromotionLookupError) Error() string {
+	return ErrStripePromotionLookup.Error()
+}
+
+func (e stripePromotionLookupError) Unwrap() error {
+	return errors.Join(ErrStripePromotionLookup, e.cause)
+}
+
 type StripeCheckoutPromotionClient interface {
 	ListPromotionCodes(context.Context, string) ([]*stripe.PromotionCode, error)
 }
@@ -54,7 +66,10 @@ func (r StripeCheckoutPromotionResolver) ResolveManualPromotion(ctx context.Cont
 	}
 	promotions, err := client.ListPromotionCodes(ctx, code)
 	if err != nil {
-		return StripeCheckoutResolvedPromotion{}, ErrStripePromotionLookup
+		// Keep the stable sentinel for callers while preserving the upstream
+		// failure for retry decisions and operational diagnostics. Do not include
+		// the submitted code in the public error text.
+		return StripeCheckoutResolvedPromotion{}, stripePromotionLookupError{cause: err}
 	}
 
 	now := time.Now().Unix()
@@ -98,6 +113,7 @@ func (stripeCheckoutPromotionListClient) ListPromotionCodes(ctx context.Context,
 	query.Set("active", "true")
 	query.Set("code", strings.TrimSpace(code))
 	query.Add("expand[]", "data.promotion.coupon")
+	query.Add("expand[]", "data.customer")
 
 	promotions := make([]*stripe.PromotionCode, 0)
 	for {

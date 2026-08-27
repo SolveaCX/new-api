@@ -669,7 +669,7 @@ func stripeCheckoutSessionCompleted(session *stripeCheckoutSessionSnapshot) bool
 	if session == nil {
 		return false
 	}
-	return strings.EqualFold(session.PaymentStatus, "paid") || strings.EqualFold(session.Status, "complete")
+	return strings.EqualFold(session.PaymentStatus, "paid") || strings.EqualFold(session.PaymentStatus, "no_payment_required")
 }
 
 func stripeCheckoutSessionExpired(session *stripeCheckoutSessionSnapshot) bool {
@@ -723,17 +723,29 @@ func createInitialStripeCheckoutRevision(
 	if err != nil {
 		return nil, nil, err
 	}
-	prepared, replay, err := currentStripeCheckoutDiscountRuntime.PrepareRevision(model.StripeCheckoutRevisionPrepare{
-		OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: purchase.UserID, ExpectedRevision: 0,
-		RequestID: "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo, SelectionDigest: digest,
-		DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
-		PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
-		DiscountPayload: purchase.DiscountPayload, Currency: purchase.Currency, SubtotalMinor: purchase.SubtotalMinor, SummaryPayload: stripeCheckoutTopUpSummaryPayload(summary),
-	})
-	if err != nil {
-		return nil, nil, err
+	initialRequestID := "initial:" + string(purchase.Kind) + ":" + purchase.TradeNo
+	var prepared *model.StripeCheckoutRevision
+	var replay bool
+	for {
+		prepared, replay, err = currentStripeCheckoutDiscountRuntime.PrepareRevision(model.StripeCheckoutRevisionPrepare{
+			OrderType: purchase.OrderType, TradeNo: purchase.TradeNo, UserID: purchase.UserID, ExpectedRevision: 0,
+			RequestID: initialRequestID, SelectionDigest: digest,
+			DiscountSource: string(selection.Source), ReplacedSource: string(selection.ReplacedSource), CouponID: selection.CouponID,
+			PromotionCodeID: selection.PromotionCodeID, PromotionCodeMask: selection.MaskedCode,
+			DiscountPayload: purchase.DiscountPayload, Currency: purchase.Currency, SubtotalMinor: purchase.SubtotalMinor, SummaryPayload: stripeCheckoutTopUpSummaryPayload(summary),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if !replay || prepared.State != model.StripeCheckoutRevisionStateAbandoned {
+			break
+		}
+		// A deterministic first request can replay an abandoned candidate after
+		// a provider timeout. Reserve a fresh request key so PrepareRevision can
+		// skip the abandoned row and issue the next monotonic revision.
+		initialRequestID = fmt.Sprintf("%s:retry:%d", initialRequestID, prepared.Revision)
 	}
-	if prepared.Revision != 1 {
+	if prepared.Revision <= 0 {
 		return nil, nil, model.ErrStripeCheckoutRevisionConflict
 	}
 	if replay {

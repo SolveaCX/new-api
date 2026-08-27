@@ -149,12 +149,14 @@ func TestStripeCheckoutRevisionActivateMovesPointerAndSupersedesExactlyOnce(t *t
 	require.NoError(t, DB.Where("order_type = ? AND trade_no = ? AND revision = ?", StripeCheckoutOrderTopUp, "t-activate", 1).First(&original).Error)
 	require.Equal(t, StripeCheckoutRevisionStateSuperseded, original.State)
 
-	_, err = ActivateStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+	activeReplay, err := ActivateStripeCheckoutRevision(StripeCheckoutRevisionActivation{
 		RevisionID:           candidate.Id,
 		ExpectedRevision:     1,
 		OldProviderSessionID: "cs_old",
 	})
-	require.ErrorIs(t, err, ErrStripeCheckoutRevisionConflict)
+	require.NoError(t, err)
+	require.Equal(t, StripeCheckoutRevisionStateActive, activeReplay.State)
+	require.EqualValues(t, candidate.Id, activeReplay.Id)
 }
 
 func TestConvergePaidStripeCheckoutRevisionAllowsRevisionGap(t *testing.T) {
@@ -215,6 +217,12 @@ func TestConvergePaidStripeCheckoutRevisionAllowsRevisionGap(t *testing.T) {
 	require.NoError(t, DB.Where("trade_no = ?", "t-paid-gap").First(&stored).Error)
 	require.EqualValues(t, 3, stored.CheckoutRevision)
 	require.Equal(t, candidateID, stored.GatewayTradeNo)
+
+	activeReplay, err := ConvergePaidStripeCheckoutRevision(StripeCheckoutRevisionActivation{
+		RevisionID: candidate.Id, ExpectedRevision: 1, OldProviderSessionID: "cs_gap_old",
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, candidate.Id, activeReplay.Id)
 }
 
 func TestConvergePaidStripeCheckoutRevisionRequiresPredecessorForExpectedRevision(t *testing.T) {

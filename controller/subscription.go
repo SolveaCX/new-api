@@ -1297,7 +1297,12 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	} else if found {
-		common.ApiSuccess(c, subscriptionSelfPurchaseResponse(replay, ""))
+		response, err := subscriptionSelfPurchaseResponseWithError(replay, "")
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, response)
 		return
 	}
 	quoteResult, err := service.QuoteSubscriptionPurchase(cmd)
@@ -1320,7 +1325,12 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, subscriptionSelfPurchaseResponse(result, ""))
+	response, err := subscriptionSelfPurchaseResponseWithError(result, "")
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, response)
 }
 
 func SubscriptionPurchasePendingMigration(c *gin.Context) {

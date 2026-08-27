@@ -300,8 +300,9 @@ func TestResolveManualPromotionRejectsExpiredOrExhaustedPromotionAndCoupon(t *te
 
 func TestResolveManualPromotionSanitizesLookupFailure(t *testing.T) {
 	const submittedCode = "SENSITIVE-CODE"
+	upstreamErr := errors.New("upstream rejected code SENSITIVE-CODE")
 	resolver := StripeCheckoutPromotionResolver{Client: &fakeStripeCheckoutPromotionClient{
-		err: errors.New("upstream rejected code SENSITIVE-CODE"),
+		err: upstreamErr,
 	}}
 
 	_, err := resolver.ResolveManualPromotion(context.Background(), StripeCheckoutPromotionQuery{
@@ -310,6 +311,7 @@ func TestResolveManualPromotionSanitizesLookupFailure(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, ErrStripePromotionLookup)
+	require.ErrorIs(t, err, upstreamErr)
 	require.NotContains(t, err.Error(), submittedCode)
 }
 
@@ -330,9 +332,9 @@ func TestStripeCheckoutPromotionListClientFiltersAndConsumesAllPages(t *testing.
 				expansions = append(expansions, values...)
 			}
 		}
-		require.Equal(t, []string{"data.promotion.coupon"}, expansions)
+		require.ElementsMatch(t, []string{"data.promotion.coupon", "data.customer"}, expansions)
 		coupon := `"coupon_first"`
-		if len(expansions) == 1 && expansions[0] == "data.promotion.coupon" {
+		if len(expansions) == 2 {
 			coupon = `{"id":"coupon_first","object":"coupon","percent_off":20,"valid":true}`
 		}
 		if r.URL.Query().Get("starting_after") == "promo_first" {

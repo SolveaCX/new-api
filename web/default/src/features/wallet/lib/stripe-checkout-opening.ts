@@ -59,8 +59,7 @@ export function normalizeCheckoutUrl(
   const isRootRelativeUrl =
     normalizedUrl.startsWith('/') && !normalizedUrl.startsWith('//')
   if (!isAbsoluteHttpUrl && !isRootRelativeUrl) return undefined
-  if (isRootRelativeUrl && typeof window === 'undefined') return undefined
-
+  if (isRootRelativeUrl && typeof window === 'undefined') return normalizedUrl
   try {
     const parsedUrl = new URL(
       normalizedUrl,

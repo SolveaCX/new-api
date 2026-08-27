@@ -23,6 +23,7 @@ type stripeCheckoutCloseRuntime struct {
 	ExpireSession         func(context.Context, service.StripeCheckoutPurchaseKind, string) (*stripeCheckoutSessionSnapshot, error)
 	FailTopUp             func(string) error
 	FailInvoice           func(string) error
+	FailTopUpAndInvoice   func(string) error
 	TerminateSubscription func(context.Context, string, string) error
 }
 
@@ -38,6 +39,7 @@ func defaultStripeCheckoutCloseRuntime() stripeCheckoutCloseRuntime {
 		FailInvoice: func(tradeNo string) error {
 			return model.UpdatePaymentInvoiceStatus(tradeNo, model.PaymentInvoiceStatusFailed)
 		},
+		FailTopUpAndInvoice:   model.FailPendingStripeTopUpAndInvoice,
 		TerminateSubscription: service.TerminatePendingStripePurchase,
 	}
 }
@@ -56,6 +58,13 @@ func replaceStripeCheckoutCloseRuntimeForTest(replacement stripeCheckoutCloseRun
 	}
 	if replacement.FailInvoice != nil {
 		updated.FailInvoice = replacement.FailInvoice
+	}
+	if replacement.FailTopUpAndInvoice != nil {
+		updated.FailTopUpAndInvoice = replacement.FailTopUpAndInvoice
+	} else if replacement.FailTopUp != nil || replacement.FailInvoice != nil {
+		// Test doubles that exercise the legacy split callbacks should not also
+		// invoke the production transaction callback.
+		updated.FailTopUpAndInvoice = nil
 	}
 	if replacement.TerminateSubscription != nil {
 		updated.TerminateSubscription = replacement.TerminateSubscription
@@ -105,10 +114,7 @@ func CloseStripeCheckout(c *gin.Context) {
 			writeStripeCheckoutCloseSuccess(c, "failed")
 			return
 		}
-		kind := service.StripeCheckoutPurchaseOneTimeSubscription
-		if strings.EqualFold(strings.TrimSpace(order.PaymentMethod), model.PaymentMethodStripe) {
-			kind = service.StripeCheckoutPurchaseRecurringSubscription
-		}
+		kind := stripeSubscriptionCheckoutPurchaseKind(&order)
 		if err := closePendingStripeCheckout(c.Request.Context(), kind, tradeNo, strings.TrimSpace(order.ProviderSessionId), false); err != nil {
 			writeStripeCheckoutCloseError(c, err)
 			return
@@ -149,6 +155,13 @@ func CloseStripeCheckout(c *gin.Context) {
 	writeStripeCheckoutCloseSuccess(c, "failed")
 }
 
+func stripeSubscriptionCheckoutPurchaseKind(order *model.SubscriptionOrder) service.StripeCheckoutPurchaseKind {
+	if order != nil && isOneTimePlanStripeMethod(order.PaymentMethod) {
+		return service.StripeCheckoutPurchaseOneTimeSubscription
+	}
+	return service.StripeCheckoutPurchaseRecurringSubscription
+}
+
 func closePendingStripeCheckout(ctx context.Context, kind service.StripeCheckoutPurchaseKind, tradeNo string, sessionID string, topUp bool) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return errors.New("Stripe checkout session is missing")
@@ -174,6 +187,12 @@ func closePendingStripeCheckout(ctx context.Context, kind service.StripeCheckout
 	}
 
 	if topUp {
+		if currentStripeCheckoutCloseRuntime.FailTopUpAndInvoice != nil {
+			if err := currentStripeCheckoutCloseRuntime.FailTopUpAndInvoice(tradeNo); err != nil {
+				return reconcileStripeCheckoutCloseRace(tradeNo, err)
+			}
+			return nil
+		}
 		if err := currentStripeCheckoutCloseRuntime.FailTopUp(tradeNo); err != nil {
 			return reconcileStripeCheckoutCloseRace(tradeNo, err)
 		}

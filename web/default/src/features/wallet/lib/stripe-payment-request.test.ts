@@ -18,7 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { resolveStripeCheckoutOpening } from './stripe-checkout-opening'
+import {
+  normalizeCheckoutUrl,
+  resolveStripeCheckoutOpening,
+} from './stripe-checkout-opening'
 import { buildStripePaymentRequest } from './stripe-payment-request'
 
 const redirectUrls = {
@@ -95,6 +98,10 @@ describe('buildStripePaymentRequest', () => {
 })
 
 describe('resolveStripeCheckoutOpening', () => {
+  test('keeps root-relative fallback URLs usable without a browser origin', () => {
+    expect(normalizeCheckoutUrl('/checkout/session')).toBe('/checkout/session')
+  })
+
   test('uses an explicit safe fallback URL for an Elements session', () => {
     expect(
       resolveStripeCheckoutOpening({

@@ -82,6 +82,13 @@ func TestCloseStripeCheckoutDoesNotFailPaidSession(t *testing.T) {
 	require.Zero(t, failed)
 }
 
+func TestStripeSubscriptionCheckoutPurchaseKindUsesOrderPaymentType(t *testing.T) {
+	require.Equal(t, service.StripeCheckoutPurchaseRecurringSubscription,
+		stripeSubscriptionCheckoutPurchaseKind(&model.SubscriptionOrder{PaymentMethod: model.PaymentMethodStripe}))
+	require.Equal(t, service.StripeCheckoutPurchaseOneTimeSubscription,
+		stripeSubscriptionCheckoutPurchaseKind(&model.SubscriptionOrder{PaymentMethod: service.SubscriptionPaymentChoicePix}))
+}
+
 func TestCloseStripeCheckoutRejectsForeignOrder(t *testing.T) {
 	setupStripeCheckoutCloseTestDB(t)
 	require.NoError(t, model.DB.Create(&model.TopUp{
