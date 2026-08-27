@@ -396,8 +396,11 @@ func createOneTimeStripeCheckoutSession(ctx context.Context, order *model.Subscr
 			created, createErr = stripeOneTimeCheckoutSessionForRevisionCreator(ctx, order, user, revision, discountSelection, presentations...)
 			return stripeCheckoutSnapshotFromOneTime(created), createErr
 		})
-		if err != nil {
+		if err != nil && !errors.Is(err, errStripeCheckoutAlreadyCompleted) {
 			return nil, err
+		}
+		if active == nil {
+			return nil, errors.New("Stripe checkout revision is missing")
 		}
 		order.CheckoutRevision = active.Revision
 		order.ProviderSessionId = stripeCheckoutRevisionSessionID(active)

@@ -2878,8 +2878,11 @@ func createStripeTopUpCheckoutSession(
 		created, createErr = create(revision)
 		return stripeCheckoutSnapshotFromStripe(created), createErr
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStripeCheckoutAlreadyCompleted) {
 		return nil, nil, err
+	}
+	if active == nil {
+		return nil, nil, errors.New("Stripe checkout revision is missing")
 	}
 	if created == nil && snapshot != nil {
 		created = &stripe.CheckoutSession{ID: snapshot.ID, URL: snapshot.URL, ClientSecret: snapshot.ClientSecret}
