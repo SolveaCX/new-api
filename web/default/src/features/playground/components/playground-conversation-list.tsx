@@ -44,6 +44,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -193,9 +194,12 @@ function PlaygroundConversationListContent(
               <h2 className='truncate text-base font-semibold'>
                 {t('Conversations')}
               </h2>
-              <p className='text-muted-foreground text-xs'>
-                {conversations.length} {t('Conversations').toLowerCase()}
-              </p>
+              <Badge
+                variant='secondary'
+                className='mt-1 px-1.5 py-0 text-[11px]'
+              >
+                {conversations.length}
+              </Badge>
             </div>
           )}
           <Button
