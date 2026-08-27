@@ -17,11 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Crown, Sparkles } from 'lucide-react'
+import { Crown, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
-import { formatQuota } from '@/lib/format'
+import {
+  formatBillingCurrencyFromUSD,
+  getCurrencyDisplay,
+} from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -276,13 +279,55 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-function getPlanEntitlements(plan: PlanRecord['plan'], t: Translate) {
-  const monthly = Number(plan.total_amount || 0)
-  return [
-    t('Monthly model quota: {{value}}', {
-      value: monthly > 0 ? formatQuota(monthly) : t('Unlimited'),
-    }),
-  ]
+/**
+ * Convert the plan's raw quota value into a monetary reference price.
+ *
+ * `total_amount` is stored in quota units, not major currency units.  Keep
+ * the conversion here (rather than changing the plan or payment fields) so
+ * the value is presentation-only and remains correct when an administrator
+ * changes the configured quota-per-dollar ratio.  Billing formatting is used
+ * intentionally so token-only display mode cannot turn this price into a raw
+ * token count.
+ */
+function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
+  const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
+    ([currency]) => currency.trim().toUpperCase() === 'USD'
+  )?.[1]
+  const configuredAmount = Number(configuredUSDPrice)
+  if (Number.isFinite(configuredAmount) && configuredAmount >= 0) {
+    return configuredAmount
+  }
+
+  const canonicalCurrency = plan.currency?.trim().toUpperCase() || 'USD'
+  if (canonicalCurrency !== 'USD') return null
+
+  const priceAmount = Number(plan.price_amount)
+  return Number.isFinite(priceAmount) && priceAmount >= 0 ? priceAmount : null
+}
+
+function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
+  const totalAmount = Number(plan.total_amount)
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
+
+  const { config } = getCurrencyDisplay()
+  const quotaPerUnit = config.quotaPerUnit
+  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
+
+  const referenceAmountUSD = totalAmount / quotaPerUnit
+  const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
+  // A quota value below the payable plan price is not an “old price”.  This
+  // guard keeps custom/free plans and legacy fixtures from rendering a
+  // misleading crossed-out amount while still allowing plans whose included
+  // model value exceeds their price (for example, $45 → $10).
+  if (
+    currentAmountUSD !== null &&
+    (currentAmountUSD <= 0 || referenceAmountUSD <= currentAmountUSD)
+  ) {
+    return null
+  }
+
+  const formatted = formatBillingCurrencyFromUSD(referenceAmountUSD)
+  return formatted === '-' ? null : formatted
 }
 
 export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
@@ -859,6 +904,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const displayPrice = discountPreview
                 ? formatPlanPrice(discountPreview.total, currency)
                 : originalPrice
+              const referencePrice = getPlanReferencePrice(plan)
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -875,8 +921,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const isCurrentRecurring =
                 action === 'repurchase' &&
                 selfData.contract?.payment_mode === 'stripe_recurring'
-              const entitlements = getPlanEntitlements(plan, t)
-
               return (
                 <Card
                   key={plan.id}
@@ -910,11 +954,24 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     </div>
 
                     <div className='mt-6 flex flex-wrap items-end gap-2'>
+                      {referencePrice ? (
+                        <span
+                          data-subscription-reference-price={referencePrice}
+                          className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
+                        >
+                          {referencePrice}
+                        </span>
+                      ) : null}
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
                         {displayPrice}
                       </span>
                       {discountPreview ? (
-                        <span className='text-muted-foreground mb-2 text-sm tabular-nums line-through'>
+                        <span
+                          data-subscription-discount-original-price={
+                            originalPrice
+                          }
+                          className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
+                        >
                           {originalPrice}
                         </span>
                       ) : null}
@@ -950,17 +1007,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       </div>
                     ) : null}
 
-                    <div className='mt-5 grow space-y-2 border-t pt-4'>
-                      {entitlements.map((label) => (
-                        <div
-                          key={label}
-                          className='text-muted-foreground flex items-center gap-2 text-xs'
-                        >
-                          <Check className='h-3.5 w-3.5 shrink-0 text-[#5b21b6] dark:text-[#a78bfa]' />
-                          <span>{label}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <div className='grow' />
 
                     <Separator className='my-4' />
                     <Button
