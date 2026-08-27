@@ -102,7 +102,6 @@ export function usePlaygroundPersistence({
 }: UsePlaygroundPersistenceOptions) {
   const activeTurnRef = useRef<UserActiveTurn | null>(null)
   const stoppedRef = useRef(false)
-  const messagesRef = useRef(messages)
   const conversationIdRef = useRef(conversationId)
   const drainPromisesRef = useRef(
     new Map<number, Promise<PlaygroundRecordPayload[]>>()
@@ -112,9 +111,8 @@ export function usePlaygroundPersistence({
   const isRestoring = hasUser && settledUserId !== userId
 
   useEffect(() => {
-    messagesRef.current = messages
     conversationIdRef.current = conversationId
-  }, [conversationId, messages])
+  }, [conversationId])
 
   const clearDeliveredLocalPriority = useCallback(
     (targetUserId: number, deliveredRecords: PlaygroundRecordPayload[]) => {
@@ -194,8 +192,7 @@ export function usePlaygroundPersistence({
           preferLocal:
             outbox.persistentReadFailed ||
             (!!priority &&
-              priority.conversationId === conversationIdRef.current &&
-              messagesRef.current.length > 0),
+              priority.conversationId === conversationIdRef.current),
         }
       )
       const deliveredCount =
@@ -329,13 +326,16 @@ export function usePlaygroundPersistence({
     if (activeTurnRef.current) stoppedRef.current = true
   }, [])
 
-  const markCurrentConversationLocalOnly = useCallback(() => {
-    if (!hasUser || !conversationId) return
-    saveLocalConversationPriority(userId, {
-      conversationId,
-      markedAt: Date.now(),
-    })
-  }, [conversationId, hasUser, userId])
+  const markCurrentConversationLocalOnly = useCallback(
+    (targetConversationId = conversationId) => {
+      if (!hasUser || !targetConversationId) return
+      saveLocalConversationPriority(userId, {
+        conversationId: targetConversationId,
+        markedAt: Date.now(),
+      })
+    },
+    [conversationId, hasUser, userId]
+  )
 
   const clearCurrentConversation = useCallback(async (): Promise<boolean> => {
     if (!hasUser || !conversationId) return false

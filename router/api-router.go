@@ -140,6 +140,10 @@ func SetApiRouter(router *gin.Engine) {
 			playgroundRecordRoute.POST("", controller.SavePlaygroundRecord)
 			playgroundRecordRoute.GET("/current", controller.GetCurrentPlaygroundRecord)
 			playgroundRecordRoute.POST("/clear", controller.ClearPlaygroundRecord)
+			playgroundRecordRoute.GET("", controller.ListPlaygroundConversations)
+			playgroundRecordRoute.POST("/delete", controller.DeletePlaygroundConversations)
+			playgroundRecordRoute.GET("/:conversation_id", controller.GetPlaygroundConversation)
+			playgroundRecordRoute.PATCH("/:conversation_id", controller.RenamePlaygroundConversation)
 		}
 		playgroundAttachmentRoute := apiRouter.Group("/playground/attachments")
 		playgroundAttachmentRoute.Use(middleware.RouteTag("playground-attachments"), middleware.UserAuth())
