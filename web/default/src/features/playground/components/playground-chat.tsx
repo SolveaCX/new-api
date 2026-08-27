@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Branch,
@@ -78,6 +79,42 @@ function sanitizeAttachmentVideoUrl(
   return sanitizeGeneratedMediaUrl(trimmedUrl)
 }
 
+interface PreviewableImageProps {
+  src: string
+  alt: string
+  className: string
+  loading?: 'eager' | 'lazy'
+  onPreview: (image: { src: string; alt: string }) => void
+}
+
+function PreviewableImage({
+  src,
+  alt,
+  className,
+  loading = 'eager',
+  onPreview,
+}: PreviewableImageProps) {
+  return (
+    <button
+      aria-label={alt}
+      className='group/image focus-visible:ring-ring block max-w-full cursor-zoom-in rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-offset-2'
+      onClick={() => onPreview({ src, alt })}
+      type='button'
+    >
+      <img
+        alt={alt}
+        className={cn(
+          'transition-transform duration-200 group-hover/image:scale-[1.01]',
+          className
+        )}
+        decoding='async'
+        loading={loading}
+        src={src}
+      />
+    </button>
+  )
+}
+
 interface PlaygroundChatProps {
   messages: MessageType[]
   onCopyMessage?: (message: MessageType) => void
@@ -106,6 +143,10 @@ export function PlaygroundChat({
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
   const [originalText, setOriginalText] = useState('')
+  const [previewImage, setPreviewImage] = useState<{
+    src: string
+    alt: string
+  } | null>(null)
 
   useEffect(() => {
     if (!editingKey) return
@@ -401,11 +442,14 @@ export function PlaygroundChat({
                                                 ({ attachment, url }) =>
                                                   attachment.kind === 'image' &&
                                                   url ? (
-                                                    <img
+                                                    <PreviewableImage
                                                       alt={attachment.filename}
                                                       className='border-border/70 size-40 rounded-2xl border object-cover shadow-sm'
                                                       key={`${message.key}-${version.id}-${attachment.filename}`}
                                                       src={url}
+                                                      onPreview={
+                                                        setPreviewImage
+                                                      }
                                                     />
                                                   ) : url ? (
                                                     <video
@@ -481,7 +525,7 @@ export function PlaygroundChat({
                                                         )
                                                       }
                                                       return (
-                                                        <img
+                                                        <PreviewableImage
                                                           alt={t(
                                                             'Generated image'
                                                           )}
@@ -489,6 +533,9 @@ export function PlaygroundChat({
                                                           key={`${message.key}-image-${mediaIndex}`}
                                                           loading='lazy'
                                                           src={media.url}
+                                                          onPreview={
+                                                            setPreviewImage
+                                                          }
                                                         />
                                                       )
                                                     }
@@ -506,14 +553,16 @@ export function PlaygroundChat({
                                                     className='-my-1'
                                                     key={`${message.key}-${version.id}-generated-image-${imageIndex}`}
                                                   >
-                                                    <img
+                                                    <PreviewableImage
                                                       alt={
                                                         image.alt ||
                                                         t('Generated image')
                                                       }
                                                       className='border-border/70 h-auto max-w-full rounded-2xl border shadow-sm'
-                                                      decoding='async'
                                                       src={image.src}
+                                                      onPreview={
+                                                        setPreviewImage
+                                                      }
                                                     />
                                                   </div>
                                                 )
@@ -560,6 +609,30 @@ export function PlaygroundChat({
         </div>
       </ConversationContent>
       <ConversationScrollButton />
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) setPreviewImage(null)
+        }}
+        open={!!previewImage}
+      >
+        <DialogContent
+          className='h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none border-0 bg-black/90 p-4 shadow-2xl sm:max-w-none'
+          showCloseButton
+        >
+          <DialogTitle className='sr-only'>
+            {previewImage?.alt || t('Generated image')}
+          </DialogTitle>
+          {previewImage && (
+            <div className='flex min-h-0 items-center justify-center'>
+              <img
+                alt={previewImage.alt}
+                className='max-h-[calc(100vh-5rem)] max-w-full object-contain'
+                src={previewImage.src}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Conversation>
   )
 }
