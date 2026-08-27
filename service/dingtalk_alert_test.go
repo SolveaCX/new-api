@@ -87,6 +87,144 @@ func TestBuildDingTalkPaymentProcessingAlertContentMasksSensitiveFields(t *testi
 	require.NotContains(t, content, "kurebarr.h")
 }
 
+func TestBuildDingTalkPaymentSuccessContentIncludesReferralFields(t *testing.T) {
+	originalDB := model.DB
+	t.Cleanup(func() {
+		model.DB = originalDB
+	})
+
+	db := setupDingTalkPaymentSuccessTestDB(t)
+	model.DB = db
+
+	require.NoError(t, db.Create(&model.User{
+		Id:                  7001,
+		Username:            "inviter",
+		Password:            "password123",
+		AffCode:             "aff-inviter",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		RegistrationCountry: "US",
+	}).Error)
+	require.NoError(t, db.Create(&model.User{
+		Id:                  7002,
+		Username:            "paid-user",
+		Password:            "password123",
+		AffCode:             "aff-paid",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		InviterId:           7001,
+		RegistrationCountry: "BR",
+		AdsAttribution:      `{"utm_source":"x","utm_campaign":"launch","first_landing_path":"/oauth/google"}`,
+	}).Error)
+
+	content := BuildDingTalkPaymentSuccessContent(&model.TopUp{
+		UserId:          7002,
+		TradeNo:         "trade-success-7002",
+		Money:           12.34,
+		PaymentCurrency: "brl",
+		PaymentMethod:   "pix",
+		PaymentProvider: "epay",
+	})
+
+	require.Contains(t, content, "【Flatkey 付款成功】")
+	require.Contains(t, content, "用户来源：x / launch / /oauth/google")
+	require.Contains(t, content, "金额：12.34 BRL")
+	require.Contains(t, content, "国家：BR")
+	require.Contains(t, content, "是否被邀：是")
+	require.Contains(t, content, "邀请人：inviter (#7001)")
+	require.Contains(t, content, "付款方式：PIX")
+}
+
+func TestBuildDingTalkPaymentSuccessContentOmitsInviterWhenMissing(t *testing.T) {
+	originalDB := model.DB
+	t.Cleanup(func() {
+		model.DB = originalDB
+	})
+
+	db := setupDingTalkPaymentSuccessTestDB(t)
+	model.DB = db
+
+	require.NoError(t, db.Create(&model.User{
+		Id:                  7010,
+		Username:            "direct-user",
+		Password:            "password123",
+		AffCode:             "aff-direct",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		RegistrationCountry: "JP",
+	}).Error)
+
+	content := BuildDingTalkPaymentSuccessContent(&model.TopUp{
+		UserId:          7010,
+		TradeNo:         "trade-success-7010",
+		Money:           5,
+		PaymentCurrency: "usd",
+		PaymentMethod:   "alipay",
+		PaymentProvider: "epay",
+	})
+
+	require.Contains(t, content, "是否被邀：否")
+	require.NotContains(t, content, "邀请人：")
+	require.Contains(t, content, "付款方式：Alipay")
+}
+
+func TestNotifyDingTalkPaymentSuccessPostsMessage(t *testing.T) {
+	allowDingTalkTestServer(t)
+	originalSetting := *operation_setting.GetMonitorSetting()
+	originalDB := model.DB
+	originalHTTPClient := httpClient
+	t.Cleanup(func() {
+		*operation_setting.GetMonitorSetting() = originalSetting
+		model.DB = originalDB
+		httpClient = originalHTTPClient
+	})
+
+	db := setupDingTalkPaymentSuccessTestDB(t)
+	model.DB = db
+
+	require.NoError(t, db.Create(&model.User{
+		Id:                  7020,
+		Username:            "notify-user",
+		Password:            "password123",
+		AffCode:             "aff-notify",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		RegistrationCountry: "SG",
+	}).Error)
+
+	done := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		done <- string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer server.Close()
+
+	httpClient = server.Client()
+	setting := operation_setting.GetMonitorSetting()
+	setting.DingTalkAlertEnabled = true
+	setting.DingTalkAlertWebhookURL = server.URL
+	setting.DingTalkAlertSecret = ""
+
+	NotifyDingTalkPaymentSuccess(&model.TopUp{
+		UserId:          7020,
+		TradeNo:         "trade-success-7020",
+		Money:           99.5,
+		PaymentCurrency: "usd",
+		PaymentMethod:   "stripe",
+		PaymentProvider: "stripe",
+	})
+
+	select {
+	case body := <-done:
+		require.Contains(t, body, "付款成功")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for DingTalk payment success request")
+	}
+}
+
 func TestNotifyDingTalkPaymentProcessingFailureUsesMonitorDingTalk(t *testing.T) {
 	allowDingTalkTestServer(t)
 	originalSetting := *operation_setting.GetMonitorSetting()
@@ -1578,6 +1716,15 @@ func setupDingTalkChannelAlertTestState(t *testing.T) *operation_setting.Monitor
 	setting.AIAnalysisBaseURL = operation_setting.DefaultMonitorAIAnalysisBaseURL
 	setting.AIAnalysisModel = operation_setting.DefaultMonitorAIAnalysisModelName
 	return setting
+}
+
+func setupDingTalkPaymentSuccessTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/dingtalk_payment_success.db?_pragma=busy_timeout(5000)"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	return db
 }
 
 func readDingTalkTextContent(t *testing.T, body io.Reader) string {

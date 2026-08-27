@@ -1190,6 +1190,9 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		RecordLog(logUserId, LogTypeTopup, msg)
 	}
 	EnqueuePaymentAnalyticsForSubscriptionBestEffort(analyticsOrder, analyticsPlanTitle)
+	if analyticsOrder != nil {
+		notifyPaymentSuccessBestEffort(subscriptionOrderTopUpHistory(analyticsOrder, common.TopUpStatusSuccess), true)
+	}
 	return nil
 }
 
