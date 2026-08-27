@@ -22,6 +22,7 @@ import {
   normalizeMediaGenerationSettings,
   resolveMediaGenerationProfile,
   resolvePlaygroundModelKind,
+  supportsPlaygroundAudioInput,
   supportsPlaygroundVideoInput,
   validateMediaGenerationAttachments,
 } from './media-generation'
@@ -110,6 +111,43 @@ describe('Playground media model profiles', () => {
     expect(supportsPlaygroundVideoInput('google/gemini-2.0-flash')).toBe(true)
     expect(supportsPlaygroundVideoInput('gemini-2.5-flash-image')).toBe(false)
     expect(supportsPlaygroundVideoInput('gpt-5.5')).toBe(false)
+  })
+
+  test('recognizes configured chat models that can consume audio input', () => {
+    for (const model of [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.1-pro-preview',
+      'gemini-3.5-flash',
+      'gpt-4o-audio-preview',
+    ]) {
+      expect(supportsPlaygroundAudioInput(model)).toBe(true)
+    }
+    for (const model of [
+      'gpt-5.5',
+      'gpt-4o',
+      'gemini-2.5-flash-image',
+      'gemini-2.5-flash-tts',
+      'whisper-1',
+    ]) {
+      expect(supportsPlaygroundAudioInput(model)).toBe(false)
+    }
+  })
+
+  test('rejects audio input before dispatching to a text-only chat model', () => {
+    const audio = {
+      kind: 'audio' as const,
+      filename: 'voice.mp3',
+      mediaType: 'audio/mpeg',
+      url: 'data:audio/mpeg;base64,AA==',
+    }
+
+    expect(validateMediaGenerationAttachments('gpt-5.5', [audio])).toBe(
+      'This chat model does not support audio attachments'
+    )
+    expect(
+      validateMediaGenerationAttachments('gemini-2.5-flash', [audio])
+    ).toBeUndefined()
   })
 
   test('rejects video input before dispatching to a text-only chat model', () => {

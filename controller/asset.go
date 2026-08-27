@@ -274,6 +274,8 @@ func assetTypeFromContentType(contentType string) string {
 		return "Video"
 	case strings.HasPrefix(mediaType, "audio/"):
 		return "Audio"
+	case mediaType == "application/pdf":
+		return "Document"
 	default:
 		return ""
 	}

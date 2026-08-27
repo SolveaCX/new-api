@@ -85,6 +85,22 @@ function sanitizeAttachmentVideoUrl(
   return sanitizeGeneratedMediaUrl(trimmedUrl)
 }
 
+function sanitizeAttachmentAudioUrl(
+  attachment: PlaygroundAttachment
+): string | undefined {
+  const dataURL = attachment.dataUrl?.trim()
+  if (
+    dataURL &&
+    /^data:audio\/(?:mpeg|mp3|wav|x-wav);base64,[a-z0-9+/\r\n]+={0,2}$/i.test(
+      dataURL
+    )
+  ) {
+    return dataURL
+  }
+  const safeURL = sanitizeGeneratedMediaUrl(attachment.url)
+  return attachment.assetId?.trim() ? safeURL : undefined
+}
+
 interface PlaygroundChatProps {
   messages: MessageType[]
   onCopyMessage?: (message: MessageType) => void
@@ -244,6 +260,13 @@ export function PlaygroundChat({
                                       { attachment, ...(url ? { url } : {}) },
                                     ]
                                   }
+                                  if (attachment.kind === 'audio') {
+                                    const url =
+                                      sanitizeAttachmentAudioUrl(attachment)
+                                    return [
+                                      { attachment, ...(url ? { url } : {}) },
+                                    ]
+                                  }
                                   return [{ attachment }]
                                 }
                               )
@@ -251,11 +274,17 @@ export function PlaygroundChat({
                                 attachmentPreviews.filter(
                                   ({ attachment }) =>
                                     attachment.kind === 'image' ||
-                                    attachment.kind === 'video'
+                                    attachment.kind === 'video' ||
+                                    attachment.kind === 'audio'
                                 )
                               const textAttachmentPreviews =
                                 attachmentPreviews.filter(
                                   ({ attachment }) => attachment.kind === 'text'
+                                )
+                              const documentAttachmentPreviews =
+                                attachmentPreviews.filter(
+                                  ({ attachment }) =>
+                                    attachment.kind === 'document'
                                 )
 
                               // Extract visible content (remove <think> tags for assistant messages)
@@ -417,6 +446,18 @@ export function PlaygroundChat({
                                                       key={`${message.key}-${version.id}-${attachment.filename}`}
                                                       src={url}
                                                     />
+                                                  ) : attachment.kind ===
+                                                      'audio' && url ? (
+                                                    <audio
+                                                      aria-label={
+                                                        attachment.filename
+                                                      }
+                                                      className='max-w-full'
+                                                      controls
+                                                      key={`${message.key}-${version.id}-${attachment.filename}`}
+                                                      preload='metadata'
+                                                      src={url}
+                                                    />
                                                   ) : url ? (
                                                     <video
                                                       aria-label={
@@ -453,6 +494,8 @@ export function PlaygroundChat({
                                         )}
 
                                         {(textAttachmentPreviews.length > 0 ||
+                                          documentAttachmentPreviews.length >
+                                            0 ||
                                           !!generatedMedia.length ||
                                           !!generatedImageContent.text ||
                                           generatedImageContent.images.length >
@@ -473,6 +516,23 @@ export function PlaygroundChat({
                                               {!!textAttachmentPreviews.length && (
                                                 <div className='flex flex-wrap gap-2'>
                                                   {textAttachmentPreviews.map(
+                                                    ({ attachment }) => (
+                                                      <span
+                                                        className='border-border bg-muted/50 text-muted-foreground inline-flex max-w-full items-center rounded-md border px-2 py-1 text-xs font-medium'
+                                                        key={`${message.key}-${version.id}-${attachment.filename}`}
+                                                        title={
+                                                          attachment.filename
+                                                        }
+                                                      >
+                                                        {attachment.filename}
+                                                      </span>
+                                                    )
+                                                  )}
+                                                </div>
+                                              )}
+                                              {!!documentAttachmentPreviews.length && (
+                                                <div className='flex flex-wrap gap-2'>
+                                                  {documentAttachmentPreviews.map(
                                                     ({ attachment }) => (
                                                       <span
                                                         className='border-border bg-muted/50 text-muted-foreground inline-flex max-w-full items-center rounded-md border px-2 py-1 text-xs font-medium'

@@ -30,6 +30,8 @@ describe('isPlaygroundChatModelName', () => {
       'anthropic/claude-sonnet-4.5',
       'claude-haiku-4-5',
       'gemini-2.5-flash',
+      'gemini-3.5-flash',
+      'gpt-4o-audio-preview',
       'antigravity-preview-05-2026',
     ]) {
       expect(isPlaygroundChatModelName(model)).toBe(true)
@@ -79,7 +81,6 @@ describe('isPlaygroundChatModelName', () => {
       'mj_video',
       'tts-1',
       'whisper-1',
-      'gpt-4o-audio-preview',
       'text-embedding-3-large',
       'bge-reranker-v2',
       'text-moderation-stable',

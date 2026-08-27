@@ -366,7 +366,14 @@ func CompleteAssetUpload(ctx context.Context, request AssetCompleteUploadRequest
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetUploadValidation
 	}
-	if detected != upload.ContentType || detected != attrs.ContentType {
+	// Compare canonical MIME values. Browsers/object stores may preserve an
+	// equivalent alias such as image/jpg while the signed session and content
+	// sniffer use image/jpeg; treating those aliases as different rejects valid
+	// image-to-video uploads for no semantic reason.
+	expectedContentType, _ := normalizeAssetContentType(upload.AssetType, upload.ContentType)
+	storedContentType, _ := normalizeAssetContentType(upload.AssetType, attrs.ContentType)
+	if expectedContentType == "" || storedContentType == "" ||
+		detected != expectedContentType || detected != storedContentType {
 		_ = failAssetUploadValidation(ctx, upload, attrs.Generation)
 		return nil, ErrAssetTypeMismatch
 	}
@@ -848,6 +855,8 @@ func normalizeAssetType(assetType string) string {
 		return "Video"
 	case "audio":
 		return "Audio"
+	case "document", "pdf":
+		return "Document"
 	default:
 		return strings.TrimSpace(assetType)
 	}
@@ -888,12 +897,17 @@ func normalizeAssetContentType(assetType string, contentType string) (string, st
 		case "audio/mp4":
 			return "audio/mp4", ".m4a"
 		}
+	case "Document":
+		switch contentType {
+		case "application/pdf":
+			return "application/pdf", ".pdf"
+		}
 	}
 	return "", ""
 }
 
 func supportedAssetContentTypeCategory(contentType string) string {
-	for _, assetType := range []string{"Image", "Video", "Audio"} {
+	for _, assetType := range []string{"Image", "Video", "Audio", "Document"} {
 		if normalized, _ := normalizeAssetContentType(assetType, contentType); normalized != "" {
 			return assetType
 		}

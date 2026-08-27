@@ -34,12 +34,13 @@ export interface MessageVersion {
 }
 
 export interface PlaygroundAttachment {
-  kind: 'image' | 'video' | 'text'
+  kind: 'image' | 'video' | 'audio' | 'document' | 'text'
   filename: string
   mediaType: string
   /** Stable server-side asset identity. URLs are short-lived previews only. */
   assetId?: string
   url?: string
+  dataUrl?: string
   text?: string
 }
 
@@ -88,13 +89,22 @@ export interface ChatCompletionMessage {
 }
 
 export interface ContentPart {
-  type: 'text' | 'image_url' | 'video_url'
+  type: 'text' | 'image_url' | 'video_url' | 'file' | 'input_audio'
   text?: string
   image_url?: {
     url: string
   }
   video_url?: {
     url: string
+  }
+  file?: {
+    filename?: string
+    file_url?: string
+    file_data?: string
+  }
+  input_audio?: {
+    data: string
+    format: string
   }
 }
 

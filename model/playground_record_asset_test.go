@@ -26,7 +26,7 @@ func playgroundAssetForTest(userID int, publicID, assetType string) Asset {
 		StorageBucket:    "playground-test",
 		ObjectKey:        "objects/" + publicID,
 		ObjectGeneration: 1,
-		ContentType:      map[string]string{AssetTypeImage: "image/png", AssetTypeVideo: "video/mp4"}[assetType],
+		ContentType:      map[string]string{AssetTypeImage: "image/png", AssetTypeVideo: "video/mp4", AssetTypeDocument: "application/pdf"}[assetType],
 		SizeBytes:        1,
 		SourceExpiresAt:  now + 3600,
 		CreatedAt:        now,
@@ -68,6 +68,17 @@ func TestValidatePlaygroundAssetReferencesScopesTypeAndExpiry(t *testing.T) {
 
 	require.NoError(t, DB.Model(&Asset{}).Where("id = ?", image.Id).Updates(map[string]any{"source_expires_at": time.Now().Add(-time.Minute).Unix()}).Error)
 	require.ErrorIs(t, ValidatePlaygroundAssetReferences(401, []PlaygroundAssetReference{{AssetID: image.PublicId, AssetType: AssetTypeImage}}), ErrPlaygroundAssetExpired)
+}
+
+func TestNormalizePlaygroundAssetReferencesAcceptsDocumentAndPdfTypes(t *testing.T) {
+	refs, err := normalizePlaygroundAssetReferences([]PlaygroundAssetReference{
+		{AssetID: "ast_playground_document", AssetType: "document"},
+		{AssetID: "ast_playground_pdf", AssetType: "pdf"},
+	})
+	require.NoError(t, err)
+	require.Len(t, refs, 2)
+	require.Equal(t, "Document", refs[0].AssetType)
+	require.Equal(t, "Document", refs[1].AssetType)
 }
 
 func TestPlaygroundRecordAssetReferencesAreIdempotentAndClearKeepsSharedAssets(t *testing.T) {

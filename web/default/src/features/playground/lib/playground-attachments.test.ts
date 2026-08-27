@@ -95,6 +95,174 @@ describe('Playground durable attachments', () => {
     post.mockRestore()
   })
 
+  test('uploads PDF attachments and returns a durable document URL', async () => {
+    enableBrowserUpload()
+    const post = spyOn(api, 'post')
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            upload_id: 'upl_pdf',
+            asset_id: 'ast_pdf',
+            upload_url: 'https://storage.example/upload-pdf',
+            upload_headers: { 'Content-Type': 'application/pdf' },
+            expires_at: 9999999999,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            asset_id: 'ast_pdf',
+            asset_type: 'Document',
+            content_type: 'application/pdf',
+            size_bytes: 8,
+            preview_url: 'https://storage.example/report.pdf',
+            expires_at: 9999999999,
+          },
+        },
+      } as never)
+    let uploadedBody: BodyInit | null = null
+    globalThis.fetch = (async (_input, init) => {
+      uploadedBody = init?.body ?? null
+      return { ok: true, status: 200 } as Response
+    }) as typeof fetch
+
+    const attachment: PlaygroundAttachment = {
+      kind: 'document',
+      filename: 'report.pdf',
+      mediaType: 'application/pdf',
+      url: 'data:application/pdf;base64,JVBERi0xLjQ=',
+    }
+    await expect(uploadPlaygroundAttachments([attachment])).resolves.toEqual([
+      {
+        ...attachment,
+        assetId: 'ast_pdf',
+        url: 'https://storage.example/report.pdf',
+      },
+    ])
+    expect(uploadedBody).toBeInstanceOf(Blob)
+    expect(post.mock.calls[0]?.[1]).toMatchObject({
+      asset_type: 'Document',
+      content_type: 'application/pdf',
+      size_bytes: 8,
+    })
+    post.mockRestore()
+  })
+
+  test('uploads audio attachments and preserves the inline audio payload', async () => {
+    enableBrowserUpload()
+    const post = spyOn(api, 'post')
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            upload_id: 'upl_audio',
+            asset_id: 'ast_audio',
+            upload_url: 'https://storage.example/upload-audio',
+            upload_headers: { 'Content-Type': 'audio/mpeg' },
+            expires_at: 9999999999,
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            asset_id: 'ast_audio',
+            asset_type: 'Audio',
+            content_type: 'audio/mpeg',
+            size_bytes: 4,
+            preview_url: 'https://storage.example/audio.mp3',
+            expires_at: 9999999999,
+          },
+        },
+      } as never)
+    globalThis.fetch = (async (_input, init) => ({
+      ok: true,
+      status: 200,
+      body: init?.body ?? null,
+    })) as typeof fetch
+
+    const attachment: PlaygroundAttachment = {
+      kind: 'audio',
+      filename: 'clip.mp3',
+      mediaType: 'audio/mpeg',
+      url: 'data:audio/mpeg;base64,AA==',
+    }
+    await expect(uploadPlaygroundAttachments([attachment])).resolves.toEqual([
+      {
+        ...attachment,
+        assetId: 'ast_audio',
+        url: 'https://storage.example/audio.mp3',
+        dataUrl: 'data:audio/mpeg;base64,AA==',
+      },
+    ])
+    expect(post.mock.calls[0]?.[1]).toMatchObject({
+      asset_type: 'Audio',
+      content_type: 'audio/mpeg',
+      size_bytes: 1,
+    })
+    post.mockRestore()
+  })
+
+  test('rehydrates audio attachments with inline data for later sends', async () => {
+    enableBrowserUpload()
+    const get = spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_audio',
+          asset_type: 'Audio',
+          content_type: 'audio/mpeg',
+          size_bytes: 1,
+          preview_url: 'https://storage.example/audio.mp3',
+          expires_at: 9999999999,
+        },
+      },
+    } as never)
+    globalThis.fetch = (async () =>
+      new Response(
+        new Blob([Uint8Array.from([0])], { type: 'audio/mpeg' })
+      )) as typeof fetch
+
+    const messages: Message[] = [
+      {
+        key: 'user-audio',
+        from: 'user',
+        versions: [
+          {
+            id: 'v1',
+            content: 'transcribe this',
+            attachments: [
+              {
+                kind: 'audio',
+                filename: 'clip.mp3',
+                mediaType: 'audio/mpeg',
+                assetId: 'ast_audio',
+                url: 'https://storage.example/audio.mp3',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const hydrated = await hydratePlaygroundMessages(messages)
+
+    expect(hydrated[0]?.versions[0]?.attachments?.[0]).toMatchObject({
+      kind: 'audio',
+      filename: 'clip.mp3',
+      mediaType: 'audio/mpeg',
+      assetId: 'ast_audio',
+      url: 'https://storage.example/audio.mp3',
+      dataUrl: 'data:audio/mpeg;base64,AA==',
+    })
+    expect(get).toHaveBeenCalledTimes(1)
+    get.mockRestore()
+  })
+
   test('hydrates duplicate asset IDs once after a server restore', async () => {
     enableBrowserUpload()
     const get = spyOn(api, 'get').mockResolvedValue({

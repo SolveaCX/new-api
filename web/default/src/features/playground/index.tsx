@@ -655,7 +655,10 @@ export function Playground({
     ): PlaygroundAttachment[] | Promise<PlaygroundAttachment[]> => {
       const hasMediaAttachment = attachments.some(
         (attachment) =>
-          attachment.kind === 'image' || attachment.kind === 'video'
+          attachment.kind === 'image' ||
+          attachment.kind === 'video' ||
+          attachment.kind === 'audio' ||
+          attachment.kind === 'document'
       )
       if (!hasMediaAttachment || !isPlaygroundAttachmentUploadAvailable()) {
         return attachments

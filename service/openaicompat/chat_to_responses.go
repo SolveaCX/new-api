@@ -234,10 +234,24 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 					"input_audio": part.InputAudio,
 				})
 			case dto.ContentTypeFile:
-				contentParts = append(contentParts, map[string]any{
+				file := part.GetFile()
+				if file == nil {
+					contentParts = append(contentParts, map[string]any{
+						"type": "input_file",
+					})
+					continue
+				}
+				item := map[string]any{
 					"type": "input_file",
-					"file": part.File,
-				})
+				}
+				if file.FileURL != "" {
+					item["file_url"] = file.FileURL
+				} else if file.FileId != "" {
+					item["file_id"] = file.FileId
+				} else if file.FileData != "" {
+					item["file_data"] = file.FileData
+				}
+				contentParts = append(contentParts, item)
 			case dto.ContentTypeVideoUrl:
 				contentParts = append(contentParts, map[string]any{
 					"type":      "input_video",

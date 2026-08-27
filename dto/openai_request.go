@@ -347,8 +347,13 @@ func (m *MediaContent) GetFile() *MessageFile {
 			return m.File.(*MessageFile)
 		}
 		if itemMap, ok := m.File.(map[string]any); ok {
+			fileName := common.Interface2String(itemMap["file_name"])
+			if fileName == "" {
+				fileName = common.Interface2String(itemMap["filename"])
+			}
 			out := &MessageFile{
-				FileName: common.Interface2String(itemMap["file_name"]),
+				FileName: fileName,
+				FileURL:  common.Interface2String(itemMap["file_url"]),
 				FileData: common.Interface2String(itemMap["file_data"]),
 				FileId:   common.Interface2String(itemMap["file_id"]),
 			}
@@ -424,6 +429,7 @@ type MessageInputAudio struct {
 
 type MessageFile struct {
 	FileName string `json:"filename,omitempty"`
+	FileURL  string `json:"file_url,omitempty"`
 	FileData string `json:"file_data,omitempty"`
 	FileId   string `json:"file_id,omitempty"`
 }
@@ -626,13 +632,15 @@ func (m *Message) ParseContent() []MediaContent {
 						},
 					})
 				} else {
-					fileName, ok1 := fileData["filename"].(string)
+					fileName, _ := fileData["filename"].(string)
+					fileURL, okURL := fileData["file_url"].(string)
 					fileDataStr, ok2 := fileData["file_data"].(string)
-					if ok1 && ok2 {
+					if ok2 || okURL {
 						contentList = append(contentList, MediaContent{
 							Type: ContentTypeFile,
 							File: &MessageFile{
 								FileName: fileName,
+								FileURL:  fileURL,
 								FileData: fileDataStr,
 							},
 						})
@@ -805,19 +813,21 @@ func (m *Message) ParseContent() []MediaContent {
 								FileId: fileId,
 							},
 						})
-					} else {
-						fileName, ok1 := fileData["filename"].(string)
-						fileDataStr, ok2 := fileData["file_data"].(string)
-						if ok1 && ok2 {
-							contentList = append(contentList, MediaContent{
-								Type: ContentTypeFile,
-								File: &MessageFile{
-									FileName: fileName,
-									FileData: fileDataStr,
-								},
-							})
-						}
-					}
+			} else {
+				fileName, _ := fileData["filename"].(string)
+				fileURL, okURL := fileData["file_url"].(string)
+				fileDataStr, ok2 := fileData["file_data"].(string)
+				if ok2 || okURL {
+					contentList = append(contentList, MediaContent{
+						Type: ContentTypeFile,
+						File: &MessageFile{
+							FileName: fileName,
+							FileURL:  fileURL,
+							FileData: fileDataStr,
+						},
+					})
+				}
+			}
 				}
 			case ContentTypeVideoUrl:
 				if videoUrl, ok := contentItem["video_url"].(string); ok {

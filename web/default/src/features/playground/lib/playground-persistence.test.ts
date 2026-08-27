@@ -259,6 +259,99 @@ describe('Playground persistence payloads', () => {
     ])
   })
 
+  test('drops embedded input audio and file data from the persisted relay request', () => {
+    const message: Message = {
+      ...userMessage,
+      versions: [{ ...userMessage.versions[0], attachments: [] }],
+    }
+    const active = {
+      ...activeTurn(),
+      userMessage: message,
+      request: {
+        ...activeTurn().request,
+        messages: [
+          {
+            role: 'user' as const,
+            content: [
+              { type: 'text' as const, text: 'read this' },
+              {
+                type: 'input_audio' as const,
+                input_audio: { data: 'AA==', format: 'mp3' },
+              },
+              {
+                type: 'file' as const,
+                file: {
+                  filename: 'report.pdf',
+                  file_data: 'JVBERi0xLjQ=',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      active,
+      [message, completeAssistant],
+      false,
+      2500
+    )
+
+    expect(payload.request_messages).toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'read this' }],
+      },
+    ])
+  })
+
+  test('drops inline input_audio parts from the persisted relay request', () => {
+    const active = {
+      ...activeTurn(),
+      request: {
+        ...activeTurn().request,
+        messages: [
+          {
+            role: 'user' as const,
+            content: [
+              {
+                type: 'text' as const,
+                text: 'please transcribe this',
+              },
+              {
+                type: 'input_audio' as const,
+                input_audio: {
+                  data: 'AAECAwQ=',
+                  format: 'mp3',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      active,
+      [userMessage, completeAssistant],
+      false,
+      2500
+    )
+
+    expect(payload.request_messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'please transcribe this',
+          },
+        ],
+      },
+    ])
+  })
+
   test('does not restore stale local inline bytes over a durable server reference', () => {
     const serverMessages: Message[] = [
       {

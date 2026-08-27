@@ -308,7 +308,7 @@ function playgroundApiErrorMessage(
 /** Create a short-lived signed upload session for a Playground attachment. */
 export async function createPlaygroundAttachmentUploadSession(
   request: {
-    assetType: 'Image' | 'Video'
+    assetType: 'Image' | 'Video' | 'Audio' | 'Document'
     contentType: string
     sizeBytes: number
   },

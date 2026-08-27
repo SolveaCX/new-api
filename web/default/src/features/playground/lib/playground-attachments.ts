@@ -21,7 +21,11 @@ import {
   type PlaygroundAttachmentPreview,
 } from '../api'
 import type { Message, PlaygroundAttachment } from '../types'
-import { MAX_ATTACHMENTS, MAX_FILE_BYTES } from './attachments'
+import {
+  MAX_ATTACHMENTS,
+  MAX_FILE_BYTES,
+  normalizePlaygroundMediaType,
+} from './attachments'
 import { markTrustedAttachmentURL } from './message-utils'
 
 const DATA_URL_PATTERN = /^data:([^;,\s]+);base64,([a-z0-9+/=\r\n]*)$/i
@@ -35,8 +39,15 @@ export function isPlaygroundAttachmentUploadAvailable(): boolean {
 
 function isMediaAttachment(
   attachment: PlaygroundAttachment
-): attachment is PlaygroundAttachment & { kind: 'image' | 'video' } {
-  return attachment.kind === 'image' || attachment.kind === 'video'
+): attachment is PlaygroundAttachment & {
+  kind: 'image' | 'video' | 'audio' | 'document'
+} {
+  return (
+    attachment.kind === 'image' ||
+    attachment.kind === 'video' ||
+    attachment.kind === 'audio' ||
+    attachment.kind === 'document'
+  )
 }
 
 function isBase64DataURL(value: unknown): boolean {
@@ -68,7 +79,9 @@ export function playgroundDataURLToBlob(value: string): Blob {
   if (bytes.length === 0 || bytes.length > MAX_FILE_BYTES) {
     throw new Error('Attachment exceeds the maximum size')
   }
-  return new Blob([bytes], { type: match[1].toLowerCase() })
+  return new Blob([bytes], {
+    type: normalizePlaygroundMediaType(match[1]),
+  })
 }
 
 async function attachmentToBlob(
@@ -95,19 +108,44 @@ async function attachmentToBlob(
   throw new Error('Attachment must be uploaded from local data')
 }
 
-function expectedAssetType(kind: 'image' | 'video'): 'Image' | 'Video' {
-  return kind === 'image' ? 'Image' : 'Video'
+function expectedUploadAssetType(
+  kind: 'image' | 'video' | 'audio' | 'document'
+): 'Image' | 'Video' | 'Audio' | 'Document' {
+  switch (kind) {
+    case 'image':
+      return 'Image'
+    case 'video':
+      return 'Video'
+    case 'audio':
+      return 'Audio'
+    case 'document':
+      return 'Document'
+  }
 }
 
 function contentTypeFor(attachment: PlaygroundAttachment, blob: Blob): string {
-  return (attachment.mediaType || blob.type || '')
-    .split(';', 1)[0]
-    .trim()
-    .toLowerCase()
+  return normalizePlaygroundMediaType(attachment.mediaType || blob.type || '')
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  if (blob.size <= 0 || blob.size > MAX_FILE_BYTES) {
+    throw new Error('Attachment exceeds the maximum size')
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return `data:${normalizePlaygroundMediaType(
+    blob.type || 'application/octet-stream'
+  )};base64,${btoa(binary)}`
 }
 
 function assertPreviewMatchesAttachment(
-  attachment: PlaygroundAttachment & { kind: 'image' | 'video' },
+  attachment: PlaygroundAttachment & {
+    kind: 'image' | 'video' | 'audio' | 'document'
+  },
   preview: PlaygroundAttachmentPreview,
   expectedAssetId?: string
 ): void {
@@ -119,7 +157,7 @@ function assertPreviewMatchesAttachment(
   if (expectedAssetId?.trim() && previewAssetId !== expectedAssetId.trim()) {
     throw new Error('Playground attachment preview mismatch')
   }
-  const expected = expectedAssetType(attachment.kind)
+  const expected = expectedUploadAssetType(attachment.kind)
   if (
     preview.asset_type &&
     preview.asset_type.toLowerCase() !== expected.toLowerCase()
@@ -204,6 +242,9 @@ export async function uploadPlaygroundAttachments(
         assetId: preview.asset_id.trim(),
         url: preview.preview_url.trim(),
         mediaType: preview.content_type || attachment.mediaType,
+        ...(attachment.kind === 'audio' && attachment.dataUrl
+          ? { dataUrl: attachment.dataUrl }
+          : {}),
       })
       markTrustedAttachmentURL(uploaded[uploaded.length - 1]!)
       continue
@@ -213,7 +254,7 @@ export async function uploadPlaygroundAttachments(
     const contentType = contentTypeFor(attachment, blob)
     const session = await createPlaygroundAttachmentUploadSession(
       {
-        assetType: expectedAssetType(attachment.kind),
+        assetType: expectedUploadAssetType(attachment.kind),
         contentType,
         sizeBytes: blob.size,
       },
@@ -235,6 +276,9 @@ export async function uploadPlaygroundAttachments(
       assetId: preview.asset_id.trim(),
       url: preview.preview_url.trim(),
       mediaType: preview.content_type || contentType || attachment.mediaType,
+      ...(attachment.kind === 'audio' && attachment.url
+        ? { dataUrl: attachment.url }
+        : {}),
     })
     markTrustedAttachmentURL(uploaded[uploaded.length - 1]!)
   }
@@ -250,6 +294,29 @@ function hydratedAttachment(
     assetId: preview.asset_id,
     url: preview.preview_url,
     mediaType: preview.content_type || attachment.mediaType,
+    ...(attachment.kind === 'audio' && attachment.dataUrl
+      ? { dataUrl: attachment.dataUrl }
+      : {}),
+  }
+}
+
+async function hydrateAudioAttachment(
+  attachment: PlaygroundAttachment,
+  preview: PlaygroundAttachmentPreview
+): Promise<PlaygroundAttachment> {
+  const hydrated = markTrustedAttachmentURL(
+    hydratedAttachment(attachment, preview)
+  )
+  if (hydrated.dataUrl) return hydrated
+
+  try {
+    const response = await fetch(preview.preview_url)
+    if (!response.ok) return hydrated
+
+    const dataUrl = await blobToDataUrl(await response.blob())
+    return markTrustedAttachmentURL({ ...hydrated, dataUrl })
+  } catch {
+    return hydrated
   }
 }
 
@@ -288,12 +355,16 @@ export async function hydratePlaygroundMessages(
                 const assetId = attachment.assetId.trim()
                 const preview = await previewFor(assetId)
                 assertPreviewMatchesAttachment(attachment, preview, assetId)
-                const next = markTrustedAttachmentURL(
-                  hydratedAttachment(attachment, preview)
-                )
+                const next =
+                  attachment.kind === 'audio'
+                    ? await hydrateAudioAttachment(attachment, preview)
+                    : markTrustedAttachmentURL(
+                        hydratedAttachment(attachment, preview)
+                      )
                 if (
                   next.url !== attachment.url ||
-                  next.mediaType !== attachment.mediaType
+                  next.mediaType !== attachment.mediaType ||
+                  next.dataUrl !== attachment.dataUrl
                 ) {
                   versionChanged = true
                 }

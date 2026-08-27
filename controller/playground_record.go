@@ -455,6 +455,8 @@ func walkPlaygroundAssetReferences(value any, context playgroundAssetJSONContext
 				local.assetType = "Image"
 			case "video":
 				local.assetType = "Video"
+			case "document", "pdf", "file":
+				local.assetType = "Document"
 			}
 		}
 		if assetID, ok := playgroundAssetIDFromMap(typed); ok {
@@ -471,8 +473,10 @@ func walkPlaygroundAssetReferences(value any, context playgroundAssetJSONContext
 				childContext.assetType = "Image"
 			case "video_url":
 				childContext.assetType = "Video"
+			case "file", "input_file":
+				childContext.assetType = "Document"
 			}
-			if keyLower := strings.ToLower(strings.TrimSpace(key)); keyLower == "url" {
+			if keyLower := strings.ToLower(strings.TrimSpace(key)); keyLower == "url" || keyLower == "file_url" {
 				if rawURL, ok := child.(string); ok && strings.HasPrefix(strings.TrimSpace(rawURL), "asset://") {
 					assetID, err := parsePlaygroundAssetURI(rawURL)
 					if err != nil {
@@ -571,8 +575,12 @@ func collectPlaygroundAssetURLs(value any, urls map[string]string) {
 	case map[string]any:
 		assetID, hasAssetID := playgroundAssetIDFromMap(typed)
 		if hasAssetID {
-			if rawURL, ok := stringValueForKey(typed, "url"); ok && rawURL != "" && assetID != "" {
-				urls[strings.TrimSpace(rawURL)] = assetID
+			if assetID != "" {
+				for _, urlKey := range []string{"url", "file_url"} {
+					if rawURL, ok := stringValueForKey(typed, urlKey); ok && rawURL != "" {
+						urls[strings.TrimSpace(rawURL)] = assetID
+					}
+				}
 			}
 		}
 		for _, child := range typed {
@@ -595,6 +603,8 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 				local.assetType = "Image"
 			case "video":
 				local.assetType = "Video"
+			case "document", "pdf", "file":
+				local.assetType = "Document"
 			}
 		}
 		if assetID, ok := playgroundAssetIDFromMap(typed); ok && assetID != "" {
@@ -602,9 +612,9 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 		}
 		for key, child := range typed {
 			keyLower := strings.ToLower(strings.TrimSpace(key))
-			if keyLower == "url" {
+			if keyLower == "url" || keyLower == "file_url" {
 				if rawURL, ok := child.(string); ok {
-					if local.assetID != "" && (local.assetType == "Image" || local.assetType == "Video") {
+					if local.assetID != "" && (local.assetType == "Image" || local.assetType == "Video" || local.assetType == "Document") {
 						delete(typed, key)
 						continue
 					}
@@ -619,6 +629,8 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 				childContext.assetType = "Image"
 			} else if keyLower == "video_url" {
 				childContext.assetType = "Video"
+			} else if keyLower == "file" || keyLower == "input_file" {
+				childContext.assetType = "Document"
 			}
 			sanitizePlaygroundValue(child, urls, childContext)
 		}
