@@ -1,10 +1,11 @@
 /**
  * A prompt that can be copied into any image model's request editor.
  *
- * These are intentionally industry-led rather than style-led. Each card tells
+ * These are intentionally workflow-led rather than style-led. Each card tells
  * a concrete team what deliverable to make, where it will be used, and which
  * production constraints matter. Any real model-generated media remains owned
- * by `model-media.ts`; these local posters are clearly marked as templates.
+ * by `model-media.ts`; reviewed template posters may be served from the local
+ * asset bundle or the public CDN.
  */
 export type ImagePromptTemplate = {
   id: string;
@@ -29,167 +30,198 @@ export type ImagePlaygroundExample = {
   poster: string;
 };
 
-const IMAGE_TEMPLATE_ASSET_BASE = "/assets/model-examples/image2";
-const MODEL_EXAMPLES_ASSET_BASE = "/assets/model-examples";
-const MODEL_PAGES_ASSET_BASE = "/assets/model-pages";
-const AWESOME_IMAGE_ASSET_BASE = "/assets/prompts/awesome-images";
-const CLI_ASSET_BASE = "/assets/cli";
-const IMAGE_BUDDY_ASSET_BASE = "/use-case/image-buddy";
+const SELECTED_PLAYGROUND_ASSET_BASE = "/assets/prompts/selected-playground";
+/**
+ * CDN-backed posters for the approved profession directions. Keep these
+ * remote so the nine model pages share the reviewed originals without adding a
+ * second copy of each generated image to the website bundle.
+ */
+const GAME_UI_EQUIPMENT_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/game-ui-equipment";
+const SPORTS_BROADCAST_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/sports-broadcast";
+const BRAND_TVC_ECOMMERCE_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/brand-tvc-ecommerce";
+const CINEMATIC_STORYBOARD_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/cinematic-storyboard";
+const COMEDY_PHYSICAL_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/comedy-physical";
+const HISTORICAL_REVIVAL_CDN_BASE =
+  "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/historical-revival";
 
 /**
- * Poster variants stay inside the same industry lane as their prompt. Every
- * reference in these pools is a product, space, interface, food, or packaging
- * still — never a real person, creator, model, portrait, hand, or workstation.
- * The model id only chooses between compatible references; it never turns a
- * food brief into a random medical or sci-fi thumbnail.
+ * Poster variants stay inside the same workflow lane as their prompt. Every
+ * reference in these pools is a reviewed visual reference — never a real
+ * person, creator, model, portrait, hand, or workstation. The model id only
+ * chooses between compatible references; it never turns a focused brief into a
+ * random unrelated thumbnail.
  */
 const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
   "product-hero": [
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gpt-image-2.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-pro-image.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
   "social-ad": [
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gpt-image-2.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-pro-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
   "catalog-variant": [
-    `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gpt-image-2.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-pro-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
   "editorial-portrait": [
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
-    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gpt-image-2.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-pro-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
   "product-ui": [
-    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gemini-api-hero.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gpt-image-2.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-pro-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
   "food-editorial": [
-    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gpt-image-2.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-pro-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
 };
 
 /**
  * Canonical image pages get a curated six-poster set instead of a shared
- * random-looking rotation. The six positions line up with the six industry
+ * random-looking rotation. The six positions line up with the six prompt
  * templates above, and each model's set is intentionally different.
  */
 const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
   "gpt-image-2": [
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gpt-image-2.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gpt-image-2.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gpt-image-2.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gpt-image-2.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gpt-image-2.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gpt-image-2.png`,
   ],
   "gemini-2-5-flash-image": [
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-2-5-flash-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-2-5-flash-image.png`,
   ],
   "gemini-3-pro-image": [
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-pro-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-pro-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-pro-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-pro-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-pro-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-pro-image.png`,
   ],
   "gemini-3-1-flash-image": [
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-1-flash-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-1-flash-image.png`,
   ],
   "gemini-3-1-flash-lite-image": [
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
-    `${MODEL_PAGES_ASSET_BASE}/gemini-api-hero.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/gemini-3-1-flash-lite-image.png`,
   ],
   "grok-imagine-image": [
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/sports.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
-    `${CLI_ASSET_BASE}/localized-variants.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image.png`,
   ],
   "grok-imagine-image-pro": [
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro-reference.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    `${CLI_ASSET_BASE}/product-reveal.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/coffee.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-pro.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-pro.png`,
   ],
   "grok-imagine-image-quality": [
-    `${IMAGE_BUDDY_ASSET_BASE}/premium-product-hero.jpg`,
-    `${MODEL_EXAMPLES_ASSET_BASE}/product-macro.png`,
-    `${CLI_ASSET_BASE}/campaign-hero.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/ai-agent-poster.png`,
-    `${IMAGE_BUDDY_ASSET_BASE}/marketplace-main-image.jpg`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-quality.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-quality.png`,
   ],
   "nano-banana-pro-preview": [
-    `${CLI_ASSET_BASE}/localized-variants.png`,
-    `${MODEL_PAGES_ASSET_BASE}/gpt-image-2-hero.png`,
-    `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-    `${AWESOME_IMAGE_ASSET_BASE}/liquid-bento.png`,
-    `${IMAGE_TEMPLATE_ASSET_BASE}/skincare.png`,
+    `${GAME_UI_EQUIPMENT_CDN_BASE}/nano-banana-pro-preview.png`,
+    `${SPORTS_BROADCAST_CDN_BASE}/nano-banana-pro-preview.png`,
+    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/nano-banana-pro-preview.png`,
+    `${CINEMATIC_STORYBOARD_CDN_BASE}/nano-banana-pro-preview.png`,
+    `${COMEDY_PHYSICAL_CDN_BASE}/nano-banana-pro-preview.png`,
+    `${HISTORICAL_REVIVAL_CDN_BASE}/nano-banana-pro-preview.png`,
   ],
+};
+
+/**
+ * The temporary picker selection for the nine canonical image model pages.
+ * The order was supplied by the product review flow, so it intentionally
+ * overrides the source feed's `model` field (the feed has only two source
+ * model values). These are local copies so the detail pages do not depend on
+ * remote image URLs at render time.
+ */
+const IMAGE_PLAYGROUND_SELECTED_POSTERS: Record<string, string> = {
+  "gpt-image-2": `${SELECTED_PLAYGROUND_ASSET_BASE}/silhouette-universe-narrative-poster.jpg`,
+  "gemini-2-5-flash-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/three-day-travel-guide-card.jpg`,
+  "gemini-3-pro-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/museum-catalog-style-chinese-disassembly-infographic.jpg`,
+  "gemini-3-1-flash-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/high-end-skincare-product-poster.png`,
+  "gemini-3-1-flash-lite-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/ximen-qing-100-panel-storyboard.jpg`,
+  "grok-imagine-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/gta-6-livestream-gameplay-screenshot.jpg`,
+  "grok-imagine-image-pro": `${SELECTED_PLAYGROUND_ASSET_BASE}/pet-brand.png`,
+  "grok-imagine-image-quality": `${SELECTED_PLAYGROUND_ASSET_BASE}/book-cover.png`,
+  "nano-banana-pro-preview": `${SELECTED_PLAYGROUND_ASSET_BASE}/real-estate-interior.png`,
 };
 
 /**
@@ -200,119 +232,120 @@ const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
 const IMAGE_PLAYGROUND_EXAMPLES: Record<string, ImagePlaygroundExample> = {
   "gpt-image-2": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["gpt-image-2"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["gpt-image-2"],
     prompt:
       "For an ecommerce skincare listing, create a 4:5 premium hero image of a frosted glass serum dropper on a pale aqua stone surface with fine water droplets. Keep the bottle proportions and cap shape exact, use soft daylight and a clean reflection, leave generous negative space for price and CTA copy, and deliver a product-only composition with no readable text, invented logo, extra products, hands, or watermark.",
   },
   "gemini-2-5-flash-image": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["gemini-2-5-flash-image"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["gemini-2-5-flash-image"],
     prompt:
       "For a beauty marketplace listing, create a warm 1:1 hero still of a matte skincare bottle and matching cream jar on a travertine shelf. Preserve the supplied packaging, cap geometry, materials, and neutral palette; use soft window shadows, a clear front-facing silhouette, and safe margins for listing controls. No people, hands, invented labels, extra products, claims, or watermark.",
   },
   "gemini-3-pro-image": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-pro-image"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["gemini-3-pro-image"],
     prompt:
       "For a sustainable retail catalog, create a clean 1:1 marketplace product photo of a brushed stainless-steel bottle centered on seamless white. Show the exact cylindrical body, lid, and metal grain with a soft grounded shadow, neutral color balance, and enough empty margin for catalog overlays. No text, logos, accessories, reflections of people, or additional objects.",
   },
   "gemini-3-1-flash-image": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-1-flash-image"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["gemini-3-1-flash-image"],
     prompt:
       "For a premium skincare launch, create a 4:5 retail campaign image of a deep-green glass pump bottle on sculptural white stone. Keep the pump, bottle proportions, and glass reflections consistent; use directional botanical shadows, bright natural daylight, and a quiet upper-left area for campaign copy. No readable text, invented branding, people, hands, extra products, or watermark.",
   },
   "gemini-3-1-flash-lite-image": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["gemini-3-1-flash-lite-image"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["gemini-3-1-flash-lite-image"],
     prompt:
       "For a beauty brand product reveal, create a square ecommerce hero of a translucent emerald pump bottle on a dark graphite pedestal. Use a controlled rim light, crisp silhouette, subtle contact shadow, and premium contrast that survives a small mobile thumbnail. Preserve the product shape and color; no text, logo changes, props, people, or watermark.",
   },
   "grok-imagine-image": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["grok-imagine-image"],
     prompt:
       "For an electronics retailer, create a 16:9 product-detail hero of an open matte-black wireless earbud case on dark slate. Show both earbuds seated correctly, crisp hinge and material texture, a low three-quarter camera, and a single soft key light with a controlled cast shadow. No hands, people, readable text, invented logo, extra accessories, or watermark.",
   },
   "grok-imagine-image-pro": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image-pro"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["grok-imagine-image-pro"],
     prompt:
       "For a consumer-electronics catalog, create a 1:1 front-facing listing image of a closed matte-black wireless earbud charging case on a light concrete surface. Preserve the rounded lid, seam, indicator light, and subtle brand mark exactly; use diffuse studio light and a soft natural shadow with marketplace-safe margins. No invented text, extra products, hands, or watermark.",
   },
   "grok-imagine-image-quality": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["grok-imagine-image-quality"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["grok-imagine-image-quality"],
     prompt:
       "For a lifestyle retail shop, create a 4:5 hero image of a handmade ceramic travel mug on a sunlit coastal stone ledge. Keep the glaze pattern, handle, and proportions stable; use a softly blurred ocean background, warm morning light, and clear negative space for product title and price. No people, hands, text, invented logo, extra props, or watermark.",
   },
   "nano-banana-pro-preview": {
     industry: "ecommerce-retail",
-    poster: IMAGE_MODEL_POSTER_SETS["nano-banana-pro-preview"][0],
+    poster: IMAGE_PLAYGROUND_SELECTED_POSTERS["nano-banana-pro-preview"],
     prompt:
       "For a beauty marketplace variant set, create three coordinated 9:16 product panels for the same pump bottle in magenta, sky blue, and amber colorways. Lock camera height, bottle proportions, cap geometry, lighting direction, and crop; change only the liquid and background color. Keep every panel text-free with no invented logos, extra products, hands, or watermark.",
   },
 };
 
 /**
- * Industry prompts for the image prompt library. Bracketed values are
+ * Workflow prompts for the image prompt library. Bracketed values are
  * deliberate fill-in slots: a visitor can replace them without rewriting the
  * composition, lighting, and delivery constraints that make a prompt useful.
  */
 export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
   {
+    // Keep the legacy id so previously saved prompt-library links continue to resolve.
     id: "product-hero",
-    label: "Product mockups",
+    label: "Game UI interaction and equipment switching",
     prompt:
-      "For ecommerce and retail teams, create a marketplace hero image for [product] sold through [Amazon, Shopify, or store]. Show the supplied product exactly, preserving packaging, materials, proportions, and supplied brand marks. Use a clean [surface], a balanced three-quarter view, soft studio light, and 4:5 or 1:1 framing with safe space for price and CTA copy. No invented text, claims, accessories, watermark, or extra products.",
-    ratio: "4:5",
-    poster: `${AWESOME_IMAGE_ASSET_BASE}/ecommerce-skincare.png`,
-    tags: ["product", "ecommerce", "hero"],
+      "For game UI and interaction designers, create a 16:9 static game keyframe for [original game and character] that can be matched across an equipment-switch transition. Show the same character with [weapon or item] equipped, a deliberate HUD/loadout composition, and a clearly separated alternate equipment slot for the next frame. Lock camera, pose, costume silhouette, lighting direction, and prop geometry so Seedance can animate a seamless swap, skill release, or menu interaction. Keep the game art and interface hierarchy legible; add labels in post. No existing IP, real logos, readable words, invented stats, or watermark.",
+    ratio: "16:9",
+    poster: `${GAME_UI_EQUIPMENT_CDN_BASE}/gpt-image-2.png`,
+    tags: ["game", "ui", "equipment", "animation"],
   },
   {
     id: "social-ad",
-    label: "Ad creatives",
+    label: "Live sports broadcast simulation",
     prompt:
-      "For consumer brands and growth teams, create a 9:16 product-first social ad for [product] aimed at [audience] on TikTok or Reels. Build a clear still-life scene with the supplied packaging, a bold [background color], controlled shadow, and a clean product silhouette that reads at mobile size. Keep the top 18% safe for a headline and CTA. No people, hands, faces, invented logos, exaggerated claims, generated text, or extra products.",
-    ratio: "9:16",
-    poster: `${CLI_ASSET_BASE}/localized-variants.png`,
-    tags: ["social", "campaign", "product-still-life"],
+      "For sports broadcasters, live-event directors, and sports marketing teams, create a 16:9 high-fidelity television broadcast frame of [sport and decisive moment] in [venue]. Capture a physically believable instant with broadcast-camera perspective, natural motion blur, realistic collisions or ball trajectory, crowd depth, and mild codec/compression texture. Reserve clean areas for a generic scoreboard, clock, lower-third, and replay markers using abstract shapes and simple numerals only; add final copy in post. Keep uniforms, equipment, lighting, and camera direction consistent so Seedance can extend the frame into a short highlight with camera shake and arena ambience. No real leagues, teams, athletes, sponsors, logos, readable words, invented claims, or watermark.",
+    ratio: "16:9",
+    poster: `${SPORTS_BROADCAST_CDN_BASE}/gpt-image-2.png`,
+    tags: ["sports", "broadcast", "live-event", "television"],
   },
   {
     id: "catalog-variant",
-    label: "Ecommerce images",
+    label: "Brand TVC and seamless ecommerce showcase",
     prompt:
-      "For fashion and sports retailers, create a consistent catalog set for [product line] with [number] colorways. Lock camera height, lens, background tone, crop, and shadow direction across every variant; change only [color or configuration]. Preserve exact proportions, sole or fabric texture, and marketplace-safe margins. No extra accessories, invented text, or drifting product identity.",
-    ratio: "1:1",
-    poster: `${AWESOME_IMAGE_ASSET_BASE}/sports-shoe.png`,
-    tags: ["catalog", "consistency", "marketplace"],
+      "For brand, advertising, and ecommerce teams, create a 16:9 commercial product hero for [product] in [set or environment]. Lock the product silhouette, proportions, materials, packaging details, and brand-safe blank areas while using a deliberate starting frame such as [macro detail, three-quarter hero, or 360-degree turn]. Build polished TVC lighting, reflections, and a clean surface that can extend into a seamless product reveal or ecommerce variant. Leave room for headline and CTA copy to be added in post. No real logos, readable words, invented claims, extra products, people, hands, or watermark.",
+    ratio: "16:9",
+    poster: `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gpt-image-2.png`,
+    tags: ["brand", "tvc", "ecommerce", "product"],
   },
   {
     id: "editorial-portrait",
-    label: "Hospitality and travel",
+    label: "Cinematic character and storyboard direction",
     prompt:
-      "For hospitality and travel teams, create a 4:5 room or destination listing image for [hotel, resort, or rental]. Show the supplied interior or space with accurate architecture, materials, linens, and daylight direction; stage one clear focal area and leave safe space for room type and booking copy. No people, silhouettes, hands, invented signage, logos, text, or extra rooms.",
-    ratio: "4:5",
-    poster: `${IMAGE_TEMPLATE_ASSET_BASE}/flatkey-image2-hotel.png`,
-    tags: ["hospitality", "interior", "travel"],
+      "For film directors, storyboard artists, and character designers, create a 16:9 cinematic keyframe of [character] in [scene] from a deliberate [wide, medium, close, or over-the-shoulder] angle. Preserve identity cues, wardrobe, props, screen direction, lighting direction, and spatial relationships so the image can serve as a reference frame for alternate camera views and a continuous shot. Build a clear foreground, midground, and background with expressive but natural action; leave dialogue and captions for post. No existing IP, real people, logos, readable words, invented credits, or watermark.",
+    ratio: "16:9",
+    poster: `${CINEMATIC_STORYBOARD_CDN_BASE}/gpt-image-2.png`,
+    tags: ["film", "character", "storyboard", "cinematic"],
   },
   {
     id: "product-ui",
-    label: "Apps",
+    label: "Comedy sketch and physical storytelling",
     prompt:
-      "For SaaS and mobile-product teams, create a 16:9 product-launch visual for [app name] showing [core workflow] in a clean interface composition. Place the supplied UI in a restrained [brand palette], preserve its hierarchy and supplied labels, use clear cards and generous spacing, and leave the right side open for headline copy. No people, hands, faces, developer terminal, readable code, invented logo, fake metrics, or tiny unreadable interface text.",
+      "For short-drama writers, comedy creators, and physical-storyboard teams, create a 16:9 cinematic freeze-frame of [comic setup] in [location]. Show a clear cause-and-effect chain—[object] moves from [start] to [landing]—with expressive reactions, believable weight, safe spacing, and a camera angle that makes the gag readable. Keep the same characters, props, wardrobe, and screen direction suitable for a short physical-comedy clip; add dialogue or captions in post. No injury, dangerous stunts, real brands, readable words, existing IP, or watermark.",
     ratio: "16:9",
-    poster: `${MODEL_PAGES_ASSET_BASE}/image-api-hero.png`,
-    tags: ["app", "product", "launch"],
+    poster: `${COMEDY_PHYSICAL_CDN_BASE}/gpt-image-2.png`,
+    tags: ["comedy", "physical", "micro-drama", "storytelling"],
   },
   {
     id: "food-editorial",
-    label: "Food and beverage",
+    label: "Historical photo restoration and revival",
     prompt:
-      "For restaurants and beverage brands, create a 4:5 menu and delivery-platform hero for [dish or drink] served by [restaurant type]. Show the requested portion and ingredients with believable texture, plated on [surface] from a top-down or three-quarter angle, with warm directional light and a clean area for dish name and price. No people, hands, invented labels, text, unrequested ingredients, utensils, or props.",
-    ratio: "4:5",
-    poster: `${MODEL_EXAMPLES_ASSET_BASE}/food-motion.png`,
-    tags: ["food", "menu", "editorial"],
+      "For archivists, museums, historians, and documentary creators, restore and re-stage a 16:9 historical photo from [year or era] showing [ordinary people and activity] in [place]. Reconstruct period-accurate clothing, architecture, tools, and light; retain natural film grain and a few subtle repaired marks while recovering texture without making people identifiable. Compose a stable frame that can later animate gentle breathing, eye movement, or environmental motion. No real public figures, political symbols, readable signage, modern objects, invented captions, logos, or watermark.",
+    ratio: "16:9",
+    poster: `${HISTORICAL_REVIVAL_CDN_BASE}/gpt-image-2.png`,
+    tags: ["historical", "restoration", "humanities", "documentary"],
   },
 ];
 
@@ -330,10 +363,10 @@ export function getImagePromptTemplates(_modelId?: string): ImagePromptTemplate[
 }
 
 /**
- * Pick deterministic, industry-compatible posters for one model's template
+ * Pick deterministic, profession-compatible posters for one model's template
  * cards. The model id chooses a compatible variant so two model pages do not
- * look like a copy-paste, while the scenario-to-industry relationship stays
- * stable (for example, a food brief always gets a food image).
+ * look like a copy-paste, while the profession-to-scenario relationship stays
+ * stable (for example, a physical-comedy brief always gets a physical-comedy image).
  */
 export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
   const normalizedModelId = modelId

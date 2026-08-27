@@ -21,18 +21,18 @@ describe("image prompt templates", () => {
     for (const template of IMAGE_PROMPT_TEMPLATES) {
       expect(template.prompt.length).toBeGreaterThan(120);
       expect(template.prompt).toContain("[");
-      expect(template.poster).toMatch(/^(\/assets\/|\/use-case\/image-buddy\/)/);
+      expect(template.poster).toMatch(/^(\/assets\/|\/use-case\/image-buddy\/|https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-media\/)/);
       expect(template.poster).not.toMatch(/creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i);
       expect(template.ratio).toMatch(/^\d+:\d+$/);
       expect(template.tags.length).toBeGreaterThan(0);
     }
 
-    expect(IMAGE_PROMPT_TEMPLATES[0].prompt).toMatch(/ecommerce and retail teams/i);
-    expect(IMAGE_PROMPT_TEMPLATES[1].prompt).toMatch(/consumer brands and growth teams/i);
-    expect(IMAGE_PROMPT_TEMPLATES[2].prompt).toMatch(/fashion and sports retailers/i);
-    expect(IMAGE_PROMPT_TEMPLATES[3].prompt).toMatch(/hospitality and travel teams/i);
-    expect(IMAGE_PROMPT_TEMPLATES[4].prompt).toMatch(/SaaS and mobile-product teams/i);
-    expect(IMAGE_PROMPT_TEMPLATES[5].prompt).toMatch(/restaurants and beverage brands/i);
+    expect(IMAGE_PROMPT_TEMPLATES[0].prompt).toMatch(/game UI and interaction designers/i);
+    expect(IMAGE_PROMPT_TEMPLATES[1].prompt).toMatch(/sports broadcasters, live-event directors/i);
+    expect(IMAGE_PROMPT_TEMPLATES[2].prompt).toMatch(/brand, advertising, and ecommerce teams/i);
+    expect(IMAGE_PROMPT_TEMPLATES[3].prompt).toMatch(/film directors, storyboard artists/i);
+    expect(IMAGE_PROMPT_TEMPLATES[4].prompt).toMatch(/short-drama writers, comedy creators/i);
+    expect(IMAGE_PROMPT_TEMPLATES[5].prompt).toMatch(/archivists, museums, historians/i);
     for (const template of IMAGE_PROMPT_TEMPLATES) {
       expect(template.prompt).not.toMatch(/real creator|professional avatar|person or role|natural hands and skin/i);
     }
@@ -53,7 +53,7 @@ describe("image prompt templates", () => {
   });
 
   test("resolves a template by its stable id", () => {
-    expect(getImagePromptTemplate("product-hero")?.label).toBe("Product mockups");
+    expect(getImagePromptTemplate("product-hero")?.label).toBe("Game UI interaction and equipment switching");
     expect(getImagePromptTemplate("missing-template")).toBeUndefined();
   });
 
@@ -66,9 +66,12 @@ describe("image prompt templates", () => {
     expect(second).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
     expect(new Set(second).size).toBe(IMAGE_PROMPT_TEMPLATES.length);
     expect(first).not.toEqual(second);
-    expect(first[0]).toMatch(/ecommerce-skincare|skincare|product-reveal|localized-variants|marketplace-main-image/);
-    expect(first[1]).toMatch(/localized-variants|campaign-hero|product-reveal/);
-    expect(first[5]).toMatch(/coffee|food-motion|premium-product|hotel|marketplace|skincare/);
+    expect(first[0]).toMatch(/game-ui-equipment/);
+    expect(first[1]).toMatch(/sports-broadcast/);
+    expect(first[2]).toMatch(/brand-tvc-ecommerce/);
+    expect(first[3]).toMatch(/cinematic-storyboard/);
+    expect(first[4]).toMatch(/comedy-physical/);
+    expect(first[5]).toMatch(/historical-revival/);
     expect(first.some((poster) => /creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i.test(poster))).toBe(false);
   });
 
@@ -116,8 +119,8 @@ describe("image prompt templates", () => {
   });
 
   test("resolves image model aliases used by the pricing catalog", () => {
-    expect(getImagePlaygroundExample("gemini-3.1-flash-image-preview")?.poster).toContain("campaign-hero");
-    expect(getImagePlaygroundExample("gemini_2_5_flash_image_preview")?.poster).toContain("skincare");
+    expect(getImagePlaygroundExample("gemini-3.1-flash-image-preview")?.poster).toContain("high-end-skincare-product-poster");
+    expect(getImagePlaygroundExample("gemini_2_5_flash_image_preview")?.poster).toContain("three-day-travel-guide-card");
     expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
   });
 });
