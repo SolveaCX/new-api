@@ -12,6 +12,8 @@ import {
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
   getModelLandingPathnames,
+  getPriorityModelLandingPathnames,
+  getLocalizedModelLandingConfig,
   resolveModelLandingModels,
   modelLandingCopy,
 } from "./model-landing";
@@ -60,11 +62,22 @@ describe("model landing configuration", () => {
       "/models/gpt-image-2",
       "/models/glm-api",
       "/models/gpt-api",
+      "/models/kimi-k3",
       "/models/minimax-h3",
       "/models/qwen-api",
       "/models/seedance-2.5",
       "/models/seedance-api",
       "/models/sonilo-video-to-music",
+    ]);
+  });
+
+  test("exposes dynamic priority model paths for sitemap discovery", () => {
+    expect(getPriorityModelLandingPathnames()).toEqual([
+      "/models/gpt-5.6-sol",
+      "/models/gpt-image-2",
+      "/models/kimi-k3",
+      "/models/deepseek-v4-pro",
+      "/models/minimax-h3",
     ]);
   });
 
@@ -165,6 +178,114 @@ describe("model landing configuration", () => {
     expect(config.seo.title).toContain("kimi-k2.5");
   });
 
+  test("keeps the five priority pages on target-specific editorial configs", () => {
+    const priorityModels: Array<{
+      id: string;
+      endpoints: string[];
+      heroNeedle: string;
+      pricingNeedles: string[];
+    }> = [
+      { id: "gpt-5.6-sol", endpoints: ["/v1/chat/completions"], heroNeedle: "GPT-5.6 Sol", pricingNeedles: ["$4.00", "$24.00", "$0.40", "$5.00"] },
+      { id: "gpt-image-2", endpoints: ["/v1/images/generations"], heroNeedle: "GPT Image 2", pricingNeedles: ["$4.00", "$24.00", "$1.00", "$6.40"] },
+      { id: "kimi-k3", endpoints: ["/v1/chat/completions", "/v1/messages"], heroNeedle: "Kimi K3", pricingNeedles: ["$2.40", "$12.00", "$0.24"] },
+      { id: "deepseek-v4-pro", endpoints: ["/v1/chat/completions", "/v1/messages"], heroNeedle: "DeepSeek V4 Pro", pricingNeedles: ["$1.32", "$0.044", "$3.96", "$0.66", "$0.022", "$1.98"] },
+      { id: "MiniMax-H3", endpoints: ["/v1/videos"], heroNeedle: "MiniMax-H3", pricingNeedles: ["$0.08"] },
+    ];
+
+    const configs = priorityModels.map(({ id }) =>
+      getModelLandingConfigForPricingModel({
+        model_name: id,
+        vendor_name: "test vendor",
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      }),
+    );
+
+    expect(new Set(configs.map((config) => config.landingContent?.hero?.title)).size).toBe(priorityModels.length);
+    expect(new Set(configs.map((config) => config.landingContent?.faq?.[0]?.question)).size).toBe(priorityModels.length);
+
+    for (const [index, config] of configs.entries()) {
+      const target = priorityModels[index];
+      const content = config.landingContent;
+
+      expect(content).toBeDefined();
+      expect(content?.hero?.title).toContain(target.heroNeedle);
+      expect(content?.hero?.description).toContain(target.heroNeedle);
+      expect(content?.pricing?.title).toContain(target.heroNeedle);
+      expect(content?.pricing?.rows?.length ?? 0).toBeGreaterThan(0);
+      const editorialText = JSON.stringify(content);
+      for (const endpoint of target.endpoints) expect(editorialText).toContain(endpoint);
+      for (const price of target.pricingNeedles) expect(editorialText).toContain(price);
+      expect(content?.faq?.length ?? 0).toBeGreaterThanOrEqual(6);
+
+      // A priority page must not silently fall back to the generic two-question
+      // generator FAQ or the Seedance-specific editorial block. Even media
+      // pages need model-specific wording in every FAQ entry.
+      expect(content?.faq?.some((item) => item.question === "Does this start a real generation?")).toBe(false);
+      expect(content).not.toBe(SEEDANCE_25_CONFIG.landingContent);
+      expect(config.slug).not.toBe(SEEDANCE_25_CONFIG.slug);
+      expect(content?.hero?.title).not.toContain("Seedance");
+    }
+  });
+
+  test("keeps priority metadata localized and distinct from the English fallback", () => {
+    const priorityIds = ["gpt-5.6-sol", "gpt-image-2", "kimi-k3", "deepseek-v4-pro", "MiniMax-H3"];
+
+    for (const id of priorityIds) {
+      const config = getModelLandingConfigForPricingModel({
+        model_name: id,
+        vendor_name: "test vendor",
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      });
+
+      for (const locale of LOCALES) {
+        const localized = locale === "en" ? config.seoByLocale?.en ?? config.seo : config.seoByLocale?.[locale];
+        expect(localized?.title).toBeTruthy();
+        expect(localized?.description).toBeTruthy();
+        if (locale !== "en") {
+          expect(localized?.title).not.toBe(config.seo.title);
+          expect(localized?.description).not.toBe(config.seo.description);
+        }
+      }
+    }
+  });
+
+  test("uses a coherent localized editorial pack without mutating the English config", () => {
+    const cases: Array<{ id: string; needle: string }> = [
+      { id: "gpt-5.6-sol", needle: "/v1/chat/completions" },
+      { id: "gpt-image-2", needle: "/v1/images/generations" },
+      { id: "kimi-k3", needle: "/v1/messages" },
+      { id: "deepseek-v4-pro", needle: "UTC" },
+      { id: "MiniMax-H3", needle: "ComfyUI" },
+    ];
+
+    for (const { id, needle } of cases) {
+      const source = getModelLandingConfigForPricingModel({
+        model_name: id,
+        vendor_name: "test vendor",
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      });
+      const sourceTitle = source.landingContent?.hero?.title;
+      const localized = getLocalizedModelLandingConfig(source, "pt");
+      const localizedText = JSON.stringify(localized.landingContent);
+
+      expect(localized).not.toBe(source);
+      expect(localized.landingContent?.hero?.title).toBeTruthy();
+      expect(localized.landingContent?.hero?.title).not.toBe(sourceTitle);
+      expect(localizedText).toContain(needle);
+      expect(source.landingContent?.hero?.title).toBe(sourceTitle);
+    }
+
+    // Seedance is already independently audited and must not be replaced by
+    // one of the five priority editorial packs.
+    expect(getLocalizedModelLandingConfig(SEEDANCE_25_CONFIG, "pt")).toBe(SEEDANCE_25_CONFIG);
+  });
+
   test("keeps refreshed model-detail UI labels translated in every locale", () => {
     const localizedKeys = [
       "Product Reveal",
@@ -183,6 +304,23 @@ describe("model landing configuration", () => {
     for (const locale of LOCALES.filter((item) => item !== "en")) {
       for (const key of localizedKeys) {
         expect(modelLandingCopy(locale, key as never)).not.toBe(modelLandingCopy("en", key as never));
+      }
+    }
+  });
+
+  test("keeps Seedance 2.5 audited copy localized across every supported locale", () => {
+    const auditedKeys = [
+      "Seedance 2.5 AI Video Generator & API",
+      "Seedance 2.5 pricing: 480p, 720p, and video references",
+      "What is Seedance 2.5? Features for AI video generation",
+      "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.",
+    ];
+
+    for (const locale of LOCALES) {
+      for (const key of auditedKeys) {
+        const value = modelLandingCopy(locale, key as never);
+        expect(value).toBeTruthy();
+        if (locale !== "en") expect(value).not.toBe(modelLandingCopy("en", key as never));
       }
     }
   });

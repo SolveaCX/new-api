@@ -1,6 +1,11 @@
 import type { Locale } from "./locales";
 import { withIdFallback } from "@/lib/locales";
 import type { PricingModel } from "./pricing";
+import {
+  getPriorityModelCopy,
+  getPriorityModelTranslationMapForSource,
+  getPriorityModelTranslations,
+} from "./priority-model-copy";
 
 export type ModelPriceRow = {
   label: string;
@@ -57,7 +62,23 @@ export type ModelLandingContent = {
     stats?: Array<{ label: string; value: string; unit?: string }>;
     sampleChart?: boolean;
   };
+  /**
+   * Optional editorial pricing block. The shared shell still receives the
+   * live pricing rows from the catalog; this metadata only supplies the
+   * model-specific heading, explanation, and (when needed) audited formula
+   * rows. Keeping the presentation data-driven avoids another page layout.
+   */
+  pricing?: {
+    eyebrow?: string;
+    title: string;
+    description: string;
+    note?: string;
+    rows?: Array<{ label: string; value: string; detail?: string }>;
+  };
   capabilities?: Array<{ title: string; body: string }>;
+  capabilitiesEyebrow?: string;
+  capabilitiesTitle?: string;
+  capabilitiesDescription?: string;
   comparison?: {
     eyebrow: string;
     title: string;
@@ -100,6 +121,7 @@ export type ModelLandingContent = {
   };
   faq?: Array<{ question: string; answer: string }>;
   faqTitle?: { beforeBreak: string; afterBreak: string };
+  faqDescription?: string;
 };
 
 export type ModelConfig = {
@@ -120,6 +142,8 @@ export type ModelConfig = {
     title: string;
     description: string;
   };
+  /** Localized metadata for markets where the page has a translated search intent. */
+  seoByLocale?: Partial<Record<Locale, { title: string; description: string }>>;
   positioning: ModelLandingKey;
   useCases: ModelLandingKey[];
   faq: Array<{ question: ModelLandingKey; answer: ModelLandingKey }>;
@@ -168,7 +192,7 @@ export const CLAUDE_CONFIG: ModelConfig = {
 
 export const GPT_CONFIG: ModelConfig = {
   slug: "gpt-api",
-  modelIds: ["gpt-5.5", "gpt-5", "gpt-5-mini", "gpt-4o", "gpt-4.1"],
+  modelIds: ["gpt-5.6-sol", "gpt-5.5", "gpt-5", "gpt-5-mini", "gpt-4o", "gpt-4.1"],
   displayName: "GPT-5",
   modelId: "gpt-5",
   officialName: "OpenAI",
@@ -263,26 +287,6 @@ export const DEEPSEEK_CONFIG: ModelConfig = {
     { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
     { question: "Can I control usage before scaling?", answer: "Yes. Plan limits, usage analytics, and one invoice keep spend bounded." },
   ],
-  landingContent: {
-    comparison: {
-      eyebrow: "Capabilities",
-      title: "What changed from the previous generation, so you can tell whether it is worth switching.",
-      description: "Compare the current model with the previous generation before you migrate.",
-      baselineLabel: "deepseek-v3.2",
-      currentLabel: "deepseek-v4-flash",
-      rows: [
-        { label: "Model ID", baseline: "deepseek-v3.2", current: "deepseek-v4-flash" },
-        { label: "Modalities", baseline: "Chat and coding", current: "Chat and coding" },
-        { label: "Context", baseline: "Long context", current: "Long context" },
-        { label: "API", baseline: "OpenAI-compatible migration path", current: "OpenAI-compatible migration path" },
-        {
-          label: "Best for",
-          baseline: "Chat and coding",
-          current: "Best for general AI apps, agents, search, and high-volume API workloads",
-        },
-      ],
-    },
-  },
 };
 
 export const QWEN_CONFIG: ModelConfig = {
@@ -415,22 +419,68 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     ],
   },
   officialName: "ByteDance",
-  officialPrice: "$0.14",
-  flatkeyPrice: "$0.14",
-  estFlatkey: "$0.14",
-  estOfficial: "$0.14",
+  // The catalog's model_price is a base value used by the billing resolver;
+  // it is not a universal per-second retail price. The request formula also
+  // depends on resolution and whether a video reference is supplied.
+  officialPrice: "$0.14 base",
+  flatkeyPrice: "$0.14 base",
+  estFlatkey: "$0.14 base",
+  estOfficial: "$0.14 base",
   examplePrompt:
     "A cinematic product shot of a sports car on a wet track, soft studio lighting, high detail.",
-  priceUnit: "/ second",
+  priceUnit: "Pricing",
   rows: [
-    { label: "Seedance video / sec", flatkey: "$0.14", official: "$0.14" },
-    { label: "Image-to-video / sec", flatkey: "$0.14", official: "$0.14" },
+    { label: "480p · no video reference", flatkey: "$0.140 × duration", official: "See request formula" },
+    { label: "720p · no video reference", flatkey: "$0.314 × duration", official: "See request formula" },
+    { label: "Video reference input", flatkey: "$0.084–$0.188 × video seconds", official: "Depends on resolution" },
     { label: "Coverage", flatkey: "", value: "Seedance 2.5 · Seedance 2.0 · Kling · Veo · Sora" },
   ],
   seo: {
-    title: "Seedance 2.5 API — text-to-video and image-to-video generation",
+    title: "Seedance 2.5 AI Video Generator & API Pricing | Flatkey",
     description:
-      "Generate Seedance 2.5 video with adaptive aspect ratios, 480p or 720p output, native audio, and one Flatkey API key.",
+      "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
+  },
+  seoByLocale: {
+    en: {
+      title: "Seedance 2.5 AI Video Generator & API Pricing | Flatkey",
+      description: "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
+    },
+    pt: {
+      title: "Gerador de vídeo IA Seedance 2.5 e preços da API | Flatkey",
+      description: "Use o Seedance 2.5 da ByteDance como gerador de vídeo por IA na API Flatkey: texto para vídeo, imagem para vídeo, clipes de 4–30 segundos e preços para 480p/720p.",
+    },
+    zh: {
+      title: "Seedance 2.5 AI 视频生成器与 API 价格 | Flatkey",
+      description: "通过 Flatkey API 使用 ByteDance Seedance 2.5：支持文生视频、图生视频、4–30 秒片段、参考素材，以及 480p/720p 定价。",
+    },
+    es: {
+      title: "Generador de vídeo IA Seedance 2.5 y precios de API | Flatkey",
+      description: "Usa ByteDance Seedance 2.5 como generador de vídeo IA con la API de Flatkey: texto a vídeo, imagen a vídeo, clips de 4–30 segundos y precios 480p/720p.",
+    },
+    fr: {
+      title: "Générateur vidéo IA Seedance 2.5 et tarifs API | Flatkey",
+      description: "Utilisez ByteDance Seedance 2.5 comme générateur vidéo IA via l’API Flatkey : texte-vers-vidéo, image-vers-vidéo, clips de 4 à 30 secondes et tarifs 480p/720p.",
+    },
+    ru: {
+      title: "ИИ-генератор видео Seedance 2.5 и цены API | Flatkey",
+      description: "Используйте ByteDance Seedance 2.5 через API Flatkey: текст-видео, изображение-видео, клипы 4–30 секунд, референсы и цены 480p/720p.",
+    },
+    ja: {
+      title: "Seedance 2.5 AI動画生成とAPI料金 | Flatkey",
+      description: "Flatkey APIでByteDance Seedance 2.5を利用。テキストから動画、画像から動画、4～30秒のクリップ、参照素材、480p/720p料金に対応します。",
+    },
+    vi: {
+      title: "Trình tạo video AI Seedance 2.5 và giá API | Flatkey",
+      description: "Dùng ByteDance Seedance 2.5 qua API Flatkey: văn bản thành video, ảnh thành video, clip 4–30 giây, media tham chiếu và giá 480p/720p.",
+    },
+    de: {
+      title: "Seedance 2.5 KI-Videogenerator und API-Preise | Flatkey",
+      description: "Nutzen Sie ByteDance Seedance 2.5 über die Flatkey-API: Text-zu-Video, Bild-zu-Video, 4–30-Sekunden-Clips, Referenzmedien und 480p/720p-Preise.",
+    },
+    id: {
+      title: "Generator Video AI Seedance 2.5 dan harga API | Flatkey",
+      description: "Gunakan ByteDance Seedance 2.5 melalui API Flatkey: teks menjadi video, gambar menjadi video, klip 4–30 detik, media referensi, serta harga 480p/720p.",
+    },
   },
   positioning: "Best for product videos, ad creative, and image-to-video production",
   useCases: ["UGC ad clips", "Product motion", "Social video variants"],
@@ -446,131 +496,121 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   ],
   landingContent: {
     hero: {
-      title: "Seedance-2.5 API",
-      description: "Seedance 2.5 is a high-quality video generation model for text-to-video and image-to-video workflows. Generate realistic, cinematic clips with native audio and strong prompt adherence.",
+      title: "Seedance 2.5 AI Video Generator & API",
+      description: "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.",
       logo: "/logos/seedance.png",
-      breadcrumb: ["Models", "Video generation", "seedance-2.5 API"],
+      breadcrumb: ["Models", "Video generation", "Seedance 2.5 API"],
       actionLabel: "Quick Start",
-      provider: "Bytedance",
-      flatkeyPrice: "$0.14 / second",
-      referencePrice: "$0.14 / second",
+      provider: "ByteDance",
+      flatkeyPrice: "From $0.140 × duration",
+      referencePrice: "Variable by resolution and input",
     },
     performance: {
       eyebrow: "Performance",
       title: "Reliability over the last 30 days",
-      description: "Measured on real Flatkey traffic, with production monitoring.",
-      metrics: [
-        { label: "Average latency", value: "813ms", note: "Task accepted; generation continues asynchronously", icon: "latency" },
-        { label: "Requests", value: "9", note: "Last 30 days", icon: "requests" },
-        // Uptime is supplied by the live performance endpoint. Keep the
-        // static fallback honest when the preview is rendered without
-        // telemetry instead of reusing the latency sample.
-        { label: "Uptime", value: "—", note: "—", icon: "uptime" },
-      ],
+      description: "Live request telemetry appears here when enough Flatkey traffic is available.",
     },
     activity: {
       eyebrow: "Activity",
-      title: "Daily seedance-2.5 requests on Flatkey",
-      description: "Sample shape shown while live telemetry is being connected.",
-      stats: [
-        { label: "Total Requests", value: "22.7K" },
-        { label: "Daily Average", value: "757" },
-        { label: "Busiest Day", value: "1.1K", unit: "7/27" },
-      ],
-      sampleChart: true,
+      title: "Seedance 2.5 usage activity",
+      description: "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.",
+      sampleChart: false,
     },
     capabilities: [
-      { title: "Text and image to video", body: "Generate from a written scene, or drive it with reference images for a subject you have already designed." },
-      { title: "Multi-shot consistency", body: "Hold characters, wardrobe, and setting across cuts within a single generation." },
-      { title: "Native audio", body: "Ambient sound and speech are generated with the picture, in multiple languages." },
-      { title: "Edit and extend", body: "Continue an existing clip or revise one, with first-frame and first/last-frame control." },
+      { title: "Text-to-video and image-to-video", body: "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed." },
+      { title: "Reference media and frame control", body: "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows." },
+      { title: "Audio-video generation", body: "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document." },
+      { title: "Duration and output controls", body: "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task." },
     ],
+    capabilitiesEyebrow: "Seedance 2.5 features",
+    capabilitiesTitle: "What is Seedance 2.5? Features for AI video generation",
+    capabilitiesDescription: "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.",
     comparison: {
-      eyebrow: "Capabilities",
-      title: "What changed from the previous generation, so you can tell whether it is worth switching.",
-      description: "Its capabilities, and what changed from Seedance 2.0 — so you can tell whether it is worth switching.",
-      baselineLabel: "Seedance 2.0",
+      eyebrow: "Seedance 2.5 features",
+      title: "Seedance 2.5 features: references, audio, and 30-second video",
+      description: "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.",
+      baselineLabel: "Seedance 2.0 (not re-audited)",
       currentLabel: "Seedance 2.5",
       rows: [
-        { label: "Clip length", baseline: "Short clips, stitched for longer runs", current: "Up to 30s in a single continuous shot" },
-        { label: "Reference inputs", baseline: "Image references", current: "Up to 50 per request — 30 images, 10 videos, 10 audio" },
-        { label: "Motion control", baseline: "Text prompt only", current: "Structured motion paths, green-screen and white-model references" },
-        { label: "Audio", baseline: "Generated audio", current: "Native audio in 10+ languages" },
-        { label: "Editing", baseline: "Regenerate to change a clip", current: "Edit and extend an existing clip in place" },
+        { label: "Clip length", baseline: "Not verified in this audit", current: "4–30 seconds per request" },
+        { label: "Reference inputs", baseline: "Not verified in this audit", current: "Up to 50 total: 30 images, 10 videos, and 10 audio" },
+        { label: "Frame control", baseline: "Not verified in this audit", current: "First-frame and last-frame roles are supported" },
+        { label: "Audio", baseline: "Not verified in this audit", current: "Audio generation can be enabled per request" },
+        { label: "Editing workflow", baseline: "Not verified in this audit", current: "Reference-guided and first/last-frame workflows" },
       ],
     },
-    // Keep the model page tied to the actual production outputs already used
-    // by the CLI prompt library. These are real product, UGC, localization,
-    // and character/video examples—not repeated placeholder cards.
+    // Keep the model page tied to workflow-specific examples used by the
+    // prompt library. They are starting points, not claims that every card is
+    // a live generation from this model.
     promptLibrary: [
       {
-        key: "ugc-paid-social-product-clip",
-        label: "UGC ad clips",
-        prompt: "Create a 9:16 UGC-style paid social video for a compact consumer product. Start with a handheld first-person product pickup, cut to a close product use moment, then a clean benefit reveal. Natural indoor daylight, casual creator framing, no readable text, no logos, edit-ready pacing.",
+        key: "micro-drama-comic-storyboard",
+        label: "Micro-drama storyboard",
+        prompt: "Create a 9:16 micro-drama storyboard from a three-beat comic script: a courier notices a torn envelope, follows a red umbrella through a crowded station, and stops at a silent platform. Keep the same two characters, wardrobe, props, and rainy evening light across the beats; use clear eyelines and no readable text.",
         poster: "/assets/cli/ugc-ad-clips.png",
         video: "/assets/cli/ugc-ad-clips.mp4",
-        alt: "9:16 UGC product advertisement clip",
+        alt: "Micro-drama storyboard video example",
       },
       {
-        key: "localized-market-product-variant-video",
-        label: "Social video variants",
-        prompt: "Create a short localized market variant video for a product launch. Use bright everyday lifestyle framing, culturally neutral props, a clear product-in-use moment, warm natural light, and space for localized captions added later. Keep the product consistent, no readable text, no brand logos.",
+        key: "ecommerce-ugc-product-video",
+        label: "E-commerce UGC",
+        prompt: "Create a 9:16 e-commerce UGC video for a reusable travel bottle. Show an adult creator opening the package, filling the bottle, and placing it in a tote bag. Keep the bottle shape and lid color consistent, use a small apartment kitchen, leave space for Portuguese captions added in post, and do not invent logos or readable label text.",
         poster: "/assets/cli/localized-variants.png",
         video: "/assets/cli/localized-variants.mp4",
-        alt: "Localized product launch video variant",
+        alt: "E-commerce UGC product video example",
       },
       {
-        key: "cinematic-product-reveal-video",
-        label: "Product motion",
-        prompt: "8 second cinematic product reveal, glossy black background, controlled reflections, slow camera push-in, product remains sharp and centered, no floating text, one continuous shot.",
+        key: "film-previz-camera-blocking",
+        label: "Film previsualization",
+        prompt: "Create a 12-second film previsualization of a detective entering an empty observatory at dawn. Start with a wide establishing view, track behind the character, then pan to the telescope and hold on the doorway. Keep screen direction, blocking, and the warm-to-cool light transition consistent; no dialogue text or logos.",
         poster: "/assets/cli/product-reveal.png",
         video: "/assets/cli/product-reveal.mp4",
-        alt: "Cinematic product reveal video",
+        alt: "Film previsualization camera blocking example",
       },
       {
-        key: "flatkey-image-to-video-product-scene",
-        label: "Image to Video",
-        prompt: "Create a polished image-to-video campaign hero from a provided product still. Keep the bottle identity and label placement locked, add a slow camera push with soft leaf shadows, natural daylight, controlled reflections, and clean commercial pacing. Avoid readable text, logo changes, flicker, and identity drift.",
+        key: "game-cinematic-reference-shot",
+        label: "Game cinematic",
+        prompt: "Animate a game-cinematic reference board into an 8-second shot: a masked pilot walks across a hangar while a grounded shuttle powers up behind them. Preserve the pilot silhouette, helmet markings, shuttle geometry, and camera-left-to-right movement; use practical hangar lights and restrained smoke, with no new text or logos.",
         poster: "/assets/cli/campaign-hero.png",
-        alt: "Product campaign hero reference still",
+        alt: "Game cinematic reference shot example",
       },
       {
-        key: "flatkey-character-reference-motion-clip",
-        label: "Reference-guided Video",
-        prompt: "Animate a four-shot product storyboard from the supplied reference board. Preserve the espresso machine silhouette, materials, and copper details across each shot; use a controlled rack focus, a hand entering only when called for, and warm studio light. No extra products, text, or continuity breaks.",
+        key: "creator-social-explainer-video",
+        label: "Creator explainer",
+        prompt: "Create a 4:5 creator explainer about a compact microphone for an independent video maker. Begin with a talking-head medium shot, cut to a close-up of the cable connection, then return to the same framing for a practical tip. Keep the speaker, microphone, and room layout consistent; leave clean caption space and avoid readable brand text.",
         poster: "/assets/cli/storyboard-motion.png",
-        alt: "Product storyboard motion reference board",
+        alt: "Creator microphone explainer video example",
       },
       {
-        key: "flatkey-text-to-video-cinematic-test",
-        label: "Short-form Video",
-        prompt: "Generate a short-form creator-product clip from the supplied reference still. Start on the compact camera and microphone setup, make a gentle push-in with a small focus shift, keep the blue/orange palette stable, and leave clean space for captions added in post. No readable text, watermarks, or extra logos.",
+        key: "market-research-creative-variant",
+        label: "Market-research variant",
+        prompt: "Create three short, clearly distinct creative variants for a market-research test of a sunscreen product: beach morning, city commute, and family picnic. Keep the same bottle proportions and cap, change only setting and opening action, use neutral props, and leave all claims and captions for post-production. Do not add medical promises or invented labels.",
         poster: "/assets/cli/thumbnail-test-set.png",
-        alt: "Creator gear short-form video reference still",
+        alt: "Market-research creative variant example",
       },
     ],
-    promptLibraryTitle: "Seedance-2.5 prompts that work",
-    promptLibraryDescription: "Each clip is a real generation. Copy its prompt, or load it into the playground and edit from there.",
+    promptLibraryTitle: "Seedance 2.5 prompt guide: six workflows",
+    promptLibraryDescription: "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.",
     why: {
       eyebrow: "Why Flatkey",
-      title: "Why run seedance-2.5 through Flatkey",
-      description: "One key, one balance, and the same upstream model you would call directly.",
+      title: "Why use Seedance 2.5 through Flatkey?",
+      description: "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.",
       cards: [
-        { title: "10% below list price", body: "The same upstream model, billed from one balance that also covers text, image, and audio models." },
-        { title: "OpenAI-compatible from day one", body: "Point base_url at Flatkey and keep your existing SDK, request shapes, and streaming code." },
-        { title: "Swap models without a new integration", body: "Move between ByteDance and every other model in the catalog by changing one string." },
-        { title: "Routing across upstream channels", body: "Requests are spread across the channels serving this model, with 30-day uptime published above." },
+        { title: "One key for the model catalog", body: "Use the same Flatkey account and API key across video, image, audio, and text workloads." },
+        { title: "Documented video contract", body: "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration." },
+        { title: "Pricing follows the request", body: "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise." },
+        { title: "Live data only when available", body: "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported." },
       ],
     },
     api: {
       eyebrow: "API",
-      title: "How to call the seedance-2.5 API",
-      description: "Four ways in, all on the same key and the same model catalog. Pick one to see a runnable example.",
+      title: "Seedance 2.5 API: how to use /v1/videos",
+      description: "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.",
       items: [
-        { title: "API", detail: "Call any model with an OpenAI-compatible API. Copy a ready-to-run example for your model and language." },
-        { title: "SDK for developers", detail: "Use the OpenAI client and set baseURL to your Flatkey router origin." },
-        { title: "Flatkey CLI", detail: "Keep prompts and reference files in your terminal workflow with the Flatkey CLI." },
-        { title: "Codex&Claude Code", detail: "Use the same key with your coding agent and route video jobs from a script." },
+        { title: "POST /v1/videos", detail: "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields." },
+        { title: "Async task result", detail: "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready." },
+        { title: "Reference limits", detail: "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total." },
+        { title: "Output controls", detail: "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio." },
       ],
     },
     related: {
@@ -582,18 +622,18 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
       cards: [],
     },
     faq: [
-      { question: "What is seedance-2.5?", answer: "Seedance-2.5 is a text-to-video and image-to-video model with multi-shot consistency, native audio, and editing controls." },
-      { question: "How much does seedance-2.5 cost?", answer: "The live price above is calculated from Flatkey's current pricing catalog and may vary by account group and output settings." },
-      { question: "What can I use it for?", answer: "Use it for product demos, social clips, ad variations, storyboards, and short-form scene experiments." },
-      { question: "How do I use the model in my app?", answer: "Send a video request to /v1/videos using the same API key and model catalog as the rest of your Flatkey integration." },
-      { question: "Can I control output features?", answer: "Yes. The request supports ratio, resolution, duration, audio, reference media, and first/last-frame options when the selected route supports them." },
-      { question: "Is the Flatkey API OpenAI compatible?", answer: "Authentication and the shared catalog follow the OpenAI-compatible gateway pattern, while video-specific fields follow the Seedance content format." },
-      { question: "What limits apply?", answer: "Rate limits and available model IDs depend on your account and current upstream availability." },
-      { question: "What happens to my prompts and generated files?", answer: "Requests are processed asynchronously. Keep the task id from the response and fetch the result from the content endpoint when ready." },
-      { question: "Codex&Claude Code", answer: "Use the same environment variables and API key from the code sample in your preferred coding-agent workflow." },
+      { question: "What is seedance-2.5?", answer: "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls." },
+      { question: "How much does seedance-2.5 cost?", answer: "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution." },
+      { question: "What can I use it for?", answer: "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests." },
+      { question: "How do I use the model in my app?", answer: "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content." },
+      { question: "Can I control output features?", answer: "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields." },
+      { question: "Is the Flatkey API OpenAI compatible?", answer: "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract." },
+      { question: "What limits apply?", answer: "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change." },
+      { question: "What is the Seedance 2.5 release date?", answer: "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch." },
+      { question: "Is Seedance 2.5 free?", answer: "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs." },
     ],
     faqTitle: {
-      beforeBreak: "Seedance-2.5",
+      beforeBreak: "Seedance 2.5",
       afterBreak: "API–frequently asked questions",
     },
   },
@@ -650,6 +690,37 @@ export const GPT_IMAGE_2_CONFIG: ModelConfig = {
   ],
 };
 
+export const KIMI_K3_CONFIG: ModelConfig = {
+  slug: "kimi-k3",
+  modelIds: ["kimi-k3"],
+  displayName: "Kimi K3",
+  modelId: "kimi-k3",
+  officialName: "Moonshot AI",
+  officialPrice: "$12.00",
+  flatkeyPrice: "$12.00",
+  estFlatkey: "$12.00",
+  estOfficial: "$12.00",
+  examplePrompt: "Extract the action items from this document and return owners, deadlines, and open questions.",
+  priceUnit: "/ million output tokens",
+  rows: [
+    { label: "Kimi K3 input", flatkey: "$2.40", official: "$2.40" },
+    { label: "Kimi K3 output", flatkey: "$12.00", official: "$12.00" },
+    { label: "Cache", flatkey: "$0.24", official: "$0.24" },
+    { label: "Context", flatkey: "", value: "1,048,576 tokens" },
+    { label: "Modalities", flatkey: "", value: "Text · file" },
+  ],
+  seo: {
+    title: "Kimi K3 API and pricing | Flatkey",
+    description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing.",
+  },
+  positioning: "Best for long-context reasoning, coding agents, and production assistants",
+  useCases: ["Long document analysis", "Coding agents", "Agent workflows"],
+  faq: [
+    { question: "Does this use the same model id in my SDK?", answer: "Yes. Keep your SDK and switch base_url plus api_key." },
+    { question: "Can I control usage before scaling?", answer: "Yes. Plan limits, usage analytics, and one invoice keep spend bounded." },
+  ],
+};
+
 export const MINIMAX_H3_CONFIG: ModelConfig = {
   slug: "minimax-h3",
   modelIds: ["MiniMax-H3"],
@@ -668,17 +739,17 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
   },
   officialName: "MiniMax",
   officialPrice: "$0.08",
-  flatkeyPrice: "$0.053333",
-  estFlatkey: "$0.32",
-  estOfficial: "$0.48",
+  flatkeyPrice: "$0.08",
+  estFlatkey: "$0.08",
+  estOfficial: "$0.08",
   examplePrompt:
     "A paper boat crosses a rain puddle at street level, cinematic macro shot, soft reflections, 6 seconds.",
   priceUnit: "/ second",
   rows: [
-    { label: "MiniMax-H3 768P / sec", flatkey: "$0.053", official: "$0.08" },
-    { label: "MiniMax-H3 2K / sec", flatkey: "$0.087", official: "$0.13" },
-    { label: "Reference video input", flatkey: "", value: "same per-second rate" },
-    { label: "Input image after free tier", flatkey: "$0.027", official: "$0.04" },
+    { label: "MiniMax-H3 catalog base / sec", flatkey: "$0.08", official: "$0.08" },
+    { label: "Resolution", flatkey: "", value: "768P · 2K (live estimate)" },
+    { label: "Reference video input", flatkey: "", value: "resolution- and input-second-dependent" },
+    { label: "Input image", flatkey: "", value: "check current catalog allowance" },
   ],
   seo: {
     title: "MiniMax-H3 video generator — configure prompts before signup",
@@ -698,6 +769,561 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
     },
   ],
 };
+
+/** Editorial, model-specific copy for high-priority catalog IDs.  These are
+ * merged only when the live pricing model matches the exact normalized ID;
+ * the shared config (including Seedance) remains the fallback for every other
+ * model in the family.
+ */
+const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
+  "gpt-5-6-sol": {
+    seo: {
+      title: "GPT-5.6 Sol API and pricing | Flatkey",
+      description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key.",
+    },
+    seoByLocale: {
+      en: { title: "GPT-5.6 Sol API and pricing | Flatkey", description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key." },
+    },
+    rows: [
+      { label: "GPT-5.6 Sol input", flatkey: "$4.00", official: "$4.00" },
+      { label: "GPT-5.6 Sol output", flatkey: "$24.00", official: "$24.00" },
+      { label: "Cache read", flatkey: "$0.40", official: "$0.40" },
+      { label: "Cache creation", flatkey: "$5.00", official: "$5.00" },
+      { label: "Context", flatkey: "", value: "1,048,576 tokens" },
+      { label: "Modalities", flatkey: "", value: "Text · image · file" },
+    ],
+    landingContent: {
+      hero: { title: "GPT-5.6 Sol API, pricing, and model details", description: "GPT-5.6 Sol is an OpenAI catalog model available through Flatkey's /v1/chat/completions endpoint. The catalog records a 1,048,576-token context and text, image, and file modalities. This page shows the exact model ID, current token rates, and request path before production traffic." },
+      pricing: { title: "GPT-5.6 Sol pricing", description: "Current Flatkey catalog token-dimension rates. They are not a universal per-request price.", note: "Rates are per 1M tokens; check the dated catalog block for current values.", rows: [
+        { label: "Input", value: "$4.00", detail: "per 1M tokens" }, { label: "Output", value: "$24.00", detail: "per 1M tokens" }, { label: "Cache read", value: "$0.40", detail: "per 1M tokens" }, { label: "Cache creation", value: "$5.00", detail: "per 1M tokens" },
+      ] },
+      capabilitiesEyebrow: "GPT-5.6 Sol capabilities",
+      capabilitiesTitle: "GPT-5.6 Sol context, modalities, and endpoint",
+      capabilitiesDescription: "Documented integration fields are shown below; no benchmark or quality promise is inferred.",
+      capabilities: [
+        { title: "Long context field", body: "The catalog records a 1,048,576-token context window." },
+        { title: "Documented input modalities", body: "Catalog metadata lists text, image, and file modalities." },
+        { title: "Chat-completions route", body: "Requests use /v1/chat/completions with model ID gpt-5.6-sol." },
+        { title: "One integration surface", body: "Flatkey supplies the API-key and billing layer with endpoint/request compatibility." },
+      ],
+      comparison: { eyebrow: "Compare fields", title: "GPT-5.6 Sol vs GPT-5.5, Terra, and Luna", description: "This table compares documented integration fields only; no performance ranking is asserted.", baselineLabel: "GPT-5.5 / Terra / Luna", currentLabel: "GPT-5.6 Sol", rows: [
+        { label: "Catalog model ID", baseline: "Unknown in this verified fact set", current: "gpt-5.6-sol" },
+        { label: "Endpoint", baseline: "Unknown", current: "/v1/chat/completions" },
+        { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
+        { label: "Modalities", baseline: "Unknown", current: "Text, image, file" },
+        { label: "Relative quality/benchmark", baseline: "Not asserted", current: "Not asserted" },
+      ] },
+      api: { eyebrow: "API", title: "Call GPT-5.6 Sol with the API", description: "Use the exact model ID and documented endpoint in your existing client.", items: [
+        { title: "Endpoint", detail: "POST /v1/chat/completions" },
+        { title: "Model ID", detail: "gpt-5.6-sol" },
+        { title: "Modalities", detail: "Text, image, and file are listed in catalog metadata." },
+        { title: "Compatibility", detail: "Use OpenAI-compatible request fields; do not infer Codex, streaming, or ChatGPT availability." },
+      ] },
+      why: { eyebrow: "Why use Flatkey for GPT-5.6 Sol?", title: "A controlled GPT-5.6 Sol integration surface", description: "Keep the model ID, endpoint, context, and token dimensions visible while you move from a test request to production traffic.", cards: [
+        { title: "Exact model routing", body: "Set gpt-5.6-sol explicitly and keep the /v1/chat/completions path in your client configuration." },
+        { title: "Token-dimension visibility", body: "Review input, output, cache-read, and cache-creation rates instead of treating one headline price as universal." },
+        { title: "Long-context workflows", body: "Use the catalog's 1,048,576-token context field for document, code, and agent workflow planning." },
+        { title: "One account for model testing", body: "Keep API keys, limits, usage, and adjacent model experiments in the same Flatkey workspace." },
+      ] },
+      faqTitle: { beforeBreak: "GPT-5.6 Sol API", afterBreak: "frequently asked questions" },
+      faqDescription: "Answers about the GPT-5.6 Sol API model ID, endpoint, token pricing, context, inputs, and catalog release metadata.",
+      faq: [
+        { question: "What is GPT-5.6 Sol?", answer: "GPT-5.6 Sol is an OpenAI catalog model routed on Flatkey through /v1/chat/completions with a 1,048,576-token context and text, image, and file modalities." },
+        { question: "How do I use GPT-5.6 Sol?", answer: "Create a Flatkey API key, send a chat-completions request, and set model to gpt-5.6-sol." },
+        { question: "What is the GPT-5.6 Sol API model ID?", answer: "The verified model ID is gpt-5.6-sol; the documented endpoint is /v1/chat/completions." },
+        { question: "How much does GPT-5.6 Sol cost?", answer: "Current catalog rates are $4 input, $24 output, $0.40 cache read, and $5 cache creation per 1M tokens. Check the dated pricing block." },
+        { question: "What context window and inputs does GPT-5.6 Sol support?", answer: "The catalog records 1,048,576 tokens and text, image, and file modalities." },
+        { question: "When was GPT-5.6 Sol released?", answer: "The catalog snapshot records 2026-06-20 as the release date; treat this as catalog metadata rather than a launch announcement." },
+      ],
+    },
+  },
+  "gpt-image-2": {
+    seo: { title: "GPT Image 2 API and image generator | Flatkey", description: "Prepare GPT Image 2 requests through Flatkey with image API access, current token-dimension pricing, size and quality controls, formats, background, and moderation settings." },
+    rows: [
+      { label: "Input tokens", flatkey: "$4.00", official: "$4.00" },
+      { label: "Output tokens", flatkey: "$24.00", official: "$24.00" },
+      { label: "Cache tokens", flatkey: "$1.00", official: "$1.00" },
+      { label: "Image dimensions", flatkey: "$6.40", official: "$6.40" },
+    ],
+    landingContent: {
+      hero: { title: "GPT Image 2 API, pricing, and image generation", description: "GPT Image 2 is the OpenAI image model exposed in Flatkey's image-generation flow. Use /v1/images/generations and configure count, size, quality, format, background, and moderation fields." },
+      pricing: { title: "GPT Image 2 pricing by token and image dimensions", description: "The catalog exposes token-dimension pricing; the final amount depends on request and usage fields.", rows: [
+        { label: "Input tokens", value: "$4.00", detail: "per 1M units" }, { label: "Output tokens", value: "$24.00", detail: "per 1M units" }, { label: "Cache tokens", value: "$1.00", detail: "per 1M units" }, { label: "Image dimensions", value: "$6.40", detail: "per 1M units" },
+      ] },
+      capabilitiesEyebrow: "GPT Image 2 controls", capabilitiesTitle: "GPT Image 2 sizes, quality, formats, and controls", capabilitiesDescription: "Configure the documented request fields before sending an image-generation task.",
+      capabilities: [
+        { title: "Image count", body: "n accepts 1–10 in the page generator." },
+        { title: "Sizes", body: "1024x1024, 1536x1024, 1024x1536, or auto." },
+        { title: "Quality", body: "auto, high, medium, or low." },
+        { title: "Output format", body: "PNG, JPEG, or WebP." },
+        { title: "Background and moderation", body: "background is opaque or auto; moderation is auto or low." },
+      ],
+      comparison: { eyebrow: "Migration fields", title: "GPT Image 2 compared with GPT Image 1", description: "GPT Image 1 values are not verified in this fact set, so only documented GPT Image 2 fields are shown.", baselineLabel: "GPT Image 1", currentLabel: "GPT Image 2", rows: [
+        { label: "Endpoint", baseline: "Unknown here", current: "/v1/images/generations" },
+        { label: "Sizes", baseline: "Unknown here", current: "1024x1024, 1536x1024, 1024x1536, auto" },
+        { label: "Formats", baseline: "Unknown here", current: "PNG, JPEG, WebP" },
+        { label: "Quality/background/moderation", baseline: "Unknown here", current: "Documented above" },
+        { label: "Image quality ranking", baseline: "Not asserted", current: "Not asserted" },
+      ] },
+      api: { eyebrow: "API", title: "GPT Image 2 API endpoint and request setup", description: "Send the model ID with the supported image controls.", items: [
+        { title: "Endpoint", detail: "POST /v1/images/generations" },
+        { title: "Model ID", detail: "gpt-image-2" },
+        { title: "Controls", detail: "n, size, quality, format, background, and moderation." },
+        { title: "Access", detail: "Use the normal Flatkey account and API-key flow; no free or no-signup promise is made." },
+      ] },
+      promptLibraryTitle: "GPT Image 2 prompt examples for product and marketing visuals",
+      promptLibraryDescription: "Start with a concrete subject, composition, output size, and brand constraint; adjust the request fields separately.",
+      promptLibrary: [
+        { key: "gpt-image-2-product", label: "Product mockup", prompt: "Studio product mockup of a matte black reusable bottle on a pale stone plinth, one soft side light, clean shadow, no text, leave negative space on the right for a headline.", poster: "/assets/prompts/awesome-images/ecommerce-skincare.png", alt: "GPT Image 2 product mockup prompt example" },
+        { key: "gpt-image-2-ad", label: "Ad creative", prompt: "Square social ad still for a citrus skincare launch: glass dropper bottle, sliced bergamot, warm cream background, crisp condensation, editorial daylight, no logo or legible text.", poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png", alt: "GPT Image 2 advertising prompt example" },
+        { key: "gpt-image-2-storyboard", label: "Storyboard frame", prompt: "Wide storyboard frame of a cyclist entering a rain-lit city tunnel at blue hour, camera low behind the wheel, reflective pavement, clear subject silhouette, cinematic but physically plausible lighting.", poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png", alt: "GPT Image 2 storyboard prompt example" },
+      ],
+      why: { eyebrow: "Why use Flatkey for GPT Image 2?", title: "A request-aware GPT Image 2 workflow", description: "Keep image controls and token/image dimensions together so a prompt test can become a reproducible API request.", cards: [
+        { title: "All documented controls in one place", body: "Set n, size, quality, output format, background, and moderation before you hand the request to the console." },
+        { title: "Dimensions stay explicit", body: "The catalog exposes token and image-dimension rates; the final amount depends on the request and usage fields." },
+        { title: "Marketing-ready starting points", body: "Use product, ad, and storyboard examples as editable starting prompts rather than generic image filler." },
+        { title: "No unsupported promises", body: "The page does not promise transparent output, free generation, or a fixed per-image price when those facts are not verified." },
+      ] },
+      faqTitle: { beforeBreak: "GPT Image 2 API", afterBreak: "frequently asked questions" },
+      faqDescription: "Answers about GPT Image 2 API access, image-generation fields, token and image-dimension pricing, formats, and background behavior.",
+      faq: [
+        { question: "What is GPT Image 2?", answer: "GPT Image 2 is the OpenAI image model available through /v1/images/generations." },
+        { question: "How do I access GPT Image 2?", answer: "Configure a request, then use the normal Flatkey account and API-key flow." },
+        { question: "What is the GPT Image 2 API endpoint?", answer: "Use /v1/images/generations with model ID gpt-image-2 and the supported fields." },
+        { question: "How much does GPT Image 2 cost?", answer: "The catalog lists $4 input tokens, $24 output tokens, $1 cache tokens, and $6.40 image dimensions per 1M units; it is not one fixed per-image price." },
+        { question: "What sizes and formats are supported?", answer: "Sizes are 1024x1024, 1536x1024, 1024x1536, and auto. Formats are PNG, JPEG, and WebP." },
+        { question: "Can GPT Image 2 create transparent backgrounds?", answer: "The verified field is background: opaque | auto; this page does not promise transparent output." },
+        { question: "Is GPT Image 2 free or available without signup?", answer: "Free or no-signup generation is not verified. Use the normal Flatkey access flow and dated pricing block." },
+      ],
+    },
+  },
+  "kimi-k3": {
+    seo: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing." },
+    seoByLocale: {
+      en: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing." },
+    },
+    landingContent: {
+      hero: { title: "Kimi K3 API, pricing, and model details", description: "Kimi K3 is the Moonshot AI catalog model available through Flatkey's compatible chat and messages routes. The verified catalog records a 1,048,576-token context and file input." },
+      pricing: { title: "Kimi K3 pricing", description: "Current Flatkey catalog token rates; they do not establish a free tier or consumer subscription price.", rows: [
+        { label: "Input", value: "$2.40", detail: "per 1M tokens" }, { label: "Output", value: "$12.00", detail: "per 1M tokens" }, { label: "Cache", value: "$0.24", detail: "per 1M tokens" },
+      ] },
+      capabilitiesEyebrow: "Kimi K3 capabilities", capabilitiesTitle: "Kimi K3 context, file input, and compatible endpoints", capabilitiesDescription: "Hosted API metadata is verified; local and open-weight assumptions are not.",
+      capabilities: [
+        { title: "Context field", body: "1,048,576 tokens in verified catalog metadata." },
+        { title: "File input", body: "File modality is listed; do not extrapolate additional media types." },
+        { title: "Two documented routes", body: "/v1/chat/completions and /v1/messages are recorded compatible paths." },
+        { title: "Knowledge-work positioning", body: "Coding, document, and research examples are editorial use cases, not benchmark claims." },
+      ],
+      comparison: { eyebrow: "Hosted API facts", title: "Kimi K3 hosted API vs local or open-source assumptions", description: "The verified catalog confirms hosted API metadata only.", baselineLabel: "Local / open-source assumptions", currentLabel: "Verified Kimi K3", rows: [
+        { label: "Hosted endpoint", baseline: "Unknown", current: "/v1/chat/completions and /v1/messages" },
+        { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
+        { label: "Input modality", baseline: "Unknown", current: "Text/file fields" },
+        { label: "Downloadable weights", baseline: "Unknown / not verified", current: "Unknown / not verified" },
+        { label: "Free access", baseline: "Unknown", current: "Not promised; paid token rates apply" },
+      ] },
+      api: { eyebrow: "API", title: "Kimi K3 API and model ID", description: "Choose the compatible route documented by your client.", items: [
+        { title: "Model ID", detail: "kimi-k3" },
+        { title: "OpenAI-compatible", detail: "POST /v1/chat/completions" },
+        { title: "Anthropic-compatible", detail: "POST /v1/messages" },
+        { title: "Boundary", detail: "Compatible routes do not prove local or open-source support." },
+      ] },
+      why: { eyebrow: "Why use Flatkey for Kimi K3?", title: "A long-context Kimi K3 API workflow", description: "Make the two compatible routes, file input, and token dimensions visible before you build an agent or knowledge workflow.", cards: [
+        { title: "Two client paths", body: "Choose /v1/chat/completions for an OpenAI-shaped client or /v1/messages for an Anthropic-shaped client." },
+        { title: "Document-first use cases", body: "Use the verified file modality and 1,048,576-token context for long documents, codebases, and research notes." },
+        { title: "Hosted boundary is clear", body: "The page separates hosted API access from unverified claims about downloadable weights or local hardware." },
+        { title: "Predictable token accounting", body: "See input, output, and cache rates in the pricing block before scaling a workflow." },
+      ] },
+      faqTitle: { beforeBreak: "Kimi K3 API", afterBreak: "frequently asked questions" },
+      faqDescription: "Answers about Kimi K3 API routes, model ID, long context, file input, pricing, hosted access, and local-deployment boundaries.",
+      faq: [
+        { question: "What is Kimi K3?", answer: "Kimi K3 is a Moonshot AI catalog model with file input and a verified 1,048,576-token context." },
+        { question: "How do I use Kimi K3?", answer: "Create a Flatkey API key, choose /v1/chat/completions or /v1/messages, and set model to kimi-k3." },
+        { question: "What is the Kimi K3 API model ID?", answer: "The verified model ID is kimi-k3." },
+        { question: "How much does Kimi K3 cost?", answer: "Current catalog rates are $2.40 input, $12 output, and $0.24 cache per 1M tokens." },
+        { question: "Is Kimi K3 free?", answer: "The current catalog shows paid token rates; do not promise free access." },
+        { question: "Is Kimi K3 open source or available locally?", answer: "Downloadable weights, local deployment, and hardware requirements are not verified." },
+        { question: "Who makes Kimi K3?", answer: "The catalog vendor is Moonshot AI; Flatkey provides routing and billing." },
+      ],
+    },
+  },
+  "deepseek-v4-pro": {
+    seo: { title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey", description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing." },
+    seoByLocale: {
+      en: { title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey", description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing." },
+    },
+    rows: [
+      { label: "Peak UTC input / cache / output", flatkey: "$1.32 / $0.044 / $3.96", official: "$1.32 / $0.044 / $3.96" },
+      { label: "Off-peak UTC input / cache / output", flatkey: "$0.66 / $0.022 / $1.98", official: "$0.66 / $0.022 / $1.98" },
+      { label: "Context", flatkey: "", value: "1,048,576 tokens" },
+      { label: "Modalities", flatkey: "", value: "Text · file" },
+    ],
+    landingContent: {
+      hero: { title: "DeepSeek V4 Pro API, pricing, and model details", description: "DeepSeek V4 Pro is documented here with text and file modalities, a 1,048,576-token context, and /v1/chat/completions plus /v1/messages. Pricing is time-tiered in UTC." },
+      pricing: { title: "DeepSeek V4 Pro pricing by UTC time tier", description: "Keep peak and off-peak token dimensions together; no blended always-active price is implied.", rows: [
+        { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "input / cache read / output per 1M tokens" }, { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "input / cache read / output per 1M tokens" },
+      ] },
+      capabilitiesEyebrow: "DeepSeek V4 Pro capabilities", capabilitiesTitle: "DeepSeek V4 Pro context, file input, and API paths", capabilitiesDescription: "Documented fields are separated from unverified performance or deployment claims.",
+      capabilities: [
+        { title: "Long context field", body: "1,048,576 tokens in catalog metadata." },
+        { title: "Text and file input", body: "These are the verified modalities for this page." },
+        { title: "OpenAI-compatible route", body: "/v1/chat/completions." },
+        { title: "Anthropic-compatible route", body: "/v1/messages." },
+        { title: "Distillable metadata", body: "Do not rewrite the catalog flag as open-source, downloadable, or locally runnable." },
+      ],
+      comparison: { eyebrow: "Compare documented fields", title: "DeepSeek V4 Pro vs V4 Flash", description: "No quality or coding-performance ranking is asserted.", baselineLabel: "DeepSeek V4 Flash", currentLabel: "DeepSeek V4 Pro", rows: [
+        { label: "Model ID", baseline: "deepseek-v4-flash", current: "deepseek-v4-pro" },
+        { label: "Endpoint paths", baseline: "Verify before publishing", current: "/v1/chat/completions, /v1/messages" },
+        { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
+        { label: "Modalities", baseline: "Unknown", current: "Text/file" },
+        { label: "Benchmark/coding ranking", baseline: "Not asserted", current: "Not asserted" },
+      ] },
+      api: { eyebrow: "API", title: "DeepSeek V4 Pro API model name and endpoints", description: "Use the compatible path selected by your client.", items: [
+        { title: "Model ID", detail: "deepseek-v4-pro" },
+        { title: "OpenAI-compatible", detail: "POST /v1/chat/completions" },
+        { title: "Anthropic-compatible", detail: "POST /v1/messages" },
+        { title: "Verified inputs", detail: "Text and file modalities only in this fact set." },
+      ] },
+      why: { eyebrow: "Why use Flatkey for DeepSeek V4 Pro?", title: "Keep DeepSeek V4 Pro's API and UTC pricing rules visible", description: "The page makes the time tier, endpoint choice, context field, and deployment boundaries explicit for production planning.", cards: [
+        { title: "UTC-aware billing", body: "Keep peak and off-peak expressions together; do not replace the catalog rule with one blended rate." },
+        { title: "OpenAI or Anthropic route", body: "Use /v1/chat/completions or /v1/messages with the exact deepseek-v4-pro model ID." },
+        { title: "Text and file boundary", body: "The verified catalog lists text and file modalities; vision and other inputs are not inferred." },
+        { title: "Model facts over rankings", body: "Compare integration fields and context data without publishing an unsupported benchmark or coding-superiority claim." },
+      ] },
+      faqTitle: { beforeBreak: "DeepSeek V4 Pro API", afterBreak: "frequently asked questions" },
+      faqDescription: "Answers about DeepSeek V4 Pro API paths, UTC peak and off-peak pricing, context, verified inputs, and deployment boundaries.",
+      faq: [
+        { question: "What is DeepSeek V4 Pro?", answer: "DeepSeek V4 Pro is documented with text/file modalities and a 1,048,576-token context." },
+        { question: "How do I use DeepSeek V4 Pro?", answer: "Send a request to /v1/chat/completions or /v1/messages with model ID deepseek-v4-pro." },
+        { question: "What is the DeepSeek V4 Pro API model name?", answer: "The verified model ID is deepseek-v4-pro." },
+        { question: "How is DeepSeek V4 Pro priced?", answer: "UTC peak input/cache-read/output are $1.32/$0.044/$3.96 and off-peak are $0.66/$0.022/$1.98 per 1M tokens." },
+        { question: "Does DeepSeek V4 Pro support local download or open-source use?", answer: "Downloadable weights or local deployment are not verified; do not infer them from metadata." },
+        { question: "Does DeepSeek V4 Pro support vision or multimodal input?", answer: "Only text and file modalities are verified in this fact set." },
+        { question: "Is DeepSeek V4 Pro better for coding than V4 Flash?", answer: "This page does not publish a benchmark or quality ranking." },
+      ],
+    },
+  },
+  "minimax-h3": {
+    seo: { title: "MiniMax-H3 video generator API and pricing | Flatkey", description: "Configure MiniMax-H3 video requests through Flatkey with 768P or 2K resolution, duration, ratio, AIGC watermark, and current per-second pricing." },
+    landingContent: {
+      hero: { title: "MiniMax-H3 video generator API and pricing", description: "MiniMax-H3 is available through Flatkey's asynchronous /v1/videos flow. Configure resolution, duration, ratio, and AIGC watermark before opening the console." },
+      pricing: { title: "MiniMax-H3 pricing", description: "The current public catalog lists a $0.08 per-second base; resolution and reference inputs should be checked against the live request estimate.", note: "Prices are a dated catalog snapshot, not a promise that every resolution or reference input settles at one rate.", rows: [
+        { label: "Catalog base", value: "$0.08", detail: "per second" }, { label: "768P / 2K", value: "Live estimate", detail: "resolution-dependent" }, { label: "Reference video", value: "Live estimate", detail: "input-video seconds and resolution" }, { label: "Input image", value: "Check catalog", detail: "free allowance and later images may differ" },
+      ] },
+      capabilitiesEyebrow: "MiniMax-H3 controls", capabilitiesTitle: "MiniMax-H3 resolution, duration, ratio, and watermark", capabilitiesDescription: "Use the documented request fields and review live pricing before submitting.",
+      capabilities: [
+        { title: "Resolution", body: "Choose 768P or 2K." },
+        { title: "Duration", body: "Configure a 4–15 second request." },
+        { title: "Aspect ratio", body: "Use a supported fixed ratio or adaptive." },
+        { title: "AIGC watermark", body: "Set the AIGC watermark boolean explicitly." },
+        { title: "Reference-aware requests", body: "The catalog metadata lists text, image, video, and audio modalities; use only reference fields accepted by the selected route." },
+      ],
+      comparison: { eyebrow: "Video controls", title: "MiniMax-H3 ComfyUI and local setup: verified boundaries", description: "Compare request settings and the available integration evidence rather than asserting a quality ranking.", baselineLabel: "Unverified local assumption", currentLabel: "Verified hosted fields", rows: [
+        { label: "Resolution", baseline: "768P", current: "768P or 2K" },
+        { label: "Duration", baseline: "6 seconds", current: "4–15 seconds" },
+        { label: "Ratio", baseline: "16:9", current: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16, adaptive" },
+        { label: "AIGC watermark", baseline: "Off", current: "Explicit boolean" },
+        { label: "ComfyUI or local weights", baseline: "Not verified", current: "Not verified in Flatkey catalog" },
+      ] },
+      api: { eyebrow: "API", title: "MiniMax-H3 video API setup", description: "Save the task ID returned by the asynchronous request and retrieve the result when ready.", items: [
+        { title: "Endpoint", detail: "POST /v1/videos" },
+        { title: "Model ID", detail: "MiniMax-H3" },
+        { title: "Fields", detail: "resolution, duration, ratio, and aigc_watermark." },
+        { title: "Result", detail: "Use the returned task ID with the content endpoint." },
+      ] },
+      promptLibraryTitle: "MiniMax-H3 prompting guide: product, UGC, and storyboard shots",
+      promptLibraryDescription: "Describe the subject, action, camera position, duration, and output ratio; keep the request fields separate from the scene prompt.",
+      promptLibrary: [
+        { key: "minimax-h3-product", label: "Product motion", prompt: "Six-second product shot: a matte black bottle rotates slowly on a wet stone pedestal, one controlled push-in, small water highlights, uncluttered background, end on a steady hero frame.", poster: "/assets/cli/product-reveal.png", video: "/assets/cli/product-reveal.mp4", alt: "MiniMax-H3 product motion prompt example" },
+        { key: "minimax-h3-ugc", label: "UGC ad clip", prompt: "Eight-second vertical UGC-style clip: a creator lifts a compact coffee maker, points to the front control, then smiles to camera; handheld but stable, natural window light, leave the spoken words to the audio track.", poster: "/assets/cli/ugc-ad-clips.png", video: "/assets/cli/ugc-ad-clips.mp4", alt: "MiniMax-H3 UGC ad prompt example" },
+        { key: "minimax-h3-storyboard", label: "Storyboard shot", prompt: "Ten-second wide establishing shot: a courier crosses a rain-soaked plaza toward a lit station, a slow lateral camera move follows, reflections remain consistent, finish with the subject centered under the sign.", poster: "/assets/cli/localized-variants.png", video: "/assets/cli/localized-variants.mp4", alt: "MiniMax-H3 storyboard prompt example" },
+      ],
+      why: { eyebrow: "Why use Flatkey for MiniMax-H3?", title: "A controllable MiniMax-H3 video API handoff", description: "Keep video settings, asynchronous task handling, and pricing boundaries visible while you move from a prompt draft to a real request.", cards: [
+        { title: "Video fields are explicit", body: "Choose 768P or 2K, 4–15 seconds, a supported ratio, and the AIGC watermark boolean." },
+        { title: "Prompting guide included", body: "Product, UGC, and storyboard examples describe subject, action, camera, and ending rather than repeating a generic cinematic prompt." },
+        { title: "Async result path", body: "Save the task ID returned by POST /v1/videos and retrieve the generated content when the task is ready." },
+        { title: "ComfyUI/local boundary", body: "The catalog does not verify native Flatkey ComfyUI delivery or local weights; this page does not imply either." },
+      ] },
+      faqTitle: { beforeBreak: "MiniMax-H3 video API", afterBreak: "frequently asked questions" },
+      faqDescription: "Answers about MiniMax-H3 video API fields, prompting, per-second pricing, asynchronous tasks, ComfyUI/local boundaries, and moderation claims.",
+      faq: [
+        { question: "Which MiniMax-H3 fields can I configure here?", answer: "Configure resolution, duration, ratio, and AIGC watermark before opening the console." },
+        { question: "What is MiniMax-H3?", answer: "MiniMax-H3 is a video model available through Flatkey's /v1/videos flow." },
+        { question: "How much does MiniMax-H3 cost?", answer: "The current public catalog lists a $0.08 per-second base. Resolution and reference-input estimates can vary, so review the live request estimate before submitting." },
+        { question: "How do I use the MiniMax-H3 video API?", answer: "Configure the fields, create a Flatkey API key, send POST /v1/videos with model MiniMax-H3, then keep the asynchronous task ID for the content lookup." },
+        { question: "Does MiniMax-H3 have a prompting guide?", answer: "Use the page examples as a starting point: name the subject, action, camera movement, duration, and ending, then set ratio and resolution as request fields." },
+        { question: "Does Flatkey provide native MiniMax-H3 ComfyUI or local installation?", answer: "Native Flatkey ComfyUI delivery, downloadable weights, and local hardware requirements are not verified in the current catalog." },
+        { question: "Is MiniMax-H3 censored or unrestricted?", answer: "The current catalog does not publish a moderation policy for this model, so the page makes no unrestricted-use claim." },
+        { question: "Are MiniMax-H3 prompt drafts executed on this public page?", answer: "The public page saves the video settings and prompt draft first. Sign up or open the console to run POST /v1/videos with an API key." },
+      ],
+    },
+  },
+};
+
+// These are the only priority IDs that have a dedicated public landing URL.
+// Keep the canonical slugs stable even when the live catalog preserves vendor
+// casing (notably `MiniMax-H3`).
+const PRIORITY_CANONICAL_SLUGS: Record<string, string> = {
+  "gpt-5-6-sol": "gpt-5.6-sol",
+  "gpt-image-2": "gpt-image-2",
+  "kimi-k3": "kimi-k3",
+  "deepseek-v4-pro": "deepseek-v4-pro",
+  "minimax-h3": "minimax-h3",
+};
+
+/**
+ * Search metadata is localized independently from the editorial body.  Keep
+ * every supported locale explicit here so a high-priority page never falls
+ * back to an English title/description simply because the live catalog uses a
+ * vendor-specific model id.  Product names, endpoint paths, model ids, and
+ * currency values intentionally remain literal; the surrounding intent is
+ * translated for the locale.
+ */
+const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: string; description: string }>>> = {
+  "gpt-5-6-sol": {
+    en: {
+      title: "GPT-5.6 Sol API and pricing | Flatkey",
+      description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key.",
+    },
+    zh: {
+      title: "GPT-5.6 Sol API 与价格 | Flatkey",
+      description: "通过 Flatkey 使用 GPT-5.6 Sol，获得 OpenAI 兼容 API、1,048,576 token 上下文、文本/图片/文件输入、当前 token 价格和一个 API Key。",
+    },
+    es: {
+      title: "API y precios de GPT-5.6 Sol | Flatkey",
+      description: "Usa GPT-5.6 Sol con Flatkey mediante una API compatible con OpenAI, contexto de 1.048.576 tokens, entradas de texto, imagen y archivo, precios actuales y una sola API key.",
+    },
+    fr: {
+      title: "API et tarifs de GPT-5.6 Sol | Flatkey",
+      description: "Utilisez GPT-5.6 Sol avec Flatkey via une API compatible OpenAI, un contexte de 1 048 576 tokens, des entrées texte, image et fichier, les tarifs actuels et une seule clé API.",
+    },
+    pt: {
+      title: "API e preços do GPT-5.6 Sol | Flatkey",
+      description: "Use o GPT-5.6 Sol com a Flatkey por uma API compatível com OpenAI, contexto de 1.048.576 tokens, entradas de texto, imagem e arquivo, preços atuais e uma única chave de API.",
+    },
+    ru: {
+      title: "API и цены GPT-5.6 Sol | Flatkey",
+      description: "Используйте GPT-5.6 Sol через Flatkey с OpenAI-совместимым API, контекстом 1 048 576 токенов, текстовыми, графическими и файловыми входами, актуальными тарифами и одним API-ключом.",
+    },
+    ja: {
+      title: "GPT-5.6 Sol API と料金 | Flatkey",
+      description: "FlatkeyでGPT-5.6 Solを利用。OpenAI互換API、1,048,576トークンのコンテキスト、テキスト・画像・ファイル入力、最新のトークン料金、1つのAPIキーに対応します。",
+    },
+    vi: {
+      title: "API và bảng giá GPT-5.6 Sol | Flatkey",
+      description: "Dùng GPT-5.6 Sol qua Flatkey với API tương thích OpenAI, ngữ cảnh 1.048.576 token, đầu vào văn bản, hình ảnh và tệp, giá token hiện tại và một khóa API.",
+    },
+    de: {
+      title: "GPT-5.6 Sol API und Preise | Flatkey",
+      description: "Nutzen Sie GPT-5.6 Sol über Flatkey mit OpenAI-kompatibler API, einem Kontext von 1.048.576 Tokens, Text-, Bild- und Dateieingaben, aktuellen Tokenpreisen und einem API-Schlüssel.",
+    },
+    id: {
+      title: "API dan harga GPT-5.6 Sol | Flatkey",
+      description: "Gunakan GPT-5.6 Sol melalui Flatkey dengan API yang kompatibel dengan OpenAI, konteks 1.048.576 token, input teks, gambar, dan file, harga token terbaru, serta satu kunci API.",
+    },
+  },
+  "gpt-image-2": {
+    en: {
+      title: "GPT Image 2 API and image generator | Flatkey",
+      description: "Prepare GPT Image 2 requests through Flatkey with image API access, current token-dimension pricing, size and quality controls, formats, background, and moderation settings.",
+    },
+    zh: {
+      title: "GPT Image 2 API 与图像生成器 | Flatkey",
+      description: "通过 Flatkey 准备 GPT Image 2 请求，使用图像 API，并配置当前 token/图像尺寸价格、尺寸、质量、格式、背景和审核设置。",
+    },
+    es: {
+      title: "API y generador de imágenes GPT Image 2 | Flatkey",
+      description: "Prepara solicitudes de GPT Image 2 con Flatkey: acceso a la API de imágenes, precios por tokens y dimensiones, controles de tamaño y calidad, formatos, fondo y moderación.",
+    },
+    fr: {
+      title: "API et générateur d’images GPT Image 2 | Flatkey",
+      description: "Préparez des requêtes GPT Image 2 avec Flatkey : accès à l’API d’image, tarifs par tokens et dimensions, contrôles de taille et de qualité, formats, arrière-plan et modération.",
+    },
+    pt: {
+      title: "API e gerador de imagens do GPT Image 2 | Flatkey",
+      description: "Prepare solicitações do GPT Image 2 com a Flatkey: acesso à API de imagens, preços por tokens e dimensões, controles de tamanho e qualidade, formatos, fundo e moderação.",
+    },
+    ru: {
+      title: "API и генератор изображений GPT Image 2 | Flatkey",
+      description: "Подготовьте запросы GPT Image 2 через Flatkey: доступ к API изображений, цены за токены и размеры, настройки разрешения и качества, формата, фона и модерации.",
+    },
+    ja: {
+      title: "GPT Image 2 API と画像生成 | Flatkey",
+      description: "FlatkeyでGPT Image 2のリクエストを準備。画像API、トークン・画像サイズ別料金、サイズと品質、形式、背景、モデレーションを設定できます。",
+    },
+    vi: {
+      title: "API và trình tạo ảnh GPT Image 2 | Flatkey",
+      description: "Chuẩn bị yêu cầu GPT Image 2 qua Flatkey với API hình ảnh, giá theo token và kích thước, tùy chọn kích thước, chất lượng, định dạng, nền và kiểm duyệt.",
+    },
+    de: {
+      title: "GPT Image 2 API und Bildgenerator | Flatkey",
+      description: "Bereiten Sie GPT Image 2-Anfragen über Flatkey vor: Bild-API, aktuelle Token- und Dimensionspreise sowie Einstellungen für Größe, Qualität, Format, Hintergrund und Moderation.",
+    },
+    id: {
+      title: "API dan generator gambar GPT Image 2 | Flatkey",
+      description: "Siapkan permintaan GPT Image 2 melalui Flatkey dengan akses API gambar, harga token dan dimensi saat ini, serta pengaturan ukuran, kualitas, format, latar, dan moderasi.",
+    },
+  },
+  "kimi-k3": {
+    en: {
+      title: "Kimi K3 API and pricing | Flatkey",
+      description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing.",
+    },
+    zh: {
+      title: "Kimi K3 API 与价格 | Flatkey",
+      description: "通过 Flatkey 使用 Moonshot AI 的 Kimi K3，支持 OpenAI 和 Anthropic 兼容端点、1,048,576 token 上下文、文件输入及当前 token 价格。",
+    },
+    es: {
+      title: "API y precios de Kimi K3 | Flatkey",
+      description: "Usa Kimi K3 de Moonshot AI con Flatkey mediante endpoints compatibles con OpenAI y Anthropic, contexto de 1.048.576 tokens, entrada de archivos y precios actuales.",
+    },
+    fr: {
+      title: "API et tarifs de Kimi K3 | Flatkey",
+      description: "Utilisez Kimi K3 de Moonshot AI avec Flatkey via des endpoints compatibles OpenAI et Anthropic, un contexte de 1 048 576 tokens, l’entrée de fichiers et les tarifs actuels.",
+    },
+    pt: {
+      title: "API e preços do Kimi K3 | Flatkey",
+      description: "Use o Kimi K3 da Moonshot AI com a Flatkey por endpoints compatíveis com OpenAI e Anthropic, contexto de 1.048.576 tokens, entrada de arquivos e preços atuais.",
+    },
+    ru: {
+      title: "API и цены Kimi K3 | Flatkey",
+      description: "Используйте Kimi K3 от Moonshot AI через Flatkey с OpenAI- и Anthropic-совместимыми endpoint, контекстом 1 048 576 токенов, загрузкой файлов и актуальными тарифами.",
+    },
+    ja: {
+      title: "Kimi K3 API と料金 | Flatkey",
+      description: "FlatkeyでMoonshot AIのKimi K3を利用。OpenAI・Anthropic互換エンドポイント、1,048,576トークンのコンテキスト、ファイル入力、最新料金に対応します。",
+    },
+    vi: {
+      title: "API và bảng giá Kimi K3 | Flatkey",
+      description: "Dùng Kimi K3 của Moonshot AI qua Flatkey với endpoint tương thích OpenAI và Anthropic, ngữ cảnh 1.048.576 token, đầu vào tệp và giá hiện tại.",
+    },
+    de: {
+      title: "Kimi K3 API und Preise | Flatkey",
+      description: "Nutzen Sie Kimi K3 von Moonshot AI über Flatkey mit OpenAI- und Anthropic-kompatiblen Endpunkten, 1.048.576-Token-Kontext, Dateieingabe und aktuellen Tokenpreisen.",
+    },
+    id: {
+      title: "API dan harga Kimi K3 | Flatkey",
+      description: "Gunakan Kimi K3 dari Moonshot AI melalui Flatkey dengan endpoint yang kompatibel dengan OpenAI dan Anthropic, konteks 1.048.576 token, input file, dan harga token terbaru.",
+    },
+  },
+  "deepseek-v4-pro": {
+    en: {
+      title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey",
+      description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing.",
+    },
+    zh: {
+      title: "DeepSeek V4 Pro API 与动态价格 | Flatkey",
+      description: "通过 Flatkey 调用 DeepSeek V4 Pro，支持 OpenAI 或 Anthropic 兼容端点、1,048,576 token 上下文、文件输入及按 UTC 时段变化的价格。",
+    },
+    es: {
+      title: "API y precios dinámicos de DeepSeek V4 Pro | Flatkey",
+      description: "Llama a DeepSeek V4 Pro con Flatkey mediante endpoints compatibles con OpenAI o Anthropic, contexto de 1.048.576 tokens, entrada de archivos y precios por franjas UTC.",
+    },
+    fr: {
+      title: "API et tarifs dynamiques de DeepSeek V4 Pro | Flatkey",
+      description: "Appelez DeepSeek V4 Pro via Flatkey avec des endpoints compatibles OpenAI ou Anthropic, un contexte de 1 048 576 tokens, l’entrée de fichiers et des tarifs horaires en UTC.",
+    },
+    pt: {
+      title: "API e preços dinâmicos do DeepSeek V4 Pro | Flatkey",
+      description: "Chame o DeepSeek V4 Pro pela Flatkey com endpoints compatíveis com OpenAI ou Anthropic, contexto de 1.048.576 tokens, entrada de arquivos e preços por faixa horária UTC.",
+    },
+    ru: {
+      title: "API и динамические цены DeepSeek V4 Pro | Flatkey",
+      description: "Вызывайте DeepSeek V4 Pro через Flatkey с OpenAI- или Anthropic-совместимыми endpoint, контекстом 1 048 576 токенов, загрузкой файлов и тарифами по времени UTC.",
+    },
+    ja: {
+      title: "DeepSeek V4 Pro API と動的料金 | Flatkey",
+      description: "FlatkeyでDeepSeek V4 Proを呼び出し。OpenAI・Anthropic互換エンドポイント、1,048,576トークンのコンテキスト、ファイル入力、UTC時間帯別料金に対応します。",
+    },
+    vi: {
+      title: "API và giá theo thời điểm của DeepSeek V4 Pro | Flatkey",
+      description: "Gọi DeepSeek V4 Pro qua Flatkey với endpoint tương thích OpenAI hoặc Anthropic, ngữ cảnh 1.048.576 token, đầu vào tệp và giá phân theo khung giờ UTC.",
+    },
+    de: {
+      title: "DeepSeek V4 Pro API und dynamische Preise | Flatkey",
+      description: "Rufen Sie DeepSeek V4 Pro über Flatkey mit OpenAI- oder Anthropic-kompatiblen Endpunkten, 1.048.576-Token-Kontext, Dateieingabe und UTC-Zeitstaffelpreisen auf.",
+    },
+    id: {
+      title: "API dan harga dinamis DeepSeek V4 Pro | Flatkey",
+      description: "Panggil DeepSeek V4 Pro melalui Flatkey dengan endpoint yang kompatibel dengan OpenAI atau Anthropic, konteks 1.048.576 token, input file, dan harga berdasarkan waktu UTC.",
+    },
+  },
+  "minimax-h3": {
+    en: {
+      title: "MiniMax H3 video API and pricing | Flatkey",
+      description: "Use MiniMax H3 through Flatkey's /v1/videos endpoint with 768P or 2K settings, 4–15 second clips, ratio controls, and current per-second pricing.",
+    },
+    zh: {
+      title: "MiniMax H3 视频 API 与价格 | Flatkey",
+      description: "通过 Flatkey 的 /v1/videos 使用 MiniMax H3，配置 768P 或 2K、4–15 秒片段、画面比例及当前每秒价格。",
+    },
+    es: {
+      title: "API de vídeo y precios de MiniMax H3 | Flatkey",
+      description: "Usa MiniMax H3 con el endpoint /v1/videos de Flatkey: configura 768P o 2K, clips de 4–15 segundos, proporción y precios actuales por segundo.",
+    },
+    fr: {
+      title: "API vidéo et tarifs de MiniMax H3 | Flatkey",
+      description: "Utilisez MiniMax H3 via l’endpoint /v1/videos de Flatkey avec des réglages 768P ou 2K, des clips de 4 à 15 secondes, le ratio et les tarifs actuels par seconde.",
+    },
+    pt: {
+      title: "API de vídeo e preços do MiniMax H3 | Flatkey",
+      description: "Use o MiniMax H3 pelo endpoint /v1/videos da Flatkey com configurações 768P ou 2K, clipes de 4–15 segundos, proporção e preço atual por segundo.",
+    },
+    ru: {
+      title: "Видео API и цены MiniMax H3 | Flatkey",
+      description: "Используйте MiniMax H3 через endpoint /v1/videos Flatkey: настройки 768P или 2K, клипы 4–15 секунд, соотношение сторон и актуальная цена за секунду.",
+    },
+    ja: {
+      title: "MiniMax H3 動画API と料金 | Flatkey",
+      description: "Flatkeyの/v1/videosでMiniMax H3を利用。768Pまたは2K、4～15秒のクリップ、アスペクト比、最新の秒単価を設定できます。",
+    },
+    vi: {
+      title: "API video và bảng giá MiniMax H3 | Flatkey",
+      description: "Dùng MiniMax H3 qua endpoint /v1/videos của Flatkey với tùy chọn 768P hoặc 2K, clip 4–15 giây, tỷ lệ khung hình và giá theo giây hiện tại.",
+    },
+    de: {
+      title: "MiniMax H3 Video-API und Preise | Flatkey",
+      description: "Nutzen Sie MiniMax H3 über den Flatkey-Endpunkt /v1/videos mit 768P- oder 2K-Einstellungen, 4–15-Sekunden-Clips, Seitenverhältnis und aktuellen Preisen pro Sekunde.",
+    },
+    id: {
+      title: "API video dan harga MiniMax H3 | Flatkey",
+      description: "Gunakan MiniMax H3 melalui endpoint /v1/videos Flatkey dengan pengaturan 768P atau 2K, klip 4–15 detik, rasio, dan harga per detik terbaru.",
+    },
+  },
+};
+
+for (const [modelKey, seoByLocale] of Object.entries(PRIORITY_SEO_BY_LOCALE)) {
+  const override = PRIORITY_MODEL_OVERRIDES[modelKey];
+  if (override) override.seoByLocale = { ...seoByLocale, ...override.seoByLocale };
+}
+
+// The editorial overrides above are intentionally authored in English so the
+// catalog/config layer remains locale-neutral.  Build a locale map against
+// those exact source objects rather than relying on a flattened generated
+// copy list: this preserves the target-specific wording (including prompts,
+// comparison rows, and FAQ answers) when the shared shell calls `t()`.
+const prioritySourceTranslationCache: Partial<Record<Locale, Record<string, string>>> = {};
+function getPrioritySourceTranslations(locale: Locale): Record<string, string> {
+  const cached = prioritySourceTranslationCache[locale];
+  if (cached) return cached;
+
+  const merged = { ...getPriorityModelTranslations(locale) };
+  for (const [modelKey, override] of Object.entries(PRIORITY_MODEL_OVERRIDES)) {
+    if (!override.landingContent) continue;
+    Object.assign(
+      merged,
+      getPriorityModelTranslationMapForSource(modelKey, locale, override.landingContent),
+    );
+  }
+  prioritySourceTranslationCache[locale] = merged;
+  return merged;
+}
+
+// Image and MiniMax pages have static route configs as well as live pricing
+// model routes, so apply their editorial overrides to the exported constants
+// before MODEL_CONFIGS is assembled.  This leaves Seedance untouched.
+Object.assign(GPT_IMAGE_2_CONFIG, PRIORITY_MODEL_OVERRIDES["gpt-image-2"]);
+Object.assign(KIMI_K3_CONFIG, PRIORITY_MODEL_OVERRIDES["kimi-k3"]);
+Object.assign(MINIMAX_H3_CONFIG, PRIORITY_MODEL_OVERRIDES["minimax-h3"]);
 
 export const GPT_4_1_MINI_CONFIG: ModelConfig = {
   ...GPT_CONFIG,
@@ -778,6 +1404,7 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   [GPT_IMAGE_2_CONFIG.slug]: GPT_IMAGE_2_CONFIG,
   [GLM_API_CONFIG.slug]: GLM_API_CONFIG,
   [GPT_CONFIG.slug]: GPT_CONFIG,
+  [KIMI_K3_CONFIG.slug]: KIMI_K3_CONFIG,
   [MINIMAX_H3_CONFIG.slug]: MINIMAX_H3_CONFIG,
   [QWEN_CONFIG.slug]: QWEN_CONFIG,
   [SEEDANCE_25_CONFIG.slug]: SEEDANCE_25_CONFIG,
@@ -1173,9 +1800,22 @@ export function getModelLandingConfig(slug: string): ModelConfig | null {
 
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
   const normalized = normalizeModelId(modelId);
-  return getModelLandingConfigs().find((config) =>
-    config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
+  const config = getModelLandingConfigs().find((candidate) =>
+    candidate.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
   ) ?? null;
+  const priorityOverride = PRIORITY_MODEL_OVERRIDES[normalized];
+  if (!config || !priorityOverride) return config;
+  return {
+    ...config,
+    ...priorityOverride,
+    slug: PRIORITY_CANONICAL_SLUGS[normalized] ?? config.slug,
+    modelIds: [modelId, ...config.modelIds],
+    displayName: modelId,
+    modelId,
+    landingContent: priorityOverride.landingContent
+      ? { ...config.landingContent, ...priorityOverride.landingContent }
+      : config.landingContent,
+  };
 }
 
 export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
@@ -1185,13 +1825,50 @@ export function getModelLandingConfigForPricingModel(model: PricingModel): Model
 }
 
 export function modelLandingConfigForModel(config: ModelConfig, model: PricingModel): ModelConfig {
+  const normalizedModelId = normalizeModelId(model.model_name);
+  const priorityOverride = PRIORITY_MODEL_OVERRIDES[normalizedModelId];
   return {
     ...config,
-    slug: encodeURIComponent(model.model_name),
+    ...priorityOverride,
+    slug: PRIORITY_CANONICAL_SLUGS[normalizedModelId] ?? encodeURIComponent(model.model_name),
     modelIds: [model.model_name, ...config.modelIds],
     displayName: model.model_name,
     modelId: model.model_name,
     officialName: model.vendor_name ?? config.officialName,
+    landingContent: priorityOverride?.landingContent
+      ? { ...config.landingContent, ...priorityOverride.landingContent }
+      : config.landingContent,
+  };
+}
+
+/**
+ * Apply a complete, model-specific editorial pack for a non-English page.
+ *
+ * The shared shell still owns the layout and the English override remains the
+ * source of truth for the default route.  For translated routes we replace
+ * the editorial fields as one coherent object instead of translating each
+ * English string independently: priority packs contain different section
+ * counts and ordering, so positional string pairing can silently attach a
+ * Kimi explanation to a pricing heading or a MiniMax comparison title.
+ */
+export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Locale): ModelConfig {
+  if (locale === "en") return config;
+  const localized = getPriorityModelCopy(config.modelId || config.slug, locale);
+  if (!localized) return config;
+
+  const sourceContent = config.landingContent;
+  const localizedContent = localized.landingContent;
+  return {
+    ...config,
+    landingContent: {
+      ...sourceContent,
+      ...localizedContent,
+      // Preserve non-editorial source fields (logo, breadcrumb, and action
+      // label) while replacing the localized title/description.
+      hero: sourceContent?.hero || localizedContent.hero
+        ? { ...sourceContent?.hero, ...localizedContent.hero }
+        : undefined,
+    },
   };
 }
 
@@ -1201,6 +1878,17 @@ export function getModelLandingConfigs(): ModelConfig[] {
 
 export function getModelLandingPathnames(): string[] {
   return getModelLandingConfigs().map((config) => `/models/${config.slug}`);
+}
+
+/**
+ * Canonical paths for priority models whose live catalog entry is resolved at
+ * request time rather than represented by a static family config (for example
+ * GPT-5.6 Sol and DeepSeek V4 Pro).  Keep these separate from the static list
+ * so generateStaticParams does not accidentally force a pricing fetch for
+ * every locale during a build.
+ */
+export function getPriorityModelLandingPathnames(): string[] {
+  return [...new Set(Object.values(PRIORITY_CANONICAL_SLUGS).map((slug) => `/models/${slug}`))];
 }
 
 export function resolveModelLandingModels(config: ModelConfig, models: PricingModel[]): PricingModel[] {
@@ -5026,8 +5714,770 @@ const seedanceModelCopy: Partial<Record<Locale, Partial<Record<ModelLandingKey, 
   },
 };
 
+// Editorial Seedance 2.5 copy added during the factual re-audit.  Keep these
+// strings separate from the older prototype table so a stale translation can
+// never silently re-introduce an unsupported claim. English is the global
+// source copy; every supported locale below carries the same audited key set.
+const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
+  en: {
+    "Seedance 2.5 AI Video Generator & API": "Seedance 2.5 AI Video Generator & API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "Live request telemetry appears here when enough Flatkey traffic is available.",
+    "Seedance 2.5 usage activity": "Seedance 2.5 usage activity",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.",
+    "Text-to-video and image-to-video": "Text-to-video and image-to-video",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.",
+    "Reference media and frame control": "Reference media and frame control",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.",
+    "Audio-video generation": "Audio-video generation",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.",
+    "Duration and output controls": "Duration and output controls",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.",
+    "Seedance 2.5 features": "Seedance 2.5 features",
+    "What is Seedance 2.5? Features for AI video generation": "What is Seedance 2.5? Features for AI video generation",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Seedance 2.5 features: references, audio, and 30-second video",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (not re-audited)",
+    "Not verified in this audit": "Not verified in this audit",
+    "4–30 seconds per request": "4–30 seconds per request",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Up to 50 total: 30 images, 10 videos, and 10 audio",
+    "First-frame and last-frame roles are supported": "First-frame and last-frame roles are supported",
+    "Audio generation can be enabled per request": "Audio generation can be enabled per request",
+    "Reference-guided and first/last-frame workflows": "Reference-guided and first/last-frame workflows",
+    "Seedance 2.5 prompt guide: six workflows": "Seedance 2.5 prompt guide: six workflows",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.",
+    "Why use Seedance 2.5 through Flatkey?": "Why use Seedance 2.5 through Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.",
+    "One key for the model catalog": "One key for the model catalog",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Use the same Flatkey account and API key across video, image, audio, and text workloads.",
+    "Documented video contract": "Documented video contract",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.",
+    "Pricing follows the request": "Pricing follows the request",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.",
+    "Live data only when available": "Live data only when available",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.",
+    "Seedance 2.5 API: how to use /v1/videos": "Seedance 2.5 API: how to use /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.",
+    "Async task result": "Async task result",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.",
+    "Reference limits": "Reference limits",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.",
+    "Output controls": "Output controls",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.",
+    "480p · no video reference": "480p · no video reference",
+    "720p · no video reference": "720p · no video reference",
+    "Catalog formula": "Catalog formula",
+    "Video reference input": "Video reference input",
+    "Depends on resolution": "Depends on resolution",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.",
+    "What is the Seedance 2.5 release date?": "What is the Seedance 2.5 release date?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.",
+    "Is Seedance 2.5 free?": "Is Seedance 2.5 free?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Seedance 2.5 pricing: 480p, 720p, and video references",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.",
+    "Seedance 2.5 request pricing formulas": "Seedance 2.5 request pricing formulas",
+    "Scenario": "Scenario",
+    "Flatkey formula": "Flatkey formula",
+    "Billing basis": "Billing basis",
+    "Total input-video seconds": "Total input-video seconds",
+    "Output duration": "Output duration",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.",
+  },
+  es: {
+    "Seedance 2.5 AI Video Generator & API": "Generador de vídeo con IA y API de Seedance 2.5",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "Seedance 2.5 de ByteDance es un modelo de generación audiovisual para flujos de trabajo de texto a vídeo e imagen a vídeo. Usa medios de referencia, control del primer/último fotograma, solicitudes de 4–30 segundos y audio opcional mediante el endpoint /v1/videos de Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "La telemetría de solicitudes en directo aparece aquí cuando hay suficiente tráfico de Flatkey.",
+    "Seedance 2.5 usage activity": "Actividad de uso de Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Aquí solo se muestran datos de solicitudes en directo de Flatkey; el gráfico aparece después de recopilar suficiente tráfico.",
+    "Text-to-video and image-to-video": "Texto a vídeo e imagen a vídeo",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Empieza con una escena escrita o proporciona imágenes de referencia de un sujeto, producto o storyboard que ya hayas diseñado.",
+    "Reference media and frame control": "Medios de referencia y control de fotogramas",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "La solicitud puede incluir referencias de imagen, vídeo y audio, además de los roles de primer y último fotograma para flujos guiados por referencias.",
+    "Audio-video generation": "Generación audiovisual",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Activa la generación de audio como una opción explícita de la solicitud; no supongas una lista de idiomas ni un comportamiento de audio que la ruta seleccionada no documente.",
+    "Duration and output controls": "Controles de duración y salida",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Elige 4–30 segundos, 480p o 720p, una relación adaptativa o fija compatible y la configuración de audio antes de enviar la tarea.",
+    "Seedance 2.5 features": "Funciones de Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "¿Qué es Seedance 2.5? Funciones para generar vídeos con IA",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "El contrato documentado cubre entradas de texto a vídeo e imagen a vídeo, medios de referencia, audio opcional y ajustes de salida acotados.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Funciones de Seedance 2.5: referencias, audio y vídeo de 30 segundos",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Esta comparación registra el comportamiento documentado de Seedance 2.5. Los valores de Seedance 2.0 se marcan como no verificados en lugar de inferirse.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (sin una nueva auditoría)",
+    "Not verified in this audit": "No verificado en esta auditoría",
+    "4–30 seconds per request": "4–30 segundos por solicitud",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Hasta 50 en total: 30 imágenes, 10 vídeos y 10 audios",
+    "First-frame and last-frame roles are supported": "Se admiten los roles de primer y último fotograma",
+    "Audio generation can be enabled per request": "La generación de audio se puede activar en cada solicitud",
+    "Reference-guided and first/last-frame workflows": "Flujos guiados por referencias y por primer/último fotograma",
+    "Seedance 2.5 prompt guide: six workflows": "Guía de prompts de Seedance 2.5: seis flujos de trabajo",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Usa estos prompts específicos de cada flujo como punto de partida. La salida depende de las referencias proporcionadas y de la configuración de la solicitud.",
+    "Why use Seedance 2.5 through Flatkey?": "¿Por qué usar Seedance 2.5 con Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Usa una sola clave para el catálogo de modelos, revisa el contrato de la solicitud y vincula el precio a la configuración elegida.",
+    "One key for the model catalog": "Una clave para el catálogo de modelos",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Usa la misma cuenta y clave API de Flatkey para trabajos de vídeo, imagen, audio y texto.",
+    "Documented video contract": "Contrato de vídeo documentado",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Mantén explícitos en tu integración la solicitud content[] de Seedance, el endpoint /v1/videos y el flujo de tareas asíncrono.",
+    "Pricing follows the request": "El precio depende de la solicitud",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "La resolución, la duración y la entrada de referencia de vídeo cambian la fórmula; el valor del catálogo no es una tarifa universal por segundo.",
+    "Live data only when available": "Datos en directo solo cuando están disponibles",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Las tarjetas de rendimiento y actividad muestran telemetría cuando hay suficiente tráfico real de Flatkey; de lo contrario quedan sin datos.",
+    "Seedance 2.5 API: how to use /v1/videos": "API de Seedance 2.5: cómo usar /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Envía los elementos content[] de Seedance, conserva el task id y obtén el resultado desde /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Envía el ID del modelo, un array content[] y los campos compatibles de duración, resolución, relación y audio.",
+    "Async task result": "Resultado de tarea asíncrona",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Guarda el task id devuelto y recupera el archivo generado desde el endpoint de contenido cuando esté listo.",
+    "Reference limits": "Límites de referencias",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "El adaptador acepta hasta 30 imágenes, 10 vídeos y 10 referencias de audio, con 50 en total.",
+    "Output controls": "Controles de salida",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Elige 480p o 720p, una relación compatible, 4–30 segundos y si quieres generar audio.",
+    "480p · no video reference": "480p · sin referencia de vídeo",
+    "720p · no video reference": "720p · sin referencia de vídeo",
+    "Catalog formula": "Fórmula del catálogo",
+    "Video reference input": "Entrada de referencia de vídeo",
+    "Depends on resolution": "Depende de la resolución",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "El precio de Seedance 2.5 varía según la resolución, la duración y la entrada de referencia de vídeo; la base del catálogo no es una tarifa universal por segundo.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 es el modelo de generación audiovisual de ByteDance para solicitudes de texto a vídeo e imagen a vídeo, con medios de referencia y controles de audio opcionales.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "La base del catálogo es $0.14, pero la fórmula de la solicitud varía: 480p sin entrada de vídeo cuesta $0.140 × duration; 720p cuesta $0.314 × duration; las fórmulas con referencia de vídeo usan los segundos totales de vídeo y la resolución.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Úsalo para storyboards de microdramas y cómics, variantes de productos y UGC, previsualización cinematográfica, cinemáticas de juegos, clips de creadores y pruebas creativas de investigación de mercado.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Envía un POST a /v1/videos con el formato content[] de Seedance, conserva el task id asíncrono y recupera el resultado desde /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Sí. Configura 480p o 720p, 4–30 segundos, una relación compatible, generate_audio y los campos documentados de referencia/fotograma.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "La autenticación de Flatkey y el catálogo compartido siguen el patrón de gateway, mientras que las solicitudes de vídeo de Seedance usan content[] y el contrato asíncrono /v1/videos.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Una solicitud puede incluir hasta 30 imágenes, 10 vídeos y 10 referencias de audio, con 50 referencias en total; los límites de la cuenta y la disponibilidad pueden cambiar.",
+    "What is the Seedance 2.5 release date?": "¿Cuál es la fecha de lanzamiento de Seedance 2.5?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "El artículo oficial de ByteDance se publicó el 2026-07-31; el catálogo de Flatkey indica released_at como 2026-08-04. Son metadatos distintos, por lo que ninguna fecha por sí sola representa todos los lanzamientos.",
+    "Is Seedance 2.5 free?": "¿Seedance 2.5 es gratis?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Esta página no promete acceso gratuito ni ilimitado. Consulta los precios en directo de Flatkey y los límites de tu cuenta antes de ejecutar tareas.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Precios de Seedance 2.5: 480p, 720p y referencias de vídeo",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "La base del catálogo es $0.14; la fórmula de la solicitud depende de la resolución de salida, la duración y la entrada de referencia de vídeo.",
+    "Seedance 2.5 request pricing formulas": "Fórmulas de precios por solicitud de Seedance 2.5",
+    "Scenario": "Escenario",
+    "Flatkey formula": "Fórmula de Flatkey",
+    "Billing basis": "Base de facturación",
+    "Total input-video seconds": "Segundos totales del vídeo de entrada",
+    "Output duration": "Duración de salida",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "La base del catálogo y la fórmula de la solicitud se muestran por separado; la liquidación final sigue la estimación de la tarea y los límites de la cuenta.",
+  },
+  fr: {
+    "Seedance 2.5 AI Video Generator & API": "Générateur vidéo IA Seedance 2.5 et API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "Seedance 2.5 de ByteDance est un modèle de génération audiovisuelle pour les flux texte-vers-vidéo et image-vers-vidéo. Utilisez des médias de référence, le contrôle des première et dernière images, des requêtes de 4 à 30 secondes et l'audio facultatif via l'endpoint /v1/videos de Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "La télémétrie des requêtes en direct apparaîtra ici lorsque le trafic Flatkey sera suffisant.",
+    "Seedance 2.5 usage activity": "Activité d'utilisation de Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Seules les données réelles des requêtes Flatkey sont affichées ici ; le graphique apparaît après la collecte de suffisamment de trafic.",
+    "Text-to-video and image-to-video": "Texte-vers-vidéo et image-vers-vidéo",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Commencez par une scène écrite ou fournissez des images de référence pour un sujet, un produit ou un storyboard déjà conçu.",
+    "Reference media and frame control": "Médias de référence et contrôle des images",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "La requête peut inclure des références d'image, de vidéo et d'audio, ainsi que des rôles de première et dernière image pour les flux guidés par référence.",
+    "Audio-video generation": "Génération audiovisuelle",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Activez la génération audio comme option explicite de la requête ; ne supposez pas une liste de langues ou un comportement audio que la route sélectionnée ne documente pas.",
+    "Duration and output controls": "Contrôles de durée et de sortie",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Choisissez 4 à 30 secondes, 480p ou 720p, un format adaptatif ou fixe compatible et le réglage audio avant d'envoyer la tâche.",
+    "Seedance 2.5 features": "Fonctionnalités de Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "Qu'est-ce que Seedance 2.5 ? Fonctionnalités de génération vidéo IA",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "Le contrat documenté couvre les entrées texte-vers-vidéo et image-vers-vidéo, les médias de référence, l'audio facultatif et des réglages de sortie limités.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Fonctionnalités de Seedance 2.5 : références, audio et vidéo de 30 secondes",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Cette comparaison consigne le comportement documenté de Seedance 2.5. Les valeurs de Seedance 2.0 sont indiquées comme non vérifiées plutôt que déduites.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (non réaudité)",
+    "Not verified in this audit": "Non vérifié dans cet audit",
+    "4–30 seconds per request": "4 à 30 secondes par requête",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Jusqu'à 50 au total : 30 images, 10 vidéos et 10 fichiers audio",
+    "First-frame and last-frame roles are supported": "Les rôles de première et dernière image sont pris en charge",
+    "Audio generation can be enabled per request": "La génération audio peut être activée pour chaque requête",
+    "Reference-guided and first/last-frame workflows": "Flux guidés par référence et par première/dernière image",
+    "Seedance 2.5 prompt guide: six workflows": "Guide de prompts Seedance 2.5 : six flux",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Utilisez ces prompts propres à chaque flux comme points de départ. Le résultat dépend des références fournies et des réglages de la requête.",
+    "Why use Seedance 2.5 through Flatkey?": "Pourquoi utiliser Seedance 2.5 avec Flatkey ?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Utilisez une clé pour le catalogue de modèles, consultez le contrat de requête et liez le prix aux réglages sélectionnés.",
+    "One key for the model catalog": "Une clé pour le catalogue de modèles",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Utilisez le même compte Flatkey et la même clé API pour les tâches vidéo, image, audio et texte.",
+    "Documented video contract": "Contrat vidéo documenté",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Gardez explicites dans votre intégration la requête content[] de Seedance, l'endpoint /v1/videos et le flux de tâches asynchrone.",
+    "Pricing follows the request": "Le prix suit la requête",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "La résolution, la durée et l'entrée de référence vidéo modifient la formule ; la valeur du catalogue ne constitue pas un tarif universel par seconde.",
+    "Live data only when available": "Données en direct lorsqu'elles sont disponibles",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Les cartes de performance et d'activité affichent la télémétrie lorsqu'il existe assez de trafic Flatkey réel ; sinon, elles restent sans données.",
+    "Seedance 2.5 API: how to use /v1/videos": "API Seedance 2.5 : comment utiliser /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Envoyez les éléments content[] de Seedance, conservez l'identifiant de tâche et récupérez le résultat via /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Envoyez l'identifiant du modèle, un tableau content[] et les champs compatibles de durée, résolution, format et audio.",
+    "Async task result": "Résultat de tâche asynchrone",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Enregistrez l'identifiant de tâche renvoyé, puis récupérez le fichier généré via l'endpoint de contenu lorsqu'il est prêt.",
+    "Reference limits": "Limites des références",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "L'adaptateur accepte jusqu'à 30 images, 10 vidéos et 10 références audio, soit 50 au total.",
+    "Output controls": "Contrôles de sortie",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Choisissez 480p ou 720p, un format compatible, 4 à 30 secondes et l'activation ou non de la génération audio.",
+    "480p · no video reference": "480p · sans référence vidéo",
+    "720p · no video reference": "720p · sans référence vidéo",
+    "Catalog formula": "Formule du catalogue",
+    "Video reference input": "Entrée de référence vidéo",
+    "Depends on resolution": "Dépend de la résolution",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Le prix de Seedance 2.5 varie selon la résolution, la durée et l'entrée de référence vidéo ; la base du catalogue n'est pas un tarif universel par seconde.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 est le modèle de génération audiovisuelle de ByteDance pour les requêtes texte-vers-vidéo et image-vers-vidéo, avec médias de référence et contrôles audio facultatifs.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "La base du catalogue est de 0,14 $, mais la formule de requête varie : en 480p sans entrée vidéo, elle est de 0,140 $ × durée ; en 720p, de 0,314 $ × durée ; les formules avec référence vidéo utilisent le nombre total de secondes vidéo et la résolution.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Utilisez-le pour les storyboards de micro-dramas et de bandes dessinées, les variantes de produits et d'UGC, la prévisualisation de films, les cinématiques de jeux, les clips de créateurs et les tests créatifs d'études de marché.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Effectuez un POST vers /v1/videos au format content[] de Seedance, conservez l'identifiant de tâche asynchrone et récupérez le résultat via /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Oui. Définissez 480p ou 720p, 4 à 30 secondes, un format compatible, generate_audio et les champs de référence/image documentés.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "L'authentification Flatkey et le catalogue partagé utilisent le modèle de passerelle, tandis que les requêtes vidéo Seedance utilisent content[] et le contrat asynchrone /v1/videos.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Une requête peut inclure jusqu'à 30 images, 10 vidéos et 10 références audio, soit 50 références au total ; les limites et la disponibilité du compte peuvent changer.",
+    "What is the Seedance 2.5 release date?": "Quelle est la date de sortie de Seedance 2.5 ?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "L'article officiel de ByteDance a été publié le 31/07/2026 ; le catalogue Flatkey indique released_at au 04/08/2026. Il s'agit de champs de métadonnées différents : aucune date ne représente à elle seule chaque lancement.",
+    "Is Seedance 2.5 free?": "Seedance 2.5 est-il gratuit ?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Cette page ne promet ni accès gratuit ni quota illimité. Consultez les tarifs Flatkey en direct et les limites de votre compte avant de lancer des tâches.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Tarifs Seedance 2.5 : 480p, 720p et références vidéo",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "La base du catalogue est de 0,14 $ ; la formule de la requête dépend de la résolution de sortie, de la durée et de l'entrée de référence vidéo.",
+    "Seedance 2.5 request pricing formulas": "Formules tarifaires des requêtes Seedance 2.5",
+    "Scenario": "Scénario",
+    "Flatkey formula": "Formule Flatkey",
+    "Billing basis": "Base de facturation",
+    "Total input-video seconds": "Nombre total de secondes vidéo en entrée",
+    "Output duration": "Durée de sortie",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "La base du catalogue et la formule de requête sont affichées séparément ; le règlement final suit l'estimation de la tâche et les limites du compte.",
+  },
+  ru: {
+    "Seedance 2.5 AI Video Generator & API": "Генератор видео с ИИ и API Seedance 2.5",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "Seedance 2.5 от ByteDance — модель генерации аудио и видео для сценариев text-to-video и image-to-video. Используйте референсные материалы, управление первым/последним кадром, запросы длительностью 4–30 секунд и необязательную генерацию аудио через endpoint /v1/videos Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "Телеметрия запросов в реальном времени появится здесь, когда трафика Flatkey будет достаточно.",
+    "Seedance 2.5 usage activity": "Активность использования Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Здесь показываются только актуальные данные запросов Flatkey; график появится после накопления достаточного трафика.",
+    "Text-to-video and image-to-video": "Текст-в-видео и изображение-в-видео",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Начните с текстового описания сцены или добавьте референсные изображения уже спроектированного объекта, продукта или раскадровки.",
+    "Reference media and frame control": "Референсные материалы и управление кадрами",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "Запрос может включать референсы изображений, видео и аудио, а также роли первого и последнего кадра для workflows на основе референсов.",
+    "Audio-video generation": "Генерация аудио и видео",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Включайте генерацию аудио отдельной опцией запроса; не предполагайте список языков или поведение аудио, если выбранный маршрут этого не документирует.",
+    "Duration and output controls": "Управление длительностью и выходом",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Перед отправкой задачи выберите 4–30 секунд, 480p или 720p, адаптивное либо поддерживаемое фиксированное соотношение сторон и настройку аудио.",
+    "Seedance 2.5 features": "Возможности Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "Что такое Seedance 2.5? Возможности генерации видео с ИИ",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "Документированный контракт охватывает входы text-to-video и image-to-video, референсные материалы, необязательное аудио и ограниченные настройки выхода.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Возможности Seedance 2.5: референсы, аудио и видео длительностью 30 секунд",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "В этом сравнении отражено документированное поведение Seedance 2.5. Значения Seedance 2.0 помечены как непроверенные, а не выведены предположительно.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (не проходил повторный аудит)",
+    "Not verified in this audit": "Не проверено в рамках этого аудита",
+    "4–30 seconds per request": "4–30 секунд на запрос",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Всего до 50: 30 изображений, 10 видео и 10 аудиофайлов",
+    "First-frame and last-frame roles are supported": "Поддерживаются роли первого и последнего кадра",
+    "Audio generation can be enabled per request": "Генерацию аудио можно включить для каждого запроса",
+    "Reference-guided and first/last-frame workflows": "Рабочие процессы с референсами и первым/последним кадром",
+    "Seedance 2.5 prompt guide: six workflows": "Руководство по промптам Seedance 2.5: шесть workflows",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Используйте эти промпты для конкретных workflows как отправную точку. Результат зависит от переданных референсов и настроек запроса.",
+    "Why use Seedance 2.5 through Flatkey?": "Зачем использовать Seedance 2.5 через Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Используйте один ключ для каталога моделей, проверяйте контракт запроса и связывайте цену с выбранными настройками.",
+    "One key for the model catalog": "Один ключ для каталога моделей",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Используйте один аккаунт и API-ключ Flatkey для задач с видео, изображениями, аудио и текстом.",
+    "Documented video contract": "Документированный видеоконтракт",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "В интеграции явно укажите запрос Seedance в формате content[], endpoint /v1/videos и асинхронный процесс выполнения задачи.",
+    "Pricing follows the request": "Цена зависит от запроса",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Разрешение, длительность и входной видео-референс меняют формулу; значение каталога не является универсальной ценой за секунду.",
+    "Live data only when available": "Данные в реальном времени — только при наличии",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Карточки производительности и активности показывают телеметрию при достаточном реальном трафике Flatkey; иначе данные не отображаются.",
+    "Seedance 2.5 API: how to use /v1/videos": "API Seedance 2.5: как использовать /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Отправьте элементы content[] Seedance, сохраните task id и получите результат через /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Отправьте идентификатор модели, массив content[] и поддерживаемые поля длительности, разрешения, соотношения сторон и аудио.",
+    "Async task result": "Результат асинхронной задачи",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Сохраните возвращённый task id, а затем получите созданный файл через content endpoint после готовности.",
+    "Reference limits": "Ограничения референсов",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "Адаптер принимает до 30 изображений, 10 видео и 10 аудиореференсов, всего до 50.",
+    "Output controls": "Настройки выхода",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Выберите 480p или 720p, поддерживаемое соотношение сторон, 4–30 секунд и необходимость генерации аудио.",
+    "480p · no video reference": "480p · без видео-референса",
+    "720p · no video reference": "720p · без видео-референса",
+    "Catalog formula": "Формула каталога",
+    "Video reference input": "Входной видео-референс",
+    "Depends on resolution": "Зависит от разрешения",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Цена Seedance 2.5 зависит от разрешения, длительности и входного видео-референса; база каталога не является универсальной ставкой за секунду.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 — аудио-видеомодель ByteDance для запросов text-to-video и image-to-video с референсными материалами и необязательными настройками аудио.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "База каталога — $0.14, но формула запроса различается: без видеовхода 480p стоит $0.140 × duration; 720p — $0.314 × duration; формулы с видео-референсом используют общее число видеосекунд и разрешение.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Используйте модель для раскадровок микродрам и комиксов, вариантов продуктов и UGC, превизуализации фильмов, игровых синематиков, роликов авторов и креативных тестов для маркетинговых исследований.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Отправьте POST на /v1/videos в формате content[] Seedance, сохраните асинхронный task id и получите результат через /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Да. Укажите 480p или 720p, 4–30 секунд, поддерживаемое соотношение сторон, generate_audio и документированные поля референсов/кадров.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Аутентификация Flatkey и общий каталог используют шаблон gateway, а видеозапросы Seedance — content[] и асинхронный контракт /v1/videos.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Запрос может содержать до 30 изображений, 10 видео и 10 аудиореференсов, всего 50; лимиты аккаунта и доступность могут меняться.",
+    "What is the Seedance 2.5 release date?": "Какова дата выхода Seedance 2.5?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "Официальная статья ByteDance опубликована 2026-07-31; в каталоге Flatkey указано released_at: 2026-08-04. Это разные метаданные, поэтому ни одна дата сама по себе не обозначает все запуски.",
+    "Is Seedance 2.5 free?": "Seedance 2.5 бесплатен?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Эта страница не обещает бесплатный или безлимитный доступ. Перед запуском задач проверьте актуальные цены Flatkey и ограничения аккаунта.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Цены Seedance 2.5: 480p, 720p и видео-референсы",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "База каталога составляет $0.14; формула запроса зависит от выходного разрешения, длительности и входного видео-референса.",
+    "Seedance 2.5 request pricing formulas": "Формулы оплаты запросов Seedance 2.5",
+    "Scenario": "Сценарий",
+    "Flatkey formula": "Формула Flatkey",
+    "Billing basis": "Основа расчёта",
+    "Total input-video seconds": "Общее число секунд входного видео",
+    "Output duration": "Длительность выхода",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "База каталога и формула запроса показываются отдельно; итоговое списание зависит от оценки задачи и лимитов аккаунта.",
+  },
+  ja: {
+    "Seedance 2.5 AI Video Generator & API": "Seedance 2.5 AI動画ジェネレーター＆API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "ByteDanceのSeedance 2.5は、text-to-videoとimage-to-videoワークフロー向けの音声・動画生成モデルです。参照メディア、最初/最後のフレーム制御、4–30秒のリクエスト、オプションの音声生成をFlatkeyの/v1/videosエンドポイントから利用できます。",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "Flatkeyのトラフィックが十分になると、ここにライブリクエストテレメトリが表示されます。",
+    "Seedance 2.5 usage activity": "Seedance 2.5の利用状況",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "ここにはライブのFlatkeyリクエストデータのみを表示します。十分なトラフィックが集まるとグラフが表示されます。",
+    "Text-to-video and image-to-video": "テキストから動画・画像から動画",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "文章でシーンを指定するか、設計済みの被写体・商品・絵コンテの参照画像を指定して開始します。",
+    "Reference media and frame control": "参照メディアとフレーム制御",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "リクエストには画像・動画・音声の参照を含められ、参照ベースのワークフローでは最初のフレームと最後のフレームの役割も指定できます。",
+    "Audio-video generation": "音声・動画生成",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "音声生成はリクエストの明示的なオプションとして有効にしてください。選択したルートが文書化していない言語一覧や音声動作を想定しないでください。",
+    "Duration and output controls": "長さと出力の制御",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "タスク送信前に4–30秒、480pまたは720p、適応または対応する固定アスペクト比、音声設定を選択します。",
+    "Seedance 2.5 features": "Seedance 2.5の機能",
+    "What is Seedance 2.5? Features for AI video generation": "Seedance 2.5とは？ AI動画生成の機能",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "文書化された契約では、text-to-videoとimage-to-video入力、参照メディア、オプションの音声、範囲が定められた出力設定に対応します。",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Seedance 2.5の機能：参照、音声、30秒動画",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "この比較は文書化されたSeedance 2.5の動作を記録しています。Seedance 2.0の値は推測せず、未検証として表示します。",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0（再監査なし）",
+    "Not verified in this audit": "この監査では未検証",
+    "4–30 seconds per request": "1リクエストあたり4–30秒",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "合計最大50件：画像30件、動画10件、音声10件",
+    "First-frame and last-frame roles are supported": "最初のフレームと最後のフレームの役割に対応",
+    "Audio generation can be enabled per request": "リクエストごとに音声生成を有効化できます",
+    "Reference-guided and first/last-frame workflows": "参照ベースおよび最初/最後のフレームのワークフロー",
+    "Seedance 2.5 prompt guide: six workflows": "Seedance 2.5プロンプトガイド：6つのワークフロー",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "これらのワークフロー別プロンプトを出発点として使用してください。出力は提供した参照とリクエスト設定によって変わります。",
+    "Why use Seedance 2.5 through Flatkey?": "Seedance 2.5をFlatkeyで使う理由",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "モデルカタログに1つのキーを使い、リクエスト契約を確認し、選択した設定に応じた料金を維持します。",
+    "One key for the model catalog": "モデルカタログ用の1つのキー",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "動画・画像・音声・テキストの処理で同じFlatkeyアカウントとAPIキーを使えます。",
+    "Documented video contract": "文書化された動画契約",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "統合ではSeedanceのcontent[]リクエスト、/v1/videosエンドポイント、非同期タスクフローを明示してください。",
+    "Pricing follows the request": "料金はリクエストに応じて変わります",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "解像度、長さ、動画参照入力によって計算式が変わります。カタログの値は一律の秒単価ではありません。",
+    "Live data only when available": "利用可能な場合のみライブデータを表示",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "十分な実Flatkeyトラフィックがある場合だけパフォーマンスとアクティビティのカードにテレメトリを表示し、それ以外は未報告のままにします。",
+    "Seedance 2.5 API: how to use /v1/videos": "Seedance 2.5 API：/v1/videosの使い方",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Seedanceのcontent[]要素を送信し、task idを保存して、/v1/videos/{task_id}/contentから結果を取得します。",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "model id、content[]配列、対応する長さ・解像度・比率・音声フィールドを送信します。",
+    "Async task result": "非同期タスクの結果",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "リクエストが返したtask idを保存し、準備ができたらcontent endpointから生成ファイルを取得します。",
+    "Reference limits": "参照の上限",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "アダプターは画像30件、動画10件、音声参照10件まで、合計50件を受け付けます。",
+    "Output controls": "出力制御",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "480pまたは720p、対応する比率、4–30秒、音声を生成するかどうかを選択します。",
+    "480p · no video reference": "480p · 動画参照なし",
+    "720p · no video reference": "720p · 動画参照なし",
+    "Catalog formula": "カタログの計算式",
+    "Video reference input": "動画参照入力",
+    "Depends on resolution": "解像度に依存",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5の料金は解像度、長さ、動画参照入力で変わります。カタログの基準値は一律の秒単価ではありません。",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5はByteDanceの音声・動画生成モデルで、参照メディアとオプションの音声制御を使ったtext-to-videoおよびimage-to-videoリクエストに対応します。",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "カタログ基準値は$0.14ですが、リクエスト式は異なります。動画入力なしの480pは$0.140 × duration、720pは$0.314 × durationです。動画参照の式では動画の合計秒数と解像度を使います。",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "マイクロドラマやコミックの絵コンテ、商品・UGCのバリエーション、映画のプリビズ、ゲームのシネマティクス、クリエイター動画、マーケットリサーチ用クリエイティブテストに利用できます。",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Seedanceのcontent[]形式で/v1/videosへPOSTし、非同期task idを保存して、/v1/videos/{task_id}/contentから結果を取得します。",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "はい。480pまたは720p、4–30秒、対応する比率、generate_audio、文書化された参照/フレームフィールドを設定します。",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Flatkeyの認証と共有カタログはゲートウェイ方式を使用し、Seedanceの動画リクエストはcontent[]と非同期の/v1/videos契約を使用します。",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "1回のリクエストには画像30件、動画10件、音声参照10件まで、合計50件を含められます。アカウントのレート制限と可用性は変わる場合があります。",
+    "What is the Seedance 2.5 release date?": "Seedance 2.5のリリース日はいつですか？",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "ByteDanceの公式記事は2026-07-31に公開され、Flatkeyのカタログではreleased_atが2026-08-04と記載されています。これは別々のメタデータであり、どちらか一方だけで全てのリリース日を示すものではありません。",
+    "Is Seedance 2.5 free?": "Seedance 2.5は無料ですか？",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "このページでは無料または無制限の利用を約束していません。ジョブを実行する前に、Flatkeyのライブ料金とアカウント制限を確認してください。",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Seedance 2.5の料金：480p、720p、動画参照",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "カタログ基準値は$0.14ですが、リクエスト式は出力解像度、長さ、動画参照入力によって変わります。",
+    "Seedance 2.5 request pricing formulas": "Seedance 2.5のリクエスト料金計算式",
+    "Scenario": "シナリオ",
+    "Flatkey formula": "Flatkeyの計算式",
+    "Billing basis": "課金基準",
+    "Total input-video seconds": "入力動画の合計秒数",
+    "Output duration": "出力の長さ",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "カタログ基準値とリクエスト式は別々に表示されます。最終的な精算はタスク見積もりとアカウント制限に従います。",
+  },
+  vi: {
+    "Seedance 2.5 AI Video Generator & API": "Trình tạo video AI Seedance 2.5 & API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "ByteDance Seedance 2.5 là mô hình tạo video kèm âm thanh cho quy trình văn bản thành video và hình ảnh thành video. Sử dụng media tham chiếu, điều khiển khung đầu/cuối, yêu cầu 4–30 giây và âm thanh tùy chọn qua endpoint /v1/videos của Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "Dữ liệu giám sát yêu cầu trực tiếp sẽ hiển thị ở đây khi Flatkey có đủ lưu lượng.",
+    "Seedance 2.5 usage activity": "Hoạt động sử dụng Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Chỉ hiển thị dữ liệu yêu cầu thực tế của Flatkey; biểu đồ xuất hiện sau khi thu thập đủ lưu lượng.",
+    "Text-to-video and image-to-video": "Văn bản thành video và hình ảnh thành video",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Bắt đầu từ một cảnh viết sẵn hoặc cung cấp ảnh tham chiếu cho chủ thể, sản phẩm hay storyboard bạn đã thiết kế.",
+    "Reference media and frame control": "Media tham chiếu và điều khiển khung hình",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "Yêu cầu có thể bao gồm tham chiếu ảnh, video và âm thanh, cùng vai trò khung đầu và khung cuối cho quy trình dựa trên tham chiếu.",
+    "Audio-video generation": "Tạo video kèm âm thanh",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Bật tạo âm thanh như một tùy chọn rõ ràng trong yêu cầu; không giả định danh sách ngôn ngữ hoặc hành vi âm thanh mà route đã chọn không ghi rõ.",
+    "Duration and output controls": "Điều khiển thời lượng và đầu ra",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Chọn 4–30 giây, 480p hoặc 720p, tỷ lệ thích ứng hoặc tỷ lệ cố định được hỗ trợ và cài đặt âm thanh trước khi gửi tác vụ.",
+    "Seedance 2.5 features": "Tính năng Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "Seedance 2.5 là gì? Tính năng tạo video AI",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "Hợp đồng được tài liệu hóa bao gồm đầu vào văn bản thành video và hình ảnh thành video, media tham chiếu, âm thanh tùy chọn và các cài đặt đầu ra giới hạn.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Tính năng Seedance 2.5: tham chiếu, âm thanh và video 30 giây",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Phần so sánh này ghi lại hành vi Seedance 2.5 đã được tài liệu hóa. Các giá trị của Seedance 2.0 được đánh dấu chưa xác minh thay vì suy đoán.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (chưa kiểm tra lại)",
+    "Not verified in this audit": "Chưa xác minh trong lần kiểm tra này",
+    "4–30 seconds per request": "4–30 giây mỗi yêu cầu",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Tối đa 50 mục: 30 ảnh, 10 video và 10 âm thanh",
+    "First-frame and last-frame roles are supported": "Hỗ trợ vai trò khung đầu và khung cuối",
+    "Audio generation can be enabled per request": "Có thể bật tạo âm thanh cho từng yêu cầu",
+    "Reference-guided and first/last-frame workflows": "Quy trình dựa trên tham chiếu và khung đầu/cuối",
+    "Seedance 2.5 prompt guide: six workflows": "Hướng dẫn prompt Seedance 2.5: sáu quy trình",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Dùng các prompt theo từng quy trình này làm điểm bắt đầu. Kết quả phụ thuộc vào tham chiếu và cài đặt yêu cầu được cung cấp.",
+    "Why use Seedance 2.5 through Flatkey?": "Tại sao dùng Seedance 2.5 qua Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Dùng một key cho danh mục mô hình, kiểm tra hợp đồng yêu cầu và gắn giá với các cài đặt đã chọn.",
+    "One key for the model catalog": "Một key cho danh mục mô hình",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Dùng cùng tài khoản Flatkey và API key cho các tác vụ video, ảnh, âm thanh và văn bản.",
+    "Documented video contract": "Hợp đồng video được tài liệu hóa",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Trong tích hợp, hãy nêu rõ yêu cầu content[] của Seedance, endpoint /v1/videos và quy trình tác vụ bất đồng bộ.",
+    "Pricing follows the request": "Giá phụ thuộc vào yêu cầu",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Độ phân giải, thời lượng và đầu vào tham chiếu video thay đổi công thức; giá trị trong danh mục không phải cam kết giá cố định cho mỗi giây.",
+    "Live data only when available": "Chỉ hiển thị dữ liệu trực tiếp khi có",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Thẻ hiệu suất và hoạt động hiển thị dữ liệu giám sát khi có đủ lưu lượng Flatkey thực tế; nếu không, chúng giữ trạng thái chưa báo cáo.",
+    "Seedance 2.5 API: how to use /v1/videos": "API Seedance 2.5: cách dùng /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Gửi các mục content[] của Seedance, lưu task id và lấy kết quả từ /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Gửi model id, mảng content[] và các trường thời lượng, độ phân giải, tỷ lệ và âm thanh được hỗ trợ.",
+    "Async task result": "Kết quả tác vụ bất đồng bộ",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Lưu task id do yêu cầu trả về, sau đó lấy tệp đã tạo từ content endpoint khi sẵn sàng.",
+    "Reference limits": "Giới hạn tham chiếu",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "Adapter chấp nhận tối đa 30 ảnh, 10 video và 10 tham chiếu âm thanh, tổng cộng 50.",
+    "Output controls": "Điều khiển đầu ra",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Chọn 480p hoặc 720p, tỷ lệ được hỗ trợ, 4–30 giây và có tạo âm thanh hay không.",
+    "480p · no video reference": "480p · không có tham chiếu video",
+    "720p · no video reference": "720p · không có tham chiếu video",
+    "Catalog formula": "Công thức danh mục",
+    "Video reference input": "Đầu vào tham chiếu video",
+    "Depends on resolution": "Phụ thuộc vào độ phân giải",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Giá Seedance 2.5 thay đổi theo độ phân giải, thời lượng và đầu vào tham chiếu video; giá cơ sở trong danh mục không phải mức giá cố định cho mỗi giây.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 là mô hình tạo video kèm âm thanh của ByteDance cho các yêu cầu văn bản thành video và hình ảnh thành video, với media tham chiếu và điều khiển âm thanh tùy chọn.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Giá cơ sở trong danh mục là $0.14, nhưng công thức yêu cầu thay đổi: 480p không có đầu vào video là $0.140 × thời lượng; 720p là $0.314 × thời lượng; công thức có tham chiếu video sử dụng tổng số giây video và độ phân giải.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Dùng cho storyboard phim ngắn và truyện tranh, biến thể sản phẩm và UGC, tiền kỳ phim, cảnh điện ảnh trò chơi, clip nhà sáng tạo và thử nghiệm ý tưởng cho nghiên cứu thị trường.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "POST tới /v1/videos theo định dạng content[] của Seedance, giữ task id bất đồng bộ và lấy kết quả từ /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Có. Đặt 480p hoặc 720p, 4–30 giây, tỷ lệ được hỗ trợ, generate_audio và các trường tham chiếu/khung hình đã được tài liệu hóa.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Xác thực Flatkey và danh mục dùng chung theo mô hình gateway; yêu cầu video Seedance dùng content[] và hợp đồng /v1/videos bất đồng bộ.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Một yêu cầu có thể chứa tối đa 30 ảnh, 10 video và 10 tham chiếu âm thanh, tổng cộng 50; giới hạn tốc độ và khả dụng của tài khoản có thể thay đổi.",
+    "What is the Seedance 2.5 release date?": "Ngày phát hành Seedance 2.5 là khi nào?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "Bài viết chính thức của ByteDance được đăng ngày 2026-07-31; danh mục Flatkey ghi released_at là 2026-08-04. Đây là hai trường siêu dữ liệu khác nhau, vì vậy không ngày nào tự nó đại diện cho mọi lần ra mắt.",
+    "Is Seedance 2.5 free?": "Seedance 2.5 có miễn phí không?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Trang này không cam kết quyền truy cập miễn phí hoặc không giới hạn. Hãy xem dữ liệu giá Flatkey trực tiếp và giới hạn tài khoản trước khi chạy tác vụ.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Giá Seedance 2.5: 480p, 720p và tham chiếu video",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "Giá cơ sở danh mục là $0.14; công thức yêu cầu phụ thuộc vào độ phân giải đầu ra, thời lượng và đầu vào tham chiếu video.",
+    "Seedance 2.5 request pricing formulas": "Công thức tính giá yêu cầu Seedance 2.5",
+    "Scenario": "Tình huống",
+    "Flatkey formula": "Công thức Flatkey",
+    "Billing basis": "Cơ sở tính phí",
+    "Total input-video seconds": "Tổng số giây video đầu vào",
+    "Output duration": "Thời lượng đầu ra",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "Giá cơ sở danh mục và công thức yêu cầu được hiển thị riêng; quyết toán cuối cùng tuân theo ước tính tác vụ và giới hạn tài khoản.",
+  },
+  de: {
+      "Seedance 2.5 AI Video Generator & API": "Seedance 2.5 KI-Videogenerator & API",
+      "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "ByteDance Seedance 2.5 ist ein Modell zur Audio- und Videogenerierung für Text-zu-Video- und Bild-zu-Video-Workflows. Verwende Referenzmedien, Erst-/Letztframe-Steuerung, Anfragen mit 4–30 Sekunden und optionales Audio über den Flatkey-Endpunkt /v1/videos.",
+      "Live request telemetry appears here when enough Flatkey traffic is available.": "Live-Anfrage-Telemetrie wird hier angezeigt, sobald genügend Flatkey-Traffic verfügbar ist.",
+      "Seedance 2.5 usage activity": "Nutzungsaktivität von Seedance 2.5",
+      "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Hier werden nur Live-Daten von Flatkey-Anfragen angezeigt; ein Diagramm erscheint, sobald genügend Traffic gesammelt wurde.",
+      "Text-to-video and image-to-video": "Text-zu-Video und Bild-zu-Video",
+      "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Beginne mit einer schriftlich beschriebenen Szene oder stelle Referenzbilder für ein bereits entworfenes Motiv, Produkt oder Storyboard bereit.",
+      "Reference media and frame control": "Referenzmedien und Frame-Steuerung",
+      "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "Die Anfrage kann Bild-, Video- und Audio-Referenzen sowie die Rollen für erstes und letztes Frame enthalten, um referenzbasierte Workflows zu unterstützen.",
+      "Audio-video generation": "Audio- und Videogenerierung",
+      "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Aktiviere die Audiogenerierung als ausdrückliche Anfrageoption; nimm keine Sprachliste oder kein Audioverhalten an, das die gewählte Route nicht dokumentiert.",
+      "Duration and output controls": "Steuerung von Dauer und Ausgabe",
+      "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Wähle vor dem Absenden der Aufgabe 4–30 Sekunden, 480p oder 720p, adaptive oder unterstützte feste Seitenverhältnisse sowie die Audioeinstellung.",
+      "Seedance 2.5 features": "Funktionen von Seedance 2.5",
+      "What is Seedance 2.5? Features for AI video generation": "Was ist Seedance 2.5? Funktionen für KI-Videogenerierung",
+      "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "Der dokumentierte Vertrag umfasst Text-zu-Video- und Bild-zu-Video-Eingaben, Referenzmedien, optionales Audio und begrenzte Ausgabeeinstellungen.",
+      "Seedance 2.5 features: references, audio, and 30-second video": "Funktionen von Seedance 2.5: Referenzen, Audio und 30-Sekunden-Video",
+      "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Dieser Vergleich hält das dokumentierte Verhalten von Seedance 2.5 fest. Werte für Seedance 2.0 sind als nicht verifiziert gekennzeichnet und werden nicht abgeleitet.",
+      "Seedance 2.0 (not re-audited)": "Seedance 2.0 (nicht erneut geprüft)",
+      "Not verified in this audit": "In diesem Audit nicht verifiziert",
+      "4–30 seconds per request": "4–30 Sekunden pro Anfrage",
+      "Up to 50 total: 30 images, 10 videos, and 10 audio": "Insgesamt bis zu 50: 30 Bilder, 10 Videos und 10 Audiodateien",
+      "First-frame and last-frame roles are supported": "Rollen für erstes und letztes Frame werden unterstützt",
+      "Audio generation can be enabled per request": "Die Audiogenerierung kann pro Anfrage aktiviert werden",
+      "Reference-guided and first/last-frame workflows": "Referenzgeführte und Erst-/Letztframe-Workflows",
+      "Seedance 2.5 prompt guide: six workflows": "Seedance 2.5 Prompt-Leitfaden: sechs Workflows",
+      "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Verwende diese workflowspezifischen Prompts als Ausgangspunkt. Die Ausgabe hängt von den bereitgestellten Referenzen und den Anfrageeinstellungen ab.",
+      "Why use Seedance 2.5 through Flatkey?": "Warum Seedance 2.5 über Flatkey verwenden?",
+      "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Verwende einen Schlüssel für den Modellkatalog, prüfe den Anfragevertrag und richte die Preisberechnung an den ausgewählten Einstellungen aus.",
+      "One key for the model catalog": "Ein Schlüssel für den Modellkatalog",
+      "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Verwende dasselbe Flatkey-Konto und denselben API-Schlüssel für Video-, Bild-, Audio- und Textaufgaben.",
+      "Documented video contract": "Dokumentierter Videovertrag",
+      "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Halte in deiner Integration die Seedance-Anfrage im Format content[], den Endpunkt /v1/videos und den asynchronen Aufgabenablauf ausdrücklich fest.",
+      "Pricing follows the request": "Die Preisberechnung richtet sich nach der Anfrage",
+      "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Auflösung, Dauer und Video-Referenzeingabe ändern die Formel; der Katalogwert ist kein allgemeingültiger Preis pro Sekunde.",
+      "Live data only when available": "Live-Daten nur bei Verfügbarkeit",
+      "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Leistungs- und Aktivitätskarten zeigen Telemetrie, sobald genügend echter Flatkey-Traffic vorhanden ist; andernfalls werden keine Daten gemeldet.",
+      "Seedance 2.5 API: how to use /v1/videos": "Seedance 2.5 API: So verwendest du /v1/videos",
+      "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Sende content[]-Elemente für Seedance, bewahre die task id auf und rufe das Ergebnis unter /v1/videos/{task_id}/content ab.",
+      "POST /v1/videos": "POST /v1/videos",
+      "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Sende die Modell-ID, ein content[]-Array sowie unterstützte Felder für Dauer, Auflösung, Seitenverhältnis und Audio.",
+      "Async task result": "Asynchrones Aufgabenergebnis",
+      "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Speichere die von der Anfrage zurückgegebene task id und rufe die erzeugte Datei über den Content-Endpunkt ab, sobald sie bereitsteht.",
+      "Reference limits": "Referenzlimits",
+      "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "Der Adapter akzeptiert bis zu 30 Bildreferenzen, 10 Videoreferenzen und 10 Audioreferenzen, insgesamt 50.",
+      "Output controls": "Ausgabesteuerung",
+      "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Wähle 480p oder 720p, ein unterstütztes Seitenverhältnis, 4–30 Sekunden und ob Audio generiert werden soll.",
+      "480p · no video reference": "480p · ohne Videoreferenz",
+      "720p · no video reference": "720p · ohne Videoreferenz",
+      "Catalog formula": "Katalogformel",
+      "Video reference input": "Videoreferenzeingabe",
+      "Depends on resolution": "Abhängig von der Auflösung",
+      "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Die Preise für Seedance 2.5 variieren je nach Auflösung, Dauer und Video-Referenzeingabe; der Katalogbasiswert ist kein allgemeingültiger Preis pro Sekunde.",
+      "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 ist das Audio- und Videogenerierungsmodell von ByteDance für Text-zu-Video- und Bild-zu-Video-Anfragen mit Referenzmedien und optionaler Audiosteuerung.",
+      "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Der Katalogbasiswert beträgt $0.14, aber die Anfrageformel variiert: 480p ohne Videoeingabe entspricht $0.140 × duration; 720p entspricht $0.314 × duration; Formeln mit Videoreferenz verwenden die gesamte Videodauer in Sekunden und die Auflösung.",
+      "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Verwende es für Mikrodrama- und Comic-Storyboards, Produkt- und UGC-Varianten, Film-Previsualisierung, Game-Cinematics, Creator-Clips und kreative Tests in der Marktforschung.",
+      "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Führe einen POST an /v1/videos im Seedance-content[]-Format aus, bewahre die asynchrone task id auf und rufe das Ergebnis unter /v1/videos/{task_id}/content ab.",
+      "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Ja. Setze 480p oder 720p, 4–30 Sekunden, ein unterstütztes Seitenverhältnis, generate_audio sowie die dokumentierten Referenz-/Frame-Felder.",
+      "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Die Flatkey-Authentifizierung und der gemeinsame Katalog verwenden das Gateway-Muster, während Seedance-Videoanfragen content[] und den asynchronen Vertrag für /v1/videos verwenden.",
+      "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Eine Anfrage kann bis zu 30 Bilder, 10 Videos und 10 Audio-Referenzen enthalten, insgesamt 50 Referenzen; Kontolimits für Anfragen und Verfügbarkeit können sich ändern.",
+      "What is the Seedance 2.5 release date?": "Was ist das Veröffentlichungsdatum von Seedance 2.5?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "Der offizielle ByteDance-Artikel wurde am 31.07.2026 veröffentlicht; der Flatkey-Katalog führt released_at als 04.08.2026. Dies sind unterschiedliche Metadatenfelder, daher steht kein Datum allein für jede Markteinführung.",
+      "Is Seedance 2.5 free?": "Ist Seedance 2.5 kostenlos?",
+      "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Auf dieser Seite wird kein kostenloser oder unbegrenzter Zugang zugesichert. Prüfe vor dem Ausführen von Jobs die aktuellen Flatkey-Preisdaten und deine Kontolimits.",
+      "Seedance 2.5 pricing: 480p, 720p, and video references": "Preise für Seedance 2.5: 480p, 720p und Videoreferenzen",
+      "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "Der Katalogbasiswert beträgt $0.14; die Anfrageformel hängt von Ausgabeauflösung, Dauer und Video-Referenzeingabe ab.",
+      "Seedance 2.5 request pricing formulas": "Preisformeln für Anfragen mit Seedance 2.5",
+      "Scenario": "Szenario",
+      "Flatkey formula": "Flatkey-Formel",
+      "Billing basis": "Abrechnungsgrundlage",
+      "Total input-video seconds": "Gesamte Sekunden der Eingangsvideos",
+      "Output duration": "Ausgabedauer",
+      "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "Katalogbasiswert und Anfrageformel werden getrennt angezeigt; die Endabrechnung richtet sich nach der Aufgabenschätzung und den Kontolimits.",
+    },
+  id: {
+    "Seedance 2.5 AI Video Generator & API": "Generator Video AI & API Seedance 2.5",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "Seedance 2.5 dari ByteDance adalah model generasi audio-video untuk alur kerja teks-ke-video dan gambar-ke-video. Gunakan media referensi, kontrol frame pertama/terakhir, permintaan 4–30 detik, dan audio opsional melalui endpoint /v1/videos Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "Telemetri permintaan langsung akan muncul di sini jika trafik Flatkey mencukupi.",
+    "Seedance 2.5 usage activity": "Aktivitas penggunaan Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Hanya data permintaan langsung Flatkey yang ditampilkan di sini; grafik akan muncul setelah trafik yang cukup terkumpul.",
+    "Text-to-video and image-to-video": "Teks-ke-video dan gambar-ke-video",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Mulai dari adegan tertulis atau berikan gambar referensi untuk subjek, produk, atau storyboard yang sudah Anda rancang.",
+    "Reference media and frame control": "Media referensi dan kontrol frame",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "Permintaan dapat menyertakan referensi gambar, video, dan audio, serta peran frame pertama dan terakhir untuk alur kerja berbasis referensi.",
+    "Audio-video generation": "Generasi audio-video",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Aktifkan generasi audio sebagai opsi permintaan yang eksplisit; jangan mengasumsikan daftar bahasa atau perilaku audio yang tidak didokumentasikan oleh rute terpilih.",
+    "Duration and output controls": "Kontrol durasi dan output",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Pilih 4–30 detik, 480p atau 720p, rasio adaptif atau rasio tetap yang didukung, serta pengaturan audio sebelum mengirim tugas.",
+    "Seedance 2.5 features": "Fitur Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "Apa itu Seedance 2.5? Fitur untuk generasi video AI",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "Kontrak yang terdokumentasi mencakup input teks-ke-video dan gambar-ke-video, media referensi, audio opsional, serta pengaturan output yang dibatasi.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Fitur Seedance 2.5: referensi, audio, dan video 30 detik",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Perbandingan ini mencatat perilaku Seedance 2.5 yang terdokumentasi. Nilai Seedance 2.0 ditandai belum terverifikasi, bukan disimpulkan.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (belum diaudit ulang)",
+    "Not verified in this audit": "Belum terverifikasi dalam audit ini",
+    "4–30 seconds per request": "4–30 detik per permintaan",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Maksimal 50 total: 30 gambar, 10 video, dan 10 audio",
+    "First-frame and last-frame roles are supported": "Peran frame pertama dan terakhir didukung",
+    "Audio generation can be enabled per request": "Generasi audio dapat diaktifkan untuk setiap permintaan",
+    "Reference-guided and first/last-frame workflows": "Alur kerja berbasis referensi dan frame pertama/terakhir",
+    "Seedance 2.5 prompt guide: six workflows": "Panduan prompt Seedance 2.5: enam alur kerja",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Gunakan prompt khusus alur kerja ini sebagai titik awal. Output bergantung pada referensi dan pengaturan permintaan yang diberikan.",
+    "Why use Seedance 2.5 through Flatkey?": "Mengapa menggunakan Seedance 2.5 melalui Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Gunakan satu kunci untuk katalog model, periksa kontrak permintaan, dan kaitkan harga dengan pengaturan yang dipilih.",
+    "One key for the model catalog": "Satu kunci untuk katalog model",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Gunakan akun dan kunci API Flatkey yang sama untuk pekerjaan video, gambar, audio, dan teks.",
+    "Documented video contract": "Kontrak video yang terdokumentasi",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Jadikan permintaan content[] Seedance, endpoint /v1/videos, dan alur tugas asinkron eksplisit dalam integrasi Anda.",
+    "Pricing follows the request": "Harga mengikuti permintaan",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Resolusi, durasi, dan input referensi video mengubah rumus; nilai katalog bukan janji tarif universal per detik.",
+    "Live data only when available": "Data langsung hanya saat tersedia",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Kartu performa dan aktivitas menampilkan telemetri jika trafik Flatkey nyata mencukupi; jika tidak, kartu tetap tanpa data.",
+    "Seedance 2.5 API: how to use /v1/videos": "API Seedance 2.5: cara menggunakan /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Kirim item content[] Seedance, simpan ID tugas, lalu ambil hasil dari /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Kirim ID model, array content[], serta field durasi, resolusi, rasio, dan audio yang didukung.",
+    "Async task result": "Hasil tugas asinkron",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Simpan ID tugas yang dikembalikan permintaan, lalu ambil file yang dihasilkan dari endpoint content saat sudah siap.",
+    "Reference limits": "Batas referensi",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "Adaptor menerima hingga 30 gambar, 10 video, dan 10 referensi audio, dengan total 50.",
+    "Output controls": "Kontrol output",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Pilih 480p atau 720p, rasio yang didukung, 4–30 detik, dan apakah audio akan dibuat.",
+    "480p · no video reference": "480p · tanpa referensi video",
+    "720p · no video reference": "720p · tanpa referensi video",
+    "Catalog formula": "Rumus katalog",
+    "Video reference input": "Input referensi video",
+    "Depends on resolution": "Bergantung pada resolusi",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Harga Seedance 2.5 bervariasi menurut resolusi, durasi, dan input referensi video; dasar katalog bukan tarif universal per detik.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 adalah model generasi audio-video ByteDance untuk permintaan teks-ke-video dan gambar-ke-video, dengan media referensi dan kontrol audio opsional.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Dasar katalog adalah $0.14, tetapi rumus permintaan bervariasi: 480p tanpa input video adalah $0.140 × durasi; 720p adalah $0.314 × durasi; rumus dengan referensi video menggunakan total detik video dan resolusi.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Gunakan untuk storyboard mikro-drama dan komik, variasi produk dan UGC, pravisualisasi film, sinematik game, klip kreator, dan uji kreatif riset pasar.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Lakukan POST ke /v1/videos dengan format content[] Seedance, simpan ID tugas asinkron, lalu ambil hasil dari /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Ya. Atur 480p atau 720p, 4–30 detik, rasio yang didukung, generate_audio, dan field referensi/frame yang terdokumentasi.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Autentikasi Flatkey dan katalog bersama menggunakan pola gateway, sedangkan permintaan video Seedance menggunakan content[] dan kontrak asinkron /v1/videos.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Satu permintaan dapat menyertakan hingga 30 gambar, 10 video, dan 10 referensi audio, dengan total 50 referensi; batas laju akun dan ketersediaan dapat berubah.",
+    "What is the Seedance 2.5 release date?": "Kapan Seedance 2.5 dirilis?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "Artikel resmi ByteDance diterbitkan pada 2026-07-31; katalog Flatkey mencantumkan released_at sebagai 2026-08-04. Ini adalah bidang metadata yang berbeda, jadi tidak satu pun tanggal tersebut mewakili semua peluncuran.",
+    "Is Seedance 2.5 free?": "Apakah Seedance 2.5 gratis?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Halaman ini tidak menjanjikan akses gratis atau tanpa batas. Gunakan data harga Flatkey langsung dan batas akun Anda sebelum menjalankan tugas.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Harga Seedance 2.5: 480p, 720p, dan referensi video",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "Dasar katalog adalah $0.14; rumus permintaan bergantung pada resolusi output, durasi, dan input referensi video.",
+    "Seedance 2.5 request pricing formulas": "Rumus harga permintaan Seedance 2.5",
+    "Scenario": "Skenario",
+    "Flatkey formula": "Rumus Flatkey",
+    "Billing basis": "Dasar penagihan",
+    "Total input-video seconds": "Total detik video input",
+    "Output duration": "Durasi output",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "Dasar katalog dan rumus permintaan ditampilkan secara terpisah; penyelesaian akhir mengikuti estimasi tugas dan batas akun.",
+  },
+  pt: {
+    "Seedance 2.5 AI Video Generator & API": "Gerador de vídeo IA Seedance 2.5 e API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "O Seedance 2.5 da ByteDance é um modelo de geração audiovisual para fluxos de texto para vídeo e imagem para vídeo. Use mídia de referência, controle do primeiro/último quadro, solicitações de 4–30 segundos e áudio opcional pelo endpoint /v1/videos da Flatkey.",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "A telemetria de solicitações ao vivo aparece aqui quando houver tráfego suficiente na Flatkey.",
+    "Seedance 2.5 usage activity": "Atividade de uso do Seedance 2.5",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "Somente dados reais de solicitações da Flatkey são exibidos; o gráfico aparece quando houver dados suficientes.",
+    "Text-to-video and image-to-video": "Texto para vídeo e imagem para vídeo",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "Comece com uma cena escrita ou forneça imagens de referência de um sujeito, produto ou storyboard já criado.",
+    "Reference media and frame control": "Mídia de referência e controle de quadros",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "A solicitação pode incluir referências de imagem, vídeo e áudio, além das funções de primeiro e último quadro.",
+    "Audio-video generation": "Geração audiovisual",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "Ative a geração de áudio como opção explícita; não presuma idiomas ou comportamentos que a rota selecionada não documente.",
+    "Duration and output controls": "Controles de duração e saída",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "Escolha 4–30 segundos, 480p ou 720p, proporção adaptativa ou fixa compatível e a opção de áudio antes de enviar a tarefa.",
+    "Seedance 2.5 features": "Recursos do Seedance 2.5",
+    "What is Seedance 2.5? Features for AI video generation": "O que é o Seedance 2.5? Recursos para geração de vídeo por IA",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "O contrato documentado cobre entradas de texto para vídeo e imagem para vídeo, mídia de referência, áudio opcional e configurações de saída limitadas.",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Recursos do Seedance 2.5: referências, áudio e vídeo de 30 segundos",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "Esta comparação registra o comportamento documentado do Seedance 2.5. Valores do Seedance 2.0 não verificados são marcados como tal.",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0 (não reauditado)",
+    "Not verified in this audit": "Não verificado nesta auditoria",
+    "4–30 seconds per request": "4–30 segundos por solicitação",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "Até 50 no total: 30 imagens, 10 vídeos e 10 áudios",
+    "First-frame and last-frame roles are supported": "Funções de primeiro e último quadro são compatíveis",
+    "Audio generation can be enabled per request": "A geração de áudio pode ser ativada por solicitação",
+    "Reference-guided and first/last-frame workflows": "Fluxos guiados por referência e pelo primeiro/último quadro",
+    "Seedance 2.5 prompt guide: six workflows": "Guia de prompts do Seedance 2.5: seis fluxos",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "Use estes prompts específicos de cada fluxo como ponto de partida. A saída depende das referências e configurações enviadas.",
+    "Why use Seedance 2.5 through Flatkey?": "Por que usar o Seedance 2.5 pela Flatkey?",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "Use uma chave para o catálogo, confira o contrato da solicitação e mantenha o preço ligado às configurações escolhidas.",
+    "One key for the model catalog": "Uma chave para o catálogo de modelos",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "Use a mesma conta e chave de API Flatkey para tarefas de vídeo, imagem, áudio e texto.",
+    "Documented video contract": "Contrato de vídeo documentado",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "Mantenha explícitos na integração a solicitação content[] do Seedance, o endpoint /v1/videos e o fluxo assíncrono.",
+    "Pricing follows the request": "O preço segue a solicitação",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "Resolução, duração e entrada de referência em vídeo alteram a fórmula; o valor do catálogo não é uma tarifa universal por segundo.",
+    "Live data only when available": "Dados ao vivo somente quando disponíveis",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "Os cartões exibem telemetria quando há tráfego real suficiente; caso contrário, os dados ficam sem relatório.",
+    "Seedance 2.5 API: how to use /v1/videos": "API do Seedance 2.5: como usar /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "Envie itens content[] do Seedance, guarde o task id e busque o resultado em /v1/videos/{task_id}/content.",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "Envie o ID do modelo, um array content[] e os campos compatíveis de duração, resolução, proporção e áudio.",
+    "Async task result": "Resultado da tarefa assíncrona",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "Salve o task id retornado e recupere o arquivo gerado no endpoint de conteúdo quando estiver pronto.",
+    "Reference limits": "Limites de referências",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "O adaptador aceita até 30 imagens, 10 vídeos e 10 referências de áudio, com 50 no total.",
+    "Output controls": "Controles de saída",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "Escolha 480p ou 720p, uma proporção compatível, 4–30 segundos e se deseja gerar áudio.",
+    "480p · no video reference": "480p · sem referência de vídeo",
+    "720p · no video reference": "720p · sem referência de vídeo",
+    "Catalog formula": "Fórmula do catálogo",
+    "Video reference input": "Entrada de referência de vídeo",
+    "Depends on resolution": "Depende da resolução",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "O preço do Seedance 2.5 varia por resolução, duração e entrada de referência de vídeo; a base do catálogo não é uma tarifa universal por segundo.",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "O Seedance 2.5 é o modelo audiovisual da ByteDance para solicitações de texto para vídeo e imagem para vídeo, com mídia de referência e controles de áudio opcionais.",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "A base do catálogo é US$ 0,14, mas a fórmula varia: 480p sem entrada de vídeo é US$ 0,140 × duração; 720p é US$ 0,314 × duração; referências de vídeo usam os segundos totais e a resolução.",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "Use para storyboards de microdramas e quadrinhos, variações de produto e UGC, pré-visualização de filmes, cinemáticas de jogos, clipes de criadores e testes de pesquisa de mercado.",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "Faça POST em /v1/videos no formato content[] do Seedance, guarde o task id assíncrono e busque o resultado em /v1/videos/{task_id}/content.",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "Sim. Defina 480p ou 720p, 4–30 segundos, uma proporção compatível, generate_audio e os campos documentados de referência/quadro.",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "A autenticação e o catálogo compartilhado da Flatkey seguem o padrão de gateway; as solicitações de vídeo usam content[] e o contrato assíncrono /v1/videos do Seedance.",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "Uma solicitação pode incluir até 30 imagens, 10 vídeos e 10 referências de áudio, com 50 referências no total; limites e disponibilidade podem mudar.",
+    "What is the Seedance 2.5 release date?": "Qual é a data de lançamento do Seedance 2.5?",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "O artigo oficial da ByteDance foi publicado em 2026-07-31; o catálogo da Flatkey lista released_at como 2026-08-04. São metadados diferentes, portanto nenhuma das datas, isoladamente, representa todos os lançamentos.",
+    "Is Seedance 2.5 free?": "O Seedance 2.5 é gratuito?",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "Esta página não promete acesso gratuito ou ilimitado. Confira os preços ao vivo da Flatkey e os limites da conta antes de executar tarefas.",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Preços do Seedance 2.5: 480p, 720p e referências de vídeo",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "A base do catálogo é US$ 0,14; a fórmula da solicitação depende da resolução de saída, da duração e da entrada de referência de vídeo.",
+    "Seedance 2.5 request pricing formulas": "Fórmulas de preço por solicitação do Seedance 2.5",
+    "Scenario": "Cenário",
+    "Flatkey formula": "Fórmula Flatkey",
+    "Billing basis": "Base de cobrança",
+    "Total input-video seconds": "Total de segundos dos vídeos de entrada",
+    "Output duration": "Duração da saída",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "A base do catálogo e a fórmula da solicitação são mostradas separadamente; a cobrança final segue a estimativa da tarefa e os limites da conta.",
+  },
+  zh: {
+    "Seedance 2.5 AI Video Generator & API": "Seedance 2.5 AI 视频生成器与 API",
+    "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.": "ByteDance Seedance 2.5 是一款音视频生成模型，支持文生视频和图生视频工作流。可通过 Flatkey 的 /v1/videos 使用参考素材、首尾帧控制、4–30 秒请求和可选音频。",
+    "Live request telemetry appears here when enough Flatkey traffic is available.": "当 Flatkey 积累足够请求流量后，这里会显示实时请求遥测数据。",
+    "Seedance 2.5 usage activity": "Seedance 2.5 使用活动",
+    "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.": "这里只展示真实的 Flatkey 请求数据；积累足够流量后才会显示图表。",
+    "Text-to-video and image-to-video": "文生视频与图生视频",
+    "Start from a written scene or supply reference images for a subject, product, or storyboard you have already designed.": "可以从文字场景开始，也可以为已设计的主体、产品或分镜提供参考图。",
+    "Reference media and frame control": "参考素材与帧控制",
+    "The request can include image, video, and audio references, plus first-frame and last-frame roles for reference-led workflows.": "请求可包含图片、视频和音频参考素材，并支持在参考驱动工作流中指定首帧和尾帧角色。",
+    "Audio-video generation": "音视频生成",
+    "Enable audio generation as an explicit request option; do not assume a language list or audio behavior that the selected route does not document.": "将音频生成作为明确的请求选项；不要假设所选路由未文档化的语言列表或音频行为。",
+    "Duration and output controls": "时长与输出控制",
+    "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task.": "提交任务前可选择 4–30 秒、480p 或 720p、自适应或支持的固定比例，以及音频设置。",
+    "Seedance 2.5 features": "Seedance 2.5 功能",
+    "What is Seedance 2.5? Features for AI video generation": "什么是 Seedance 2.5？AI 视频生成能力",
+    "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.": "文档化契约覆盖文生视频和图生视频输入、参考素材、可选音频及受限输出设置。",
+    "Seedance 2.5 features: references, audio, and 30-second video": "Seedance 2.5 功能：参考素材、音频与 30 秒视频",
+    "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.": "此对比只记录已文档化的 Seedance 2.5 行为；Seedance 2.0 的未核实值不会被推测。",
+    "Seedance 2.0 (not re-audited)": "Seedance 2.0（未重新审计）",
+    "Not verified in this audit": "本次审计未核实",
+    "4–30 seconds per request": "每次请求 4–30 秒",
+    "Up to 50 total: 30 images, 10 videos, and 10 audio": "总计最多 50 个：30 张图片、10 个视频和 10 个音频",
+    "First-frame and last-frame roles are supported": "支持首帧和尾帧角色",
+    "Audio generation can be enabled per request": "可在每次请求中启用音频生成",
+    "Reference-guided and first/last-frame workflows": "参考驱动及首尾帧工作流",
+    "Seedance 2.5 prompt guide: six workflows": "Seedance 2.5 提示词指南：六种工作流",
+    "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.": "这些按工作流编写的提示词可作为起点；输出取决于参考素材和请求设置。",
+    "Why use Seedance 2.5 through Flatkey?": "为什么通过 Flatkey 使用 Seedance 2.5？",
+    "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.": "一个 Key 覆盖模型目录，清楚查看请求契约，并让价格与所选设置保持一致。",
+    "One key for the model catalog": "一个 Key 覆盖模型目录",
+    "Use the same Flatkey account and API key across video, image, audio, and text workloads.": "视频、图片、音频和文本任务共用同一个 Flatkey 账号与 API Key。",
+    "Documented video contract": "文档化视频契约",
+    "Keep Seedance's content[] request, /v1/videos endpoint, and asynchronous task flow explicit in your integration.": "在集成中明确 Seedance 的 content[] 请求、/v1/videos endpoint 和异步任务流程。",
+    "Pricing follows the request": "价格随请求变化",
+    "Resolution, duration, and video-reference input change the formula; the catalog value is not a universal per-second promise.": "分辨率、时长和视频参考输入会改变公式；目录值不是统一的每秒价格承诺。",
+    "Live data only when available": "仅在有数据时显示实时指标",
+    "Performance and activity cards show telemetry when enough real Flatkey traffic exists, otherwise they stay unreported.": "只有积累足够真实 Flatkey 流量时才显示遥测卡片，否则保持未报告状态。",
+    "Seedance 2.5 API: how to use /v1/videos": "Seedance 2.5 API：如何使用 /v1/videos",
+    "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.": "发送 Seedance content[] 项，保存 task id，并从 /v1/videos/{task_id}/content 获取结果。",
+    "POST /v1/videos": "POST /v1/videos",
+    "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields.": "发送模型 ID、content[] 数组，以及支持的时长、分辨率、比例和音频字段。",
+    "Async task result": "异步任务结果",
+    "Save the task id returned by the request, then retrieve the generated file from the content endpoint when ready.": "保存请求返回的 task id，任务完成后从 content endpoint 获取生成文件。",
+    "Reference limits": "参考素材限制",
+    "The adapter accepts up to 30 images, 10 videos, and 10 audio references, with 50 total.": "适配器最多接受 30 张图片、10 个视频和 10 个音频参考素材，总数 50 个。",
+    "Output controls": "输出控制",
+    "Choose 480p or 720p, a supported ratio, 4–30 seconds, and whether to generate audio.": "选择 480p 或 720p、支持的比例、4–30 秒，以及是否生成音频。",
+    "480p · no video reference": "480p · 无视频参考",
+    "720p · no video reference": "720p · 无视频参考",
+    "Catalog formula": "目录公式",
+    "Video reference input": "视频参考输入",
+    "Depends on resolution": "取决于分辨率",
+    "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5 价格取决于分辨率、时长和视频参考输入；目录基础值不是统一的每秒费率。",
+    "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 是 ByteDance 的音视频生成模型，支持文生视频、图生视频、参考素材和可选音频控制。",
+    "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "目录基础值为 $0.14，但请求公式会变化：无视频输入的 480p 为 $0.140 × 时长，720p 为 $0.314 × 时长；视频参考公式还取决于视频总秒数和分辨率。",
+    "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests.": "可用于微短剧和漫画分镜、产品与 UGC 变体、电影预演、游戏过场、创作者短片及市场调研创意测试。",
+    "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content.": "使用 Seedance content[] 格式向 /v1/videos 发起 POST，保留异步 task id，并从 /v1/videos/{task_id}/content 获取结果。",
+    "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields.": "可以。设置 480p 或 720p、4–30 秒、支持的比例、generate_audio，以及文档化的参考/帧字段。",
+    "Flatkey authentication and the shared catalog use the gateway pattern, while Seedance video requests use content[] and the asynchronous /v1/videos contract.": "Flatkey 鉴权和共享目录采用网关模式；Seedance 视频请求使用 content[] 和异步 /v1/videos 契约。",
+    "A request can include up to 30 images, 10 videos, and 10 audio references, with 50 references total; account rate limits and availability can change.": "一次请求最多可包含 30 张图片、10 个视频和 10 个音频参考素材，总计 50 个；账户限流和可用性可能变化。",
+    "What is the Seedance 2.5 release date?": "Seedance 2.5 的发布日期是什么？",
+    "The official ByteDance article was published on 2026-07-31; Flatkey's catalog lists released_at as 2026-08-04. These are different metadata fields, so neither date alone represents every launch.": "ByteDance 官方文章发表于 2026-07-31；Flatkey 目录将 released_at 记录为 2026-08-04。两者是不同的元数据字段，不能把任一日期单独理解为所有发布渠道的发布日期。",
+    "Is Seedance 2.5 free?": "Seedance 2.5 免费吗？",
+    "No free or unlimited entitlement is promised on this page. Use the live Flatkey pricing data and your account limits before running jobs.": "本页不承诺免费或无限额度；运行任务前请查看 Flatkey 实时价格和账户限制。",
+    "Seedance 2.5 pricing: 480p, 720p, and video references": "Seedance 2.5 价格：480p、720p 与视频参考输入",
+    "The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.": "目录基础值为 $0.14；实际请求公式取决于输出分辨率、时长和视频参考输入。",
+    "Seedance 2.5 request pricing formulas": "Seedance 2.5 请求计价公式",
+    "Scenario": "场景",
+    "Flatkey formula": "Flatkey 公式",
+    "Billing basis": "计费依据",
+    "Total input-video seconds": "输入视频总秒数",
+    "Output duration": "输出时长",
+    "The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.": "目录基础值与请求公式会分开显示；最终结算以任务估算和账户限制为准。",
+  },
+};
+
 export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Record<string, string> = {}) {
-  let value = seedanceModelCopy[locale]?.[key] ?? modelDetailUiAdditions[locale]?.[key] ?? modelDetailUiCopy[locale]?.[key] ?? modelDetailPrototypeCopy[locale]?.[key] ?? modelDetailCommonCopy[locale]?.[key] ?? supplementalModelLandingCopy[locale]?.[key] ?? modelComparisonCopy[locale]?.[key] ?? translations[locale][key] ?? translations.en[key] ?? key;
+  // Priority pages have a dedicated editorial copy pack.  Resolve those
+  // strings only after the established Seedance/shared maps so a priority
+  // phrase cannot change legacy pages that happen to reuse a short label
+  // such as "Input" or "Context".
+  const priorityTranslations = getPrioritySourceTranslations(locale);
+  let value = seedanceFactCopy[locale]?.[key] ?? seedanceFactCopy.en?.[key] ?? seedanceModelCopy[locale]?.[key] ?? modelDetailUiAdditions[locale]?.[key] ?? modelDetailUiCopy[locale]?.[key] ?? modelDetailPrototypeCopy[locale]?.[key] ?? modelDetailCommonCopy[locale]?.[key] ?? supplementalModelLandingCopy[locale]?.[key] ?? modelComparisonCopy[locale]?.[key] ?? priorityTranslations[key] ?? translations[locale][key] ?? translations.en[key] ?? key;
   for (const [name, replacement] of Object.entries(vars)) {
     value = value.replaceAll(`{{${name}}}`, replacement);
   }

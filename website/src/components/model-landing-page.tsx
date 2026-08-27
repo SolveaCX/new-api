@@ -47,6 +47,7 @@ import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   modelLandingCopy,
+  getLocalizedModelLandingConfig,
   getModelLandingConfigs,
   normalizeModelId,
   type ModelConfig,
@@ -146,7 +147,14 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
-export function ModelLandingPage({ config, locale, liveModels = [], allModels = [], groupRatio = {}, groupModelRatio = {}, rankings = null, initialHealth }: Props) {
+export function ModelLandingPage({ config: inputConfig, locale, liveModels = [], allModels = [], groupRatio = {}, groupModelRatio = {}, rankings = null, initialHealth }: Props) {
+  // Priority pages ship a complete editorial pack per locale. Resolve it once
+  // at the page boundary so the shared shell never mixes an English source
+  // field with a translated field from a different section.
+  const config = useMemo(
+    () => getLocalizedModelLandingConfig(inputConfig, locale),
+    [inputConfig, locale],
+  );
   const [prompt, setPrompt] = useState(config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
@@ -255,9 +263,9 @@ function FlatkeyModelDetailPage(props: {
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.t);
   const priceRows = buildFlatkeyPriceRows(props.config, model, effectiveGroupRatio, props.t);
   const configuredGenerator = props.config.generator;
-  // Audio detail pages expose API and pricing information without the public
-  // prompt playground. Keep the configured kind for metadata while disabling
-  // the interactive workbench itself.
+  // Audio model pages expose API and pricing details only. They do not have a
+  // public prompt playground, so keep the configured kind for page metadata
+  // while disabling the shared workbench/navigation entry below.
   const generator = configuredGenerator?.kind === "audio" ? undefined : configuredGenerator;
   const mediaKind = configuredGenerator?.kind ?? "text";
   const mediaReferenceCount = configuredGenerator?.kind === "video"
@@ -274,9 +282,15 @@ function FlatkeyModelDetailPage(props: {
     modelName: props.config.displayName,
     vendorName: providerName,
     description: modelDescription,
-    inputPriceUsd: model
-      ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
-      : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
+    // Seedance 2.5 has a resolution/duration/input-dependent formula, while
+    // the other audited priority pages expose multiple token, image, or UTC
+    // dimensions. Do not turn any of those editorial tables into a misleading
+    // single Product Offer. Their exact dimensions remain visible below.
+    inputPriceUsd: props.config.slug === "seedance-2.5" || Boolean(props.config.landingContent?.pricing)
+      ? Number.NaN
+      : model
+        ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
+        : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
   });
@@ -459,7 +473,7 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">{heroProvider}</div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{props.t("Flatkey price")}</div>
+                      <div className="model-stat-label">{props.config.slug === "seedance-2.5" ? props.t("480p · no video reference") : props.t("Flatkey price")}</div>
                       <div className="model-stat-value">{localizedHeroFlatkeyPrice}</div>
                     </div>
                     <div className="model-stat-card">
@@ -473,7 +487,7 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelSectionNav generator={generator} t={props.t} />
+        <ModelSectionNav generator={generator} showPricing={props.config.slug === "seedance-2.5" || Boolean(landingContent?.pricing)} t={props.t} />
 
         {generator ? (
           <section id="workbench" className="model-section model-playground playground">
@@ -605,6 +619,17 @@ function FlatkeyModelDetailPage(props: {
 
         <ModelActivitySection config={props.config} trend={trend} summary={summary} t={props.t} />
 
+        {landingContent?.pricing ? (
+          <ModelPricingSection
+            content={landingContent.pricing}
+            liveRows={priceRows.rows}
+            liveNote={priceRows.note}
+            t={props.t}
+          />
+        ) : props.config.slug === "seedance-2.5" ? (
+          <SeedancePricingSection rows={priceRows.rows} note={priceRows.note} t={props.t} />
+        ) : null}
+
         <ModelCapabilitiesSection config={props.config} t={props.t} />
 
         <ModelComparisonSection config={props.config} t={props.t} />
@@ -674,7 +699,7 @@ function FlatkeyModelDetailPage(props: {
             <div className="faq-intro">
               <FlatkeySectionHeading
                 eyebrow={props.t("FAQ")}
-                title={props.t(props.config.landingContent?.faq ? "Seedance-2.5 API–frequently asked questions" : "Frequently asked questions")}
+                title={props.t(landingContent?.faqTitle ? "Seedance-2.5 API–frequently asked questions" : "Frequently asked questions")}
                 titleNode={landingContent?.faqTitle ? (
                   <>
                     {props.t(landingContent.faqTitle.beforeBreak)}
@@ -682,9 +707,9 @@ function FlatkeyModelDetailPage(props: {
                     {props.t(landingContent.faqTitle.afterBreak)}
                   </>
                 ) : undefined}
-                description={props.t(props.config.landingContent?.faq
+                description={props.t(landingContent?.faqDescription ?? (landingContent?.faq
                   ? "Pricing, compatibility, limits, and how your prompts and generated files are handled."
-                  : "Use the pricing section above for current Flatkey prices from our pricing API.")}
+                  : "Use the pricing section above for current Flatkey prices from our pricing API."))}
               />
             </div>
             <div className="faq-list">
@@ -2192,18 +2217,20 @@ function ModelTabIcon({ name }: { name: ModelTabIconName }) {
 
 function ModelSectionNav(props: {
   generator?: ModelConfig["generator"];
+  showPricing?: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const { generator, t } = props;
+  const { generator, showPricing = false, t } = props;
   const items = useMemo<Array<{ href: string; label: string; icon: ModelTabIconName }>>(
     () => [
       ...(generator ? [{ href: "#workbench", label: t("Playground"), icon: "playground" as const }] : []),
       { href: "#performance", label: t("Performance"), icon: "performance" },
       { href: "#activity", label: t("Activity"), icon: "activity" },
+      ...(showPricing ? [{ href: "#pricing", label: t("Pricing"), icon: "api" as const }] : []),
       { href: "#api", label: t("API"), icon: "api" },
       { href: "#faq", label: t("FAQ"), icon: "faq" },
     ],
-    [generator, t]
+    [generator, showPricing, t]
   );
   const [activeHref, setActiveHref] = useState(() => {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
@@ -2374,11 +2401,11 @@ function ModelCapabilitiesSection(props: {
     <section id="capabilities" className="model-section capabilities">
       <div className="model-container">
         <FlatkeySectionHeading
-          eyebrow={props.t("Capabilities")}
-          title={props.t(isSeedance25 ? "What seedance-2.5 can do" : "Core capabilities and practical engineering value")}
-          description={props.t(isSeedance25
+          eyebrow={props.t(props.config.landingContent?.capabilitiesEyebrow ?? "Capabilities")}
+          title={props.t(props.config.landingContent?.capabilitiesTitle ?? (isSeedance25 ? "What seedance-2.5 can do" : "Core capabilities and practical engineering value"))}
+          description={props.t(props.config.landingContent?.capabilitiesDescription ?? (isSeedance25
             ? "Its capabilities, and what changed from Seedance 2.0 — so you can tell whether it is worth switching."
-            : props.config.positioning)}
+            : props.config.positioning))}
         />
         <div className="capability-grid">
           {cards.map(({ title, body }, index) => (
@@ -2816,6 +2843,122 @@ function ModelActivitySection(props: {
   );
 }
 
+function SeedancePricingSection(props: {
+  rows: FlatkeyPriceTableRow[];
+  note: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const videoReferenceLabel = props.t("Video reference input");
+  return (
+    <section id="pricing" className="model-section model-pricing">
+      <div className="model-container">
+        <div className="pricing-block">
+          <FlatkeySectionHeading
+            eyebrow={props.t("Pricing")}
+            title={props.t("Seedance 2.5 pricing: 480p, 720p, and video references")}
+            description={props.t("The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.")}
+          />
+          <div className="pricing-card">
+            <table>
+              <caption className="sr-only">{props.t("Seedance 2.5 request pricing formulas")}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{props.t("Scenario")}</th>
+                  <th scope="col">{props.t("Flatkey formula")}</th>
+                  <th scope="col">{props.t("Billing basis")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.rows.map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
+                    <td>{row.label === videoReferenceLabel ? props.t("Total input-video seconds") : props.t("Output duration")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="pricing-note">{props.note}</p>
+            <p className="pricing-note">{props.t("The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.")}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Render an audited, model-specific pricing block inside the shared detail
+ * page. `liveRows` always come from the pricing API; optional editorial rows
+ * are reserved for dimensions (for example image units or UTC tiers) that
+ * the compact comparison card cannot infer safely.
+ */
+function ModelPricingSection(props: {
+  content: NonNullable<NonNullable<ModelConfig["landingContent"]>["pricing"]>;
+  liveRows: FlatkeyPriceTableRow[];
+  liveNote: string;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const rows = props.content.rows;
+  return (
+    <section id="pricing" className="model-section model-pricing">
+      <div className="model-container">
+        <div className="pricing-block">
+          <FlatkeySectionHeading
+            eyebrow={props.t(props.content.eyebrow ?? "Pricing")}
+            title={props.t(props.content.title)}
+            description={props.t(props.content.description)}
+          />
+          <div className="pricing-card">
+            {rows?.length ? (
+              <table>
+                <caption className="sr-only">{props.t(props.content.title)}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{props.t("Pricing dimension")}</th>
+                    <th scope="col">{props.t("Flatkey rate")}</th>
+                    <th scope="col">{props.t("Billing note")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={`${row.label}-${row.value}`}>
+                      <td>{props.t(row.label)}</td>
+                      <td className="font-mono font-semibold text-emerald-700">{props.t(row.value)}</td>
+                      <td>{row.detail ? props.t(row.detail) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table>
+                <caption className="sr-only">{props.t(props.content.title)}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{props.t("Pricing dimension")}</th>
+                    <th scope="col">{props.t("Flatkey rate")}</th>
+                    <th scope="col">{props.t("Reference rate")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {props.liveRows.map((row) => (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
+                      <td>{row.official}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="pricing-note">{props.t(props.content.note ?? props.liveNote)}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ModelApiSection(props: {
   config: ModelConfig;
   locale: Locale;
@@ -3080,6 +3223,37 @@ function buildFlatkeyPriceRows(
   t: (key: string, vars?: Record<string, string>) => string
 ): { rows: FlatkeyPriceTableRow[]; note: string } {
   const note = t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API.");
+  // Seedance 2.5 is billed from a documented request formula rather than a
+  // single per-second price. Keep the detail page honest even when the live
+  // catalog exposes only its $0.14 model-price base.
+  if (config.slug === "seedance-2.5") {
+    return {
+      note: t("Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate."),
+      rows: [
+        {
+          label: t("480p · no video reference"),
+          flatkey: "$0.140 × duration",
+          official: t("Catalog formula"),
+          flatkeyPercent: 100,
+          officialPercent: 100,
+        },
+        {
+          label: t("720p · no video reference"),
+          flatkey: "$0.314 × duration",
+          official: t("Catalog formula"),
+          flatkeyPercent: 100,
+          officialPercent: 100,
+        },
+        {
+          label: t("Video reference input"),
+          flatkey: "$0.084–$0.188 × video seconds",
+          official: t("Depends on resolution"),
+          flatkeyPercent: 100,
+          officialPercent: 100,
+        },
+      ],
+    };
+  }
   if (!model) {
     const generatorKind = config.generator?.kind;
     if (generatorKind === "video") {
@@ -3467,6 +3641,19 @@ function buildModelDescription(
   t: (key: string, vars?: Record<string, string>) => string,
   locale: Locale = "en"
 ) {
+  // Seedance's catalog description is not the editorial source of truth for
+  // this page. Keep the opening answer aligned with the audited contract in
+  // every locale, including the JSON-LD description, instead of allowing a
+  // stale live-catalog paragraph to reintroduce unsupported claims.
+  if (config.slug === "seedance-2.5") {
+    return t("Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.");
+  }
+  // Priority pages carry an audited opening answer in landingContent. Keep it
+  // as the source for both the visible hero and JSON-LD instead of allowing a
+  // stale provider description to overwrite the target-specific facts.
+  if (config.landingContent?.hero?.description) {
+    return t(config.landingContent.hero.description);
+  }
   // Live catalog descriptions are currently English. Keep them on the
   // English page, but use the localized shell copy on other locales so a
   // translated detail page does not mix an English paragraph into its hero.

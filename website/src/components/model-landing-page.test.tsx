@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ModelLandingPage } from "./model-landing-page";
 import {
-  DEEPSEEK_CONFIG,
   GPT_CONFIG,
   GPT_IMAGE_2_CONFIG,
   MINIMAX_H3_CONFIG,
@@ -180,6 +179,25 @@ describe("ModelLandingPage", () => {
     expect(requestPreview).not.toContain('"resolution": "1080p"');
   });
 
+  test("renders the Seedance 2.5 pricing evidence without a false fixed Product Offer", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
+    );
+    const pricingSection = html.slice(html.indexOf('id="pricing"'), html.indexOf('id="capabilities"'));
+
+    expect(html).toContain('href="#pricing"');
+    expect(pricingSection).toContain("Seedance 2.5 pricing: 480p, 720p, and video references");
+    expect(pricingSection).toContain("$0.140 × duration");
+    expect(pricingSection).toContain("$0.314 × duration");
+    expect(pricingSection).toContain("$0.084–$0.188 × video seconds");
+    expect(pricingSection).toContain("Total input-video seconds");
+    expect(html).toContain('class="model-stat-label">480p · no video reference</div>');
+    // A single Product Offer would imply that $0.14 is the price for every
+    // request, which is not true for resolution/duration/reference variants.
+    const schema = html.slice(html.indexOf('type="application/ld+json"'), html.indexOf('</script>'));
+    expect(schema).not.toContain('"offers"');
+  });
+
   test("renders back and playground actions on localized media model landings", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="zh" liveModels={[]} />
@@ -193,7 +211,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("model=MiniMax-H3");
   });
 
-  test("renders Flatkey sections and related model links on localized Sonilo model pages", () => {
+  test("renders Flatkey sections and related model links on localized Sonilo model pages without a playground", () => {
     const sonilo: PricingModel = {
       model_name: "sonilo-video-to-music",
       vendor_name: "Sonilo",
@@ -239,7 +257,7 @@ describe("ModelLandingPage", () => {
     expect(html).not.toContain("生成器配置");
     expect(html).not.toContain("Playground（注册前可编辑）");
     expect(html).not.toContain("在 Playground 打开");
-    expect(html).not.toContain('id="workbench"');
+    expect(html).toContain("请求预览");
     expect(html).toContain("常见问题");
     expect(html).toContain("sonilo-video-to-music 可通过 Flatkey 使用");
     expect(html).not.toContain("Generate production-ready music from any video with synchronized timing.");
@@ -380,16 +398,34 @@ describe("ModelLandingPage", () => {
   });
 
   test("renders shared text model sections without media-only blocks", () => {
+    const deepseekV4Pro: PricingModel = {
+      model_name: "deepseek-v4-pro",
+      vendor_name: "DeepSeek",
+      quota_type: 0,
+      model_ratio: 0.66,
+      completion_ratio: 3,
+      cache_ratio: 0.033333333333,
+      supported_endpoint_types: ["openai", "anthropic"],
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 1.65, plg: 1.32 },
+          output: { configured: 4.95, plg: 3.96 },
+          cache: { configured: 0.055, plg: 0.044 },
+        },
+      },
+    };
+    const deepseekV4ProConfig = getModelLandingConfigForPricingModel(deepseekV4Pro);
     const html = renderToStaticMarkup(
       <ModelLandingPage
-        config={DEEPSEEK_CONFIG}
+        config={deepseekV4ProConfig}
         locale="en"
-        liveModels={[]}
+        liveModels={[deepseekV4Pro]}
         initialHealth={{
-          model: "deepseek-v4-flash",
+          model: "deepseek-v4-pro",
           trend: [{ ts: 1, success_rate: 99.25, avg_ttft_ms: 7619 }],
           summary: {
-            model_name: "deepseek-v4-flash",
+            model_name: "deepseek-v4-pro",
             avg_latency_ms: 22419,
             avg_ttft_ms: 7619,
             success_rate: 99.25,
@@ -414,8 +450,11 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('id="api"');
     expect(html).not.toContain('id="workbench"');
     expect(html).not.toContain("Prompt library");
-    expect(html).toContain("deepseek-v3.2");
-    expect(html).toContain("What changed from the previous generation");
+    expect(html).toContain("deepseek-v4-pro");
+    expect(html).toContain("DeepSeek V4 Pro vs V4 Flash");
+    expect(html).toContain("/v1/chat/completions");
+    expect(html).toContain("/v1/messages");
+    expect(html).not.toContain("What changed from the previous generation");
     expect(html).not.toContain("Pricing vs official");
 
     const performance = html.slice(html.indexOf('id="performance"'), html.indexOf('id="activity"'));
@@ -469,12 +508,19 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(imageHtml).toContain("GPT-image-1");
+    // The image landing now uses the target-specific comparison copy. Keep
+    // this assertion focused on the previous-generation comparison while
+    // matching the editorial title/casing used by GPT Image 2.
+    expect(imageHtml).toContain("GPT Image 1");
+    expect(imageHtml).toContain("GPT Image 2 compared with GPT Image 1");
     expect(imageHtml).not.toContain("Pricing vs official");
     expect(imageHtml).toContain("$0.04 / image");
     expect(imageHtml).toContain("$0.06 / image");
-    expect(videoHtml).toContain("$0.14 / second");
-    expect(videoHtml).not.toContain("$0.14 / request");
+    expect(videoHtml).toContain("$0.140 × duration");
+    expect(videoHtml).toContain("$0.314 × duration");
+    expect(videoHtml).toContain("$0.084–$0.188 × video seconds");
+    expect(videoHtml).not.toContain("$0.14 / second");
+    expect(videoHtml).not.toContain("10% below list price");
   });
 
   test("keeps request-priced media pages aligned with the model directory", () => {
@@ -537,16 +583,18 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("0 / 10");
   });
 
-  test("keeps audio model detail pages free of the public playground", () => {
+  test("keeps audio model pages free of the public playground", () => {
     const audioHtml = renderToStaticMarkup(
       <ModelLandingPage config={SONILO_VIDEO_TO_MUSIC_CONFIG} locale="en" liveModels={[]} />
     );
+    const audioPageHtml = audioHtml.slice(audioHtml.indexOf("<main"), audioHtml.indexOf("</main>"));
 
-    expect(audioHtml).toContain('data-model-kind="audio"');
-    expect(audioHtml).not.toContain('id="workbench"');
-    expect(audioHtml).not.toContain('href="#workbench"');
-    expect(audioHtml).not.toContain("Start generating");
-    expect(audioHtml).not.toContain('id="prompt-library"');
-    expect(audioHtml).not.toContain("Prompt library");
+    expect(audioPageHtml).toContain('data-model-kind="audio"');
+    expect(audioPageHtml).not.toContain('id="workbench"');
+    expect(audioPageHtml).not.toContain('href="#workbench"');
+    expect(audioPageHtml).not.toContain("Playground");
+    expect(audioPageHtml).not.toContain("Start generating");
+    expect(audioPageHtml).not.toContain('id="prompt-library"');
+    expect(audioPageHtml).not.toContain("Prompt library");
   });
 });
