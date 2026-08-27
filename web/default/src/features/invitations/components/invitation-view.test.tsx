@@ -145,7 +145,7 @@ describe('InvitationView', () => {
     const topupShareMessage =
       'Share your referral link with friends. Referral rewards are processed after their first successful top-up.'
     const subscriptionShareMessage =
-      'I found a great AI Token platform: one key connects you to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount. Come try it!'
+      'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
 
     expect(html).toContain(
       'Invite friends to subscribe: they get $5 package discount immediately, and you receive $5 package discount after their first successful paid package purchase.'
@@ -287,7 +287,7 @@ describe('InvitationView', () => {
     )
     expect(html).not.toContain(
       encodeURIComponent(
-        'I found a great AI Token platform: one key connects you to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount. Come try it!'
+        'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
       )
     )
   })
@@ -485,7 +485,7 @@ describe('InvitationView', () => {
     const pageDescription =
       'Share your referral link with friends. Referral rewards are processed after their first successful top-up.'
     const shareMessage =
-      'I found a great AI Token platform: one key connects you to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount. Come try it!'
+      'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.'
 
     expect(html).toContain(pageDescription)
     expect(html).not.toContain(shareMessage)

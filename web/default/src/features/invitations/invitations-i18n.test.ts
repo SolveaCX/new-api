@@ -111,7 +111,7 @@ const invitationKeys = [
   'Your friend registers',
   'Your friend gets {{inviteeReward}} package discount immediately after registering.',
   'You receive {{reward}} package discount immediately after their first successful paid package purchase. Package discounts never expire and can only be used for package purchases or renewals.',
-  'I found a great AI Token platform: one key connects you to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount. Come try it!',
+  'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.',
   'Your friend gets {{inviteeReward}} package discount, and you receive {{inviterReward}} package discount.',
   'Package discounts never expire and can only be used for package purchases or renewals.',
   'Awaiting subscription',
@@ -150,7 +150,7 @@ const affectedPackageCreditKeys = [
   'Your friend registers',
   'Your friend gets {{inviteeReward}} package discount immediately after registering.',
   'You receive {{reward}} package discount immediately after their first successful paid package purchase. Package discounts never expire and can only be used for package purchases or renewals.',
-  'I found a great AI Token platform: one key connects you to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount. Come try it!',
+  'I found a great AI API gateway where one key gives you access to GPT, Claude, Gemini, Seedance, and other popular models. Sign up now to get a package discount.',
   'Your friend gets {{inviteeReward}} package discount, and you receive {{inviterReward}} package discount.',
   'Package discounts never expire and can only be used for package purchases or renewals.',
 ] as const
