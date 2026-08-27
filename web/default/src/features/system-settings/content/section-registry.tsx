@@ -60,7 +60,6 @@ const CONTENT_SECTIONS = [
       <AnnouncementsSectionV2
         enabled={settings['console_setting.announcements_enabled']}
         data={settings['console_setting.announcements']}
-        playgroundDefaultModel={settings.PlaygroundDefaultModel}
       />
     ),
   },
