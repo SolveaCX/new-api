@@ -16,9 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
-import type { ComponentType } from 'react'
-import { Claude, Doubao, Gemini, Grok, Minimax, OpenAI } from '@lobehub/icons'
+import { useEffect, useState, type ComponentType } from 'react'
+import {
+  Claude,
+  DeepSeek,
+  Doubao,
+  Gemini,
+  Grok,
+  Minimax,
+  OpenAI,
+} from '@lobehub/icons'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -41,6 +48,7 @@ const featuredModels: Array<{ label: string; logo: ModelLogo }> = [
   { label: 'Claude', logo: Claude.Color },
   { label: 'Gemini', logo: Gemini.Color },
   { label: 'Grok', logo: Grok },
+  { label: 'DeepSeek', logo: DeepSeek.Color },
   { label: 'MiniMax', logo: Minimax.Color },
 ]
 
