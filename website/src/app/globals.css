@@ -1546,6 +1546,7 @@ html:has(.model-prototype) {
 .model-prototype .model-anchor-link[href="#performance"] { width: 101px; }
 .model-prototype .model-anchor-link[href="#parameters"] { width: 92px; }
 .model-prototype .model-anchor-link[href="#activity"] { width: 68px; }
+.model-prototype .model-anchor-link[href="#pricing"] { width: 68px; }
 .model-prototype .model-anchor-link[href="#api"] { width: 41px; }
 .model-prototype .model-anchor-link[href="#faq"] { width: 45px; }
 
@@ -1582,6 +1583,7 @@ html:has(.model-prototype) {
 .model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"]),
 .model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"]),
 .model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"]),
+.model-prototype:has(#pricing:target) .model-anchor-link.active:not([href="#pricing"]),
 .model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"]),
 .model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"]) {
   color: var(--model-muted);
@@ -1591,6 +1593,7 @@ html:has(.model-prototype) {
 .model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"])::after,
 .model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"])::after,
 .model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"])::after,
+.model-prototype:has(#pricing:target) .model-anchor-link.active:not([href="#pricing"])::after,
 .model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"])::after,
 .model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"])::after {
   opacity: 0;
@@ -1599,6 +1602,7 @@ html:has(.model-prototype) {
 .model-prototype:has(#performance:target) .model-anchor-link[href="#performance"],
 .model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"],
 .model-prototype:has(#activity:target) .model-anchor-link[href="#activity"],
+.model-prototype:has(#pricing:target) .model-anchor-link[href="#pricing"],
 .model-prototype:has(#api:target) .model-anchor-link[href="#api"],
 .model-prototype:has(#faq:target) .model-anchor-link[href="#faq"] {
   color: var(--model-ink);
@@ -1608,6 +1612,7 @@ html:has(.model-prototype) {
 .model-prototype:has(#performance:target) .model-anchor-link[href="#performance"]::after,
 .model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"]::after,
 .model-prototype:has(#activity:target) .model-anchor-link[href="#activity"]::after,
+.model-prototype:has(#pricing:target) .model-anchor-link[href="#pricing"]::after,
 .model-prototype:has(#api:target) .model-anchor-link[href="#api"]::after,
 .model-prototype:has(#faq:target) .model-anchor-link[href="#faq"]::after {
   opacity: 1;
@@ -2666,6 +2671,17 @@ html:has(.model-prototype) {
 
 .model-prototype .model-pricing tr:last-child td {
   border-bottom: 0;
+}
+
+.model-prototype .model-pricing .pricing-note {
+  margin: 18px 0 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.model-prototype .model-pricing .pricing-note + .pricing-note {
+  margin-top: 6px;
 }
 
 .model-prototype .model-pricing .price-track > div:first-child {

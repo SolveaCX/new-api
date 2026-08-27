@@ -5,9 +5,10 @@ import {
   getModelLandingConfig,
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
+  getLocalizedModelLandingConfig,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
-import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
+import { resolvePublicModel } from "@/lib/model-public";
 import { getPricingData, getVendorName, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { fetchRankingsData } from "@/lib/rankings-live";
 import { fetchModelHealthData } from "@/lib/model-health-server";
@@ -35,9 +36,10 @@ export async function generateMetadata(props: Props) {
   }
   const config = getModelLandingConfig(params.slug);
   if (config) {
+    const localizedSeo = config.seoByLocale?.[params.locale] ?? config.seo;
     return buildMetadata({
-      title: config.seo.title,
-      description: config.seo.description,
+      title: localizedSeo.title,
+      description: localizedSeo.description,
       pathname: `/models/${config.slug}`,
       locale: params.locale,
     });
@@ -50,10 +52,11 @@ export async function generateMetadata(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
+  const localizedSeo = modelSpecificConfig.seoByLocale?.[params.locale] ?? modelSpecificConfig.seoByLocale?.en ?? modelSpecificConfig.seo;
   return buildMetadata({
-    title: modelSpecificConfig.seo.title,
-    description: modelSpecificConfig.seo.description,
-    pathname: modelPublicPath(model.model_name),
+    title: localizedSeo.title,
+    description: localizedSeo.description,
+    pathname: `/models/${modelSpecificConfig.slug}`,
     locale: params.locale,
   });
 }
@@ -61,6 +64,12 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === "en") notFound();
+  // Keep the localized landing URL canonical when a catalog model name is
+  // requested with vendor casing (for example /models/MiniMax-H3).
+  if (params.slug !== "minimax-h3" && params.slug.toLowerCase() === "minimax-h3") {
+    redirect(localizePath("/models/minimax-h3", params.locale));
+  }
+  if (params.slug === "seedance-2-5") redirect(localizePath("/models/seedance-2.5", params.locale));
   if (params.slug === "gpt-api") redirect(localizePath("/gpt-api", params.locale));
   if (params.slug === "claude-api") redirect(localizePath("/claude-api", params.locale));
 
@@ -72,11 +81,12 @@ export default async function Page(props: Props) {
   }));
 
   if (config) {
-    const resolvedModels = resolveModelLandingModels(config, models);
-    const initialHealth = await fetchModelHealthData(resolvedModels[0]?.model_name ?? config.modelId);
+    const localizedConfig = getLocalizedModelLandingConfig(config, params.locale);
+    const resolvedModels = resolveModelLandingModels(localizedConfig, models);
+    const initialHealth = await fetchModelHealthData(resolvedModels[0]?.model_name ?? localizedConfig.modelId);
     return (
       <ModelLandingPage
-        config={config}
+        config={localizedConfig}
         locale={params.locale}
         liveModels={resolvedModels}
         allModels={models}
@@ -96,12 +106,13 @@ export default async function Page(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
+  const localizedConfig = getLocalizedModelLandingConfig(modelSpecificConfig, params.locale);
   const initialHealth = await fetchModelHealthData(modelWithVendor.model_name);
   return (
     <ModelLandingPage
-      config={modelSpecificConfig}
+      config={localizedConfig}
       locale={params.locale}
-      liveModels={resolveModelLandingModels(modelSpecificConfig, [modelWithVendor])}
+      liveModels={resolveModelLandingModels(localizedConfig, [modelWithVendor])}
     allModels={models}
     groupRatio={pricing.groupRatio}
     groupModelRatio={pricing.groupModelRatio}

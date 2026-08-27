@@ -3,9 +3,9 @@ import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
-import { getModelLandingPathnames } from "@/lib/model-landing";
+import { getModelLandingPathnames, getPriorityModelLandingPathnames } from "@/lib/model-landing";
 import { seriesForModels } from "@/lib/model-directory-meta";
-import { modelPublicPath } from "@/lib/model-public";
+import { modelPublicPath, normalizeModelKey } from "@/lib/model-public";
 import { PROMPTS_PATH } from "@/lib/prompt-library-path";
 import { getPromptLibraryStaticPathnames } from "@/lib/prompt-library-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
@@ -88,7 +88,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/sla", 0.3, "yearly"),
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
-  const modelLandingEntries = getModelLandingPathnames()
+  // Keep the curated model landings and the priority SEO landings discoverable.
+  // The priority list also owns canonical aliases for model IDs whose catalog
+  // spelling differs from the public slug (for example MiniMax-H3).
+  const curatedModelLandingPathnames = [
+    ...new Set([...getModelLandingPathnames(), ...getPriorityModelLandingPathnames()]),
+  ];
+  const modelLandingEntries = curatedModelLandingPathnames
     .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname))
     .flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const skagLandingEntries = SKAG_LANDING_SLUGS.flatMap((slug) =>
@@ -100,9 +106,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   );
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
-  const landingSlugs = new Set(getModelLandingPathnames().map((pathname) => pathname.replace(/^\/models\//, "")));
+  const landingSlugs = new Set(curatedModelLandingPathnames.map((pathname) => pathname.replace(/^\/models\//, "")));
+  const normalizedLandingSlugs = new Set([...landingSlugs].map(normalizeModelKey));
   const modelPublicEntries = pricing.models
-    .filter((model) => !landingSlugs.has(model.model_name))
+    .filter(
+      (model) =>
+        !landingSlugs.has(model.model_name) &&
+        !normalizedLandingSlugs.has(normalizeModelKey(model.model_name))
+    )
     .flatMap((model) => entry(modelPublicPath(model.model_name), 0.6, "daily"));
   // Market acquisition pages are single-locale (no i18n alternates by design).
   const marketEntries = getMarketPathnames().map((pathname) => ({

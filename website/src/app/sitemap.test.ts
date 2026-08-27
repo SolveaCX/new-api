@@ -18,6 +18,13 @@ describe("sitemap", () => {
                     model_ratio: 1,
                     completion_ratio: 1,
                   },
+                  {
+                    model_name: "MiniMax-H3",
+                    vendor_name: "MiniMax",
+                    quota_type: 1,
+                    model_price: 0.08,
+                    completion_ratio: 0,
+                  },
                 ],
                 vendors: [],
               }),
@@ -38,6 +45,12 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/models/claude-api");
       expect(urls).toContain("https://flatkey.ai/gpt-api");
       expect(urls).toContain("https://flatkey.ai/claude-api");
+      expect(urls).not.toContain("https://flatkey.ai/models/MiniMax-H3");
+      expect(urls).toContain("https://flatkey.ai/models/minimax-h3");
+      expect(urls).toContain("https://flatkey.ai/models/gpt-5.6-sol");
+      expect(urls).toContain("https://flatkey.ai/models/deepseek-v4-pro");
+      expect(urls.filter((url) => url === "https://flatkey.ai/models/gpt-5.6-sol")).toHaveLength(1);
+      expect(urls.filter((url) => url === "https://flatkey.ai/models/deepseek-v4-pro")).toHaveLength(1);
       expect(urls).toContain("https://flatkey.ai/pt/5-credit-promo");
       expect(urls).not.toContain("https://flatkey.ai/5-credit-promo");
       expect(promoEntry?.alternates?.languages).toMatchObject({
