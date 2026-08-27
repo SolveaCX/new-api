@@ -1,8 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
+import Image from "next/image";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRight,
+  Globe2,
+  Menu,
+  X,
+} from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
@@ -20,6 +29,8 @@ import {
   withIdFallback,
 } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
+import type { PublicAnnouncement } from "@/lib/public-site-settings";
+import { promoBannerCopyForLocale } from "@/lib/promo-banner";
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
   clearConsoleSessionHint,
@@ -154,67 +165,105 @@ const languagePanelLabelByLocale: Record<Locale, string> = withIdFallback({
 
 const promoBannerCopyByLocale: Record<
   Locale,
-  { dismissLabel: string; linkLabel: string; message: string }
+  {
+    dismissLabel: string;
+    linkLabel: string;
+    message: string;
+    nextLabel: string;
+    previousLabel: string;
+  }
 > = withIdFallback({
   en: {
     dismissLabel: "Dismiss DeepSeek V4 announcement",
     linkLabel: "Learn more →",
-    message:
-      "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+    message: "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+    nextLabel: "Next advertisement",
+    previousLabel: "Previous advertisement",
   },
   zh: {
     dismissLabel: "关闭 DeepSeek V4 公告",
     linkLabel: "了解更多 →",
     message: "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
+    nextLabel: "下一条广告",
+    previousLabel: "上一条广告",
   },
   es: {
     dismissLabel: "Cerrar anuncio de DeepSeek V4",
     linkLabel: "Más información →",
     message:
       "DeepSeek V4 ya está aquí. Únete a nuestro Discord y recibe 5 USD en créditos gratis.",
+    nextLabel: "Siguiente anuncio",
+    previousLabel: "Anuncio anterior",
   },
   fr: {
     dismissLabel: "Fermer l’annonce DeepSeek V4",
     linkLabel: "En savoir plus →",
     message:
       "DeepSeek V4 est arrivé. Rejoignez notre Discord et recevez 5 $ de crédits gratuits.",
+    nextLabel: "Annonce suivante",
+    previousLabel: "Annonce précédente",
   },
   pt: {
     dismissLabel: "Fechar anúncio do DeepSeek V4",
     linkLabel: "Saiba mais →",
     message:
       "O DeepSeek V4 chegou. Entre no nosso Discord e ganhe US$ 5 em créditos grátis.",
+    nextLabel: "Próximo anúncio",
+    previousLabel: "Anúncio anterior",
   },
   ru: {
     dismissLabel: "Закрыть объявление DeepSeek V4",
     linkLabel: "Узнать больше →",
     message:
       "DeepSeek V4 уже здесь. Присоединяйтесь к нашему Discord и получите 5 $ бесплатных кредитов.",
+    nextLabel: "Следующее объявление",
+    previousLabel: "Предыдущее объявление",
   },
   ja: {
     dismissLabel: "DeepSeek V4 のお知らせを閉じる",
     linkLabel: "詳細を見る →",
     message:
       "DeepSeek V4 が登場。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
+    nextLabel: "次の広告",
+    previousLabel: "前の広告",
   },
   vi: {
     dismissLabel: "Đóng thông báo DeepSeek V4",
     linkLabel: "Tìm hiểu thêm →",
     message:
       "DeepSeek V4 đã ra mắt. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
+    nextLabel: "Quảng cáo tiếp theo",
+    previousLabel: "Quảng cáo trước",
   },
   de: {
     dismissLabel: "DeepSeek-V4-Ankündigung schließen",
     linkLabel: "Mehr erfahren →",
     message:
       "DeepSeek V4 ist da. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
+    nextLabel: "Nächste Anzeige",
+    previousLabel: "Vorherige Anzeige",
   },
   id: {
     dismissLabel: "Tutup pengumuman DeepSeek V4",
     linkLabel: "Pelajari lebih lanjut →",
     message:
       "DeepSeek V4 telah hadir. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
+    nextLabel: "Iklan berikutnya",
+    previousLabel: "Iklan sebelumnya",
   },
+});
+
+const legacyPromoDismissLabelByLocale: Record<Locale, string> = withIdFallback({
+  en: "Dismiss website banner",
+  zh: "关闭官网横幅",
+  es: "Cerrar el banner del sitio web",
+  fr: "Fermer la bannière du site",
+  pt: "Fechar o banner do site",
+  ru: "Закрыть баннер сайта",
+  ja: "サイトバナーを閉じる",
+  vi: "Đóng biểu ngữ trang web",
+  de: "Website-Banner schließen",
+  id: "Tutup banner situs web",
 });
 
 const PROMO_BANNER_ARTICLE_PATH = "/blog/deepseek-v4-pro-vs-flash";
@@ -257,8 +306,7 @@ const mobileSecondaryActionClass =
   "flex min-h-12 items-center justify-center rounded-xl border border-[#0B0B0F14] bg-white px-4 py-3 text-base font-bold text-[#0B0B0F] shadow-[0_10px_24px_-22px_rgba(11,11,15,.55)] transition hover:border-[#C9B8FF] hover:bg-[#F3EDFF] hover:text-[#6B46C1] focus-visible:border-[#C9B8FF] focus-visible:bg-[#F3EDFF] focus-visible:text-[#6B46C1] focus-visible:outline-none";
 const desktopNavTriggerClass =
   "inline-flex h-10 shrink-0 select-none items-center justify-center gap-1 whitespace-nowrap px-2.5 [font-family:inherit] text-[14px] leading-none no-underline transition-[color,transform,opacity] duration-200 ease-out hover:-translate-y-px hover:text-[#050505] focus-visible:text-[#050505] focus-visible:outline-none active:scale-[0.985] min-[1120px]:gap-1.5 min-[1120px]:px-3 min-[1120px]:text-[14.5px] min-[1360px]:text-[15px]";
-const desktopNavDropdownTriggerClass =
-  `${desktopNavTriggerClass} cursor-pointer appearance-none border-0 bg-transparent`;
+const desktopNavDropdownTriggerClass = `${desktopNavTriggerClass} cursor-pointer appearance-none border-0 bg-transparent`;
 const desktopNavDropdownItemClass =
   "flex min-h-10 origin-center items-center rounded-[10px] px-3 py-2 text-[14px] font-semibold leading-none text-[#0B0B0F] transition-[color,transform,background-color] duration-200 ease-out hover:translate-x-0.5 hover:bg-[#F7F2FF] hover:text-[#050505] focus-visible:bg-[#F7F2FF] focus-visible:text-[#050505] focus-visible:outline-none";
 const desktopNavIdleClass = "font-semibold text-[#0B0B0F]";
@@ -282,9 +330,7 @@ type SiteHeaderDesktopActionsProps = {
   startFreeLabel: string;
 };
 
-export function SiteHeaderDesktopActions(
-  props: SiteHeaderDesktopActionsProps,
-) {
+export function SiteHeaderDesktopActions(props: SiteHeaderDesktopActionsProps) {
   return (
     <>
       <a
@@ -434,7 +480,10 @@ function HeaderLanguageMenu(props: {
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
       >
-        <Globe2 className="size-[17px] min-[1180px]:size-[18px]" aria-hidden="true" />
+        <Globe2
+          className="size-[17px] min-[1180px]:size-[18px]"
+          aria-hidden="true"
+        />
       </button>
 
       <nav
@@ -476,7 +525,7 @@ export function SiteHeader(props: Props) {
   const copy = getCopy(props.locale);
   const cliCopy = cliLandingCopy[props.locale] ?? cliLandingCopy.en;
   const toolsCopy = toolsLandingCopy[props.locale];
-  const { docsUrl } = useSiteConfig();
+  const { docsUrl, announcements, promoBanner } = useSiteConfig();
   const legacyLabels =
     legacyNavLabelByLocale[props.locale] ?? legacyNavLabelByLocale.en;
   const groupLabels =
@@ -485,12 +534,15 @@ export function SiteHeader(props: Props) {
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
   const [promoBannerVisible, setPromoBannerVisible] = useState(true);
+  const [promoIndex, setPromoIndex] = useState(0);
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleSignInUrl(props.locale);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
   const dashboardHref = consoleUrl("/dashboard");
   const accountHref = consoleSessionActive ? dashboardHref : signInHref;
-  const accountLabel = consoleSessionActive ? copy.nav.console : copy.nav.signIn;
+  const accountLabel = consoleSessionActive
+    ? copy.nav.console
+    : copy.nav.signIn;
   const contactSalesHref = localizePath("/contact", props.locale);
   const startFreeLabel =
     startFreeLabelByLocale[props.locale] ?? startFreeLabelByLocale.en;
@@ -500,13 +552,36 @@ export function SiteHeader(props: Props) {
     : startFreeLabel;
   const promoBannerCopy =
     promoBannerCopyByLocale[props.locale] ?? promoBannerCopyByLocale.en;
-  const promoBannerHref = localizePath(
-    PROMO_BANNER_ARTICLE_PATH,
+  const promoBannerHref = localizePath(PROMO_BANNER_ARTICLE_PATH, props.locale);
+  const configuredPromoContent = promoBannerCopyForLocale(
+    promoBanner.content,
     props.locale,
   );
-  const mobileMenuOffsetClass = promoBannerVisible
-    ? "top-[132px] max-h-[calc(100dvh-132px)] min-[700px]:top-[112px] min-[700px]:max-h-[calc(100dvh-112px)]"
-    : "top-[72px] max-h-[calc(100dvh-72px)]";
+  const fallbackPromo: PublicAnnouncement = {
+    content:
+      configuredPromoContent ||
+      (Object.keys(promoBanner.content).length > 0
+        ? promoBannerCopy.message
+        : ""),
+    extra: "DeepSeek V4",
+    link: promoBanner.href || (configuredPromoContent ? "" : promoBannerHref),
+    icon: promoBanner.icon,
+  };
+  const promoItems =
+    announcements === undefined && promoBanner.enabled
+      ? fallbackPromo.content
+        ? [fallbackPromo]
+        : []
+      : (announcements ?? []);
+  const hasPromoBanner = promoBannerVisible && promoItems.length > 0;
+  const safePromoIndex = promoItems.length ? promoIndex % promoItems.length : 0;
+  const activePromo = promoItems[safePromoIndex] ?? promoItems[0];
+  const activePromoLink = activePromo?.link?.startsWith("/")
+    ? localizePath(activePromo.link, props.locale)
+    : activePromo?.link;
+  const mobileMenuOffsetClass = hasPromoBanner
+    ? "top-full max-h-[calc(100dvh-72px)]"
+    : "top-full max-h-[calc(100dvh-72px)]";
 
   const productItems = useMemo<NavItem[]>(
     () => [
@@ -555,6 +630,14 @@ export function SiteHeader(props: Props) {
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
   ];
+
+  useEffect(() => {
+    if (!promoBannerVisible || promoItems.length < 2) return;
+    const timer = window.setInterval(() => {
+      setPromoIndex((index) => (index + 1) % promoItems.length);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [promoBannerVisible, promoItems.length]);
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
@@ -700,7 +783,10 @@ export function SiteHeader(props: Props) {
           onMouseDown={(event) => event.preventDefault()}
         >
           <span className="min-w-0 overflow-hidden text-ellipsis">{label}</span>
-          <ChevronDown className={desktopDropdownChevronClass} aria-hidden="true" />
+          <ChevronDown
+            className={desktopDropdownChevronClass}
+            aria-hidden="true"
+          />
         </button>
         <div className="pointer-events-none absolute top-full left-1/2 z-[70] w-[220px] origin-top -translate-x-1/2 -translate-y-1 scale-[0.97] pt-[6px] opacity-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/nav:pointer-events-auto group-hover/nav:translate-y-0 group-hover/nav:scale-100 group-hover/nav:opacity-100 group-focus-within/nav:pointer-events-auto group-focus-within/nav:translate-y-0 group-focus-within/nav:scale-100 group-focus-within/nav:opacity-100">
           <div
@@ -745,44 +831,6 @@ export function SiteHeader(props: Props) {
 
   return (
     <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
-      {promoBannerVisible && (
-        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F]">
-          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
-            <Link
-              className="inline-flex w-[calc(100vw-6rem)] max-w-xs min-w-0 items-center justify-center gap-1.5 text-center text-[#0B0B0F] no-underline min-[430px]:max-w-sm min-[700px]:w-auto min-[700px]:max-w-none min-[700px]:gap-2 min-[700px]:truncate"
-              href={promoBannerHref}
-            >
-              <span
-                className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
-                aria-hidden="true"
-              >
-                <Image
-                  alt=""
-                  src="/assets/logos/deepseek.svg"
-                  width={16}
-                  height={16}
-                  unoptimized
-                  className="size-[14px] min-[700px]:size-4"
-                />
-              </span>
-              <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
-                {promoBannerCopy.message}{" "}
-                <span className="whitespace-nowrap underline decoration-[#AAA7B0] underline-offset-2">
-                  {promoBannerCopy.linkLabel}
-                </span>
-              </span>
-            </Link>
-            <button
-              type="button"
-              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
-              aria-label={promoBannerCopy.dismissLabel}
-              onClick={dismissPromoBanner}
-            >
-              <X className="size-4" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      )}
       <nav className="relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-3 px-[var(--fk-site-gutter)] text-[#0B0B0F] min-[901px]:h-[76px] min-[1180px]:h-[84px] min-[1180px]:gap-5 min-[1480px]:h-[88px] min-[1480px]:gap-[30px]">
         <Link
           href={localizePath("/", props.locale)}
@@ -848,15 +896,107 @@ export function SiteHeader(props: Props) {
             )}
             aria-hidden="true"
           >
-            {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+            {mobileOpen ? (
+              <X className="size-5" />
+            ) : (
+              <Menu className="size-5" />
+            )}
           </span>
         </button>
       </nav>
 
+      {hasPromoBanner && activePromo && (
+        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F] [background:linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)]">
+          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 pr-14 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
+            <div className="flex min-w-0 max-w-[min(100%,48rem)] items-center justify-center gap-2 text-center">
+              {activePromo.icon ? (
+                <span
+                  className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
+                  aria-hidden="true"
+                >
+                  <Image
+                    alt=""
+                    src={activePromo.icon}
+                    width={16}
+                    height={16}
+                    unoptimized
+                    className="size-[14px] min-[700px]:size-4"
+                  />
+                </span>
+              ) : null}
+              {activePromo.extra ? (
+                <span className="inline-flex max-w-[7rem] shrink-0 truncate rounded-full border border-[#D8C9FF] bg-white/80 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-[#6B46C1] uppercase min-[700px]:max-w-none">
+                  {activePromo.extra}
+                </span>
+              ) : null}
+              {activePromoLink ? (
+                <Link
+                  className="min-w-0 text-xs leading-snug font-normal text-[#0B0B0F] no-underline min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium"
+                  href={activePromoLink}
+                >
+                  {activePromo.content}{" "}
+                  <span className="inline-flex size-[26px] items-center justify-center whitespace-nowrap rounded-full bg-white px-2 font-semibold text-[#4c1d95] min-[700px]:w-auto">
+                    {promoBannerCopy.linkLabel}
+                  </span>
+                  <ArrowRight className="lucide-arrow-right size-3.5 min-[700px]:hidden" aria-hidden="true" />
+                  <span className="hidden min-[700px]:inline" aria-hidden="true" />
+                </Link>
+              ) : (
+                <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
+                  {activePromo.content}
+                </span>
+              )}
+            </div>
+            {promoItems.length > 1 ? (
+              <div className="absolute left-2.5 flex items-center gap-1 min-[700px]:left-[max(12px,var(--fk-site-gutter))]">
+                <button
+                  type="button"
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
+                  aria-label={promoBannerCopy.previousLabel}
+                  onClick={() =>
+                    setPromoIndex(
+                      (safePromoIndex - 1 + promoItems.length) %
+                        promoItems.length,
+                    )
+                  }
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </button>
+                <span className="hidden text-[10px] font-semibold tabular-nums text-[#81758E] min-[430px]:inline">
+                  {safePromoIndex + 1}/{promoItems.length}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
+                  aria-label={promoBannerCopy.nextLabel}
+                  onClick={() =>
+                    setPromoIndex((safePromoIndex + 1) % promoItems.length)
+                  }
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
+              aria-label={
+                announcements === undefined
+                  ? legacyPromoDismissLabelByLocale[props.locale]
+                  : `Dismiss ${activePromo.extra || "advertisement"}`
+              }
+              onClick={dismissPromoBanner}
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div
         id={mobileMenuId}
         className={cn(
-          `fixed inset-x-0 z-40 overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden ${mobileMenuOffsetClass}`,
+          `fixed absolute inset-x-0 top-full z-40 overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden ${mobileMenuOffsetClass}`,
           mobileOpen
             ? "translate-y-0 opacity-100 shadow-[0_24px_70px_-42px_rgba(76,29,149,.52)]"
             : "pointer-events-none -translate-y-4 opacity-0 shadow-none",
