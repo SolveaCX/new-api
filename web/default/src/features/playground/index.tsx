@@ -16,7 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import i18next from 'i18next'
@@ -1003,8 +1010,10 @@ export function Playground({
           conversation.conversation_id
         )
         if (!snapshot) return
-        updateMessages(snapshot.messages)
-        setConversationId(snapshot.conversation_id)
+        startTransition(() => {
+          updateMessages(snapshot.messages)
+          setConversationId(snapshot.conversation_id)
+        })
       } catch (error) {
         toast.error(
           error instanceof Error

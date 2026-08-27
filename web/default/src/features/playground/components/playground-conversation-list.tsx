@@ -62,7 +62,9 @@ interface PlaygroundConversationListProps {
   refreshKey?: number
   draftConversation?: PlaygroundConversationSummary | null
   onNew: () => void
-  onSelect: (conversation: PlaygroundConversationSummary) => void
+  onSelect: (
+    conversation: PlaygroundConversationSummary
+  ) => Promise<void> | void
 }
 
 const conversationsQueryKey = ['playground-conversations']
@@ -77,6 +79,9 @@ function PlaygroundConversationListContent(
   const [editingName, setEditingName] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isBatchMode, setIsBatchMode] = useState(false)
+  const [loadingConversationId, setLoadingConversationId] = useState<
+    string | null
+  >(null)
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(
     null
   )
@@ -177,6 +182,23 @@ function PlaygroundConversationListContent(
     renameMutation.mutate({ conversationId: editingId, name })
   }
 
+  const selectConversation = async (
+    conversation: PlaygroundConversationSummary
+  ) => {
+    if (
+      props.disabled ||
+      loadingConversationId !== null ||
+      conversation.conversation_id === props.currentConversationId
+    )
+      return
+    setLoadingConversationId(conversation.conversation_id)
+    try {
+      await props.onSelect(conversation)
+    } finally {
+      setLoadingConversationId(null)
+    }
+  }
+
   return (
     <>
       <aside
@@ -203,6 +225,16 @@ function PlaygroundConversationListContent(
             <ChevronLeft aria-hidden='true' />
           )}
         </Button>
+        {loadingConversationId && (
+          <div
+            className='bg-background text-muted-foreground absolute top-14 left-full z-20 ml-3 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-sm'
+            role='status'
+            aria-live='polite'
+          >
+            <span className='border-primary size-3.5 animate-spin rounded-full border-2 border-t-transparent' />
+            {t('Loading conversations...')}
+          </div>
+        )}
         {!isCollapsed && (
           <nav
             className='flex flex-col gap-0.5 px-2 pt-3'
@@ -212,7 +244,7 @@ function PlaygroundConversationListContent(
               variant='ghost'
               className='h-9 w-full justify-start rounded-md px-2.5 text-sm'
               onClick={props.onNew}
-              disabled={props.disabled}
+              disabled={props.disabled || loadingConversationId !== null}
             >
               <SquarePen data-icon='inline-start' aria-hidden='true' />
               {t('New')}
@@ -224,7 +256,9 @@ function PlaygroundConversationListContent(
                 setIsBatchMode((mode) => !mode)
                 setSelectedIds(new Set())
               }}
-              disabled={conversations.length === 0}
+              disabled={
+                conversations.length === 0 || loadingConversationId !== null
+              }
               aria-pressed={isBatchMode}
             >
               <ListChecks data-icon='inline-start' aria-hidden='true' />
@@ -350,9 +384,11 @@ function PlaygroundConversationListContent(
                           onClick={() =>
                             isBatchMode
                               ? toggleSelected(conversation.conversation_id)
-                              : props.onSelect(conversation)
+                              : void selectConversation(conversation)
                           }
-                          disabled={props.disabled}
+                          disabled={
+                            props.disabled || loadingConversationId !== null
+                          }
                         >
                           {conversation.name}
                         </button>
