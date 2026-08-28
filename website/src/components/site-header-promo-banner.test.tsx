@@ -13,12 +13,13 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain(
-      "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+      "DeepSeek V4 Pro is 15% off for a limited time. Join our Discord to get $5 in free credit.",
     );
-    expect(html).toContain(">Learn more →<");
+    expect(html).toContain(">Learn more<");
     expect(html).not.toContain('aria-label="Dismiss DeepSeek V4 announcement"');
     expect(html).toContain('href="/blog/deepseek-v4-pro-vs-flash"');
     expect(html).toContain("DeepSeek V4");
+    expect(html).toContain('src="/assets/logos/deepseek.svg"');
     expect(html).not.toContain("Seedance");
     expect(html.indexOf('data-promo-banner="true"')).toBeLessThan(
       html.indexOf("Product"),
@@ -50,17 +51,14 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("Seedance 2.5 is available");
     expect(html).toContain("Video models");
     expect(html).toContain('href="/models/seedance-2-5"');
-    expect(html).not.toContain("Learn more →");
-    expect(html).not.toContain('data-promo-dots="true"');
-    expect(html).not.toContain('data-promo-progress="true"');
+    expect(html).not.toContain("Learn more");
     expect(html).not.toMatch(/>\s*\d+\s*\/\s*\d+\s*</);
     expect(html.indexOf('data-promo-banner="true"')).toBeLessThan(
       html.indexOf("Product"),
     );
     expect(html).toContain('data-promo-pause-on-hover="true"');
-    expect(html).not.toContain('data-promo-dot="true"');
-    expect(html).not.toContain('role="tablist"');
-    expect(html).not.toContain('role="tab"');
+    expect(html).toContain('role="tablist"');
+    expect(html.match(/role="tab"/g)).toHaveLength(2);
   });
 
   test("renders localized intro, content, and CTA without a promo logo", () => {
@@ -106,7 +104,7 @@ describe("SiteHeader promo banner", () => {
       </SiteConfigProvider>,
     );
 
-    expect(html).not.toContain("DeepSeek V4 is here");
+    expect(html).not.toContain("DeepSeek V4 Pro");
     expect(html).not.toContain("Next advertisement");
   });
 
@@ -118,9 +116,9 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain(
-      "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
+      "DeepSeek V4 Pro 限时优惠 15% 折扣。加入我们的 Discord，领取 5 美元免费额度。",
     );
-    expect(html).toContain(">了解更多 →<");
+    expect(html).toContain(">了解更多<");
     expect(html).not.toContain('aria-label="关闭 DeepSeek V4 公告"');
     expect(html).toContain('href="/zh/blog/deepseek-v4-pro-vs-flash"');
   });
