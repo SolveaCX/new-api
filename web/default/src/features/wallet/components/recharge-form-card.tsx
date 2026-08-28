@@ -187,7 +187,7 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
               >
                 {recallDiscount ? (
                   <span className='absolute top-1 right-1 inline-flex rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] leading-none font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'>
-                    {t('-80% off')}
+                    {t('80% off')}
                   </span>
                 ) : null}
                 <span className='flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5'>

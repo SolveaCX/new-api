@@ -1208,6 +1208,22 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Monthly model quota:')
   })
 
+  test('shows the campaign badge before a backend checkout quote loads', () => {
+    const campaignPlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        total_amount: 22_500_000,
+      },
+    }
+    const html = renderWalletCardWithPlans([campaignPlan])
+
+    expect(html).toContain('data-discount-kind="campaign"')
+    expect(html).toContain('data-subscription-discount-label="80% off"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
+    expect(html).toContain('$10')
+  })
+
   test('keeps the model-value reference in USD when quota display uses another currency', async () => {
     const previousCurrency = useSystemConfigStore.getState().config.currency
     useSystemConfigStore.setState((state) => ({
@@ -1340,7 +1356,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('$5')
     expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$10"')
@@ -1363,7 +1379,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('$4')
     expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$10"')
@@ -1390,7 +1406,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$10"')
     expect(html).toContain('line-through')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
@@ -1417,7 +1433,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
     expect(html).toContain('100,00')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
   })
 
   test('formats JPY backend preview amounts without a USD fallback', () => {
@@ -1439,7 +1455,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('¥1,000')
     expect(html).toContain('¥2,000')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1458,7 +1474,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
       expect(html).toContain('$4')
       expect(html).toContain('$10')
-      expect(html).toContain('-80% off')
+      expect(html).toContain('80% off')
       expect(html).not.toContain('Save $6')
     }
   })
@@ -1564,7 +1580,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain(formatBrl(40))
     expect(html).toContain(formatBrl(50))
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('line-through')
     expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')
