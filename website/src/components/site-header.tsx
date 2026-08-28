@@ -1,9 +1,15 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+} from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
 import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
@@ -249,6 +255,7 @@ const promoBannerCopyByLocale: Record<
 });
 
 const PROMO_BANNER_ARTICLE_PATH = "/blog/deepseek-v4-pro-vs-flash";
+const PROMO_ROTATION_INTERVAL_MS = 5000;
 
 type Props = {
   locale: Locale;
@@ -515,8 +522,10 @@ export function SiteHeader(props: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
-  const [promoBannerVisible, setPromoBannerVisible] = useState(true);
   const [promoIndex, setPromoIndex] = useState(0);
+  const [promoHovering, setPromoHovering] = useState(false);
+  const [promoFocused, setPromoFocused] = useState(false);
+  const promoPaused = promoHovering || promoFocused;
   const currentPath = stripLocale(props.pathname);
   const signInHref = consoleSignInUrl(props.locale);
   const signUpHref = consoleUrl("/sign-up", `lng=${props.locale}`);
@@ -543,7 +552,7 @@ export function SiteHeader(props: Props) {
   };
   const promoItems =
     announcements === undefined ? [fallbackPromo] : announcements;
-  const hasPromoBanner = promoBannerVisible && promoItems.length > 0;
+  const hasPromoBanner = promoItems.length > 0;
   const safePromoIndex = promoItems.length ? promoIndex % promoItems.length : 0;
   const activePromo = promoItems[safePromoIndex] ?? promoItems[0];
   const activePromoContent = activePromo
@@ -558,10 +567,6 @@ export function SiteHeader(props: Props) {
   const activePromoLink = activePromo
     ? localizeAnnouncementLink(activePromo.link, props.locale)
     : undefined;
-  const mobileMenuOffsetClass = hasPromoBanner
-    ? "top-[168px] max-h-[calc(100dvh-168px)] min-[901px]:top-[112px] min-[901px]:max-h-[calc(100dvh-112px)]"
-    : "top-[72px] max-h-[calc(100dvh-72px)]";
-
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
@@ -611,12 +616,12 @@ export function SiteHeader(props: Props) {
   ];
 
   useEffect(() => {
-    if (!promoBannerVisible || promoItems.length < 2) return;
+    if (promoItems.length < 2 || promoPaused) return;
     const timer = window.setInterval(() => {
       setPromoIndex((index) => (index + 1) % promoItems.length);
-    }, 3000);
+    }, PROMO_ROTATION_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [promoBannerVisible, promoItems.length]);
+  }, [promoItems.length, promoPaused]);
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
@@ -804,12 +809,107 @@ export function SiteHeader(props: Props) {
     </details>
   );
 
-  const dismissPromoBanner = () => {
-    setPromoBannerVisible(false);
+  const handlePromoBlurCapture = (event: FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (
+      !nextTarget ||
+      typeof Node === "undefined" ||
+      !(nextTarget instanceof Node) ||
+      !event.currentTarget.contains(nextTarget)
+    ) {
+      setPromoFocused(false);
+    }
   };
 
+  // Keep the announcement as one visual sentence.  The intro, logo, copy, and
+  // CTA share one inline flow so the logo stays with the first line while the
+  // rest of the message wraps naturally on narrow screens.
+  const promoIntro = activePromoIntro ? (
+    <span
+      className="mr-1 inline-flex max-w-full break-words items-center gap-1 rounded-full border border-white/35 bg-white/12 px-2 py-0.5 align-middle text-[10px] leading-4 font-bold tracking-[0.08em] text-white uppercase [overflow-wrap:anywhere] max-[900px]:mr-0.5 max-[900px]:rounded-none max-[900px]:border-0 max-[900px]:bg-transparent max-[900px]:px-0 max-[900px]:py-0 max-[900px]:text-[10px] max-[900px]:tracking-[0.04em] max-[900px]:text-white/80"
+      data-promo-intro="true"
+    >
+      <span
+        aria-hidden="true"
+        className="size-1.5 shrink-0 rounded-full bg-white/90 max-[900px]:size-1"
+      />
+      {activePromoIntro}
+    </span>
+  ) : null;
+
+  const promoCta = activePromoLink && activePromoLinkLabel ? (
+    <>
+      {" "}
+      <span
+        className="inline-block max-w-full whitespace-nowrap font-semibold text-white underline decoration-white/55 underline-offset-4 transition-[text-decoration-color,opacity] group-hover:decoration-white group-hover:opacity-100 max-[900px]:whitespace-normal"
+        data-promo-cta="true"
+      >
+        {activePromoLinkLabel}
+      </span>
+    </>
+  ) : null;
+
+  const promoCopy = (
+    <span className="min-w-0 flex-1 break-words text-center text-[14px] leading-[1.4] font-medium [overflow-wrap:anywhere] max-[900px]:text-[12px] max-[900px]:leading-[1.35]">
+      {promoIntro}
+      <span data-promo-content="true">{activePromoContent}</span>
+      {promoCta}
+    </span>
+  );
+
+  const promoLinkClass =
+    "group flex w-fit min-w-0 max-w-full items-start justify-center gap-2 rounded-full px-2.5 py-0 text-center text-white no-underline transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-1 focus-visible:ring-offset-[#6B38E6] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:rounded-xl max-[900px]:px-1.5 max-[900px]:py-0.5";
+  const promoStaticClass =
+    "flex w-fit min-w-0 max-w-full items-start justify-center gap-2 px-2.5 py-0 text-center text-white max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:px-1.5 max-[900px]:py-0.5";
+
   return (
-    <header className="fk-site-header sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
+    <header className="fk-site-header relative sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
+      {hasPromoBanner && activePromo ? (
+        <div
+          className="relative isolate overflow-hidden border-b border-white/15 bg-[#6B38E6] text-white shadow-[0_8px_24px_-18px_rgba(59,24,128,.58)] min-[1200px]:h-12"
+          data-promo-banner="true"
+          data-promo-pause-on-hover="true"
+          data-promo-paused={promoPaused ? "true" : undefined}
+          onPointerEnter={(event) => {
+            if (event.pointerType !== "touch") setPromoHovering(true);
+          }}
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "touch") setPromoHovering(false);
+          }}
+          onFocusCapture={() => setPromoFocused(true)}
+          onBlurCapture={handlePromoBlurCapture}
+        >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-[min(46rem,70vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,.12),transparent_68%)]"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/20"
+          />
+          <div className="relative z-10 mx-auto flex min-h-[64px] w-full max-w-[100vw] flex-col items-center justify-center gap-0 px-3 py-1.5 pr-10 text-center max-[900px]:min-h-[64px] max-[900px]:px-3 max-[900px]:py-1.5 max-[900px]:pr-10 min-[901px]:min-h-12 min-[901px]:max-w-[var(--fk-site-frame-max-width)] min-[901px]:px-[var(--fk-site-gutter)] min-[901px]:py-0 min-[901px]:pr-[calc(var(--fk-site-gutter)+2.75rem)]">
+            <div
+              className="flex w-full min-w-0 max-w-[min(100%,72rem)] flex-wrap items-center justify-center gap-x-2 text-center"
+              aria-live={promoItems.length > 1 ? "polite" : undefined}
+            >
+              {activePromoLink ? (
+                <Link
+                  className={promoLinkClass}
+                  href={activePromoLink}
+                  data-promo-link="true"
+                >
+                  {promoCopy}
+                </Link>
+              ) : (
+                <span className={promoStaticClass}>
+                  {promoCopy}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <nav className="relative mx-auto flex h-[72px] max-w-[var(--fk-site-frame-max-width)] items-center gap-3 px-[var(--fk-site-gutter)] text-[#0B0B0F] min-[901px]:h-[76px] min-[1180px]:h-[84px] min-[1180px]:gap-5 min-[1480px]:h-[88px] min-[1480px]:gap-[30px]">
         <Link
           href={localizePath("/", props.locale)}
@@ -884,146 +984,10 @@ export function SiteHeader(props: Props) {
         </button>
       </nav>
 
-      {hasPromoBanner && activePromo && (
-        <div className="relative isolate overflow-hidden border-b border-violet-200/80 bg-[linear-gradient(105deg,#eef7ff_0%,#f3f2ff_48%,#fbf5ff_100%)] text-[#0B0B0F] shadow-[0_8px_24px_-22px_rgba(79,70,229,0.9)]">
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-10 left-[12%] size-32 rounded-full bg-sky-300/30 blur-3xl"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-8 -bottom-16 size-44 rounded-full bg-violet-300/35 blur-3xl"
-          />
-          <div className="relative z-10 mx-auto flex min-h-[84px] w-full max-w-[100vw] flex-col items-center justify-center px-3 pt-2 pb-4 text-center min-[901px]:h-10 min-[901px]:min-h-10 min-[901px]:max-w-[var(--fk-site-frame-max-width)] min-[901px]:flex-row min-[901px]:px-[var(--fk-site-gutter)] min-[901px]:py-0 min-[901px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
-            <div
-              className="flex min-w-0 max-w-[min(100%,54rem)] flex-wrap items-center justify-center gap-2.5 text-center max-[900px]:w-full max-[900px]:max-w-none max-[900px]:flex-col max-[900px]:items-center max-[900px]:gap-y-1.5 max-[900px]:text-center"
-              aria-live={promoItems.length > 1 ? "polite" : undefined}
-            >
-              {activePromoIntro ? (
-                <span
-                  className="inline-flex max-w-[7rem] shrink-0 items-center gap-1 truncate rounded-full border border-white/85 bg-white/65 px-2.5 py-1 text-[10px] font-bold tracking-[0.08em] text-[#5B3AA8] uppercase shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md max-[900px]:max-w-full max-[900px]:self-center min-[901px]:max-w-none"
-                  data-promo-intro="true"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="size-1.5 shrink-0 rounded-full bg-gradient-to-r from-sky-500 to-violet-500"
-                  />
-                  {activePromoIntro}
-                </span>
-              ) : null}
-              {activePromoLink ? (
-                <Link
-                  className="group inline-grid min-w-0 max-w-full grid-cols-[auto_minmax(0,1fr)] grid-rows-[auto_auto] items-center gap-x-2 text-center text-xs leading-snug font-normal text-[#0B0B0F] no-underline max-[900px]:w-fit max-[900px]:max-w-[calc(100%-1rem)] max-[900px]:leading-5 min-[901px]:inline-flex min-[901px]:gap-x-2 min-[901px]:text-[14px] min-[901px]:leading-tight min-[901px]:font-medium"
-                  href={activePromoLink}
-                >
-                  {activePromo.logo ? (
-                    <span
-                      className="row-start-1 col-start-1 inline-flex size-6 self-start items-center justify-center rounded-full border border-white/85 bg-white/70 pt-0.5 shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md min-[901px]:size-7 min-[901px]:self-center min-[901px]:pt-0"
-                      aria-hidden="true"
-                      data-promo-logo="true"
-                    >
-                      <Image
-                        src={activePromo.logo}
-                        alt=""
-                        width={22}
-                        height={22}
-                        unoptimized
-                        className="size-[18px] object-contain min-[901px]:size-[22px]"
-                        data-promo-logo-image="true"
-                      />
-                    </span>
-                  ) : null}
-                  <span
-                    className={cn(
-                      "row-start-1 min-w-0 max-[900px]:whitespace-normal max-[900px]:break-words",
-                      activePromo.logo ? "col-start-2" : "col-span-2",
-                    )}
-                  >
-                    {activePromoContent}
-                  </span>
-                  {activePromoLinkLabel ? (
-                    <span
-                      className={cn(
-                        "row-start-2 justify-self-center whitespace-nowrap font-semibold text-[#4C1D95] underline decoration-violet-300 underline-offset-4 transition-colors group-hover:text-[#2563EB] group-hover:decoration-sky-400 min-[901px]:row-auto min-[901px]:col-auto min-[901px]:justify-self-auto min-[901px]:text-[13px]",
-                        activePromo.logo ? "col-start-2" : "col-span-2",
-                      )}
-                      data-promo-cta="true"
-                    >
-                      {activePromoLinkLabel}
-                    </span>
-                  ) : null}
-                </Link>
-              ) : (
-                <span className="inline-grid min-w-0 max-w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 text-center text-xs leading-snug font-normal max-[900px]:w-fit max-[900px]:max-w-[calc(100%-1rem)] max-[900px]:leading-5 min-[901px]:inline-flex min-[901px]:text-[14px] min-[901px]:leading-tight min-[901px]:font-medium">
-                  {activePromo.logo ? (
-                    <span
-                      className="inline-flex size-6 self-start items-center justify-center rounded-full border border-white/85 bg-white/70 pt-0.5 shadow-[0_4px_14px_-10px_rgba(76,29,149,0.8)] backdrop-blur-md min-[901px]:size-7 min-[901px]:self-center min-[901px]:pt-0"
-                      aria-hidden="true"
-                      data-promo-logo="true"
-                    >
-                      <Image
-                        src={activePromo.logo}
-                        alt=""
-                        width={22}
-                        height={22}
-                        unoptimized
-                        className="size-[18px] object-contain min-[901px]:size-[22px]"
-                        data-promo-logo-image="true"
-                      />
-                    </span>
-                  ) : null}
-                  <span
-                    className={cn(
-                      "min-w-0 max-[900px]:whitespace-normal max-[900px]:break-words",
-                      activePromo.logo ? "col-start-2" : "col-span-2",
-                    )}
-                  >
-                    {activePromoContent}
-                  </span>
-                </span>
-              )}
-            </div>
-            {promoItems.length > 1 ? (
-              <div className="absolute top-1/2 left-[max(12px,var(--fk-site-gutter))] hidden -translate-y-1/2 items-center gap-1.5 text-[#6B46C1] min-[901px]:flex">
-                <span
-                  aria-hidden="true"
-                  className="flex items-center gap-1.5"
-                  data-promo-dots="true"
-                >
-                  {promoItems.map((_, index) => (
-                    <span
-                      key={`promo-dot-${index}`}
-                      className={cn(
-                        "size-1.5 rounded-full transition-[transform,background-color] duration-300",
-                        index === safePromoIndex
-                          ? "scale-125 bg-[#6B46C1]"
-                          : "bg-violet-300/90",
-                      )}
-                    />
-                  ))}
-                </span>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="absolute top-2 right-2.5 z-10 inline-flex size-7 items-center justify-center rounded-full border border-white/75 bg-white/40 text-[#0B0B0F] shadow-[0_6px_18px_-12px_rgba(76,29,149,0.8)] backdrop-blur-xl transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[901px]:top-1/2 min-[901px]:right-[max(12px,var(--fk-site-gutter))] min-[901px]:-translate-y-1/2"
-              aria-label={
-                announcements === undefined
-                  ? promoBannerCopy.dismissLabel
-                  : `Dismiss ${activePromoIntro || activePromoContent || "advertisement"}`
-              }
-              onClick={dismissPromoBanner}
-            >
-              <X className="size-3.5" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      )}
-
       <div
         id={mobileMenuId}
         className={cn(
-          `fixed inset-x-0 z-40 overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden ${mobileMenuOffsetClass}`,
+          "absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-72px)] overflow-y-auto border-b border-[#E7E4EC] bg-white px-4 py-4 shadow-[0_22px_60px_-42px_rgba(11,11,15,.45)] transition duration-200 ease-out min-[901px]:hidden",
           mobileOpen
             ? "translate-y-0 opacity-100 shadow-[0_24px_70px_-42px_rgba(76,29,149,.52)]"
             : "pointer-events-none -translate-y-4 opacity-0 shadow-none",

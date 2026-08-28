@@ -16,20 +16,16 @@ describe("SiteHeader promo banner", () => {
       "DeepSeek V4 is here. Join our Discord get $5 free credits.",
     );
     expect(html).toContain(">Learn more →<");
-    expect(html).toContain('aria-label="Dismiss DeepSeek V4 announcement"');
+    expect(html).not.toContain('aria-label="Dismiss DeepSeek V4 announcement"');
     expect(html).toContain('href="/blog/deepseek-v4-pro-vs-flash"');
     expect(html).toContain("DeepSeek V4");
     expect(html).not.toContain("Seedance");
-    expect(
-      html.indexOf(
-        "DeepSeek V4 is here. Join our Discord get $5 free credits.",
-      ),
-    ).toBeLessThan(
-      html.indexOf('aria-label="Dismiss DeepSeek V4 announcement"'),
+    expect(html.indexOf('data-promo-banner="true"')).toBeLessThan(
+      html.indexOf("Product"),
     );
   });
 
-  test("uses configured ads below the navigation and exposes carousel controls", () => {
+  test("places configured ads before navigation and rotates without controls", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider
         docsUrl={null}
@@ -55,17 +51,19 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("Video models");
     expect(html).toContain('href="/models/seedance-2-5"');
     expect(html).not.toContain("Learn more →");
-    expect(html).toContain('data-promo-dots="true"');
-    expect(html).not.toContain('aria-label="Previous advertisement"');
-    expect(html).not.toContain('aria-label="Next advertisement"');
+    expect(html).not.toContain('data-promo-dots="true"');
     expect(html).not.toContain('data-promo-progress="true"');
     expect(html).not.toMatch(/>\s*\d+\s*\/\s*\d+\s*</);
-    expect(html.indexOf("Product")).toBeLessThan(
-      html.indexOf("Seedance 2.5 is available"),
+    expect(html.indexOf('data-promo-banner="true"')).toBeLessThan(
+      html.indexOf("Product"),
     );
+    expect(html).toContain('data-promo-pause-on-hover="true"');
+    expect(html).not.toContain('data-promo-dot="true"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
   });
 
-  test("renders localized intro, logo, content, and CTA in order", () => {
+  test("renders localized intro, content, and CTA without a promo logo", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider
         docsUrl={null}
@@ -91,12 +89,10 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("中文内容");
     expect(html).toContain("查看价格");
     expect(html).toContain('data-promo-cta="true"');
-    expect(html).toContain('src="/assets/logos/deepseek.svg"');
+    expect(html).not.toContain('data-promo-logo="true"');
+    expect(html).not.toContain('src="/assets/logos/deepseek.svg"');
     expect(html).toContain('href="/zh/pricing?source=announcement#plans"');
     expect(html.indexOf('data-promo-intro="true"')).toBeLessThan(
-      html.indexOf('data-promo-logo="true"'),
-    );
-    expect(html.indexOf('data-promo-logo="true"')).toBeLessThan(
       html.indexOf("中文内容"),
     );
     expect(html).not.toContain("English content");
@@ -125,7 +121,7 @@ describe("SiteHeader promo banner", () => {
       "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
     );
     expect(html).toContain(">了解更多 →<");
-    expect(html).toContain('aria-label="关闭 DeepSeek V4 公告"');
+    expect(html).not.toContain('aria-label="关闭 DeepSeek V4 公告"');
     expect(html).toContain('href="/zh/blog/deepseek-v4-pro-vs-flash"');
   });
 
