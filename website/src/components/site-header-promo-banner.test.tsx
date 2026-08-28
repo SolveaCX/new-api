@@ -59,6 +59,8 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain('data-promo-pause-on-hover="true"');
     expect(html).toContain('role="tablist"');
     expect(html.match(/role="tab"/g)).toHaveLength(2);
+    expect(html).toContain("h-1 w-3 bg-white");
+    expect(html).toContain("size-1 bg-white/60");
   });
 
   test("renders localized intro, content, and CTA without a promo logo", () => {
