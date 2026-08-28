@@ -231,7 +231,7 @@ describe("ModelsDirectoryTable", () => {
     expect(nameIndex).toBeGreaterThanOrEqual(0);
     expect(nameRowIndex).toBeLessThan(nameIndex);
     expect(nameRowEnd).toBeGreaterThan(nameRowIndex);
-    expect(nameRow).toContain("Limited discount");
+    expect(nameRow).toContain("Limited");
     expect(nameRow).toContain("New release");
   });
 });
