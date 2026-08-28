@@ -23,6 +23,7 @@ describe("OnlinePricingPage", () => {
     expect(starterReferencePrice).toBeLessThan(starterPrice);
     expect(starterCta).toBeGreaterThan(starterPrice);
     expect(proBadge).toBeGreaterThanOrEqual(0);
+    expect(html).toContain('<div class="tier limited-offer"><div class="badge limited">LIMITED OFFER</div>');
     expect(html).toContain('<div class="badge limited">LIMITED OFFER</div>');
     expect(html).toContain('<div class="tname">Starter</div>');
     expect(html).not.toContain('<div class="tier hot"><div class="badge">MOST POPULAR</div><div class="tname">Go</div>');
