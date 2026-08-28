@@ -25,8 +25,15 @@ const LABELS: Record<Locale, Record<ModelPromotion, string>> = {
 export function getModelPromotions(modelName: string): ModelPromotion[] {
   const name = modelName.toLowerCase();
   const promotions: ModelPromotion[] = [];
-  if (name.includes("free") || /(^|[/_.-])ling[-_.]?3\.0[-_.]?flash[-_.]?fin/.test(name)) promotions.push("free");
-  if ((name.includes("qwen3.8-max") && !name.includes("qwen3.8-max-free")) || name.includes("kimi-k3")) promotions.push("limited");
+  if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) {
+    promotions.push("free");
+  }
+  if (
+    /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
+    /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
+  ) {
+    promotions.push("limited");
+  }
   if (
     /(^|[/])seedance[-_.]?2[-_.]?5(?:[-_.]|$)/.test(name) ||
     /(^|[/])kimi[-_.]?k3(?:[-_.]|$)/.test(name) ||
