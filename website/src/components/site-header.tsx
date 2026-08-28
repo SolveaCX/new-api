@@ -563,6 +563,7 @@ export function SiteHeader(props: Props) {
     extra: "",
     link: promoBannerHref,
     link_label: promoBannerCopy.linkLabel,
+    logo: "/assets/logos/deepseek.svg",
   };
   const promoItems =
     announcements === undefined ? [fallbackPromo] : announcements;
@@ -581,7 +582,10 @@ export function SiteHeader(props: Props) {
   const activePromoLink = activePromo
     ? localizeAnnouncementLink(activePromo.link, props.locale)
     : undefined;
-  const showDeepSeekMark = /deepseek/i.test(activePromoContent);
+  // Render the configured announcement logo only when one is provided.
+  // The responsive class hides it on mobile where the banner uses the full text width.
+  const promoLogo = activePromo?.logo;
+  const showPromoLogo = Boolean(promoLogo);
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
@@ -905,14 +909,14 @@ export function SiteHeader(props: Props) {
                   href={activePromoLink}
                   data-promo-link="true"
                 >
-                  {showDeepSeekMark ? (
+                  {showPromoLogo ? (
                     <span
                       className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1 max-[699px]:hidden"
                       aria-hidden="true"
                     >
                       <Image
                         alt=""
-                        src="/assets/logos/deepseek.svg"
+                        src={promoLogo!}
                         width={24}
                         height={24}
                         unoptimized
@@ -925,14 +929,14 @@ export function SiteHeader(props: Props) {
                 </Link>
               ) : (
                 <span className={promoStaticClass}>
-                  {showDeepSeekMark ? (
+                  {showPromoLogo ? (
                     <span
                       className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1 max-[699px]:hidden"
                       aria-hidden="true"
                     >
                       <Image
                         alt=""
-                        src="/assets/logos/deepseek.svg"
+                        src={promoLogo!}
                         width={24}
                         height={24}
                         unoptimized
