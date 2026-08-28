@@ -203,12 +203,6 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
                       ? `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountedAmount)}`
                       : `${checkoutCurrencySymbol}${formatNumber(displayAmount)}`}
                   </span>
-                  {recallDiscount ? (
-                    <span className='text-[10px] font-medium line-through opacity-75'>
-                      {checkoutCurrencySymbol}
-                      {formatNumber(recallDiscount.originalAmount)}
-                    </span>
-                  ) : null}
                 </span>
                 {recallDiscount ? (
                   <span className='text-[10px] font-medium text-[#166534] dark:text-[#86efac]'>

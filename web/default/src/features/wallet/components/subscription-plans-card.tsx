@@ -871,13 +871,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
               const currency =
                 discountPreview?.currency || configuredDisplayPrice.currency
-              const originalPrice = formatPlanPrice(
-                discountPreview?.originalTotal ?? configuredDisplayPrice.amount,
-                currency
-              )
               const displayPrice = discountPreview
                 ? formatPlanPrice(discountPreview.total, currency)
-                : originalPrice
+                : formatPlanPrice(configuredDisplayPrice.amount, currency)
               const referencePrice = getPlanReferencePrice(plan)
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
@@ -947,16 +943,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
                         {displayPrice}
                       </span>
-                      {discountPreview ? (
-                        <span
-                          data-subscription-discount-original-price={
-                            originalPrice
-                          }
-                          className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
-                        >
-                          {originalPrice}
-                        </span>
-                      ) : null}
                       <span className='text-muted-foreground mb-1 text-sm'>
                         {t('per month')}
                       </span>
