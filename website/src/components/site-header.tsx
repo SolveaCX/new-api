@@ -970,15 +970,15 @@ export function SiteHeader(props: Props) {
                       role="tab"
                       aria-selected={selected}
                       aria-label={`${promoBannerCopy.dotLabel} ${index + 1}`}
-                      className="inline-flex h-5 items-center justify-center rounded-full px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6] focus-visible:ring-offset-1"
+                      className="inline-flex h-5 items-center justify-center rounded-full px-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/75"
                       onClick={() => setPromoIndex(index)}
                     >
                       <span
                         className={cn(
                           "block rounded-full transition-[width,background-color] duration-200",
                           selected
-                            ? "h-1 w-3 bg-[#6B38E6]"
-                            : "size-1 bg-[#6B38E6]/45",
+                            ? "h-1 w-3 bg-white"
+                            : "size-1 bg-white/60",
                         )}
                       />
                     </button>
