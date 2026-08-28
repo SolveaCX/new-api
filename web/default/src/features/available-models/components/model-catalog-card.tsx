@@ -45,6 +45,10 @@ import {
   getModelCategory,
   getModelCategoryLabel,
 } from '../lib/model-catalog-type'
+import {
+  getModelPromotionLabel,
+  getModelPromotions,
+} from '../lib/model-promotions'
 import type { ModelAccessModel } from '../types'
 
 export type ModelCatalogCardProps = {
@@ -206,6 +210,7 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
   const category = getModelCategory(model)
   const categoryLabel = getModelCategoryLabel(category, t)
   const brand = resolveModelBrand(model)
+  const promotions = getModelPromotions(model.id)
   // "OpenAI Compatible" is true of nearly every model here, so as a badge it
   // costs a slot and tells the reader nothing. The category badge already
   // leads the row, so an endpoint resolving to the same word ("Video" for a
@@ -231,12 +236,18 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
           {getLobeIcon(brand.icon, 26)}
         </span>
         <div className='min-w-0 flex-1'>
-          <h3
-            className='truncate text-lg leading-tight font-bold'
-            title={model.id}
-          >
-            {model.id}
-          </h3>
+          <div className='flex min-w-0 flex-wrap items-center gap-2'>
+            <h3 className='truncate text-lg leading-tight font-bold' title={model.id}>{model.id}</h3>
+            {promotions.map((promotion) => (
+              <Badge key={promotion} variant='outline' className={cn(
+                'border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm',
+                promotion === 'free' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                promotion === 'limited' && 'border-amber-200 bg-amber-50 text-amber-700',
+                promotion === 'hot' && 'border-rose-200 bg-rose-50 text-rose-700',
+                promotion === 'new' && 'border-sky-200 bg-sky-50 text-sky-700'
+              )}>{getModelPromotionLabel(promotion, t)}</Badge>
+            ))}
+          </div>
           <p className='text-muted-foreground mt-1 truncate text-sm font-medium'>
             {brand.name ?? t('Unknown')}
           </p>
