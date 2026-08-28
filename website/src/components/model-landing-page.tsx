@@ -2759,14 +2759,32 @@ type PromptLibraryItem = {
   alt?: string;
 };
 
-const PROMPT_POSTER_FALLBACKS = [
-  "/assets/prompts/awesome-images/game-prop-crystal.png",
-  "/assets/prompts/awesome-images/sports-shoe.png",
-  "/assets/prompts/awesome-images/ecommerce-skincare.png",
-  "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png",
-  "/assets/prompts/awesome-images/liquid-bento.png",
-  "/assets/prompts/awesome-images/campaign-hero.png",
-] as const;
+/**
+ * Local fallbacks stay paired with the workflow that owns the card. Do not
+ * rotate these by card index: the six profession sets have different orders
+ * on image and video pages, and index-based fallbacks make a food card show a
+ * shoe or a game card show an unrelated map when a remote object fails.
+ */
+const PROMPT_POSTER_FALLBACKS: Record<string, string> = {
+  // Image profession directions.
+  "product-hero": "/assets/prompts/awesome-images/saas-hero-phone.png",
+  "social-ad": "/assets/prompts/awesome-images/sports-shoe.png",
+  "catalog-variant": "/assets/prompts/awesome-images/ecommerce-skincare.png",
+  "editorial-portrait": "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png",
+  "product-ui": "/assets/prompts/awesome-images/liquid-bento.png",
+  "food-editorial": "/assets/cli/campaign-hero.png",
+  // Video workflow templates.
+  "product-launch": "/assets/model-examples/product-macro.png",
+  "food-beverage-loop": "/assets/model-examples/food-motion.png",
+  "hospitality-walkthrough": "/assets/model-examples/image2/flatkey-image2-hotel.png",
+  "mobility-launch": "/assets/model-examples/seedance-f1-wet-track.png",
+  "saas-product-demo": "/assets/prompts/awesome-images/saas-hero-phone.png",
+  "architecture-reveal": "/assets/model-showcase/coastal-landmark.png",
+};
+
+function getPromptPosterFallback(item: PromptLibraryItem): string {
+  return PROMPT_POSTER_FALLBACKS[item.key] ?? (item.example.poster || "/assets/prompts/awesome-images/playground-starter-product.png");
+}
 
 function PromptLibrarySection(props: {
   config: ModelConfig;
@@ -2793,15 +2811,16 @@ function PromptLibrarySection(props: {
         <div className="prompt-grid">
           {items.map((item, index) => {
             const isPriorityMedia = index === 0;
+            const posterFallback = getPromptPosterFallback(item);
             const posterSource = failedPosters[item.example.poster]
-              ? PROMPT_POSTER_FALLBACKS[index % PROMPT_POSTER_FALLBACKS.length]
+              ? posterFallback
               : item.example.poster;
             return (
             <article key={item.key} className="prompt-card">
               <div
                 className="prompt-media"
                 style={{
-                  backgroundImage: `url("${PROMPT_POSTER_FALLBACKS[index % PROMPT_POSTER_FALLBACKS.length]}")`,
+                  backgroundImage: `url("${posterFallback}")`,
                   backgroundPosition: "center",
                   backgroundSize: "cover",
                 }}
@@ -2897,9 +2916,11 @@ function buildPromptLibraryItems(
         label: t(template.label),
         prompt: template.prompt,
         alt: t(template.label),
-        // The generated profession clips carry their own first frame. Do not
-        // keep the old generic poster visible while the new CDN video loads.
-        example: { poster: isProfessionVideo(template.video) ? "" : template.poster, video: template.video },
+        // Keep the reviewed workflow poster visible while the generated
+        // profession clip loads. If the CDN video is unavailable, this exact
+        // product/food/hospitality/etc. reference remains in the card instead
+        // of falling through to an unrelated generic image.
+        example: { poster: template.poster, video: template.video },
       }));
     }
   }
