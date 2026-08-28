@@ -322,7 +322,7 @@ describe("sorting", () => {
   test("most popular leads with the board order, then overall rank", () => {
     const sorted = sortDirectoryRows(SAMPLE, "rank");
     expect(sorted[0].name).toBe("gpt-5.6-sol"); // TOP 2 — the lowest board position present
-    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["gpt-5.6-sol", "deepseek-v4-pro", "seedance-2.5"]);
+    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["gpt-5.6-sol", "seedance-2.5", "deepseek-v4-pro"]);
   });
 
   test("longest context first, unknown context last", () => {
