@@ -7151,3 +7151,22 @@ html:has(.model-prototype) {
     top: var(--model-site-header-height, 132px);
   }
 }
+
+/* Keep the prompt count below the textarea so it never obscures wrapped copy. */
+.model-prototype .input-fields .prompt-field > .prompt-control > .counter {
+  position: static !important;
+  display: block;
+  margin-top: 6px;
+  padding-right: 2px;
+  text-align: right;
+  pointer-events: none;
+}
+
+.model-prototype .input-fields .prompt-field > .prompt-control textarea {
+  padding-bottom: 12px;
+}
+
+/* Product previews should show the complete generated image within the frame. */
+.model-prototype .output-preview .video-preview.image-preview .preview-media {
+  object-fit: contain !important;
+}

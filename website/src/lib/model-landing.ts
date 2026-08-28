@@ -825,13 +825,13 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
         { label: "Flatkey input", value: "$4.00", detail: "per 1M tokens" }, { label: "Flatkey output", value: "$24.00", detail: "per 1M tokens" }, { label: "Flatkey cache read", value: "$0.40", detail: "per 1M tokens" }, { label: "Flatkey cache creation", value: "$5.00", detail: "per 1M tokens; catalog-specific" },
       ] },
       capabilitiesEyebrow: "GPT-5.6 Sol capabilities",
-      capabilitiesTitle: "GPT-5.6 Sol context and multimodal inputs",
-      capabilitiesDescription: "OpenAI model documentation and the Flatkey route are kept separate below; no benchmark or quality promise is inferred.",
+      capabilitiesTitle: "GPT-5.6 Sol capabilities for documents, code, and agents",
+      capabilitiesDescription: "These cards describe practical workflows; exact context, modality, and route fields remain in the API section below.",
       capabilities: [
-        { title: "Long-context reasoning", body: "OpenAI documents a roughly 1.05M-token context window and up to 128K output tokens for GPT-5.6 Sol." },
-        { title: "Text and image inputs", body: "OpenAI lists text input/output and image input for this model; audio and video are not listed as supported modalities. File tools, when available, are route-specific rather than native model modalities." },
-        { title: "Flatkey API routes", body: "Flatkey requests use /v1/chat/completions or /v1/responses with model ID gpt-5.6-sol." },
-        { title: "One integration surface", body: "Flatkey supplies the API-key and billing layer with endpoint/request compatibility." },
+        { title: "Long-context document and code work", body: "Use the model to plan, summarize, transform, and reason across large documents, codebases, and research notes." },
+        { title: "Text and image understanding", body: "Ground answers in written material and supported image input when a workflow needs more than text alone." },
+        { title: "Structured agent workflows", body: "Connect reasoning, structured output, tools, and streaming to assistants and application backends." },
+        { title: "Production integration", body: "Keep one stable model identity and account surface as experiments become repeatable product workflows." },
       ],
       comparison: { eyebrow: "Compare fields", title: "GPT-5.6 Sol vs GPT-5.5, GPT-5.6 Terra, and GPT-5.6 Luna", description: "This table compares documented integration fields only; no performance ranking is asserted.", baselineLabel: "GPT-5.5 / GPT-5.6 Terra / GPT-5.6 Luna", currentLabel: "GPT-5.6 Sol", rows: [
         { label: "Catalog model ID", baseline: "Unknown in this verified fact set", current: "gpt-5.6-sol" },
@@ -941,12 +941,12 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
       pricing: { title: "Kimi K3 API pricing for long-context requests", description: "These are current Flatkey catalog token rates; they are not a consumer subscription price or a promise of free access.", note: "Rates are shown per 1M tokens; verify the dated Flatkey catalog block before scaling.", rows: [
         { label: "Flatkey input", value: "$2.40", detail: "per 1M tokens" }, { label: "Flatkey output", value: "$12.00", detail: "per 1M tokens" }, { label: "Flatkey cache", value: "$0.24", detail: "per 1M tokens" },
       ] },
-      capabilitiesEyebrow: "Kimi K3 capabilities", capabilitiesTitle: "Kimi K3 1M-token context, native vision, and API endpoints", capabilitiesDescription: "Moonshot's upstream model facts and Flatkey's hosted route are kept separate below.",
+      capabilitiesEyebrow: "Kimi K3 capabilities", capabilitiesTitle: "Kimi K3 capabilities for coding, files, and research", capabilitiesDescription: "These cards describe practical workflows; upstream facts and Flatkey route fields remain separated below.",
       capabilities: [
-        { title: "Context field", body: "1,048,576 tokens in verified catalog metadata." },
-        { title: "Native vision and files", body: "Moonshot documents native visual understanding and open-weight model capabilities; the Flatkey catalog separately lists file input for this hosted route." },
-        { title: "Two documented routes", body: "/v1/chat/completions and /v1/messages are recorded compatible paths." },
-        { title: "Knowledge-work positioning", body: "Coding, document, and research examples are editorial use cases, not benchmark claims." },
+        { title: "Long-context knowledge work", body: "Work across long documents, codebases, and research notes while keeping the relevant material in one workflow." },
+        { title: "Vision and file-aware analysis", body: "Use visual understanding upstream and the file inputs listed for the hosted route when a task needs richer context." },
+        { title: "Coding and research assistance", body: "Draft, inspect, explain, and transform technical material for engineering and knowledge teams." },
+        { title: "Flexible client integration", body: "Bring the model into compatible chat or messages clients while keeping the same model identity and account controls." },
       ],
       comparison: { eyebrow: "Hosted API facts", title: "Kimi K3 hosted API vs open-weight and local options", description: "Moonshot documents open-weight availability upstream; this page describes Flatkey's hosted API route and does not promise native local execution inside Flatkey.", baselineLabel: "Moonshot open-weight / local option", currentLabel: "Verified Flatkey hosted API", rows: [
         { label: "Hosted endpoint", baseline: "Unknown", current: "/v1/chat/completions and /v1/messages" },
@@ -1000,13 +1000,12 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
       pricing: { title: "DeepSeek V4 Pro API pricing by UTC tier", description: "These are Flatkey's current UTC catalog tiers. Keep peak and off-peak token dimensions together; they are not a single official direct rate.", note: "Rates are shown per 1M tokens. DeepSeek's direct reference uses cache-miss input / cache-hit input / output and peak UTC windows (01–04 and 06–10 Monday–Friday); verify the dated Flatkey catalog block before scaling.", rows: [
         { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "cache-miss input / cache-hit input / output per 1M tokens" }, { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
       ] },
-      capabilitiesEyebrow: "DeepSeek V4 Pro capabilities", capabilitiesTitle: "DeepSeek V4 Pro 1M-token context, UTC pricing, and API endpoints", capabilitiesDescription: "Documented fields are separated from unverified performance or deployment claims.",
+      capabilitiesEyebrow: "DeepSeek V4 Pro capabilities", capabilitiesTitle: "DeepSeek V4 Pro capabilities for reasoning and coding", capabilitiesDescription: "These cards describe practical workflows; exact route, context, and billing fields remain in the API and comparison sections.",
       capabilities: [
-        { title: "Long context field", body: "DeepSeek documents a 1M-token context and up to 384K output tokens for V4 Pro." },
-        { title: "Text and file fields", body: "Text and file fields are verified for this Flatkey route; do not treat them as proof of native V4 Pro vision or a provider-wide Files API contract." },
-        { title: "OpenAI-compatible route", body: "/v1/chat/completions." },
-        { title: "Anthropic-compatible route", body: "/v1/messages." },
-        { title: "Upstream open-source boundary", body: "DeepSeek has documented an open-source V4 Preview upstream; this page covers Flatkey hosted routing and does not promise local packaging or hardware support." },
+        { title: "Long-context reasoning", body: "Plan, compare, and transform large technical materials within the documented context available to the model route." },
+        { title: "Text and file workflows", body: "Use the verified text and file inputs for coding, document analysis, and research tasks on the hosted route." },
+        { title: "Engineering and coding assistance", body: "Turn technical prompts into explanations, implementation drafts, reviews, and structured next steps." },
+        { title: "Compatible application integration", body: "Connect the model to OpenAI-shaped or Anthropic-shaped clients while keeping routing and account controls in Flatkey." },
       ],
       comparison: { eyebrow: "Compare documented fields", title: "DeepSeek V4 Pro vs V4 Flash: API and context fields", description: "No quality or coding-performance ranking is asserted.", baselineLabel: "DeepSeek V4 Flash", currentLabel: "DeepSeek V4 Pro", rows: [
         { label: "Model ID", baseline: "deepseek-v4-flash", current: "deepseek-v4-pro" },
@@ -1050,13 +1049,12 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
       pricing: { title: "MiniMax H3 video API pricing by resolution and duration", description: "Flatkey's catalog base is $0.08 per second at the 768P reference. Official MiniMax pay-as-you-go rates differ by resolution, so review the live estimate for your request.", note: "Use the dated Flatkey catalog estimate for settlement. MiniMax documents $0.08/sec at 768P and $0.13/sec at 2K; the first five input images are free, later images are $0.04 each, and video input is billed from input seconds and output resolution.", rows: [
         { label: "Flatkey catalog base (768P reference)", value: "$0.08", detail: "per second" }, { label: "Official 768P reference", value: "$0.08", detail: "per second; verify current provider terms" }, { label: "Official 2K reference", value: "$0.13", detail: "per second; verify current provider terms" }, { label: "Reference video", value: "Live estimate", detail: "input-video seconds and resolution" },
       ] },
-      capabilitiesEyebrow: "MiniMax-H3 video model controls", capabilitiesTitle: "MiniMax H3 video model: 2K, 15-second clips, aspect ratios, and audio", capabilitiesDescription: "Use the documented request fields and review live pricing before submitting.",
+      capabilitiesEyebrow: "MiniMax-H3 video capabilities", capabilitiesTitle: "MiniMax H3 video generation and production capabilities", capabilitiesDescription: "Use these documented capabilities to plan a production workflow; request fields remain in the API section below.",
       capabilities: [
-        { title: "Resolution", body: "Choose 768P or 2K." },
-        { title: "Duration", body: "Configure a 4–15 second request." },
-        { title: "Aspect ratio", body: "Text-to-video requires a supported fixed ratio; adaptive is for image/reference routes." },
-        { title: "AIGC watermark", body: "aigc_watermark is a Flatkey route field; availability is route-specific." },
-        { title: "Reference-aware requests", body: "Official API documentation accepts text, image, video, and audio content items; use only reference fields accepted by the selected route." },
+        { title: "Text-to-video and image-to-video", body: "Start a scene from a written brief or a designed frame and develop it into a short clip." },
+        { title: "Reference-led motion", body: "Use text, image, video, or audio references to keep the subject and creative direction coherent." },
+        { title: "Camera and pacing direction", body: "Shape how the camera, subject movement, duration, and framing progress through the shot." },
+        { title: "Production-ready variants", body: "Create product, UGC, and storyboard versions that can move from testing into an editing workflow." },
       ],
       comparison: { eyebrow: "Hosted API facts", title: "MiniMax H3 hosted API vs open-weight or local deployment", description: "Compare documented hosted request fields with open-weight or local assumptions; MiniMax upstream terms and Flatkey routing are separate.", baselineLabel: "Open-weight / local deployment", currentLabel: "Verified hosted API", rows: [
         { label: "Resolution", baseline: "768P base; 2K via hosted regeneration", current: "768P or 2K" },
@@ -2440,24 +2438,24 @@ function buildGenericLandingContent(
 
   const capabilities = kind === "image"
     ? [
-        { title: `${name} text-to-image requests`, body: `Use ${name} for prompt-led image generation through ${endpoint}, with the input fields documented by the selected route.` },
-        { title: `${name} reference-guided images`, body: `Build product, ecommerce and advertising variants when the catalog route accepts image references; keep the reference fields explicit in each request.` },
-        { title: `${name} image API workflows`, body: `Connect ${name} to a creative tool, CMS or batch job with one Flatkey API key and the model id shown above.` },
-        { title: `${name} output and billing controls`, body: `Review the live catalog rate and request dimensions before scaling image generation; the settlement unit is shown in the pricing table.` },
+        { title: `${name} visual creation`, body: `Turn a written brief into product, editorial, or campaign imagery through ${endpoint}.` },
+        { title: `${name} reference-led editing`, body: `Use an existing image as creative direction for revisions and consistent visual variants when the route accepts references.` },
+        { title: `${name} channel-ready variants`, body: `Adapt one concept into the image compositions your storefront, campaign, or content pipeline needs.` },
+        { title: `${name} creative production workflow`, body: `Move an approved visual from prompt exploration into a repeatable Flatkey generation workflow.` },
       ]
     : kind === "video"
       ? [
-          { title: `${name} text-to-video requests`, body: `Create short-form video drafts from a written brief through ${endpoint}, using the controls supported by this model route.` },
-          { title: `${name} image-to-video workflows`, body: `Use reference images for product motion, creator clips or storyboards when the catalog route accepts image input.` },
-          { title: `${name} video API controls`, body: `Keep duration, ratio, resolution and any audio or reference fields explicit instead of assuming a universal video contract.` },
-          { title: `${name} production handoff`, body: `Move a tested prompt from the public playground into an authenticated Flatkey request with the same model id.` },
+          { title: `${name} scene creation`, body: `Turn a written brief into short-form scenes through ${endpoint}, ready for creative iteration.` },
+          { title: `${name} reference-led motion`, body: `Animate a designed frame, product, character, or storyboard when the route accepts reference media.` },
+          { title: `${name} camera and action direction`, body: `Shape how the camera, subject, pacing, and framing develop into a coherent clip.` },
+          { title: `${name} production handoff`, body: `Move a tested concept from prompt exploration into an authenticated Flatkey video workflow.` },
         ]
       : kind === "audio"
         ? [
-            { title: `${name} audio generation`, body: `Create audio outputs through ${endpoint} using the input fields exposed by this catalog route.` },
-            { title: `${name} media-aware workflows`, body: `Use the listed modalities (${modalities}) to plan soundtrack, speech or video-to-audio jobs without assuming undocumented formats.` },
-            { title: `${name} audio API integration`, body: `Connect ${name} to creator tools, localization pipelines and batch jobs through the shared Flatkey API key.` },
-            { title: `${name} billing dimensions`, body: `Check the live audio input/output or request dimensions in the pricing table before estimating production volume.` },
+            { title: `${name} soundtrack and sound design`, body: `Create music, ambience, speech layers, or other audio outputs through ${endpoint}.` },
+            { title: `${name} media-aware audio work`, body: `Use the listed modalities (${modalities}) to plan soundtrack, speech, or video-to-audio workflows.` },
+            { title: `${name} creator and localization use`, body: `Connect the model to creator tools, dubbing, localization, or batch-production pipelines.` },
+            { title: `${name} repeatable delivery`, body: `Move a tested audio brief into an authenticated Flatkey workflow with predictable account controls.` },
           ]
         : [
             { title: `${name} chat and coding API`, body: `Call ${name} through ${endpoint} for chat, coding or agent workflows supported by the model's listed modalities.` },

@@ -3939,21 +3939,210 @@ const MINIMAX_API_FIELDS: Record<Locale, string> = {
 function localizedCapabilitiesTitle(facts: Facts, pack: LanguagePack, locale: Locale): string {
   if (locale === "en") {
     if (facts.slug === "gpt-5-6-sol") return "GPT-5.6 Sol context and multimodal inputs";
-    if (facts.slug === "gpt-image-2") return "GPT Image 2 image generator controls for size, quality, and format";
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 image generation and editing capabilities";
     if (facts.slug === "kimi-k3") return "Kimi K3 1M-token context, native vision, and API endpoints";
     if (facts.slug === "deepseek-v4-pro") return "DeepSeek V4 Pro 1M-token context, UTC pricing, and API endpoints";
-    if (facts.slug === "minimax-h3") return "MiniMax H3 video model: 2K, 15-second clips, aspect ratios, and audio";
+    if (facts.slug === "minimax-h3") return "MiniMax H3 video generation and production capabilities";
   }
   if (locale === "pt") {
     if (facts.slug === "gpt-5-6-sol") return "Contexto longo e entradas multimodais do GPT-5.6 Sol";
-    if (facts.slug === "gpt-image-2") return "Controles do gerador de imagens GPT Image 2 para tamanho, qualidade e formato";
+    if (facts.slug === "gpt-image-2") return "Capacidades de geração e edição de imagens do GPT Image 2";
     if (facts.slug === "kimi-k3") return "Contexto de 1 milhão de tokens, visão nativa e endpoints da API Kimi K3";
     if (facts.slug === "deepseek-v4-pro") return "Contexto de 1 milhão de tokens, preços por UTC e endpoints da API DeepSeek V4 Pro";
-    if (facts.slug === "minimax-h3") return "Modelo de vídeo MiniMax H3: 2K, clipes de 15 segundos, proporções e áudio";
+    if (facts.slug === "minimax-h3") return "Capacidades de geração e produção de vídeo do MiniMax H3";
   }
-  if (facts.kind === "image") return `${facts.name} ${pack.imageControls}`;
-  if (facts.kind === "video") return `${facts.name} ${pack.videoControls}`;
+  if (facts.kind === "image") {
+    const titles: Record<Locale, string> = {
+      zh: `${facts.name} 图像生成与编辑能力`, es: `Capacidades de generación y edición de imágenes de ${facts.name}`,
+      fr: `Capacités de génération et d’édition d’images de ${facts.name}`, ru: `Возможности генерации и редактирования изображений ${facts.name}`,
+      ja: `${facts.name} の画像生成・編集機能`, vi: `Khả năng tạo và chỉnh sửa hình ảnh của ${facts.name}`,
+      de: `Bildgenerierungs- und Bearbeitungsfunktionen von ${facts.name}`, id: `Kemampuan pembuatan dan penyuntingan gambar ${facts.name}`,
+      en: `${facts.name} image generation and editing capabilities`, pt: `Capacidades de geração e edição de imagens do ${facts.name}`,
+    };
+    return titles[locale] ?? `${facts.name} image generation and editing capabilities`;
+  }
+  if (facts.kind === "video") {
+    const titles: Record<Locale, string> = {
+      zh: `${facts.name} 视频生成与制作能力`, es: `Capacidades de generación y producción de vídeo de ${facts.name}`,
+      fr: `Capacités de génération et de production vidéo de ${facts.name}`, ru: `Возможности генерации и производства видео ${facts.name}`,
+      ja: `${facts.name} の動画生成・制作機能`, vi: `Khả năng tạo và sản xuất video của ${facts.name}`,
+      de: `Videoerzeugungs- und Produktionsfunktionen von ${facts.name}`, id: `Kemampuan pembuatan dan produksi video ${facts.name}`,
+      en: `${facts.name} video generation and production capabilities`, pt: `Capacidades de geração e produção de vídeo do ${facts.name}`,
+    };
+    return titles[locale] ?? `${facts.name} video generation and production capabilities`;
+  }
+  if (facts.kind === "text") {
+    const labels: Record<Locale, { gpt: string; kimi: string; deepseek: string }> = {
+      en: { gpt: "capabilities for documents, code, and agents", kimi: "capabilities for coding, files, and research", deepseek: "capabilities for reasoning and coding" },
+      zh: { gpt: "面向文档、代码和智能体的能力", kimi: "面向编程、文件和研究的能力", deepseek: "面向推理和编程的能力" },
+      es: { gpt: "capacidades para documentos, código y agentes", kimi: "capacidades para código, archivos e investigación", deepseek: "capacidades para razonamiento y código" },
+      fr: { gpt: "capacités pour les documents, le code et les agents", kimi: "capacités pour le code, les fichiers et la recherche", deepseek: "capacités pour le raisonnement et le code" },
+      pt: { gpt: "capacidades para documentos, código e agentes", kimi: "capacidades para código, arquivos e pesquisa", deepseek: "capacidades para raciocínio e código" },
+      ru: { gpt: "возможности для документов, кода и агентов", kimi: "возможности для кода, файлов и исследований", deepseek: "возможности для рассуждений и кода" },
+      ja: { gpt: "文書・コード・エージェント向けの機能", kimi: "コーディング・ファイル・調査向けの機能", deepseek: "推論・コーディング向けの機能" },
+      vi: { gpt: "khả năng cho tài liệu, mã và agent", kimi: "khả năng cho mã, tệp và nghiên cứu", deepseek: "khả năng cho suy luận và mã" },
+      de: { gpt: "Funktionen für Dokumente, Code und Agenten", kimi: "Funktionen für Code, Dateien und Recherche", deepseek: "Funktionen für Reasoning und Code" },
+      id: { gpt: "kemampuan untuk dokumen, kode, dan agen", kimi: "kemampuan untuk kode, file, dan riset", deepseek: "kemampuan untuk penalaran dan kode" },
+    };
+    const label = labels[locale] ?? labels.en;
+    const key = facts.slug === "gpt-5-6-sol" ? "gpt" : facts.slug === "kimi-k3" ? "kimi" : "deepseek";
+    return `${facts.name} ${label[key]}`;
+  }
   return `${facts.name} ${facts.slug === "gpt-5-6-sol" ? pack.contextModalitiesEndpoint : pack.fileEndpoints}`;
+}
+
+type MediaCapabilityCard = { title: string; body: string };
+
+/** Feature-led cards for media models. API fields remain in the API section;
+ * these cards explain what a creator can accomplish with the selected model. */
+function localizedMediaCapabilityCards(facts: Facts, locale: Locale): MediaCapabilityCard[] {
+  const name = facts.name;
+  const endpoint = facts.endpoint;
+  const editEndpoint = facts.secondEndpoint ?? "/v1/images/edits";
+  const copy: Record<Locale, { image: MediaCapabilityCard[]; video: MediaCapabilityCard[] }> = {
+    en: {
+      image: [
+        { title: "Text-to-image and editing", body: `Create new visuals from a prompt or revise an existing image through ${endpoint} and ${editEndpoint}.` },
+        { title: "Reference-led creative", body: "Use image context to preserve important subjects and composition details across product, editorial, and campaign work." },
+        { title: "Flexible visual variants", body: "Turn one creative brief into square, portrait, or landscape assets for different placements and channels." },
+        { title: "Safe production delivery", body: "Prepare polished outputs with the model's documented quality, format, background, and moderation behavior." },
+      ],
+      video: [
+        { title: "Text-to-video and image-to-video", body: `Start a scene from a written brief or a designed frame through ${endpoint}.` },
+        { title: "Reference-led shot direction", body: "Use reference media to keep a product, character, or storyboard visually coherent while the shot develops." },
+        { title: "Controlled motion and pacing", body: "Shape a usable clip by deciding how the camera, subject movement, duration, and framing should progress." },
+        { title: "Audio-aware production handoff", body: "Keep optional sound and output choices explicit so a tested clip can move cleanly into editing and delivery." },
+      ],
+    },
+    zh: {
+      image: [
+        { title: "文生图与图像编辑", body: `通过 ${endpoint} 生成新画面，也可通过 ${editEndpoint} 修改已有图片。` },
+        { title: "参考图驱动创作", body: "使用图片上下文保留主体与构图细节，适合产品、编辑和营销素材制作。" },
+        { title: "多场景视觉变体", body: "围绕同一创意生成方形、竖版或横版素材，适配不同版位和渠道。" },
+        { title: "安全且适合交付", body: "结合模型已记录的质量、格式、背景和内容审核行为，整理可直接进入制作流程的结果。" },
+      ],
+      video: [
+        { title: "文生视频与图生视频", body: `通过 ${endpoint} 从文字脚本或已设计的画面开始生成场景。` },
+        { title: "参考素材驱动镜头", body: "使用参考素材保持产品、角色或分镜在镜头发展过程中的视觉连贯性。" },
+        { title: "可控的动作与节奏", body: "先确定镜头、主体动作、时长和构图如何推进，再得到可用于剪辑的片段。" },
+        { title: "音频感知的制作衔接", body: "明确处理可选声音和输出设置，让测试片段顺利进入剪辑与交付流程。" },
+      ],
+    },
+    es: {
+      image: [
+        { title: "Texto a imagen y edición", body: `Crea imágenes nuevas o revisa una existente mediante ${endpoint} y ${editEndpoint}.` },
+        { title: "Creación guiada por referencias", body: "Usa contexto visual para conservar sujetos y composición en trabajos de producto, editorial y campaña." },
+        { title: "Variantes visuales flexibles", body: "Convierte un mismo brief en piezas cuadradas, verticales u horizontales para cada canal." },
+        { title: "Entrega segura para producción", body: "Prepara resultados con el comportamiento documentado de calidad, formato, fondo y moderación." },
+      ],
+      video: [
+        { title: "Texto a vídeo e imagen a vídeo", body: `Inicia una escena desde un brief escrito o un fotograma diseñado mediante ${endpoint}.` },
+        { title: "Dirección de planos con referencias", body: "Usa medios de referencia para mantener coherentes un producto, personaje o storyboard." },
+        { title: "Movimiento y ritmo controlados", body: "Define la progresión de cámara, sujeto, duración y encuadre para obtener un clip utilizable." },
+        { title: "Entrega de producción con audio", body: "Mantén explícitos el sonido opcional y la salida para pasar del clip probado a la edición." },
+      ],
+    },
+    fr: {
+      image: [
+        { title: "Texte vers image et édition", body: `Créez de nouvelles images ou retouchez une image via ${endpoint} et ${editEndpoint}.` },
+        { title: "Création guidée par références", body: "Utilisez le contexte visuel pour préserver sujets et composition dans les travaux produit et campagne." },
+        { title: "Variantes visuelles flexibles", body: "Déclinez un brief en formats carré, portrait ou paysage pour chaque emplacement." },
+        { title: "Livraison sûre pour la production", body: "Préparez des résultats selon les comportements documentés de qualité, format, fond et modération." },
+      ],
+      video: [
+        { title: "Texte vers vidéo et image vers vidéo", body: `Commencez une scène avec un brief écrit ou une image conçue via ${endpoint}.` },
+        { title: "Direction de plan guidée par références", body: "Utilisez des médias de référence pour garder produit, personnage ou storyboard cohérents." },
+        { title: "Mouvement et rythme contrôlés", body: "Définissez la progression de la caméra, du sujet, de la durée et du cadrage." },
+        { title: "Passage en production avec audio", body: "Gardez le son facultatif et la sortie explicites pour passer du test au montage." },
+      ],
+    },
+    pt: {
+      image: [
+        { title: "Texto para imagem e edição", body: `Crie imagens novas ou edite uma existente por ${endpoint} e ${editEndpoint}.` },
+        { title: "Criação guiada por referência", body: "Use contexto visual para preservar assunto e composição em peças de produto, editorial e campanha." },
+        { title: "Variações visuais flexíveis", body: "Transforme um briefing em peças quadradas, verticais ou horizontais para cada canal." },
+        { title: "Entrega segura para produção", body: "Prepare resultados com o comportamento documentado de qualidade, formato, fundo e moderação." },
+      ],
+      video: [
+        { title: "Texto para vídeo e imagem para vídeo", body: `Comece uma cena a partir de um briefing ou quadro criado por ${endpoint}.` },
+        { title: "Direção de planos com referências", body: "Use mídias de referência para manter produto, personagem ou storyboard coerentes." },
+        { title: "Movimento e ritmo controlados", body: "Defina como câmera, assunto, duração e enquadramento devem avançar." },
+        { title: "Transição para produção com áudio", body: "Mantenha áudio opcional e saída explícitos ao levar o clipe testado para a edição." },
+      ],
+    },
+    ru: {
+      image: [
+        { title: "Текст в изображение и редактирование", body: `Создавайте новые изображения или изменяйте существующие через ${endpoint} и ${editEndpoint}.` },
+        { title: "Создание по референсам", body: "Используйте визуальный контекст, чтобы сохранять объект и композицию в продуктовых и рекламных задачах." },
+        { title: "Гибкие визуальные варианты", body: "Преобразуйте один бриф в квадратные, вертикальные и горизонтальные материалы для разных каналов." },
+        { title: "Безопасная передача в продакшен", body: "Готовьте результат с учетом задокументированных качества, формата, фона и модерации." },
+      ],
+      video: [
+        { title: "Текст в видео и изображение в видео", body: `Начните сцену с брифа или готового кадра через ${endpoint}.` },
+        { title: "Съемка по референсам", body: "Используйте референсы, чтобы сохранять целостность продукта, персонажа или раскадровки." },
+        { title: "Контролируемые движение и ритм", body: "Задайте развитие камеры, объекта, длительности и кадрирования для рабочего клипа." },
+        { title: "Передача в продакшен с аудио", body: "Явно укажите звук и параметры вывода при переходе от тестового клипа к монтажу." },
+      ],
+    },
+    ja: {
+      image: [
+        { title: "テキストから画像生成と編集", body: `${endpoint} で新しい画像を生成し、${editEndpoint} で既存画像を編集できます。` },
+        { title: "参照画像を使った制作", body: "画像コンテキストを使い、商品・編集・キャンペーンの主題と構図を保ちます。" },
+        { title: "柔軟なビジュアル展開", body: "1つの企画から正方形・縦長・横長の素材を各チャネル向けに展開します。" },
+        { title: "安全な制作納品", body: "記録された品質、形式、背景、モデレーションの挙動に沿って成果物を整えます。" },
+      ],
+      video: [
+        { title: "テキストから動画・画像から動画", body: `${endpoint} で文章のブリーフまたは設計済みフレームからシーンを始めます。` },
+        { title: "参照素材によるショット設計", body: "参照素材を使い、商品・キャラクター・絵コンテの見た目を一貫させます。" },
+        { title: "動きとテンポの制御", body: "カメラ、被写体、長さ、構図の進み方を決めて編集可能なクリップにします。" },
+        { title: "音声を考慮した制作連携", body: "任意の音声と出力を明示し、テストから編集・納品へつなげます。" },
+      ],
+    },
+    vi: {
+      image: [
+        { title: "Tạo và chỉnh sửa từ văn bản", body: `Tạo hình ảnh mới hoặc chỉnh sửa ảnh hiện có qua ${endpoint} và ${editEndpoint}.` },
+        { title: "Sáng tạo theo ảnh tham chiếu", body: "Dùng ngữ cảnh hình ảnh để giữ chủ thể và bố cục cho nội dung sản phẩm, biên tập và chiến dịch." },
+        { title: "Biến thể hình ảnh linh hoạt", body: "Chuyển một brief thành tài sản vuông, dọc hoặc ngang cho từng kênh." },
+        { title: "Bàn giao an toàn cho sản xuất", body: "Chuẩn bị kết quả theo hành vi đã ghi nhận về chất lượng, định dạng, nền và kiểm duyệt." },
+      ],
+      video: [
+        { title: "Văn bản thành video và ảnh thành video", body: `Bắt đầu cảnh từ brief hoặc khung hình đã thiết kế qua ${endpoint}.` },
+        { title: "Định hướng cảnh bằng tham chiếu", body: "Dùng tư liệu tham chiếu để giữ hình ảnh nhất quán cho sản phẩm, nhân vật hoặc storyboard." },
+        { title: "Kiểm soát chuyển động và nhịp", body: "Định hướng tiến triển của máy quay, chủ thể, thời lượng và khung hình cho clip dùng được." },
+        { title: "Bàn giao sản xuất có âm thanh", body: "Giữ âm thanh tùy chọn và đầu ra rõ ràng khi chuyển clip thử sang dựng và phát hành." },
+      ],
+    },
+    de: {
+      image: [
+        { title: "Text-zu-Bild und Bearbeitung", body: `Erzeuge neue Bilder oder bearbeite vorhandene über ${endpoint} und ${editEndpoint}.` },
+        { title: "Referenzgestützte Gestaltung", body: "Nutze Bildkontext, um Motive und Komposition in Produkt-, Editorial- und Kampagnenarbeit zu erhalten." },
+        { title: "Flexible Bildvarianten", body: "Leite aus einem Brief quadratische, Hoch- oder Querformat-Assets für verschiedene Kanäle ab." },
+        { title: "Sichere Übergabe in die Produktion", body: "Bereite Ergebnisse nach dem dokumentierten Verhalten von Qualität, Format, Hintergrund und Moderation vor." },
+      ],
+      video: [
+        { title: "Text-zu-Video und Bild-zu-Video", body: `Starte eine Szene aus Briefing oder gestaltetem Frame über ${endpoint}.` },
+        { title: "Referenzgestützte Shot-Regie", body: "Nutze Referenzmedien, damit Produkt, Figur oder Storyboard visuell konsistent bleiben." },
+        { title: "Kontrollierte Bewegung und Dramaturgie", body: "Lege die Entwicklung von Kamera, Motiv, Dauer und Bildausschnitt für einen nutzbaren Clip fest." },
+        { title: "Audio-bewusste Produktionsübergabe", body: "Halte optionales Audio und Ausgabe explizit, damit der Testclip in Schnitt und Ausspielung gelangt." },
+      ],
+    },
+    id: {
+      image: [
+        { title: "Teks ke gambar dan penyuntingan", body: `Buat gambar baru atau edit gambar yang ada melalui ${endpoint} dan ${editEndpoint}.` },
+        { title: "Kreatif berbasis referensi", body: "Gunakan konteks gambar untuk mempertahankan subjek dan komposisi pada karya produk, editorial, dan kampanye." },
+        { title: "Variasi visual fleksibel", body: "Ubah satu brief menjadi aset persegi, potret, atau lanskap untuk berbagai kanal." },
+        { title: "Pengiriman produksi yang aman", body: "Siapkan hasil sesuai perilaku kualitas, format, latar, dan moderasi yang terdokumentasi." },
+      ],
+      video: [
+        { title: "Teks ke video dan gambar ke video", body: `Mulai adegan dari brief tertulis atau frame rancangan melalui ${endpoint}.` },
+        { title: "Arahan shot berbasis referensi", body: "Gunakan media referensi agar produk, karakter, atau storyboard tetap konsisten secara visual." },
+        { title: "Gerak dan tempo terkontrol", body: "Tentukan perkembangan kamera, subjek, durasi, dan framing untuk klip yang siap dipakai." },
+        { title: "Serah terima produksi dengan audio", body: "Jaga audio opsional dan output tetap eksplisit saat memindahkan klip uji ke penyuntingan." },
+      ],
+    },
+  };
+  if (facts.kind === "image") return copy[locale]?.image ?? copy.en.image;
+  return copy[locale]?.video ?? copy.en.video;
 }
 
 const MINIMAX_DURATION_RANGE: Record<Locale, string> = {
@@ -4180,6 +4369,76 @@ function localizedGptModelIdAnswer(facts: Facts, pack: LanguagePack, locale: Loc
   return `${pack.modelId}: ${facts.id}; ${pack.endpoint}: ${facts.endpoint}. OpenAI documents /v1/responses separately.`;
 }
 
+/** Feature-led copy for the remaining priority text models. Technical
+ * context, modalities, and route details stay in the API/comparison sections. */
+function localizedTextCapabilityCards(facts: Facts, locale: Locale): MediaCapabilityCard[] {
+  const context = facts.context ?? "1,048,576 tokens";
+  const routes = facts.secondEndpoint ? `${facts.endpoint} and ${facts.secondEndpoint}` : facts.endpoint;
+  const copy: Record<Locale, MediaCapabilityCard[]> = {
+    en: [
+      { title: "Long-context work", body: `${facts.name} is suited to document, code, and research workflows within its documented ${context} context.` },
+      { title: "Multimodal understanding", body: `Use the model's documented ${facts.modalities} to ground answers in the material your workflow provides.` },
+      { title: "Structured agent workflows", body: "Connect reasoning, structured output, tools, and streaming to the agent or application flow you are building." },
+      { title: "Production-ready integration", body: `Keep the model ID and compatible routes (${routes}) stable as you move from experiments into production.` },
+    ],
+    zh: [
+      { title: "长上下文工作", body: `${facts.name} 适合在已记录的 ${context} 上下文范围内处理文档、代码和研究任务。` },
+      { title: "多模态理解", body: `利用模型已记录的 ${facts.modalities}，让回答建立在工作流提供的材料之上。` },
+      { title: "结构化智能体工作流", body: "将推理、结构化输出、工具调用和流式响应接入正在构建的智能体或应用流程。" },
+      { title: "适合生产集成", body: `从实验进入生产时，保持模型 ID 与兼容路由（${routes}）稳定。` },
+    ],
+    es: [
+      { title: "Trabajo con contexto largo", body: `${facts.name} sirve para documentos, código e investigación dentro de su contexto documentado de ${context}.` },
+      { title: "Comprensión multimodal", body: `Usa las ${facts.modalities} documentadas para fundamentar las respuestas en el material de tu flujo.` },
+      { title: "Flujos de agentes estructurados", body: "Conecta razonamiento, salida estructurada, herramientas y streaming con tu aplicación o agente." },
+      { title: "Integración lista para producción", body: `Mantén estables el ID del modelo y las rutas compatibles (${routes}) al pasar de pruebas a producción.` },
+    ],
+    fr: [
+      { title: "Travail à long contexte", body: `${facts.name} convient aux documents, au code et à la recherche dans son contexte documenté de ${context}.` },
+      { title: "Compréhension multimodale", body: `Utilisez les ${facts.modalities} documentées pour ancrer les réponses dans les éléments fournis.` },
+      { title: "Flux d’agents structurés", body: "Reliez raisonnement, sortie structurée, outils et streaming à l’agent ou à l’application créée." },
+      { title: "Intégration prête pour la production", body: `Conservez l’ID du modèle et les routes compatibles (${routes}) en passant du test à la production.` },
+    ],
+    pt: [
+      { title: "Trabalho com contexto longo", body: `${facts.name} atende a documentos, código e pesquisa dentro do contexto documentado de ${context}.` },
+      { title: "Compreensão multimodal", body: `Use as ${facts.modalities} documentadas para fundamentar as respostas no material fornecido.` },
+      { title: "Fluxos estruturados de agentes", body: "Conecte raciocínio, saída estruturada, ferramentas e streaming ao agente ou aplicativo criado." },
+      { title: "Integração pronta para produção", body: `Mantenha o ID do modelo e as rotas compatíveis (${routes}) estáveis ao passar dos testes para a produção.` },
+    ],
+    ru: [
+      { title: "Работа с длинным контекстом", body: `${facts.name} подходит для документов, кода и исследований в пределах задокументированного контекста ${context}.` },
+      { title: "Мультимодальное понимание", body: `Используйте задокументированные ${facts.modalities}, чтобы связать ответы с материалами рабочего процесса.` },
+      { title: "Структурированные агентские процессы", body: "Подключайте рассуждения, структурированный вывод, инструменты и потоковую выдачу к своему приложению." },
+      { title: "Интеграция для продакшена", body: `Сохраняйте ID модели и совместимые маршруты (${routes}) при переходе от тестов к продакшену.` },
+    ],
+    ja: [
+      { title: "長いコンテキストの作業", body: `${facts.name} は、記録された ${context} のコンテキストで文書・コード・調査を扱えます。` },
+      { title: "マルチモーダル理解", body: `記録された ${facts.modalities} を使い、ワークフローが提供する資料に基づいて回答します。` },
+      { title: "構造化エージェントワークフロー", body: "推論、構造化出力、ツール、ストリーミングを構築中のエージェントやアプリに接続します。" },
+      { title: "本番向け統合", body: `検証から本番へ移るときも、モデル ID と互換ルート（${routes}）を維持します。` },
+    ],
+    vi: [
+      { title: "Tác vụ ngữ cảnh dài", body: `${facts.name} phù hợp với tài liệu, mã và nghiên cứu trong ngữ cảnh ${context} đã được ghi nhận.` },
+      { title: "Hiểu đa phương thức", body: `Dùng ${facts.modalities} được ghi nhận để neo câu trả lời vào tài liệu mà quy trình cung cấp.` },
+      { title: "Quy trình agent có cấu trúc", body: "Kết nối suy luận, đầu ra có cấu trúc, công cụ và streaming với agent hoặc ứng dụng bạn xây dựng." },
+      { title: "Tích hợp sẵn sàng sản xuất", body: `Giữ ID mô hình và các route tương thích (${routes}) ổn định khi chuyển từ thử nghiệm sang sản xuất.` },
+    ],
+    de: [
+      { title: "Arbeit mit langem Kontext", body: `${facts.name} eignet sich für Dokumente, Code und Recherche innerhalb des dokumentierten ${context}-Kontexts.` },
+      { title: "Multimodales Verständnis", body: `Nutze die dokumentierten ${facts.modalities}, um Antworten an den bereitgestellten Materialien auszurichten.` },
+      { title: "Strukturierte Agenten-Workflows", body: "Verbinde Reasoning, strukturierte Ausgaben, Tools und Streaming mit deinem Agenten oder deiner Anwendung." },
+      { title: "Produktionsreife Integration", body: `Halte Modell-ID und kompatible Routen (${routes}) beim Übergang von Tests in die Produktion stabil.` },
+    ],
+    id: [
+      { title: "Pekerjaan dengan konteks panjang", body: `${facts.name} cocok untuk dokumen, kode, dan riset dalam konteks ${context} yang terdokumentasi.` },
+      { title: "Pemahaman multimodal", body: `Gunakan ${facts.modalities} yang terdokumentasi agar jawaban berpijak pada materi alur kerja.` },
+      { title: "Alur kerja agen terstruktur", body: "Hubungkan penalaran, output terstruktur, alat, dan streaming ke agen atau aplikasi yang dibuat." },
+      { title: "Integrasi siap produksi", body: `Pertahankan ID model dan rute kompatibel (${routes}) saat berpindah dari eksperimen ke produksi.` },
+    ],
+  };
+  return copy[locale] ?? copy.en;
+}
+
 function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelLandingContent {
   const isGpt = facts.slug === "gpt-5-6-sol";
   const isKimi = facts.slug === "kimi-k3";
@@ -4191,27 +4450,7 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
     : isKimi
       ? localizedKimiStatement(facts, locale)
       : localizedDeepseekStatement(facts, locale);
-  const capabilityCards = isGpt
-    ? [
-        { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-        { title: pack.modalities, body: pack.modalitiesBody(modalities) },
-        { title: pack.endpoint, body: pack.endpointBody(facts.endpoint, facts.id) },
-        { title: "Flatkey", body: pack.keyBillingBody },
-      ]
-    : isKimi
-      ? [
-          { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-          { title: pack.inputModality, body: localizedTextInputBody(facts, locale, pack) },
-          { title: pack.endpoint, body: pack.twoRoutesBody(facts.endpoint, facts.secondEndpoint ?? "/v1/messages") },
-          { title: literal(locale, "Knowledge work"), body: pack.knowledgeBody },
-        ]
-      : [
-          { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-          { title: pack.inputModality, body: pack.modalitiesBody(modalities) },
-          { title: literal(locale, "OpenAI-compatible"), body: pack.routeBody(facts.endpoint) },
-          { title: literal(locale, "Anthropic-compatible"), body: pack.routeBody(facts.secondEndpoint ?? "/v1/messages") },
-          { title: literal(locale, "Distillable metadata"), body: pack.distillableBody },
-        ];
+  const capabilityCards = localizedTextCapabilityCards(facts, locale);
   const comparison = isGpt
     ? {
         eyebrow: pack.compareFields,
@@ -4373,13 +4612,7 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
     capabilitiesEyebrow: `${facts.name} ${pack.controls}`,
     capabilitiesTitle: localizedCapabilitiesTitle(facts, pack, locale),
     capabilitiesDescription: pack.documentedFields,
-    capabilities: [
-      { title: pack.input, body: pack.imageCountBody },
-      { title: pack.sizes, body: pack.imageSizesBody },
-      { title: pack.quality, body: pack.imageQualityBody },
-      { title: pack.formats, body: pack.imageFormatsBody },
-      { title: literal(locale, "Background / moderation"), body: localizedImageBackgroundBody(locale, pack) },
-    ],
+    capabilities: localizedMediaCapabilityCards(facts, locale),
     comparison: {
       eyebrow: pack.migrationFields,
       title: localizedComparisonTitle(locale, facts),
@@ -4451,13 +4684,7 @@ function buildVideoCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
     capabilitiesEyebrow: `${facts.name} ${pack.videoFields}`,
     capabilitiesTitle: localizedCapabilitiesTitle(facts, pack, locale),
     capabilitiesDescription: pack.documentedFields,
-    capabilities: [
-      { title: pack.resolution, body: pack.resolutionBody },
-      { title: pack.duration, body: pack.durationBody },
-      { title: pack.ratio, body: pack.ratioBody },
-      { title: pack.watermark, body: pack.watermarkBody },
-      { title: MINIMAX_REFERENCE_TITLE[locale] ?? MINIMAX_REFERENCE_TITLE.en, body: MINIMAX_REFERENCE_BODY[locale] ?? MINIMAX_REFERENCE_BODY.en },
-    ],
+    capabilities: localizedMediaCapabilityCards(facts, locale),
     comparison: {
       eyebrow: pack.videoFields,
       title: localizedComparisonTitle(locale, facts),
