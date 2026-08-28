@@ -790,6 +790,11 @@ func StripeWebhook(c *gin.Context) {
 		processingErr = chargeReversed(ctx, event)
 	case stripe.EventTypeChargeDisputeCreated:
 		processingErr = chargeReversed(ctx, event)
+	case stripe.EventTypeChargeSucceeded:
+		processingErr = persistStripeChargeObservationFromEvent(event)
+		if processingErr == nil {
+			scheduleStripeChargeObservation(event)
+		}
 	case stripe.EventTypeInvoicePaid:
 		processingErr = handleStripeInvoicePaid(ctx, event)
 	case stripe.EventTypeInvoiceCreated:
@@ -807,6 +812,12 @@ func StripeWebhook(c *gin.Context) {
 	default:
 		logger.LogInfo(ctx, fmt.Sprintf("Stripe webhook 忽略事件 event_type=%s client_ip=%s", string(event.Type), callerIp))
 	}
+	checkoutPaid := strings.TrimSpace(event.GetObjectValue("payment_status")) == string(stripe.CheckoutSessionPaymentStatusPaid) ||
+		strings.TrimSpace(event.GetObjectValue("payment_status")) == string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired)
+	if processingErr == nil && (event.Type == stripe.EventTypeCheckoutSessionAsyncPaymentSucceeded ||
+		(event.Type == stripe.EventTypeCheckoutSessionCompleted && checkoutPaid)) {
+		processingErr = finalizeStripeCheckoutCardObservation(ctx, event)
+	}
 
 	if processingErr != nil {
 		if isRetryableStripeWebhookProcessingError(processingErr) {
@@ -818,7 +829,6 @@ func StripeWebhook(c *gin.Context) {
 		c.Status(http.StatusOK)
 		return
 	}
-
 	c.Status(http.StatusOK)
 }
 
