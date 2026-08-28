@@ -47,12 +47,20 @@ import { SiteShell } from "@/components/site-shell";
 import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
+  getImagePlaygroundExample,
+  getImagePromptTemplateFallbackPosters,
+  getImagePromptTemplates,
+  type ImagePlaygroundExample,
+} from "@/lib/image-prompt-templates";
+import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
+import {
   modelLandingCopy,
   getLocalizedModelLandingConfig,
   getModelLandingConfigs,
   normalizeModelId,
   type ModelConfig,
   type ModelGeneratorField,
+  type ModelGeneratorProtocol,
   type ModelLandingKey,
 } from "@/lib/model-landing";
 import { consoleUrl } from "@/lib/origins";
@@ -93,6 +101,8 @@ type MediaExample = {
   poster: string;
   video?: string;
 };
+
+const isProfessionVideo = (video?: string) => Boolean(video?.includes("/model-showcase/video-profession-"));
 
 type ReferenceImageDraft = {
   id: string;
@@ -156,7 +166,10 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
     () => getLocalizedModelLandingConfig(inputConfig, locale),
     [inputConfig, locale],
   );
-  const [prompt, setPrompt] = useState(config.examplePrompt);
+  const imagePlaygroundExample = config.generator?.kind === "image"
+    ? getImagePlaygroundExample(config.modelId)
+    : undefined;
+  const [prompt, setPrompt] = useState(() => imagePlaygroundExample?.prompt ?? config.examplePrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
@@ -228,6 +241,7 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
       groupModelRatio={groupModelRatio}
       rankings={rankings}
       initialHealth={initialHealth}
+      imagePlaygroundExample={imagePlaygroundExample}
       t={t}
     />
   );
@@ -252,6 +266,7 @@ function FlatkeyModelDetailPage(props: {
   groupModelRatio: GroupModelRatio;
   rankings: RankingsData | null;
   initialHealth?: HomeModelHealth;
+  imagePlaygroundExample?: ImagePlaygroundExample;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
@@ -545,8 +560,10 @@ function FlatkeyModelDetailPage(props: {
                   <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
                   <OutputPreview
                     modelName={props.config.displayName}
+                    modelId={props.config.modelId}
                     prompt={props.prompt}
                     kind={generator.kind}
+                    protocol={generator.protocol}
                     endpoint={generator.endpoint}
                     fieldValues={props.fieldValues}
                     referenceCount={mediaReferenceCount}
@@ -871,8 +888,10 @@ function MediaModelLanding(props: {
                 <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
                 <OutputPreview
                   modelName={props.config.displayName}
+                  modelId={props.config.modelId}
                   prompt={props.prompt}
                   kind={generator.kind}
+                  protocol={generator.protocol}
                   endpoint={generator.endpoint}
                   fieldValues={props.fieldValues}
                   referenceCount={props.referenceImages.length}
@@ -1371,10 +1390,10 @@ function MediaPromptEditor(props: {
     if (props.generator.kind !== "video") return props.generator.fields;
 
     // Keep the controls in the same reading order as the approved prototype:
-    // ratio, resolution, duration, then audio.  Generator configs are shared
+    // ratio, resolution/size, duration, then audio. Generator configs are shared
     // with the request builder and historically put resolution first, so sort
     // only the presentation list instead of changing request semantics.
-    const prototypeOrder = ["ratio", "resolution", "duration", "generate_audio"];
+    const prototypeOrder = ["ratio", "resolution", "size", "duration", "generate_audio"];
     return [...props.generator.fields].sort((left, right) => {
       const leftIndex = prototypeOrder.indexOf(left.name);
       const rightIndex = prototypeOrder.indexOf(right.name);
@@ -1383,7 +1402,7 @@ function MediaPromptEditor(props: {
   }, [props.generator.kind, props.generator.fields]);
   const fieldRows = useMemo(() => {
     if (props.generator.kind !== "video") return [fields];
-    const leading = fields.filter((field) => field.name === "ratio" || field.name === "resolution");
+    const leading = fields.filter((field) => field.name === "ratio" || field.name === "resolution" || field.name === "size");
     const secondary = fields.filter((field) => field.name === "duration" || field.name === "generate_audio");
     const rest = fields.filter((field) => !leading.includes(field) && !secondary.includes(field));
     const rows: ModelGeneratorField[][] = [];
@@ -1395,12 +1414,13 @@ function MediaPromptEditor(props: {
   const quickPrompts = props.generator.kind === "video"
     ? ["Product Reveal", "UGC Ad", "Cinematic Scene", "Social Clip"]
     : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
-  const supportsReferenceImages = props.generator.kind === "image";
+  const referenceImageLimit = props.generator.referenceLimits?.image ?? (props.generator.kind === "image" ? 4 : 0);
+  const supportsReferenceImages = props.generator.kind === "image" && referenceImageLimit > 0;
 
   const onReferenceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? []);
     if (files.length === 0) return;
-    const remainingSlots = Math.max(0, 4 - props.referenceImages.length);
+    const remainingSlots = Math.max(0, referenceImageLimit - props.referenceImages.length);
     const nextImages = files.slice(0, remainingSlots).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
@@ -1449,30 +1469,25 @@ function MediaPromptEditor(props: {
       </div>
       {props.generator.kind === "video" ? (
         <div className="input-reference-fields mt-6">
-          <MediaUploadField
-            label={props.t("Reference image")}
-            accept="image/*"
-            kind="image"
-            maxFiles={30}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
-          <MediaUploadField
-            label={props.t("Reference videos")}
-            accept="video/*"
-            kind="video"
-            maxFiles={10}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
-          <MediaUploadField
-            label={props.t("Reference Audios")}
-            accept="audio/*"
-            kind="audio"
-            maxFiles={10}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
+          {([
+            ["image", props.t("Reference image"), "image/*"],
+            ["video", props.t("Reference videos"), "video/*"],
+            ["audio", props.t("Reference Audios"), "audio/*"],
+          ] as const).map(([kind, label, accept]) => {
+            const maxFiles = props.generator.referenceLimits?.[kind] ?? 0;
+            if (maxFiles <= 0) return null;
+            return (
+              <MediaUploadField
+                key={kind}
+                label={label}
+                accept={accept}
+                kind={kind}
+                maxFiles={maxFiles}
+                onCountChange={props.onMediaUploadCountChange}
+                t={props.t}
+              />
+            );
+          })}
         </div>
       ) : null}
       <div className="advanced-options mt-6">
@@ -1896,33 +1911,63 @@ function parsePrice(value: string) {
 
 function OutputPreview(props: {
   modelName: string;
+  modelId: string;
   prompt: string;
   kind: "image" | "video" | "audio";
+  protocol?: ModelGeneratorProtocol;
   endpoint: string;
   fieldValues: Record<string, string | number | boolean>;
   referenceCount: number;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const endpoint = props.endpoint;
-  const videoExample = props.kind === "video" ? MEDIA_EXAMPLES.video[0] : undefined;
+  const protocol = props.protocol ?? (props.kind === "image" ? "openai-image" : props.kind === "video" ? "seedance-video" : "audio");
+  const videoExample = props.kind === "video"
+    ? getVideoPromptTemplates(props.modelId)[0] ?? MEDIA_EXAMPLES.video[0]
+    : undefined;
+  const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
   const rows = props.kind === "video"
     ? [
         [props.t("Endpoint"), `POST ${endpoint}`],
         [props.t("Model ID"), props.modelName],
-        [props.t("Aspect ratio"), String(field("ratio", "adaptive"))],
-        [props.t("Resolution"), String(field("resolution", "720p"))],
-        [props.t("Duration"), `${field("duration", 5)}s`],
-        [props.t("Generate audio"), field("generate_audio", true) ? props.t("On") : props.t("Off")],
+        ...(protocol === "grok-video"
+          ? []
+          : protocol === "veo-video"
+            ? [[props.t("Size"), String(field("size", "1280x720"))]]
+            : [
+                [props.t("Aspect ratio"), String(field("ratio", "adaptive"))],
+                [props.t("Resolution"), String(field("resolution", "720p"))],
+              ]),
+        [props.t("Duration"), `${field("duration", protocol === "veo-video" ? "8" : 5)}s`],
+        ...(protocol === "seedance-video"
+          ? [[props.t("Generate audio"), field("generate_audio", true) ? props.t("On") : props.t("Off")]]
+          : []),
         [props.t("Reference media"), props.referenceCount > 0 ? `${props.referenceCount}` : props.t("None")],
       ]
     : props.kind === "image"
       ? [
           [props.t("Endpoint"), `POST ${endpoint}`],
           [props.t("Model ID"), props.modelName],
-          [props.t("Size"), String(field("size", "1024x1024"))],
-          [props.t("Quality"), String(field("quality", "standard"))],
-          [props.t("Outputs"), String(field("n", 1))],
+          ...(protocol === "gemini-image"
+            ? [
+                [props.t("Aspect ratio"), String(field("aspect_ratio", "1:1"))],
+                ...(props.fieldValues.image_size ? [[props.t("Size"), String(field("image_size", "1K"))]] : []),
+              ]
+            : protocol === "openai-image" && props.fieldValues.resolution
+              ? [
+                  [props.t("Resolution"), String(field("resolution", "1k"))],
+                  [props.t("Quality"), String(field("quality", "medium"))],
+                  [props.t("Aspect ratio"), String(field("aspect_ratio", "auto"))],
+                ]
+              : [
+                  [props.t("Size"), String(field("size", "1024x1024"))],
+                  [props.t("Quality"), String(field("quality", "standard"))],
+                ]),
+          ...(protocol === "openai-image" && props.fieldValues.resolution
+            ? [[props.t("Output format"), String(field("response_format", "url"))]]
+            : []),
+          ...(protocol === "gemini-image" ? [] : [[props.t("Outputs"), String(field("n", 1))]]),
         ]
       : [
           [props.t("Endpoint"), `POST ${endpoint}`],
@@ -1938,12 +1983,20 @@ function OutputPreview(props: {
           <video
             className="preview-media"
             src={videoExample.video}
-            poster={videoExample.poster}
+            poster={isProfessionVideo(videoExample.video) ? undefined : videoExample.poster}
             autoPlay
             muted
             loop
             playsInline
             aria-label={props.t("Video preview")}
+          />
+        ) : imageExample ? (
+          <Image
+            src={imageExample.poster}
+            alt={props.t("Image preview")}
+            fill
+            sizes="(min-width: 1024px) 40vw, 100vw"
+            className="preview-media object-cover"
           />
         ) : (
           <span className="preview-label">
@@ -2726,11 +2779,6 @@ function PromptLibrarySection(props: {
             title={props.t(props.config.landingContent?.promptLibraryTitle ?? "Explore what {{model}} can create", { model: props.config.displayName })}
             description={props.t(props.config.landingContent?.promptLibraryDescription ?? "Prompt testing and request handoff.")}
           />
-          {!isPrototypeContent ? (
-            <a href="#workbench" className="prompt-library-link">
-              {props.t("Open in Playground")} <span aria-hidden>↗</span>
-            </a>
-          ) : null}
         </div>
         <div className="prompt-grid">
           {items.map((item) => (
@@ -2740,14 +2788,25 @@ function PromptLibrarySection(props: {
                   <video
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
-                    poster={item.example.poster}
+                    poster={item.example.poster || undefined}
                     muted
                     loop
                     autoPlay
                     playsInline
                   />
                 ) : (
-                  <Image src={item.example.poster} alt={item.alt ?? item.label} fill sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="prompt-image object-cover" />
+                  <Image
+                    src={item.example.poster}
+                    alt={item.alt ?? item.label}
+                    fill
+                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                    className="prompt-image object-cover"
+                    loading="eager"
+                    // The reviewed prompt posters live on the public CDN. Bypass
+                    // Next's server-side optimizer so a slow/large remote object
+                    // cannot leave the card stuck on a broken image placeholder.
+                    unoptimized
+                  />
                 )}
                 <div className="prompt-badge">{item.label}</div>
               </div>
@@ -2786,6 +2845,35 @@ function buildPromptLibraryItems(
   examples: readonly MediaExample[],
   t: (key: string, vars?: Record<string, string>) => string
 ): PromptLibraryItem[] {
+  if (config.generator?.kind === "image") {
+    const templates = getImagePromptTemplates(config.modelId);
+    const posters = getImagePromptTemplateFallbackPosters(config.modelId);
+    if (templates.length > 0) {
+      return templates.slice(0, 6).map((template, index) => ({
+        key: template.id,
+        label: t(template.label),
+        prompt: template.prompt,
+        alt: t(template.label),
+        example: { poster: posters[index] ?? template.poster },
+      }));
+    }
+  }
+
+  if (config.generator?.kind === "video") {
+    const templates = getVideoPromptTemplates(config.modelId);
+    if (templates.length > 0) {
+      return templates.slice(0, 6).map((template) => ({
+        key: template.id,
+        label: t(template.label),
+        prompt: template.prompt,
+        alt: t(template.label),
+        // The generated profession clips carry their own first frame. Do not
+        // keep the old generic poster visible while the new CDN video loads.
+        example: { poster: isProfessionVideo(template.video) ? "" : template.poster, video: template.video },
+      }));
+    }
+  }
+
   const configured = config.landingContent?.promptLibrary;
   const labels = config.generator?.kind === "video"
     ? ["UGC ad clips", "Product motion", "Social video variants"]
@@ -3363,6 +3451,21 @@ function renderApiSample(source: string, tab: ApiCodeTab): ReactNode {
 function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
   if (config.generator?.kind === "video") {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
+    if (config.generator.protocol === "grok-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt: config.examplePrompt,
+        duration: defaults.duration ?? 5,
+      });
+    }
+    if (config.generator.protocol === "veo-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt: config.examplePrompt,
+        duration: Number(defaults.duration ?? 8),
+        size: defaults.size ?? "1280x720",
+      });
+    }
     return {
       model: config.modelId,
       content: [{ type: "text", text: config.examplePrompt }],
@@ -3374,6 +3477,20 @@ function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
   }
   if (config.generator?.kind === "image") {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
+    if (config.generator.protocol === "gemini-image") {
+      const imageConfig = compactRequest({
+        aspectRatio: defaults.aspect_ratio,
+        imageSize: defaults.image_size,
+      });
+      return {
+        model: config.modelId,
+        contents: [{ role: "user", parts: [{ text: config.examplePrompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig,
+        },
+      };
+    }
     return {
       model: config.modelId,
       prompt: config.examplePrompt,
@@ -4167,6 +4284,17 @@ function buildGeneratorRequest(
   referenceImages: ReferenceImageDraft[] = []
 ) {
   if (config.generator?.kind === "video") {
+    if (config.generator.protocol === "grok-video") {
+      return compactRequest({ model: config.modelId, prompt, duration: values.duration ?? 5 });
+    }
+    if (config.generator.protocol === "veo-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt,
+        duration: Number(values.duration ?? 8),
+        size: values.size ?? "1280x720",
+      });
+    }
     const content = [{ type: "text", text: prompt }];
     return compactRequest({ model: config.modelId, content, ...values });
   }
@@ -4174,6 +4302,20 @@ function buildGeneratorRequest(
     return compactRequest({ model: config.modelId, input: prompt, ...values });
   }
   if (config.generator?.kind === "image") {
+    if (config.generator.protocol === "gemini-image") {
+      const imageConfig = compactRequest({
+        aspectRatio: values.aspect_ratio,
+        imageSize: values.image_size,
+      });
+      return {
+        model: config.modelId,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig,
+        },
+      };
+    }
     return compactRequest({
       model: config.modelId,
       prompt,

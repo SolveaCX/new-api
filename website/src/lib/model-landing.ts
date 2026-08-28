@@ -25,11 +25,25 @@ export type ModelGeneratorField = {
   help?: string;
 };
 
+export type ModelGeneratorProtocol =
+  | "openai-image"
+  | "gemini-image"
+  | "seedance-video"
+  | "veo-video"
+  | "grok-video"
+  | "audio";
+
+export type ModelReferenceLimits = Partial<Record<"image" | "video" | "audio", number>>;
+
 export type ModelGeneratorConfig = {
   kind: "image" | "video" | "audio";
   endpoint: string;
   storageKey: string;
   fields: ModelGeneratorField[];
+  /** Wire contract used by the Playground request preview and builder. */
+  protocol?: ModelGeneratorProtocol;
+  /** Maximum reference files accepted by this model's documented route. */
+  referenceLimits?: ModelReferenceLimits;
 };
 
 /**
@@ -354,6 +368,8 @@ export const SEEDANCE_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:seedance-2-0",
+    protocol: "seedance-video",
+    referenceLimits: { image: 30, video: 10, audio: 10 },
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "1080p", options: ["720p", "1080p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
@@ -411,6 +427,8 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:seedance-2-5",
+    protocol: "seedance-video",
+    referenceLimits: { image: 30, video: 10, audio: 10 },
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "720p", options: ["480p", "720p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "adaptive", options: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"] },
@@ -648,6 +666,8 @@ export const GPT_IMAGE_2_CONFIG: ModelConfig = {
     kind: "image",
     endpoint: "/v1/images/generations",
     storageKey: "flatkey:model-generator-draft:gpt-image-2",
+    protocol: "openai-image",
+    referenceLimits: { image: 4 },
     fields: [
       { name: "n", label: "Images", type: "number", defaultValue: 1, min: 1, max: 10 },
       { name: "size", label: "Size", type: "select", defaultValue: "1024x1024", options: ["1024x1024", "1536x1024", "1024x1536", "auto"] },
@@ -733,6 +753,8 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:minimax-h3",
+    protocol: "seedance-video",
+    referenceLimits: { image: 9, video: 3, audio: 3 },
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "768P", options: ["768P", "2K"] },
       { name: "duration", label: "Duration", type: "number", defaultValue: 6, min: 4, max: 15 },
@@ -1386,6 +1408,7 @@ export const SONILO_VIDEO_TO_MUSIC_CONFIG: ModelConfig = {
     kind: "audio",
     endpoint: "/v1/video-to-music",
     storageKey: "flatkey:model-generator-draft:sonilo-video-to-music",
+    protocol: "audio",
     fields: [
       { name: "video_url", label: "Video URL", type: "text", defaultValue: "" },
       { name: "duration_seconds", label: "Duration", type: "number", defaultValue: 30, min: 5, max: 300 },
@@ -1469,6 +1492,69 @@ const GENERIC_MEDIA_FIELDS: Record<ModelGeneratorConfig["kind"], ModelGeneratorF
     { name: "preserve_speech", label: "Preserve speech", type: "boolean", defaultValue: true },
   ],
 };
+
+// Catalog models do not share one universal media request. These profiles
+// mirror the gateway adapters/docs so the public Playground never presents a
+// control that the selected route silently ignores.
+const GROK_IMAGE_FIELDS: ModelGeneratorField[] = [
+  { name: "n", label: "Images", type: "number", defaultValue: 1, min: 1, max: 10 },
+  { name: "resolution", label: "Resolution", type: "select", defaultValue: "1k", options: ["1k", "2k"] },
+  { name: "quality", label: "Quality", type: "select", defaultValue: "medium", options: ["low", "medium"] },
+  { name: "aspect_ratio", label: "Aspect ratio", type: "select", defaultValue: "auto", options: ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20"] },
+  { name: "response_format", label: "Output format", type: "select", defaultValue: "url", options: ["url", "b64_json"] },
+];
+
+const GEMINI_IMAGE_BASE_FIELDS: ModelGeneratorField[] = [
+  { name: "aspect_ratio", label: "Aspect ratio", type: "select", defaultValue: "1:1", options: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] },
+];
+
+const GROK_VIDEO_FIELDS: ModelGeneratorField[] = [
+  { name: "duration", label: "Duration", type: "number", defaultValue: 5, min: 1, max: 15 },
+];
+
+const VEO_VIDEO_FIELDS: ModelGeneratorField[] = [
+  { name: "size", label: "Size", type: "select", defaultValue: "1280x720", options: ["1280x720", "1920x1080", "3840x2160"] },
+  { name: "duration", label: "Duration", type: "select", defaultValue: "8", options: ["4", "6", "8"] },
+];
+
+function isGeminiImageModel(modelName: string) {
+  const normalized = normalizeModelId(modelName);
+  return normalized.startsWith("gemini-2-5-flash-image") ||
+    normalized.startsWith("gemini-3-pro-image") ||
+    normalized.startsWith("gemini-3-1-flash-image") ||
+    normalized.startsWith("gemini-3-1-flash-lite-image") ||
+    normalized.startsWith("nano-banana-pro-preview");
+}
+
+function getGenericMediaProfile(model: PricingModel, kind: ModelGeneratorConfig["kind"]): Pick<ModelGeneratorConfig, "endpoint" | "fields" | "protocol" | "referenceLimits"> {
+  const normalized = normalizeModelId(model.model_name);
+  if (kind === "video" && normalized.startsWith("grok-imagine-video")) {
+    return { endpoint: "/v1/videos", fields: GROK_VIDEO_FIELDS, protocol: "grok-video", referenceLimits: { image: 1 } };
+  }
+  if (kind === "video" && normalized.startsWith("veo-")) {
+    return { endpoint: "/v1/videos", fields: VEO_VIDEO_FIELDS, protocol: "veo-video", referenceLimits: { image: 1 } };
+  }
+  if (kind === "image" && isGeminiImageModel(model.model_name)) {
+    const includeSize = !normalized.startsWith("gemini-2-5-flash-image");
+    return {
+      endpoint: `/v1beta/models/${model.model_name}:generateContent`,
+      fields: includeSize
+        ? [...GEMINI_IMAGE_BASE_FIELDS, { name: "image_size", label: "Size", type: "select", defaultValue: "1K", options: ["1K", "2K", "4K"] }]
+        : GEMINI_IMAGE_BASE_FIELDS,
+      protocol: "gemini-image",
+      referenceLimits: { image: 4 },
+    };
+  }
+  if (kind === "image" && normalized.startsWith("grok-imagine-image")) {
+    return { endpoint: "/v1/images/generations", fields: GROK_IMAGE_FIELDS, protocol: "openai-image", referenceLimits: { image: 3 } };
+  }
+  return {
+    endpoint: mediaEndpointForModel(kind, model),
+    fields: GENERIC_MEDIA_FIELDS[kind],
+    protocol: kind === "image" ? "openai-image" : kind === "video" ? "seedance-video" : "audio",
+    referenceLimits: kind === "image" ? { image: 4 } : kind === "video" ? { image: 30, video: 10, audio: 10 } : {},
+  };
+}
 
 export type ModelLandingKey =
   | "All models"
@@ -2066,7 +2152,18 @@ export function getModelLandingConfigForModel(modelId: string): ModelConfig | nu
 
 export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
   const explicitConfig = getModelLandingConfigForModel(model.model_name);
-  if (explicitConfig) return modelLandingConfigForModel(explicitConfig, model);
+  if (explicitConfig) {
+    // A family config can match a more specific media model by prefix (for
+    // example `gemini-2.5-flash-image` matches the Gemini chat family). Let the
+    // model name/endpoint classification win when it disagrees with that
+    // broad family config, otherwise the image page loses its generator and
+    // prompt-library assets entirely.
+    const inferredKind = inferMediaKind(model);
+    if (inferredKind && explicitConfig.generator?.kind !== inferredKind) {
+      return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
+    }
+    return modelLandingConfigForModel(explicitConfig, model);
+  }
   return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
 }
 
@@ -2200,6 +2297,7 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
   const liveFlatkeyPrice = liveSecond != null ? formatPriceLiteral(liveSecond) : price.flatkey;
   const liveOfficialPrice = liveOfficialSecond != null ? formatPriceLiteral(liveOfficialSecond) : price.official;
   const landingContent = buildGenericLandingContent(model, kind);
+  const mediaProfile = getGenericMediaProfile(model, kind);
   const metadata = buildModelLandingMetadata(model, { locale: "en", task: metadataTaskForLandingKind(kind) });
   return {
     slug: encodeURIComponent(model.model_name),
@@ -2208,9 +2306,11 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
     modelId: model.model_name,
     generator: {
       kind,
-      endpoint: mediaEndpointForModel(kind, model),
+      endpoint: mediaProfile.endpoint,
       storageKey: `flatkey:model-generator-draft:${normalizeModelId(model.model_name)}`,
-      fields: GENERIC_MEDIA_FIELDS[kind],
+      fields: mediaProfile.fields,
+      protocol: mediaProfile.protocol,
+      referenceLimits: mediaProfile.referenceLimits,
     },
     officialName,
     officialPrice: liveOfficialPrice,

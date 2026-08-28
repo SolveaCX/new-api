@@ -1604,47 +1604,6 @@ html:has(.model-prototype) {
   opacity: 1;
 }
 
-/* The model shell is also rendered as a server-first page. If a deep link is
- * restored before its client rail hydrates, let the native :target state keep
- * the visible tab in sync instead of leaving Playground underlined. */
-.model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"]),
-.model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"]),
-.model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"]),
-.model-prototype:has(#pricing:target) .model-anchor-link.active:not([href="#pricing"]),
-.model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"]),
-.model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"]) {
-  color: var(--model-muted);
-  font-weight: 500;
-}
-
-.model-prototype:has(#performance:target) .model-anchor-link.active:not([href="#performance"])::after,
-.model-prototype:has(#parameters:target) .model-anchor-link.active:not([href="#parameters"])::after,
-.model-prototype:has(#activity:target) .model-anchor-link.active:not([href="#activity"])::after,
-.model-prototype:has(#pricing:target) .model-anchor-link.active:not([href="#pricing"])::after,
-.model-prototype:has(#api:target) .model-anchor-link.active:not([href="#api"])::after,
-.model-prototype:has(#faq:target) .model-anchor-link.active:not([href="#faq"])::after {
-  opacity: 0;
-}
-
-.model-prototype:has(#performance:target) .model-anchor-link[href="#performance"],
-.model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"],
-.model-prototype:has(#activity:target) .model-anchor-link[href="#activity"],
-.model-prototype:has(#pricing:target) .model-anchor-link[href="#pricing"],
-.model-prototype:has(#api:target) .model-anchor-link[href="#api"],
-.model-prototype:has(#faq:target) .model-anchor-link[href="#faq"] {
-  color: var(--model-ink);
-  font-weight: 600;
-}
-
-.model-prototype:has(#performance:target) .model-anchor-link[href="#performance"]::after,
-.model-prototype:has(#parameters:target) .model-anchor-link[href="#parameters"]::after,
-.model-prototype:has(#activity:target) .model-anchor-link[href="#activity"]::after,
-.model-prototype:has(#pricing:target) .model-anchor-link[href="#pricing"]::after,
-.model-prototype:has(#api:target) .model-anchor-link[href="#api"]::after,
-.model-prototype:has(#faq:target) .model-anchor-link[href="#faq"]::after {
-  opacity: 1;
-}
-
 .model-prototype .model-tab-icon {
   display: inline-grid;
   width: 14px;
@@ -6533,7 +6492,7 @@ html:has(.model-prototype) {
  */
 .model-prototype .model-anchor-bar {
   top: var(--model-site-header-height, 126px);
-  height: 48px;
+  height: 40px;
   overflow-x: auto;
   overflow-y: hidden;
   box-sizing: border-box;
@@ -6544,12 +6503,12 @@ html:has(.model-prototype) {
 }
 
 .model-prototype .model-anchor-inner {
-  height: 48px;
-  min-height: 48px;
+  height: 40px;
+  min-height: 40px;
 }
 
 .model-prototype .model-anchor-links {
-  height: 48px;
+  height: 40px;
   min-width: max-content;
   gap: 24px;
 }
@@ -6557,13 +6516,13 @@ html:has(.model-prototype) {
 .model-prototype .model-anchor-link {
   width: auto !important;
   min-width: max-content;
-  height: 48px;
-  padding: 14px 0 12px;
+  height: 40px;
+  padding: 10px 0;
   white-space: nowrap;
 }
 
 .model-prototype .model-section {
-  scroll-margin-top: calc(var(--model-site-header-height, 126px) + 48px);
+  scroll-margin-top: calc(var(--model-site-header-height, 126px) + 40px);
 }
 
 .model-prototype .workbench {
@@ -7145,7 +7104,20 @@ html:has(.model-prototype) {
 
 .model-prototype .model-anchor-link[aria-current="page"]::after {
   z-index: 1;
+  height: 2px;
+  border-radius: 0;
+  background: #6b38e5;
+  box-shadow: none;
   opacity: 1 !important;
+}
+
+/* The rail is a 40px Figma frame including its selected marker. Removing the
+ * one-pixel border from the box model prevents the 2px marker from being
+ * clipped to a single pixel; the inset shadow keeps the quiet divider. */
+.model-prototype .model-anchor-bar {
+  border-top: 0;
+  border-bottom: 0;
+  box-shadow: inset 0 1px var(--model-line), inset 0 -1px var(--model-line), 0 8px 18px -18px rgb(23 26 33 / 0.45);
 }
 
 @media (max-width: 900px) {

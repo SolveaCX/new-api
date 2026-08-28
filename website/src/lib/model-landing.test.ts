@@ -284,6 +284,52 @@ describe("model landing configuration", () => {
     expect(config?.seo.description).toContain("audio");
   });
 
+  test("does not let a broad Gemini chat family hide a Gemini image generator", () => {
+    const config = getModelLandingConfigForPricingModel({
+      model_name: "gemini-2.5-flash-image",
+      vendor_name: "Google",
+      quota_type: 0,
+      model_ratio: 0.3,
+      completion_ratio: 6,
+      supported_endpoint_types: ["gemini"],
+      directory_metadata: { modalities: ["text", "image"] },
+    });
+
+    expect(config.generator?.kind).toBe("image");
+    expect(config.generator?.endpoint).toBe("/v1beta/models/gemini-2.5-flash-image:generateContent");
+    expect(config.generator?.protocol).toBe("gemini-image");
+  });
+
+  test("keeps dynamic media Playground fields aligned with each model contract", () => {
+    const grok = getModelLandingConfigForPricingModel({
+      model_name: "grok-imagine-video",
+      vendor_name: "xAI",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.07,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video"],
+    });
+    expect(grok?.generator).toMatchObject({
+      endpoint: "/v1/videos",
+      protocol: "grok-video",
+      referenceLimits: { image: 1 },
+    });
+    expect(grok?.generator?.fields.map((field) => field.name)).toEqual(["duration"]);
+
+    const veo = getModelLandingConfigForPricingModel({
+      model_name: "veo-3.1-generate-preview",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.4,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video"],
+    });
+    expect(veo?.generator).toMatchObject({ protocol: "veo-video", referenceLimits: { image: 1 } });
+    expect(veo?.generator?.fields.map((field) => field.name)).toEqual(["size", "duration"]);
+  });
+
   test("does not put Playground copy into generic audio landing content", () => {
     const config = getModelLandingConfigForPricingModel({
       model_name: "eleven_sound_v1",

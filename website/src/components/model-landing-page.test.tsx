@@ -12,6 +12,7 @@ import {
 } from "@/lib/model-landing";
 import type { PricingModel } from "@/lib/pricing";
 import type { RankingsData } from "@/lib/rankings-live";
+import { getImagePlaygroundExample } from "@/lib/image-prompt-templates";
 
 const gptFamilyModels: PricingModel[] = [
   {
@@ -119,7 +120,7 @@ describe("ModelLandingPage", () => {
     const url = new URL(encodedHref!.replaceAll("&amp;", "&"));
     expect(url.pathname).toBe("/playground");
     expect(url.searchParams.get("model")).toBe("gpt-image-2");
-    expect(url.searchParams.get("prompt")).toBe(GPT_IMAGE_2_CONFIG.examplePrompt);
+    expect(url.searchParams.get("prompt")).toBe(getImagePlaygroundExample("gpt-image-2")?.prompt);
     expect(url.searchParams.has("redirect")).toBe(false);
   });
 
@@ -152,6 +153,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("Playground (edit before sign-up)");
     expect(html).toContain("Generator setup");
     expect(html).toContain("Open in Playground");
+    expect(html).not.toContain('class="prompt-library-link"');
     expect(html).toContain("Request preview");
     expect(html).toContain("$0.047 / second");
     expect(html).not.toContain('<p class="eyebrow">Capabilities</p>');
@@ -602,13 +604,14 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("Prompt library");
     expect(videoHtml).toContain("/v1/videos");
     expect(videoHtml).toContain('class="preview-media"');
-    expect(videoHtml).toContain("/assets/cli/product-reveal.mp4");
-    expect(videoHtml).toContain("/assets/cli/ugc-ad-clips.mp4");
-    expect(videoHtml).toContain("/assets/cli/localized-variants.mp4");
-    expect(videoHtml).toContain("/assets/cli/product-reveal.mp4");
-    expect(videoHtml).toContain("campaign-hero.png");
-    expect(videoHtml).toContain("storyboard-motion.png");
-    expect(videoHtml).toContain("thumbnail-test-set.png");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/video-profession-01-manga-seedance-2-5.mp4");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-02/video-profession-02-seedance-2-5-tvc-kettle.mp4");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-03/video-profession-03-seedance-2-5-sci-fi-set-extension.mp4");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-04/video-profession-04-seedance-2-5-open-world-trailer.mp4");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-05/video-profession-05-seedance-2-5-space-science-explainer.mp4");
+    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/video-profession-06-seedance-2-5-stage-projection.mp4");
+    expect(videoHtml).not.toContain("/assets/cli/ugc-ad-clips.mp4");
+    expect(videoHtml).not.toContain("/assets/cli/localized-variants.mp4");
     expect(videoHtml).not.toContain("prompt-high-speed-action");
     expect(videoHtml).not.toContain("formula car at speed");
     expect(videoHtml).not.toContain("upload-example");
