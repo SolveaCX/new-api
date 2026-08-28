@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
 import { api } from '@/lib/api'
+import { getCustomerInvite } from './lib/storage'
 import type {
   LoginPayload,
   LoginResponse,
@@ -124,6 +125,7 @@ export async function getOAuthState(): Promise<string> {
   const res = await api.get('/api/oauth/state', {
     params: {
       aff,
+      invite: getCustomerInvite() || undefined,
       ads_attribution: adsAttribution || undefined,
       ...getGAMeasurementIdentifiers(),
     },

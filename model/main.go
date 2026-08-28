@@ -352,6 +352,7 @@ func orderedMigrationModels() []migrationModel {
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&AdsAttributionOutbox{}, "AdsAttributionOutbox"},
+		{&CustomerReferralOutbox{}, "CustomerReferralOutbox"},
 		{&PaymentAnalyticsOutbox{}, "PaymentAnalyticsOutbox"},
 		{&PaymentAnalyticsEventReceipt{}, "PaymentAnalyticsEventReceipt"},
 		{&StripeBonusClaim{}, "StripeBonusClaim"},

@@ -150,6 +150,7 @@ func main() {
 	// the durable product outbox into the shared Ads Agent attribution service.
 	service.StartAdsAttributionDeliveryTask()
 	service.StartPaymentAnalyticsDeliveryTask()
+	service.StartCustomerReferralDeliveryTask()
 
 	// Stripe user win-back campaign scheduler (master node, default-off)
 	service.StartRecallCampaignTasks()

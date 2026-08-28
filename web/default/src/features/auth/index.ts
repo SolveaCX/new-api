@@ -92,6 +92,9 @@ export {
   removeUserId,
   getAffiliateCode,
   saveAffiliateCode,
+  getCustomerInvite,
+  saveCustomerInvite,
+  clearCustomerInvite,
 } from './lib/storage'
 
 export { isRegistrationEmailVerified } from './lib/registration-email-verification'

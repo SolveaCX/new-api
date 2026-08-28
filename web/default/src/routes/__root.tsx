@@ -25,6 +25,13 @@ import {
   useLocation,
 } from '@tanstack/react-router'
 import i18n from '@/i18n/config'
+import { getLanguagePreferenceCookie } from '@/i18n/language-preference-cookie'
+import {
+  applyInterfaceLanguage,
+  getPreferredUserLanguage,
+  persistUserLanguageCookie,
+  syncUserLanguagePreferenceToDatabase,
+} from '@/i18n/user-language-preference'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useTranslation } from 'react-i18next'
@@ -36,18 +43,14 @@ import {
 } from '@/lib/analytics/mixpanel'
 import { getSelf } from '@/lib/api'
 import { getPublicPathLanguage, isPublicWebsitePath } from '@/lib/public-locale'
-import { getLanguagePreferenceCookie } from '@/i18n/language-preference-cookie'
-import {
-  applyInterfaceLanguage,
-  getPreferredUserLanguage,
-  persistUserLanguageCookie,
-  syncUserLanguagePreferenceToDatabase,
-} from '@/i18n/user-language-preference'
 import { ThemeCustomizationProvider } from '@/context/theme-customization-provider'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
-import { saveAffiliateCode } from '@/features/auth/lib/storage'
+import {
+  saveAffiliateCode,
+  saveCustomerInvite,
+} from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
 import { getSetupStatus } from '@/features/setup/api'
@@ -131,6 +134,20 @@ function RootComponent() {
     if (aff) {
       saveAffiliateCode(aff)
     }
+
+    const invite = new URLSearchParams(window.location.search)
+      .get('invite')
+      ?.trim()
+    if (invite) {
+      saveCustomerInvite(invite)
+      const sanitizedURL = new URL(window.location.href)
+      sanitizedURL.searchParams.delete('invite')
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${sanitizedURL.pathname}${sanitizedURL.search}${sanitizedURL.hash}`
+      )
+    }
     captureAdsAttribution()
   }, [location.search])
 
@@ -144,7 +161,12 @@ function RootComponent() {
   }, [location.pathname])
 
   useEffect(() => {
-    trackMixpanelPageView(location.pathname, window.location.search)
+    const analyticsSearch = new URLSearchParams(window.location.search)
+    analyticsSearch.delete('invite')
+    const sanitizedSearch = analyticsSearch.toString()
+      ? `?${analyticsSearch.toString()}`
+      : ''
+    trackMixpanelPageView(location.pathname, sanitizedSearch)
   }, [location.pathname, location.search])
 
   return (

@@ -70,6 +70,8 @@ import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { isRegistrationEmailVerified } from '@/features/auth/lib/registration-email-verification'
 import {
   getAffiliateCode,
+  getCustomerInvite,
+  clearCustomerInvite,
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
 import {
@@ -304,12 +306,14 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
+        invite: getCustomerInvite() || undefined,
         ads_attribution: adsAttribution || undefined,
         turnstile: turnstileToken,
         website: data.website || undefined,
       })
 
       if (res?.success) {
+        clearCustomerInvite()
         // Fire Google Ads signup conversion (no-op unless configured via env).
         trackSignupConversion()
         // Fire TikTok / Meta / X signup conversions (no-op unless configured).
