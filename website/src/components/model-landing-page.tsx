@@ -2920,7 +2920,14 @@ function buildPromptLibraryItems(
         // profession clip loads. If the CDN video is unavailable, this exact
         // product/food/hospitality/etc. reference remains in the card instead
         // of falling through to an unrelated generic image.
-        example: { poster: template.poster, video: template.video },
+        example: {
+          // The model-specific CDN poster set is intentionally not used here:
+          // a failed profession clip must still show the matching workflow
+          // image (product macro, food motion, hotel, vehicle, UI, or
+          // architecture), never another profession's thumbnail.
+          poster: PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster,
+          video: template.video,
+        },
       }));
     }
   }
