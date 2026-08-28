@@ -202,6 +202,37 @@ describe("ModelsDirectoryTable", () => {
     expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell");
     expect(html).not.toContain("whitespace-normal xl:table-cell");
   });
+
+  test("keeps promotion badges in a dedicated row on narrow model cells", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={getModelsDirectoryTableCopy("en")}
+        rows={[
+          {
+            name: "glm-5.3-flash",
+            vendor: "Z.ai",
+            official: "$1",
+            discounted: "$0.8",
+            officialUsd: 1,
+            discountedUsd: 0.8,
+            iconKey: "zai",
+          },
+        ]}
+      />
+    );
+
+    const nameIndex = html.indexOf(">glm-5.3-flash</span>");
+    const badgeRowIndex = html.indexOf('class="mt-1 flex flex-wrap items-center gap-1.5"');
+    const badgeRowEnd = html.indexOf('class="text-muted-foreground/70', badgeRowIndex);
+    const badgeRow = html.slice(badgeRowIndex, badgeRowEnd);
+
+    expect(nameIndex).toBeGreaterThanOrEqual(0);
+    expect(badgeRowIndex).toBeGreaterThan(nameIndex);
+    expect(badgeRowEnd).toBeGreaterThan(badgeRowIndex);
+    expect(badgeRow).toContain("Limited discount");
+    expect(badgeRow).toContain("New release");
+  });
 });
 
 describe("attribution label", () => {

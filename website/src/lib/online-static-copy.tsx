@@ -132,14 +132,14 @@ type OnlineCopy = {
     enterpriseCta: string;
     enterpriseLabel: string;
     local: ReactNode;
-    discountLabel: string;
+    limitedOffer: string;
     mostPopular: string;
     payAsYouGo: string;
     payCta: (price: string) => string;
     perMonth: string;
     payWith: string;
     paymentMethods: PaymentMethodLabels;
-    plans: Record<"Go" | "Pro" | "Max", PlanCopy>;
+    plans: Record<"Starter" | "Pro" | "Max", PlanCopy>;
     subscriptionNotRequired: string;
     sub: ReactNode;
     textModelsLabel: string;
@@ -294,7 +294,7 @@ const en: OnlineCopy = {
     enterpriseCta: "Contact sales",
     enterpriseLabel: "Enterprise",
     local: <>Stripe Checkout · Adaptive Pricing (BRL/INR/CNY/EUR) · bank transfer & invoicing via <u>Enterprise billing</u> · cancel anytime — new users start with $1 free credit</>,
-    discountLabel: "80% off",
+    limitedOffer: "LIMITED OFFER",
     mostPopular: "MOST POPULAR",
     payAsYouGo: "Starter top-up",
     payCta: (price) => `Subscribe Pro ${price}/mo sign in`,
@@ -302,7 +302,7 @@ const en: OnlineCopy = {
     payWith: paymentMethodCopy.en.payWith,
     paymentMethods: paymentMethodCopy.en.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "For individuals & light daily use",
         cta: "Subscribe",
         text: "Up to $45 model usage / mo",
@@ -324,7 +324,7 @@ const en: OnlineCopy = {
     subscriptionNotRequired: "Credit package",
     sub: (
       <>
-        Subscribe to Go, Pro or Max for more model usage. All 100+ models are included — GPT, Claude,
+        Subscribe to Starter, Pro or Max for more model usage. All 100+ models are included — GPT, Claude,
         Gemini, DeepSeek, Kimi, GLM, plus Seedance image & video. <b>Enterprise contracts add committed-volume discounts</b>.
       </>
     ),
@@ -490,7 +490,7 @@ const zh: OnlineCopy = {
     enterpriseCta: "联系销售",
     enterpriseLabel: "企业版",
     local: <>Stripe Checkout · 自适应定价 (BRL/INR/CNY/EUR) · 企业账单支持银行转账与发票 · 随时取消，新用户送 $1 免费额度</>,
-    discountLabel: "80% off",
+    limitedOffer: "限时特惠",
     mostPopular: "最受欢迎",
     payAsYouGo: "起始充值",
     payCta: (price) => `订阅 Pro ${price}/月并登录`,
@@ -498,7 +498,7 @@ const zh: OnlineCopy = {
     payWith: paymentMethodCopy.zh.payWith,
     paymentMethods: paymentMethodCopy.zh.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "适合个人与轻量日常使用",
         cta: "立即订阅",
         text: "每月最多 $45 模型用量",
@@ -520,7 +520,7 @@ const zh: OnlineCopy = {
     subscriptionNotRequired: "额度包",
     sub: (
       <>
-        订阅 Go、Pro 或 Max 获得更多模型用量。全部 100+ 模型均可使用，GPT、Claude、Gemini、DeepSeek、Kimi、GLM，以及 Seedance 生图和生视频。<b>企业级合同提供承诺用量折扣</b>。
+        订阅 Starter、Pro 或 Max 获得更多模型用量。全部 100+ 模型均可使用，GPT、Claude、Gemini、DeepSeek、Kimi、GLM，以及 Seedance 生图和生视频。<b>企业级合同提供承诺用量折扣</b>。
       </>
     ),
     textModelsLabel: "全部模型",
@@ -545,7 +545,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Contactar ventas",
     enterpriseLabel: "Empresa",
     local: <>Stripe Checkout · Precios adaptativos (BRL/INR/CNY/EUR) · transferencia bancaria y facturación mediante <u>facturación empresarial</u> · cancela cuando quieras; los nuevos usuarios empiezan con $1 de crédito gratis</>,
-    discountLabel: "80% off",
+    limitedOffer: "OFERTA LIMITADA",
     mostPopular: "MÁS POPULAR",
     payAsYouGo: "Recarga inicial",
     payCta: (price) => `Suscríbete a Pro por ${price}/mes e inicia sesión`,
@@ -553,7 +553,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.es.payWith,
     paymentMethods: paymentMethodCopy.es.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Para uso individual y diario ligero",
         cta: "Suscribirse",
         text: "Hasta $45 de uso de modelos / mes",
@@ -573,7 +573,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Paquete de créditos",
-    sub: <>Suscríbete a Go, Pro o Max para obtener más uso de modelos. Incluye todos los más de 100 modelos: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, además de imagen y vídeo Seedance. <b>Los contratos empresariales añaden descuentos por volumen comprometido</b>.</>,
+    sub: <>Suscríbete a Starter, Pro o Max para obtener más uso de modelos. Incluye todos los más de 100 modelos: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, además de imagen y vídeo Seedance. <b>Los contratos empresariales añaden descuentos por volumen comprometido</b>.</>,
     textModelsLabel: "Todos los modelos",
     title: <>Precios flexibles.<br />Todos los modelos incluidos.</>,
     toolsLabel: "Créditos de herramientas",
@@ -587,7 +587,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Contacter l'équipe commerciale",
     enterpriseLabel: "Entreprise",
     local: <>Stripe Checkout · Tarification adaptative (BRL/INR/CNY/EUR) · virement bancaire et facturation via <u>facturation entreprise</u> · annulation à tout moment; les nouveaux utilisateurs commencent avec $1 de crédit gratuit</>,
-    discountLabel: "80% off",
+    limitedOffer: "OFFRE LIMITÉE",
     mostPopular: "LE PLUS POPULAIRE",
     payAsYouGo: "Recharge de départ",
     payCta: (price) => `S'abonner à Pro pour ${price}/mois et se connecter`,
@@ -595,7 +595,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.fr.payWith,
     paymentMethods: paymentMethodCopy.fr.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Pour les particuliers et un usage quotidien léger",
         cta: "S'abonner",
         text: "Jusqu'à $45 d'utilisation de modèles / mois",
@@ -615,7 +615,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Pack de crédits",
-    sub: <>Abonnez-vous à Go, Pro ou Max pour obtenir plus d&apos;utilisation de modèles. Les 100+ modèles sont inclus : GPT, Claude, Gemini, DeepSeek, Kimi, GLM, ainsi que l&apos;image et la vidéo Seedance. <b>Les contrats entreprise ajoutent des remises sur volume engagé</b>.</>,
+    sub: <>Abonnez-vous à Starter, Pro ou Max pour obtenir plus d&apos;utilisation de modèles. Les 100+ modèles sont inclus : GPT, Claude, Gemini, DeepSeek, Kimi, GLM, ainsi que l&apos;image et la vidéo Seedance. <b>Les contrats entreprise ajoutent des remises sur volume engagé</b>.</>,
     textModelsLabel: "Tous les modèles",
     title: <>Tarifs flexibles.<br />Tous les modèles inclus.</>,
     toolsLabel: "Crédits d'outils",
@@ -629,7 +629,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Falar com vendas",
     enterpriseLabel: "Empresarial",
     local: <>Stripe Checkout · Preços adaptativos (BRL/INR/CNY/EUR) · transferência bancária e faturamento via <u>cobrança empresarial</u> · cancele quando quiser; novos usuários começam com $1 de crédito grátis</>,
-    discountLabel: "80% off",
+    limitedOffer: "OFERTA LIMITADA",
     mostPopular: "MAIS POPULAR",
     payAsYouGo: "Recarga inicial",
     payCta: (price) => `Assine Pro por ${price}/mês e entre`,
@@ -637,7 +637,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.pt.payWith,
     paymentMethods: paymentMethodCopy.pt.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Para uso individual e diário leve",
         cta: "Assinar",
         text: "Até $45 de uso de modelos / mês",
@@ -657,7 +657,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Pacote de créditos",
-    sub: <>Assine Go, Pro ou Max para ter mais uso de modelos. Todos os 100+ modelos estão incluídos: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, além de imagem e vídeo Seedance. <b>Contratos empresariais adicionam descontos por volume contratado</b>.</>,
+    sub: <>Assine Starter, Pro ou Max para ter mais uso de modelos. Todos os 100+ modelos estão incluídos: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, além de imagem e vídeo Seedance. <b>Contratos empresariais adicionam descontos por volume contratado</b>.</>,
     textModelsLabel: "Todos os modelos",
     title: <>Preços flexíveis.<br />Todos os modelos incluídos.</>,
     toolsLabel: "Créditos de ferramentas",
@@ -671,7 +671,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Связаться с продажами",
     enterpriseLabel: "Корпоративный",
     local: <>Stripe Checkout · адаптивные цены (BRL/INR/CNY/EUR) · банковский перевод и счета через <u>корпоративный биллинг</u> · отмена в любое время; новые пользователи начинают с бесплатного кредита $1</>,
-    discountLabel: "80% off",
+    limitedOffer: "ОГРАНИЧЕННОЕ ПРЕДЛОЖЕНИЕ",
     mostPopular: "ПОПУЛЯРНО",
     payAsYouGo: "Стартовое пополнение",
     payCta: (price) => `Оформить Pro за ${price}/мес. и войти`,
@@ -679,7 +679,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.ru.payWith,
     paymentMethods: paymentMethodCopy.ru.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Для индивидуального и лёгкого ежедневного использования",
         cta: "Оформить",
         text: "До $45 использования моделей / мес.",
@@ -699,7 +699,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Пакет кредитов",
-    sub: <>Подпишитесь на Go, Pro или Max, чтобы получить больший объём использования моделей. Доступны все 100+ моделей: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, а также изображения и видео Seedance. <b>Корпоративные контракты дают скидки за договорной объём</b>.</>,
+    sub: <>Подпишитесь на Starter, Pro или Max, чтобы получить больший объём использования моделей. Доступны все 100+ моделей: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, а также изображения и видео Seedance. <b>Корпоративные контракты дают скидки за договорной объём</b>.</>,
     textModelsLabel: "Все модели",
     title: <>Гибкие тарифы.<br />Все модели включены.</>,
     toolsLabel: "Кредиты инструментов",
@@ -713,7 +713,7 @@ const localizedPricingCopy = {
     enterpriseCta: "営業に問い合わせる",
     enterpriseLabel: "エンタープライズ",
     local: <>Stripe Checkout · 適応型価格 (BRL/INR/CNY/EUR) · <u>エンタープライズ請求</u>で銀行振込と請求書に対応 · いつでも解約可能。新規ユーザーは $1 の無料クレジットから開始</>,
-    discountLabel: "80% off",
+    limitedOffer: "期間限定オファー",
     mostPopular: "一番人気",
     payAsYouGo: "初回チャージ",
     payCta: (price) => `Pro を ${price}/月で登録してログイン`,
@@ -721,7 +721,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.ja.payWith,
     paymentMethods: paymentMethodCopy.ja.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "個人利用と軽い日常利用向け",
         cta: "登録する",
         text: "月あたり最大 $45 のモデル利用",
@@ -741,7 +741,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "クレジットパック",
-    sub: <>Go、Pro、Max を登録すると、より多くのモデル利用枠を使えます。GPT、Claude、Gemini、DeepSeek、Kimi、GLM、Seedance の画像・動画を含む 100+ モデルすべてが対象です。<b>エンタープライズ契約ではコミット量割引が追加されます</b>。</>,
+    sub: <>Starter、Pro、Max を登録すると、より多くのモデル利用枠を使えます。GPT、Claude、Gemini、DeepSeek、Kimi、GLM、Seedance の画像・動画を含む 100+ モデルすべてが対象です。<b>エンタープライズ契約ではコミット量割引が追加されます</b>。</>,
     textModelsLabel: "すべてのモデル",
     title: <>柔軟な料金。<br />すべてのモデル込み。</>,
     toolsLabel: "ツールクレジット",
@@ -755,7 +755,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Liên hệ kinh doanh",
     enterpriseLabel: "Doanh nghiệp",
     local: <>Stripe Checkout · giá thích ứng (BRL/INR/CNY/EUR) · chuyển khoản ngân hàng và hóa đơn qua <u>thanh toán doanh nghiệp</u> · hủy bất cứ lúc nào; người dùng mới bắt đầu với $1 credit miễn phí</>,
-    discountLabel: "80% off",
+    limitedOffer: "ƯU ĐÃI CÓ HẠN",
     mostPopular: "PHỔ BIẾN NHẤT",
     payAsYouGo: "Nạp khởi đầu",
     payCta: (price) => `Đăng ký Pro ${price}/tháng và đăng nhập`,
@@ -763,7 +763,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.vi.payWith,
     paymentMethods: paymentMethodCopy.vi.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Cho cá nhân và nhu cầu hằng ngày nhẹ",
         cta: "Đăng ký",
         text: "Tối đa $45 mức sử dụng model / tháng",
@@ -783,7 +783,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Gói credit",
-    sub: <>Đăng ký Go, Pro hoặc Max để có thêm mức sử dụng model. Tất cả hơn 100 model đều được bao gồm: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, cùng hình ảnh và video Seedance. <b>Hợp đồng doanh nghiệp có thêm chiết khấu sản lượng cam kết</b>.</>,
+    sub: <>Đăng ký Starter, Pro hoặc Max để có thêm mức sử dụng model. Tất cả hơn 100 model đều được bao gồm: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, cùng hình ảnh và video Seedance. <b>Hợp đồng doanh nghiệp có thêm chiết khấu sản lượng cam kết</b>.</>,
     textModelsLabel: "Tất cả model",
     title: <>Giá linh hoạt.<br />Bao trọn mọi model.</>,
     toolsLabel: "Credit công cụ",
@@ -797,7 +797,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Vertrieb kontaktieren",
     enterpriseLabel: "Unternehmen",
     local: <>Stripe Checkout · adaptive Preise (BRL/INR/CNY/EUR) · Banküberweisung und Rechnungen über <u>Enterprise-Abrechnung</u> · jederzeit kündbar; neue Nutzer starten mit $1 Gratisguthaben</>,
-    discountLabel: "80% off",
+    limitedOffer: "BEGRENZTES ANGEBOT",
     mostPopular: "BELIEBT",
     payAsYouGo: "Startguthaben",
     payCta: (price) => `Pro für ${price}/Monat abonnieren und anmelden`,
@@ -805,7 +805,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.de.payWith,
     paymentMethods: paymentMethodCopy.de.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Für Einzelpersonen und leichte tägliche Nutzung",
         cta: "Abonnieren",
         text: "Bis zu $45 Modellnutzung / Monat",
@@ -825,7 +825,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Guthabenpaket",
-    sub: <>Abonnieren Sie Go, Pro oder Max für mehr Modellnutzung. Alle 100+ Modelle sind enthalten: GPT, Claude, Gemini, DeepSeek, Kimi, GLM sowie Seedance Bild und Video. <b>Enterprise-Verträge bieten zusätzlich Commit-Volumen-Rabatte</b>.</>,
+    sub: <>Abonnieren Sie Starter, Pro oder Max für mehr Modellnutzung. Alle 100+ Modelle sind enthalten: GPT, Claude, Gemini, DeepSeek, Kimi, GLM sowie Seedance Bild und Video. <b>Enterprise-Verträge bieten zusätzlich Commit-Volumen-Rabatte</b>.</>,
     textModelsLabel: "Alle Modelle",
     title: <>Flexible Preise.<br />Alle Modelle inklusive.</>,
     toolsLabel: "Tool-Guthaben",
@@ -839,7 +839,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Hubungi sales",
     enterpriseLabel: "Perusahaan",
     local: <>Stripe Checkout · harga adaptif (BRL/INR/CNY/EUR) · transfer bank dan faktur melalui <u>penagihan perusahaan</u> · batalkan kapan saja; pengguna baru mulai dengan kredit gratis $1</>,
-    discountLabel: "80% off",
+    limitedOffer: "PENAWARAN TERBATAS",
     mostPopular: "PALING POPULER",
     payAsYouGo: "Top-up awal",
     payCta: (price) => `Berlangganan Pro ${price}/bulan dan masuk`,
@@ -847,7 +847,7 @@ const localizedPricingCopy = {
     payWith: paymentMethodCopy.id.payWith,
     paymentMethods: paymentMethodCopy.id.methods,
     plans: {
-      Go: {
+      Starter: {
         audience: "Untuk individu dan penggunaan harian ringan",
         cta: "Berlangganan",
         text: "Hingga $45 penggunaan model / bulan",
@@ -867,7 +867,7 @@ const localizedPricingCopy = {
       },
     },
     subscriptionNotRequired: "Paket kredit",
-    sub: <>Berlangganan Go, Pro, atau Max untuk penggunaan model yang lebih besar. Semua 100+ model tersedia: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, plus gambar dan video Seedance. <b>Kontrak perusahaan menambahkan diskon volume komitmen</b>.</>,
+    sub: <>Berlangganan Starter, Pro, atau Max untuk penggunaan model yang lebih besar. Semua 100+ model tersedia: GPT, Claude, Gemini, DeepSeek, Kimi, GLM, plus gambar dan video Seedance. <b>Kontrak perusahaan menambahkan diskon volume komitmen</b>.</>,
     textModelsLabel: "Semua model",
     title: <>Harga fleksibel.<br />Semua model termasuk.</>,
     toolsLabel: "Kredit tool",
