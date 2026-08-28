@@ -521,6 +521,8 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/self/tokens", middleware.UserAuth(), controller.GetUserTokenQuotaDates)
 		dataRoute.GET("/ops_report", middleware.AdminAuth(), controller.GetOpsReport)
 		dataRoute.GET("/ops_report_stripe", middleware.AdminAuth(), controller.GetOpsStripeReport)
+		dataRoute.GET("/stripe_card_risk", middleware.RootAuth(), controller.AdminGetStripeCardRiskGroups)
+		dataRoute.POST("/stripe_card_observations/backfill", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.AdminBackfillStripeCardObservations)
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
 		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
 		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
