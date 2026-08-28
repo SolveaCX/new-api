@@ -878,6 +878,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const originalPrice = discountPreview
                 ? formatPlanPrice(discountPreview.originalTotal, currency)
                 : referencePrice
+              // The campaign badge must be visible before a checkout quote is
+              // loaded. The configured plan/reference price pair is the
+              // source of truth for the static campaign presentation; a
+              // backend quote can still replace the payable total below.
+              const hasCampaignDiscount = Boolean(
+                originalPrice && originalPrice !== displayPrice
+              )
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -917,13 +924,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         ) : null}
                       </div>
                       <div className='flex shrink-0 flex-col items-end gap-1'>
-                        {discountPreview ? (
+                        {hasCampaignDiscount ? (
                           <span
-                            data-discount-kind={discountPreview.discountKind}
-                            data-subscription-discount-label='-80% off'
+                            data-discount-kind={
+                              discountPreview?.discountKind || 'campaign'
+                            }
+                            data-subscription-discount-label='80% off'
                             className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                           >
-                            {t('-80% off')}
+                            {t('80% off')}
                           </span>
                         ) : null}
                         {isMostPopular ? (

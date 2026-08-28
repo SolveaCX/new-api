@@ -40,8 +40,8 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain("All models");
     expect(html).toContain('<del class="toldprice">$90</del>');
     expect(html).toContain('<del class="toldprice">$300</del>');
-    expect(html.match(/class="tdiscount">-80% off<\/div>/g)?.length).toBe(3);
-    expect(html).not.toContain('class="tdiscount">-80% off</div><div class="tname">Enterprise');
+    expect(html.match(/class="tdiscount">80% off<\/div>/g)?.length).toBe(3);
+    expect(html).not.toContain('class="tdiscount">80% off</div><div class="tname">Enterprise');
     expect(html).not.toContain("Up to $45 model usage / mo");
     expect(html).not.toContain("Up to $90 model usage / mo");
     expect(html).not.toContain("Up to $300 model usage / mo");
@@ -81,7 +81,7 @@ describe("OnlinePricingPage", () => {
       for (const snippet of item.snippets) {
         expect(html).toContain(snippet);
       }
-      expect(html).toContain('class="tdiscount">-80% off</div>');
+      expect(html).toContain('class="tdiscount">80% off</div>');
       for (const referencePrice of ["$45", "$90", "$300"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }

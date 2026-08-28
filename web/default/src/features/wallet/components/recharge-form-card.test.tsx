@@ -265,7 +265,7 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('R$10')
     expect(html).toContain('data-recharge-original-price="10"')
     expect(html).toContain('line-through')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).not.toContain('OFF')
     expect(html).not.toContain('Save R$2')
   })
@@ -290,7 +290,7 @@ describe('RechargeFormCard', () => {
     expect(html).toContain('¥2,500')
     expect(html).toContain('¥3,000')
     expect(html).toContain('data-recharge-original-price="3000"')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).not.toContain('OFF')
     expect(html).not.toContain('Save ¥500')
     expect(html).not.toContain('Save ¥5</')
@@ -311,7 +311,7 @@ describe('RechargeFormCard', () => {
       />
     )
 
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('$8')
     expect(html).toContain('$10')
     expect(html).toContain('data-recharge-original-price="10"')
@@ -337,7 +337,7 @@ describe('RechargeFormCard', () => {
       />
     )
 
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('R$79.92')
     expect(html).toContain('R$99.9')
     expect(html).toContain('data-recharge-original-price="99.9"')
