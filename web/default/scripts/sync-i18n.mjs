@@ -25,6 +25,7 @@ const FALLBACK_COMPARE_LOCALE = 'en' // used for "still English" detection only
 const OBFUSCATED_KEYS = []
 
 const BRAND_AND_LITERAL_KEYS = new Set([
+  '-80% off',
   'AI Proxy',
   'API Base',
   'Serverless',
