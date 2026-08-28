@@ -89,19 +89,19 @@ export function ModelsDirectoryTable(props: Props) {
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E7E4EC] bg-white shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-24px_rgba(24,14,38,0.18)] dark:border-white/10 dark:bg-white/[0.03]">
       <div className="touch-pan-x overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
-        <table className="w-full min-w-[680px] table-fixed border-collapse text-sm lg:min-w-0">
+        <table className="w-full min-w-0 table-fixed border-collapse text-sm">
         <thead>
           <tr className="border-b border-[#EFECF3] bg-[#FBFAFC] text-left text-[11px] leading-4 font-bold tracking-[0.08em] text-[#6B7280] uppercase dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
-            <th className="sticky left-0 z-10 w-[25%] min-w-[220px] bg-[#FBFAFC] px-3 py-3.5 font-bold lg:static lg:z-auto lg:min-w-0 2xl:px-5 dark:bg-white/[0.02]">{props.copy.colModel}</th>
+            <th className="sticky left-0 z-10 w-[65%] min-w-[220px] bg-[#FBFAFC] px-3 py-3.5 font-bold lg:static lg:z-auto lg:w-[25%] lg:min-w-0 2xl:px-5 dark:bg-white/[0.02]">{props.copy.colModel}</th>
             <th className="hidden w-[11%] px-2 py-3.5 text-right font-bold lg:table-cell 2xl:px-3">{props.copy.colOfficial}</th>
             {!props.hideOurPrice ? (
-              <th className="w-[11%] px-2 py-3.5 text-right font-bold 2xl:px-3">
+              <th className="w-[20%] px-2 py-3.5 text-right font-bold lg:w-[11%] 2xl:px-3">
                 {props.copy.colOurPrice ?? props.copy.colFlatkey}
               </th>
             ) : null}
             {props.copy.colInput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell 2xl:px-3">{props.copy.colInput}</th> : null}
             {props.copy.colOutput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell 2xl:px-3">{props.copy.colOutput}</th> : null}
-            {props.copy.colDiscount ? <th className="w-[9%] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colDiscount}</th> : null}
+            {props.copy.colDiscount ? <th className="w-[15%] px-2 py-3.5 text-right font-bold lg:w-[9%] 2xl:px-3">{props.copy.colDiscount}</th> : null}
             {props.copy.colContext ? <th className="hidden w-[8%] px-2 py-3.5 text-right font-bold lg:table-cell 2xl:px-3">{props.copy.colContext}</th> : null}
             <th className="hidden w-[8%] px-2 py-3.5 text-right font-bold xl:table-cell 2xl:px-3">{props.copy.colLatency}</th>
             <th className="hidden w-[17%] px-2 py-3.5 text-left font-bold xl:table-cell 2xl:px-5">{props.copy.colHealth}</th>
