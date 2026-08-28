@@ -47,7 +47,7 @@ export const WEBSITE_LOCALE_LABELS: Record<WebsiteLocale, string> = {
 
 /** Public-site assets that can be selected without uploading a file. */
 export const BUILT_IN_MODEL_LOGOS = [
-  { label: 'Flatkey', value: '/assets/logos/flatkey-mark-dark.svg' },
+  { label: 'Flatkey', value: '/assets/logos/flatkey-mark-white.svg' },
   { label: 'OpenAI', value: '/assets/logos/openai.svg' },
   { label: 'Claude', value: '/assets/logos/claude.svg' },
   { label: 'Gemini', value: '/assets/logos/googlegemini.svg' },
