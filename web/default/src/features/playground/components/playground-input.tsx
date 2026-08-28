@@ -298,6 +298,7 @@ export function PlaygroundInput({
       <PromptInput
         accept={attachmentConfig.accept}
         className='rounded-3xl bg-white dark:bg-[#2f2f2f]'
+        globalDrop
         groupClassName='rounded-3xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 overflow-hidden dark:border-neutral-700 dark:bg-[#2f2f2f] dark:text-neutral-100 dark:has-disabled:!bg-[#2f2f2f]'
         maxFileSize={10 * 1024 * 1024}
         maxFiles={5}
