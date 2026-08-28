@@ -6,6 +6,7 @@ import {
   type PriceBandId,
 } from "./model-directory-meta";
 import type { ModelDirectoryMetadata } from "./pricing";
+import { modelPromotionPriority } from "./model-promotions";
 
 // Filter engine for the /models directory. Mirrors the prototype's semantics:
 //
@@ -295,6 +296,6 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
       return sorted.sort((a, b) => (b.saving ?? -1) - (a.saving ?? -1) || byPopularity(a, b));
     case "rank":
     default:
-      return sorted.sort(byPopularity);
+      return sorted.sort((a, b) => modelPromotionPriority(a.name) - modelPromotionPriority(b.name) || byPopularity(a, b));
   }
 }
