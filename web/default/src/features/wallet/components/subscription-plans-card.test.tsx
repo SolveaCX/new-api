@@ -333,22 +333,40 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     }
   })
 
-  test('hides the current plan module when there is no active plan and shows Go Pro Max first', () => {
+  test('hides the current plan module when there is no active plan and shows Starter Pro Max first', () => {
     const html = renderWalletCard()
 
     expect(html).not.toContain('Current subscription')
     expect(html).not.toContain('No active plan')
     expect(html).not.toContain('Choose a plan now')
-    expect(html.indexOf('Go')).toBeLessThan(html.indexOf('Pro'))
+    expect(html.indexOf('Starter')).toBeLessThan(html.indexOf('Pro'))
     expect(html.indexOf('Pro')).toBeLessThan(html.indexOf('Max'))
     expect(html).toContain('Buy now')
+  })
+
+  test('uses the campaign discount labels and limited ribbon per plan tier', () => {
+    const campaignPlans = plans.map((item, index) => ({
+      ...item,
+      plan: {
+        ...item.plan,
+        total_amount: [22_500_000, 45_000_000, 150_000_000][index],
+      },
+    }))
+    const html = renderWalletCardWithPlans(campaignPlans)
+
+    expect(html).toContain('<h4 class="text-xl font-semibold">Starter</h4>')
+    expect(html.match(/data-subscription-discount-label="80% off"/g)?.length).toBe(1)
+    expect(html.match(/data-subscription-discount-label="70% off"/g)?.length).toBe(2)
+    expect(html.match(/data-subscription-limited-offer/g)?.length).toBe(1)
+    expect(html).not.toContain('data-subscription-discount-label="OFF"')
+    expect(html).not.toContain('Save $')
   })
 
   test('shows localized plan positioning and marks Pro as most popular', async () => {
     await testI18n.changeLanguage('zh')
     try {
       const html = renderWalletCard()
-      const goStart = html.indexOf('Go')
+      const goStart = html.indexOf('入门版')
       const proStart = html.indexOf('Pro')
       const maxStart = html.indexOf('Max')
 
@@ -402,7 +420,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         },
       })
     )
-    const goStart = html.indexOf('Go')
+    const goStart = html.indexOf('Starter')
     const proStart = html.indexOf('Pro', goStart)
     const maxStart = html.indexOf('Max', proStart)
 
@@ -1410,7 +1428,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('¥1,000')
     expect(html).toContain('¥2,000')
-    expect(html).toContain('80% off')
+    expect(html).toContain('70% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1436,7 +1454,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
   test('does not locally discount plan card prices for recall offers', () => {
     const html = renderWalletCardWithRecall()
-    const goStart = html.indexOf('Go')
+    const goStart = html.indexOf('Starter')
     const proStart = html.indexOf('Pro', goStart)
     const maxStart = html.indexOf('Max', proStart)
     const goSlice = html.slice(goStart, proStart)
@@ -1473,7 +1491,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         },
       },
     ])
-    const goStart = html.indexOf('Go')
+    const goStart = html.indexOf('Starter')
     const proStart = html.indexOf('Pro', goStart)
     const goSlice = html.slice(goStart, proStart)
 
@@ -1535,7 +1553,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain(formatBrl(40))
     expect(html).toContain(formatBrl(50))
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).toContain('line-through')
     expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')

@@ -198,6 +198,22 @@ function getPlanCardDiscountPreview(
 type Translate = (key: string, options?: Record<string, unknown>) => string
 type SelfSubscriptionRefreshResult = 'applied' | 'superseded' | 'failed'
 
+function getPlanDisplayName(title: string, t: Translate): string {
+  return getPlanTier(title) === 'go' ? t('Starter') : title
+}
+
+function getPlanDiscountLabel(title: string, t: Translate): string | null {
+  switch (getPlanTier(title)) {
+    case 'go':
+      return t('80% off')
+    case 'pro':
+    case 'max':
+      return t('70% off')
+    default:
+      return null
+  }
+}
+
 function getPlanAudience(title: string, t: Translate): string {
   switch (getPlanTier(title)) {
     case 'go':
@@ -885,6 +901,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const hasCampaignDiscount = Boolean(
                 originalPrice && originalPrice !== displayPrice
               )
+              const displayName = getPlanDisplayName(plan.title, t)
+              const discountLabel = getPlanDiscountLabel(plan.title, t)
+              const isLimitedOffer = getPlanTier(plan.title) === 'go'
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -912,10 +931,18 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   )}
                 >
                   <CardContent className='flex h-full flex-col p-5'>
+                    {isLimitedOffer ? (
+                      <span
+                        data-subscription-limited-offer
+                        className='pointer-events-none absolute -top-2 -right-14 z-10 w-44 rotate-45 border border-rose-200 bg-rose-50 px-2 py-1 text-center text-[10px] leading-tight font-bold tracking-wide text-rose-700 shadow-sm dark:border-rose-800/70 dark:bg-rose-950/60 dark:text-rose-300'
+                      >
+                        {t('Limited')}
+                      </span>
+                    ) : null}
                     <div className='flex items-start justify-between gap-3'>
                       <div className='min-w-0'>
                         <h4 className='text-xl font-semibold'>
-                          {plan.title || t('Subscription Plans')}
+                          {displayName || t('Subscription Plans')}
                         </h4>
                         {audience ? (
                           <p className='text-muted-foreground mt-0.5 text-xs'>
@@ -924,15 +951,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         ) : null}
                       </div>
                       <div className='flex shrink-0 flex-col items-end gap-1'>
-                        {hasCampaignDiscount ? (
+                        {hasCampaignDiscount && discountLabel ? (
                           <span
                             data-discount-kind={
                               discountPreview?.discountKind || 'campaign'
                             }
-                            data-subscription-discount-label='80% off'
+                            data-subscription-discount-label={discountLabel}
                             className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                           >
-                            {t('80% off')}
+                            {discountLabel}
                           </span>
                         ) : null}
                         {isMostPopular ? (
