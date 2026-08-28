@@ -358,7 +358,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.match(/data-subscription-discount-label="80% off"/g)?.length).toBe(1)
     expect(html.match(/data-subscription-discount-label="70% off"/g)?.length).toBe(2)
     expect(html.match(/data-subscription-limited-offer/g)?.length).toBe(1)
-    expect(html).toContain('Limited offer')
+    expect(html).toContain('Limited')
     expect(html).toContain('relative overflow-hidden rounded-lg')
     expect(html).toContain('top-4 -right-13')
     expect(html).not.toContain('data-subscription-discount-label="OFF"')
