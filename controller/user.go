@@ -1047,6 +1047,14 @@ func filterUserModelsForDisplay(c *gin.Context, models []string) []string {
 	return operation_setting.FilterPricingVisibleModels(models)
 }
 
+func sortUserModelsByFamilyCreatedTime(models []string) []string {
+	createdTimes, err := model.GetModelCreatedTimes(models)
+	if err != nil {
+		return append([]string(nil), models...)
+	}
+	return model.SortModelsByFamilyAndCreatedTime(models, createdTimes)
+}
+
 func GetUserModels(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1080,14 +1088,14 @@ func GetUserModels(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"message": "",
-				"data":    filterUserModelsForDisplay(c, models),
+				"data":    filterUserModelsForDisplay(c, sortUserModelsByFamilyCreatedTime(models)),
 			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
-			"data":    filterUserModelsForDisplay(c, model.GetGroupEnabledModels(group)),
+			"data":    filterUserModelsForDisplay(c, sortUserModelsByFamilyCreatedTime(model.GetGroupEnabledModels(group))),
 		})
 		return
 	}
@@ -1102,7 +1110,7 @@ func GetUserModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    filterUserModelsForDisplay(c, models),
+		"data":    filterUserModelsForDisplay(c, sortUserModelsByFamilyCreatedTime(models)),
 	})
 	return
 }
