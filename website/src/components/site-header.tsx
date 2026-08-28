@@ -873,9 +873,9 @@ export function SiteHeader(props: Props) {
   );
 
   const promoLinkClass =
-    "group flex w-fit min-w-0 max-w-full items-start justify-center gap-2.5 rounded-full px-2.5 py-0 text-center text-[#0B0B0F] no-underline transition-colors hover:bg-white/55 focus-visible:bg-white/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6]/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#EEE5FF] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:rounded-xl max-[900px]:px-1.5 max-[900px]:py-0.5";
+    "group inline-flex w-auto min-w-0 max-w-full items-center justify-center gap-2.5 rounded-full px-2.5 py-0 text-center text-[#0B0B0F] no-underline transition-colors hover:bg-white/55 focus-visible:bg-white/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6]/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#EEE5FF] max-[699px]:w-full max-[699px]:max-w-[calc(100%-0.25rem)] max-[699px]:rounded-xl max-[699px]:px-1.5 max-[699px]:py-0.5";
   const promoStaticClass =
-    "flex w-fit min-w-0 max-w-full items-start justify-center gap-2.5 px-2.5 py-0 text-center text-[#0B0B0F] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:px-1.5 max-[900px]:py-0.5";
+    "inline-flex w-auto min-w-0 max-w-full items-center justify-center gap-2.5 px-2.5 py-0 text-center text-[#0B0B0F] max-[699px]:w-full max-[699px]:max-w-[calc(100%-0.25rem)] max-[699px]:px-1.5 max-[699px]:py-0.5";
 
   return (
     <header className="fk-site-header relative sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
@@ -894,9 +894,9 @@ export function SiteHeader(props: Props) {
           onFocusCapture={() => setPromoFocused(true)}
           onBlurCapture={handlePromoBlurCapture}
         >
-          <div className="relative z-10 mx-auto flex min-h-[60px] w-full max-w-[1920px] items-center justify-center gap-0 px-4 py-[14px] text-center">
+          <div className="relative z-10 mx-auto flex min-h-[60px] w-full max-w-[1920px] items-center justify-center gap-0 px-4 pt-3 pb-[18px] text-center min-[700px]:h-[60px] min-[700px]:py-[14px]">
             <div
-              className="flex w-full min-w-0 max-w-[min(100%,72rem)] flex-wrap items-center justify-center gap-x-2 text-center"
+              className="flex w-full min-w-0 max-w-[min(100%,72rem)] flex-wrap items-center justify-center gap-x-2 text-center min-[700px]:w-auto"
               aria-live={promoItems.length > 1 ? "polite" : undefined}
             >
               {activePromoLink ? (
@@ -907,7 +907,7 @@ export function SiteHeader(props: Props) {
                 >
                   {showDeepSeekMark ? (
                     <span
-                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1"
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1 max-[699px]:hidden"
                       aria-hidden="true"
                     >
                       <Image
@@ -927,7 +927,7 @@ export function SiteHeader(props: Props) {
                 <span className={promoStaticClass}>
                   {showDeepSeekMark ? (
                     <span
-                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1"
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1 max-[699px]:hidden"
                       aria-hidden="true"
                     >
                       <Image
@@ -947,7 +947,7 @@ export function SiteHeader(props: Props) {
             </div>
             {promoItems.length > 1 ? (
               <div
-                className="absolute bottom-1.5 left-1/2 flex h-5 -translate-x-1/2 items-center gap-1"
+                className="absolute bottom-2 left-1/2 flex h-1 -translate-x-1/2 items-center gap-1"
                 role="tablist"
                 aria-label={promoBannerCopy.dotLabel}
               >
