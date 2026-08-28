@@ -875,6 +875,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ? formatPlanPrice(discountPreview.total, currency)
                 : formatPlanPrice(configuredDisplayPrice.amount, currency)
               const referencePrice = getPlanReferencePrice(plan)
+              const originalPrice = discountPreview
+                ? formatPlanPrice(discountPreview.originalTotal, currency)
+                : referencePrice
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -917,9 +920,10 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         {discountPreview ? (
                           <span
                             data-discount-kind={discountPreview.discountKind}
-                            className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'
+                            data-subscription-discount-label='-80% off'
+                            className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                           >
-                            {t('OFF')}
+                            {t('-80% off')}
                           </span>
                         ) : null}
                         {isMostPopular ? (
@@ -932,12 +936,12 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     </div>
 
                     <div className='mt-6 flex flex-wrap items-end gap-2'>
-                      {referencePrice ? (
+                      {originalPrice ? (
                         <span
-                          data-subscription-reference-price={referencePrice}
+                          data-subscription-reference-price={originalPrice}
                           className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
                         >
-                          {referencePrice}
+                          {originalPrice}
                         </span>
                       ) : null}
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
@@ -947,16 +951,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         {t('per month')}
                       </span>
                     </div>
-                    {discountPreview ? (
-                      <div className='mt-1 text-xs font-medium text-[#166534] dark:text-[#86efac]'>
-                        {t('Save {{amount}}', {
-                          amount: formatPlanPrice(
-                            discountPreview.discountAmount,
-                            discountPreview.currency
-                          ),
-                        })}
-                      </div>
-                    ) : null}
 
                     <div className='grow' />
 
