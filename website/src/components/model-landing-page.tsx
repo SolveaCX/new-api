@@ -2781,7 +2781,9 @@ function PromptLibrarySection(props: {
           />
         </div>
         <div className="prompt-grid">
-          {items.map((item) => (
+          {items.map((item, index) => {
+            const isPriorityMedia = index === 0;
+            return (
             <article key={item.key} className="prompt-card">
               <div className="prompt-media">
                 {item.example.video ? (
@@ -2791,8 +2793,9 @@ function PromptLibrarySection(props: {
                     poster={item.example.poster || undefined}
                     muted
                     loop
-                    autoPlay
+                    autoPlay={isPriorityMedia}
                     playsInline
+                    preload={isPriorityMedia ? "metadata" : "none"}
                   />
                 ) : (
                   <Image
@@ -2801,7 +2804,8 @@ function PromptLibrarySection(props: {
                     fill
                     sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                     className="prompt-image object-cover"
-                    loading="eager"
+                    priority={isPriorityMedia}
+                    loading={isPriorityMedia ? "eager" : "lazy"}
                     // The reviewed prompt posters live on the public CDN. Bypass
                     // Next's server-side optimizer so a slow/large remote object
                     // cannot leave the card stuck on a broken image placeholder.
@@ -2833,7 +2837,8 @@ function PromptLibrarySection(props: {
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
