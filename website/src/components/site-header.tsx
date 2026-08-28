@@ -930,7 +930,8 @@ export function SiteHeader(props: Props) {
                     width={24}
                     height={24}
                     unoptimized
-                    className="size-6"
+                    className="size-6 shrink-0"
+                    style={{ width: 24, height: 24 }}
                   />
                 </span>
               ) : null}
