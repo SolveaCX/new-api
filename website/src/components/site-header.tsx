@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
 import {
@@ -168,6 +169,7 @@ const promoBannerCopyByLocale: Record<
   Locale,
   {
     dismissLabel: string;
+    dotLabel: string;
     linkLabel: string;
     message: string;
     nextLabel: string;
@@ -176,79 +178,91 @@ const promoBannerCopyByLocale: Record<
 > = withIdFallback({
   en: {
     dismissLabel: "Dismiss DeepSeek V4 announcement",
-    linkLabel: "Learn more →",
-    message: "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+    dotLabel: "Show announcement",
+    linkLabel: "Learn more",
+    message:
+      "DeepSeek V4 Pro is 15% off for a limited time. Join our Discord to get $5 in free credit.",
     nextLabel: "Next advertisement",
     previousLabel: "Previous advertisement",
   },
   zh: {
     dismissLabel: "关闭 DeepSeek V4 公告",
-    linkLabel: "了解更多 →",
-    message: "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
+    dotLabel: "显示公告",
+    linkLabel: "了解更多",
+    message:
+      "DeepSeek V4 Pro 限时优惠 15% 折扣。加入我们的 Discord，领取 5 美元免费额度。",
     nextLabel: "下一条广告",
     previousLabel: "上一条广告",
   },
   es: {
     dismissLabel: "Cerrar anuncio de DeepSeek V4",
-    linkLabel: "Más información →",
+    dotLabel: "Mostrar anuncio",
+    linkLabel: "Más información",
     message:
-      "DeepSeek V4 ya está aquí. Únete a nuestro Discord y recibe 5 USD en créditos gratis.",
+      "DeepSeek V4 Pro tiene un 15 % de descuento por tiempo limitado. Únete a nuestro Discord y recibe 5 USD de crédito gratis.",
     nextLabel: "Siguiente anuncio",
     previousLabel: "Anuncio anterior",
   },
   fr: {
     dismissLabel: "Fermer l’annonce DeepSeek V4",
-    linkLabel: "En savoir plus →",
+    dotLabel: "Afficher l’annonce",
+    linkLabel: "En savoir plus",
     message:
-      "DeepSeek V4 est arrivé. Rejoignez notre Discord et recevez 5 $ de crédits gratuits.",
+      "DeepSeek V4 Pro est à -15 % pour une durée limitée. Rejoignez notre Discord pour recevoir 5 $ de crédit gratuit.",
     nextLabel: "Annonce suivante",
     previousLabel: "Annonce précédente",
   },
   pt: {
     dismissLabel: "Fechar anúncio do DeepSeek V4",
-    linkLabel: "Saiba mais →",
+    dotLabel: "Mostrar anúncio",
+    linkLabel: "Saiba mais",
     message:
-      "O DeepSeek V4 chegou. Entre no nosso Discord e ganhe US$ 5 em créditos grátis.",
+      "O DeepSeek V4 Pro está com 15% de desconto por tempo limitado. Entre no nosso Discord e ganhe US$ 5 em crédito grátis.",
     nextLabel: "Próximo anúncio",
     previousLabel: "Anúncio anterior",
   },
   ru: {
     dismissLabel: "Закрыть объявление DeepSeek V4",
-    linkLabel: "Узнать больше →",
+    dotLabel: "Показать объявление",
+    linkLabel: "Узнать больше",
     message:
-      "DeepSeek V4 уже здесь. Присоединяйтесь к нашему Discord и получите 5 $ бесплатных кредитов.",
+      "Скидка 15% на DeepSeek V4 Pro действует ограниченное время. Присоединяйтесь к нашему Discord и получите 5 $ бесплатного кредита.",
     nextLabel: "Следующее объявление",
     previousLabel: "Предыдущее объявление",
   },
   ja: {
     dismissLabel: "DeepSeek V4 のお知らせを閉じる",
-    linkLabel: "詳細を見る →",
+    dotLabel: "お知らせを表示",
+    linkLabel: "詳細を見る",
     message:
-      "DeepSeek V4 が登場。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
+      "DeepSeek V4 Pro が期間限定で 15% オフ。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
     nextLabel: "次の広告",
     previousLabel: "前の広告",
   },
   vi: {
     dismissLabel: "Đóng thông báo DeepSeek V4",
-    linkLabel: "Tìm hiểu thêm →",
+    dotLabel: "Hiển thị thông báo",
+    linkLabel: "Tìm hiểu thêm",
     message:
-      "DeepSeek V4 đã ra mắt. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
+      "DeepSeek V4 Pro giảm 15% trong thời gian có hạn. Tham gia Discord để nhận 5 USD tín dụng miễn phí.",
     nextLabel: "Quảng cáo tiếp theo",
     previousLabel: "Quảng cáo trước",
   },
   de: {
     dismissLabel: "DeepSeek-V4-Ankündigung schließen",
-    linkLabel: "Mehr erfahren →",
+    dotLabel: "Ankündigung anzeigen",
+    linkLabel: "Mehr erfahren",
     message:
-      "DeepSeek V4 ist da. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
+      "DeepSeek V4 Pro ist für kurze Zeit 15 % günstiger. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
     nextLabel: "Nächste Anzeige",
     previousLabel: "Vorherige Anzeige",
   },
   id: {
     dismissLabel: "Tutup pengumuman DeepSeek V4",
-    linkLabel: "Pelajari lebih lanjut →",
+    dotLabel: "Tampilkan pengumuman",
+    linkLabel: "Pelajari lebih lanjut",
     message:
-      "DeepSeek V4 telah hadir. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
+      "DeepSeek V4 Pro diskon 15% untuk waktu terbatas. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
     nextLabel: "Iklan berikutnya",
     previousLabel: "Iklan sebelumnya",
   },
@@ -546,7 +560,7 @@ export function SiteHeader(props: Props) {
   const promoBannerHref = localizePath(PROMO_BANNER_ARTICLE_PATH, props.locale);
   const fallbackPromo: PublicAnnouncement = {
     content: promoBannerCopy.message,
-    extra: "DeepSeek V4",
+    extra: "",
     link: promoBannerHref,
     link_label: promoBannerCopy.linkLabel,
   };
@@ -567,6 +581,7 @@ export function SiteHeader(props: Props) {
   const activePromoLink = activePromo
     ? localizeAnnouncementLink(activePromo.link, props.locale)
     : undefined;
+  const showDeepSeekMark = /deepseek/i.test(activePromoContent);
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
@@ -826,12 +841,12 @@ export function SiteHeader(props: Props) {
   // rest of the message wraps naturally on narrow screens.
   const promoIntro = activePromoIntro ? (
     <span
-      className="mr-1 inline-flex max-w-full break-words items-center gap-1 rounded-full border border-white/35 bg-white/12 px-2 py-0.5 align-middle text-[10px] leading-4 font-bold tracking-[0.08em] text-white uppercase [overflow-wrap:anywhere] max-[900px]:mr-0.5 max-[900px]:rounded-none max-[900px]:border-0 max-[900px]:bg-transparent max-[900px]:px-0 max-[900px]:py-0 max-[900px]:text-[10px] max-[900px]:tracking-[0.04em] max-[900px]:text-white/80"
+      className="mr-1 inline-flex max-w-full break-words items-center gap-1 rounded-full border border-[#D4C1FF] bg-white/55 px-2 py-0.5 align-middle text-[10px] leading-4 font-bold tracking-[0.08em] text-[#4C1D95] uppercase [overflow-wrap:anywhere] max-[900px]:mr-0.5 max-[900px]:rounded-none max-[900px]:border-0 max-[900px]:bg-transparent max-[900px]:px-0 max-[900px]:py-0 max-[900px]:text-[10px] max-[900px]:tracking-[0.04em] max-[900px]:text-[#6B38E6]"
       data-promo-intro="true"
     >
       <span
         aria-hidden="true"
-        className="size-1.5 shrink-0 rounded-full bg-white/90 max-[900px]:size-1"
+        className="size-1.5 shrink-0 rounded-full bg-[#6B38E6] max-[900px]:size-1"
       />
       {activePromoIntro}
     </span>
@@ -841,7 +856,7 @@ export function SiteHeader(props: Props) {
     <>
       {" "}
       <span
-        className="inline-block max-w-full whitespace-nowrap font-semibold text-white underline decoration-white/55 underline-offset-4 transition-[text-decoration-color,opacity] group-hover:decoration-white group-hover:opacity-100 max-[900px]:whitespace-normal"
+        className="inline-block max-w-full whitespace-nowrap font-semibold text-[#0B0B0F] underline decoration-[#6B6870] underline-offset-2 transition-[text-decoration-color,opacity] group-hover:decoration-[#0B0B0F] group-hover:opacity-100 max-[900px]:whitespace-normal"
         data-promo-cta="true"
       >
         {activePromoLinkLabel}
@@ -858,15 +873,15 @@ export function SiteHeader(props: Props) {
   );
 
   const promoLinkClass =
-    "group flex w-fit min-w-0 max-w-full items-start justify-center gap-2 rounded-full px-2.5 py-0 text-center text-white no-underline transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-1 focus-visible:ring-offset-[#6B38E6] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:rounded-xl max-[900px]:px-1.5 max-[900px]:py-0.5";
+    "group flex w-fit min-w-0 max-w-full items-start justify-center gap-2.5 rounded-full px-2.5 py-0 text-center text-[#0B0B0F] no-underline transition-colors hover:bg-white/55 focus-visible:bg-white/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6]/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#EEE5FF] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:rounded-xl max-[900px]:px-1.5 max-[900px]:py-0.5";
   const promoStaticClass =
-    "flex w-fit min-w-0 max-w-full items-start justify-center gap-2 px-2.5 py-0 text-center text-white max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:px-1.5 max-[900px]:py-0.5";
+    "flex w-fit min-w-0 max-w-full items-start justify-center gap-2.5 px-2.5 py-0 text-center text-[#0B0B0F] max-[900px]:w-full max-[900px]:max-w-[calc(100%-0.25rem)] max-[900px]:px-1.5 max-[900px]:py-0.5";
 
   return (
     <header className="fk-site-header relative sticky top-0 z-50 border-b border-[#E7E4EC] bg-white/95 backdrop-blur-[8px]">
       {hasPromoBanner && activePromo ? (
         <div
-          className="relative isolate overflow-hidden border-b border-white/15 bg-[#6B38E6] text-white shadow-[0_8px_24px_-18px_rgba(59,24,128,.58)] min-[1200px]:h-12"
+          className="relative isolate overflow-hidden border-b border-[#D4C1FF] bg-[#EEE5FF] text-[#0B0B0F]"
           data-promo-banner="true"
           data-promo-pause-on-hover="true"
           data-promo-paused={promoPaused ? "true" : undefined}
@@ -879,15 +894,7 @@ export function SiteHeader(props: Props) {
           onFocusCapture={() => setPromoFocused(true)}
           onBlurCapture={handlePromoBlurCapture}
         >
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-1/2 w-[min(46rem,70vw)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,.12),transparent_68%)]"
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/20"
-          />
-          <div className="relative z-10 mx-auto flex min-h-[64px] w-full max-w-[100vw] flex-col items-center justify-center gap-0 px-3 py-1.5 pr-10 text-center max-[900px]:min-h-[64px] max-[900px]:px-3 max-[900px]:py-1.5 max-[900px]:pr-10 min-[901px]:min-h-12 min-[901px]:max-w-[var(--fk-site-frame-max-width)] min-[901px]:px-[var(--fk-site-gutter)] min-[901px]:py-0 min-[901px]:pr-[calc(var(--fk-site-gutter)+2.75rem)]">
+          <div className="relative z-10 mx-auto flex min-h-[60px] w-full max-w-[1920px] items-center justify-center gap-0 px-4 py-[14px] text-center">
             <div
               className="flex w-full min-w-0 max-w-[min(100%,72rem)] flex-wrap items-center justify-center gap-x-2 text-center"
               aria-live={promoItems.length > 1 ? "polite" : undefined}
@@ -898,14 +905,75 @@ export function SiteHeader(props: Props) {
                   href={activePromoLink}
                   data-promo-link="true"
                 >
+                  {showDeepSeekMark ? (
+                    <span
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1"
+                      aria-hidden="true"
+                    >
+                      <Image
+                        alt=""
+                        src="/assets/logos/deepseek.svg"
+                        width={24}
+                        height={24}
+                        unoptimized
+                        className="size-6"
+                      />
+                    </span>
+                  ) : null}
                   {promoCopy}
                 </Link>
               ) : (
                 <span className={promoStaticClass}>
+                  {showDeepSeekMark ? (
+                    <span
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1"
+                      aria-hidden="true"
+                    >
+                      <Image
+                        alt=""
+                        src="/assets/logos/deepseek.svg"
+                        width={24}
+                        height={24}
+                        unoptimized
+                        className="size-6"
+                      />
+                    </span>
+                  ) : null}
                   {promoCopy}
                 </span>
               )}
             </div>
+            {promoItems.length > 1 ? (
+              <div
+                className="absolute bottom-1.5 left-1/2 flex h-5 -translate-x-1/2 items-center gap-1"
+                role="tablist"
+                aria-label={promoBannerCopy.dotLabel}
+              >
+                {promoItems.map((item, index) => {
+                  const selected = index === safePromoIndex;
+                  return (
+                    <button
+                      key={item.id ?? index}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-label={`${promoBannerCopy.dotLabel} ${index + 1}`}
+                      className="inline-flex h-5 items-center justify-center rounded-full px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6] focus-visible:ring-offset-1"
+                      onClick={() => setPromoIndex(index)}
+                    >
+                      <span
+                        className={cn(
+                          "block rounded-full transition-[width,background-color] duration-200",
+                          selected
+                            ? "h-1 w-3 bg-[#6B38E6]"
+                            : "size-1 bg-[#6B38E6]/45",
+                        )}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
