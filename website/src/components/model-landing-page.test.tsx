@@ -610,6 +610,10 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-04/video-profession-04-seedance-2-5-open-world-trailer.mp4");
     expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-05/video-profession-05-seedance-2-5-space-science-explainer.mp4");
     expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/video-profession-06-seedance-2-5-stage-projection.mp4");
+    const promptLibraryHtml = videoHtml.slice(videoHtml.indexOf('id="prompt-library"'));
+    expect(promptLibraryHtml).toContain('preload="auto"');
+    expect(promptLibraryHtml).toContain('preload="none"');
+    expect(promptLibraryHtml).not.toContain('poster="/assets/model-examples/product-macro.png"');
     expect(videoHtml).not.toContain("/assets/cli/ugc-ad-clips.mp4");
     expect(videoHtml).not.toContain("/assets/cli/localized-variants.mp4");
     expect(videoHtml).not.toContain("prompt-high-speed-action");
