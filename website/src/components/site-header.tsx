@@ -5,9 +5,6 @@ import Image from "next/image";
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ArrowRight,
   Globe2,
   Menu,
   X,
@@ -167,6 +164,7 @@ const promoBannerCopyByLocale: Record<
   Locale,
   {
     dismissLabel: string;
+    dotLabel: string;
     linkLabel: string;
     message: string;
     nextLabel: string;
@@ -175,79 +173,91 @@ const promoBannerCopyByLocale: Record<
 > = withIdFallback({
   en: {
     dismissLabel: "Dismiss DeepSeek V4 announcement",
-    linkLabel: "Learn more →",
-    message: "DeepSeek V4 is here. Join our Discord get $5 free credits.",
+    dotLabel: "Show announcement",
+    linkLabel: "Learn more",
+    message:
+      "DeepSeek V4 Pro is 15% off for a limited time. Join our Discord to get $5 in free credit.",
     nextLabel: "Next advertisement",
     previousLabel: "Previous advertisement",
   },
   zh: {
     dismissLabel: "关闭 DeepSeek V4 公告",
-    linkLabel: "了解更多 →",
-    message: "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
+    dotLabel: "显示公告",
+    linkLabel: "了解更多",
+    message:
+      "DeepSeek V4 Pro 限时优惠 15% 折扣。加入我们的 Discord，领取 5 美元免费额度。",
     nextLabel: "下一条广告",
     previousLabel: "上一条广告",
   },
   es: {
     dismissLabel: "Cerrar anuncio de DeepSeek V4",
-    linkLabel: "Más información →",
+    dotLabel: "Mostrar anuncio",
+    linkLabel: "Más información",
     message:
-      "DeepSeek V4 ya está aquí. Únete a nuestro Discord y recibe 5 USD en créditos gratis.",
+      "DeepSeek V4 Pro tiene un 15 % de descuento por tiempo limitado. Únete a nuestro Discord y recibe 5 USD de crédito gratis.",
     nextLabel: "Siguiente anuncio",
     previousLabel: "Anuncio anterior",
   },
   fr: {
     dismissLabel: "Fermer l’annonce DeepSeek V4",
-    linkLabel: "En savoir plus →",
+    dotLabel: "Afficher l’annonce",
+    linkLabel: "En savoir plus",
     message:
-      "DeepSeek V4 est arrivé. Rejoignez notre Discord et recevez 5 $ de crédits gratuits.",
+      "DeepSeek V4 Pro est à -15 % pour une durée limitée. Rejoignez notre Discord pour recevoir 5 $ de crédit gratuit.",
     nextLabel: "Annonce suivante",
     previousLabel: "Annonce précédente",
   },
   pt: {
     dismissLabel: "Fechar anúncio do DeepSeek V4",
-    linkLabel: "Saiba mais →",
+    dotLabel: "Mostrar anúncio",
+    linkLabel: "Saiba mais",
     message:
-      "O DeepSeek V4 chegou. Entre no nosso Discord e ganhe US$ 5 em créditos grátis.",
+      "O DeepSeek V4 Pro está com 15% de desconto por tempo limitado. Entre no nosso Discord e ganhe US$ 5 em crédito grátis.",
     nextLabel: "Próximo anúncio",
     previousLabel: "Anúncio anterior",
   },
   ru: {
     dismissLabel: "Закрыть объявление DeepSeek V4",
-    linkLabel: "Узнать больше →",
+    dotLabel: "Показать объявление",
+    linkLabel: "Узнать больше",
     message:
-      "DeepSeek V4 уже здесь. Присоединяйтесь к нашему Discord и получите 5 $ бесплатных кредитов.",
+      "Скидка 15% на DeepSeek V4 Pro действует ограниченное время. Присоединяйтесь к нашему Discord и получите 5 $ бесплатного кредита.",
     nextLabel: "Следующее объявление",
     previousLabel: "Предыдущее объявление",
   },
   ja: {
     dismissLabel: "DeepSeek V4 のお知らせを閉じる",
-    linkLabel: "詳細を見る →",
+    dotLabel: "お知らせを表示",
+    linkLabel: "詳細を見る",
     message:
-      "DeepSeek V4 が登場。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
+      "DeepSeek V4 Pro が期間限定で 15% オフ。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
     nextLabel: "次の広告",
     previousLabel: "前の広告",
   },
   vi: {
     dismissLabel: "Đóng thông báo DeepSeek V4",
-    linkLabel: "Tìm hiểu thêm →",
+    dotLabel: "Hiển thị thông báo",
+    linkLabel: "Tìm hiểu thêm",
     message:
-      "DeepSeek V4 đã ra mắt. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
+      "DeepSeek V4 Pro giảm 15% trong thời gian có hạn. Tham gia Discord để nhận 5 USD tín dụng miễn phí.",
     nextLabel: "Quảng cáo tiếp theo",
     previousLabel: "Quảng cáo trước",
   },
   de: {
     dismissLabel: "DeepSeek-V4-Ankündigung schließen",
-    linkLabel: "Mehr erfahren →",
+    dotLabel: "Ankündigung anzeigen",
+    linkLabel: "Mehr erfahren",
     message:
-      "DeepSeek V4 ist da. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
+      "DeepSeek V4 Pro ist für kurze Zeit 15 % günstiger. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
     nextLabel: "Nächste Anzeige",
     previousLabel: "Vorherige Anzeige",
   },
   id: {
     dismissLabel: "Tutup pengumuman DeepSeek V4",
-    linkLabel: "Pelajari lebih lanjut →",
+    dotLabel: "Tampilkan pengumuman",
+    linkLabel: "Pelajari lebih lanjut",
     message:
-      "DeepSeek V4 telah hadir. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
+      "DeepSeek V4 Pro diskon 15% untuk waktu terbatas. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
     nextLabel: "Iklan berikutnya",
     previousLabel: "Iklan sebelumnya",
   },
@@ -563,7 +573,7 @@ export function SiteHeader(props: Props) {
       (Object.keys(promoBanner.content).length > 0
         ? promoBannerCopy.message
         : ""),
-    extra: "DeepSeek V4",
+    extra: "",
     link: promoBanner.href || (configuredPromoContent ? "" : promoBannerHref),
     icon: promoBanner.icon,
   };
@@ -906,80 +916,79 @@ export function SiteHeader(props: Props) {
       </nav>
 
       {hasPromoBanner && activePromo && (
-        <div className="overflow-hidden border-b border-[#E4DAFF] bg-[#F6F1FF] text-[#0B0B0F] [background:linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)]">
-          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[100vw] items-center justify-center px-12 pr-14 py-2 text-center min-[700px]:h-10 min-[700px]:min-h-10 min-[700px]:max-w-[var(--fk-site-frame-max-width)] min-[700px]:px-[var(--fk-site-gutter)] min-[700px]:py-0 min-[700px]:pr-[calc(var(--fk-site-gutter)+2.5rem)]">
+        <div className="overflow-hidden border-b border-[#D4C1FF] bg-[#EEE5FF] text-[#0B0B0F]">
+          <div className="relative mx-auto flex min-h-[60px] w-full max-w-[1920px] items-center justify-center px-4 py-[14px] text-center">
             <div className="flex min-w-0 max-w-[min(100%,48rem)] items-center justify-center gap-2 text-center">
               {activePromo.icon ? (
                 <span
-                  className="grid size-[18px] shrink-0 place-items-center rounded-full bg-white/85 ring-1 ring-[#E4DAFF] min-[700px]:size-5"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white p-1"
                   aria-hidden="true"
                 >
                   <Image
                     alt=""
                     src={activePromo.icon}
-                    width={16}
-                    height={16}
+                    width={24}
+                    height={24}
                     unoptimized
-                    className="size-[14px] min-[700px]:size-4"
+                    className="size-6"
                   />
                 </span>
               ) : null}
               {activePromo.extra ? (
-                <span className="inline-flex max-w-[7rem] shrink-0 truncate rounded-full border border-[#D8C9FF] bg-white/80 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-[#6B46C1] uppercase min-[700px]:max-w-none">
+                <span className="inline-flex max-w-[7rem] shrink-0 truncate rounded-full border border-[#D4C1FF] bg-white/55 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-[#4C1D95] uppercase min-[700px]:max-w-none">
                   {activePromo.extra}
                 </span>
               ) : null}
               {activePromoLink ? (
                 <Link
-                  className="min-w-0 text-xs leading-snug font-normal text-[#0B0B0F] no-underline min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium"
+                  className="min-w-0 break-words text-[14px] leading-[21px] font-medium text-[#0B0B0F] no-underline max-[699px]:text-xs max-[699px]:leading-snug"
                   href={activePromoLink}
                 >
                   {activePromo.content}{" "}
-                  <span className="inline-flex size-[26px] items-center justify-center whitespace-nowrap rounded-full bg-white px-2 font-semibold text-[#4c1d95] min-[700px]:w-auto">
+                  <span className="whitespace-nowrap font-medium text-[#0B0B0F] underline decoration-[#6B6870] underline-offset-2">
                     {promoBannerCopy.linkLabel}
                   </span>
-                  <ArrowRight className="lucide-arrow-right size-3.5 min-[700px]:hidden" aria-hidden="true" />
-                  <span className="hidden min-[700px]:inline" aria-hidden="true" />
                 </Link>
               ) : (
-                <span className="min-w-0 text-xs leading-snug font-normal min-[700px]:truncate min-[700px]:text-[14px] min-[700px]:leading-tight min-[700px]:font-medium">
+                <span className="min-w-0 break-words text-[14px] leading-[21px] font-medium max-[699px]:text-xs max-[699px]:leading-snug">
                   {activePromo.content}
                 </span>
               )}
             </div>
             {promoItems.length > 1 ? (
-              <div className="absolute left-2.5 flex items-center gap-1 min-[700px]:left-[max(12px,var(--fk-site-gutter))]">
-                <button
-                  type="button"
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
-                  aria-label={promoBannerCopy.previousLabel}
-                  onClick={() =>
-                    setPromoIndex(
-                      (safePromoIndex - 1 + promoItems.length) %
-                        promoItems.length,
-                    )
-                  }
-                >
-                  <ChevronLeft className="size-4" aria-hidden="true" />
-                </button>
-                <span className="hidden text-[10px] font-semibold tabular-nums text-[#81758E] min-[430px]:inline">
-                  {safePromoIndex + 1}/{promoItems.length}
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[#6B46C1] transition hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF]"
-                  aria-label={promoBannerCopy.nextLabel}
-                  onClick={() =>
-                    setPromoIndex((safePromoIndex + 1) % promoItems.length)
-                  }
-                >
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                </button>
+              <div
+                className="absolute bottom-1.5 left-1/2 flex h-5 -translate-x-1/2 items-center gap-1"
+                role="tablist"
+                aria-label={promoBannerCopy.dotLabel}
+              >
+                {promoItems.map((item, index) => {
+                  const selected = index === safePromoIndex;
+                  return (
+                    <button
+                      key={item.id ?? index}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-label={`${promoBannerCopy.dotLabel} ${index + 1}`}
+                      className="inline-flex h-5 items-center justify-center rounded-full px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6B38E6] focus-visible:ring-offset-1"
+                      onClick={() => setPromoIndex(index)}
+                    >
+                      <span
+                        className={cn(
+                          "block rounded-full transition-[width,background-color] duration-200",
+                          selected
+                            ? "h-1 w-3 bg-[#6B38E6]"
+                            : "size-1 bg-[#6B38E6]/45",
+                        )}
+                      />
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
             <button
               type="button"
-              className="absolute top-1/2 right-2.5 z-10 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[#0B0B0F] transition hover:bg-white/75 hover:text-[#0B0B0F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C9B8FF] min-[700px]:right-[max(12px,var(--fk-site-gutter))]"
+              className="sr-only"
               aria-label={
                 announcements === undefined
                   ? legacyPromoDismissLabelByLocale[props.locale]
