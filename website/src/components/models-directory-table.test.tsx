@@ -198,7 +198,8 @@ describe("ModelsDirectoryTable", () => {
       />
     );
 
-    expect(html).toContain("w-full min-w-[680px] table-fixed border-collapse text-sm lg:min-w-0");
+    expect(html).toContain("w-full min-w-0 table-fixed border-collapse text-sm");
+    expect(html).toContain("sticky left-0 z-10 w-[65%] min-w-[220px]");
     expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell");
     expect(html).not.toContain("whitespace-normal xl:table-cell");
   });
