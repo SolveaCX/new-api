@@ -378,8 +378,6 @@ func orderedMigrationModels() []migrationModel {
 		{&PaymentAnalyticsOutbox{}, "PaymentAnalyticsOutbox"},
 		{&PaymentAnalyticsEventReceipt{}, "PaymentAnalyticsEventReceipt"},
 		{&StripeBonusClaim{}, "StripeBonusClaim"},
-		{&StripePaymentCardObservation{}, "StripePaymentCardObservation"},
-		{&StripePaymentCardBackfillLease{}, "StripePaymentCardBackfillLease"},
 		{&TopUpBonusClaim{}, "TopUpBonusClaim"},
 		{&UserInvoiceProfile{}, "UserInvoiceProfile"},
 		{&PaymentInvoice{}, "PaymentInvoice"},
