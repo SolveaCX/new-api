@@ -203,7 +203,7 @@ describe("ModelsDirectoryTable", () => {
     expect(html).not.toContain("whitespace-normal xl:table-cell");
   });
 
-  test("keeps promotion badges in a dedicated row on narrow model cells", () => {
+  test("keeps promotion badges beside the model name", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
         locale="en"
@@ -223,15 +223,15 @@ describe("ModelsDirectoryTable", () => {
     );
 
     const nameIndex = html.indexOf(">glm-5.3-flash</span>");
-    const badgeRowIndex = html.indexOf('class="mt-1 flex flex-wrap items-center gap-1.5"');
-    const badgeRowEnd = html.indexOf('class="text-muted-foreground/70', badgeRowIndex);
-    const badgeRow = html.slice(badgeRowIndex, badgeRowEnd);
+    const nameRowIndex = html.indexOf('class="flex min-w-0 flex-wrap items-center gap-1.5"');
+    const nameRowEnd = html.indexOf('class="text-muted-foreground/70', nameRowIndex);
+    const nameRow = html.slice(nameRowIndex, nameRowEnd);
 
     expect(nameIndex).toBeGreaterThanOrEqual(0);
-    expect(badgeRowIndex).toBeGreaterThan(nameIndex);
-    expect(badgeRowEnd).toBeGreaterThan(badgeRowIndex);
-    expect(badgeRow).toContain("Limited discount");
-    expect(badgeRow).toContain("New release");
+    expect(nameRowIndex).toBeLessThan(nameIndex);
+    expect(nameRowEnd).toBeGreaterThan(nameRowIndex);
+    expect(nameRow).toContain("Limited discount");
+    expect(nameRow).toContain("New release");
   });
 });
 

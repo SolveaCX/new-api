@@ -200,25 +200,21 @@ function DirectoryRow(props: {
               imageSize={18}
             />
             <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline">
                   {row.name}
                 </span>
                 {row.top10 ? <TopBadge rank={row.top10} /> : null}
+                {promotions.map((promotion) => (
+                  <span key={promotion} className={cn(
+                    "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
+                    promotion === "free" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                    promotion === "limited" && "border-amber-200 bg-amber-50 text-amber-700",
+                    promotion === "hot" && "border-rose-200 bg-rose-50 text-rose-700",
+                    promotion === "new" && "border-sky-200 bg-sky-50 text-sky-700"
+                  )}>{modelPromotionLabel(promotionLocale, promotion)}</span>
+                ))}
               </span>
-              {promotions.length > 0 ? (
-                <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                  {promotions.map((promotion) => (
-                    <span key={promotion} className={cn(
-                      "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
-                      promotion === "free" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-                      promotion === "limited" && "border-amber-200 bg-amber-50 text-amber-700",
-                      promotion === "hot" && "border-rose-200 bg-rose-50 text-rose-700",
-                      promotion === "new" && "border-sky-200 bg-sky-50 text-sky-700"
-                    )}>{modelPromotionLabel(promotionLocale, promotion)}</span>
-                  ))}
-                </span>
-              ) : null}
               <span className="text-muted-foreground/70 block truncate text-[11px]">
                 {attribution}
               </span>
@@ -235,7 +231,7 @@ function DirectoryRow(props: {
               imageSize={18}
             />
             <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span className="truncate font-mono text-[13px] font-semibold tracking-tight">{row.name}</span>
                 {row.top10 ? <TopBadge rank={row.top10} /> : null}
               </span>
