@@ -2786,6 +2786,62 @@ function getPromptPosterFallback(item: PromptLibraryItem): string {
   return PROMPT_POSTER_FALLBACKS[item.key] ?? (item.example.poster || "/assets/prompts/awesome-images/playground-starter-product.png");
 }
 
+/**
+ * Load a prompt-library clip when it is close to the viewport. The first card
+ * is eager, while the remaining cards start the exact CDN asset as soon as
+ * they become visible. This keeps the page responsive without substituting an
+ * older poster for a reviewed generated clip.
+ */
+function PromptLibraryVideo(props: {
+  src: string;
+  poster?: string;
+  priority: boolean;
+  className: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVisible, setIsVisible] = useState(props.priority);
+
+  useEffect(() => {
+    if (props.priority || isVisible) return;
+    const video = videoRef.current;
+    if (!video || typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [isVisible, props.priority]);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    const playPromise = videoRef.current?.play();
+    playPromise?.catch(() => undefined);
+  }, [isVisible]);
+
+  return (
+    <video
+      ref={videoRef}
+      className={props.className}
+      src={props.src}
+      poster={props.poster}
+      muted
+      loop
+      autoPlay={isVisible}
+      playsInline
+      preload={isVisible ? "auto" : "none"}
+    />
+  );
+}
+
 function PromptLibrarySection(props: {
   config: ModelConfig;
   examples: readonly MediaExample[];
@@ -2831,15 +2887,11 @@ function PromptLibrarySection(props: {
                 }}
               >
                 {item.example.video ? (
-                  <video
+                  <PromptLibraryVideo
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
                     poster={item.example.poster || undefined}
-                    muted
-                    loop
-                    autoPlay={isPriorityMedia}
-                    playsInline
-                    preload={isPriorityMedia ? "metadata" : "none"}
+                    priority={isPriorityMedia}
                   />
                 ) : (
                   <Image
