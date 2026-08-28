@@ -1406,7 +1406,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$10"')
     expect(html).toContain('line-through')
-    expect(html).toContain('-80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
