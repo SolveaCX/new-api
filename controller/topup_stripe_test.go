@@ -916,6 +916,26 @@ func TestStripeCheckoutSessionCarriesSubmitMessage(t *testing.T) {
 	require.Nil(t, params.CustomText)
 }
 
+func TestStripeCheckoutSessionElementsModeOmitsUnsupportedCustomText(t *testing.T) {
+	params := buildStripeCheckoutSessionParams(
+		"trade_elements_bonus",
+		"",
+		"buyer@example.com",
+		"price_123",
+		1,
+		"USD",
+		"https://example.com/success",
+		"https://example.com/cancel",
+		false,
+		false,
+		service.StripeCheckoutPresentation{Elements: true},
+		"$27 in credits ($20 + $7 bonus) will be added to your account immediately after payment.",
+		nil,
+	)
+
+	require.Nil(t, params.CustomText, "Stripe Elements rejects custom_text")
+}
+
 func TestStripeCheckoutSessionEmbeddedModeUsesReturnURL(t *testing.T) {
 	params := buildStripeCheckoutSessionParams(
 		"trade_embedded",
