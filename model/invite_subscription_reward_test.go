@@ -16,7 +16,7 @@ import (
 func setupInviteSubRewardTest(t *testing.T) {
 	t.Helper()
 	setupInviteRewardModelTest(t)
-	require.NoError(t, DB.AutoMigrate(&SubscriptionOrder{}, &InviteSubscriptionReward{}))
+	require.NoError(t, DB.AutoMigrate(&InviteSubscriptionReward{}))
 
 	originalMode := common.InviteRewardSubscriptionMode
 	originalDelay := common.InviteRewardUnlockDelaySeconds
@@ -60,7 +60,7 @@ func setupInviteSubRewardConcurrentTest(t *testing.T) {
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
 	common.RedisEnabled = false
-	require.NoError(t, DB.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Log{}, &InviteRewardEvent{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &SubscriptionOrder{}, &InviteSubscriptionReward{}))
+	require.NoError(t, DB.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Log{}, &InviteRewardEvent{}, &InviteBenefitBlacklist{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &SubscriptionOrder{}, &InviteSubscriptionReward{}))
 
 	t.Cleanup(func() {
 		require.NoError(t, sqlDB.Close())
@@ -619,7 +619,9 @@ func TestInviteSubRewardUnlimitedInviterCapAllowsAllRewards(t *testing.T) {
 	inviter := createInviteRewardUser(t, "inviter", 0)
 	for i := 1; i <= 3; i++ {
 		invitee := createInviteRewardUser(t, fmt.Sprintf("invitee%d", i), inviter.Id)
-		order := createCompletedSubscriptionOrder(t, invitee.Id, 5, fmt.Sprintf("sub-unlimited-%d", i))
+		// Use a non-minimum payment so this cap-specific test does not also
+		// trigger the exact-$5 invite-benefit risk rule.
+		order := createCompletedSubscriptionOrder(t, invitee.Id, 6, fmt.Sprintf("sub-unlimited-%d", i))
 		grantInviteSubRewardForTest(t, order)
 	}
 
@@ -644,7 +646,9 @@ func TestInviteSubRewardBlockedWhenInviterLimitReached(t *testing.T) {
 	inviter := createInviteRewardUser(t, "inviter", 0)
 	for i := 1; i <= 3; i++ {
 		invitee := createInviteRewardUser(t, fmt.Sprintf("invitee%d", i), inviter.Id)
-		order := createCompletedSubscriptionOrder(t, invitee.Id, 5, fmt.Sprintf("sub-%03d", i))
+		// Keep the payment outside the exact-minimum risk cohort: this test is
+		// specifically about the configured inviter reward count limit.
+		order := createCompletedSubscriptionOrder(t, invitee.Id, 6, fmt.Sprintf("sub-%03d", i))
 		grantInviteSubRewardForTest(t, order)
 	}
 

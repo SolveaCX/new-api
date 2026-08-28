@@ -31,12 +31,6 @@ func TestMaskInvitationIdentity(t *testing.T) {
 	}
 }
 
-func TestInvitationReasonNormalizationDoesNotExposeStripeCardRule(t *testing.T) {
-	require.Equal(t, "unavailable", normalizeBlockedInvitationReason(InviteRewardBlockReasonStripeCardReused))
-	require.Equal(t, "unavailable", normalizeInvitationReason(InviteRewardBlockReasonStripeCardReused))
-	require.Equal(t, InviteRewardBlockReasonInviterLimitReached, normalizeBlockedInvitationReason(InviteRewardBlockReasonInviterLimitReached))
-}
-
 func setupInvitationModelTest(t *testing.T) {
 	t.Helper()
 
@@ -279,14 +273,6 @@ func TestGetInvitationPage(t *testing.T) {
 			InviteRewardStatus: InviteRewardStatusNone,
 			CreatedAt:          300,
 		})
-		stripeCardReused := createInvitationTestUser(t, User{
-			Id:                      36,
-			Username:                "stripe-card-reused",
-			InviterId:               inviter.Id,
-			InviteRewardStatus:      InviteRewardStatusBlocked,
-			InviteRewardBlockReason: InviteRewardBlockReasonStripeCardReused,
-			CreatedAt:               250,
-		})
 		require.NoError(t, DB.Create(&InviteRewardEvent{
 			InviteeId:          missingEvent.Id,
 			InviterId:          inviter.Id + 1,
@@ -297,7 +283,7 @@ func TestGetInvitationPage(t *testing.T) {
 
 		page, err := GetInvitationPage(inviter.Id, 0, 10)
 		require.NoError(t, err)
-		require.Len(t, page.Items, 6)
+		require.Len(t, page.Items, 5)
 		require.Equal(t, missingEvent.Id, page.Items[0].Id)
 		require.Equal(t, InviteRewardStatusGranted, page.Items[0].Status)
 		require.Zero(t, page.Items[0].RewardQuota)
@@ -314,14 +300,6 @@ func TestGetInvitationPage(t *testing.T) {
 		require.Equal(t, InviteRewardStatusBlocked, page.Items[4].Status)
 		require.Zero(t, page.Items[4].RewardQuota)
 		require.Equal(t, "unavailable", page.Items[4].Reason)
-		require.Equal(t, stripeCardReused.Id, page.Items[5].Id)
-		require.Equal(t, InviteRewardStatusBlocked, page.Items[5].Status)
-		require.Equal(t, "unavailable", page.Items[5].Reason)
-		require.NotEqual(t, InviteRewardBlockReasonStripeCardReused, page.Items[5].Reason)
-
-		var stored User
-		require.NoError(t, DB.Select("invite_reward_block_reason").First(&stored, stripeCardReused.Id).Error)
-		require.Equal(t, InviteRewardBlockReasonStripeCardReused, stored.InviteRewardBlockReason, "internal risk reason remains available to operators")
 
 		emptyPage, err := GetInvitationPage(999, 0, 10)
 		require.NoError(t, err)

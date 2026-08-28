@@ -49,7 +49,7 @@ func setupInviteRewardModelTest(t *testing.T) {
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
 	common.RedisEnabled = false
-	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Log{}, &InviteRewardEvent{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &RecallLifecycleEvent{}, &QuotaLifecycleState{}, &StripeBonusClaim{}, &StripePaymentCardObservation{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &SubscriptionOrder{}, &Log{}, &InviteRewardEvent{}, &InviteBenefitBlacklist{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &RecallLifecycleEvent{}, &QuotaLifecycleState{}))
 
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
@@ -96,14 +96,6 @@ func createInviteRewardTriggerToken(t *testing.T, userId int, key string) *Token
 }
 
 func createInviteRewardTopUp(t *testing.T, userId int, tradeNo string) *TopUp {
-	return createInviteRewardTopUpWithProvider(t, userId, tradeNo, PaymentProviderEpay)
-}
-
-func createStripeInviteRewardTopUp(t *testing.T, userId int, tradeNo string) *TopUp {
-	return createInviteRewardTopUpWithProvider(t, userId, tradeNo, PaymentProviderStripe)
-}
-
-func createInviteRewardTopUpWithProvider(t *testing.T, userId int, tradeNo, provider string) *TopUp {
 	t.Helper()
 	topUp := &TopUp{
 		UserId:          userId,
@@ -111,7 +103,7 @@ func createInviteRewardTopUpWithProvider(t *testing.T, userId int, tradeNo, prov
 		Money:           2,
 		TradeNo:         tradeNo,
 		PaymentMethod:   PaymentMethodStripe,
-		PaymentProvider: provider,
+		PaymentProvider: PaymentProviderStripe,
 		Status:          common.TopUpStatusPending,
 		CreateTime:      time.Now().Unix(),
 	}
@@ -128,26 +120,6 @@ func createSuccessfulInviteRewardTopUp(t *testing.T, userId int, tradeNo string)
 		Update("status", common.TopUpStatusSuccess).Error)
 	topUp.Status = common.TopUpStatusSuccess
 	return topUp
-}
-
-func createSuccessfulStripeInviteRewardTopUp(t *testing.T, userId int, tradeNo string) *TopUp {
-	t.Helper()
-	topUp := createStripeInviteRewardTopUp(t, userId, tradeNo)
-	require.NoError(t, DB.Model(&TopUp{}).
-		Where("id = ?", topUp.Id).
-		Update("status", common.TopUpStatusSuccess).Error)
-	topUp.Status = common.TopUpStatusSuccess
-	return topUp
-}
-
-func observeInviteRewardNonCard(t *testing.T, userId int, tradeNo string) {
-	t.Helper()
-	created, err := ObserveStripePaymentCard(&StripePaymentCardObservation{
-		UserId: userId, TradeNo: tradeNo, ChargeId: "ch_" + tradeNo,
-		PaymentMethodType: "us_bank_account",
-	})
-	require.NoError(t, err)
-	require.True(t, created)
 }
 
 func TestInvitedUserInsertSetsPendingWithoutGrantingReward(t *testing.T) {
@@ -410,8 +382,7 @@ func TestInviteRewardGrantedOnceAfterTopUpSuccess(t *testing.T) {
 
 	inviter := createInviteRewardUser(t, "topup_inviter", 0)
 	invitee := createInviteRewardUser(t, "topup_invitee", inviter.Id)
-	createStripeInviteRewardTopUp(t, invitee.Id, "invite-topup-success")
-	observeInviteRewardNonCard(t, invitee.Id, "invite-topup-success")
+	createInviteRewardTopUp(t, invitee.Id, "invite-topup-success")
 
 	recharged, err := RechargeWithPaymentSnapshot("invite-topup-success", "cus_invite", "127.0.0.1", PaymentSnapshot{})
 	require.NoError(t, err)
@@ -433,83 +404,6 @@ func TestInviteRewardGrantedOnceAfterTopUpSuccess(t *testing.T) {
 	require.Equal(t, 1, refreshedInviter.AffCount)
 
 	var events int64
-	require.NoError(t, DB.Model(&InviteRewardEvent{}).Where("invitee_id = ?", invitee.Id).Count(&events).Error)
-	require.EqualValues(t, 1, events)
-}
-
-func TestStripeExactFingerprintReuseBlocksInviteRewardWithoutReducingPurchasedQuota(t *testing.T) {
-	setupInviteRewardModelTest(t)
-	common.QuotaForInviter = 100
-	common.QuotaForInvitee = 50
-
-	firstCardUser := createInviteRewardUser(t, "first_card_owner", 0)
-	inviter := createInviteRewardUser(t, "reused_card_inviter", 0)
-	invitee := createInviteRewardUser(t, "reused_card_invitee", inviter.Id)
-	topUp := createStripeInviteRewardTopUp(t, invitee.Id, "stripe-reused-card-topup")
-
-	created, err := ObserveStripePaymentCard(&StripePaymentCardObservation{
-		UserId: firstCardUser.Id, ChargeId: "ch_first_card", Fingerprint: "fp_reused_card",
-	})
-	require.NoError(t, err)
-	require.True(t, created)
-	created, err = ObserveStripePaymentCard(&StripePaymentCardObservation{
-		UserId: invitee.Id, TradeNo: topUp.TradeNo, ChargeId: "ch_reused_card", Fingerprint: "fp_reused_card",
-	})
-	require.NoError(t, err)
-	require.True(t, created)
-
-	recharged, err := RechargeWithPaymentSnapshot(topUp.TradeNo, "cus_reused_card", "127.0.0.1", PaymentSnapshot{})
-	require.NoError(t, err)
-	require.True(t, recharged)
-
-	var refreshedInvitee User
-	require.NoError(t, DB.First(&refreshedInvitee, invitee.Id).Error)
-	require.Equal(t, int(2*common.QuotaPerUnit), refreshedInvitee.Quota, "only purchased quota must be credited")
-	require.Equal(t, InviteRewardStatusBlocked, refreshedInvitee.InviteRewardStatus)
-	require.Equal(t, InviteRewardBlockReasonStripeCardReused, refreshedInvitee.InviteRewardBlockReason)
-
-	var refreshedInviter User
-	require.NoError(t, DB.First(&refreshedInviter, inviter.Id).Error)
-	require.Zero(t, refreshedInviter.Quota)
-
-	var event InviteRewardEvent
-	require.NoError(t, DB.First(&event, "invitee_id = ?", invitee.Id).Error)
-	require.Equal(t, InviteRewardEventStatusBlocked, event.Status)
-	require.Equal(t, InviteRewardBlockReasonStripeCardReused, event.Reason)
-}
-
-func TestStripeInviteRewardRemainsPendingUntilUnknownCardIsCompleted(t *testing.T) {
-	setupInviteRewardModelTest(t)
-
-	inviter := createInviteRewardUser(t, "pending_card_inviter", 0)
-	invitee := createInviteRewardUser(t, "pending_card_invitee", inviter.Id)
-	topUp := createSuccessfulStripeInviteRewardTopUp(t, invitee.Id, "stripe-pending-card-topup")
-
-	created, err := ObserveStripePaymentCard(&StripePaymentCardObservation{
-		UserId: invitee.Id, TradeNo: topUp.TradeNo, ChargeId: "ch_pending_card",
-		PaymentMethodType: "card",
-	})
-	require.NoError(t, err)
-	require.True(t, created)
-	require.NoError(t, TryGrantInviteRewardAfterTopUpSucceeded(invitee.Id, topUp.Id))
-
-	var refreshedInvitee User
-	require.NoError(t, DB.First(&refreshedInvitee, invitee.Id).Error)
-	require.Equal(t, InviteRewardStatusPending, refreshedInvitee.InviteRewardStatus)
-	var events int64
-	require.NoError(t, DB.Model(&InviteRewardEvent{}).Where("invitee_id = ?", invitee.Id).Count(&events).Error)
-	require.Zero(t, events)
-
-	created, err = ObserveStripePaymentCard(&StripePaymentCardObservation{
-		UserId: invitee.Id, TradeNo: topUp.TradeNo, CheckoutSessionId: "cs_pending_card",
-		ChargeId: "ch_pending_card", PaymentMethodType: "card", Fingerprint: "fp_pending_card",
-	})
-	require.NoError(t, err)
-	require.False(t, created)
-	require.NoError(t, TryGrantInviteRewardAfterTopUpSucceeded(invitee.Id, topUp.Id))
-
-	require.NoError(t, DB.First(&refreshedInvitee, invitee.Id).Error)
-	require.Equal(t, InviteRewardStatusGranted, refreshedInvitee.InviteRewardStatus)
 	require.NoError(t, DB.Model(&InviteRewardEvent{}).Where("invitee_id = ?", invitee.Id).Count(&events).Error)
 	require.EqualValues(t, 1, events)
 }
@@ -549,8 +443,7 @@ func TestZeroInviteRewardAmountsStillMarkGrantedAfterTopUpSuccess(t *testing.T) 
 
 	inviter := createInviteRewardUser(t, "zero_amount_inviter", 0)
 	invitee := createInviteRewardUser(t, "zero_amount_invitee", inviter.Id)
-	createStripeInviteRewardTopUp(t, invitee.Id, "invite-zero-amount")
-	observeInviteRewardNonCard(t, invitee.Id, "invite-zero-amount")
+	createInviteRewardTopUp(t, invitee.Id, "invite-zero-amount")
 
 	recharged, err := RechargeWithPaymentSnapshot("invite-zero-amount", "cus_zero_amount", "127.0.0.1", PaymentSnapshot{})
 	require.NoError(t, err)
@@ -578,8 +471,7 @@ func TestInviteRewardTopUpSuccessUsesConfiguredRewardAmounts(t *testing.T) {
 
 	inviter := createInviteRewardUser(t, "configured_config_inviter", 0)
 	invitee := createInviteRewardUser(t, "configured_config_invitee", inviter.Id)
-	createStripeInviteRewardTopUp(t, invitee.Id, "invite-configured-config")
-	observeInviteRewardNonCard(t, invitee.Id, "invite-configured-config")
+	createInviteRewardTopUp(t, invitee.Id, "invite-configured-config")
 
 	recharged, err := RechargeWithPaymentSnapshot("invite-configured-config", "cus_configured_config", "127.0.0.1", PaymentSnapshot{})
 	require.NoError(t, err)
@@ -967,10 +859,10 @@ func runInviteRewardExternalDBSmoke(t *testing.T, dialect string, dsn string) {
 	common.UsingMySQL = dialect == "mysql"
 	common.UsingPostgreSQL = dialect == "postgres"
 	common.RedisEnabled = false
-	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &Log{}, &InviteRewardEvent{}, &RecallLifecycleEvent{}, &QuotaLifecycleState{}))
+	require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &TopUp{}, &SubscriptionOrder{}, &Log{}, &InviteRewardEvent{}, &InviteBenefitBlacklist{}, &RecallLifecycleEvent{}, &QuotaLifecycleState{}))
 
 	t.Cleanup(func() {
-		_ = db.Migrator().DropTable(&InviteRewardEvent{}, &Token{}, &Log{}, &User{})
+		_ = db.Migrator().DropTable(&InviteBenefitBlacklist{}, &InviteRewardEvent{}, &SubscriptionOrder{}, &Token{}, &Log{}, &User{})
 		_ = sqlDB.Close()
 		DB = originalDB
 		LOG_DB = originalLogDB
