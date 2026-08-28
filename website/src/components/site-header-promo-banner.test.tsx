@@ -57,13 +57,14 @@ describe("SiteHeader promo banner", () => {
       html.indexOf("Product"),
     );
     expect(html).toContain('data-promo-pause-on-hover="true"');
+    expect(html).not.toContain('src="/assets/logos/deepseek.svg"');
     expect(html).toContain('role="tablist"');
     expect(html.match(/role="tab"/g)).toHaveLength(2);
     expect(html).toContain("h-1 w-3 bg-white");
     expect(html).toContain("size-1 bg-white/60");
   });
 
-  test("renders localized intro, content, and CTA without a promo logo", () => {
+  test("renders localized intro, content, and CTA with the desktop promo logo", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider
         docsUrl={null}
@@ -89,8 +90,7 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("中文内容");
     expect(html).toContain("查看价格");
     expect(html).toContain('data-promo-cta="true"');
-    expect(html).not.toContain('data-promo-logo="true"');
-    expect(html).not.toContain('src="/assets/logos/deepseek.svg"');
+    expect(html).toContain('src="/assets/logos/deepseek.svg"');
     expect(html).toContain('href="/zh/pricing?source=announcement#plans"');
     expect(html.indexOf('data-promo-intro="true"')).toBeLessThan(
       html.indexOf("中文内容"),
