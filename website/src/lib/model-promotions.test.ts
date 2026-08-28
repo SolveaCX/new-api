@@ -30,4 +30,10 @@ describe("model promotions", () => {
     expect(modelPromotionLabel("en", "new")).toBe("New release");
     expect(modelPromotionLabel("zh", "new")).toBe("新发布");
   });
+
+  test("uses Limited for the limited label outside Chinese", () => {
+    expect(modelPromotionLabel("en", "limited")).toBe("Limited");
+    expect(modelPromotionLabel("fr", "limited")).toBe("Limited");
+    expect(modelPromotionLabel("zh", "limited")).toBe("限时折扣");
+  });
 });
