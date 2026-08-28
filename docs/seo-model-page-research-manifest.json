@@ -1,0 +1,428 @@
+{
+  "collection_date": "2026-08-25",
+  "last_audit_date": "2026-08-27",
+  "market": "global",
+  "country_proxy": "us",
+  "global_filter": {
+    "field": "global_volume",
+    "operator": "gte",
+    "value": 10
+  },
+  "catalog": {
+    "source": "/tmp/flatkey-pricing.json",
+    "models": 101,
+    "excluded": [
+      "seedance-2.5"
+    ]
+  },
+  "modes": {
+    "full": [
+      "gpt-5.6-sol",
+      "MiniMax-H3",
+      "deepseek-v4-pro",
+      "kimi-k3",
+      "gpt-image-2"
+    ],
+    "full_total": 6,
+    "full_independent": [
+      "seedance-2.5"
+    ],
+    "quick": 95,
+    "completed_excluded": [
+      "seedance-2.5"
+    ],
+    "re_audited": [
+      "seedance-2.5"
+    ]
+  },
+  "implementation_audit": {
+    "date": "2026-08-27",
+    "status_vocabulary": {
+      "research_complete": "Ahrefs evidence and verified fact baseline are saved; this says nothing about code or ranking.",
+      "code_implemented_pending_validation": "Target-specific page data is present in the website worktree; SSR, metadata/schema, locale and browser checks are still required.",
+      "automated_tests_passed_pending_ssr_browser": "The targeted config/component regression suites pass; SSR, metadata/schema, locale and browser checks are still required.",
+      "automated_tests_and_local_ssr_passed_pending_browser": "Targeted config/component suites, production build and local canonical/metadata SSR checks pass; real test-environment browser and final fact checks are still required.",
+      "implemented_validated": "Only use after automated tests and rendered test-environment checks pass.",
+      "local_code_implemented_pending_staging_browser_fact_review": "Model-specific content/metadata is present in the website worktree; staging render, final fact review and index observation remain.",
+      "implemented_local_pending_staging_and_index_observation": "Generated or curated page pack is in the local website; staging/browser checks and Google index observation remain."
+    },
+    "priority_pages": {
+      "gpt-5.6-sol": {
+        "research": "complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser"
+      },
+      "gpt-image-2": {
+        "research": "complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser"
+      },
+      "kimi-k3": {
+        "research": "complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser"
+      },
+      "deepseek-v4-pro": {
+        "research": "complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser"
+      },
+      "MiniMax-H3": {
+        "research": "complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser",
+        "canonical": "/models/minimax-h3",
+        "alias_redirect": "implemented_local_ssr_verified_pending_browser"
+      },
+      "seedance-2.5": {
+        "research": "independent_re_audit_complete",
+        "implementation": "local_code_implemented_pending_staging_browser_fact_review",
+        "validation": "automated_tests_and_local_ssr_passed_pending_staging_browser"
+      }
+    },
+    "do_not_claim": [
+      "Google indexing or ranking",
+      "Brazilian Portuguese volume from English Brazil SV",
+      "staging deployment before it is actually merged/published",
+      "official provider facts that are not present in the catalog or cited fact baseline"
+    ],
+    "all_pages": {
+      "total": 101,
+      "curated_priority": 5,
+      "independent_seedance": 1,
+      "generated_quick": 95,
+      "implementation": "all 101 page configs resolve model-specific landingContent and SEO metadata from catalog/keyword data",
+      "validation": "targeted tests, typecheck, lint and production build passed; staging browser/fact review remains"
+    }
+  },
+  "validation_snapshot": {
+    "date": "2026-08-27",
+    "scope": "website model-detail SEO changes",
+    "typecheck": "passed (bun run typecheck)",
+    "targeted_tests": "passed (41 tests, 773 assertions: model landing config/component, metadata, sitemap, copy)",
+    "locale_editorial_pack_audit": "passed (45 packs: 5 priority models × 9 non-English locales; localized hero, FAQ count, endpoints and price literals verified)",
+    "keyword_placement_audit": "passed (primary, commercial/API and major secondary clusters mapped to metadata, H1/opening, intent-aligned H2/body/FAQ; punctuation variants normalized; pt-BR intent terms checked; locale grammar pass prevents mechanical model-name plus keyword headings)",
+    "lint": "passed with 0 errors and 2 pre-existing next/image warnings in online-home-page.tsx",
+      "production_build": "passed (bun run build; Next.js 16.2.9 Turbopack)",
+      "all_model_config_audit": "passed (101/101 landingContent packs present; 101 unique content signatures; all H2-like section titles present; no Input/Output-only H2; all SEO descriptions <=160 characters)",
+      "local_ssr": {
+      "status": "passed",
+      "routes": [
+        "/models/gpt-5.6-sol",
+        "/models/gpt-image-2",
+        "/models/kimi-k3",
+        "/models/deepseek-v4-pro",
+        "/models/minimax-h3",
+        "/models/seedance-2.5",
+        "/models/gemini-3.1-flash-image",
+        "/models/veo-3.1-generate-preview",
+        "/models/sonilo-video-to-music",
+        "/models/gpt-4.1-mini",
+        "/pt/models/gpt-5.6-sol",
+        "/pt/models/gpt-image-2",
+        "/pt/models/sonilo-video-to-music"
+      ],
+      "checks": [
+        "HTTP 200",
+        "canonical metadata present",
+        "FAQ markup present",
+        "model-specific API/endpoint text present",
+        "pt routes use translated title/description",
+        "generic image/video routes use image/video task wording in SSR metadata",
+        "single-model legacy routes use generated model-specific landing content; sonilo-video-to-music remains audio in localized H1/H2",
+        "all sampled metadata descriptions remain within the 160-character limit",
+        "top-level View API link is present and API hash is not selected at page top"
+      ]
+    },
+    "canonical_alias": {
+      "route": "/models/MiniMax-H3",
+      "status": "passed",
+      "response": "307 Temporary Redirect",
+      "location": "/models/minimax-h3"
+    },
+    "remaining": [
+      "staging browser visual check and final fact review",
+      "merge/publish website staging build",
+      "Search Console indexing/ranking measurement"
+    ]
+  },
+  "seedance25_audit": {
+    "status": "re-audited/implemented",
+    "evidence_date": "2026-08-26",
+    "ahrefs_source": "saved global Overview/Matching/Questions data; no duplicate Ahrefs requests",
+    "primary_keyword": {
+      "keyword": "seedance 2.5",
+      "global_volume": 17000,
+      "us_proxy_volume": 3800,
+      "kd": 25,
+      "intent": "branded/informational"
+    },
+    "supporting_keywords": [
+      {
+        "keyword": "seedance 2.5 release date",
+        "global_volume": 1700,
+        "us_proxy_volume": 500,
+        "kd": "N/A",
+        "intent": "informational"
+      },
+      {
+        "keyword": "seedance 2.5 api",
+        "global_volume": 250,
+        "us_proxy_volume": 80,
+        "kd": "N/A",
+        "intent": "commercial/transactional"
+      },
+      {
+        "keyword": "seedance 2.5 release",
+        "global_volume": 150,
+        "us_proxy_volume": 60,
+        "kd": "N/A",
+        "intent": "informational"
+      },
+      {
+        "keyword": "bytedance seedance 2.5",
+        "global_volume": 200,
+        "us_proxy_volume": 50,
+        "kd": "N/A",
+        "intent": "branded/informational"
+      },
+      {
+        "keyword": "seedance 2.5 ai",
+        "global_volume": 300,
+        "us_proxy_volume": 30,
+        "kd": "N/A",
+        "intent": "informational"
+      },
+      {
+        "keyword": "seedance 2.5 video",
+        "global_volume": 200,
+        "us_proxy_volume": 10,
+        "kd": "N/A",
+        "intent": "informational/commercial"
+      },
+      {
+        "keyword": "seedance 2.5 free",
+        "global_volume": 250,
+        "us_proxy_volume": 30,
+        "kd": "N/A",
+        "intent": "transactional"
+      },
+      {
+        "keyword": "seedance 2.5 pricing",
+        "global_volume": 60,
+        "us_proxy_volume": 20,
+        "kd": "N/A",
+        "intent": "commercial"
+      },
+      {
+        "keyword": "seedance 2.5 price",
+        "global_volume": 50,
+        "us_proxy_volume": 10,
+        "kd": "N/A",
+        "intent": "commercial"
+      },
+      {
+        "keyword": "seedance 2.5 cost",
+        "global_volume": 40,
+        "us_proxy_volume": 20,
+        "kd": "N/A",
+        "intent": "commercial"
+      },
+      {
+        "keyword": "seedance 2.5 ai video",
+        "global_volume": 80,
+        "us_proxy_volume": 50,
+        "kd": "N/A",
+        "intent": "informational/commercial"
+      },
+      {
+        "keyword": "seedance 2.5 ai video generator",
+        "global_volume": 40,
+        "us_proxy_volume": 30,
+        "kd": "N/A",
+        "intent": "commercial"
+      },
+      {
+        "keyword": "seedance 2.5 image to video",
+        "global_volume": "0–10",
+        "us_proxy_volume": "0–10",
+        "kd": "N/A",
+        "intent": "use-case"
+      },
+      {
+        "keyword": "seedance 2.5 text to video",
+        "global_volume": "N/A",
+        "us_proxy_volume": "N/A",
+        "kd": "N/A",
+        "intent": "use-case"
+      },
+      {
+        "keyword": "seedance 2.5 prompts",
+        "global_volume": "0–10",
+        "us_proxy_volume": "0–10",
+        "kd": "N/A",
+        "intent": "informational/operational"
+      },
+      {
+        "keyword": "seedance 2.5 api key",
+        "global_volume": "not indexed",
+        "us_proxy_volume": "not indexed",
+        "kd": "N/A",
+        "intent": "transactional"
+      },
+      {
+        "keyword": "seedance 2.5 vs kling",
+        "global_volume": "0–10",
+        "us_proxy_volume": "0–10",
+        "kd": "N/A",
+        "intent": "comparison"
+      }
+    ],
+    "questions_global_volume": {
+      "when_is_seedance_2_5_coming_out": 70,
+      "how_to_use_seedance_2_5": 30,
+      "when_does_seedance_2_5_come_out": 30,
+      "what_is_seedance_2_5": 20,
+      "where_can_or_where_to_use_seedance_2_5": 10,
+      "when_will_seedance_2_5_be_released": 10
+    },
+    "country_boundary": "Brazil screenshot SV=600 is the exact English query in Brazil, not Portuguese (pt-BR) volume; collect Portuguese queries separately.",
+    "verified_facts": {
+      "official_sources": [
+        "https://seed.bytedance.com/en/seedance2_5",
+        "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5"
+      ],
+      "official_article_date": "2026-07-31",
+      "catalog_released_at": "2026-08-04",
+      "modalities": [
+        "text",
+        "video",
+        "image"
+      ],
+      "supported_endpoint": "/v1/videos",
+      "duration_seconds": "4–30",
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "ratios": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "adaptive"
+      ],
+      "reference_limits": {
+        "images": 30,
+        "videos": 10,
+        "audio": 10,
+        "total": 50
+      }
+    },
+    "flatkey_billing_formulas": {
+      "no_video_reference": {
+        "480p": "$0.140 × output seconds",
+        "720p": "$0.314 × output seconds"
+      },
+      "with_video_reference": {
+        "480p": "$0.084 × total input-video seconds",
+        "720p": "$0.188 × total input-video seconds"
+      },
+      "catalog_base_note": "$0.14 is a catalog base field, not a universal request price",
+      "source": "docs/superpowers/specs/2026-08-11-modelapi-seedance-25-billing-design.md"
+    },
+    "layout": {
+      "h1_intro": [
+        "seedance 2.5",
+        "AI video",
+        "video generator"
+      ],
+      "capabilities_scenes": [
+        "text-to-video",
+        "image-to-video",
+        "prompts",
+        "micro-drama/comic",
+        "e-commerce UGC",
+        "film previz",
+        "game cinematic",
+        "creator explainer",
+        "market research"
+      ],
+      "pricing": [
+        "api",
+        "pricing",
+        "price",
+        "cost"
+      ],
+      "api": [
+        "content[]",
+        "duration",
+        "resolution",
+        "ratio",
+        "reference media"
+      ],
+      "faq": [
+        "release date",
+        "how/where to use",
+        "free boundary",
+        "what is Seedance 2.5"
+      ]
+    },
+    "deduplication_controls": [
+      "Shared workbench/navigation/health/providers shell is allowed; opening, pricing formulas, API example, scenes, and FAQ answers must be Seedance-specific.",
+      "Do not assign one exact keyword to every H2; cluster by intent and use natural variants.",
+      "Do not fabricate Ahrefs KD/SV where the database returned N/A or not indexed.",
+      "Compare sibling pages by full sentences, question wording, answers, and verified facts—not only by model-name replacement."
+    ]
+  },
+  "final_dataset": {
+    "overview_rows": 93,
+    "overview_normalized_aliases": [
+      "minimax-h3"
+    ],
+    "matching_models": 100,
+    "matching_rows": 1757,
+    "matching_units": 95128,
+    "questions_models": 5,
+    "questions_rows": 110,
+    "questions_units": 5940,
+    "serp_queries": 20,
+    "serp_rows": 201,
+    "serp_units": 9050,
+    "support_overview_rows": 14,
+    "support_overview_units": 756,
+    "canonical_dataset_units": 116760
+  },
+  "account_usage_snapshot": {
+    "workspace_used": 210719,
+    "workspace_limit": 400000,
+    "api_key_used": 210419,
+    "usage_reset_date": "2026-09-13T00:00:00Z"
+  },
+  "raw_cache_paths": {
+    "global_overview": "/private/tmp/ahrefs-global-overview.json",
+    "priority_overview": "/private/tmp/ahrefs-priority-overview.json",
+    "support_overview": "/private/tmp/ahrefs-priority-support-overview.json",
+    "matching_directory": "/private/tmp/ahrefs-matching/",
+    "questions_directory": "/private/tmp/ahrefs-questions/",
+    "serp_directory": "/private/tmp/ahrefs-serp/",
+    "usage_snapshot": "/private/tmp/ahrefs-usage-latest.json"
+  },
+  "report": "docs/seo-model-page-final-report.md",
+  "matrix": "docs/seo-model-page-keyword-matrix.json",
+  "api_key_persisted": false,
+  "implementation_summary": {
+    "date": "2026-08-27",
+    "total_model_pages": 101,
+    "priority_full_depth_curated": 5,
+    "seedance_independent_curated": 1,
+    "quick_generated_from_global_and_matching": 95,
+    "content_status": "all page packs implemented locally; prompt_library is not_applicable for text/embedding/audio pages",
+    "ranking_status": "not claimed until Google Search Console shows indexed impressions and positions"
+  },
+  "research_report": "docs/seo-model-page-keyword-research-brief.md",
+  "executive_brief": "docs/seo-model-page-executive-brief.md",
+  "coverage": "docs/seo-model-page-content-coverage.json",
+  "keyword_csv": "docs/seo-model-page-keyword-content-coverage.csv"
+}

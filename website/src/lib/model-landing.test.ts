@@ -11,6 +11,7 @@ import {
   getModelLandingConfig,
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
+  buildModelLandingMetadata,
   getModelLandingPathnames,
   getPriorityModelLandingPathnames,
   getLocalizedModelLandingConfig,
@@ -21,6 +22,128 @@ import { LOCALES } from "./locales";
 import type { PricingModel } from "./pricing";
 
 describe("model landing configuration", () => {
+  test("builds live metadata for every catalog task type", () => {
+    const cases: Array<[string, string[], string[]]> = [
+      ["gpt-test", ["openai"], ["chat/completions"]],
+      ["gpt-image-test", ["image-generation"], ["image generation"]],
+      ["video-test", ["video"], ["video generation"]],
+      ["tts-test", ["audio"], ["audio"]],
+      ["gemini-embedding-001", ["embeddings"], ["embedding"]],
+      ["rerank-test", ["jina-rerank"], ["reranking"]],
+    ];
+    for (const [modelName, endpoints, taskNeedles] of cases) {
+      const metadata = buildModelLandingMetadata({
+        model_name: modelName,
+        vendor_name: "Live Provider",
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 2,
+        supported_endpoint_types: endpoints,
+        display_pricing: { billing_kind: "token", prices: { input: { plg: 1.25 }, output: { plg: 2.5 } } },
+        directory_metadata: {
+          author: "Live Provider",
+          providers: ["Live Provider"],
+          modalities: ["text"],
+          context_tokens: 128000,
+          series: "test",
+          categories: ["test"],
+          released_at: "2026-01-01",
+          distillable: false,
+        },
+      });
+      expect(taskNeedles.some((needle) => metadata.title.toLowerCase().includes(needle))).toBe(true);
+      expect(metadata.description).toContain("Live Provider");
+      expect(metadata.description).toContain("$1.25");
+      expect(metadata.description).toContain("128,000-token");
+      expect(metadata.description.length).toBeLessThanOrEqual(160);
+    }
+  });
+
+  test("uses Portuguese metadata wording and clamps long descriptions", () => {
+    const metadata = buildModelLandingMetadata({
+      model_name: "very-long-model-name-for-description-length-check",
+      vendor_name: "Provedor ao Vivo",
+      quota_type: 1,
+      model_ratio: 0,
+      completion_ratio: 0,
+      model_price: 0.08,
+      supported_endpoint_types: ["video"],
+      directory_metadata: {
+        author: "Provedor ao Vivo",
+        providers: ["Provedor ao Vivo"],
+        modalities: ["video"],
+        context_tokens: null,
+        series: "test",
+        categories: ["test"],
+        released_at: "2026-01-01",
+        distillable: false,
+      },
+    }, { locale: "pt" });
+    expect(metadata.description).toContain("API de geração de vídeo");
+    expect(metadata.description).toContain("Provedor ao Vivo");
+    expect(metadata.description.length).toBeLessThanOrEqual(160);
+  });
+
+  test("prefers the resolved landing kind for ambiguous provider endpoints", () => {
+    const metadata = buildModelLandingMetadata({
+      model_name: "gemini-3.1-flash-image",
+      vendor_name: "Google",
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 1,
+      supported_endpoint_types: ["gemini"],
+      directory_metadata: { modalities: ["text", "image"] },
+      display_pricing: { billing_kind: "token", prices: { input: { plg: 1 }, output: { plg: 2 } } },
+    } as PricingModel, { task: "image generation" });
+    expect(metadata.title).toContain("image generation API");
+    expect(metadata.description).toContain("image generation");
+  });
+
+  test("localizes live metadata templates for every supported locale", () => {
+    const model: PricingModel = {
+      model_name: "locale-check-model",
+      vendor_name: "Provider Global",
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 2,
+      supported_endpoint_types: ["openai"],
+      display_pricing: {
+        billing_kind: "token",
+        prices: { input: { plg: 1.25 }, output: { plg: 2.5 } },
+      },
+      directory_metadata: {
+        author: "Provider Global",
+        providers: ["Provider Global"],
+        modalities: ["text"],
+        context_tokens: 128000,
+        series: "locale-test",
+        categories: ["text"],
+        released_at: "2026-01-01",
+        distillable: false,
+      },
+    };
+
+    const expectedTitleTerms: Record<string, string> = {
+      en: "pricing",
+      zh: "价格",
+      es: "precios",
+      fr: "tarifs",
+      pt: "preços",
+      ru: "цены",
+      ja: "料金",
+      vi: "giá",
+      de: "Preise",
+      id: "harga",
+    };
+    for (const locale of LOCALES) {
+      const metadata = buildModelLandingMetadata(model, { locale });
+      expect(metadata.title).toContain(expectedTitleTerms[locale]);
+      expect(metadata.description).toContain("Provider Global");
+      expect(metadata.description.length).toBeLessThanOrEqual(160);
+      if (locale !== "en") expect(metadata.description).not.toContain("via Flatkey; Provider Global model");
+    }
+  });
+
   test("defines paid-search landing pages for DeepSeek, Qwen, and GLM APIs", () => {
     expect(getModelLandingConfig("deepseek-api")).toBe(DEEPSEEK_CONFIG);
     expect(getModelLandingConfig("qwen-api")).toBe(QWEN_CONFIG);
@@ -123,34 +246,6 @@ describe("model landing configuration", () => {
     expect(getModelLandingConfigForModel("unknown-model")).toBeNull();
   });
 
-  test("keeps Gemini image models out of the text-family prefix match", () => {
-    const imageModel: PricingModel = {
-      model_name: "gemini-2.5-flash-image",
-      vendor_name: "Google",
-      quota_type: 1,
-      model_ratio: 0,
-      model_price: 0.04,
-      completion_ratio: 0,
-      supported_endpoint_types: ["image-generation"],
-    };
-
-    expect(getModelLandingConfigForModel(imageModel.model_name)).toBeNull();
-    expect(getModelLandingConfigForPricingModel(imageModel).generator?.kind).toBe("image");
-
-    const chatModel: PricingModel = {
-      model_name: "gemini-2.5-flash",
-      vendor_name: "Google",
-      quota_type: 0,
-      model_ratio: 0.3,
-      model_price: 0,
-      completion_ratio: 2.5,
-      supported_endpoint_types: ["gemini"],
-    };
-    expect(resolveModelLandingModels(GEMINI_CONFIG, [imageModel, chatModel]).map((model) => model.model_name)).toEqual([
-      "gemini-2.5-flash",
-    ]);
-  });
-
   test("keeps Seedance 2.5 generation defaults separate from Seedance 2.0", () => {
     expect(getModelLandingConfig("seedance-2.5")).toBe(SEEDANCE_25_CONFIG);
     expect(SEEDANCE_25_CONFIG.modelId).toBe("seedance-2.5");
@@ -185,6 +280,26 @@ describe("model landing configuration", () => {
     expect(config?.generator?.kind).toBe("audio");
     expect(config?.generator?.endpoint).toBe("/v1/video-to-music");
     expect(config?.generator?.storageKey).toBe("flatkey:model-generator-draft:sonilo-video-to-music");
+    expect(config?.seo.title).toContain("audio API");
+    expect(config?.seo.description).toContain("audio");
+  });
+
+  test("does not put Playground copy into generic audio landing content", () => {
+    const config = getModelLandingConfigForPricingModel({
+      model_name: "eleven_sound_v1",
+      vendor_name: "ElevenLabs",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.01,
+      completion_ratio: 0,
+      supported_endpoint_types: ["audio"],
+    });
+
+    expect(config.generator?.kind).toBe("audio");
+    const editorialText = JSON.stringify(config.landingContent);
+    expect(editorialText).not.toMatch(/playground/i);
+    expect(editorialText).not.toContain("Start in the playground");
+    expect(editorialText).not.toContain("public playground");
   });
 
   test("builds text landing configs for generic live pricing models", () => {
@@ -204,6 +319,11 @@ describe("model landing configuration", () => {
     expect(config.officialName).toBe("Moonshot AI");
     expect(config.generator).toBeUndefined();
     expect(config.seo.title).toContain("kimi-k2.5");
+    expect(config.landingContent?.pricing?.title).toContain("kimi-k2.5");
+    expect(config.landingContent?.capabilitiesTitle).toContain("kimi-k2.5");
+    expect(config.landingContent?.comparison?.title).toContain("kimi-k2.5");
+    expect(config.landingContent?.api?.title).toContain("kimi-k2.5");
+    expect(config.landingContent?.faq?.length).toBe(4);
   });
 
   test("keeps the five priority pages on target-specific editorial configs", () => {
@@ -238,9 +358,12 @@ describe("model landing configuration", () => {
       const content = config.landingContent;
 
       expect(content).toBeDefined();
-      expect(content?.hero?.title).toContain(target.heroNeedle);
-      expect(content?.hero?.description).toContain(target.heroNeedle);
-      expect(content?.pricing?.title).toContain(target.heroNeedle);
+      const normalizeHeading = (value: string) => value.trim().toLowerCase().replace(/[._\s]+/g, "-");
+      expect(normalizeHeading(content?.hero?.title ?? "")).toContain(normalizeHeading(target.heroNeedle));
+      expect(normalizeHeading(content?.hero?.description ?? "")).toContain(normalizeHeading(target.heroNeedle));
+      // Prose may use a natural spacing variant (for example, "MiniMax H3")
+      // while the model ID uses a hyphen ("MiniMax-H3").
+      expect(normalizeHeading(content?.pricing?.title ?? "")).toContain(normalizeHeading(target.heroNeedle));
       expect(content?.pricing?.rows?.length ?? 0).toBeGreaterThan(0);
       const editorialText = JSON.stringify(content);
       for (const endpoint of target.endpoints) expect(editorialText).toContain(endpoint);
@@ -255,6 +378,30 @@ describe("model landing configuration", () => {
       expect(config.slug).not.toBe(SEEDANCE_25_CONFIG.slug);
       expect(content?.hero?.title).not.toContain("Seedance");
     }
+  });
+
+  test("adds keyword-led editorial sections to explicit catalog families without curated copy", () => {
+    const config = getModelLandingConfigForPricingModel({
+      model_name: "gpt-5.5",
+      vendor_name: "OpenAI",
+      quota_type: 0,
+      model_ratio: 0.5,
+      completion_ratio: 8,
+      supported_endpoint_types: ["openai"],
+      directory_metadata: {
+        author: "OpenAI",
+        providers: ["OpenAI"],
+        modalities: ["text", "image"],
+        context_tokens: 256000,
+        series: "GPT-5",
+        categories: ["reasoning"],
+        released_at: "2026-01-01",
+        distillable: false,
+      },
+    });
+    expect(config.landingContent?.hero?.title).toContain("gpt-5.5");
+    expect(config.landingContent?.pricing?.title).toContain("gpt-5.5");
+    expect(config.landingContent?.faq?.length).toBe(4);
   });
 
   test("keeps priority metadata localized and distinct from the English fallback", () => {

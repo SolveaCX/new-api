@@ -10,7 +10,6 @@ import {
   SEEDANCE_CONFIG,
   getModelLandingConfigForPricingModel,
 } from "@/lib/model-landing";
-import { getImagePlaygroundExample } from "@/lib/image-prompt-templates";
 import type { PricingModel } from "@/lib/pricing";
 import type { RankingsData } from "@/lib/rankings-live";
 
@@ -120,21 +119,8 @@ describe("ModelLandingPage", () => {
     const url = new URL(encodedHref!.replaceAll("&amp;", "&"));
     expect(url.pathname).toBe("/playground");
     expect(url.searchParams.get("model")).toBe("gpt-image-2");
-    expect(url.searchParams.get("prompt")).toBe(getImagePlaygroundExample("gpt-image-2")?.prompt);
+    expect(url.searchParams.get("prompt")).toBe(GPT_IMAGE_2_CONFIG.examplePrompt);
     expect(url.searchParams.has("redirect")).toBe(false);
-  });
-
-  test("shows the model-specific ecommerce starter in the image Playground", () => {
-    const html = renderToStaticMarkup(
-      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />
-    );
-    const starter = getImagePlaygroundExample("gpt-image-2");
-
-    expect(starter).toBeDefined();
-    expect(html).toContain(`data-playground-industry="${starter!.industry}"`);
-    expect(html).toContain(`data-playground-poster="${starter!.poster}"`);
-    expect(html).toContain(starter!.prompt);
-    expect(html).toContain("preview-media");
   });
 
   test("routes the top Get API Key action to the console overview", () => {
@@ -145,6 +131,14 @@ describe("ModelLandingPage", () => {
     expect(hrefBeforeText(html, "Get API Key")).toBe(
       "https://console.flatkey.ai/dashboard",
     );
+  });
+
+  test("adds a View API jump link beside the top quick-start action", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
+    );
+
+    expect(hrefBeforeText(html, "View API")).toBe("#api");
   });
 
   test("renders Flatkey homepage-style sections for video model landings", () => {
@@ -160,7 +154,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("Open in Playground");
     expect(html).toContain("Request preview");
     expect(html).toContain("$0.047 / second");
-    expect(html).toContain("Capabilities");
+    expect(html).not.toContain('<p class="eyebrow">Capabilities</p>');
     expect(html).toContain("Related models");
     expect(html).toContain("Frequently asked questions");
     expect(html).toContain('type="application/ld+json"');
@@ -200,12 +194,19 @@ describe("ModelLandingPage", () => {
     const pricingSection = html.slice(html.indexOf('id="pricing"'), html.indexOf('id="capabilities"'));
 
     expect(html).toContain('href="#pricing"');
-    expect(pricingSection).toContain("Seedance 2.5 pricing: 480p, 720p, and video references");
+    expect(pricingSection).toContain("Seedance 2.5 API Pricing");
     expect(pricingSection).toContain("$0.140 × duration");
     expect(pricingSection).toContain("$0.314 × duration");
     expect(pricingSection).toContain("$0.084–$0.188 × video seconds");
     expect(pricingSection).toContain("Total input-video seconds");
-    expect(html).toContain('class="model-stat-label">480p · no video reference</div>');
+    expect(pricingSection).toContain("Add credits");
+    expect(pricingSection).toContain("$10");
+    expect(pricingSection).toContain("$20");
+    expect(pricingSection).toContain("$50");
+    expect(pricingSection).toContain('href="https://console.flatkey.ai/wallet"');
+    expect(html).toContain('class="model-stat-label">Request price</div>');
+    expect(pricingSection).not.toContain("480p");
+    expect(pricingSection).not.toContain("720p");
     // A single Product Offer would imply that $0.14 is the price for every
     // request, which is not true for resolution/duration/reference variants.
     const schema = html.slice(html.indexOf('type="application/ld+json"'), html.indexOf('</script>'));
@@ -526,13 +527,31 @@ describe("ModelLandingPage", () => {
     // this assertion focused on the previous-generation comparison while
     // matching the editorial title/casing used by GPT Image 2.
     expect(imageHtml).toContain("GPT Image 1");
-    expect(imageHtml).toContain("GPT Image 2 compared with GPT Image 1");
+    expect(imageHtml).toContain("GPT Image 2");
+    expect(imageHtml).toContain("GPT Image 1");
     expect(imageHtml).not.toContain("Pricing vs official");
-    expect(imageHtml).toContain("$0.04 / image");
-    expect(imageHtml).toContain("$0.06 / image");
+    // GPT Image 2 now uses the audited token-dimension catalog rows instead
+    // of the legacy generic per-image examples.
+    expect(imageHtml).toContain("$4.00");
+    expect(imageHtml).toContain("$24.00");
+    expect(imageHtml).toContain("image-input tokens");
+    expect(imageHtml).toContain("pricing-conversion-grid");
+    expect(imageHtml).toContain('href="https://console.flatkey.ai/wallet"');
+    expect(imageHtml).toContain("$10");
+    expect(imageHtml).toContain("$20");
+    expect(imageHtml).toContain("$50");
+    expect(imageHtml).toContain('class="prompt-control"');
+    const imageCapabilities = imageHtml.slice(imageHtml.indexOf('id="capabilities"'), imageHtml.indexOf('id="comparison"'));
+    expect((imageCapabilities.match(/class="capability-card"/g) ?? []).length).toBe(4);
+    expect(imageCapabilities).toContain("Text-to-image creation");
+    expect(imageCapabilities).not.toContain("Image count");
     expect(videoHtml).toContain("$0.140 × duration");
     expect(videoHtml).toContain("$0.314 × duration");
     expect(videoHtml).toContain("$0.084–$0.188 × video seconds");
+    const videoPricing = videoHtml.slice(videoHtml.indexOf('id="pricing"'), videoHtml.indexOf('id="capabilities"'));
+    expect(videoPricing).toContain("pricing-conversion-grid");
+    expect(videoPricing).not.toContain("480p");
+    expect(videoPricing).not.toContain("720p");
     expect(videoHtml).not.toContain("$0.14 / second");
     expect(videoHtml).not.toContain("10% below list price");
   });
@@ -577,6 +596,7 @@ describe("ModelLandingPage", () => {
     expect(imageHtml).toContain('type="number" min="1" max="10"');
     expect(imageHtml).toContain('class="h-9 w-full min-w-0 appearance-none');
     expect(imageHtml).toContain("resize-y");
+    expect((imageHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
     expect(videoHtml).toContain('data-model-kind="video"');
     expect(videoHtml).toContain('id="prompt-library"');
     expect(videoHtml).toContain("Prompt library");
@@ -595,6 +615,7 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("Upload or drag and drop");
     expect(videoHtml).toContain("0 / 30");
     expect(videoHtml).toContain("0 / 10");
+    expect((videoHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
   });
 
   test("keeps audio model pages free of the public playground", () => {
@@ -610,5 +631,48 @@ describe("ModelLandingPage", () => {
     expect(audioPageHtml).not.toContain("Start generating");
     expect(audioPageHtml).not.toContain('id="prompt-library"');
     expect(audioPageHtml).not.toContain("Prompt library");
+  });
+
+  test("keeps generic audio model pages free of playground links and copy", () => {
+    const audioModels: PricingModel[] = [
+      {
+        model_name: "eleven_sound_v1",
+        vendor_name: "ElevenLabs",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.01,
+        completion_ratio: 0,
+        supported_endpoint_types: ["audio"],
+      },
+      {
+        model_name: "gemini-3.1-flash-tts-preview",
+        vendor_name: "Google",
+        quota_type: 1,
+        model_ratio: 0,
+        model_price: 0.01,
+        completion_ratio: 0,
+        supported_endpoint_types: ["audio"],
+      },
+    ];
+
+    for (const model of audioModels) {
+      const config = getModelLandingConfigForPricingModel(model);
+      const html = renderToStaticMarkup(
+        <ModelLandingPage config={config} locale="en" liveModels={[model]} allModels={[model]} />
+      );
+      const audioPageHtml = html.slice(html.indexOf("<main"), html.indexOf("</main>"));
+
+      expect(config.generator?.kind).toBe("audio");
+      expect(audioPageHtml).toContain('data-model-kind="audio"');
+      expect(audioPageHtml).toContain('id="api"');
+      expect(audioPageHtml).toContain('id="pricing"');
+      expect(audioPageHtml).not.toContain('id="workbench"');
+      expect(audioPageHtml).not.toContain('id="prompt-library"');
+      expect(audioPageHtml).not.toMatch(/playground/i);
+      expect(audioPageHtml).not.toContain("Try a prompt");
+      expect(audioPageHtml).not.toContain("Start generating");
+      expect(audioPageHtml).not.toContain('href="#workbench"');
+      expect(audioPageHtml).not.toContain("/playground");
+    }
   });
 });

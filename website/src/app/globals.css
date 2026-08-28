@@ -1299,6 +1299,33 @@ html:has(.model-prototype) {
   box-shadow: none;
 }
 
+.model-prototype .model-view-api {
+  display: inline-flex;
+  width: 120px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 20px;
+  border: 1px solid #dfe1e6;
+  border-radius: 6px;
+  color: #0f121a !important;
+  background: #fff !important;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.model-prototype .model-view-api:hover,
+.model-prototype .model-view-api:focus-visible {
+  border-color: #a9a4b2;
+  background: #f7f7f8 !important;
+  outline: 2px solid #bca2ff;
+  outline-offset: 2px;
+}
+
 .model-prototype .model-hero-row {
   display: flex;
   width: 100%;
@@ -2821,28 +2848,12 @@ html:has(.model-prototype) {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  transition: transform 0.28s;
-}
-
-/* Posters are supplied in several deliberate ratios (4:5, 9:16, and 16:9).
- * Keep the complete artwork visible inside the card; only motion previews are
- * allowed to crop to the media frame. */
-.model-prototype .prompt-media img.prompt-image {
-  background: #f5f5f7;
-  object-fit: contain;
-}
-
-.model-prototype .prompt-media video.prompt-image {
   object-fit: cover;
+  transition: transform 0.28s;
 }
 
 .model-prototype .prompt-card:hover .prompt-image {
   transform: scale(1.04);
-}
-
-.model-prototype .prompt-card:hover img.prompt-image {
-  transform: none;
 }
 
 .model-prototype .prompt-media::after {
@@ -3568,7 +3579,7 @@ html:has(.model-prototype) {
  * it while scrolling instead of letting the shell's stacking context cover it. */
 @media (min-width: 901px) {
   .model-prototype .model-anchor-bar {
-    top: 126px;
+    top: var(--model-site-header-height, 126px);
     z-index: 40;
   }
 }
@@ -3727,11 +3738,18 @@ html:has(.model-prototype) {
   .model-prototype .model-hero-top {
     height: auto;
     align-items: flex-start;
+    flex-wrap: wrap;
+    row-gap: 10px;
   }
 
   .model-prototype .model-breadcrumb {
-    max-width: calc(100% - 130px);
+    max-width: 100%;
     font-size: 11px;
+  }
+
+  .model-prototype .model-hero-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .model-prototype .model-title-line h1 {
@@ -3844,21 +3862,6 @@ html:has(.model-prototype) {
   .model-prototype .faq-toggle {
     font-size: 13px;
   }
-}
-
-/* Related model APIs now use the light Flatkey cover artwork. Keep the card
- * metadata legible against its pale lavender lower edge. */
-.model-prototype .related-card:has(.related-image) .related-copy {
-  color: #17151d;
-  background: linear-gradient(180deg, transparent 0%, rgb(247 243 255 / 0.88) 34%, rgb(247 243 255 / 0.98) 100%);
-}
-
-.model-prototype .related-card:has(.related-image) .related-copy strong {
-  color: #17151d;
-}
-
-.model-prototype .related-card:has(.related-image) .related-copy span {
-  color: #6d5aa8;
 }
 
 /* Final desktop parity pass --------------------------------------------------
@@ -5502,17 +5505,40 @@ html:has(.model-prototype) {
   }
 }
 
-/* Keep the prompt counter anchored to the textarea and preserve the 20px
- * row rhythm from the prototype's advanced-options field grids. */
+/* Keep the prompt counter inside the textarea control. Positioning it against
+ * the whole field makes it overlap the last line when a long prompt wraps. */
 .model-prototype .input-fields .prompt-field > .field-label {
   align-items: flex-start;
 }
 
-.model-prototype .input-fields .prompt-field > .field-label .counter {
+.model-prototype .input-fields .prompt-field > .prompt-control {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.model-prototype .input-fields .prompt-field > .prompt-control textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100px;
+  min-height: 100px;
+  margin-top: 0;
+  padding: 12px 12px 34px;
+}
+
+.model-prototype .input-fields .prompt-field > .prompt-control > .counter {
   position: absolute;
-  right: 9px;
-  bottom: 7px;
-  margin-left: 0;
+  right: 12px;
+  bottom: 10px;
+  z-index: 1;
+  margin: 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+  pointer-events: none;
 }
 
 .model-prototype .advanced-options > div {
@@ -5651,6 +5677,21 @@ html:has(.model-prototype) {
   text-overflow: clip;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Related model APIs use the light Flatkey cover artwork, so the card copy
+ * needs the same dark ink treatment instead of the legacy photo-card white. */
+.model-prototype .related-card:has(.related-image) .related-copy {
+  color: #17151d;
+  background: linear-gradient(180deg, transparent 0%, rgb(247 243 255 / 0.88) 34%, rgb(247 243 255 / 0.98) 100%);
+}
+
+.model-prototype .related-card:has(.related-image) .related-copy strong {
+  color: #17151d;
+}
+
+.model-prototype .related-card:has(.related-image) .related-copy span {
+  color: #6d5aa8;
 }
 
 @media (min-width: 901px) {
@@ -5797,8 +5838,7 @@ html:has(.model-prototype) {
 
   .model-prototype .prompt-library-head {
     height: auto;
-    min-height: 0;
-    flex: 0 0 auto;
+    min-height: 121px;
   }
 
   .model-prototype .faq-intro {
@@ -5855,64 +5895,677 @@ html:has(.model-prototype) {
     padding: 42px 0 28px;
   }
 
-  .model-prototype .model-pricing .pricing-card {
+.model-prototype .model-pricing .pricing-card {
     padding: 24px;
   }
 }
 
-/* Prompt-library content is data-driven: localized headings and profession
- * briefs can be longer than the original prototype handoff. Keep the heading
- * in normal flow, preserve complete poster artwork, and let cards grow with
- * their prompt instead of allowing text or actions to disappear behind a
- * fixed-height sibling. */
-.model-prototype .prompt-library-head {
-  min-height: 0;
-  flex: 0 0 auto;
+/* Conversion pricing cards -------------------------------------------------
+ * Keep the headline focused on a real catalog amount. Product configuration
+ * details live beside it, while the compact table below remains available for
+ * users who need the exact billing formula.
+ */
+.model-prototype .pricing-conversion-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 20px;
 }
 
-.model-prototype .prompt-library .prompt-grid {
-  height: auto;
-  min-height: 0;
-  flex: 0 0 auto;
-  grid-template-rows: none;
-  grid-auto-rows: minmax(460px, auto);
-}
-
-.model-prototype .prompt-library .prompt-card {
-  height: 100%;
-  min-height: 460px;
-  overflow: visible;
-}
-
-.model-prototype .prompt-library .prompt-body {
-  height: auto;
-  flex: 1 1 auto;
-  min-height: 221px;
-}
-
-.model-prototype .prompt-library .prompt-text {
-  height: auto;
-  min-height: 161px;
-  overflow: visible;
-}
-
-/* Keep both card actions on the same bottom edge even when a localized
- * prompt wraps to a different number of lines. The body fills the remaining
- * card height and the action row consumes the auto margin at the bottom. */
-.model-prototype .prompt-library .prompt-actions {
-  flex: 0 0 auto;
-  margin-top: auto;
-}
-
-.model-prototype .prompt-actions > * {
+.model-prototype .pricing-feature-card,
+.model-prototype .pricing-facts-card {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 28px 32px;
+  border: 1px solid var(--model-line);
+  border-radius: 16px;
+  background: #fff;
 }
 
-/* Keep the playground panels content-driven. This prevents the input column's
- * fixed scroll box from clipping uploaded media while the output column grows
- * to the same row height as the input column. */
+.model-prototype .pricing-feature-head,
+.model-prototype .pricing-facts-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.model-prototype .pricing-kicker {
+  display: block;
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.model-prototype .pricing-feature-head h3,
+.model-prototype .pricing-facts-head h3 {
+  min-width: 0;
+  margin: 4px 0 0;
+  color: var(--model-ink);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .pricing-live-badge {
+  flex: none;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #3564d8;
+  background: #eef4ff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.model-prototype .pricing-feature-value {
+  margin-top: 28px;
+  color: var(--model-ink);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 700;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .pricing-feature-card > p {
+  margin: 14px 0 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.model-prototype .pricing-feature-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--model-purple);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.model-prototype .pricing-feature-action:hover,
+.model-prototype .pricing-feature-action:focus-visible {
+  background: #5e2dcc;
+  outline: 2px solid rgb(124 58 237 / 0.25);
+  outline-offset: 2px;
+}
+
+.model-prototype .pricing-facts-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--model-purple);
+  background: #f2edff;
+  font-size: 17px;
+}
+
+.model-prototype .pricing-facts-list {
+  display: grid;
+  gap: 0;
+  margin: 22px 0 0;
+}
+
+.model-prototype .pricing-facts-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--model-line);
+}
+
+.model-prototype .pricing-facts-list dt,
+.model-prototype .pricing-facts-list dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .pricing-facts-list dt {
+  color: var(--model-muted);
+}
+
+.model-prototype .pricing-facts-list dd {
+  color: var(--model-ink);
+  font-weight: 600;
+  text-align: right;
+}
+
+.model-prototype .pricing-breakdown-card {
+  margin-top: 0;
+}
+
+/* Release the prototype's fixed playground height so the editor can grow with
+ * its actual controls instead of forcing a nested scrollbar. */
+.model-prototype .input-reference-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.model-prototype .model-playground,
+.model-prototype .model-playground > .model-container,
+.model-prototype .workbench,
+.model-prototype .model-panel {
+  height: auto;
+}
+
+.model-prototype .model-playground > .model-container,
+.model-prototype .workbench {
+  min-height: 0;
+}
+
+.model-prototype .model-panel {
+  min-height: 785px;
+}
+
+.model-prototype .input-fields {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 47px 32px 0;
+  overflow: visible;
+}
+
+.model-prototype .generate-button {
+  position: static;
+  display: flex;
+  width: calc(100% - 64px);
+  margin: 20px 32px 40px;
+}
+
+.model-prototype .model-hero-copy-block,
+.model-prototype .model-hero-copy,
+.model-prototype .model-title-line,
+.model-prototype .model-hero-tags {
+  max-width: 100%;
+}
+
+.model-prototype .model-hero-copy {
+  height: auto;
+  min-height: 0;
+}
+
+.model-prototype .model-title-line h1 {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 43px;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.model-prototype .model-anchor-link,
+.model-prototype .model-anchor-link[href^="#"] {
+  width: auto !important;
+  min-width: max-content;
+}
+
+.model-prototype .model-hero-tags {
+  height: auto;
+  min-height: 36px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.model-prototype .model-tag,
+.model-prototype .model-tag:nth-child(n) {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 36px;
+  white-space: normal;
+  text-align: center;
+}
+
+.model-prototype .model-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  height: auto;
+}
+
+.model-prototype .model-stat-card {
+  width: auto;
+  height: auto;
+}
+
+.model-prototype .prompt-grid {
+  grid-auto-rows: auto;
+  align-items: stretch;
+}
+
+.model-prototype .prompt-card {
+  height: auto;
+}
+
+.model-prototype .prompt-media {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-container {
+    width: calc(100% - 32px);
+  }
+
+  .model-prototype .model-hero {
+    padding: 20px 0 24px;
+  }
+
+  .model-prototype .model-hero-top {
+    height: auto;
+    min-height: 32px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .model-prototype .model-breadcrumb {
+    width: auto;
+    max-width: none;
+    flex: 1 1 180px;
+  }
+
+  .model-prototype .model-hero-actions {
+    max-width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .model-prototype .model-hero-row {
+    height: auto;
+    gap: 20px;
+  }
+
+  .model-prototype .model-hero-copy-block {
+    min-height: 0;
+  }
+
+  .model-prototype .model-hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-prototype .model-playground {
+    padding: 32px 0;
+  }
+
+  .model-prototype .model-panel {
+    min-height: 0;
+  }
+
+  .model-prototype .input-fields {
+    margin: 47px 22px 0;
+  }
+
+  .model-prototype .generate-button {
+    width: calc(100% - 44px);
+    margin: 20px 22px 28px;
+  }
+
+  .model-prototype .output-preview .video-preview {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    width: auto;
+    height: auto;
+    min-height: 300px;
+    margin: 50px 22px 0;
+  }
+
+  .model-prototype .summary {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    margin: 28px 22px 24px;
+  }
+
+  .model-prototype .summary-list,
+  .model-prototype .summary-list dt,
+  .model-prototype .summary-list dd {
+    height: auto;
+    min-height: 0;
+  }
+
+  .model-prototype .pricing-conversion-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .pricing-feature-card,
+  .model-prototype .pricing-facts-card {
+    padding: 24px;
+  }
+
+  .model-prototype .input-reference-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .capability-grid,
+  .model-prototype .related-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    height: auto;
+    min-height: 0;
+  }
+
+  .model-prototype .capability-card {
+    height: auto;
+    min-height: 194px;
+  }
+
+  .model-prototype .prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: auto;
+  }
+
+  .model-prototype .prompt-card,
+  .model-prototype .prompt-media,
+  .model-prototype .prompt-body,
+  .model-prototype .prompt-text {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .model-prototype .prompt-media {
+    aspect-ratio: 16 / 9;
+  }
+
+  .model-prototype .prompt-actions {
+    height: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-prototype .comparison {
+    overflow-x: auto;
+  }
+
+  .model-prototype .comparison table {
+    min-width: 720px;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-container {
+    width: calc(100% - 28px);
+  }
+
+  .model-prototype .model-hero-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .model-prototype .model-back-link {
+    display: none;
+  }
+
+  .model-prototype .model-quick-start,
+  .model-prototype .model-view-api {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .model-prototype .model-title-line h1 {
+    max-width: 100%;
+    font-size: clamp(24px, 8vw, 32px);
+    line-height: 1.2;
+  }
+
+  .model-prototype .model-hero-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .model-tag {
+    flex: 1 1 auto;
+  }
+
+  .model-prototype .input-fields {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .model-prototype .generate-button {
+    width: calc(100% - 32px);
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .model-prototype .output-preview .video-preview,
+  .model-prototype .summary {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .model-prototype .capability-grid,
+  .model-prototype .related-grid,
+  .model-prototype .prompt-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .pricing-feature-card,
+  .model-prototype .pricing-facts-card,
+  .model-prototype .model-pricing .pricing-card {
+    padding: 20px;
+  }
+
+  .model-prototype .pricing-feature-head,
+  .model-prototype .pricing-facts-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .model-prototype .pricing-facts-list > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .model-prototype .pricing-facts-list dd {
+    text-align: left;
+  }
+
+  .model-prototype .comparison table {
+    min-width: 640px;
+  }
+}
+
+/* Keep the compact capability pills on one visual row on desktop. The
+ * container can scroll horizontally for unusually long localized labels;
+ * smaller screens intentionally wrap them to avoid shrinking the text. */
+@media (min-width: 901px) {
+  .model-prototype .model-hero-capabilities {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 36px;
+    padding: 12px 0;
+  }
+
+  .model-prototype .model-hero-tags {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .model-prototype .model-hero-tags::-webkit-scrollbar {
+    display: none;
+  }
+
+  .model-prototype .model-tag {
+    flex: 0 0 auto;
+  }
+}
+
+/* Wallet conversion panel -------------------------------------------------
+ * The model rate stays separate from account funding. This keeps the real
+ * catalog price legible while giving visitors a clear, low-friction way to
+ * choose a starter balance and continue in the authenticated wallet. */
+.model-prototype .pricing-wallet-card {
+  background: linear-gradient(145deg, #fff 0%, #fbfaff 100%);
+}
+
+.model-prototype .pricing-wallet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--model-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-decoration: none;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.model-prototype .pricing-wallet-action:hover,
+.model-prototype .pricing-wallet-action:focus-visible {
+  background: var(--model-purple);
+  outline: 2px solid rgb(124 58 237 / 0.22);
+  outline-offset: 2px;
+  transform: translateY(-1px);
+}
+
+.model-prototype .pricing-wallet-copy {
+  max-width: 42ch;
+  margin: 16px 0 0;
+  color: var(--model-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.model-prototype .pricing-topup-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.model-prototype .pricing-topup-option {
+  display: flex;
+  min-width: 0;
+  min-height: 72px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 13px;
+  border: 1px solid var(--model-line);
+  border-radius: 11px;
+  color: var(--model-ink);
+  background: #fff;
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.model-prototype .pricing-topup-option:hover,
+.model-prototype .pricing-topup-option:focus-visible {
+  border-color: rgb(124 58 237 / 0.42);
+  box-shadow: 0 8px 20px rgb(38 20 82 / 0.09);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.model-prototype .pricing-topup-option strong {
+  color: var(--model-ink);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.model-prototype .pricing-topup-option span {
+  color: var(--model-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.model-prototype .pricing-wallet-facts-label {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--model-line);
+  color: var(--model-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.model-prototype .pricing-wallet-card .pricing-facts-list {
+  margin-top: 4px;
+}
+
+@media (max-width: 620px) {
+  .model-prototype .pricing-wallet-action {
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .model-prototype .pricing-topup-option {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+}
+
+/* Final responsive handoff -------------------------------------------------
+ * Keep the model workbench and prompt library content-sized. Older prototype
+ * rules reserve a fixed canvas for the first mock; that canvas causes the
+ * editor and output panel to overflow when the header, locale, or viewport
+ * changes. These rules are intentionally last so every model detail page
+ * shares the same fluid behavior.
+ */
+.model-prototype .model-anchor-bar {
+  top: var(--model-site-header-height, 126px);
+  height: 48px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  border-top: 1px solid var(--model-line);
+  background: rgb(255 255 255 / 0.98);
+  box-shadow: 0 8px 18px -18px rgb(23 26 33 / 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.model-prototype .model-anchor-inner {
+  height: 48px;
+  min-height: 48px;
+}
+
+.model-prototype .model-anchor-links {
+  height: 48px;
+  min-width: max-content;
+  gap: 24px;
+}
+
+.model-prototype .model-anchor-link {
+  width: auto !important;
+  min-width: max-content;
+  height: 48px;
+  padding: 14px 0 12px;
+  white-space: nowrap;
+}
+
+.model-prototype .model-section {
+  scroll-margin-top: calc(var(--model-site-header-height, 126px) + 48px);
+}
+
 .model-prototype .workbench {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -5924,13 +6577,11 @@ html:has(.model-prototype) {
 }
 
 .model-prototype .workbench > .model-panel {
-  display: flex !important;
   width: auto;
   min-width: 0;
-  height: auto !important;
-  min-height: 0 !important;
-  flex-direction: column;
-  overflow: visible !important;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 .model-prototype .input-fields {
@@ -5939,10 +6590,34 @@ html:has(.model-prototype) {
   width: auto;
   max-width: 100%;
   min-width: 0;
-  height: auto !important;
-  flex-direction: column;
+  height: auto;
   margin: 47px 32px 0;
-  overflow: visible !important;
+  overflow: visible;
+}
+
+.model-prototype .input-fields > *,
+.model-prototype .input-fields .prompt-field,
+.model-prototype .input-fields .input-reference-fields,
+.model-prototype .input-fields .advanced-options,
+.model-prototype .input-fields .reference-images-field {
+  min-width: 0;
+  flex: none;
+}
+
+.model-prototype .input-reference-fields {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.model-prototype .input-reference-fields > * {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .model-prototype .input-fields .upload-field,
@@ -5953,6 +6628,23 @@ html:has(.model-prototype) {
   box-sizing: border-box;
 }
 
+.model-prototype .input-fields .upload-zone {
+  overflow: hidden;
+  padding: 25px 16px 26px;
+}
+
+.model-prototype .input-fields .upload-copy,
+.model-prototype .input-fields .upload-add-copy {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .model-prototype .generate-button {
   position: static;
   display: flex;
@@ -5961,19 +6653,39 @@ html:has(.model-prototype) {
   margin: 20px 32px 40px;
 }
 
+.model-prototype .output-preview,
+.model-prototype .output-preview .video-preview,
+.model-prototype .summary {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The input form can grow when reference media is added. Keep the output
+ * column content-driven as well: an absolute summary with a fixed height made
+ * it look detached from the preview and left stale whitespace beside a taller
+ * input form. */
+.model-prototype .workbench {
+  align-items: flex-start;
+}
+
+.model-prototype .model-panel {
+  height: auto;
+  min-height: 0;
+}
+
 .model-prototype .output-preview {
   display: flex;
-  min-width: 0;
   flex-direction: column;
+  min-height: 0;
 }
 
 .model-prototype .output-preview .video-preview {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  left: auto;
   width: auto;
-  max-width: 100%;
   height: 300px;
-  min-width: 0;
   margin: 50px 32px 0;
 }
 
@@ -5981,7 +6693,6 @@ html:has(.model-prototype) {
   position: static;
   width: auto;
   height: auto;
-  min-width: 0;
   min-height: 0;
   margin: 20px 32px 40px;
 }
@@ -5997,9 +6708,155 @@ html:has(.model-prototype) {
   min-height: 36px;
 }
 
+.model-prototype .summary-help {
+  height: auto;
+  min-height: 53px;
+}
+
 @media (max-width: 900px) {
+  .model-prototype .output-preview .video-preview,
+  .model-prototype .summary {
+    margin-right: 22px;
+    margin-left: 22px;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .output-preview .video-preview,
+  .model-prototype .summary {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+}
+
+/* The prompt library uses a true auto row. Cards stretch to the tallest item
+ * in each row while the actions stay at the bottom, so no card loses its
+ * buttons when a localized prompt wraps to an extra line. */
+.model-prototype .prompt-library,
+.model-prototype .prompt-library > .model-container {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.model-prototype .prompt-library > .model-container {
+  gap: 28px;
+}
+
+.model-prototype .prompt-library-head,
+.model-prototype .prompt-library-head > .section-head {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.model-prototype .prompt-library-head .eyebrow,
+.model-prototype .prompt-library-head .section-title,
+.model-prototype .prompt-library-head .section-copy {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.model-prototype .prompt-grid {
+  grid-auto-rows: auto;
+  align-items: stretch;
+  height: auto;
+  min-height: 0;
+}
+
+.model-prototype .prompt-card {
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+.model-prototype .prompt-media {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.model-prototype .prompt-body {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.model-prototype .prompt-text {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: visible;
+}
+
+.model-prototype .prompt-actions {
+  height: auto;
+  min-height: 36px;
+  margin-top: auto;
+}
+
+.model-prototype .prompt-actions > button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-prototype .pricing-example-list {
+  display: grid;
+  gap: 0;
+  margin-top: 22px;
+  border-top: 1px solid var(--model-line);
+}
+
+.model-prototype .pricing-example-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--model-line);
+}
+
+.model-prototype .pricing-example-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--model-muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-prototype .pricing-example-row strong {
+  flex: none;
+  color: var(--model-ink);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .model-prototype .model-anchor-bar {
+    top: var(--model-site-header-height, 132px);
+  }
+
   .model-prototype .workbench {
     grid-template-columns: 1fr;
+  }
+
+  .model-prototype .model-panel {
+    height: auto;
+    min-height: 0;
   }
 
   .model-prototype .input-fields {
@@ -6011,16 +6868,27 @@ html:has(.model-prototype) {
     margin: 20px 22px 28px;
   }
 
-  .model-prototype .output-preview .video-preview,
-  .model-prototype .summary {
-    margin-right: 22px;
-    margin-left: 22px;
+  .model-prototype .prompt-grid {
+    grid-template-rows: none;
+    grid-auto-rows: auto;
   }
 }
 
 @media (max-width: 620px) {
+  .model-prototype .model-anchor-bar {
+    top: var(--model-site-header-height, 132px);
+  }
+
+  .model-prototype .model-anchor-links {
+    gap: 18px;
+  }
+
   .model-prototype .input-fields {
     margin: 28px 16px 0;
+  }
+
+  .model-prototype .input-reference-fields {
+    grid-template-columns: 1fr;
   }
 
   .model-prototype .generate-button {
@@ -6028,32 +6896,220 @@ html:has(.model-prototype) {
     margin: 20px 16px 28px;
   }
 
-  .model-prototype .output-preview .video-preview,
-  .model-prototype .summary {
-    margin-right: 16px;
-    margin-left: 16px;
+  .model-prototype .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-prototype .pricing-example-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .model-prototype .pricing-example-row strong {
+    text-align: left;
   }
 }
 
-/* Keep uploaded references readable when a user selects several files of the
- * same type. The cards wrap inside the drop zone and the field grows with the
- * number of rows instead of clipping or forcing a horizontal scroller. */
+/* Release the prompt library from the legacy prototype canvas dimensions.
+ * The older rules intentionally used a 940px/460px fixed board; keeping those
+ * values in the cascade makes the section copy overlap cards and clips the
+ * action row when a prompt wraps or a locale gets longer. */
+.model-prototype .prompt-library > .model-container {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
+.model-prototype .prompt-library-head,
+.model-prototype .prompt-library-head > .section-head {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+
+.model-prototype .prompt-library-head .eyebrow,
+.model-prototype .prompt-library-head .section-title,
+.model-prototype .prompt-library-head .section-copy {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .prompt-library .prompt-grid {
+  grid-template-rows: none !important;
+  grid-auto-rows: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+  align-items: stretch;
+}
+
+.model-prototype .prompt-library .prompt-card {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  align-self: stretch;
+}
+
+.model-prototype .prompt-library .prompt-media {
+  height: auto !important;
+  aspect-ratio: 16 / 9;
+}
+
+.model-prototype .prompt-library .prompt-body {
+  height: auto !important;
+  min-height: 0 !important;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+}
+
+.model-prototype .prompt-library .prompt-text {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  flex: 1 1 auto;
+}
+
+.model-prototype .prompt-library .prompt-actions {
+  height: auto !important;
+  min-height: 36px;
+  margin-top: auto;
+}
+
+/* Reference inputs are intentionally stacked. Each media type gets its own
+ * full-width drop zone, matching the original Playground rhythm and keeping
+ * the count badge/readable upload copy together at every viewport width. */
+.model-prototype .input-reference-fields {
+  grid-template-columns: 1fr !important;
+  gap: 14px;
+}
+
+/* The first pill is the page's primary modality. Restore the accent/selected
+ * treatment from the approved model-detail visual language while keeping the
+ * remaining capability tags neutral. */
+.model-prototype .model-hero-tags .model-tag:first-child {
+  border: 1px solid #d9caff;
+  color: #5b31c6;
+  background: #f6f1ff;
+}
+
+/* Let the primary pricing card use the full shared row height. The wallet
+ * panel can be taller because it contains the balance options and catalog
+ * facts; a column layout keeps the prompt CTA anchored at the bottom instead
+ * of leaving an unexplained blank area under the rate examples. */
+.model-prototype .pricing-feature-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-prototype .pricing-feature-card .pricing-feature-action {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+@media (max-width: 900px) {
+  .model-prototype .prompt-library .prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .model-prototype .prompt-library .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Playground prototype parity ---------------------------------------------
+ * The approved mock keeps Input and Output in one shared grid row.  The
+ * content-sized handoff above must still stretch both panels to that row's
+ * height; using flex-start here made the two borders end at different places.
+ * Keep the panels in normal flow so the editor can grow when media is added,
+ * while the grid supplies the equal outer height.
+ */
+.model-prototype .workbench {
+  align-items: stretch !important;
+}
+
+.model-prototype .workbench > .model-panel {
+  display: flex !important;
+  align-self: stretch;
+  height: auto !important;
+  min-height: 0 !important;
+  flex-direction: column;
+  overflow: visible !important;
+}
+
+.model-prototype .workbench > .model-panel > .panel-heading {
+  flex: 0 0 auto;
+}
+
+.model-prototype .input-fields,
+.model-prototype .output-preview {
+  flex: 0 0 auto;
+}
+
+/* Uploaded files remain visible inside the prototype drop zone.  The file
+ * list can scroll horizontally for many files, but the zone itself must not
+ * clip the preview row or the add-more control. */
+.model-prototype .input-fields .upload-zone.has-uploads {
+  height: auto;
+  min-height: 70px;
+  overflow: visible;
+  align-items: stretch;
+  padding: 8px 10px;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads .upload-filled {
+  min-height: 52px;
+  align-items: center;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads .upload-file-list {
+  min-height: 52px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads .upload-filled > .upload-add-copy {
+  display: inline-flex !important;
+  width: auto !important;
+  min-width: 151px;
+  max-width: 151px;
+  flex: 0 0 151px;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.model-prototype .input-fields .upload-zone.has-uploads .upload-file-list {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+/* Multiple references must remain readable instead of being squeezed into a
+ * one-line horizontal scroller.  Grow the field with the uploaded cards and
+ * wrap them into a compact two-column grid at the prototype width. */
 .model-prototype .input-fields .upload-field:has(.upload-zone.has-uploads) {
   height: auto !important;
   min-height: 96px;
 }
 
 .model-prototype .input-fields .upload-zone.has-uploads {
-  height: auto !important;
-  min-height: 70px;
-  overflow: visible !important;
   align-items: stretch;
-  padding: 8px 10px;
 }
 
 .model-prototype .input-fields .upload-zone.has-uploads .upload-filled {
   display: flex;
-  min-width: 0;
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
@@ -6062,7 +7118,6 @@ html:has(.model-prototype) {
 .model-prototype .input-fields .upload-zone.has-uploads .upload-file-list {
   display: grid;
   width: 100%;
-  min-width: 0;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
   overflow: visible;
@@ -6075,19 +7130,14 @@ html:has(.model-prototype) {
 }
 
 .model-prototype .input-fields .upload-zone.has-uploads .upload-filled > .upload-add-copy {
-  display: inline-flex;
   width: 100% !important;
   min-width: 0;
   max-width: none;
   flex: 0 0 20px;
-  align-items: center;
-  justify-content: center;
-  overflow: visible;
-  white-space: nowrap;
 }
 
-/* The selected section marker must stay visible after scroll-driven active
- * state updates, including direct navigation to #api. */
+/* Keep the selected rail marker deterministic after a scroll-driven update,
+ * even when the URL has no hash (or a stale hash from a previous section). */
 .model-prototype .model-anchor-link[aria-current="page"] {
   color: var(--model-ink);
   font-weight: 600;
@@ -6098,25 +7148,34 @@ html:has(.model-prototype) {
   opacity: 1 !important;
 }
 
-@media (min-width: 901px) and (max-width: 1100px) {
-  .model-prototype .prompt-library .prompt-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 900px) {
+  /* A single-column mobile workbench has no sibling panel to equalize. */
+  .model-prototype .workbench > .model-panel {
+    height: auto !important;
+    min-height: 0 !important;
   }
 }
 
-@media (min-width: 621px) and (max-width: 699px) {
-  .model-prototype .prompt-library .prompt-grid {
-    grid-template-columns: 1fr;
-  }
+/* Related model cards should determine the section height.  The original
+ * prototype reserved enough space for a full two-row catalog, which leaves a
+ * large white tail when a model only has one row (for example, three cards).
+ * Keep the square card ratio for visual consistency, but let the grid and its
+ * section grow only as tall as the cards that are actually rendered. */
+.model-prototype .related,
+.model-prototype .related > .model-container,
+.model-prototype .related .related-grid {
+  height: auto !important;
+  min-height: 0 !important;
 }
 
-@media (max-width: 620px) {
-  .model-prototype .prompt-library .prompt-actions {
-    height: auto;
-    grid-template-columns: 1fr;
-  }
+.model-prototype .related .related-grid {
+  grid-template-rows: none !important;
+  grid-auto-rows: auto !important;
+  align-items: stretch;
+}
 
-  .model-prototype .prompt-library .prompt-actions > * {
-    width: 100%;
+@media (max-width: 900px) {
+  .model-prototype .model-anchor-bar {
+    top: var(--model-site-header-height, 132px);
   }
 }

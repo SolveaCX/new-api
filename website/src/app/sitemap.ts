@@ -6,8 +6,6 @@ import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames, getPriorityModelLandingPathnames } from "@/lib/model-landing";
 import { seriesForModels } from "@/lib/model-directory-meta";
 import { modelPublicPath, normalizeModelKey } from "@/lib/model-public";
-import { PROMPTS_PATH } from "@/lib/prompt-library-path";
-import { getPromptLibraryStaticPathnames } from "@/lib/prompt-library-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
 import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
@@ -88,12 +86,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/sla", 0.3, "yearly"),
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
-  // Keep the curated model landings and the priority SEO landings discoverable.
-  // The priority list also owns canonical aliases for model IDs whose catalog
-  // spelling differs from the public slug (for example MiniMax-H3).
-  const curatedModelLandingPathnames = [
-    ...new Set([...getModelLandingPathnames(), ...getPriorityModelLandingPathnames()]),
-  ];
+  const curatedModelLandingPathnames = [...new Set([
+    ...getModelLandingPathnames(),
+    ...getPriorityModelLandingPathnames(),
+  ])];
   const modelLandingEntries = curatedModelLandingPathnames
     .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname))
     .flatMap((pathname) => entry(pathname, 0.82, "daily"));
@@ -101,19 +97,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );
   const toolsAdLandingEntries = getToolsAdLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
-  const promptEntries = getPromptLibraryStaticPathnames().flatMap((pathname) =>
-    entry(pathname, pathname === PROMPTS_PATH ? 0.78 : 0.72, "weekly")
-  );
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
   const landingSlugs = new Set(curatedModelLandingPathnames.map((pathname) => pathname.replace(/^\/models\//, "")));
+  // Curated landing slugs can differ from catalog casing (MiniMax-H3 vs
+  // minimax-h3). Exclude normalized aliases here; their route redirects to the
+  // curated lowercase page and must not be emitted as a second sitemap URL.
   const normalizedLandingSlugs = new Set([...landingSlugs].map(normalizeModelKey));
   const modelPublicEntries = pricing.models
-    .filter(
-      (model) =>
-        !landingSlugs.has(model.model_name) &&
-        !normalizedLandingSlugs.has(normalizeModelKey(model.model_name))
-    )
+    .filter((model) => !landingSlugs.has(model.model_name) && !normalizedLandingSlugs.has(normalizeModelKey(model.model_name)))
     .flatMap((model) => entry(modelPublicPath(model.model_name), 0.6, "daily"));
   // Market acquisition pages are single-locale (no i18n alternates by design).
   const marketEntries = getMarketPathnames().map((pathname) => ({
@@ -166,7 +158,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...modelLandingEntries,
     ...skagLandingEntries,
     ...toolsAdLandingEntries,
-    ...promptEntries,
     ...modelPublicEntries,
     ...seriesEntries,
     ...categoryEntries,
