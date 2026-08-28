@@ -13,7 +13,7 @@ describe('announcement configuration', () => {
   test('includes the Flatkey brand mark in the built-in logo picker', () => {
     expect(BUILT_IN_MODEL_LOGOS[0]).toEqual({
       label: 'Flatkey',
-      value: '/assets/logos/flatkey-mark-dark.svg',
+      value: '/assets/logos/flatkey-mark-white.svg',
     })
   })
 
