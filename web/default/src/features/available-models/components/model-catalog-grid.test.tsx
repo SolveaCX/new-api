@@ -117,6 +117,18 @@ describe('ModelCatalogGrid', () => {
     expect(html).toContain('Quick start')
   })
 
+  test('keeps promotion badges beside the model name', () => {
+    const html = renderGrid({
+      models: [buildModel({ id: 'glm-5.3-flash' })],
+    })
+
+    expect(html).toContain('flex min-w-0 flex-wrap items-center gap-1.5')
+    expect(html).toContain(
+      'min-w-0 flex-1 truncate text-lg leading-tight font-bold'
+    )
+    expect(html).toContain('Limited discount')
+  })
+
   // Quick start explains how to call a model from your own code, which is the
   // only route that fits embeddings, rerank and TTS — so it stays offered for
   // model families the Playground could never run.

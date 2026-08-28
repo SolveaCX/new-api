@@ -236,8 +236,8 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
           {getLobeIcon(brand.icon, 26)}
         </span>
         <div className='min-w-0 flex-1'>
-          <div className='flex min-w-0 flex-wrap items-center gap-2'>
-            <h3 className='truncate text-lg leading-tight font-bold' title={model.id}>{model.id}</h3>
+          <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
+            <h3 className='min-w-0 flex-1 truncate text-lg leading-tight font-bold' title={model.id}>{model.id}</h3>
             {promotions.map((promotion) => (
               <Badge key={promotion} variant='outline' className={cn(
                 'border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm',
