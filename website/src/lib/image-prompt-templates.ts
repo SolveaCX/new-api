@@ -32,9 +32,10 @@ export type ImagePlaygroundExample = {
 
 const SELECTED_PLAYGROUND_ASSET_BASE = "/assets/prompts/selected-playground";
 /**
- * CDN-backed posters for the approved profession directions. Keep these
- * remote so the nine model pages share the reviewed originals without adding a
- * second copy of each generated image to the website bundle.
+ * Asset binding contract: these reviewed CDN images are the canonical media
+ * for the six profession directions. The model Playground starter and prompt
+ * library variants must keep using this registry; local artwork is permitted
+ * only as an explicit load-error fallback, never as a data replacement.
  */
 const GAME_UI_EQUIPMENT_CDN_BASE =
   "https://cdn.shulex-voc.com/flatkey/model-media/prompt-library/game-ui-equipment";

@@ -32,10 +32,11 @@ const professionVideo = (profession: number, filename: string) =>
   `${PROFESSION_VIDEO_BASE}/video-profession-${String(profession).padStart(2, "0")}/${filename}`;
 
 /**
- * The reviewed profession clips generated for the six video directions. The
- * page cards use these CDN objects instead of the old generic sample rotation.
- * The filenames are intentionally explicit so every card remains traceable to
- * the approved profession batch and no card silently falls back to a duplicate.
+ * Asset binding contract: these reviewed CDN clips are the canonical media for
+ * their model page. `getVideoPromptTemplates` is consumed by both the model
+ * Playground preview and the prompt library, so neither surface may replace
+ * these URLs with a generic/local sample. Local posters are allowed only as an
+ * explicit load-error fallback and must never be emitted as the primary asset.
  */
 const VIDEO_PROFESSION_SETS: Record<string, readonly string[]> = {
   "seedance-2-5": [

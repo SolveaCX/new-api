@@ -2811,7 +2811,12 @@ function PromptLibrarySection(props: {
         <div className="prompt-grid">
           {items.map((item, index) => {
             const isPriorityMedia = index === 0;
-            const posterFallback = getPromptPosterFallback(item);
+            // Generated profession clips are the canonical asset for video
+            // cards. Do not paint an older local poster behind them while the
+            // CDN clip is loading; the same clip is also used by the
+            // playground preview below.
+            const usesGeneratedVideo = isProfessionVideo(item.example.video);
+            const posterFallback = usesGeneratedVideo ? "" : getPromptPosterFallback(item);
             const posterSource = failedPosters[item.example.poster]
               ? posterFallback
               : item.example.poster;
@@ -2820,7 +2825,7 @@ function PromptLibrarySection(props: {
               <div
                 className="prompt-media"
                 style={{
-                  backgroundImage: `url("${posterFallback}")`,
+                  ...(posterFallback ? { backgroundImage: `url("${posterFallback}")` } : {}),
                   backgroundPosition: "center",
                   backgroundSize: "cover",
                 }}
@@ -2921,11 +2926,10 @@ function buildPromptLibraryItems(
         // product/food/hospitality/etc. reference remains in the card instead
         // of falling through to an unrelated generic image.
         example: {
-          // The model-specific CDN poster set is intentionally not used here:
-          // a failed profession clip must still show the matching workflow
-          // image (product macro, food motion, hotel, vehicle, UI, or
-          // architecture), never another profession's thumbnail.
-          poster: PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster,
+          // Keep the generated CDN clip as the primary asset. Do not attach an
+          // older local poster to a profession clip; this preserves the same
+          // source binding in both the card and the Playground preview.
+          poster: isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster),
           video: template.video,
         },
       }));
