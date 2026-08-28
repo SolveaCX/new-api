@@ -183,8 +183,28 @@ function SlideMedia(props: { slide: FeaturedSlide; reducedMotion: boolean }) {
     );
   }
 
+  const fallbackStyle = slide.fallbackImage
+    ? {
+        backgroundImage: `url("${slide.fallbackImage}")`,
+        backgroundPosition: "center",
+        backgroundSize: "cover",
+      }
+    : undefined;
+
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={slide.image} alt="" className="absolute inset-0 size-full object-cover" loading="lazy" />
+    <div className="absolute inset-0 size-full bg-cover bg-center" style={fallbackStyle}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={slide.image}
+        alt=""
+        className="size-full object-cover"
+        loading="lazy"
+        onError={(event) => {
+          if (slide.fallbackImage && event.currentTarget.src !== slide.fallbackImage) {
+            event.currentTarget.src = slide.fallbackImage;
+          }
+        }}
+      />
+    </div>
   );
 }
