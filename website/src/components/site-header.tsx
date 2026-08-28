@@ -305,7 +305,7 @@ const desktopDropdownChevronClass =
 const desktopSecondaryActionClass =
   "inline-flex h-10 items-center whitespace-nowrap rounded-[9px] border border-[#E7E4EC] bg-white px-2.5 text-[13px] font-bold text-[#0B0B0F] no-underline shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95] min-[1180px]:px-3 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
 const desktopPrimaryActionClass =
-  "inline-flex h-10 max-w-[10rem] items-center justify-center overflow-hidden whitespace-nowrap rounded-[9px] bg-[#070707] px-3 text-[13px] font-bold text-ellipsis text-white no-underline shadow-[0_10px_24px_-18px_rgba(11,11,15,.75)] transition hover:-translate-y-px hover:bg-[#17171B] min-[1180px]:h-11 min-[1180px]:max-w-[12rem] min-[1180px]:px-4 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
+  "inline-flex h-10 min-w-0 max-w-[14rem] items-center justify-center rounded-[9px] bg-[#070707] px-3 text-center text-[13px] leading-tight font-bold text-white no-underline shadow-[0_10px_24px_-18px_rgba(11,11,15,.75)] transition hover:-translate-y-px hover:bg-[#17171B] min-[1180px]:h-11 min-[1180px]:max-w-[16rem] min-[1180px]:px-4 min-[1180px]:text-[13.5px] min-[1360px]:text-[14px]";
 const headerLogoClass =
   "gap-2 [&_img]:!h-9 [&_img]:!w-9 [&_[data-flatkey-wordmark='true']]:!text-[28px] min-[1180px]:gap-[9px] min-[1180px]:[&_img]:!h-10 min-[1180px]:[&_img]:!w-10 min-[1180px]:[&_[data-flatkey-wordmark='true']]:!text-[32px] min-[1480px]:[&_img]:!h-11 min-[1480px]:[&_img]:!w-11 min-[1480px]:[&_[data-flatkey-wordmark='true']]:!text-[36px]";
 
@@ -947,7 +947,7 @@ export function SiteHeader(props: Props) {
 
         <a
           className={cn(
-            "ml-auto h-10 max-w-[8.5rem] shrink-0 overflow-hidden whitespace-nowrap rounded-[9px] px-3 text-[13px] font-bold text-ellipsis no-underline min-[901px]:hidden",
+            "ml-auto h-10 min-w-0 max-w-[11rem] shrink-0 rounded-[9px] px-3 text-center text-[13px] leading-tight font-bold no-underline min-[901px]:hidden",
             consoleSessionActive
               ? "inline-flex items-center justify-center border border-[#E7E4EC] bg-white text-[#0B0B0F] shadow-[0_1px_2px_rgba(24,14,38,.05)] transition hover:border-[#D8D1E2] hover:bg-[#F8F4FF] hover:text-[#4C1D95]"
               : "inline-flex items-center justify-center bg-[#070707] text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)]",
