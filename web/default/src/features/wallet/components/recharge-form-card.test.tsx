@@ -262,11 +262,12 @@ describe('RechargeFormCard', () => {
     )
 
     expect(html).toContain('R$8')
-    expect(html).toContain('2.00 BRL OFF')
-    expect(html).toContain('Save R$2')
-    expect(html).not.toContain('R$10')
-    expect(html).not.toContain('line-through')
-    expect(html).not.toContain('>$10</span>')
+    expect(html).toContain('R$10')
+    expect(html).toContain('data-recharge-original-price="10"')
+    expect(html).toContain('line-through')
+    expect(html).toContain('-80% off')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save R$2')
     expect(html).not.toContain('Coupon Applied from')
   })
 
@@ -288,9 +289,12 @@ describe('RechargeFormCard', () => {
     )
 
     expect(html).toContain('¥2,500')
-    expect(html).toContain('Save ¥500')
-    expect(html).not.toContain('¥3,000')
-    expect(html).not.toContain('line-through')
+    expect(html).toContain('¥3,000')
+    expect(html).toContain('data-recharge-original-price="3000"')
+    expect(html).toContain('line-through')
+    expect(html).toContain('-80% off')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save ¥500')
     expect(html).not.toContain('Save ¥5</')
   })
 
@@ -309,14 +313,16 @@ describe('RechargeFormCard', () => {
       />
     )
 
-    expect(html).toContain('20% OFF')
+    expect(html).toContain('-80% off')
     expect(html).toContain('$8')
-    expect(html).toContain('Save $2')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-recharge-original-price="10"')
+    expect(html).toContain('line-through')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Welcome back')
-    expect(html).not.toContain('$10')
-    expect(html).not.toContain('line-through')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $2')
   })
 
   test('calculates percent recall savings from the configured checkout price', () => {
@@ -336,12 +342,14 @@ describe('RechargeFormCard', () => {
       />
     )
 
-    expect(html).toContain('20% OFF')
+    expect(html).toContain('-80% off')
     expect(html).toContain('R$79.92')
-    expect(html).toContain('Save R$19.98')
-    expect(html).not.toContain('R$99.9')
-    expect(html).not.toContain('line-through')
+    expect(html).toContain('R$99.9')
+    expect(html).toContain('data-recharge-original-price="99.9"')
+    expect(html).toContain('line-through')
     expect(html).not.toContain('R$16')
     expect(html).not.toContain('R$20')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save R$19.98')
   })
 })

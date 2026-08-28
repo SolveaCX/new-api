@@ -876,13 +876,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   currency: plan.currency || 'USD',
                 }
               )
-              const discountPercent = discountPreview
-                ? Math.round(
-                    (discountPreview.discountAmount /
-                      discountPreview.originalTotal) *
-                      100
-                  )
-                : 0
               const recallExpiryDate =
                 discountPreview?.discountKind === 'recall' && recallOffer
                   ? formatRecallExpiryDate(
@@ -898,6 +891,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ? formatPlanPrice(discountPreview.total, currency)
                 : formatPlanPrice(configuredDisplayPrice.amount, currency)
               const referencePrice = getPlanReferencePrice(plan)
+              const originalPrice = discountPreview
+                ? formatPlanPrice(discountPreview.originalTotal, currency)
+                : referencePrice
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -937,6 +933,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         ) : null}
                       </div>
                       <div className='flex shrink-0 flex-col items-end gap-1'>
+                        {discountPreview ? (
+                          <span
+                            data-discount-kind={discountPreview.discountKind}
+                            data-subscription-discount-label='-80% off'
+                            className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
+                          >
+                            {t('-80% off')}
+                          </span>
+                        ) : null}
                         {isMostPopular ? (
                           <span className='border-primary/20 inline-flex items-center gap-1 rounded-full border bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
                             <Sparkles className='h-3 w-3' />
@@ -947,12 +952,12 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     </div>
 
                     <div className='mt-6 flex flex-wrap items-end gap-2'>
-                      {referencePrice ? (
+                      {originalPrice ? (
                         <span
-                          data-subscription-reference-price={referencePrice}
+                          data-subscription-reference-price={originalPrice}
                           className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
                         >
-                          {referencePrice}
+                          {originalPrice}
                         </span>
                       ) : null}
                       <span className='text-5xl font-semibold tracking-tight tabular-nums'>
@@ -962,31 +967,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         {t('per month')}
                       </span>
                     </div>
-                    {discountPreview ? (
-                      <div className='mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-medium text-[#166534] dark:text-[#86efac]'>
-                        <span
-                          data-discount-kind={discountPreview.discountKind}
-                          className='inline-flex rounded-full bg-[#dcfce7] px-2 py-1 text-[11px] font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'
-                        >
-                          {discountPercent > 0
-                            ? t('{{percent}}% OFF', {
-                                percent: discountPercent,
-                              })
-                            : t('OFF')}
-                        </span>
-                        <span>
-                          {t('Save {{amount}}', {
-                            amount: formatPlanPrice(
-                              discountPreview.discountAmount,
-                              discountPreview.currency
-                            ),
-                          })}
-                        </span>
-                        {recallExpiryDate ? (
-                          <span>
-                            {t('Expires {{date}}', { date: recallExpiryDate })}
-                          </span>
-                        ) : null}
+                    {recallExpiryDate ? (
+                      <div className='text-muted-foreground mt-1 text-xs font-medium'>
+                        {t('Expires {{date}}', { date: recallExpiryDate })}
                       </div>
                     ) : null}
 
