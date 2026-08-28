@@ -2805,7 +2805,11 @@ function PromptLibrarySection(props: {
                     sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                     className="prompt-image object-cover"
                     priority={isPriorityMedia}
-                    loading={isPriorityMedia ? "eager" : "lazy"}
+                    // Prompt posters are the primary content of this section.
+                    // Eager loading prevents visible cards from remaining as
+                    // empty placeholders when the browser's lazy threshold
+                    // does not account for the tall prompt-card layout.
+                    loading="eager"
                     // The reviewed prompt posters live on the public CDN. Bypass
                     // Next's server-side optimizer so a slow/large remote object
                     // cannot leave the card stuck on a broken image placeholder.
