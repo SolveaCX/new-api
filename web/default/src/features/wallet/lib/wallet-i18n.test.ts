@@ -38,6 +38,7 @@ const localeTranslations = {
 } as const
 
 const walletRechargeKeys = [
+  '-80% off',
   'Top-up Packages',
   'Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price.',
   'Top up {{price}}',
@@ -152,6 +153,15 @@ describe('wallet recharge i18n', () => {
           key
         )
       }
+    }
+  })
+
+  test('keeps the campaign discount badge in the shared English format', () => {
+    for (const [locale, translations] of Object.entries(localeTranslations)) {
+      expect(
+        translations['-80% off'],
+        `${locale} should keep the shared badge copy`
+      ).toBe('-80% off')
     }
   })
 

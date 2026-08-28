@@ -1340,12 +1340,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('OFF')
+    expect(html).toContain('-80% off')
     expect(html).toContain('$5')
-    expect(html).toContain('Save $5')
-    expect(html).not.toContain('line-through')
-    expect(html).not.toContain('data-subscription-discount-original-price=')
-    expect(html).not.toContain('$10')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $5')
   })
 
   test('shows Recall when the backend quote selects it over invitation credit', () => {
@@ -1362,10 +1363,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('OFF')
+    expect(html).toContain('-80% off')
     expect(html).toContain('$4')
-    expect(html).toContain('Save $6')
-    expect(html).not.toContain('$10')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $6')
     expect(html).not.toContain('Save $5')
   })
 
@@ -1382,11 +1386,16 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('Save $2')
-    expect(html).toContain('20% OFF')
+    expect(html).toContain('$8')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).toContain('-80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $2')
   })
 
   test('formats backend preview amounts in the quote currency', () => {
@@ -1407,7 +1416,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
-    expect(html).not.toContain('100,00')
+    expect(html).toContain('100,00')
+    expect(html).toContain('-80% off')
   })
 
   test('formats JPY backend preview amounts without a USD fallback', () => {
@@ -1428,7 +1438,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain('¥1,000')
-    expect(html).not.toContain('¥2,000')
+    expect(html).toContain('¥2,000')
+    expect(html).toContain('-80% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1445,9 +1456,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         })
       )
 
-    expect(html).toContain('$4')
-    expect(html).toContain('Save $6')
-    expect(html).not.toContain('$10')
+      expect(html).toContain('$4')
+      expect(html).toContain('$10')
+      expect(html).toContain('-80% off')
+      expect(html).not.toContain('Save $6')
     }
   })
 
@@ -1551,8 +1563,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain(formatBrl(40))
-    expect(html).toContain(`Save ${formatBrl(10)}`)
-    expect(html).not.toContain(formatBrl(50))
+    expect(html).toContain(formatBrl(50))
+    expect(html).toContain('-80% off')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')
     expect(html).not.toContain('$40')
     expect(html).not.toContain('Save $10')
