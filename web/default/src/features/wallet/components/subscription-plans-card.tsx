@@ -924,7 +924,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 <Card
                   key={plan.id}
                   className={cn(
-                    'border-border/80 relative overflow-visible rounded-lg border shadow-sm transition-[box-shadow,border-color]',
+                    'border-border/80 relative overflow-hidden rounded-lg border shadow-sm transition-[box-shadow,border-color]',
                     isMostPopular
                       ? '!border-primary/70 !border-2 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] ring-2 ring-[#8b5cf6]/60 hover:shadow-lg dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
                       : 'hover:border-primary/50 hover:shadow-lg'
@@ -934,7 +934,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     {isLimitedOffer ? (
                       <span
                         data-subscription-limited-offer
-                        className='pointer-events-none absolute -top-2 -right-14 z-10 w-44 rotate-45 border border-rose-200 bg-rose-50 px-2 py-1 text-center text-[10px] leading-tight font-bold tracking-wide text-rose-700 shadow-sm dark:border-rose-800/70 dark:bg-rose-950/60 dark:text-rose-300'
+                        className='pointer-events-none absolute top-4 -right-13 z-10 w-44 rotate-45 border border-rose-200 bg-rose-50 px-2 py-1 text-center text-[10px] leading-tight font-bold tracking-wide break-words text-rose-700 shadow-sm dark:border-rose-800/70 dark:bg-rose-950/60 dark:text-rose-300'
                       >
                         {t('Limited offer')}
                       </span>
@@ -950,7 +950,12 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           </p>
                         ) : null}
                       </div>
-                      <div className='flex shrink-0 flex-col items-end gap-1'>
+                      <div
+                        className={cn(
+                          'flex shrink-0 flex-col items-end gap-1',
+                          isLimitedOffer && 'pt-10'
+                        )}
+                      >
                         {hasCampaignDiscount && discountLabel ? (
                           <span
                             data-discount-kind={
