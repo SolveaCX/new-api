@@ -2759,12 +2759,22 @@ type PromptLibraryItem = {
   alt?: string;
 };
 
+const PROMPT_POSTER_FALLBACKS = [
+  "/assets/prompts/awesome-images/game-prop-crystal.png",
+  "/assets/prompts/awesome-images/sports-shoe.png",
+  "/assets/prompts/awesome-images/ecommerce-skincare.png",
+  "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png",
+  "/assets/prompts/awesome-images/liquid-bento.png",
+  "/assets/prompts/awesome-images/campaign-hero.png",
+] as const;
+
 function PromptLibrarySection(props: {
   config: ModelConfig;
   examples: readonly MediaExample[];
   onPromptChange: (prompt: string) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
+  const [failedPosters, setFailedPosters] = useState<Record<string, boolean>>({});
   const kind = props.config.generator?.kind;
   if (kind !== "image" && kind !== "video") return null;
   const items = buildPromptLibraryItems(props.config, props.examples, props.t);
@@ -2783,9 +2793,19 @@ function PromptLibrarySection(props: {
         <div className="prompt-grid">
           {items.map((item, index) => {
             const isPriorityMedia = index === 0;
+            const posterSource = failedPosters[item.example.poster]
+              ? PROMPT_POSTER_FALLBACKS[index % PROMPT_POSTER_FALLBACKS.length]
+              : item.example.poster;
             return (
             <article key={item.key} className="prompt-card">
-              <div className="prompt-media">
+              <div
+                className="prompt-media"
+                style={{
+                  backgroundImage: `url("${PROMPT_POSTER_FALLBACKS[index % PROMPT_POSTER_FALLBACKS.length]}")`,
+                  backgroundPosition: "center",
+                  backgroundSize: "cover",
+                }}
+              >
                 {item.example.video ? (
                   <video
                     className="prompt-image h-full w-full object-cover"
@@ -2799,7 +2819,7 @@ function PromptLibrarySection(props: {
                   />
                 ) : (
                   <Image
-                    src={item.example.poster}
+                    src={posterSource}
                     alt={item.alt ?? item.label}
                     fill
                     sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
@@ -2810,6 +2830,7 @@ function PromptLibrarySection(props: {
                     // empty placeholders when the browser's lazy threshold
                     // does not account for the tall prompt-card layout.
                     loading="eager"
+                    onError={() => setFailedPosters((current) => ({ ...current, [item.example.poster]: true }))}
                     // The reviewed prompt posters live on the public CDN. Bypass
                     // Next's server-side optimizer so a slow/large remote object
                     // cannot leave the card stuck on a broken image placeholder.
