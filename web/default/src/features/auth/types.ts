@@ -38,6 +38,7 @@ export interface RegisterPayload {
   email?: string
   verification_code?: string
   aff_code?: string
+  invite?: string
   ads_attribution?: string
   ga_client_id?: string
   ga_session_id?: string

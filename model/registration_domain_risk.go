@@ -239,9 +239,11 @@ func insertRegisteredUserWithTx(tx *gorm.DB, user *User, inviterID int, registra
 		return err
 	}
 	if afterCreate != nil {
-		return afterCreate(tx)
+		if err := afterCreate(tx); err != nil {
+			return err
+		}
 	}
-	return nil
+	return EnqueueCustomerReferralInTx(tx, user)
 }
 
 func usersForEmailDomain(db *gorm.DB, domain string) *gorm.DB {

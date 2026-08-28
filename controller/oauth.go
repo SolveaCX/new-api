@@ -51,6 +51,7 @@ func GenerateOAuthCode(c *gin.Context) {
 
 func prepareOAuthState(c *gin.Context, session sessions.Session) string {
 	state := common.GetRandomString(12)
+	applyCustomerReferralInviteToSession(c, session)
 	affCode := c.Query("aff")
 	if affCode != "" {
 		session.Set("aff", affCode)
@@ -73,6 +74,31 @@ func prepareOAuthState(c *gin.Context, session sessions.Session) string {
 	}
 	session.Set("oauth_state", state)
 	return state
+}
+
+// applyCustomerReferralInviteToSession decrypts the one-shot invite carried by
+// an OAuth start request. Only the opaque values needed for a new-user
+// transaction are stored in the server-side session; the raw invite is never
+// logged or returned to the browser.
+func applyCustomerReferralInviteToSession(c *gin.Context, session sessions.Session) {
+	session.Delete("customer_referral_invite_code")
+	session.Delete("customer_referral_source_platform")
+	rawInvite := strings.TrimSpace(c.Query("invite"))
+	if rawInvite == "" {
+		return
+	}
+	invite, err := service.DecodeCustomerInvite(rawInvite)
+	if err != nil {
+		return
+	}
+	session.Set("customer_referral_invite_code", invite.Code)
+	session.Set("customer_referral_source_platform", invite.Platform)
+}
+
+func customerReferralInviteFromSession(session sessions.Session) (string, string) {
+	code, _ := session.Get("customer_referral_invite_code").(string)
+	platform, _ := session.Get("customer_referral_source_platform").(string)
+	return code, platform
 }
 
 func StartGoogleOAuth(c *gin.Context) {
@@ -282,6 +308,8 @@ func HandleOAuth(c *gin.Context) {
 	session.Delete("aff")
 	session.Delete("ga_client_id")
 	session.Delete("ga_session_id")
+	session.Delete("customer_referral_invite_code")
+	session.Delete("customer_referral_source_platform")
 
 	// 9. Setup login. Pass isNewUser so the frontend can trigger first-login onboarding for
 	// OAuth registrations (mirrors password registration's route-level Playground first-run contract).
@@ -336,6 +364,7 @@ func HandleGoogleOneTap(c *gin.Context) {
 		respondGoogleOneTapAlreadyLoggedIn(c)
 		return
 	}
+	applyCustomerReferralInviteToSession(c, session)
 
 	user, isNewUser, err := findOrCreateOAuthUser(c, provider, oauthUser, session)
 	if err != nil {
@@ -367,6 +396,8 @@ func HandleGoogleOneTap(c *gin.Context) {
 	session.Delete("aff")
 	session.Delete("ga_client_id")
 	session.Delete("ga_session_id")
+	session.Delete("customer_referral_invite_code")
+	session.Delete("customer_referral_source_platform")
 
 	data, err := setupLoginSession(user, c, isNewUser)
 	if err != nil {
@@ -635,6 +666,7 @@ func selfHealOAuthEmailVerification(user *model.User, oauthUser *oauth.OAuthUser
 func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, session sessions.Session) (*model.User, bool, error) {
 	user := &model.User{}
 	adsAttribution := getOAuthAdsAttribution(c, session)
+	customerInviteCode, customerInvitePlatform := customerReferralInviteFromSession(session)
 
 	// Check if user already exists with new ID
 	if provider.IsUserIDTaken(oauthUser.ProviderUserID) {
@@ -749,6 +781,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		user.Status = common.UserStatusDisabled
 	}
 	user.AdsAttribution = adsAttribution
+	user.CustomerReferralInviteCode = customerInviteCode
+	user.CustomerReferralSourcePlatform = customerInvitePlatform
 	if cookieLang, err := c.Cookie(i18n.LanguagePreferenceCookieName); err == nil {
 		if language, ok := dto.NormalizeUserLanguagePreference(cookieLang); ok {
 			user.SetSetting(dto.UserSetting{Language: language})

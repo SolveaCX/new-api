@@ -7,11 +7,15 @@ the Free Software Foundation, either version 3 of the License, or (at your
 option) any later version.
 */
 import { DEFAULT_POST_LOGIN_PATH } from '@/features/auth/constants'
+import { getCustomerInvite } from './storage'
 
 export function buildGoogleOneTapLoginUri(returnTo?: string): string {
   const safeReturnTo =
     returnTo?.startsWith('/') && !returnTo.startsWith('//')
       ? returnTo
       : DEFAULT_POST_LOGIN_PATH
-  return `/api/oauth/google/one-tap?${new URLSearchParams({ return_to: safeReturnTo })}`
+  const params = new URLSearchParams({ return_to: safeReturnTo })
+  const invite = getCustomerInvite()
+  if (invite) params.set('invite', invite)
+  return `/api/oauth/google/one-tap?${params}`
 }
