@@ -49,6 +49,7 @@ type inviteSubRewardCreateResult struct {
 	inviteeId   int
 	inviterId   int
 	rewardQuota int
+	reason      string
 }
 
 type inviteSubscriptionRewardLedgerSnapshot struct {
@@ -131,6 +132,13 @@ func grantInviteSubscriptionDiscountAfterPaidOrderTx(tx *gorm.DB, order *Subscri
 	}
 	if existingLedger {
 		return repairInviteSubscriptionRewardFromLedgerTx(tx, order, invitee.Id, inviter.Id, existingLedgerSnapshot, now)
+	}
+	blacklist, _, err := ensureInviteBenefitBlacklistForInviterTx(tx, inviter.Id)
+	if err != nil {
+		return inviteSubRewardCreateResult{}, err
+	}
+	if blacklist != nil {
+		return blockInviteSubscriptionRewardForBenefitRiskTx(tx, order, invitee.Id, inviter.Id, now)
 	}
 
 	rewardQuota := common.QuotaForInviter
@@ -223,6 +231,39 @@ func grantInviteSubscriptionDiscountAfterPaidOrderTx(tx *gorm.DB, order *Subscri
 		return inviteSubRewardCreateResult{}, err
 	}
 	return result, nil
+}
+
+func blockInviteSubscriptionRewardForBenefitRiskTx(tx *gorm.DB, order *SubscriptionOrder, inviteeId int, inviterId int, now int64) (inviteSubRewardCreateResult, error) {
+	reward := InviteSubscriptionReward{
+		InviteeId:   inviteeId,
+		InviterId:   inviterId,
+		OrderId:     order.Id,
+		TradeNo:     order.TradeNo,
+		OrderMoney:  order.Money,
+		RewardQuota: 0,
+		Status:      InviteSubRewardStatusBlocked,
+		Reason:      InviteRewardBlockReasonBenefitRisk,
+		CreatedAt:   now,
+	}
+	insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reward)
+	if insert.Error != nil {
+		return inviteSubRewardCreateResult{}, insert.Error
+	}
+	if insert.RowsAffected == 0 {
+		return inviteSubRewardCreateResult{}, nil
+	}
+	// The paid order already consumed the invitee's discount. Finalize their side
+	// without clawing it back; this block applies only to the inviter reward.
+	if err := finalizeInviteSubscriptionRewardInviteeTx(tx, inviteeId, now); err != nil {
+		return inviteSubRewardCreateResult{}, err
+	}
+	return inviteSubRewardCreateResult{
+		handled:   true,
+		blocked:   true,
+		inviteeId: inviteeId,
+		inviterId: inviterId,
+		reason:    InviteRewardBlockReasonBenefitRisk,
+	}, nil
 }
 
 func repairInviteSubscriptionRewardFromLedgerTx(tx *gorm.DB, order *SubscriptionOrder, inviteeId int, inviterId int, snapshot inviteSubscriptionRewardLedgerSnapshot, now int64) (inviteSubRewardCreateResult, error) {
@@ -450,6 +491,10 @@ func runInviteSubRewardPostCreateHooks(result inviteSubRewardCreateResult) {
 		common.SysLog(fmt.Sprintf("failed to invalidate invitee %d cache after invite sub reward: %v", result.inviteeId, err))
 	}
 	if result.blocked {
+		if result.reason == InviteRewardBlockReasonBenefitRisk {
+			common.SysLog(fmt.Sprintf("invite subscription reward blocked for inviter %d: %s", result.inviterId, result.reason))
+			return
+		}
 		RecordLog(result.inviterId, LogTypeSystem, "已达到邀请奖励上限，本次邀请不再获得奖励")
 		return
 	}
@@ -501,6 +546,19 @@ func claimInviteFirstSubDiscountTx(tx *gorm.DB, userId int, planPrice float64, m
 		return 0, query.Error
 	}
 	if query.RowsAffected == 0 || invitee.InviterId <= 0 {
+		return 0, nil
+	}
+	if _, err := lockInviteSubscriptionRewardUserTx(tx, invitee.InviterId); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	blacklist, _, err := ensureInviteBenefitBlacklistForInviterTx(tx, invitee.InviterId)
+	if err != nil {
+		return 0, err
+	}
+	if blacklist != nil {
 		return 0, nil
 	}
 	var count int64

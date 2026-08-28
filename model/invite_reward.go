@@ -25,7 +25,7 @@ const (
 
 	InviteRewardBlockReasonInviterMissing      = "inviter_missing"
 	InviteRewardBlockReasonInviterLimitReached = "inviter_limit_reached"
-	InviteRewardBlockReasonStripeCardReused    = "stripe_card_reused"
+	InviteRewardBlockReasonBenefitRisk         = "inviter_benefit_blacklisted"
 )
 
 type InviteRewardEvent struct {
@@ -159,33 +159,10 @@ func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger invi
 	switch trigger.triggerType {
 	case InviteRewardTriggerTopUpSuccess:
 		var triggerTopUp TopUp
-		if err := tx.Select("id", "trade_no", "payment_provider").
+		if err := tx.Select("id").
 			Where("id = ? AND user_id = ? AND status = ?", trigger.triggerTopUpId, invitee.Id, common.TopUpStatusSuccess).
 			First(&triggerTopUp).Error; err != nil {
 			return inviteRewardGrantResult{}, err
-		}
-		if triggerTopUp.PaymentProvider == PaymentProviderStripe {
-			var observations []StripePaymentCardObservation
-			if err := tx.Select("reward_decision").
-				Where("trade_no = ? AND user_id = ?", triggerTopUp.TradeNo, invitee.Id).
-				Find(&observations).Error; err != nil {
-				return inviteRewardGrantResult{}, err
-			}
-			confirmed := false
-			for _, observation := range observations {
-				switch observation.RewardDecision {
-				case StripeCardRewardDecisionDuplicateExactCard:
-					return blockInviteRewardForTriggerInTx(tx, invitee.Id, invitee.InviterId, trigger, InviteRewardBlockReasonStripeCardReused)
-				case StripeCardRewardDecisionFirstExactCard, StripeCardRewardDecisionSameUserExactCard, StripeCardRewardDecisionNonCard:
-					confirmed = true
-				}
-			}
-			if !confirmed {
-				// Stripe fulfillment is fail-open for purchased quota but fail-closed for
-				// promotional rewards: an unavailable Stripe API or an out-of-order webhook
-				// leaves the reward pending until a confirmed observation arrives.
-				return inviteRewardGrantResult{}, nil
-			}
 		}
 	default:
 		var triggerToken Token
@@ -205,6 +182,13 @@ func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger invi
 			return blockInviteRewardForTriggerInTx(tx, invitee.Id, invitee.InviterId, trigger, InviteRewardBlockReasonInviterMissing)
 		}
 		return inviteRewardGrantResult{}, err
+	}
+	blacklist, _, err := ensureInviteBenefitBlacklistForInviterTx(tx, inviter.Id)
+	if err != nil {
+		return inviteRewardGrantResult{}, err
+	}
+	if blacklist != nil {
+		return blockInviteRewardForTriggerInTx(tx, invitee.Id, inviter.Id, trigger, InviteRewardBlockReasonBenefitRisk)
 	}
 	result := inviteRewardGrantResult{
 		inviteeId:          invitee.Id,
