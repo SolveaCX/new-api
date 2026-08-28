@@ -189,7 +189,7 @@ function DirectoryRow(props: {
         {props.locale ? (
           <Link
             href={localizePath(modelPublicPath(row.name), props.locale)}
-            className="flex items-center gap-2.5 hover:opacity-80"
+            className="flex min-w-0 items-center gap-2.5 hover:opacity-80"
           >
             <HomeModelLogo
               iconKey={row.iconKey}
@@ -199,12 +199,15 @@ function DirectoryRow(props: {
               surfaceSize={30}
               imageSize={18}
             />
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
-                <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline">
-                    {row.name}
-                  </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline">
+                  {row.name}
+                </span>
+                {row.top10 ? <TopBadge rank={row.top10} /> : null}
+              </span>
+              {promotions.length > 0 ? (
+                <span className="mt-1 flex flex-wrap items-center gap-1.5">
                   {promotions.map((promotion) => (
                     <span key={promotion} className={cn(
                       "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
@@ -215,15 +218,14 @@ function DirectoryRow(props: {
                     )}>{modelPromotionLabel(promotionLocale, promotion)}</span>
                   ))}
                 </span>
-                {row.top10 ? <TopBadge rank={row.top10} /> : null}
-              </span>
+              ) : null}
               <span className="text-muted-foreground/70 block truncate text-[11px]">
                 {attribution}
               </span>
             </span>
           </Link>
         ) : (
-          <div className="flex items-center gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
             <HomeModelLogo
               iconKey={row.iconKey}
               modelName={row.name}
@@ -232,7 +234,7 @@ function DirectoryRow(props: {
               surfaceSize={30}
               imageSize={18}
             />
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
                 <span className="truncate font-mono text-[13px] font-semibold tracking-tight">{row.name}</span>
                 {row.top10 ? <TopBadge rank={row.top10} /> : null}
