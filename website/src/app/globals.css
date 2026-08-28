@@ -6950,15 +6950,6 @@ html:has(.model-prototype) {
   gap: 14px;
 }
 
-/* The first pill is the page's primary modality. Restore the accent/selected
- * treatment from the approved model-detail visual language while keeping the
- * remaining capability tags neutral. */
-.model-prototype .model-hero-tags .model-tag:first-child {
-  border: 1px solid #d9caff;
-  color: #5b31c6;
-  background: #f6f1ff;
-}
-
 /* Let the primary pricing card use the full shared row height. The wallet
  * panel can be taller because it contains the balance options and catalog
  * facts; a column layout keeps the prompt CTA anchored at the bottom instead
