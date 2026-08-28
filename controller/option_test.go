@@ -189,6 +189,39 @@ func TestUpdateOptionsBulkPersistsCodexIdentitySettingsAtomically(t *testing.T) 
 	}
 }
 
+func TestUpdateOptionsBulkPersistsPaymentNotifySettingsAtomically(t *testing.T) {
+	db := setupOptionControllerTestDB(t)
+
+	ctx, recorder := newOptionRequestContext(t, map[string]any{
+		"options": []map[string]any{
+			{"key": "payment_notify_setting.dingtalk_alert_enabled", "value": "true"},
+			{"key": "payment_notify_setting.dingtalk_alert_webhook_url", "value": "https://oapi.dingtalk.com/robot/send?access_token=abc"},
+			{"key": "payment_notify_setting.dingtalk_alert_secret", "value": "secret"},
+		},
+	})
+	UpdateOptions(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected payment notify bulk option update to succeed, got message: %s", response.Message)
+	}
+
+	want := map[string]string{
+		"payment_notify_setting.dingtalk_alert_enabled":     "true",
+		"payment_notify_setting.dingtalk_alert_webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=abc",
+		"payment_notify_setting.dingtalk_alert_secret":      "secret",
+	}
+	for key, value := range want {
+		var option model.Option
+		if err := db.First(&option, "key = ?", key).Error; err != nil {
+			t.Fatalf("failed to load %s: %v", key, err)
+		}
+		if option.Value != value {
+			t.Fatalf("unexpected %s value: %q", key, option.Value)
+		}
+	}
+}
+
 func TestUpdateOptionsBulkRejectsUnsupportedKeysWithoutPartialWrite(t *testing.T) {
 	db := setupOptionControllerTestDB(t)
 
