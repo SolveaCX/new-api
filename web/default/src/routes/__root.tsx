@@ -47,7 +47,10 @@ import { ThemeCustomizationProvider } from '@/context/theme-customization-provid
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
-import { saveAffiliateCode } from '@/features/auth/lib/storage'
+import {
+  saveAffiliateCode,
+  saveCustomerInvite,
+} from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
 import { getSetupStatus } from '@/features/setup/api'
@@ -131,6 +134,19 @@ function RootComponent() {
     if (aff) {
       saveAffiliateCode(aff)
     }
+    const invite = new URLSearchParams(window.location.search)
+      .get('invite')
+      ?.trim()
+    if (invite) {
+      saveCustomerInvite(invite)
+      const sanitizedURL = new URL(window.location.href)
+      sanitizedURL.searchParams.delete('invite')
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${sanitizedURL.pathname}${sanitizedURL.search}${sanitizedURL.hash}`
+      )
+    }
     captureAdsAttribution()
   }, [location.search])
 
@@ -144,7 +160,14 @@ function RootComponent() {
   }, [location.pathname])
 
   useEffect(() => {
-    trackAmplitudePageView(location.pathname, window.location.search)
+    // The encrypted invite is a credential-like one-shot value. Keep it out
+    // of analytics and browser history after capturing it for signup/OAuth.
+    const analyticsSearch = new URLSearchParams(window.location.search)
+    analyticsSearch.delete('invite')
+    const sanitizedSearch = analyticsSearch.toString()
+      ? `?${analyticsSearch.toString()}`
+      : ''
+    trackAmplitudePageView(location.pathname, sanitizedSearch)
   }, [location.pathname, location.search])
 
   return (

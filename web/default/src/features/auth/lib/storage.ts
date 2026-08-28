@@ -38,6 +38,7 @@ export { isSafeInternalPath } from '@/lib/analytics/recall-claim'
 const STORAGE_KEYS = {
   USER_ID: 'uid',
   AFFILIATE: 'aff',
+  CUSTOMER_INVITE: 'flatkey_customer_invite',
   STATUS: 'status',
   PENDING_ONBOARDING: 'pending_onboarding',
   LEGACY_PENDING_PLAYGROUND_FIRST_RUN: 'pending_playground_first_run',
@@ -493,5 +494,38 @@ export function saveAffiliateCode(code: string): void {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save affiliate code:', error)
+  }
+}
+
+// Customer referral invites are encrypted, single-use values. Keep the raw
+// invite tab-scoped until registration/OAuth consumes it; never persist the
+// decrypted code in browser storage or analytics payloads.
+export function getCustomerInvite(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.sessionStorage.getItem(STORAGE_KEYS.CUSTOMER_INVITE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveCustomerInvite(invite: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const value = invite.trim()
+    if (value) {
+      window.sessionStorage.setItem(STORAGE_KEYS.CUSTOMER_INVITE, value)
+    }
+  } catch {
+    /* storage can be unavailable in privacy mode */
+  }
+}
+
+export function clearCustomerInvite(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEYS.CUSTOMER_INVITE)
+  } catch {
+    /* storage can be unavailable in privacy mode */
   }
 }
