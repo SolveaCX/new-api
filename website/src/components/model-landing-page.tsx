@@ -55,6 +55,8 @@ import {
 import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
 import {
   modelLandingCopy,
+  getModelVideoModeLabel,
+  getModelVideoModeUiCopy,
   getLocalizedModelLandingConfig,
   getModelLandingConfigs,
   normalizeModelId,
@@ -62,6 +64,8 @@ import {
   type ModelGeneratorField,
   type ModelGeneratorProtocol,
   type ModelLandingKey,
+  type ModelVideoMode,
+  type ModelVideoModeOption,
 } from "@/lib/model-landing";
 import { consoleUrl } from "@/lib/origins";
 import {
@@ -542,6 +546,7 @@ function FlatkeyModelDetailPage(props: {
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
+                    locale={props.locale}
                     prompt={props.prompt}
                     fieldValues={props.fieldValues}
                     referenceImages={props.referenceImages}
@@ -863,6 +868,7 @@ function MediaModelLanding(props: {
                 <MediaPromptEditor
                   generator={generator}
                   modelId={props.config.modelId}
+                  locale={props.locale}
                   prompt={props.prompt}
                   fieldValues={props.fieldValues}
                   referenceImages={props.referenceImages}
@@ -1377,6 +1383,7 @@ function ModelLandingBreadcrumb(props: {
 function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
+  locale: Locale;
   prompt: string;
   fieldValues: Record<string, string | number | boolean>;
   referenceImages: ReferenceImageDraft[];
@@ -1414,6 +1421,10 @@ function MediaPromptEditor(props: {
   const quickPrompts = props.generator.kind === "video"
     ? ["Product Reveal", "UGC Ad", "Cinematic Scene", "Social Clip"]
     : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
+  const videoModeOptions = props.generator.kind === "video" ? (props.generator.videoModes ?? []) : [];
+  const selectedVideoMode = videoModeOptions.find((option) => option.value === props.fieldValues.video_mode)?.value
+    ?? videoModeOptions.find((option) => option.value === props.generator.defaultVideoMode)?.value
+    ?? videoModeOptions.find((option) => option.supported)?.value;
   const referenceImageLimit = props.generator.referenceLimits?.image ?? (props.generator.kind === "image" ? 4 : 0);
   const supportsReferenceImages = props.generator.kind === "image" && referenceImageLimit > 0;
 
@@ -1439,6 +1450,14 @@ function MediaPromptEditor(props: {
 
   return (
     <div className="input-fields">
+      {selectedVideoMode && videoModeOptions.length > 0 ? (
+        <VideoModeSelector
+          locale={props.locale}
+          options={videoModeOptions}
+          value={selectedVideoMode}
+          onChange={(value) => props.onFieldChange("video_mode", value)}
+        />
+      ) : null}
       <label className="field prompt-field block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
         <span className="field-label">
           <span>{props.t("Prompt")}</span>
@@ -1545,6 +1564,52 @@ function MediaPromptEditor(props: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function VideoModeSelector(props: {
+  locale: Locale;
+  options: readonly ModelVideoModeOption[];
+  value: ModelVideoMode;
+  onChange: (value: ModelVideoMode) => void;
+}) {
+  const copy = getModelVideoModeUiCopy(props.locale);
+  const selectedOption = props.options.find((option) => option.value === props.value) ?? props.options[0];
+
+  if (!selectedOption) return null;
+
+  return (
+    <label
+      data-video-mode-selector
+      data-video-mode-value={selectedOption.value}
+      className="grid w-full min-w-0 gap-1.5 text-[11px] leading-5 font-extrabold tracking-normal text-[#77717f] uppercase"
+    >
+      <span>{copy.label}</span>
+      <select
+        value={selectedOption.value}
+        aria-describedby="seedance-video-mode-help"
+        data-video-mode-options
+        onChange={(event) => {
+          const nextMode = props.options.find((option) => option.value === event.currentTarget.value);
+          if (nextMode?.supported) props.onChange(nextMode.value);
+        }}
+        data-video-mode-control
+        className="h-9 w-full min-w-0 appearance-none rounded-lg border border-[#ded8ea] bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] outline-none transition focus:border-[#7c3aed] focus:ring-4 focus:ring-[#7c3aed]/10"
+      >
+        {props.options.map((option) => {
+          const label = getModelVideoModeLabel(props.locale, option.value);
+          return (
+            <option
+              key={option.value}
+              disabled={!option.supported}
+              data-video-mode={option.value}
+              data-video-mode-supported={option.supported}
+            >{option.supported ? label : `${label} — ${copy.unavailable}`}</option>
+          );
+        })}
+      </select>
+      <span id="seedance-video-mode-help" className="sr-only">{copy.helper}</span>
+    </label>
   );
 }
 
@@ -4388,7 +4453,16 @@ function buildMediaPricingRows(config: ModelConfig) {
 }
 
 function buildInitialGeneratorValues(config: ModelConfig) {
-  return Object.fromEntries((config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue]));
+  const values: Record<string, string | number | boolean> = Object.fromEntries(
+    (config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue])
+  );
+  const videoModes = config.generator?.videoModes;
+  if (config.generator?.kind === "video" && videoModes?.length) {
+    values.video_mode = config.generator.defaultVideoMode
+      ?? videoModes.find((option) => option.supported)?.value
+      ?? videoModes[0].value;
+  }
+  return values;
 }
 
 function buildGeneratorRequest(
@@ -4397,6 +4471,10 @@ function buildGeneratorRequest(
   values: Record<string, string | number | boolean>,
   referenceImages: ReferenceImageDraft[] = []
 ) {
+  // `video_mode` is Playground-only metadata. The gateway's documented
+  // Seedance wire contract infers the workflow from content[] item roles, so
+  // never leak this selector value as an unsupported API parameter.
+  const { video_mode: _videoMode, ...requestValues } = values;
   if (config.generator?.kind === "video") {
     if (config.generator.protocol === "grok-video") {
       return compactRequest({ model: config.modelId, prompt, duration: values.duration ?? 5 });
@@ -4410,10 +4488,10 @@ function buildGeneratorRequest(
       });
     }
     const content = [{ type: "text", text: prompt }];
-    return compactRequest({ model: config.modelId, content, ...values });
+    return compactRequest({ model: config.modelId, content, ...requestValues });
   }
   if (config.generator?.kind === "audio") {
-    return compactRequest({ model: config.modelId, input: prompt, ...values });
+    return compactRequest({ model: config.modelId, input: prompt, ...requestValues });
   }
   if (config.generator?.kind === "image") {
     if (config.generator.protocol === "gemini-image") {
@@ -4433,7 +4511,7 @@ function buildGeneratorRequest(
     return compactRequest({
       model: config.modelId,
       prompt,
-      ...values,
+      ...requestValues,
       reference_images:
         referenceImages.length > 0
           ? referenceImages.map(({ name, size, type }) => ({ name, size, type }))

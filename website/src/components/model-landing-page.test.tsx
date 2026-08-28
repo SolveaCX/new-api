@@ -189,6 +189,57 @@ describe("ModelLandingPage", () => {
     expect(requestPreview).not.toContain('"resolution": "1080p"');
   });
 
+  test("renders the documented Seedance video mode selector without a fake request field", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />
+    );
+    const requestPreview = html.replaceAll("&quot;", '"');
+
+    expect(html).toContain("data-video-mode-selector");
+    expect(html).toContain('data-video-mode-value="text-to-video"');
+    expect(html).toContain("data-video-mode-control");
+    expect(html).toContain("Video mode");
+    expect(html).toContain("Text-to-Video");
+    expect(html).toContain("Image-to-Video");
+    expect(html).toContain("Reference-to-Video");
+    expect(html).toContain("Video Edit");
+    expect(html).toContain("Video Extend");
+    expect(html).toContain("Not available on this route");
+    expect(html).not.toContain(">Seedance</span>");
+    const selectorStart = html.indexOf("data-video-mode-selector");
+    const promptStart = html.indexOf('class="field prompt-field', selectorStart);
+    expect(selectorStart).toBeGreaterThanOrEqual(0);
+    expect(promptStart).toBeGreaterThan(selectorStart);
+    expect(html.slice(selectorStart, promptStart)).not.toContain("$");
+    expect(requestPreview).not.toContain('"video_mode"');
+    expect(SEEDANCE_25_CONFIG.generator?.defaultVideoMode).toBe("text-to-video");
+    expect(SEEDANCE_25_CONFIG.generator?.videoModes?.filter((option) => option.supported).map((option) => option.value)).toEqual([
+      "text-to-video",
+      "image-to-video",
+      "reference-to-video",
+    ]);
+  });
+
+  test("localizes the Seedance video mode selector", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="zh" liveModels={[]} />
+    );
+
+    expect(html).toContain("视频模式");
+    expect(html).toContain("Text-to-Video");
+    expect(html).toContain("Image-to-Video");
+    expect(html).toContain("Reference-to-Video");
+    expect(html).toContain("Video Edit");
+    expect(html).toContain("Video Extend");
+    const selectorStart = html.indexOf("data-video-mode-selector");
+    const promptStart = html.indexOf('class="field prompt-field', selectorStart);
+    const selectorMarkup = html.slice(selectorStart, promptStart);
+    expect(selectorMarkup).not.toContain("文生视频");
+    expect(selectorMarkup).not.toContain("图生视频");
+    expect(selectorMarkup).not.toContain("参考生视频");
+    expect(html).toContain("当前路由不可用");
+  });
+
   test("renders the Seedance 2.5 pricing evidence without a false fixed Product Offer", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={SEEDANCE_25_CONFIG} locale="en" liveModels={[]} />

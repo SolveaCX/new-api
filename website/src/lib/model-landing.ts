@@ -33,6 +33,115 @@ export type ModelGeneratorProtocol =
   | "grok-video"
   | "audio";
 
+/**
+ * Input workflows exposed by the documented Seedance content[] contract.
+ *
+ * This is deliberately opt-in metadata rather than something inferred from
+ * `protocol`: other video adapters use different request shapes and action
+ * support.  A mode that is not supported by the selected route stays visible
+ * in the Playground as disabled, but is never serialized as a made-up API
+ * field.
+ */
+export type ModelVideoMode =
+  | "text-to-video"
+  | "image-to-video"
+  | "reference-to-video"
+  | "video-edit"
+  | "video-extend";
+
+export type ModelVideoModeOption = {
+  value: ModelVideoMode;
+  supported: boolean;
+};
+
+export const SEEDANCE_VIDEO_MODE_OPTIONS: readonly ModelVideoModeOption[] = [
+  { value: "text-to-video", supported: true },
+  { value: "image-to-video", supported: true },
+  { value: "reference-to-video", supported: true },
+  { value: "video-edit", supported: false },
+  { value: "video-extend", supported: false },
+];
+
+type ModelVideoModeUiCopy = {
+  label: string;
+  helper: string;
+  unavailable: string;
+};
+
+/**
+ * Keep these labels identical across locales: they are Seedance's documented
+ * workflow names and are also used when users map a Playground mode to the
+ * provider contract.
+ */
+const MODEL_VIDEO_MODE_ENGLISH_LABELS: Record<ModelVideoMode, string> = {
+  "text-to-video": "Text-to-Video",
+  "image-to-video": "Image-to-Video",
+  "reference-to-video": "Reference-to-Video",
+  "video-edit": "Video Edit",
+  "video-extend": "Video Extend",
+};
+
+const MODEL_VIDEO_MODE_UI_COPY: Record<Locale, ModelVideoModeUiCopy> = {
+  en: {
+    label: "Video mode",
+    helper: "Choose the documented input workflow. The request keeps Seedance's content[] contract.",
+    unavailable: "Not available on this route",
+  },
+  zh: {
+    label: "视频模式",
+    helper: "选择文档化的输入工作流，请求仍使用 Seedance 的 content[] 契约。",
+    unavailable: "当前路由不可用",
+  },
+  es: {
+    label: "Modo de vídeo",
+    helper: "Elige el flujo de entrada documentado. La solicitud mantiene el contrato content[] de Seedance.",
+    unavailable: "No disponible en esta ruta",
+  },
+  fr: {
+    label: "Mode vidéo",
+    helper: "Choisissez le flux d’entrée documenté. La requête conserve le contrat content[] de Seedance.",
+    unavailable: "Indisponible sur cette route",
+  },
+  pt: {
+    label: "Modo de vídeo",
+    helper: "Escolha o fluxo de entrada documentado. A solicitação mantém o contrato content[] do Seedance.",
+    unavailable: "Indisponível nesta rota",
+  },
+  ru: {
+    label: "Режим видео",
+    helper: "Выберите документированный способ ввода. Запрос сохраняет контракт Seedance content[].",
+    unavailable: "Недоступно для этого маршрута",
+  },
+  ja: {
+    label: "ビデオモード",
+    helper: "ドキュメント化された入力ワークフローを選択します。リクエストはSeedanceのcontent[]契約を保持します。",
+    unavailable: "このルートでは利用できません",
+  },
+  vi: {
+    label: "Chế độ video",
+    helper: "Chọn quy trình đầu vào đã được tài liệu hóa. Yêu cầu vẫn giữ hợp đồng content[] của Seedance.",
+    unavailable: "Không khả dụng trên tuyến này",
+  },
+  de: {
+    label: "Videomodus",
+    helper: "Wählen Sie den dokumentierten Eingabeworkflow. Die Anfrage behält den Seedance-content[]-Vertrag bei.",
+    unavailable: "Auf dieser Route nicht verfügbar",
+  },
+  id: {
+    label: "Mode video",
+    helper: "Pilih alur input yang terdokumentasi. Permintaan tetap menggunakan kontrak content[] Seedance.",
+    unavailable: "Tidak tersedia di rute ini",
+  },
+};
+
+export function getModelVideoModeLabel(_locale: Locale, mode: ModelVideoMode): string {
+  return MODEL_VIDEO_MODE_ENGLISH_LABELS[mode];
+}
+
+export function getModelVideoModeUiCopy(locale: Locale): ModelVideoModeUiCopy {
+  return MODEL_VIDEO_MODE_UI_COPY[locale] ?? MODEL_VIDEO_MODE_UI_COPY.en;
+}
+
 export type ModelReferenceLimits = Partial<Record<"image" | "video" | "audio", number>>;
 
 export type ModelGeneratorConfig = {
@@ -44,6 +153,13 @@ export type ModelGeneratorConfig = {
   protocol?: ModelGeneratorProtocol;
   /** Maximum reference files accepted by this model's documented route. */
   referenceLimits?: ModelReferenceLimits;
+  /**
+   * Optional, route-specific video workflows. Do not infer this from the
+   * protocol: a shared protocol name does not imply shared action support.
+   */
+  videoModes?: readonly ModelVideoModeOption[];
+  /** Default UI workflow for an explicitly configured video mode selector. */
+  defaultVideoMode?: ModelVideoMode;
 };
 
 /**
@@ -370,6 +486,8 @@ export const SEEDANCE_CONFIG: ModelConfig = {
     storageKey: "flatkey:model-generator-draft:seedance-2-0",
     protocol: "seedance-video",
     referenceLimits: { image: 30, video: 10, audio: 10 },
+    videoModes: SEEDANCE_VIDEO_MODE_OPTIONS,
+    defaultVideoMode: "text-to-video",
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "1080p", options: ["720p", "1080p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
@@ -429,6 +547,8 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     storageKey: "flatkey:model-generator-draft:seedance-2-5",
     protocol: "seedance-video",
     referenceLimits: { image: 30, video: 10, audio: 10 },
+    videoModes: SEEDANCE_VIDEO_MODE_OPTIONS,
+    defaultVideoMode: "text-to-video",
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "720p", options: ["480p", "720p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "adaptive", options: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"] },

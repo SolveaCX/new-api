@@ -4579,6 +4579,23 @@ html:has(.model-prototype) {
   background-size: 14px 14px;
 }
 
+/* The Seedance workflow selector is a normal playground field, not a
+ * second card. Keep its native select presentation identical to the other
+ * parameter controls while the browser menu itself remains outside layout. */
+.model-prototype .input-fields [data-video-mode-control] {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 6px 36px 6px 12px;
+  border-radius: 8px;
+  color: var(--model-ink);
+  background-color: var(--model-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5' stroke='%23616978' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 8px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
 /* Performance/activity metric typography */
 .model-prototype .metric-icon:not(:has(svg)) {
   font-size: 18px;
@@ -6163,7 +6180,7 @@ html:has(.model-prototype) {
   }
 
   .model-prototype .input-fields {
-    margin: 47px 22px 0;
+    margin: 56px 22px 0;
   }
 
   .model-prototype .generate-button {
@@ -6819,7 +6836,7 @@ html:has(.model-prototype) {
   }
 
   .model-prototype .input-fields {
-    margin: 32px 22px 0;
+    margin: 56px 22px 0;
   }
 
   .model-prototype .generate-button {
@@ -6843,7 +6860,7 @@ html:has(.model-prototype) {
   }
 
   .model-prototype .input-fields {
-    margin: 28px 16px 0;
+    margin: 56px 16px 0;
   }
 
   .model-prototype .input-reference-fields {
@@ -7116,6 +7133,17 @@ html:has(.model-prototype) {
   .model-prototype .workbench > .model-panel {
     height: auto !important;
     min-height: 0 !important;
+  }
+  .model-prototype .model-panel .panel-heading {
+    left: 22px;
+  }
+}
+
+@media (max-width: 620px) {
+  /* Match the narrower form inset on phones so the panel title, mode field,
+   * and prompt remain on one vertical edge. */
+  .model-prototype .model-panel .panel-heading {
+    left: 16px;
   }
 }
 
