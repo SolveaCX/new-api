@@ -6,6 +6,8 @@ import {
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
   getLocalizedModelLandingConfig,
+  buildModelLandingMetadata,
+  limitSeoDescription,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { resolvePublicModel } from "@/lib/model-public";
@@ -35,16 +37,37 @@ export async function generateMetadata(props: Props) {
     return buildMetadata(getSkagLandingMetadataInput("claude-api", params.locale));
   }
   const config = getModelLandingConfig(params.slug);
+  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
   if (config) {
+    const liveModel = pricing.models.find((model) => model.model_name === config.modelId)
+      ?? resolveModelLandingModels(config, pricing.models)[0];
+    if (liveModel) {
+      const modelWithVendor = {
+        ...liveModel,
+        vendor_name: liveModel.vendor_name ?? getVendorName(liveModel, pricing.vendors),
+      };
+      const dynamic = buildModelLandingMetadata(modelWithVendor, {
+        displayName: config.displayName,
+        pathname: `/models/${config.slug}`,
+        locale: params.locale,
+        task: config.generator?.kind === "image"
+          ? "image generation"
+          : config.generator?.kind === "video"
+            ? "video generation"
+            : config.generator?.kind === "audio"
+              ? "audio"
+              : undefined,
+      });
+      return buildMetadata(dynamic);
+    }
     const localizedSeo = config.seoByLocale?.[params.locale] ?? config.seo;
     return buildMetadata({
       title: localizedSeo.title,
-      description: localizedSeo.description,
+      description: limitSeoDescription(localizedSeo.description),
       pathname: `/models/${config.slug}`,
       locale: params.locale,
     });
   }
-  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
   const model = resolvePublicModel(pricing.models, params.slug);
   if (!model) return {};
   const modelWithVendor = {
@@ -52,13 +75,17 @@ export async function generateMetadata(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
-  const localizedSeo = modelSpecificConfig.seoByLocale?.[params.locale] ?? modelSpecificConfig.seoByLocale?.en ?? modelSpecificConfig.seo;
-  return buildMetadata({
-    title: localizedSeo.title,
-    description: localizedSeo.description,
+  return buildMetadata(buildModelLandingMetadata(modelWithVendor, {
     pathname: `/models/${modelSpecificConfig.slug}`,
     locale: params.locale,
-  });
+    task: modelSpecificConfig.generator?.kind === "image"
+      ? "image generation"
+      : modelSpecificConfig.generator?.kind === "video"
+        ? "video generation"
+        : modelSpecificConfig.generator?.kind === "audio"
+          ? "audio"
+          : undefined,
+  }));
 }
 
 export default async function Page(props: Props) {
@@ -81,8 +108,14 @@ export default async function Page(props: Props) {
   }));
 
   if (config) {
-    const localizedConfig = getLocalizedModelLandingConfig(config, params.locale);
-    const resolvedModels = resolveModelLandingModels(localizedConfig, models);
+    const resolvedModels = resolveModelLandingModels(config, models);
+    // Single-model legacy routes use the same model-specific editorial pack
+    // as fallback model URLs; multi-model API family pages keep their existing
+    // aggregate content.
+    const effectiveConfig = resolvedModels.length === 1
+      ? getModelLandingConfigForPricingModel(resolvedModels[0])
+      : config;
+    const localizedConfig = getLocalizedModelLandingConfig(effectiveConfig, params.locale);
     const initialHealth = await fetchModelHealthData(resolvedModels[0]?.model_name ?? localizedConfig.modelId);
     return (
       <ModelLandingPage
