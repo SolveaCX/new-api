@@ -245,6 +245,8 @@ export function normalizeSelfSubscriptionData(
     current_period: data?.current_period ?? DEFAULT_CURRENT_PERIOD,
     quota: data?.quota ?? DEFAULT_QUOTA,
     monthly_bucket: data?.monthly_bucket ?? EMPTY_USAGE_WINDOW,
+    window_5h: data?.window_5h ?? EMPTY_USAGE_WINDOW,
+    window_7d: data?.window_7d ?? EMPTY_USAGE_WINDOW,
     remaining_days: data?.remaining_days,
     renewal_source: normalizeRenewalSource(data?.renewal_source),
     renewal_status: normalizeRenewalStatus(data?.renewal_status),
