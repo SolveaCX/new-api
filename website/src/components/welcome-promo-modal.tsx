@@ -298,7 +298,7 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
             </div>
             <div className="grid content-start gap-2 lg:content-normal lg:gap-3">
               <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeToTry} offerClassName={offerTextClassByLocale[locale]} highlighted />
-              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
+              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Pro" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/zai.svg" logoAlt="GLM" name="GLM 5.3flash" description={copy.multimodalModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
             </div>
           </div>
