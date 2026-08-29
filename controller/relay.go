@@ -97,7 +97,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// reaches the client. No-op for non-whitelabel channels and for
 			// ordinary upstream errors. Runs after the log above so operators
 			// still see the original text server-side.
-			service.ScrubWhitelabelError(c, newAPIError, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
+			originalErr, _ := common.GetContextKeyType[*types.NewAPIError](c, constant.ContextKeyBlockRunUpstreamError)
+			service.ScrubWhitelabelErrorWithOriginal(c, newAPIError, originalErr, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			writeRelayError(c, relayFormat, ws, newAPIError)
 		}
