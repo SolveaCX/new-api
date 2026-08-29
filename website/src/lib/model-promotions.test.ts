@@ -7,7 +7,7 @@ import {
 
 describe("model promotions", () => {
   test("marks the requested models", () => {
-    expect(getModelPromotions("glm-5.3")).toEqual(["limited", "new"]);
+    expect(getModelPromotions("glm-5.3")).toEqual(["new"]);
     expect(getModelPromotions("glm-5.3-flash")).toEqual(["limited", "new"]);
     expect(getModelPromotions("deepseek-v4-pro")).toEqual(["limited"]);
     expect(getModelPromotions("deepseek-v4-flash")).toEqual(["free"]);
@@ -41,10 +41,10 @@ describe("model promotions", () => {
     ];
     expect(sortModelsByPromotion(models).map((model) => model.model_name)).toEqual([
       "deepseek-v4-flash",
-      "glm-5.3",
       "deepseek-v4-pro",
       "gpt-5.6-sol",
       "plain",
+      "glm-5.3",
     ]);
   });
 
@@ -53,9 +53,9 @@ describe("model promotions", () => {
     expect(modelPromotionLabel("zh", "new")).toBe("新发布");
   });
 
-  test("uses Limited for the limited label outside Chinese", () => {
-    expect(modelPromotionLabel("en", "limited")).toBe("Limited");
-    expect(modelPromotionLabel("fr", "limited")).toBe("Limited");
+  test("uses the complete localized limited-discount label", () => {
+    expect(modelPromotionLabel("en", "limited")).toBe("Limited discount");
+    expect(modelPromotionLabel("fr", "limited")).toBe("Remise à durée limitée");
     expect(modelPromotionLabel("zh", "limited")).toBe("限时折扣");
   });
 });
