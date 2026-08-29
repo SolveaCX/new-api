@@ -57,7 +57,7 @@ var internalLeakMarkers = []string{
 // location and use the exact provider-neutral validation text. Do not broaden
 // this to a substring match, since upstream-controlled fields can otherwise
 // smuggle branding or implementation details alongside the useful message.
-var safeBusinessErrorPattern = regexp.MustCompile("^messages\\.[0-9]+\\.content\\.[0-9]+: Invalid (signature in thinking block|`signature` in `thinking` block)$")
+var safeBusinessErrorPattern = regexp.MustCompile(`^messages\.[0-9]+\.content\.[0-9]+: Invalid signature in thinking block$`)
 
 // whitelabelGenericErrorMessage is the sanitized client-facing replacement.
 const whitelabelGenericErrorMessage = "The upstream provider returned an error. Please retry; if it persists, contact support with your request id."
@@ -144,7 +144,7 @@ func ScrubWhitelabelError(ctx context.Context, newApiErr *types.NewAPIError, cha
 	if surface == "" {
 		return
 	}
-	containsLeak := containsWhitelabelLeak(channelType, surface)
+	containsLeak := taskcommon.ContainsBrandKeyword(surface) || looksLikeInternalLeak(surface) || isCopilotBrandLeak(channelType, surface)
 	if allowlisted {
 		if containsLeak {
 			logger.LogError(ctx, fmt.Sprintf("whitelabel error scrub (channel_type=%d): %s", channelType, common.LocalLogPreview(surface)))
@@ -162,28 +162,6 @@ func ScrubWhitelabelError(ctx context.Context, newApiErr *types.NewAPIError, cha
 	}
 	logger.LogError(ctx, fmt.Sprintf("whitelabel error scrub (channel_type=%d): %s", channelType, common.LocalLogPreview(surface)))
 	newApiErr.OverrideMessage(whitelabelGenericErrorMessage)
-}
-
-// ScrubWhitelabelErrorWithOriginal restores an allowlisted upstream business
-// error after BlockRun payment safety normalization has replaced its message.
-// The normalized error object is retained so settlement-unknown still remains
-// non-retryable and non-penalizing; only its client-facing envelope is updated.
-func ScrubWhitelabelErrorWithOriginal(ctx context.Context, newApiErr, originalErr *types.NewAPIError, channelType int) {
-	if newApiErr != nil && originalErr != nil &&
-		channelType == constant.ChannelTypeBlockRun &&
-		newApiErr.GetErrorCode() == types.ErrorCodeBlockRunSettlementUnknown {
-		message, allowlisted := allowlistedBusinessErrorMessage(originalErr)
-		surface := originalErr.SanitizationSurface()
-		if allowlisted && surface != "" && !containsWhitelabelLeak(channelType, surface) {
-			preserveAllowlistedBusinessError(newApiErr, message)
-			return
-		}
-	}
-	ScrubWhitelabelError(ctx, newApiErr, channelType)
-}
-
-func containsWhitelabelLeak(channelType int, surface string) bool {
-	return taskcommon.ContainsBrandKeyword(surface) || looksLikeInternalLeak(surface) || isCopilotBrandLeak(channelType, surface)
 }
 
 func isCopilotBrandLeak(channelType int, surface string) bool {

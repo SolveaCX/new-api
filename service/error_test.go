@@ -159,7 +159,6 @@ func TestScrubWhitelabelError(t *testing.T) {
 	const brand = "blockrun upstream connection timed out"
 	const benign = "Rate limit exceeded, please slow down"
 	const allowlisted = "messages.19.content.0: Invalid signature in thinking block"
-	const allowlistedWithBackticks = "messages.1.content.0: Invalid `signature` in `thinking` block"
 
 	newUpstreamErr := func(oe types.OpenAIError) *types.NewAPIError {
 		return types.WithOpenAIError(oe, http.StatusInternalServerError)
@@ -185,81 +184,24 @@ func TestScrubWhitelabelError(t *testing.T) {
 	})
 
 	t.Run("allowlisted thinking block validation passes through with a clean envelope", func(t *testing.T) {
-		for _, message := range []string{allowlisted, allowlistedWithBackticks} {
-			for _, channelType := range []int{constant.ChannelTypeBlockRun, constant.ChannelTypeCopilot} {
-				e := newUpstreamErr(types.OpenAIError{
-					Message:  message,
-					Type:     "invalid_request_error",
-					Param:    "messages",
-					Code:     "invalid_request",
-					Metadata: json.RawMessage(`{"retryable":false}`),
-				})
-				ScrubWhitelabelError(context.Background(), e, channelType)
-				oe := e.ToOpenAIError()
-				require.Equal(t, message, oe.Message)
-				require.Equal(t, string(types.ErrorTypeUpstreamError), oe.Type)
-				require.Equal(t, string(types.ErrorTypeUpstreamError), fmt.Sprintf("%v", oe.Code))
-				require.Empty(t, oe.Param)
-				require.Empty(t, oe.Metadata)
-				claude := e.ToClaudeError()
-				require.Equal(t, message, claude.Message)
-				require.Equal(t, string(types.ErrorTypeUpstreamError), claude.Type)
-			}
-		}
-	})
-
-	t.Run("settlement unknown restores allowlisted original without changing payment safety", func(t *testing.T) {
-		clientErr := types.NewErrorWithStatusCode(
-			errors.New("BlockRun signed payment settlement is unknown"),
-			types.ErrorCodeBlockRunSettlementUnknown,
-			http.StatusBadRequest,
-			types.ErrOptionWithSkipRetry(),
-		)
-		originalErr := newUpstreamErr(types.OpenAIError{
-			Message: allowlistedWithBackticks,
-			Type:    "invalid_request_error",
-			Param:   "messages",
-			Code:    "invalid_request",
-		})
-
-		ScrubWhitelabelErrorWithOriginal(context.Background(), clientErr, originalErr, constant.ChannelTypeBlockRun)
-
-		require.Equal(t, allowlistedWithBackticks, clientErr.ToOpenAIError().Message)
-		require.Equal(t, allowlistedWithBackticks, clientErr.ToClaudeError().Message)
-		require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, clientErr.GetErrorCode())
-		require.True(t, types.IsSkipRetryError(clientErr))
-	})
-
-	t.Run("settlement unknown does not restore an allowlisted message with a leaking sibling field", func(t *testing.T) {
-		clientErr := types.NewErrorWithStatusCode(
-			errors.New("BlockRun signed payment settlement is unknown"),
-			types.ErrorCodeBlockRunSettlementUnknown,
-			http.StatusBadRequest,
-			types.ErrOptionWithSkipRetry(),
-		)
-		originalErr := newUpstreamErr(types.OpenAIError{
-			Message: allowlistedWithBackticks,
-			Type:    "invalid_request_error",
-			Param:   "GenerateOpenAIRequest.internal",
-			Code:    "invalid_request",
-		})
-
-		ScrubWhitelabelErrorWithOriginal(context.Background(), clientErr, originalErr, constant.ChannelTypeBlockRun)
-
-		require.Equal(t, whitelabelGenericErrorMessage, clientErr.ToOpenAIError().Message)
-		require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, clientErr.GetErrorCode())
-		require.True(t, types.IsSkipRetryError(clientErr))
-	})
-
-	t.Run("settlement unknown does not restore near-match formats", func(t *testing.T) {
-		for _, message := range []string{
-			"messages.1.content.0: Invalid `signature` in thinking block",
-			"messages.1.content.0: Invalid signature in `thinking` block",
-			"messages.1.content.0: Invalid `signature` in `thinking` block (details)",
-		} {
-			clientErr := types.NewErrorWithStatusCode(errors.New("BlockRun signed payment settlement is unknown"), types.ErrorCodeBlockRunSettlementUnknown, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-			ScrubWhitelabelErrorWithOriginal(context.Background(), clientErr, plain(message), constant.ChannelTypeBlockRun)
-			require.Equal(t, whitelabelGenericErrorMessage, clientErr.ToOpenAIError().Message)
+		for _, channelType := range []int{constant.ChannelTypeBlockRun, constant.ChannelTypeCopilot} {
+			e := newUpstreamErr(types.OpenAIError{
+				Message:  allowlisted,
+				Type:     "invalid_request_error",
+				Param:    "messages",
+				Code:     "invalid_request",
+				Metadata: json.RawMessage(`{"retryable":false}`),
+			})
+			ScrubWhitelabelError(context.Background(), e, channelType)
+			oe := e.ToOpenAIError()
+			require.Equal(t, allowlisted, oe.Message)
+			require.Equal(t, string(types.ErrorTypeUpstreamError), oe.Type)
+			require.Equal(t, string(types.ErrorTypeUpstreamError), fmt.Sprintf("%v", oe.Code))
+			require.Empty(t, oe.Param)
+			require.Empty(t, oe.Metadata)
+			claude := e.ToClaudeError()
+			require.Equal(t, allowlisted, claude.Message)
+			require.Equal(t, string(types.ErrorTypeUpstreamError), claude.Type)
 		}
 	})
 
