@@ -314,9 +314,9 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   en: {
     title: "One key, multi model run",
     eyebrow: "Text Intelligence",
-    tabs: ["Automated Task", "Image Generation", "Video generation"],
+    tabs: ["Text Intelligence", "Image Generation", "Video generation"],
     promptTitle: "Test Prompt",
-    promptBody: "Find 14 competitors, research their launches, identify decision makers, waterfall-enrich contacts, and prepare a sourced GTM brief.",
+    promptBody: "Analyze the data and source material, identify key patterns and trends, summarize the findings, and turn them into clear recommendations.",
     attachment: "Attach source material",
     actionTitle: "AI analysis in action",
     checklist: ["Structured data analyzed", "Key patterns and trends identified", "Long-form text summarized", "Insights turned into recommendations"],
@@ -331,7 +331,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   zh: {
     title: "一个 key，多模型运行",
     eyebrow: "文本智能",
-    tabs: ["自动化任务", "图片生成", "视频生成"],
+    tabs: ["文本智能", "图片生成", "视频生成"],
     promptTitle: "测试提示词",
     promptBody: "分析数据和源材料，识别关键模式与趋势，总结发现，并将其转化为清晰的建议。",
     attachment: "上传源材料",
@@ -348,7 +348,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   es: {
     title: "Una key, múltiples modelos",
     eyebrow: "Inteligencia de texto",
-    tabs: ["Tarea automatizada", "Generación de imágenes", "Generación de vídeo"],
+    tabs: ["Inteligencia de texto", "Generación de imágenes", "Generación de vídeo"],
     promptTitle: "Prompt de prueba",
     promptBody: "Analiza los datos y el material de origen, identifica patrones y tendencias clave, resume los hallazgos y conviértelos en recomendaciones claras.",
     attachment: "Adjuntar material de origen",
@@ -365,7 +365,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   fr: {
     title: "Une key, plusieurs modèles",
     eyebrow: "Intelligence textuelle",
-    tabs: ["Tâche automatisée", "Génération d’images", "Génération vidéo"],
+    tabs: ["Intelligence textuelle", "Génération d’images", "Génération vidéo"],
     promptTitle: "Prompt de test",
     promptBody: "Analysez les données et les sources, identifiez les tendances et schémas clés, résumez les résultats et transformez-les en recommandations claires.",
     attachment: "Joindre les sources",
@@ -382,7 +382,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   pt: {
     title: "Uma key, vários modelos",
     eyebrow: "Inteligência de texto",
-    tabs: ["Tarefa automatizada", "Geração de imagens", "Geração de vídeo"],
+    tabs: ["Inteligência de texto", "Geração de imagens", "Geração de vídeo"],
     promptTitle: "Prompt de teste",
     promptBody: "Analise os dados e as fontes, identifique padrões e tendências, resuma as descobertas e transforme tudo em recomendações claras.",
     attachment: "Anexar fontes",
@@ -399,7 +399,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   ru: {
     title: "Один key, несколько моделей",
     eyebrow: "Интеллект для текста",
-    tabs: ["Автоматизированная задача", "Генерация изображений", "Генерация видео"],
+    tabs: ["Интеллект для текста", "Генерация изображений", "Генерация видео"],
     promptTitle: "Тестовый промпт",
     promptBody: "Проанализируйте данные и исходные материалы, найдите ключевые закономерности и тренды, обобщите результаты и превратите их в понятные рекомендации.",
     attachment: "Прикрепить материалы",
@@ -416,7 +416,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   ja: {
     title: "1 つの key、複数モデルを実行",
     eyebrow: "テキストインテリジェンス",
-    tabs: ["自動タスク", "画像生成", "動画生成"],
+    tabs: ["テキストインテリジェンス", "画像生成", "動画生成"],
     promptTitle: "テストプロンプト",
     promptBody: "データとソース資料を分析し、重要なパターンと傾向を特定して、結果を要約し、明確な提案に変換します。",
     attachment: "ソース資料を添付",
@@ -433,7 +433,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   vi: {
     title: "Một key, chạy nhiều model",
     eyebrow: "Trí tuệ văn bản",
-    tabs: ["Tác vụ tự động", "Tạo hình ảnh", "Tạo video"],
+    tabs: ["Trí tuệ văn bản", "Tạo hình ảnh", "Tạo video"],
     promptTitle: "Prompt thử nghiệm",
     promptBody: "Phân tích dữ liệu và tài liệu nguồn, xác định các mẫu và xu hướng chính, tóm tắt phát hiện rồi chuyển thành đề xuất rõ ràng.",
     attachment: "Đính kèm tài liệu nguồn",
@@ -450,7 +450,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   de: {
     title: "Ein Key, mehrere Modelle",
     eyebrow: "Textintelligenz",
-    tabs: ["Automatisierte Aufgabe", "Bildgenerierung", "Videogenerierung"],
+    tabs: ["Textintelligenz", "Bildgenerierung", "Videogenerierung"],
     promptTitle: "Test-Prompt",
     promptBody: "Analysiere Daten und Quellen, erkenne wichtige Muster und Trends, fasse die Ergebnisse zusammen und mache daraus klare Empfehlungen.",
     attachment: "Quellen anhängen",
@@ -467,7 +467,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   id: {
     title: "Satu key, banyak model",
     eyebrow: "Intelijen teks",
-    tabs: ["Tugas otomatis", "Pembuatan gambar", "Pembuatan video"],
+    tabs: ["Intelijen teks", "Pembuatan gambar", "Pembuatan video"],
     promptTitle: "Prompt uji",
     promptBody: "Analisis data dan materi sumber, temukan pola serta tren utama, rangkum hasilnya, lalu ubah menjadi rekomendasi yang jelas.",
     attachment: "Lampirkan materi sumber",
@@ -710,13 +710,10 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         <div className="intelligence-wrap">
           {(() => {
             const intelligence = INTELLIGENCE_COPY[props.locale];
-            const terminal = copy.home.terminal;
-            const cleanTerminalLine = (value: string) => value.replace(/^[✓→]\s*/, "");
             return (
               <>
                 <div className="intelligence-heading">
                   <h2 id="intelligence-heading">{intelligence.title}</h2>
-                  <p>{intelligence.eyebrow}</p>
                 </div>
                 <div className="intelligence-tabs" role="tablist" aria-label={intelligence.eyebrow}>
                   {intelligence.tabs.map((tab, index) => (
@@ -759,21 +756,18 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <p className="intelligence-footer">{intelligence.footer}</p>
                   </div>
                   <div className="intelligence-criteria">
-                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
-                    <div className="criteria-row">{cleanTerminalLine(terminal.competitors)}</div>
-                    <div className="criteria-row">{cleanTerminalLine(terminal.scanned)}</div>
-                    <div className="criteria-row success">{cleanTerminalLine(terminal.contacts)}</div>
-                    <div className="criteria-row success">{cleanTerminalLine(terminal.persona)}</div>
+                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>{intelligence.actionTitle}</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
+                    {intelligence.checklist.map((item, index) => <div className={`criteria-row${index > 1 ? " success" : ""}`} key={item}>{item}</div>)}
                     <div className="criteria-metrics">
-                      <div className="criteria-metric"><span>{terminal.successfulLabel}</span><strong>{terminal.successfulValue}</strong></div>
-                      <div className="criteria-metric"><span>{terminal.runtimeLabel}</span><strong>{terminal.runtimeValue}</strong></div>
-                      <div className="criteria-metric"><span>{terminal.invoiceLabel}</span><strong>{terminal.invoiceValue}</strong></div>
+                      <div className="criteria-metric"><span>{intelligence.recordsLabel}</span><strong>{intelligence.recordsValue}</strong></div>
+                      <div className="criteria-metric"><span>{intelligence.processedLabel}</span><strong>{intelligence.processedValue}</strong></div>
+                      <div className="criteria-metric"><span>{intelligence.costLabel}</span><strong>{intelligence.costValue}</strong></div>
                     </div>
-                    <div className="criteria-pay">{copy.home.pay}&nbsp;&nbsp;·&nbsp;&nbsp; failed calls $0.00</div>
+                    <div className="criteria-pay">{intelligence.footer}</div>
                   </div>
                   <div className="intelligence-models">
                     <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/nvidia.svg" alt="" /><div className="model-card-copy"><strong>nvidia/nemotron-3.5-lightning</strong><span>Nemotron · foundation model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-flash</strong><span>DeepSeek · reasoning model</span></div></div>
                     <div className="model-selected-label">Selected model</div>
                     <div className="model-card selected"><img src="/assets/logos/claude.svg" alt="" /><div className="model-card-copy"><strong>Claude</strong><span>reasoning + coding</span></div><span className="model-card-price">$0.8 / 1M tokens</span></div>
                     <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · multimodal model</span></div></div>
