@@ -6860,6 +6860,8 @@
     "Use a site path such as /pricing or a full https:// URL.": "Usa una ruta del sitio como /pricing o una URL https:// completa.",
     "Optional logo shown before the announcement content (64 KB max).": "Logo opcional que se muestra antes del contenido del anuncio (máximo 64 KB).",
     "Choose a model logo": "Elegir un logo de modelo",
-    "Custom upload": "Carga personalizada"
+    "Custom upload": "Carga personalizada",
+    "One connection, All models. Start building with your free credits.": "Una conexión, todos los modelos. Empieza a crear con tus créditos gratuitos.",
+    "Fast": "Rápido"
   }
 }

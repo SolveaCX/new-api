@@ -6860,6 +6860,8 @@
     "Use a site path such as /pricing or a full https:// URL.": "Dùng đường dẫn trang như /pricing hoặc URL https:// đầy đủ.",
     "Optional logo shown before the announcement content (64 KB max).": "Logo tùy chọn hiển thị trước nội dung thông báo (tối đa 64 KB).",
     "Choose a model logo": "Chọn logo mô hình",
-    "Custom upload": "Tải lên tùy chỉnh"
+    "Custom upload": "Tải lên tùy chỉnh",
+    "One connection, All models. Start building with your free credits.": "Một kết nối, mọi mô hình. Bắt đầu xây dựng với tín dụng miễn phí.",
+    "Fast": "Nhanh"
   }
 }

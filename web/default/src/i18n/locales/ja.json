@@ -6860,6 +6860,8 @@
     "Use a site path such as /pricing or a full https:// URL.": "/pricing のようなサイト内パス、または完全な https:// URL を使用してください。",
     "Optional logo shown before the announcement content (64 KB max).": "お知らせ本文の前に表示する任意のロゴ（最大64 KB）。",
     "Choose a model logo": "モデルロゴを選択",
-    "Custom upload": "カスタムアップロード"
+    "Custom upload": "カスタムアップロード",
+    "One connection, All models. Start building with your free credits.": "1つの接続ですべてのモデルを利用できます。無料クレジットで始めましょう。",
+    "Fast": "高速"
   }
 }
