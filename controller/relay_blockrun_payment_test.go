@@ -87,6 +87,31 @@ func TestNormalizeBlockRunPaymentErrors(t *testing.T) {
 		require.True(t, ok)
 		require.True(t, state.StreamTruncated)
 	})
+
+	t.Run("allowlisted upstream validation survives settlement normalization", func(t *testing.T) {
+		ctx, _ := newBlockRunPaymentTestContext()
+		ctx.Set(string(constant.ContextKeyChannelType), constant.ChannelTypeBlockRun)
+		relaycommon.MarkBlockRunPaymentAttempt(ctx, dto.BlockRunPaymentChainBase, 205, "request=req-5")
+		const message = "messages.1.content.0: Invalid `signature` in `thinking` block"
+		originalErr := types.WithClaudeError(types.ClaudeError{
+			Message: message,
+			Type:    "invalid_request_error",
+		}, http.StatusBadRequest)
+
+		clientErr := normalizeBlockRunPaymentError(ctx, originalErr)
+		storedOriginal, ok := common.GetContextKeyType[*types.NewAPIError](ctx, constant.ContextKeyBlockRunOriginalError)
+		require.True(t, ok)
+		service.ScrubWhitelabelErrorWithOriginal(ctx, clientErr, storedOriginal, constant.ChannelTypeBlockRun)
+
+		require.Equal(t, message, clientErr.Error())
+		require.Equal(t, http.StatusBadRequest, clientErr.StatusCode)
+		require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, clientErr.GetErrorCode())
+		require.True(t, types.IsSkipRetryError(clientErr))
+		require.False(t, shouldApplyChannelPenalty(clientErr))
+		state, ok := relaycommon.GetBlockRunPaymentState(ctx)
+		require.True(t, ok)
+		require.Equal(t, relaycommon.BlockRunPaymentOutcomeSettlementUnknown, state.Outcome)
+	})
 }
 
 func TestProcessChannelErrorPersistsOriginalBlockRunError(t *testing.T) {
