@@ -99,8 +99,8 @@ export function ModelsDirectoryTable(props: Props) {
                 {props.copy.colOurPrice ?? props.copy.colFlatkey}
               </th>
             ) : null}
-            {props.copy.colInput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell 2xl:px-3">{props.copy.colInput}</th> : null}
-            {props.copy.colOutput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell 2xl:px-3">{props.copy.colOutput}</th> : null}
+            {props.copy.colInput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal xl:table-cell 2xl:px-3">{props.copy.colInput}</th> : null}
+            {props.copy.colOutput ? <th className="hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal xl:table-cell 2xl:px-3">{props.copy.colOutput}</th> : null}
             {props.copy.colDiscount ? <th className="w-[15%] px-2 py-3.5 text-right font-bold lg:w-[9%] 2xl:px-3">{props.copy.colDiscount}</th> : null}
             {props.copy.colContext ? <th className="hidden w-[8%] px-2 py-3.5 text-right font-bold lg:table-cell 2xl:px-3">{props.copy.colContext}</th> : null}
             <th className="hidden w-[8%] px-2 py-3.5 text-right font-bold xl:table-cell 2xl:px-3">{props.copy.colLatency}</th>
@@ -201,10 +201,12 @@ function DirectoryRow(props: {
             />
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline">
+                <span
+                  className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline"
+                  title={row.name}
+                >
                   {row.name}
                 </span>
-                {row.top10 ? <TopBadge rank={row.top10} /> : null}
                 {promotions.map((promotion) => (
                   <span key={promotion} className={cn(
                     "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
@@ -232,8 +234,7 @@ function DirectoryRow(props: {
             />
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="truncate font-mono text-[13px] font-semibold tracking-tight">{row.name}</span>
-                {row.top10 ? <TopBadge rank={row.top10} /> : null}
+                <span className="truncate font-mono text-[13px] font-semibold tracking-tight" title={row.name}>{row.name}</span>
               </span>
               <span className="text-muted-foreground/70 block truncate text-[11px]">
                 {attribution}
@@ -250,8 +251,8 @@ function DirectoryRow(props: {
           <PriceCell price={row.discounted} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} />
         </td>
       ) : null}
-      {props.showInput ? <td className="hidden px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 2xl:table-cell">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
-      {props.showOutput ? <td className="hidden px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 2xl:table-cell">{row.output ? <PriceCell price={row.output} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
+      {props.showInput ? <td className="hidden px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 xl:table-cell">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
+      {props.showOutput ? <td className="hidden px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 xl:table-cell">{row.output ? <PriceCell price={row.output} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
       {props.showDiscount ? (
         <td className="px-2 py-3 text-right font-mono text-[12px] 2xl:px-3 2xl:text-[13px]">
           {discount == null ? (
@@ -301,14 +302,6 @@ export function attributionLabel(vendor: string | undefined, series: string | un
   const realVendor = vendor && vendor !== PLACEHOLDER_VENDOR ? vendor : undefined;
   if (realVendor && series) return `${realVendor} · ${series}`;
   return realVendor ?? series ?? "";
-}
-
-/** Popularity-board position, shown next to the model name. */
-function TopBadge(props: { rank: number }) {  return (
-    <span className="shrink-0 rounded bg-amber-400/20 px-1.5 py-0.5 font-sans text-[9px] font-black tracking-wide text-amber-700 uppercase dark:bg-amber-300/15 dark:text-amber-300">
-      TOP {props.rank}
-    </span>
-  );
 }
 
 /**
