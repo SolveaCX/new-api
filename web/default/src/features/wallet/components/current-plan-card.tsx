@@ -39,7 +39,6 @@ import type {
   SubscriptionRenewalSource,
 } from '@/features/subscriptions/types'
 import type { WalletSelfSubscriptionData } from '../lib/subscription-plan-lifecycle'
-import { PlanLimitSummary } from './plan-limit-summary'
 import { UsageWindowMeter } from './usage-window-meter'
 
 type CurrentPlanCardProps = {
@@ -72,6 +71,10 @@ function getRemainingDays(selfData: WalletSelfSubscriptionData): number {
     0
   if (!end) return 0
   return Math.max(0, Math.ceil((end * 1000 - Date.now()) / 86400000))
+}
+
+function hasUsageWindowLimit(window: { total?: number } | undefined): boolean {
+  return Number(window?.total ?? 0) > 0
 }
 
 function getRenewalAction(
@@ -274,7 +277,28 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
           />
         </a>
 
-        <PlanLimitSummary plan={props.plan} className='mt-2' />
+        {hasUsageWindowLimit(props.selfData.window_5h) ||
+        hasUsageWindowLimit(props.selfData.window_7d) ? (
+          <div
+            className='grid grid-cols-2 gap-3'
+            data-wallet-short-window-meters
+          >
+            {hasUsageWindowLimit(props.selfData.window_5h) ? (
+              <UsageWindowMeter
+                label={t('5-hour window limit (USD)')}
+                window={props.selfData.window_5h}
+                secondary
+              />
+            ) : null}
+            {hasUsageWindowLimit(props.selfData.window_7d) ? (
+              <UsageWindowMeter
+                label={t('7-day window limit (USD)')}
+                window={props.selfData.window_7d}
+                secondary
+              />
+            ) : null}
+          </div>
+        ) : null}
 
         {renewalAction && props.selfData.renewal_source ? (
           <div className='flex justify-end'>
