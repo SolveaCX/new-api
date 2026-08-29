@@ -105,3 +105,45 @@ func TestMigrateStandardSubscriptionPlanLimitsUsesPersistedQuotaUnit(t *testing.
 	require.Equal(t, int64(12000), got.WindowWeekAmount)
 	require.Equal(t, int64(25000), got.TotalAmount)
 }
+
+func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *testing.T) {
+	originalDB := DB
+	originalUsingSQLite := common.UsingSQLite
+	originalQuotaPerUnit := common.QuotaPerUnit
+	t.Cleanup(func() {
+		DB = originalDB
+		common.UsingSQLite = originalUsingSQLite
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&Option{}, &SubscriptionPlan{}))
+	DB = db
+	common.UsingSQLite = true
+	common.QuotaPerUnit = 1000
+
+	// A staging database may already have applied the previous contract marker
+	// before its test plans were created or renamed with the [TEST] prefix.
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v2", Value: "applied"}).Error)
+	plan := &SubscriptionPlan{
+		Title:       "[TEST] Go",
+		PriceAmount: 10,
+		Currency:    "USD",
+		TotalAmount: 45000,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	require.NoError(t, migrateStandardSubscriptionPlanLimits())
+	var got SubscriptionPlan
+	require.NoError(t, db.First(&got, plan.Id).Error)
+	require.Equal(t, int64(8000), got.Window5hAmount)
+	require.Equal(t, int64(12000), got.WindowWeekAmount)
+	require.Equal(t, int64(25000), got.TotalAmount)
+
+	var marker Option
+	require.NoError(t, db.Where(&Option{Key: "subscription_standard_limits_v3"}).First(&marker).Error)
+}
