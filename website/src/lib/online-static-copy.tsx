@@ -237,7 +237,7 @@ const en: OnlineCopy = {
     invoice: "Every model Every tool One invoice",
     pay: "Pay per successful call",
     savings: ["Model subscriptions", "Data tool subscriptions", "Automation subscriptions"],
-    sub: "One balance covers over 100 official models and over 1000 pay per call tools No idle seats duplicate subscriptions or API keys scattered across providers",
+    sub: "One balance covers over 100 official models and over 1000 pay per call tools, No idle seats duplicate subscriptions or API keys scattered across providers",
     terminal: {
       billed: "✓ $0.83 billed · failed calls $0.00",
       contacts: "✓ 489 contacts waterfall enriched across 5 providers",
