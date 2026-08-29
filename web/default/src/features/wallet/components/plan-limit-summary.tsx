@@ -41,12 +41,12 @@ export function PlanLimitSummary(props: PlanLimitSummaryProps) {
   const items = [
     {
       key: '5h',
-      label: t('5-hour window limit (USD)'),
+      label: t('5-Hour Window'),
       amount: Number(props.plan.window_5h_amount || 0),
     },
     {
       key: '7d',
-      label: t('7-day window limit (USD)'),
+      label: t('7 Days'),
       amount: Number(props.plan.window_week_amount || 0),
     },
   ].filter((item) => item.amount > 0)

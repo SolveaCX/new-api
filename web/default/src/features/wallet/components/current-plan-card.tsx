@@ -266,6 +266,29 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
           </div>
         </div>
 
+        {hasUsageWindowLimit(props.selfData.window_5h) ||
+        hasUsageWindowLimit(props.selfData.window_7d) ? (
+          <div
+            className='grid grid-cols-2 gap-3'
+            data-wallet-short-window-meters
+          >
+            {hasUsageWindowLimit(props.selfData.window_5h) ? (
+              <UsageWindowMeter
+                label={t('5-Hour Window')}
+                window={props.selfData.window_5h}
+                secondary
+              />
+            ) : null}
+            {hasUsageWindowLimit(props.selfData.window_7d) ? (
+              <UsageWindowMeter
+                label={t('7 Days')}
+                window={props.selfData.window_7d}
+                secondary
+              />
+            ) : null}
+          </div>
+        ) : null}
+
         <a
           href='/usage-logs'
           className='block rounded-lg focus-visible:ring-2 focus-visible:outline-none'
@@ -276,29 +299,6 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
             secondary
           />
         </a>
-
-        {hasUsageWindowLimit(props.selfData.window_5h) ||
-        hasUsageWindowLimit(props.selfData.window_7d) ? (
-          <div
-            className='grid grid-cols-2 gap-3'
-            data-wallet-short-window-meters
-          >
-            {hasUsageWindowLimit(props.selfData.window_5h) ? (
-              <UsageWindowMeter
-                label={t('5-hour window limit (USD)')}
-                window={props.selfData.window_5h}
-                secondary
-              />
-            ) : null}
-            {hasUsageWindowLimit(props.selfData.window_7d) ? (
-              <UsageWindowMeter
-                label={t('7-day window limit (USD)')}
-                window={props.selfData.window_7d}
-                secondary
-              />
-            ) : null}
-          </div>
-        ) : null}
 
         {renewalAction && props.selfData.renewal_source ? (
           <div className='flex justify-end'>
