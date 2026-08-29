@@ -395,6 +395,54 @@ func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, de
 	return true, nil
 }
 
+// applySubscriptionWindowSnapshotLedger mirrors the in-memory ledger update
+// performed by AdjustSubscriptionWindowFromSnapshotOnce. It is used when a
+// retry observes an already-claimed Redis idempotency key (or Redis is
+// temporarily unavailable) and still needs to persist the durable task
+// snapshot exactly once.
+func applySubscriptionWindowSnapshotLedger(snap *model.TaskSubscriptionWindow, delta int64) {
+	if snap == nil || delta == 0 {
+		return
+	}
+	if snap.BucketHeld == nil {
+		snap.BucketHeld = map[string]int64{}
+	}
+	if snap.WeekHeld == nil {
+		snap.WeekHeld = map[string]int64{}
+	}
+	if delta > 0 {
+		now := common.GetTimestamp()
+		if snap.Limit5h > 0 {
+			currentBucket := now / subscriptionWindowBucketSeconds * subscriptionWindowBucketSeconds
+			key := subscriptionWindowBucketKey(snap.SubId, currentBucket)
+			snap.BucketHeld[key] += delta
+		}
+		if snap.LimitWeek > 0 {
+			idx := subscriptionWindowWeekIndex(snap.SubStart, now)
+			key := subscriptionWindowWeekKey(snap.SubId, idx)
+			snap.WeekHeld[key] += delta
+		}
+		return
+	}
+	for _, held := range []map[string]int64{snap.BucketHeld, snap.WeekHeld} {
+		refund := -delta
+		for key, amount := range held {
+			if refund <= 0 {
+				break
+			}
+			take := amount
+			if take > refund {
+				take = refund
+			}
+			held[key] -= take
+			if held[key] <= 0 {
+				delete(held, key)
+			}
+			refund -= take
+		}
+	}
+}
+
 func AdjustSubscriptionWindowFromSnapshotOnce(snap *model.TaskSubscriptionWindow, delta int64, taskID string) (bool, error) {
 	if snap == nil || delta == 0 || taskID == "" {
 		return false, nil

@@ -164,6 +164,8 @@ const (
 	MsgQuotaWarningInvalid            = "quota.warning_invalid"
 	MsgQuotaThresholdGtZero           = "quota.threshold_gt_zero"
 	MsgQuotaInviterRewardLimitInvalid = "quota.inviter_reward_limit_invalid"
+	MsgQuotaSubscriptionWindow5h      = "quota.subscription_window_5h_exceeded"
+	MsgQuotaSubscriptionWindowWeek    = "quota.subscription_window_week_exceeded"
 )
 
 // Log related messages

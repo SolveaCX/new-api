@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -203,21 +204,22 @@ type TaskBillingContext struct {
 	// 是未加权 list 额度，而订阅池按加权额扣减——异步退款/差额结算必须按此权重
 	// 换算，否则退错额（权重 >1 的模型会少退/少补）。0 视为 1.0（旧数据兼容）。
 	SubscriptionWeight float64 `json:"subscription_weight,omitempty"`
-	// SubscriptionWindow is a legacy short-window ledger snapshot. New
-	// synchronous subscription billing no longer persists it, but old queued
-	// tasks may still carry one while compatibility accounting drains.
+	// SubscriptionWindow is the short-window ledger snapshot captured when an
+	// asynchronous subscription task is accepted. Older queued tasks may also
+	// carry this field, so workers must keep the payload backward compatible.
 	SubscriptionWindow *TaskSubscriptionWindow `json:"subscription_window,omitempty"`
 }
 
-// TaskSubscriptionWindow is the legacy serialized subscription window guard
-// snapshot kept for old queued task compatibility.
+// TaskSubscriptionWindow is the serialized subscription window guard snapshot
+// used to settle or refund the exact Redis buckets reserved at submission.
 type TaskSubscriptionWindow struct {
-	SubId      int              `json:"sub_id"`
-	SubStart   int64            `json:"sub_start"`
-	Limit5h    int64            `json:"limit_5h"`
-	LimitWeek  int64            `json:"limit_week"`
-	BucketHeld map[string]int64 `json:"bucket_held,omitempty"` // 5h 桶 key → 持有量
-	WeekHeld   map[string]int64 `json:"week_held,omitempty"`   // 周 key → 持有量
+	SubId                     int              `json:"sub_id"`
+	SubStart                  int64            `json:"sub_start"`
+	Limit5h                   int64            `json:"limit_5h"`
+	LimitWeek                 int64            `json:"limit_week"`
+	BucketHeld                map[string]int64 `json:"bucket_held,omitempty"` // 5h 桶 key → 持有量
+	WeekHeld                  map[string]int64 `json:"week_held,omitempty"`   // 周 key → 持有量
+	AcceptedAccountingApplied bool             `json:"accepted_accounting_applied,omitempty"`
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
@@ -656,6 +658,37 @@ func (Task *Task) Update() error {
 	var err error
 	err = DB.Save(Task).Error
 	return err
+}
+
+// UpdateTaskSubscriptionWindowSnapshot persists a worker's updated short-window
+// ledger without overwriting unrelated task private data. Accepted asset-task
+// accounting can cross a process restart, so the ledger mutation must survive
+// after the Redis idempotency step has succeeded.
+func UpdateTaskSubscriptionWindowSnapshot(taskID string, snapshot *TaskSubscriptionWindow) error {
+	if strings.TrimSpace(taskID) == "" {
+		return errors.New("task id is empty")
+	}
+	if snapshot == nil {
+		return nil
+	}
+	if DB == nil {
+		return errors.New("database is not initialized")
+	}
+	now := common.GetTimestamp()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var current Task
+		if err := tx.Where("task_id = ?", taskID).First(&current).Error; err != nil {
+			return err
+		}
+		if current.PrivateData.BillingContext == nil {
+			current.PrivateData.BillingContext = &TaskBillingContext{}
+		}
+		current.PrivateData.BillingContext.SubscriptionWindow = snapshot
+		return tx.Model(&Task{}).Where("task_id = ?", taskID).Updates(map[string]any{
+			"private_data": current.PrivateData,
+			"updated_at":   now,
+		}).Error
+	})
 }
 
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).

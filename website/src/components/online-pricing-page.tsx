@@ -2,6 +2,7 @@ import Link from "next/link";
 import { type Locale, localizePath } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 import { consoleUrl } from "@/lib/origins";
+import { formatUsd, STANDARD_SUBSCRIPTION_LIMITS } from "@/lib/subscription-pricing";
 import { OnlinePaymentMethodPicker } from "./online-payment-method-picker";
 import { OnlineStaticShell } from "./online-static-shell";
 
@@ -22,21 +23,21 @@ const plans = [
     id: "go",
     name: "Go",
     price: "$10",
-    referencePrice: "$45",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.go.monthlyUsd),
   },
   {
     hot: true,
     id: "pro",
     name: "Pro",
     price: "$30",
-    referencePrice: "$90",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.pro.monthlyUsd),
   },
   {
     hot: false,
     id: "max",
     name: "Max",
     price: "$100",
-    referencePrice: "$300",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.max.monthlyUsd),
   },
 ] as const;
 
