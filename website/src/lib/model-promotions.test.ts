@@ -3,13 +3,14 @@ import { getModelPromotions, modelPromotionLabel } from "./model-promotions";
 
 describe("model promotions", () => {
   test("marks the requested models", () => {
-    expect(getModelPromotions("glm-5.3")).toEqual([]);
+    expect(getModelPromotions("glm-5.3")).toEqual(["new"]);
     expect(getModelPromotions("glm-5.3-flash")).toEqual(["limited", "new"]);
     expect(getModelPromotions("deepseek-v4-pro")).toEqual(["limited"]);
     expect(getModelPromotions("deepseek-v4-flash")).toEqual(["free"]);
     expect(getModelPromotions("deepseek-v4-pro-0813")).toEqual([]);
     expect(getModelPromotions("deepseek-v4-flash-0813")).toEqual([]);
     expect(getModelPromotions("glm-5.3-flash-0813")).toEqual([]);
+    expect(getModelPromotions("glm-5.3-0813")).toEqual([]);
     expect(getModelPromotions("qwen3.8-max")).toEqual([]);
     expect(getModelPromotions("qwen3.8-max-free")).toEqual([]);
     expect(getModelPromotions("kimi-k3")).toEqual([]);

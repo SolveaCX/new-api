@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildRowsForModels } from "./home-models";
+import { savingRatio } from "./model-directory-filters";
 import {
   buildEffectiveGroupRatio,
   formatModelPrice,
@@ -69,5 +70,20 @@ describe("per-model group ratio takes precedence over the flat group ratio", () 
 
   test("an unenriched model still falls back to the flat group ratio", () => {
     expect(getBestGroupRatio(GLM, GROUP_RATIO)).toBe(0.9);
+  });
+
+  test("a zero model override renders free pricing and a 100% discount", () => {
+    const deepseek: PricingModel = {
+      ...GLM,
+      model_name: "deepseek-v4-flash",
+      completion_ratio: 3,
+      group_ratio: { plg: 0 },
+    };
+    const [row] = buildRowsForModels([deepseek], VENDORS, GROUP_RATIO);
+
+    expect(row.discounted).toBe("$0");
+    expect(row.inputFilterUsd).toBe(0);
+    expect(row.outputFilterUsd).toBe(0);
+    expect(savingRatio(row.officialUsd, row.inputFilterUsd)).toBe(1);
   });
 });
