@@ -236,7 +236,7 @@ export function ModelAccessList({
                 </ItemMedia>
                 <ItemContent className='min-w-0'>
                   <ItemTitle className='max-w-full font-mono'>
-                    <span className='truncate'>{model.id}</span>
+                    <span className='truncate' title={model.id}>{model.id}</span>
                     {promotions.map((promotion) => (
                       <Badge key={promotion} variant='outline' className={cn(
                         'border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm',

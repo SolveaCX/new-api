@@ -351,7 +351,7 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">{model.model_name}</h3>
+              <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white" title={model.model_name}>{model.model_name}</h3>
               {promotions.map((promotion) => (
                 <span key={promotion} className={cn(
                   "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",

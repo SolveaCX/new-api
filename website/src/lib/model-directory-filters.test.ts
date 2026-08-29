@@ -319,10 +319,9 @@ describe("facet counts", () => {
 });
 
 describe("sorting", () => {
-  test("most popular leads with the board order, then overall rank", () => {
+  test("free and campaign models lead before hot models", () => {
     const sorted = sortDirectoryRows(SAMPLE, "rank");
-    expect(sorted[0].name).toBe("gpt-5.6-sol"); // TOP 2 — the lowest board position present
-    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["gpt-5.6-sol", "seedance-2.5", "deepseek-v4-pro"]);
+    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["deepseek-v4-pro", "gpt-5.6-sol", "seedance-2.5"]);
   });
 
   test("longest context first, unknown context last", () => {
@@ -331,9 +330,14 @@ describe("sorting", () => {
   });
 
   test("newest orders by band and leaves unknown ages last", () => {
-    const withUnknown = [...SAMPLE, buildDirectoryRow({ name: "totally-unknown-model", vendor: "Nobody" }, NOW)];
+    const withUnknown = [
+      ...SAMPLE,
+      buildDirectoryRow({ name: "totally-unknown-model", vendor: "Nobody" }, NOW),
+      buildDirectoryRow({ name: "glm-5.3-flash", vendor: "Zhipu" }, NOW),
+    ];
     const sorted = sortDirectoryRows(withUnknown, "newest");
-    expect(sorted[0].age).toBe("new");
+    expect(sorted[0].name).toBe("glm-5.3-flash");
+    expect(sorted[1].age).toBe("new");
     expect(sorted[sorted.length - 1].name).toBe("totally-unknown-model");
   });
 

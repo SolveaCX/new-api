@@ -25,7 +25,12 @@ const LABELS: Record<Locale, Record<ModelPromotion, string>> = {
 export function getModelPromotions(modelName: string): ModelPromotion[] {
   const name = modelName.toLowerCase();
   const promotions: ModelPromotion[] = [];
-  if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) {
+
+  if (
+    name.includes("free") ||
+    /(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name) ||
+    /(^|[/_.-])ling[-_.]?3\.0[-_.]?flash[-_.]?fin/.test(name)
+  ) {
     promotions.push("free");
   }
   if (
@@ -34,12 +39,19 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
   ) {
     promotions.push("limited");
   }
+  // HOT is reserved for the current launch models, not an entire family.
+  // Keep these patterns explicit so older versions do not inherit the badge.
   if (
     /(^|[/_-])seedance[-_.]?2[-_.]?5(?:[-_.]|$)/.test(name) ||
+    /(^|[/])kimi[-_.]?k3(?:[-_.]|$)/.test(name) ||
     /(^|[/])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
     /(^|[/])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(name)
-  ) promotions.push("hot");
-  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) promotions.push("new");
+  ) {
+    promotions.push("hot");
+  }
+  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) {
+    promotions.push("new");
+  }
   return promotions;
 }
 

@@ -6,7 +6,7 @@ import {
   type PriceBandId,
 } from "./model-directory-meta";
 import type { ModelDirectoryMetadata } from "./pricing";
-import { modelPromotionPriority } from "./model-promotions";
+import { getModelPromotions, modelPromotionPriority } from "./model-promotions";
 
 // Filter engine for the /models directory. Mirrors the prototype's semantics:
 //
@@ -267,8 +267,8 @@ export const DIRECTORY_SORTS: DirectorySort[] = ["rank", "newest", "discount", "
 
 const AGE_ORDER: AgeBand[] = ["new", "1-3m", "3-6m", "6-12m", "12m+"];
 
-// "Most Popular" leads with the popularity board in its exact order — the model
-// badged TOP 1 sits first — then falls back to the overall ranking.
+// "Most Popular" leads with the popularity board in its exact order, then
+// falls back to the overall ranking.
 const byPopularity = (a: DirectoryRow, b: DirectoryRow) =>
   (a.top10 ?? Number.MAX_SAFE_INTEGER) - (b.top10 ?? Number.MAX_SAFE_INTEGER) || a.rank - b.rank;
 
@@ -289,7 +289,13 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
     case "ctxDesc":
       return sorted.sort((a, b) => (b.contextTokens ?? 0) - (a.contextTokens ?? 0) || byPopularity(a, b));
     case "newest":
-      return sorted.sort((a, b) => ageIndex(a.age) - ageIndex(b.age) || byPopularity(a, b));
+      return sorted.sort(
+        (a, b) =>
+          Number(getModelPromotions(b.name).includes("new")) -
+            Number(getModelPromotions(a.name).includes("new")) ||
+          ageIndex(a.age) - ageIndex(b.age) ||
+          byPopularity(a, b)
+      );
     // Biggest saving first. A row with no comparable price sorts last rather
     // than mixing in with genuine 0% discounts.
     case "discount":
