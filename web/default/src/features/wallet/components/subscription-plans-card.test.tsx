@@ -489,7 +489,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('aria-label="Refresh subscription plans"')
   })
 
-  test('renders a read-only current card with configured window caps and a linked monthly usage meter', () => {
+  test('renders current monthly and short-window usage meters with short windows side by side', () => {
     const plansWithConfiguredWindows = plans.map((item) =>
       item.plan.id === 2
         ? {
@@ -550,6 +550,20 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
           reset_at: 1,
           unlimited: false,
         },
+        window_5h: {
+          used: 2000,
+          total: 9000,
+          remaining: 7000,
+          reset_at: 1,
+          unlimited: false,
+        },
+        window_7d: {
+          used: 5000,
+          total: 22500,
+          remaining: 17500,
+          reset_at: 1,
+          unlimited: false,
+        },
         media_credits: { used: 3, total: 20, remaining: 17, reset_at: 1 },
       } as SelfSubscriptionDataResponse & {
         media_credits: {
@@ -570,14 +584,17 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Renewal time')
     expect(html).not.toContain('future charge')
     expect(html).toContain('href="/usage-logs"')
-    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(1)
-    expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(1)
+    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(3)
+    expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(3)
     expect(html).toContain('data-wallet-usage-meter="Monthly model quota"')
+    expect(html).toContain(
+      'data-wallet-usage-meter="5-hour window limit (USD)"'
+    )
+    expect(html).toContain('data-wallet-usage-meter="7-day window limit (USD)"')
+    expect(html).toContain('grid grid-cols-2 gap-3')
     expect(html).not.toContain(
       'data-wallet-usage-meter="Media generation credits"'
     )
-    expect(html).not.toContain('data-wallet-usage-meter="5-hour limit"')
-    expect(html).not.toContain('data-wallet-usage-meter="7-day limit"')
     expect(html).toContain('data-plan-limit="5h"')
     expect(html).toContain('data-plan-limit="7d"')
     expect(html).toContain('$18')
