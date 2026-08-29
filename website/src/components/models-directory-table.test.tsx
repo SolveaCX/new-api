@@ -178,7 +178,7 @@ describe("ModelsDirectoryTable", () => {
     expect(cells[3]).toContain("$0.072");
   });
 
-  test("defers optional price columns until wide desktop layouts", () => {
+  test("shows optional price columns at regular desktop widths", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
         locale="en"
@@ -200,8 +200,8 @@ describe("ModelsDirectoryTable", () => {
 
     expect(html).toContain("w-full min-w-0 table-fixed border-collapse text-sm");
     expect(html).toContain("sticky left-0 z-10 w-[65%] min-w-[220px]");
-    expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell");
-    expect(html).not.toContain("whitespace-normal xl:table-cell");
+    expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal xl:table-cell");
+    expect(html).not.toContain("whitespace-normal 2xl:table-cell");
   });
 
   test("keeps promotion badges beside the model name", () => {
@@ -218,6 +218,7 @@ describe("ModelsDirectoryTable", () => {
             officialUsd: 1,
             discountedUsd: 0.8,
             iconKey: "zai",
+            top10: 1,
           },
         ]}
       />
@@ -233,6 +234,8 @@ describe("ModelsDirectoryTable", () => {
     expect(nameRowEnd).toBeGreaterThan(nameRowIndex);
     expect(nameRow).toContain("Limited");
     expect(nameRow).toContain("New release");
+    expect(nameRow).not.toContain("TOP");
+    expect(nameRow).toContain('title="glm-5.3-flash"');
   });
 });
 
