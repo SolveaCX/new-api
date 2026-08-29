@@ -11,9 +11,9 @@ describe("model promotions", () => {
     expect(getModelPromotions("deepseek-v4-flash-0813")).toEqual([]);
     expect(getModelPromotions("glm-5.3-flash-0813")).toEqual([]);
     expect(getModelPromotions("qwen3.8-max")).toEqual([]);
-    expect(getModelPromotions("qwen/qwen3.8-max-free")).toEqual(["free"]);
+    expect(getModelPromotions("qwen/qwen3.8-max-free")).toEqual([]);
     expect(getModelPromotions("kimi-k3")).toEqual(["hot"]);
-    expect(getModelPromotions("ling-3.0-flash-fin")).toEqual(["free"]);
+    expect(getModelPromotions("ling-3.0-flash-fin")).toEqual([]);
     expect(getModelPromotions("gpt-5.5")).toEqual([]);
     expect(getModelPromotions("gpt-5.6-sol")).toEqual(["hot"]);
     expect(getModelPromotions("doubao-seedance-2-5-260628")).toEqual(["hot"]);

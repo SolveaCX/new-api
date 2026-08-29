@@ -26,11 +26,10 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
   const name = modelName.toLowerCase();
   const promotions: ModelPromotion[] = [];
 
-  if (
-    name.includes("free") ||
-    /(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name) ||
-    /(^|[/_.-])ling[-_.]?3\.0[-_.]?flash[-_.]?fin/.test(name)
-  ) {
+  // Keep campaign labels tied to the exact launch IDs. A generic free
+  // substring would incorrectly badge unrelated catalogue variants such as
+  // qwen3.8-max-free and ling-3.0-flash-fin.
+  if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) {
     promotions.push("free");
   }
   if (
@@ -43,9 +42,9 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
   // Keep these patterns explicit so older versions do not inherit the badge.
   if (
     /(^|[/_-])seedance[-_.]?2[-_.]?5(?:[-_.]|$)/.test(name) ||
-    /(^|[/])kimi[-_.]?k3(?:[-_.]|$)/.test(name) ||
-    /(^|[/])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
-    /(^|[/])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(name)
+    /(^|[/_-])kimi[-_.]?k3(?:[-_.]|$)/.test(name) ||
+    /(^|[/_-])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
+    /(^|[/_-])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(name)
   ) {
     promotions.push("hot");
   }

@@ -15,6 +15,8 @@ export type FeaturedSlide = {
   vendor: string;
   /** Poster image; also the still shown before a video decodes. */
   image: string;
+  /** Bundled fallback used when the CDN poster is unavailable. */
+  fallbackImage?: string;
   /** Optional looping clip. Autoplays muted — browsers block audio autoplay. */
   video?: string;
   tags: Record<Locale, string[]>;
@@ -22,6 +24,37 @@ export type FeaturedSlide = {
 };
 
 export const FEATURED_SLIDES: FeaturedSlide[] = [
+  {
+    modelName: "glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    vendor: "Zhipu AI",
+    image: "https://cdn.shulex-voc.com/flatkey/models-featured/glm-5.3-flash.png",
+    fallbackImage: "/assets/models-featured/glm-5.3-flash.png",
+    tags: {
+      en: ["Coding", "Multimodal", "Long Context"],
+      zh: ["编程", "多模态", "长上下文"],
+      es: ["Programación", "Multimodal", "Contexto largo"],
+      fr: ["Code", "Multimodal", "Contexte long"],
+      pt: ["Programação", "Multimodal", "Contexto longo"],
+      ru: ["Программирование", "Мультимодальность", "Длинный контекст"],
+      ja: ["コーディング", "マルチモーダル", "長文コンテキスト"],
+      vi: ["Lập trình", "Đa phương thức", "Ngữ cảnh dài"],
+      de: ["Coding", "Multimodal", "Langer Kontext"],
+      id: ["Coding", "Multimodal", "Konteks panjang"],
+    },
+    blurb: {
+      en: "Ox Alpha, unmasked. GLM-5.3 Flash ran 62 trillion tokens anonymously before Zhipu claimed it - 1M-token multimodal context, open MIT weights, Chinese silicon.",
+      zh: "Ox Alpha，未加掩饰。GLM-5.3 Flash 在智谱认领它之前，曾以匿名状态运行了 62 万亿个 token——100 万 token 多模态上下文、开放 MIT 许可证权重，以及来自中国的硅基实力。",
+      es: "Ox Alpha, sin máscara. GLM-5.3 Flash procesó 62 billones de tokens de forma anónima antes de que Zhipu lo reclamara: contexto multimodal de 1M de tokens, pesos abiertos bajo MIT y silicio chino.",
+      fr: "Ox Alpha, sans masque. GLM-5.3 Flash a exécuté 62 000 milliards de tokens anonymement avant que Zhipu ne le revendique : contexte multimodal d'un million de tokens, poids ouverts sous MIT et silicium chinois.",
+      pt: "Ox Alpha, sem máscara. O GLM-5.3 Flash processou 62 trilhões de tokens anonimamente antes de a Zhipu reivindicá-lo: contexto multimodal de 1M de tokens, pesos abertos sob MIT e silício chinês.",
+      ru: "Ox Alpha без маски. GLM-5.3 Flash анонимно обработал 62 трлн токенов, прежде чем Zhipu заявил права на него: мультимодальный контекст на 1 млн токенов, открытые веса под MIT и китайский кремний.",
+      ja: "Ox Alpha、覆面を脱いだ姿。GLM-5.3 Flash は Zhipu が名乗り出るまで匿名で 62 兆トークンを処理していた——100 万トークンのマルチモーダルコンテキスト、MIT のオープンウェイト、中国発のシリコン。",
+      vi: "Ox Alpha, không che giấu. GLM-5.3 Flash đã xử lý 62 nghìn tỷ token trong ẩn danh trước khi Zhipu nhận mình là chủ nhân — ngữ cảnh đa phương thức 1 triệu token, trọng số mở theo MIT và silicon Trung Quốc.",
+      de: "Ox Alpha, unverhüllt. GLM-5.3 Flash verarbeitete anonym 62 Billionen Tokens, bevor Zhipu es für sich beanspruchte: multimodaler Kontext mit 1 Mio. Tokens, offene MIT-Gewichte und chinesisches Silizium.",
+      id: "Ox Alpha, tanpa penyamaran. GLM-5.3 Flash menjalankan 62 triliun token secara anonim sebelum Zhipu mengakuinya — konteks multimodal 1 juta token, bobot terbuka berlisensi MIT, dan silikon Tiongkok.",
+    },
+  },
   {
     modelName: "seedance-2.5",
     displayName: "Seedance 2.5",
