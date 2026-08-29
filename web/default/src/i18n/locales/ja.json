@@ -6898,6 +6898,8 @@
     "Delete this conversation?": "この会話を削除しますか？",
     "Collapse conversations": "会話を折りたたむ",
     "Expand conversations": "会話を展開",
-    "Deleted conversations cannot be recovered.": "削除した会話は復元できません。"
+    "Deleted conversations cannot be recovered.": "削除した会話は復元できません。",
+    "One connection, All models. Start building with your free credits.": "1つの接続ですべてのモデルを利用できます。無料クレジットで始めましょう。",
+    "Fast": "高速"
   }
 }

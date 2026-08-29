@@ -6898,6 +6898,8 @@
     "Delete this conversation?": "Удалить этот диалог?",
     "Collapse conversations": "Свернуть диалоги",
     "Expand conversations": "Развернуть диалоги",
-    "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить."
+    "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить.",
+    "One connection, All models. Start building with your free credits.": "Одно подключение — все модели. Начните создавать с бесплатными кредитами.",
+    "Fast": "Быстро"
   }
 }

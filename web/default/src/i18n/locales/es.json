@@ -3520,7 +3520,7 @@
     "Press Enter or comma to add tags": "Press Enter or comma to add tags",
     "Press Enter to use \"{{value}}\"": "Press Enter to use \"{{value}}\"",
     "Prevent server-side request forgery attacks": "Prevent server-side request forgery attacks",
-    "Preview": "Preview",
+    "Preview": "Vista previa",
     "Previous": "Previous",
     "Previous branch": "Previous branch",
     "Previous page": "Previous page",
@@ -4239,7 +4239,7 @@
     "Significant outages detected": "Significant outages detected",
     "Signing you in with {{provider}}": "Signing you in with {{provider}}",
     "SiliconFlow": "SiliconFlow",
-    "Simple": "Simple",
+    "Simple": "Sencillo",
     "Simple mode only returns message; status code and error type use system defaults.": "Simple mode only returns message; status code and error type use system defaults.",
     "Simple mode: prune objects by type, e.g. redacted_thinking.": "Simple mode: prune objects by type, e.g. redacted_thinking.",
     "Single Key": "Single Key",
@@ -6898,6 +6898,8 @@
     "Delete this conversation?": "¿Eliminar esta conversación?",
     "Collapse conversations": "Contraer conversaciones",
     "Expand conversations": "Expandir conversaciones",
-    "Deleted conversations cannot be recovered.": "Las conversaciones eliminadas no se pueden recuperar."
+    "Deleted conversations cannot be recovered.": "Las conversaciones eliminadas no se pueden recuperar.",
+    "One connection, All models. Start building with your free credits.": "Una conexión, todos los modelos. Empieza a crear con tus créditos gratuitos.",
+    "Fast": "Rápido"
   }
 }

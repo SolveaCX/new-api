@@ -48,6 +48,7 @@ interface StatCardProps {
   loading?: boolean
   error?: boolean
   action?: ReactNode
+  showIcon?: boolean
 }
 
 const TONE_CLASSES: Record<StatCardTone, string> = {
@@ -213,6 +214,7 @@ export function StatCard(props: StatCardProps) {
   const hasDetails = Boolean(props.details?.length)
   const hasSparkline = Boolean(props.sparkline?.length)
   const hasFooter = hasDetails || hasSparkline
+  const inlineAction = props.showIcon === false && props.action != null
 
   return (
     <div
@@ -225,14 +227,25 @@ export function StatCard(props: StatCardProps) {
       )}
     >
       <div className='flex items-start justify-between gap-1'>
-        <div className='text-muted-foreground flex items-center gap-1.5 text-xs font-medium sm:gap-2'>
-          <Icon
-            className='text-muted-foreground/60 size-3.5 shrink-0'
-            aria-hidden='true'
-          />
+        <div
+          className={cn(
+            'flex items-center gap-1.5 text-xs font-medium sm:gap-2',
+            props.showIcon === false
+              ? 'text-foreground text-[13px] font-normal'
+              : 'text-muted-foreground'
+          )}
+        >
+          {props.showIcon !== false && (
+            <Icon
+              className='text-muted-foreground/60 size-3.5 shrink-0'
+              aria-hidden='true'
+            />
+          )}
           <span className='line-clamp-2 leading-snug'>{props.title}</span>
         </div>
-        {props.action && <div className='shrink-0'>{props.action}</div>}
+        {props.action && !inlineAction && (
+          <div className='shrink-0'>{props.action}</div>
+        )}
       </div>
 
       {props.loading ? (
@@ -251,10 +264,27 @@ export function StatCard(props: StatCardProps) {
         </div>
       ) : (
         <div className='flex flex-col gap-1'>
-          <div className='text-foreground font-mono text-2xl font-semibold tracking-tight break-all tabular-nums'>
-            {props.value}
+          <div className='flex items-end gap-2'>
+            <div
+              className={cn(
+                'text-foreground text-2xl font-semibold tracking-tight break-all tabular-nums',
+                props.showIcon === false ? 'font-sans' : 'font-mono'
+              )}
+            >
+              {props.value}
+            </div>
+            {inlineAction && (
+              <div className='shrink-0 pb-0.5'>{props.action}</div>
+            )}
           </div>
-          <p className='text-muted-foreground/60 text-xs leading-relaxed'>
+          <p
+            className={cn(
+              'text-xs leading-relaxed sm:text-[13px]',
+              props.showIcon === false
+                ? 'text-[#777777]'
+                : 'text-muted-foreground/60'
+            )}
+          >
             {props.description}
           </p>
         </div>
