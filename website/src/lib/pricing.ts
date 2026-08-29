@@ -381,7 +381,7 @@ export function getBestGroupRatio(
   const names = groups.includes("all") ? Object.keys(effective).filter(isVisibleGroup) : groups;
   const ratios = names
     .map((group) => effective[group])
-    .filter((ratio): ratio is number => typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0);
+    .filter((ratio): ratio is number => typeof ratio === "number" && Number.isFinite(ratio) && ratio >= 0);
   return ratios.length > 0 ? Math.min(...ratios) : 1;
 }
 
