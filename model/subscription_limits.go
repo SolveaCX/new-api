@@ -29,9 +29,9 @@ type StandardSubscriptionPlanLimit struct {
 const subscriptionStandardLimitsMigrationKey = "subscription_standard_limits_v4"
 
 var standardSubscriptionPlanLimits = []StandardSubscriptionPlanLimit{
-	{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 45},
+	{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 25},
 	{Title: "Pro", PriceUSD: 30, Window5hUSD: 18, WindowWeekUSD: 45, MonthlyUSD: 90},
-	{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 300},
+	{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 450},
 }
 
 // StandardSubscriptionPlanLimits returns a copy of the product contract.
@@ -41,11 +41,21 @@ func StandardSubscriptionPlanLimits() []StandardSubscriptionPlanLimit {
 	return limits
 }
 
+func standardSubscriptionPlanTitle(title string) string {
+	normalizedTitle := strings.ToLower(strings.TrimSpace(title))
+	// Staging payment plans may be prefixed with [TEST]; treat that explicit
+	// alias as the same standard tier while leaving custom titles untouched.
+	if strings.HasPrefix(normalizedTitle, "[test]") {
+		normalizedTitle = strings.TrimSpace(strings.TrimPrefix(normalizedTitle, "[test]"))
+	}
+	return normalizedTitle
+}
+
 func standardSubscriptionPlanLimit(title string, priceUSD float64, currency string) (StandardSubscriptionPlanLimit, bool) {
 	if currency != "" && !strings.EqualFold(strings.TrimSpace(currency), "USD") {
 		return StandardSubscriptionPlanLimit{}, false
 	}
-	normalizedTitle := strings.ToLower(strings.TrimSpace(title))
+	normalizedTitle := standardSubscriptionPlanTitle(title)
 	for _, limit := range standardSubscriptionPlanLimits {
 		if strings.ToLower(limit.Title) != normalizedTitle {
 			continue
@@ -116,7 +126,11 @@ func loadPersistedQuotaPerUnit(db *gorm.DB) {
 // Go/Pro/Max rows. It deliberately does not create payment plans: provider
 // product IDs, tier ranks, and enablement are operator-owned values. A row is
 // identified by title + USD price so custom plans at the same price remain
-// untouched.
+// untouched. If an operator has accidentally created duplicate rows for one
+// tier, the single enabled row is treated as canonical; multiple enabled (or
+// multiple disabled) rows remain unresolved and are retried on a later start.
+// Active entitlements for a migrated plan receive the same quota snapshot so
+// existing subscribers are governed by the corrected contract immediately.
 func migrateStandardSubscriptionPlanLimits() error {
 	if DB == nil || !DB.Migrator().HasTable(&SubscriptionPlan{}) {
 		return nil
@@ -141,30 +155,53 @@ func migrateStandardSubscriptionPlanLimits() error {
 		if err := tx.Find(&plans).Error; err != nil {
 			return err
 		}
+		limitsByIndex := make(map[int]StandardSubscriptionPlanLimit)
 		candidates := make(map[string][]int)
-		for i := range plans {
-			plan := &plans[i]
-			if _, ok := standardSubscriptionPlanLimit(plan.Title, plan.PriceAmount, plan.Currency); !ok {
-				continue
-			}
-			key := strings.ToLower(strings.TrimSpace(plan.Title))
-			candidates[key] = append(candidates[key], i)
-		}
-		for key, indexes := range candidates {
-			if len(indexes) > 1 {
-				ambiguous = true
-				common.SysLog(fmt.Sprintf("skip standard subscription limit migration for ambiguous plan title %q (%d matching rows)", key, len(indexes)))
-			}
-		}
-		if ambiguous {
-			return nil
-		}
 		for i := range plans {
 			plan := &plans[i]
 			limit, ok := standardSubscriptionPlanLimit(plan.Title, plan.PriceAmount, plan.Currency)
 			if !ok {
 				continue
 			}
+			limitsByIndex[i] = limit
+			key := standardSubscriptionPlanTitle(plan.Title)
+			candidates[key] = append(candidates[key], i)
+		}
+
+		// Resolve each tier independently. A duplicate Pro row must not prevent
+		// the unambiguous Go and Max rows from being repaired.
+		selected := make(map[int]StandardSubscriptionPlanLimit)
+		for key, indexes := range candidates {
+			selectedIndexes := indexes
+			if len(indexes) > 1 {
+				enabledIndexes := make([]int, 0, len(indexes))
+				for _, index := range indexes {
+					if plans[index].Enabled {
+						enabledIndexes = append(enabledIndexes, index)
+					}
+				}
+				switch len(enabledIndexes) {
+				case 1:
+					selectedIndexes = enabledIndexes
+					common.SysLog(fmt.Sprintf("found duplicate standard subscription plan title %q (%d matching rows); selecting the only enabled row", key, len(indexes)))
+				default:
+					ambiguous = true
+					common.SysLog(fmt.Sprintf("skip standard subscription limit migration for ambiguous plan title %q (%d matching rows, %d enabled)", key, len(indexes), len(enabledIndexes)))
+					continue
+				}
+			}
+			for _, index := range selectedIndexes {
+				selected[index] = limitsByIndex[index]
+			}
+		}
+
+		if len(selected) == 0 {
+			return nil
+		}
+		hasSubscriptions := tx.Migrator().HasTable(&UserSubscription{})
+		now := common.GetTimestamp()
+		for i, limit := range selected {
+			plan := &plans[i]
 			matched = true
 			applyStandardSubscriptionPlanLimitWithUnit(plan, limit, quotaPerUnit)
 			updates := map[string]any{
@@ -176,10 +213,23 @@ func migrateStandardSubscriptionPlanLimits() error {
 				"window_week_amount":         plan.WindowWeekAmount,
 				"quota_reset_period":         plan.QuotaResetPeriod,
 				"quota_reset_custom_seconds": plan.QuotaResetCustomSeconds,
-				"updated_at":                 common.GetTimestamp(),
+				"updated_at":                 now,
 			}
 			if err := tx.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(updates).Error; err != nil {
 				return err
+			}
+			if hasSubscriptions {
+				snapshotUpdates := map[string]any{
+					"amount_total":       plan.TotalAmount,
+					"window_5h_amount":   plan.Window5hAmount,
+					"window_week_amount": plan.WindowWeekAmount,
+					"updated_at":         now,
+				}
+				if err := tx.Model(&UserSubscription{}).
+					Where("plan_id = ? AND status = ? AND end_time > ?", plan.Id, SubscriptionEntitlementStatusActive, now).
+					Updates(snapshotUpdates).Error; err != nil {
+					return err
+				}
 			}
 		}
 		if !matched || !hasOptions || ambiguous {
