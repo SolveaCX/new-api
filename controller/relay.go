@@ -889,8 +889,9 @@ func RelayTask(c *gin.Context) {
 		// 订阅计费：快照模型权重，供轮询阶段按加权额做退款/差额结算。
 		if relayInfo.BillingSource == service.BillingSourceSubscription {
 			if bs, ok := relayInfo.Billing.(*service.BillingSession); ok && bs != nil {
-				weight, _ := bs.SubscriptionTaskSnapshot()
+				weight, window := bs.SubscriptionTaskSnapshot()
 				task.PrivateData.BillingContext.SubscriptionWeight = weight
+				task.PrivateData.BillingContext.SubscriptionWindow = window
 			}
 		}
 		task.Quota = result.Quota

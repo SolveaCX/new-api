@@ -126,6 +126,14 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		if err := model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, weightedDelta); err != nil {
 			return err
 		}
+		if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWindow != nil {
+			if _, err := AdjustSubscriptionWindowFromSnapshot(bc.SubscriptionWindow, weightedDelta); err != nil {
+				// Window counters are advisory and fail-open; the monthly pool is
+				// authoritative. Keep the task settlement successful while leaving a
+				// diagnostic trail for operators.
+				common.SysLog(fmt.Sprintf("task %s subscription window compensation failed (tolerated): %v", task.TaskID, err))
+			}
+		}
 		return nil
 	}
 	if delta > 0 {
@@ -460,6 +468,42 @@ func ApplyAcceptedTaskSubscriptionWindowOnce(ctx context.Context, task *model.Ta
 	if task == nil || !taskIsSubscription(task) {
 		return nil
 	}
+	reservedQuota := task.AcceptedAccountingReservedQuota
+	if reservedQuota == 0 {
+		reservedQuota = task.Quota
+	}
+	actualQuota := task.AcceptedAccountingActualQuota
+	if actualQuota == 0 {
+		actualQuota = task.Quota
+	}
+	weightedDelta := taskSubscriptionWeighted(task, int64(actualQuota)) - taskSubscriptionWeighted(task, int64(reservedQuota))
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.SubscriptionWindow != nil && weightedDelta != 0 {
+		snapshot := bc.SubscriptionWindow
+		wasApplied := snapshot.AcceptedAccountingApplied
+		changed, err := AdjustSubscriptionWindowFromSnapshotOnce(snapshot, weightedDelta, task.TaskID)
+		if err != nil {
+			return err
+		}
+		// The Redis step and the durable JSON snapshot cannot share a
+		// transaction. Redis may therefore report "already applied" after a
+		// process crashed between the two writes. In that case, apply the same
+		// ledger delta locally before persisting it; the flag prevents a second
+		// local mutation on later retries. If Redis is unavailable, persisting the
+		// conservative ledger keeps a subsequent refund from leaking the delta.
+		if !wasApplied {
+			if !changed {
+				applySubscriptionWindowSnapshotLedger(snapshot, weightedDelta)
+			}
+			snapshot.AcceptedAccountingApplied = true
+			if err := model.UpdateTaskSubscriptionWindowSnapshot(task.TaskID, snapshot); err != nil {
+				return err
+			}
+		}
+	}
+	// Keep the database ledger for observability and compatibility with old
+	// tasks. Redis provides the cross-node idempotency guard for the actual
+	// counter mutation; when Redis is unavailable the window intentionally
+	// fails open and this ledger still lets the worker finish.
 	_, err := markAcceptedAccountingStepDone(task.TaskID, model.TaskAcceptedAccountingStepSubscriptionWindow)
 	return err
 }

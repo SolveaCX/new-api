@@ -581,6 +581,54 @@ export function SubscriptionsMutateDrawer({
                 />
               </div>
 
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                <FormField
+                  control={form.control}
+                  name='window_5h_amount'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('5-hour window limit (USD)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          step='0.01'
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>{t('0 means disabled')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='window_week_amount'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('7-day window limit (USD)')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min={0}
+                          step='0.01'
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>{t('0 means disabled')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
               {/* 面向用户的价值展示字段（纯展示，不参与计费） */}
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
                 <FormField

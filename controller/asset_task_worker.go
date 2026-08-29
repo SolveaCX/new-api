@@ -263,8 +263,9 @@ func taskBillingContextSnapshot(info *relaycommon.RelayInfo) *model.TaskBillingC
 	}
 	if info.BillingSource == service.BillingSourceSubscription {
 		if bs, ok := info.Billing.(*service.BillingSession); ok && bs != nil {
-			weight, _ := bs.SubscriptionTaskSnapshot()
+			weight, window := bs.SubscriptionTaskSnapshot()
 			snapshot.SubscriptionWeight = weight
+			snapshot.SubscriptionWindow = window
 		}
 	}
 	return snapshot

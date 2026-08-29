@@ -2,6 +2,7 @@ import Link from "next/link";
 import { type Locale, localizePath } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 import { consoleUrl } from "@/lib/origins";
+import { formatUsd, STANDARD_SUBSCRIPTION_LIMITS } from "@/lib/subscription-pricing";
 import { OnlinePaymentMethodPicker } from "./online-payment-method-picker";
 import { OnlineStaticShell } from "./online-static-shell";
 
@@ -24,7 +25,7 @@ const plans = [
     hot: false,
     name: "Starter",
     discountLabel: "80% off",
-    referencePrice: "$45",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.go.monthlyUsd),
     prices: { BRL: 49.9, JPY: 1_500, USD: 10 },
   },
   {
@@ -33,7 +34,7 @@ const plans = [
     hot: true,
     name: "Pro",
     discountLabel: "70% off",
-    referencePrice: "$90",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.pro.monthlyUsd),
     prices: { BRL: 149.9, JPY: 4_500, USD: 30 },
   },
   {
@@ -42,7 +43,7 @@ const plans = [
     hot: false,
     name: "Max",
     discountLabel: "70% off",
-    referencePrice: "$300",
+    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.max.monthlyUsd),
     prices: { BRL: 499, JPY: 15_000, USD: 100 },
   },
 ] as const;
