@@ -401,6 +401,30 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.match(/Most Popular/g)?.length).toBe(1)
   })
 
+  test('renders migrated monthly quota values as strike-through prices for staging plans', () => {
+    const stagingPlans = [
+      {
+        ...plan(21, '[TEST] Go', 10),
+        plan: { ...plan(21, '[TEST] Go', 10).plan, total_amount: 12_500_000 },
+      },
+      {
+        ...plan(22, '[TEST] Pro', 30),
+        plan: { ...plan(22, '[TEST] Pro', 30).plan, total_amount: 45_000_000 },
+      },
+      {
+        ...plan(23, '[TEST] Max', 100),
+        plan: { ...plan(23, '[TEST] Max', 100).plan, total_amount: 225_000_000 },
+      },
+    ]
+    const html = renderWalletCardWithPlans(stagingPlans)
+
+    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$90"')
+    expect(html).toContain('data-subscription-reference-price="$450"')
+    expect(html).not.toContain('data-subscription-reference-price="$45"')
+    expect(html).not.toContain('data-subscription-reference-price="$300"')
+  })
+
   test('keeps the Pro most-popular badge visible when there is an active plan', () => {
     const html = renderWalletCard(
       normalizeSelfSubscriptionData({

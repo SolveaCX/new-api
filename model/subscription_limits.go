@@ -26,7 +26,7 @@ type StandardSubscriptionPlanLimit struct {
 
 // Bump this marker whenever the published standard-plan contract changes so a
 // deployment that already applied an earlier contract gets the new values.
-const subscriptionStandardLimitsMigrationKey = "subscription_standard_limits_v2"
+const subscriptionStandardLimitsMigrationKey = "subscription_standard_limits_v3"
 
 var standardSubscriptionPlanLimits = []StandardSubscriptionPlanLimit{
 	{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 25},
@@ -41,11 +41,22 @@ func StandardSubscriptionPlanLimits() []StandardSubscriptionPlanLimit {
 	return limits
 }
 
+func standardSubscriptionPlanTitle(title string) string {
+	normalizedTitle := strings.ToLower(strings.TrimSpace(title))
+	// Staging payment plans are sometimes prefixed with [TEST] so they cannot
+	// be confused with production plans. Treat that explicit alias as the same
+	// standard tier while leaving arbitrary custom titles untouched.
+	if strings.HasPrefix(normalizedTitle, "[test]") {
+		normalizedTitle = strings.TrimSpace(strings.TrimPrefix(normalizedTitle, "[test]"))
+	}
+	return normalizedTitle
+}
+
 func standardSubscriptionPlanLimit(title string, priceUSD float64, currency string) (StandardSubscriptionPlanLimit, bool) {
 	if currency != "" && !strings.EqualFold(strings.TrimSpace(currency), "USD") {
 		return StandardSubscriptionPlanLimit{}, false
 	}
-	normalizedTitle := strings.ToLower(strings.TrimSpace(title))
+	normalizedTitle := standardSubscriptionPlanTitle(title)
 	for _, limit := range standardSubscriptionPlanLimits {
 		if strings.ToLower(limit.Title) != normalizedTitle {
 			continue
