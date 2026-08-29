@@ -29,6 +29,7 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
     promotions.push("free");
   }
   if (
+    /(^|[/])glm[-_.]?5[-_.]?3$/.test(name) ||
     /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
     /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
   ) {
