@@ -327,7 +327,7 @@ describe("sorting", () => {
     expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["deepseek-v4-pro", "gpt-5.6-sol", "seedance-2.5"]);
   });
 
-  test("keeps models in the same series together within a promotion tier", () => {
+  test("keeps limited models ahead of new-only models", () => {
     const campaignRows = rows([
       { name: "glm-5.3-flash", vendor: "Zhipu AI", inputUsd: 0.12 },
       { name: "deepseek-v4-pro", vendor: "DeepSeek", inputUsd: 1.056 },
@@ -336,8 +336,8 @@ describe("sorting", () => {
 
     expect(sortDirectoryRows(campaignRows, "rank").map((row) => row.name)).toEqual([
       "deepseek-v4-pro",
-      "glm-5.3",
       "glm-5.3-flash",
+      "glm-5.3",
     ]);
   });
 
