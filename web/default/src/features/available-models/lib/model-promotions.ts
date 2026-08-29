@@ -15,6 +15,7 @@ export function getModelPromotions(modelId: string): ModelPromotion[] {
   const promotions: ModelPromotion[] = []
   if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) promotions.push('free')
   if (
+    /(^|[/])glm[-_.]?5[-_.]?3$/.test(name) ||
     /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
     /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
   ) {
@@ -28,7 +29,7 @@ export function getModelPromotions(modelId: string): ModelPromotion[] {
     )
   )
     promotions.push('hot')
-  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) promotions.push('new')
+  if (/(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name)) promotions.push('new')
   return promotions
 }
 

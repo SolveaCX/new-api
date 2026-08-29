@@ -29,6 +29,7 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
     promotions.push("free");
   }
   if (
+    /(^|[/])glm[-_.]?5[-_.]?3$/.test(name) ||
     /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
     /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
   ) {
@@ -39,7 +40,9 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
     /(^|[/])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
     /(^|[/])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(name)
   ) promotions.push("hot");
-  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) promotions.push("new");
+  if (
+    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name)
+  ) promotions.push("new");
   return promotions;
 }
 
