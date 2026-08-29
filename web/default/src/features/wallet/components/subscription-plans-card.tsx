@@ -70,6 +70,7 @@ import {
 } from '../lib/subscription-plan-prices'
 import type { RecallOfferView, TopupInfo } from '../types'
 import { CurrentPlanCard } from './current-plan-card'
+import { PlanLimitSummary } from './plan-limit-summary'
 import { PlanPurchaseDialog } from './plan-purchase-dialog'
 
 interface SubscriptionPlansCardProps {
@@ -981,6 +982,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         {t('Expires {{date}}', { date: recallExpiryDate })}
                       </div>
                     ) : null}
+
+                    <PlanLimitSummary plan={plan} className='mt-4' />
 
                     <div className='grow' />
 

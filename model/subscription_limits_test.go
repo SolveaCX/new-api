@@ -145,5 +145,152 @@ func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *tes
 	require.Equal(t, int64(25000), got.TotalAmount)
 
 	var marker Option
-	require.NoError(t, db.Where(&Option{Key: "subscription_standard_limits_v3"}).First(&marker).Error)
+	require.NoError(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error)
+}
+
+func TestMigrateStandardSubscriptionPlanLimitsContinuesPastDuplicateTier(t *testing.T) {
+	originalDB := DB
+	originalUsingSQLite := common.UsingSQLite
+	originalQuotaPerUnit := common.QuotaPerUnit
+	t.Cleanup(func() {
+		DB = originalDB
+		common.UsingSQLite = originalUsingSQLite
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&Option{}, &SubscriptionPlan{}, &UserSubscription{}))
+	DB = db
+	common.UsingSQLite = true
+	common.QuotaPerUnit = 1000
+
+	goPlan := &SubscriptionPlan{
+		Title:       "[TEST] Go",
+		PriceAmount: 10,
+		Currency:    "USD",
+		TotalAmount: 45000,
+		Enabled:     true,
+	}
+	duplicateProA := &SubscriptionPlan{
+		Title:       "[TEST] Pro",
+		PriceAmount: 30,
+		Currency:    "USD",
+		TotalAmount: 90000,
+		Enabled:     true,
+	}
+	duplicateProB := &SubscriptionPlan{
+		Title:       "[TEST] Pro",
+		PriceAmount: 30,
+		Currency:    "USD",
+		TotalAmount: 90000,
+		Enabled:     true,
+	}
+	maxPlan := &SubscriptionPlan{
+		Title:       "[TEST] Max",
+		PriceAmount: 100,
+		Currency:    "USD",
+		TotalAmount: 300000,
+		Enabled:     true,
+	}
+	for _, plan := range []*SubscriptionPlan{goPlan, duplicateProA, duplicateProB, maxPlan} {
+		require.NoError(t, db.Create(plan).Error)
+	}
+	activeGo := &UserSubscription{
+		PlanId:      goPlan.Id,
+		AmountTotal: goPlan.TotalAmount,
+		Status:      SubscriptionEntitlementStatusActive,
+		EndTime:     9_999_999_999,
+	}
+	require.NoError(t, db.Create(activeGo).Error)
+
+	require.NoError(t, migrateStandardSubscriptionPlanLimits())
+	var gotGo, gotMax, gotPro SubscriptionPlan
+	require.NoError(t, db.First(&gotGo, goPlan.Id).Error)
+	require.NoError(t, db.First(&gotMax, maxPlan.Id).Error)
+	require.NoError(t, db.First(&gotPro, duplicateProA.Id).Error)
+	require.Equal(t, int64(8000), gotGo.Window5hAmount)
+	require.Equal(t, int64(12000), gotGo.WindowWeekAmount)
+	require.Equal(t, int64(25000), gotGo.TotalAmount)
+	require.Equal(t, int64(78000), gotMax.Window5hAmount)
+	require.Equal(t, int64(220000), gotMax.WindowWeekAmount)
+	require.Equal(t, int64(450000), gotMax.TotalAmount)
+	require.Equal(t, int64(90000), gotPro.TotalAmount)
+	require.Zero(t, gotPro.Window5hAmount)
+	require.Zero(t, gotPro.WindowWeekAmount)
+
+	var updatedActiveGo UserSubscription
+	require.NoError(t, db.First(&updatedActiveGo, activeGo.Id).Error)
+	require.Equal(t, int64(25000), updatedActiveGo.AmountTotal)
+	require.NotNil(t, updatedActiveGo.Window5hAmount)
+	require.NotNil(t, updatedActiveGo.WindowWeekAmount)
+	require.Equal(t, int64(8000), *updatedActiveGo.Window5hAmount)
+	require.Equal(t, int64(12000), *updatedActiveGo.WindowWeekAmount)
+
+	var marker Option
+	require.ErrorIs(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error, gorm.ErrRecordNotFound)
+}
+
+func TestMigrateStandardSubscriptionPlanLimitsSelectsEnabledDuplicateTier(t *testing.T) {
+	originalDB := DB
+	originalUsingSQLite := common.UsingSQLite
+	originalQuotaPerUnit := common.QuotaPerUnit
+	t.Cleanup(func() {
+		DB = originalDB
+		common.UsingSQLite = originalUsingSQLite
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&Option{}, &SubscriptionPlan{}, &UserSubscription{}))
+	DB = db
+	common.UsingSQLite = true
+	common.QuotaPerUnit = 1000
+
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v2", Value: "applied"}).Error)
+	duplicateGoA := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 45000}
+	duplicateGoB := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 47000}
+	require.NoError(t, db.Create(duplicateGoA).Error)
+	require.NoError(t, db.Create(duplicateGoB).Error)
+	require.NoError(t, db.Model(&SubscriptionPlan{}).Where("id = ?", duplicateGoA.Id).Update("enabled", false).Error)
+	require.NoError(t, db.Model(&SubscriptionPlan{}).Where("id = ?", duplicateGoB.Id).Update("enabled", true).Error)
+	activeGo := &UserSubscription{
+		PlanId:      duplicateGoB.Id,
+		AmountTotal: duplicateGoB.TotalAmount,
+		Status:      SubscriptionEntitlementStatusActive,
+		EndTime:     9_999_999_999,
+	}
+	require.NoError(t, db.Create(activeGo).Error)
+
+	require.NoError(t, migrateStandardSubscriptionPlanLimits())
+
+	var gotA, gotB SubscriptionPlan
+	require.NoError(t, db.First(&gotA, duplicateGoA.Id).Error)
+	require.NoError(t, db.First(&gotB, duplicateGoB.Id).Error)
+	// The disabled historical duplicate is not the canonical tier row and is
+	// intentionally left untouched.
+	require.Zero(t, gotA.Window5hAmount)
+	require.Zero(t, gotA.WindowWeekAmount)
+	require.Equal(t, int64(45000), gotA.TotalAmount)
+	require.Equal(t, int64(8000), gotB.Window5hAmount)
+	require.Equal(t, int64(12000), gotB.WindowWeekAmount)
+	require.Equal(t, int64(25000), gotB.TotalAmount)
+
+	var updatedSubscription UserSubscription
+	require.NoError(t, db.First(&updatedSubscription, activeGo.Id).Error)
+	require.Equal(t, int64(25000), updatedSubscription.AmountTotal)
+	require.NotNil(t, updatedSubscription.Window5hAmount)
+	require.NotNil(t, updatedSubscription.WindowWeekAmount)
+	require.Equal(t, int64(8000), *updatedSubscription.Window5hAmount)
+	require.Equal(t, int64(12000), *updatedSubscription.WindowWeekAmount)
+
+	var marker Option
+	require.NoError(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error)
 }

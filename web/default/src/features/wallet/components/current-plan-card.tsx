@@ -39,6 +39,7 @@ import type {
   SubscriptionRenewalSource,
 } from '@/features/subscriptions/types'
 import type { WalletSelfSubscriptionData } from '../lib/subscription-plan-lifecycle'
+import { PlanLimitSummary } from './plan-limit-summary'
 import { UsageWindowMeter } from './usage-window-meter'
 
 type CurrentPlanCardProps = {
@@ -264,7 +265,7 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
 
         <a
           href='/usage-logs'
-          className='block rounded-lg focus-visible:outline-none focus-visible:ring-2'
+          className='block rounded-lg focus-visible:ring-2 focus-visible:outline-none'
         >
           <UsageWindowMeter
             label={t('Monthly model quota')}
@@ -272,6 +273,8 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
             secondary
           />
         </a>
+
+        <PlanLimitSummary plan={props.plan} className='mt-2' />
 
         {renewalAction && props.selfData.renewal_source ? (
           <div className='flex justify-end'>

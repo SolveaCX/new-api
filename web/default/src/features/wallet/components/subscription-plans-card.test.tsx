@@ -405,15 +405,30 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const stagingPlans = [
       {
         ...plan(21, '[TEST] Go', 10),
-        plan: { ...plan(21, '[TEST] Go', 10).plan, total_amount: 12_500_000 },
+        plan: {
+          ...plan(21, '[TEST] Go', 10).plan,
+          total_amount: 12_500_000,
+          window_5h_amount: 4_000_000,
+          window_week_amount: 6_000_000,
+        },
       },
       {
         ...plan(22, '[TEST] Pro', 30),
-        plan: { ...plan(22, '[TEST] Pro', 30).plan, total_amount: 45_000_000 },
+        plan: {
+          ...plan(22, '[TEST] Pro', 30).plan,
+          total_amount: 45_000_000,
+          window_5h_amount: 9_000_000,
+          window_week_amount: 22_500_000,
+        },
       },
       {
         ...plan(23, '[TEST] Max', 100),
-        plan: { ...plan(23, '[TEST] Max', 100).plan, total_amount: 225_000_000 },
+        plan: {
+          ...plan(23, '[TEST] Max', 100).plan,
+          total_amount: 225_000_000,
+          window_5h_amount: 39_000_000,
+          window_week_amount: 110_000_000,
+        },
       },
     ]
     const html = renderWalletCardWithPlans(stagingPlans)
@@ -423,6 +438,16 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('data-subscription-reference-price="$450"')
     expect(html).not.toContain('data-subscription-reference-price="$45"')
     expect(html).not.toContain('data-subscription-reference-price="$300"')
+    expect(html).toContain('data-plan-limit="5h"')
+    expect(html).toContain('data-plan-limit="7d"')
+    expect(html).toContain('5-hour window limit (USD)')
+    expect(html).toContain('7-day window limit (USD)')
+    expect(html).toContain('$8')
+    expect(html).toContain('$12')
+    expect(html).toContain('$18')
+    expect(html).toContain('$45')
+    expect(html).toContain('$78')
+    expect(html).toContain('$220')
   })
 
   test('keeps the Pro most-popular badge visible when there is an active plan', () => {
@@ -464,8 +489,21 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('aria-label="Refresh subscription plans"')
   })
 
-  test('renders a read-only current card with correct badges and a linked monthly usage meter only', () => {
-    const html = renderWalletCard(
+  test('renders a read-only current card with configured window caps and a linked monthly usage meter', () => {
+    const plansWithConfiguredWindows = plans.map((item) =>
+      item.plan.id === 2
+        ? {
+            ...item,
+            plan: {
+              ...item.plan,
+              window_5h_amount: 9_000_000,
+              window_week_amount: 22_500_000,
+            },
+          }
+        : item
+    )
+    const html = renderWalletCardWithPlans(
+      plansWithConfiguredWindows,
       normalizeSelfSubscriptionData({
         contract: {
           contract_id: 9,
@@ -540,8 +578,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
     expect(html).not.toContain('data-wallet-usage-meter="5-hour limit"')
     expect(html).not.toContain('data-wallet-usage-meter="7-day limit"')
-    expect(html).not.toContain('5-hour limit')
-    expect(html).not.toContain('7-day limit')
+    expect(html).toContain('data-plan-limit="5h"')
+    expect(html).toContain('data-plan-limit="7d"')
+    expect(html).toContain('$18')
+    expect(html).toContain('$45')
     expect(html).not.toContain('Media generation credits')
     expect(html).toContain('$0.014 / $0.04 used')
     expect(html).not.toContain('3 / 20 used')
@@ -1269,6 +1309,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         plan: {
           ...localizedPlans[0].plan,
           total_amount: 22_500_000,
+          window_5h_amount: 4_000_000,
+          window_week_amount: 6_000_000,
         },
       }
       const html = renderWalletCardWithPlans([
@@ -1278,6 +1320,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
       expect(html).toContain('data-subscription-reference-price="$45"')
       expect(html).not.toContain('¥315')
+      expect(html).toContain('$8')
+      expect(html).toContain('$12')
+      expect(html).not.toContain('¥56')
+      expect(html).not.toContain('¥84')
       expect(html).toContain('R$')
     } finally {
       await testI18n.changeLanguage('en')
