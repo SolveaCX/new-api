@@ -683,12 +683,24 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
             "cleanup": step_block(workflow_text(), "Execute cleanup browser QA job"),
             "candidate": step_block(workflow_text(), "Validate candidate promotion attempts"),
         }
-        expected = [
-            "FLATKEY_QA_TARGET_ENVIRONMENT=${FLATKEY_QA_TARGET_ENVIRONMENT}",
-            "FLATKEY_QA_WEBSITE_ORIGIN=${FLATKEY_QA_WEBSITE_ORIGIN}",
-            "FLATKEY_QA_CONSOLE_ORIGIN=${FLATKEY_QA_CONSOLE_ORIGIN}",
-            "FLATKEY_QA_DOCS_ORIGIN=${FLATKEY_QA_DOCS_ORIGIN}",
-        ]
+        expected = {
+            "main": [
+                "FLATKEY_QA_TARGET_ENVIRONMENT=${FLATKEY_QA_TARGET_ENVIRONMENT}",
+                "FLATKEY_QA_WEBSITE_ORIGIN=${FLATKEY_QA_WEBSITE_ORIGIN}",
+                "FLATKEY_QA_CONSOLE_ORIGIN=${FLATKEY_QA_CONSOLE_ORIGIN}",
+                "FLATKEY_QA_DOCS_ORIGIN=${FLATKEY_QA_DOCS_ORIGIN}",
+            ],
+            "cleanup": [
+                "FLATKEY_QA_TARGET_ENVIRONMENT=${FLATKEY_QA_TARGET_ENVIRONMENT}",
+                "FLATKEY_QA_CONSOLE_ORIGIN=${FLATKEY_QA_CONSOLE_ORIGIN}",
+            ],
+            "candidate": [
+                "FLATKEY_QA_TARGET_ENVIRONMENT=${FLATKEY_QA_TARGET_ENVIRONMENT}",
+                "FLATKEY_QA_WEBSITE_ORIGIN=${FLATKEY_QA_WEBSITE_ORIGIN}",
+                "FLATKEY_QA_CONSOLE_ORIGIN=${FLATKEY_QA_CONSOLE_ORIGIN}",
+                "FLATKEY_QA_DOCS_ORIGIN=${FLATKEY_QA_DOCS_ORIGIN}",
+            ],
+        }
 
         for name, block in blocks.items():
             with self.subTest(path=name):
@@ -696,8 +708,11 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
                 self.assertGreaterEqual(len(commands), 1)
                 for command in commands:
                     self.assertIn("--update-env-vars=", command)
-                    for item in expected:
+                    for item in expected[name]:
                         self.assertIn(item, command)
+                    if name == "cleanup":
+                        self.assertNotIn("FLATKEY_QA_WEBSITE_ORIGIN=", command)
+                        self.assertNotIn("FLATKEY_QA_DOCS_ORIGIN=", command)
 
     def test_execution_overrides_do_not_accept_caller_supplied_origin_job_or_service_names(self):
         text = workflow_text()
