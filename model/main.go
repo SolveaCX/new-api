@@ -308,6 +308,12 @@ func migrateDB() error {
 			return err
 		}
 	}
+	// InitOptionMap runs after InitDB. Load the persisted quota unit before
+	// deriving the standard plan amounts and then restore canonical limits.
+	loadPersistedQuotaPerUnit(DB)
+	if err := migrateStandardSubscriptionPlanLimits(); err != nil {
+		return fmt.Errorf("failed to restore standard subscription plan limits: %w", err)
+	}
 	return migrateStartupInvitationValue()
 }
 
@@ -491,6 +497,12 @@ func migrateDBFast() error {
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
+	}
+	// Keep the fast SQLite and regular startup paths on the same pricing
+	// contract and quota-unit conversion order.
+	loadPersistedQuotaPerUnit(DB)
+	if err := migrateStandardSubscriptionPlanLimits(); err != nil {
+		return fmt.Errorf("failed to restore standard subscription plan limits: %w", err)
 	}
 	if err := migrateStartupInvitationValue(); err != nil {
 		return err

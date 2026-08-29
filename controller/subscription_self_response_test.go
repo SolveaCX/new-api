@@ -986,7 +986,7 @@ func TestRecurringSubscriptionDTOsRequiresSupportForNonActionableProviderStatuse
 	}
 }
 
-func TestGetSubscriptionSelfReturnsCurrentEntitlementQuotaReadModelWithoutShortWindows(t *testing.T) {
+func TestGetSubscriptionSelfReturnsCurrentEntitlementAndShortWindowLimits(t *testing.T) {
 	setupSubscriptionControllerTestDB(t)
 	insertSubscriptionControllerUser(t, 915)
 	now := common.GetTimestamp()
@@ -1071,17 +1071,17 @@ func TestGetSubscriptionSelfReturnsCurrentEntitlementQuotaReadModelWithoutShortW
 	current := data["current_subscription"].(map[string]any)
 	require.NotContains(t, current, "usage_limits")
 	currentSubscription := current["subscription"].(map[string]any)
-	require.NotContains(t, currentSubscription, "window_5h_amount")
-	require.NotContains(t, currentSubscription, "window_week_amount")
+	require.Equal(t, float64(125), currentSubscription["window_5h_amount"])
+	require.Equal(t, float64(900), currentSubscription["window_week_amount"])
+	currentPlan := current["plan"].(map[string]any)
+	require.Equal(t, float64(999), currentPlan["window_5h_amount"])
+	require.Equal(t, float64(9999), currentPlan["window_week_amount"])
 	require.NotContains(t, currentSubscription, "media_credits_total")
 	require.NotContains(t, currentSubscription, "media_credits_used")
-	currentPlan := current["plan"].(map[string]any)
-	require.NotContains(t, currentPlan, "window_5h_amount")
-	require.NotContains(t, currentPlan, "window_week_amount")
 	require.NotContains(t, currentPlan, "media_credits_monthly")
 }
 
-func TestGetSubscriptionSelfReturnsZeroQuotaReadModelWithoutSubscriptionOrShortWindows(t *testing.T) {
+func TestGetSubscriptionSelfReturnsZeroQuotaReadModelWithoutSubscription(t *testing.T) {
 	setupSubscriptionControllerTestDB(t)
 	insertSubscriptionControllerUser(t, 916)
 
@@ -1262,7 +1262,7 @@ func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {
 	require.Equal(t, []string{model.SubscriptionPaymentModeStripeRecurring}, paymentModes[9913])
 }
 
-func TestGetSubscriptionPlansExposesConfiguredUsageLimitsWithoutShortWindowFields(t *testing.T) {
+func TestGetSubscriptionPlansExposesConfiguredUsageLimitsAndShortWindowFields(t *testing.T) {
 	enablePaymentComplianceForSubscriptionControllerTest(t)
 	setupSubscriptionControllerTestDB(t)
 	require.NoError(t, model.DB.Create(&model.SubscriptionPlan{
@@ -1292,8 +1292,8 @@ func TestGetSubscriptionPlansExposesConfiguredUsageLimitsWithoutShortWindowField
 	items := envelope["data"].([]any)
 	require.Len(t, items, 1)
 	plan := items[0].(map[string]any)["plan"].(map[string]any)
-	require.NotContains(t, plan, "window_5h_amount")
-	require.NotContains(t, plan, "window_week_amount")
+	require.Equal(t, float64(500), plan["window_5h_amount"])
+	require.Equal(t, float64(2000), plan["window_week_amount"])
 	require.NotContains(t, plan, "media_credits_monthly")
 }
 

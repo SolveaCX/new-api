@@ -203,7 +203,7 @@ func TestAdminUpdateSubscriptionPlanClearsAndValidatesLocalPrices(t *testing.T) 
 	require.False(t, resp.Success, recorder.Body.String())
 }
 
-func TestAdminCreateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *testing.T) {
+func TestAdminCreateSubscriptionPlanPreservesConfiguredShortWindowAmounts(t *testing.T) {
 	setupSubscriptionPlanControllerLifecycleTestDB(t)
 	confirmSubscriptionPlanPaymentComplianceForTest(t)
 	gin.SetMode(gin.TestMode)
@@ -228,21 +228,21 @@ func TestAdminCreateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.True(t, resp.Success, recorder.Body.String())
-	require.Zero(t, resp.Data.Window5hAmount)
-	require.Zero(t, resp.Data.WindowWeekAmount)
+	require.Equal(t, int64(500), resp.Data.Window5hAmount)
+	require.Equal(t, int64(2000), resp.Data.WindowWeekAmount)
 	require.Zero(t, resp.Data.MediaCreditsMonthly)
 	var rawResp struct {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &rawResp))
-	require.NotContains(t, rawResp.Data, "window_5h_amount")
-	require.NotContains(t, rawResp.Data, "window_week_amount")
+	require.Equal(t, float64(500), rawResp.Data["window_5h_amount"])
+	require.Equal(t, float64(2000), rawResp.Data["window_week_amount"])
 	require.NotContains(t, rawResp.Data, "media_credits_monthly")
 
 	var stored model.SubscriptionPlan
 	require.NoError(t, model.DB.First(&stored, "id = ?", resp.Data.Id).Error)
-	require.Zero(t, stored.Window5hAmount)
-	require.Zero(t, stored.WindowWeekAmount)
+	require.Equal(t, int64(500), stored.Window5hAmount)
+	require.Equal(t, int64(2000), stored.WindowWeekAmount)
 	require.Zero(t, stored.MediaCreditsMonthly)
 }
 
@@ -273,7 +273,7 @@ func TestAdminSubscriptionPlanIgnoresLegacyMediaCredits(t *testing.T) {
 	require.Zero(t, stored.MediaCreditsMonthly)
 }
 
-func TestAdminListSubscriptionPlansOmitsLegacyShortWindowAmounts(t *testing.T) {
+func TestAdminListSubscriptionPlansIncludesShortWindowAmounts(t *testing.T) {
 	setupSubscriptionPlanControllerLifecycleTestDB(t)
 	gin.SetMode(gin.TestMode)
 
@@ -305,12 +305,12 @@ func TestAdminListSubscriptionPlansOmitsLegacyShortWindowAmounts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.True(t, resp.Success, recorder.Body.String())
 	require.Len(t, resp.Data, 1)
-	require.NotContains(t, resp.Data[0].Plan, "window_5h_amount")
-	require.NotContains(t, resp.Data[0].Plan, "window_week_amount")
+	require.Equal(t, float64(500), resp.Data[0].Plan["window_5h_amount"])
+	require.Equal(t, float64(2000), resp.Data[0].Plan["window_week_amount"])
 	require.NotContains(t, resp.Data[0].Plan, "media_credits_monthly")
 }
 
-func TestAdminUpdateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *testing.T) {
+func TestAdminUpdateSubscriptionPlanPersistsShortWindowAmounts(t *testing.T) {
 	setupSubscriptionPlanControllerLifecycleTestDB(t)
 	confirmSubscriptionPlanPaymentComplianceForTest(t)
 	gin.SetMode(gin.TestMode)
@@ -343,8 +343,8 @@ func TestAdminUpdateSubscriptionPlanNormalizesLegacyShortWindowAmountsToZero(t *
 
 	var stored model.SubscriptionPlan
 	require.NoError(t, model.DB.First(&stored, "id = ?", plan.Id).Error)
-	require.Zero(t, stored.Window5hAmount)
-	require.Zero(t, stored.WindowWeekAmount)
+	require.Equal(t, int64(500), stored.Window5hAmount)
+	require.Equal(t, int64(2000), stored.WindowWeekAmount)
 	require.Zero(t, stored.MediaCreditsMonthly)
 }
 

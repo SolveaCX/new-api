@@ -126,7 +126,7 @@ func TestSubscriptionFundingWeightedRounding(t *testing.T) {
 	}
 }
 
-func TestSubscriptionFundingDoesNotExposeLegacyWindowSnapshot(t *testing.T) {
+func TestSubscriptionFundingWindowSnapshotNilWithoutReservation(t *testing.T) {
 	guard := &subscriptionWindowGuard{
 		subId:      12,
 		limit5h:    100,
@@ -139,7 +139,7 @@ func TestSubscriptionFundingDoesNotExposeLegacyWindowSnapshot(t *testing.T) {
 	}
 	funding := &SubscriptionFunding{}
 	if snapshot := funding.WindowSnapshot(); snapshot != nil {
-		t.Fatalf("legacy window snapshot must be inactive, got %+v", snapshot)
+		t.Fatalf("window snapshot without a reservation must be nil, got %+v", snapshot)
 	}
 }
 

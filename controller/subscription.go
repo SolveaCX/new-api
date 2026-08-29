@@ -49,6 +49,8 @@ type AdminSubscriptionPlanResponseDTO struct {
 	MaxPurchasePerUser      int      `json:"max_purchase_per_user"`
 	UpgradeGroup            string   `json:"upgrade_group"`
 	TotalAmount             int64    `json:"total_amount"`
+	Window5hAmount          int64    `json:"window_5h_amount"`
+	WindowWeekAmount        int64    `json:"window_week_amount"`
 	QuotaResetPeriod        string   `json:"quota_reset_period"`
 	QuotaResetCustomSeconds int64    `json:"quota_reset_custom_seconds"`
 	ModelCount              int      `json:"model_count"`
@@ -77,6 +79,8 @@ type SubscriptionPlanPublicDTO struct {
 	MaxPurchasePerUser      int                `json:"max_purchase_per_user"`
 	UpgradeGroup            string             `json:"upgrade_group"`
 	TotalAmount             int64              `json:"total_amount"`
+	Window5hAmount          int64              `json:"window_5h_amount"`
+	WindowWeekAmount        int64              `json:"window_week_amount"`
 	QuotaResetPeriod        string             `json:"quota_reset_period"`
 	QuotaResetCustomSeconds int64              `json:"quota_reset_custom_seconds"`
 	CreatedAt               int64              `json:"created_at"`
@@ -134,26 +138,28 @@ type SubscriptionSelfResponse struct {
 }
 
 type SubscriptionSelfSubscriptionDTO struct {
-	Id            int    `json:"id"`
-	UserId        int    `json:"user_id"`
-	PlanId        int    `json:"plan_id"`
-	ContractId    int64  `json:"contract_id"`
-	CurrentSlot   *int   `json:"current_slot"`
-	AmountTotal   int64  `json:"amount_total"`
-	AmountUsed    int64  `json:"amount_used"`
-	StartTime     int64  `json:"start_time"`
-	EndTime       int64  `json:"end_time"`
-	AccessEndTime int64  `json:"access_end_time"`
-	EndReason     string `json:"end_reason"`
-	Status        string `json:"status"`
-	Source        string `json:"source"`
-	PaymentMode   string `json:"payment_mode"`
-	LastResetTime int64  `json:"last_reset_time"`
-	NextResetTime int64  `json:"next_reset_time"`
-	UpgradeGroup  string `json:"upgrade_group"`
-	PrevUserGroup string `json:"prev_user_group"`
-	CreatedAt     int64  `json:"created_at"`
-	UpdatedAt     int64  `json:"updated_at"`
+	Id               int    `json:"id"`
+	UserId           int    `json:"user_id"`
+	PlanId           int    `json:"plan_id"`
+	ContractId       int64  `json:"contract_id"`
+	CurrentSlot      *int   `json:"current_slot"`
+	AmountTotal      int64  `json:"amount_total"`
+	AmountUsed       int64  `json:"amount_used"`
+	Window5hAmount   *int64 `json:"window_5h_amount,omitempty"`
+	WindowWeekAmount *int64 `json:"window_week_amount,omitempty"`
+	StartTime        int64  `json:"start_time"`
+	EndTime          int64  `json:"end_time"`
+	AccessEndTime    int64  `json:"access_end_time"`
+	EndReason        string `json:"end_reason"`
+	Status           string `json:"status"`
+	Source           string `json:"source"`
+	PaymentMode      string `json:"payment_mode"`
+	LastResetTime    int64  `json:"last_reset_time"`
+	NextResetTime    int64  `json:"next_reset_time"`
+	UpgradeGroup     string `json:"upgrade_group"`
+	PrevUserGroup    string `json:"prev_user_group"`
+	CreatedAt        int64  `json:"created_at"`
+	UpdatedAt        int64  `json:"updated_at"`
 }
 
 type SubscriptionSelfPlanDTO struct {
@@ -174,6 +180,8 @@ type SubscriptionSelfPlanDTO struct {
 	MaxPurchasePerUser      int      `json:"max_purchase_per_user"`
 	UpgradeGroup            string   `json:"upgrade_group"`
 	TotalAmount             int64    `json:"total_amount"`
+	Window5hAmount          int64    `json:"window_5h_amount"`
+	WindowWeekAmount        int64    `json:"window_week_amount"`
 	QuotaResetPeriod        string   `json:"quota_reset_period"`
 	QuotaResetCustomSeconds int64    `json:"quota_reset_custom_seconds"`
 	ModelCount              int      `json:"model_count"`
@@ -390,6 +398,8 @@ func subscriptionPlanPublicDTO(plan *model.SubscriptionPlan) SubscriptionPlanPub
 		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
 		UpgradeGroup:            plan.UpgradeGroup,
 		TotalAmount:             plan.TotalAmount,
+		Window5hAmount:          plan.Window5hAmount,
+		WindowWeekAmount:        plan.WindowWeekAmount,
 		QuotaResetPeriod:        plan.QuotaResetPeriod,
 		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
 		CreatedAt:               plan.CreatedAt,
@@ -578,26 +588,28 @@ func subscriptionSelfSubscriptionDTO(subscription *model.UserSubscription) *Subs
 		return nil
 	}
 	return &SubscriptionSelfSubscriptionDTO{
-		Id:            subscription.Id,
-		UserId:        subscription.UserId,
-		PlanId:        subscription.PlanId,
-		ContractId:    subscription.ContractId,
-		CurrentSlot:   subscription.CurrentSlot,
-		AmountTotal:   subscription.AmountTotal,
-		AmountUsed:    subscription.AmountUsed,
-		StartTime:     subscription.StartTime,
-		EndTime:       subscription.EndTime,
-		AccessEndTime: subscription.AccessEndTime,
-		EndReason:     subscription.EndReason,
-		Status:        subscription.Status,
-		Source:        subscription.Source,
-		PaymentMode:   subscription.PaymentMode,
-		LastResetTime: subscription.LastResetTime,
-		NextResetTime: subscription.NextResetTime,
-		UpgradeGroup:  subscription.UpgradeGroup,
-		PrevUserGroup: subscription.PrevUserGroup,
-		CreatedAt:     subscription.CreatedAt,
-		UpdatedAt:     subscription.UpdatedAt,
+		Id:               subscription.Id,
+		UserId:           subscription.UserId,
+		PlanId:           subscription.PlanId,
+		ContractId:       subscription.ContractId,
+		CurrentSlot:      subscription.CurrentSlot,
+		AmountTotal:      subscription.AmountTotal,
+		AmountUsed:       subscription.AmountUsed,
+		Window5hAmount:   subscription.Window5hAmount,
+		WindowWeekAmount: subscription.WindowWeekAmount,
+		StartTime:        subscription.StartTime,
+		EndTime:          subscription.EndTime,
+		AccessEndTime:    subscription.AccessEndTime,
+		EndReason:        subscription.EndReason,
+		Status:           subscription.Status,
+		Source:           subscription.Source,
+		PaymentMode:      subscription.PaymentMode,
+		LastResetTime:    subscription.LastResetTime,
+		NextResetTime:    subscription.NextResetTime,
+		UpgradeGroup:     subscription.UpgradeGroup,
+		PrevUserGroup:    subscription.PrevUserGroup,
+		CreatedAt:        subscription.CreatedAt,
+		UpdatedAt:        subscription.UpdatedAt,
 	}
 }
 
@@ -623,6 +635,8 @@ func subscriptionSelfPlanDTO(plan *model.SubscriptionPlan) *SubscriptionSelfPlan
 		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
 		UpgradeGroup:            plan.UpgradeGroup,
 		TotalAmount:             plan.TotalAmount,
+		Window5hAmount:          plan.Window5hAmount,
+		WindowWeekAmount:        plan.WindowWeekAmount,
 		QuotaResetPeriod:        plan.QuotaResetPeriod,
 		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
 		ModelCount:              plan.ModelCount,
@@ -659,6 +673,8 @@ func adminSubscriptionPlanResponseDTO(plan *model.SubscriptionPlan) AdminSubscri
 		MaxPurchasePerUser:      plan.MaxPurchasePerUser,
 		UpgradeGroup:            plan.UpgradeGroup,
 		TotalAmount:             plan.TotalAmount,
+		Window5hAmount:          plan.Window5hAmount,
+		WindowWeekAmount:        plan.WindowWeekAmount,
 		QuotaResetPeriod:        plan.QuotaResetPeriod,
 		QuotaResetCustomSeconds: plan.QuotaResetCustomSeconds,
 		ModelCount:              plan.ModelCount,
@@ -1399,6 +1415,39 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 
 type AdminUpsertSubscriptionPlanRequest struct {
 	Plan model.SubscriptionPlan `json:"plan"`
+
+	// planFields retains JSON presence so older console clients that do not know
+	// about short-window limits cannot accidentally erase configured values.
+	planFields map[string]any `json:"-"`
+}
+
+func (r *AdminUpsertSubscriptionPlanRequest) UnmarshalJSON(data []byte) error {
+	type requestAlias struct {
+		Plan model.SubscriptionPlan `json:"plan"`
+	}
+	var decoded requestAlias
+	if err := common.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var envelope struct {
+		Plan map[string]any `json:"plan"`
+	}
+	if err := common.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+	r.Plan = decoded.Plan
+	r.planFields = envelope.Plan
+	return nil
+}
+
+func (r *AdminUpsertSubscriptionPlanRequest) hasPlanField(name string) bool {
+	if r == nil || r.planFields == nil {
+		// Internal callers/tests may construct the request directly; preserve the
+		// historical behavior that all struct fields are considered supplied.
+		return true
+	}
+	_, ok := r.planFields[name]
+	return ok
 }
 
 func AdminCreateSubscriptionPlan(c *gin.Context) {
@@ -1448,8 +1497,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
-	req.Plan.Window5hAmount = 0
-	req.Plan.WindowWeekAmount = 0
+	if req.Plan.Window5hAmount < 0 || req.Plan.WindowWeekAmount < 0 {
+		common.ApiErrorMsg(c, "窗口限额不能为负数")
+		return
+	}
 	req.Plan.MediaCreditsMonthly = 0
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
@@ -1520,8 +1571,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
 	}
-	req.Plan.Window5hAmount = 0
-	req.Plan.WindowWeekAmount = 0
+	if req.Plan.Window5hAmount < 0 || req.Plan.WindowWeekAmount < 0 {
+		common.ApiErrorMsg(c, "窗口限额不能为负数")
+		return
+	}
 	req.Plan.MediaCreditsMonthly = 0
 	req.Plan.UpgradeGroup = strings.TrimSpace(req.Plan.UpgradeGroup)
 	if req.Plan.UpgradeGroup != "" {
@@ -1534,6 +1587,21 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
+	}
+	// Older console clients omit the window fields. Preserve the stored values
+	// for those partial updates while honoring explicit zero as "disabled".
+	if !req.hasPlanField("window_5h_amount") || !req.hasPlanField("window_week_amount") {
+		var existing model.SubscriptionPlan
+		if err := model.DB.Where("id = ?", id).First(&existing).Error; err != nil {
+			apiSubscriptionPlanLifecycleError(c, err)
+			return
+		}
+		if !req.hasPlanField("window_5h_amount") {
+			req.Plan.Window5hAmount = existing.Window5hAmount
+		}
+		if !req.hasPlanField("window_week_amount") {
+			req.Plan.WindowWeekAmount = existing.WindowWeekAmount
+		}
 	}
 
 	err := model.UpdateSubscriptionPlan(&req.Plan)
