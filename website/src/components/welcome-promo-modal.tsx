@@ -12,7 +12,7 @@ type WelcomePromoCopy = {
   topup: string;
   getApiKey: string;
   exploreModels: string;
-  freeToTry: string;
+  freeLimited: string;
   off: string;
   closeLabel: string;
   dialogLabel: string;
@@ -27,7 +27,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Top up your account – additional 80% off",
     getApiKey: "Get API Key",
     exploreModels: "Explore Models",
-    freeToTry: "Free to try",
+    freeLimited: "Free for a limited time",
     off: "55% off",
     closeLabel: "Close promotion",
     dialogLabel: "Free trial promotion",
@@ -40,7 +40,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "充值到账户，额外享受 80% 折扣",
     getApiKey: "获取 API 密钥",
     exploreModels: "探索模型",
-    freeToTry: "免费试用",
+    freeLimited: "限时免费",
     off: "55% 折扣",
     closeLabel: "关闭优惠弹窗",
     dialogLabel: "免费试用优惠",
@@ -53,7 +53,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Recarga tu cuenta y obtén un 80 % de descuento adicional",
     getApiKey: "Obtener clave API",
     exploreModels: "Explorar modelos",
-    freeToTry: "Prueba gratis",
+    freeLimited: "Gratis por tiempo limitado",
     off: "55 % de descuento",
     closeLabel: "Cerrar promoción",
     dialogLabel: "Promoción de prueba gratis",
@@ -66,7 +66,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Rechargez votre compte : 80 % de remise supplémentaire",
     getApiKey: "Obtenir une clé API",
     exploreModels: "Explorer les modèles",
-    freeToTry: "Essai gratuit",
+    freeLimited: "Gratuit pour une durée limitée",
     off: "55 % de remise",
     closeLabel: "Fermer la promotion",
     dialogLabel: "Promotion d'essai gratuit",
@@ -79,7 +79,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Adicione saldo à conta e ganhe 80% de desconto adicional",
     getApiKey: "Obter chave de API",
     exploreModels: "Explorar modelos",
-    freeToTry: "Teste grátis",
+    freeLimited: "Grátis por tempo limitado",
     off: "55% de desconto",
     closeLabel: "Fechar promoção",
     dialogLabel: "Promoção de teste grátis",
@@ -92,7 +92,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Пополните счёт и получите дополнительные 80% скидки",
     getApiKey: "Получить API-ключ",
     exploreModels: "Изучить модели",
-    freeToTry: "Бесплатно",
+    freeLimited: "Бесплатно на ограниченный срок",
     off: "Скидка 55%",
     closeLabel: "Закрыть акцию",
     dialogLabel: "Акция бесплатного пробного периода",
@@ -105,7 +105,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "アカウントにチャージすると、さらに 80% OFF",
     getApiKey: "API キーを取得",
     exploreModels: "モデルを見る",
-    freeToTry: "無料で試す",
+    freeLimited: "期間限定無料",
     off: "55% OFF",
     closeLabel: "キャンペーンを閉じる",
     dialogLabel: "無料トライアルキャンペーン",
@@ -118,7 +118,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Nạp tiền vào tài khoản để được giảm thêm 80%",
     getApiKey: "Lấy API key",
     exploreModels: "Khám phá model",
-    freeToTry: "Dùng thử miễn phí",
+    freeLimited: "Miễn phí có thời hạn",
     off: "Giảm 55%",
     closeLabel: "Đóng khuyến mãi",
     dialogLabel: "Khuyến mãi dùng thử miễn phí",
@@ -131,7 +131,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Laden Sie Ihr Konto auf und erhalten Sie zusätzlich 80 % Rabatt",
     getApiKey: "API-Key abrufen",
     exploreModels: "Modelle entdecken",
-    freeToTry: "Kostenlos testen",
+    freeLimited: "Zeitlich begrenzt kostenlos",
     off: "55 % Rabatt",
     closeLabel: "Aktion schließen",
     dialogLabel: "Aktion zum kostenlosen Testen",
@@ -146,8 +146,8 @@ type ModelCardProps = {
   name: string;
   description: string;
   offer: string;
+  secondaryOffer?: string;
   offerClassName?: string;
-  highlighted?: boolean;
 };
 
 const desktopTitleClassByLocale: Record<Locale, string> = {
@@ -193,11 +193,14 @@ function ModelCard(props: ModelCardProps) {
   return (
     <div className="relative flex h-[clamp(56px,8vh,64px)] w-full items-center gap-2 overflow-hidden rounded-xl border border-white/65 bg-white/35 p-2 shadow-[0_3px_8px_rgba(0,0,0,0.02)] backdrop-blur-sm max-[479px]:h-[clamp(46px,8vh,52px)] lg:h-[86px] lg:gap-4 lg:rounded-2xl lg:p-5">
       <Image src={props.logo} alt={props.logoAlt} width={24} height={24} className="size-5 shrink-0 object-contain max-[479px]:size-[18px] lg:size-6" />
-      <div className="box-border h-auto min-w-0 flex-[1_1_180px] shrink border-r border-black/[0.08] pr-2 lg:h-[46px] lg:w-auto lg:min-w-0 lg:pr-4">
+      <div className="box-border h-auto min-w-0 flex-[1_1_180px] shrink border-r border-black/[0.08] pr-2 lg:w-auto lg:min-w-0 lg:pr-4">
         <p className="truncate text-sm leading-5 font-semibold tracking-[-0.02em] text-black max-[479px]:text-xs max-[479px]:leading-4 lg:text-base lg:leading-6">{props.name}</p>
-        <p className="truncate text-[11px] leading-4 tracking-[-0.01em] text-black/60 max-[479px]:text-[10px] max-[479px]:leading-3 lg:text-[13px] lg:leading-5">{props.description}</p>
+        <p className="break-words text-[11px] leading-4 tracking-[-0.01em] text-black/60 max-[479px]:line-clamp-1 max-[479px]:text-[10px] max-[479px]:leading-3 lg:text-[11px] lg:leading-4">{props.description}</p>
       </div>
-      <span className={["flex h-7 min-w-0 max-w-[140px] shrink-0 items-center justify-center break-words whitespace-normal px-2 text-center font-medium tracking-[-0.02em] max-[479px]:h-6 max-[479px]:max-w-[120px] max-[479px]:px-1 lg:h-auto lg:min-h-[29px] lg:min-w-[101px] lg:max-w-[150px] lg:px-1 lg:leading-5 lg:whitespace-normal", props.offerClassName, props.highlighted ? "rounded-lg bg-[#fab8e5] text-black" : "text-[#5b20d1]"].filter(Boolean).join(" ")}>{props.offer}</span>
+      <div className={["flex min-w-0 max-w-[140px] shrink-0 items-center justify-center text-center max-[479px]:max-w-[120px] lg:min-w-[84px] lg:max-w-[120px]", props.secondaryOffer ? "flex-col gap-1 max-[479px]:gap-0.5" : ""].filter(Boolean).join(" ")}>
+        {props.secondaryOffer ? <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap text-[8px] leading-none font-medium tracking-[-0.01em] text-[#5b20d1] max-[479px]:gap-0.5 max-[479px]:text-[7px] lg:text-[10px]"><span aria-hidden="true" className="size-1 shrink-0 rounded-full bg-[#7c3aed] max-[479px]:size-0.5" />{props.secondaryOffer}</span> : null}
+        <span className={["flex min-w-0 max-w-full items-center justify-center break-words whitespace-normal px-2 text-center font-medium leading-tight tracking-[-0.02em] text-[#5b20d1] max-[479px]:px-1 lg:min-h-[29px] lg:px-1", props.offerClassName].filter(Boolean).join(" ")}>{props.offer}</span>
+      </div>
     </div>
   );
 }
@@ -297,7 +300,7 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
               </div>
             </div>
             <div className="grid content-start gap-2 lg:content-normal lg:gap-3">
-              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeToTry} offerClassName={offerTextClassByLocale[locale]} highlighted />
+              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeLimited} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Pro" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/zai.svg" logoAlt="GLM" name="GLM 5.3flash" description={copy.multimodalModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
             </div>
