@@ -292,6 +292,9 @@ const FEATURED_MODEL_STRIP = [
   ["claude.svg", "claude-opus-5", "Claude · reasoning model"],
 ] as const;
 
+const IMAGE_SELECTED_MODEL = "gpt-image-2";
+const VIDEO_SELECTED_MODEL = "seedance-2.5";
+
 type IntelligenceCopy = {
   title: string;
   eyebrow: string;
@@ -791,7 +794,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
                     <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-flash</strong><span>DeepSeek · reasoning model</span></div></div>
                     <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/claude.svg" alt="" /><div className="model-card-copy"><strong>Claude</strong><span>reasoning + coding</span></div><span className="model-card-price">$0.8 / 1M tokens</span></div>
+                    <div className="model-card selected"><img src="/assets/logos/claude.svg" alt="" /><div className="model-card-copy"><strong>claude-opus-5</strong><span>Claude · reasoning model</span></div><span className="model-card-price">$4.5 / 1M tokens</span></div>
                     <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · multimodal model</span></div></div>
                     <div className="model-card"><img src="/assets/logos/zai.svg" alt="" /><div className="model-card-copy"><strong>z-ai/glm-5.3-flash</strong><span>dal modelGLM · multim</span></div></div>
                   </div>
@@ -818,7 +821,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <div className="intelligence-media-body">
                       <img className="intelligence-result-media" src="/assets/home-tabs/image-fashion-result.png" alt="Fashion image generated from the headphones reference" />
                       <div className="media-metrics">
-                        <div className="media-metric"><span>Model</span><strong>nano-banana</strong></div>
+                        <div className="media-metric"><span>Model</span><strong>{IMAGE_SELECTED_MODEL}</strong></div>
                         <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
                         <div className="media-metric"><span>One invoice</span><strong>$0.06</strong></div>
                       </div>
@@ -826,12 +829,12 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
                   </div>
                   <div className="intelligence-models">
-                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-pro</strong><span>DeepSeek · reasoning model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>nano-banana-pro-preview</strong><span>Google · image model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>gemini-3.1-flash-image</strong><span>Google · image model</span></div></div>
                     <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>OpenAI/image-2</strong><span>OpenAI · image model</span></div><span className="model-card-price">$4 / 1M tokens</span></div>
-                    <div className="model-card"><img src="/assets/logos/minimax.svg" alt="" /><div className="model-card-copy"><strong>MiniMax-H3</strong><span>MiniMax · video generation model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/qwen.svg" alt="" /><div className="model-card-copy"><strong>qwen/qwen3.8-max</strong><span>Qwen · reasoning model</span></div></div>
+                    <div className="model-card selected"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>{IMAGE_SELECTED_MODEL}</strong><span>OpenAI · image model</span></div><span className="model-card-price">$4 / 1M tokens</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>imagen-4.0-ultra-generate-001</strong><span>Google · image model</span></div></div>
+                    <div className="model-card"><span className="model-placeholder" aria-hidden="true">F</span><div className="model-card-copy"><strong>flux-2-pro</strong><span>Black Forest Labs · image model</span></div></div>
                   </div>
                   <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
                     <line y1="100" x2="80" y2="100" stroke="url(#image-line)" />
@@ -857,7 +860,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                         <source src="/assets/home-tabs/video-f1-result.mp4" type="video/mp4" />
                       </video>
                       <div className="media-metrics">
-                        <div className="media-metric"><span>Model</span><strong>Seedance-2.5</strong></div>
+                        <div className="media-metric"><span>Model</span><strong>{VIDEO_SELECTED_MODEL}</strong></div>
                         <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
                         <div className="media-metric"><span>One invoice</span><strong>$0.16</strong></div>
                       </div>
@@ -865,12 +868,12 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
                   </div>
                   <div className="intelligence-models">
-                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-pro</strong><span>DeepSeek · reasoning model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>sora-2</strong><span>OpenAI · video model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/minimax.svg" alt="" /><div className="model-card-copy"><strong>MiniMax-H3</strong><span>MiniMax · video model</span></div></div>
                     <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/bytedance.svg" alt="" /><div className="model-card-copy"><strong>ByteDance/<br />seedance-2.5</strong><span>ByteDance · video model</span></div><span className="model-card-price">$0.084 / 1M</span></div>
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · multimodal model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/qwen.svg" alt="" /><div className="model-card-copy"><strong>qwen/qwen3.8-max</strong><span>Qwen · reasoning model</span></div></div>
+                    <div className="model-card selected"><img src="/assets/logos/bytedance.svg" alt="" /><div className="model-card-copy"><strong>{VIDEO_SELECTED_MODEL}</strong><span>ByteDance · video model</span></div><span className="model-card-price">$0.084 / 1M</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>veo-3.1-generate-preview</strong><span>Google · video model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/kuaishou.svg" alt="" /><div className="model-card-copy"><strong>kling-2.5-pro</strong><span>Kuaishou · video model</span></div></div>
                   </div>
                   <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
                     <line y1="100" x2="80" y2="100" stroke="url(#video-line)" />

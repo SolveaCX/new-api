@@ -11,6 +11,14 @@ function hrefBeforeText(html: string, text: string): string {
   return matches[matches.length - 1][1].replaceAll("&amp;", "&");
 }
 
+function panelMarkup(html: string, panelClass: string, nextPanelClass?: string): string {
+  const start = html.indexOf(panelClass);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = nextPanelClass ? html.indexOf(nextPanelClass, start) : html.length;
+  expect(end).toBeGreaterThan(start);
+  return html.slice(start, end);
+}
+
 describe("OnlineHomePage", () => {
   const signupHref = "https://console.flatkey.ai/sign-up?lng=en";
   const overviewHref =
@@ -49,5 +57,38 @@ describe("OnlineHomePage", () => {
     expect(hrefBeforeText(html, "最高领取 $40 免费额度")).toBe(
       "https://console.flatkey.ai/sign-up?redirect=%2Fdashboard%2Foverview&lng=zh",
     );
+  });
+
+  test("uses task-specific models and keeps each media result aligned with its selected model", async () => {
+    const { OnlineHomePage } = await import("./online-home-page");
+    const html = renderToStaticMarkup(
+      await OnlineHomePage({ locale: "en" }),
+    );
+    const imagePanel = panelMarkup(
+      html,
+      '<div class="intelligence-panel intelligence-panel-media intelligence-panel-image"',
+      '<div class="intelligence-panel intelligence-panel-media intelligence-panel-video"',
+    );
+    const videoPanel = panelMarkup(
+      html,
+      '<div class="intelligence-panel intelligence-panel-media intelligence-panel-video"',
+      '<section class="tools-intro"',
+    );
+
+    expect(imagePanel).toContain("nano-banana-pro-preview");
+    expect(imagePanel).toContain("gemini-3.1-flash-image");
+    expect(imagePanel).toContain("imagen-4.0-ultra-generate-001");
+    expect(imagePanel).toContain("flux-2-pro");
+    expect(imagePanel.match(/gpt-image-2/g)?.length).toBe(2);
+    expect(imagePanel).not.toContain("deepseek-v4-pro");
+    expect(imagePanel).not.toContain("MiniMax-H3");
+
+    expect(videoPanel).toContain("sora-2");
+    expect(videoPanel).toContain("MiniMax-H3");
+    expect(videoPanel).toContain("veo-3.1-generate-preview");
+    expect(videoPanel).toContain("kling-2.5-pro");
+    expect(videoPanel.match(/seedance-2.5/g)?.length).toBe(2);
+    expect(videoPanel).not.toContain("google/gemini-3.7-flash");
+    expect(videoPanel).not.toContain("qwen/qwen3.8-max");
   });
 });
