@@ -96,11 +96,7 @@ export function UsageMetrics() {
         {items.map((item) => (
           <StaggerItem
             key={item.key}
-            className={`rounded-2xl border border-black/[0.1] px-6 py-4 dark:border-white/10 ${
-              item.key === 'balance'
-                ? 'bg-[#f9f4ff] dark:border-violet-300/25 dark:bg-violet-950/45'
-                : 'bg-card dark:bg-[#242426]'
-            }`}
+            className='bg-card rounded-2xl border border-black/[0.1] px-6 py-4 dark:border-white/10 dark:bg-[#242426]'
           >
             <StatCard
               title={item.title}
