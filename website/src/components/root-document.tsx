@@ -3,6 +3,7 @@ import Script from "next/script";
 import type { ReactNode } from "react";
 import { GoogleOneTapPrompt } from "@/components/google-one-tap-prompt";
 import { SiteConfigProvider } from "@/components/site-config-provider";
+import { WelcomePromoModal } from "@/components/welcome-promo-modal";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
 import { localeLanguageTag, type Locale } from "@/lib/locales";
 import { SITE_ORIGIN, consoleUrl } from "@/lib/origins";
@@ -217,6 +218,7 @@ export function RootDocument({
         />
         <SiteConfigProvider docsUrl={docsUrl} announcements={announcements}>
           {children}
+          <WelcomePromoModal locale={lang} />
         </SiteConfigProvider>
         <Script
           id="solvea-livechat-bootstrap"
