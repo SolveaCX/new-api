@@ -6900,6 +6900,22 @@
     "Expand conversations": "Развернуть диалоги",
     "Deleted conversations cannot be recovered.": "Удалённые диалоги невозможно восстановить.",
     "One connection, All models. Start building with your free credits.": "Одно подключение — все модели. Начните создавать с бесплатными кредитами.",
-    "Fast": "Быстро"
+    "Fast": "Быстро",
+    "Human verification": "Проверка пользователя",
+    "Rotate the image until it is upright.": "Поверните изображение в правильное положение.",
+    "Drag the slider until the puzzle piece fits.": "Перетащите ползунок, чтобы совместить фрагмент с вырезом.",
+    "Verification type": "Тип проверки",
+    "Slide puzzle": "Пазл с ползунком",
+    "Slide": "Перетащить",
+    "Rotate image": "Поворот изображения",
+    "Rotate": "Повернуть",
+    "Slide puzzle verification image": "Изображение для проверки пазлом",
+    "Drag the puzzle piece": "Перетащите фрагмент пазла",
+    "Rotation verification image": "Изображение для проверки поворотом",
+    "Rotate the image": "Поверните изображение",
+    "Unable to load verification. Please try again.": "Не удалось загрузить проверку. Повторите попытку.",
+    "Verification failed. A new challenge has been loaded.": "Проверка не пройдена. Загружено новое задание.",
+    "Refresh challenge": "Обновить задание",
+    "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта."
   }
 }

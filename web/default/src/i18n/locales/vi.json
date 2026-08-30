@@ -6900,6 +6900,22 @@
     "Expand conversations": "Mở rộng cuộc trò chuyện",
     "Deleted conversations cannot be recovered.": "Không thể khôi phục các cuộc trò chuyện đã xóa.",
     "One connection, All models. Start building with your free credits.": "Một kết nối, mọi mô hình. Bắt đầu xây dựng với tín dụng miễn phí.",
-    "Fast": "Nhanh"
+    "Fast": "Nhanh",
+    "Human verification": "Xác minh người dùng",
+    "Rotate the image until it is upright.": "Xoay hình ảnh cho đến khi đúng chiều.",
+    "Drag the slider until the puzzle piece fits.": "Kéo thanh trượt cho đến khi mảnh ghép khớp với vị trí trống.",
+    "Verification type": "Loại xác minh",
+    "Slide puzzle": "Ghép hình kéo trượt",
+    "Slide": "Kéo",
+    "Rotate image": "Xoay hình ảnh",
+    "Rotate": "Xoay",
+    "Slide puzzle verification image": "Hình ảnh xác minh ghép hình kéo trượt",
+    "Drag the puzzle piece": "Kéo mảnh ghép",
+    "Rotation verification image": "Hình ảnh xác minh xoay",
+    "Rotate the image": "Xoay hình ảnh",
+    "Unable to load verification. Please try again.": "Không thể tải xác minh. Vui lòng thử lại.",
+    "Verification failed. A new challenge has been loaded.": "Xác minh thất bại. Một thử thách mới đã được tải.",
+    "Refresh challenge": "Làm mới thử thách",
+    "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản."
   }
 }

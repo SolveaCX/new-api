@@ -442,3 +442,10 @@ const (
 	MsgCustomOAuthBindingNotFound   = "custom_oauth.binding_not_found"
 	MsgCustomOAuthProviderIdInvalid = "custom_oauth.provider_id_field_invalid"
 )
+
+// Registration CAPTCHA messages
+const (
+	MsgRegistrationCaptchaRequired    = "registration_captcha.required"
+	MsgRegistrationCaptchaInvalid     = "registration_captcha.invalid"
+	MsgRegistrationCaptchaUnavailable = "registration_captcha.unavailable"
+)

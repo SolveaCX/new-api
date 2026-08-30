@@ -72,6 +72,7 @@ require (
 	github.com/phuslu/iploc v1.0.20260701
 	github.com/stripe/stripe-go/v86 v86.1.1
 	github.com/waffo-com/waffo-pancake-sdk-go v0.3.1
+	github.com/wenlng/go-captcha/v2 v2.0.5
 	google.golang.org/api v0.290.0
 	gorm.io/hints v1.1.2
 )
@@ -106,6 +107,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
