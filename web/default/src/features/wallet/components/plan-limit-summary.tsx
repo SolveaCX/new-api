@@ -38,40 +38,49 @@ function formatUSDQuota(quota: number): string {
 export function PlanLimitSummary(props: PlanLimitSummaryProps) {
   const { t } = useTranslation()
 
-  const items = [
+  const windows = [
+    { key: '5h' as const, amount: Number(props.plan.window_5h_amount || 0) },
     {
-      key: '5h',
-      label: t('5-hour window limit (USD)'),
-      amount: Number(props.plan.window_5h_amount || 0),
-    },
-    {
-      key: '7d',
-      label: t('7-day window limit (USD)'),
+      key: '7d' as const,
       amount: Number(props.plan.window_week_amount || 0),
     },
-  ].filter((item) => item.amount > 0)
+  ].filter((window) => window.amount > 0)
 
-  if (items.length === 0) return null
+  if (windows.length === 0) return null
+
+  let summary: string
+  if (windows.length === 2) {
+    summary = t('Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d', {
+      fiveHour: formatUSDQuota(windows[0].amount),
+      week: formatUSDQuota(windows[1].amount),
+    })
+  } else if (windows[0].key === '5h') {
+    summary = t('Short-term cap: {{value}} / 5h', {
+      value: formatUSDQuota(windows[0].amount),
+    })
+  } else {
+    summary = t('Short-term cap: {{value}} / 7d', {
+      value: formatUSDQuota(windows[0].amount),
+    })
+  }
 
   return (
-    <dl
+    <div
+      data-plan-limit-summary='true'
       className={cn(
-        'grid grid-cols-1 gap-2 text-xs sm:grid-cols-2',
+        'border-primary/20 rounded-lg border bg-[#f0ebfa] px-4 py-3 dark:bg-[#5b21b6]/20',
         props.className
       )}
     >
-      {items.map((item) => (
-        <div
-          key={item.key}
-          data-plan-limit={item.key}
-          className='border-border/60 bg-muted/30 rounded-lg border px-3 py-2'
-        >
-          <dt className='text-muted-foreground truncate'>{item.label}</dt>
-          <dd className='mt-1 font-medium tabular-nums'>
-            {formatUSDQuota(item.amount)}
-          </dd>
-        </div>
-      ))}
-    </dl>
+      <div
+        data-plan-limit-label='all-models'
+        className='font-mono text-[10px] font-semibold tracking-[0.14em] text-[#4c1d95] uppercase dark:text-[#c4b5fd]'
+      >
+        {t('All models')}
+      </div>
+      <p className='text-foreground mt-2 text-sm leading-relaxed wrap-break-word'>
+        {summary}
+      </p>
+    </div>
   )
 }

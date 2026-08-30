@@ -45,10 +45,10 @@ times; this change does not touch that component or its layout.
 
 ## Internationalization
 
-Add the following source keys to all eight locale files (English is the source
-language; each other locale receives a real translation):
+Reuse the existing `All models` source key and add the following three keys to
+all eight locale files (English is the source language; each other locale
+receives a real translation):
 
-- `All models`
 - `Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d`
 - `Short-term cap: {{value}} / 5h`
 - `Short-term cap: {{value}} / 7d`

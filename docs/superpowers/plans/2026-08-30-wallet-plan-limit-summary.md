@@ -1,10 +1,10 @@
 # Wallet Plan Limit Summary Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the authenticated wallet's plan-card short-window limits use the approved pricing-card panel and copy while keeping live usage meters unchanged.
 
-**Architecture:** Keep \`PlanLimitSummary\` as the single presentation boundary for \`window_5h_amount\` and \`window_week_amount\`. Convert quota units to fixed-USD strings, choose a combined or single translated sentence from the available positive windows, and render one responsive tinted panel. Add the four literal i18n keys to every console locale; no plan values are hardcoded in the UI.
+**Architecture:** Keep `PlanLimitSummary` as the single presentation boundary for `window_5h_amount` and `window_week_amount`. Convert quota units to fixed-USD strings, choose a combined or single translated sentence from the available positive windows, and render one responsive tinted panel. Reuse the existing `All models` key and add the three short-term sentence keys to every console locale; no plan values are hardcoded in the UI.
 
 **Tech Stack:** React 19, TypeScript, react-i18next, Tailwind CSS, Bun test, ESLint, TypeScript project references.
 
@@ -13,12 +13,12 @@
 ### Task 1: Lock the approved summary contract with failing tests
 
 **Files:**
-- Modify: \`web/default/src/features/wallet/components/subscription-plans-card.test.tsx:404-451\`
-- Modify: \`web/default/src/features/wallet/components/subscription-plans-card.test.tsx\` (add a focused direct-render helper near the existing wallet render helpers)
+- Modify: `web/default/src/features/wallet/components/subscription-plans-card.test.tsx:404-451`
+- Modify: `web/default/src/features/wallet/components/subscription-plans-card.test.tsx` (add a focused direct-render helper near the existing wallet render helpers)
 
-- [ ] **Step 1: Replace old independent-box assertions with panel assertions**
+- [x] **Step 1: Replace old independent-box assertions with panel assertions**
 
-In the existing \`renders migrated monthly quota values as strike-through prices for staging plans\` test, keep the six dollar-value assertions and replace the old label assertions with:
+In the existing `renders migrated monthly quota values as strike-through prices for staging plans` test, keep the six dollar-value assertions and replace the old label assertions with:
 
 ~~~tsx
 expect(html).toContain('data-plan-limit-summary="true"')
@@ -30,11 +30,13 @@ expect(html).not.toContain('5-hour window limit (USD)')
 expect(html).not.toContain('7-day window limit (USD)')
 ~~~
 
-The existing \`data-plan-limit="5h"\` and \`data-plan-limit="7d"\` checks should be removed because the compact summary has one sentence rather than two independent boxes.
+The existing `data-plan-limit="5h"` and `data-plan-limit="7d"` checks should be removed because the compact summary has one sentence rather than two independent boxes.
 
-- [ ] **Step 2: Add a direct renderer and single-window test**
+Also update the later `renders current monthly and short-window usage meters with short windows side by side` test: keep its `data-wallet-usage-meter` assertions (those protect the live meters), but replace its two `data-plan-limit` assertions with one `data-plan-limit-summary="true"` assertion so the test does not depend on the removed box instrumentation.
 
-Import \`PlanLimitSummary\` beside the other wallet components and add this helper beside \`renderWalletCardWithPlans\`:
+- [x] **Step 2: Add a direct renderer and single-window test**
+
+Import `PlanLimitSummary` beside the other wallet components and add this helper beside `renderWalletCardWithPlans`:
 
 ~~~tsx
 function renderPlanLimitSummary(plan: {
@@ -62,35 +64,34 @@ test('renders only the configured window in a compact summary', () => {
 })
 ~~~
 
-- [ ] **Step 3: Run the focused test and verify the expected red state**
+- [x] **Step 3: Run the focused test and verify the expected red state**
 
-From \`web/default\`, run:
+From `web/default`, run:
 
 ~~~bash
 bun test src/features/wallet/components/subscription-plans-card.test.tsx
 ~~~
 
-Expected: the new assertions fail because the current renderer emits two labeled boxes and no compact-panel marker or \`Short-term ...\` sentence. Fix only test setup errors; do not change production code before observing this feature failure.
+Expected: the new assertions fail because the current renderer emits two labeled boxes and no compact-panel marker or `Short-term ...` sentence. Fix only test setup errors; do not change production code before observing this feature failure.
 
 ### Task 2: Implement the compact, data-driven summary and localized copy
 
 **Files:**
-- Modify: \`web/default/src/features/wallet/components/plan-limit-summary.tsx:24-77\`
-- Modify: \`web/default/src/i18n/locales/en.json\`
-- Modify: \`web/default/src/i18n/locales/zh.json\`
-- Modify: \`web/default/src/i18n/locales/fr.json\`
-- Modify: \`web/default/src/i18n/locales/ru.json\`
-- Modify: \`web/default/src/i18n/locales/ja.json\`
-- Modify: \`web/default/src/i18n/locales/vi.json\`
-- Modify: \`web/default/src/i18n/locales/es.json\`
-- Modify: \`web/default/src/i18n/locales/pt.json\`
+- Modify: `web/default/src/features/wallet/components/plan-limit-summary.tsx:24-77`
+- Modify: `web/default/src/i18n/locales/en.json`
+- Modify: `web/default/src/i18n/locales/zh.json`
+- Modify: `web/default/src/i18n/locales/fr.json`
+- Modify: `web/default/src/i18n/locales/ru.json`
+- Modify: `web/default/src/i18n/locales/ja.json`
+- Modify: `web/default/src/i18n/locales/vi.json`
+- Modify: `web/default/src/i18n/locales/es.json`
+- Modify: `web/default/src/i18n/locales/pt.json`
 
-- [ ] **Step 1: Add the four source keys and real translations**
+- [x] **Step 1: Reuse the existing label key and add three real translations**
 
-Add these entries to every locale's \`translation\` object. Keep placeholder names exactly \`fiveHour\`, \`week\`, and \`value\`:
+The `All models` key already exists in every locale and should be reused. Add these three entries to every locale's `translation` object. Keep placeholder names exactly `fiveHour`, `week`, and `value`:
 
 ~~~json
-"All models": "All models",
 "Short-term cap: {{value}} / 5h": "Short-term cap: {{value}} / 5h",
 "Short-term cap: {{value}} / 7d": "Short-term cap: {{value}} / 7d",
 "Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d": "Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d"
@@ -99,20 +100,20 @@ Add these entries to every locale's \`translation\` object. Keep placeholder nam
 Use these translated values in the non-English files:
 
 ~~~text
-zh: 全部模型; 短期上限：{{value}} / 5 小时; 短期上限：{{value}} / 7 天; 短期上限：{{fiveHour}} / 5 小时 · {{week}} / 7 天
-fr: Tous les modèles; Plafond à court terme : {{value}} / 5 h; Plafond à court terme : {{value}} / 7 j; Plafonds à court terme : {{fiveHour}} / 5 h · {{week}} / 7 j
-ru: Все модели; Краткосрочный лимит: {{value}} / 5 ч; Краткосрочный лимит: {{value}} / 7 д; Краткосрочные лимиты: {{fiveHour}} / 5 ч · {{week}} / 7 д
-ja: すべてのモデル; 短期上限：{{value}} / 5時間; 短期上限：{{value}} / 7日; 短期上限：{{fiveHour}} / 5時間 · {{week}} / 7日
-vi: Tất cả model; Hạn mức ngắn hạn: {{value}} / 5 giờ; Hạn mức ngắn hạn: {{value}} / 7 ngày; Hạn mức ngắn hạn: {{fiveHour}} / 5 giờ · {{week}} / 7 ngày
-es: Todos los modelos; Límite a corto plazo: {{value}} / 5 h; Límite a corto plazo: {{value}} / 7 d; Límites a corto plazo: {{fiveHour}} / 5 h · {{week}} / 7 d
-pt: Todos os modelos; Limite de curto prazo: {{value}} / 5 h; Limite de curto prazo: {{value}} / 7 d; Limites de curto prazo: {{fiveHour}} / 5 h · {{week}} / 7 d
+zh: 短期上限：{{value}} / 5 小时; 短期上限：{{value}} / 7 天; 短期上限：{{fiveHour}} / 5 小时 · {{week}} / 7 天
+fr: Plafond à court terme : {{value}} / 5 h; Plafond à court terme : {{value}} / 7 j; Plafonds à court terme : {{fiveHour}} / 5 h · {{week}} / 7 j
+ru: Краткосрочный лимит: {{value}} / 5 ч; Краткосрочный лимит: {{value}} / 7 д; Краткосрочные лимиты: {{fiveHour}} / 5 ч · {{week}} / 7 д
+ja: 短期上限：{{value}} / 5時間; 短期上限：{{value}} / 7日; 短期上限：{{fiveHour}} / 5時間 · {{week}} / 7日
+vi: Hạn mức ngắn hạn: {{value}} / 5 giờ; Hạn mức ngắn hạn: {{value}} / 7 ngày; Hạn mức ngắn hạn: {{fiveHour}} / 5 giờ · {{week}} / 7 ngày
+es: Límite a corto plazo: {{value}} / 5 h; Límite a corto plazo: {{value}} / 7 d; Límites a corto plazo: {{fiveHour}} / 5 h · {{week}} / 7 d
+pt: Limite de curto prazo: {{value}} / 5 h; Limite de curto prazo: {{value}} / 7 d; Limites de curto prazo: {{fiveHour}} / 5 h · {{week}} / 7 d
 ~~~
 
-The four values in each line are ordered as \`All models\`, singular 5h, singular 7d, combined.
+The three values in each line are ordered as singular 5h, singular 7d, combined.
 
-- [ ] **Step 2: Refactor \`PlanLimitSummary\` to one responsive panel**
+- [x] **Step 2: Refactor `PlanLimitSummary` to one responsive panel**
 
-Keep \`formatUSDQuota\` and positive-value filtering. Build a typed \`windows\` array, return \`null\` when it is empty, choose the combined key when both windows exist and the matching singular key otherwise, then render one panel:
+Keep `formatUSDQuota` and positive-value filtering. Build a typed `windows` array, return `null` when it is empty, choose the combined key when both windows exist and the matching singular key otherwise, then render one panel:
 
 ~~~tsx
 const windows = [
@@ -159,9 +160,9 @@ return (
 )
 ~~~
 
-Do not change \`CurrentPlanCard\`, \`UsageWindowMeter\`, or the \`PlanLimitSummary\` call site.
+Do not change `CurrentPlanCard`, `UsageWindowMeter`, or the `PlanLimitSummary` call site.
 
-- [ ] **Step 3: Run the focused test and verify green**
+- [x] **Step 3: Run the focused test and verify green**
 
 ~~~bash
 bun test src/features/wallet/components/subscription-plans-card.test.tsx
@@ -172,18 +173,18 @@ Expected: all tests in the file pass, including combined Go/Pro/Max values, sing
 ### Task 3: Synchronize translations and verify the repository
 
 **Files:**
-- Generated/modified: \`web/default/src/i18n/locales/*.json\`
-- Generated/modified: \`web/default/src/i18n/locales/_reports/*\` and \`_extras/*\` as produced by the sync script
+- Generated/modified: `web/default/src/i18n/locales/*.json`
+- Generated/modified: `web/default/src/i18n/locales/_reports/*` and `_extras/*` as produced by the sync script
 
-- [ ] **Step 1: Normalize locale ordering and inspect the report**
+- [x] **Step 1: Normalize locale ordering and inspect the report**
 
 ~~~bash
 bun run i18n:sync
 ~~~
 
-Expected: exit code 0, no missing keys in \`_sync-report.json\`, and no newly flagged untranslated values for the four added keys. Correct a translation before continuing if the report flags one.
+Expected: exit code 0, no missing keys in `_sync-report.json`, and no newly flagged untranslated values for the three added keys. Correct a translation before continuing if the report flags one.
 
-- [ ] **Step 2: Run typecheck and touched-file lint**
+- [x] **Step 2: Run typecheck and touched-file lint**
 
 ~~~bash
 bun run typecheck
@@ -192,7 +193,7 @@ bunx eslint src/features/wallet/components/plan-limit-summary.tsx src/features/w
 
 Expected: both commands exit 0 with no TypeScript or ESLint errors.
 
-- [ ] **Step 3: Check the diff and inspect a local preview**
+- [x] **Step 3: Check the diff and inspect a local preview**
 
 ~~~bash
 git diff --check
@@ -200,9 +201,11 @@ git status --short
 bun run dev --host 127.0.0.1
 ~~~
 
-Inspect the wallet route at desktop and narrow widths. Each plan card must have one lavender panel with \`ALL MODELS\` and one caps sentence; the current-plan monthly/5-hour/7-day meters must remain side-by-side and unchanged.
+Inspect the wallet route at desktop and narrow widths. Each plan card must have one lavender panel with `ALL MODELS` and one caps sentence; the current-plan monthly/5-hour/7-day meters must remain side-by-side and unchanged.
 
-- [ ] **Step 4: Commit the implementation with the Lore protocol**
+Observed in this run: Rsbuild's dev compiler rebuilt the console successfully, and the static wallet render/tests verified the panel structure. The connected local browser kept an empty React root, so an interactive screenshot comparison remains a preview-environment gap.
+
+- [x] **Step 4: Commit the implementation with the Lore protocol**
 
 After verification:
 
@@ -218,4 +221,3 @@ Directive: keep current-plan UsageWindowMeter layout unchanged
 Tested: focused Bun test; i18n sync; typecheck; ESLint; git diff --check
 Not-tested: production deployment"
 ~~~
-
