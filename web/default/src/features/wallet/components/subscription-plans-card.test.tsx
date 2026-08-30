@@ -445,11 +445,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     ]
     const html = renderWalletCardWithPlans(stagingPlans)
 
-    expect(html).toContain('data-subscription-reference-price="$45"')
+    expect(html).toContain('data-subscription-reference-price="$25"')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).toContain('data-subscription-reference-price="$300"')
-    expect(html).not.toContain('data-subscription-reference-price="$25"')
-    expect(html).not.toContain('data-subscription-reference-price="$450"')
+    expect(html).toContain('data-subscription-reference-price="$450"')
+    expect(html).not.toContain('data-subscription-reference-price="$45"')
+    expect(html).not.toContain('data-subscription-reference-price="$300"')
     expect(html).toContain('data-plan-limit-summary="true"')
     expect(html).toContain('data-plan-limit-label="all-models"')
     expect(html).toContain('Short-term caps: $8 / 5h · $12 / 7d')
