@@ -91,13 +91,15 @@ export function UsageMetrics() {
   })
 
   return (
-    <section className='bg-card rounded-[20px] border border-black/[0.04] p-4 shadow-[0_1px_8px_rgba(0,0,0,0.04)] sm:p-6 dark:border-white/10'>
+    <section className='bg-card rounded-[20px] border border-black/[0.04] p-4 shadow-[0_1px_8px_rgba(0,0,0,0.04)] sm:p-6 dark:border-white/10 dark:bg-[#1d1d1f] dark:shadow-none'>
       <StaggerContainer className='grid gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4'>
         {items.map((item) => (
           <StaggerItem
             key={item.key}
-            className={`rounded-2xl border border-black/[0.1] px-6 py-4 ${
-              item.key === 'balance' ? 'bg-[#f9f4ff]' : 'bg-card'
+            className={`rounded-2xl border border-black/[0.1] px-6 py-4 dark:border-white/10 ${
+              item.key === 'balance'
+                ? 'bg-[#f9f4ff] dark:border-violet-300/25 dark:bg-violet-950/45'
+                : 'bg-card dark:bg-[#242426]'
             }`}
           >
             <StatCard

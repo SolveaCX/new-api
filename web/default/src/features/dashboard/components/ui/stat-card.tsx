@@ -281,7 +281,7 @@ export function StatCard(props: StatCardProps) {
             className={cn(
               'text-xs leading-relaxed sm:text-[13px]',
               props.showIcon === false
-                ? 'text-[#777777]'
+                ? 'dark:text-muted-foreground text-[#777777]'
                 : 'text-muted-foreground/60'
             )}
           >
