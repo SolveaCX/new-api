@@ -16,6 +16,11 @@ describe("welcome promotion modal", () => {
     }
   });
 
+  test("uses the concise English offer labels", () => {
+    expect(WELCOME_PROMO_COPY.en.freeToTry).toBe("Free");
+    expect(WELCOME_PROMO_COPY.en.limited).toBe("Limited");
+  });
+
   test("only allows the modal on the homepage and skips browser back navigation", () => {
     expect(isWelcomePromoHomepage("/")).toBe(true);
     expect(isWelcomePromoHomepage("/zh")).toBe(true);

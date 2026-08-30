@@ -13,6 +13,7 @@ type WelcomePromoCopy = {
   getApiKey: string;
   exploreModels: string;
   freeToTry: string;
+  limited: string;
   off: string;
   closeLabel: string;
   dialogLabel: string;
@@ -27,7 +28,8 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Top up your account – additional 80% off",
     getApiKey: "Get API Key",
     exploreModels: "Explore Models",
-    freeToTry: "Free to try",
+    freeToTry: "Free",
+    limited: "Limited",
     off: "55% off",
     closeLabel: "Close promotion",
     dialogLabel: "Free trial promotion",
@@ -41,6 +43,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "获取 API 密钥",
     exploreModels: "探索模型",
     freeToTry: "免费试用",
+    limited: "限时",
     off: "55% 折扣",
     closeLabel: "关闭优惠弹窗",
     dialogLabel: "免费试用优惠",
@@ -54,6 +57,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "Obtener clave API",
     exploreModels: "Explorar modelos",
     freeToTry: "Prueba gratis",
+    limited: "Limitado",
     off: "55 % de descuento",
     closeLabel: "Cerrar promoción",
     dialogLabel: "Promoción de prueba gratis",
@@ -67,6 +71,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "Obtenir une clé API",
     exploreModels: "Explorer les modèles",
     freeToTry: "Essai gratuit",
+    limited: "Limité",
     off: "55 % de remise",
     closeLabel: "Fermer la promotion",
     dialogLabel: "Promotion d'essai gratuit",
@@ -80,6 +85,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "Obter chave de API",
     exploreModels: "Explorar modelos",
     freeToTry: "Teste grátis",
+    limited: "Limitado",
     off: "55% de desconto",
     closeLabel: "Fechar promoção",
     dialogLabel: "Promoção de teste grátis",
@@ -93,6 +99,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "Получить API-ключ",
     exploreModels: "Изучить модели",
     freeToTry: "Бесплатно",
+    limited: "Ограниченный",
     off: "Скидка 55%",
     closeLabel: "Закрыть акцию",
     dialogLabel: "Акция бесплатного пробного периода",
@@ -106,6 +113,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "API キーを取得",
     exploreModels: "モデルを見る",
     freeToTry: "無料で試す",
+    limited: "期間限定",
     off: "55% OFF",
     closeLabel: "キャンペーンを閉じる",
     dialogLabel: "無料トライアルキャンペーン",
@@ -119,6 +127,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "Lấy API key",
     exploreModels: "Khám phá model",
     freeToTry: "Dùng thử miễn phí",
+    limited: "Có hạn",
     off: "Giảm 55%",
     closeLabel: "Đóng khuyến mãi",
     dialogLabel: "Khuyến mãi dùng thử miễn phí",
@@ -132,6 +141,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     getApiKey: "API-Key abrufen",
     exploreModels: "Modelle entdecken",
     freeToTry: "Kostenlos testen",
+    limited: "Limitiert",
     off: "55 % Rabatt",
     closeLabel: "Aktion schließen",
     dialogLabel: "Aktion zum kostenlosen Testen",
@@ -146,6 +156,7 @@ type ModelCardProps = {
   name: string;
   description: string;
   offer: string;
+  secondaryOffer?: string;
   offerClassName?: string;
   highlighted?: boolean;
 };
@@ -197,7 +208,8 @@ function ModelCard(props: ModelCardProps) {
         <p className="truncate text-sm leading-5 font-semibold tracking-[-0.02em] text-black max-[479px]:text-xs max-[479px]:leading-4 lg:text-base lg:leading-6">{props.name}</p>
         <p className="truncate text-[11px] leading-4 tracking-[-0.01em] text-black/60 max-[479px]:text-[10px] max-[479px]:leading-3 lg:text-[13px] lg:leading-5">{props.description}</p>
       </div>
-      <span className={["flex h-7 min-w-0 max-w-[140px] shrink-0 items-center justify-center break-words whitespace-normal px-2 text-center font-medium tracking-[-0.02em] max-[479px]:h-6 max-[479px]:max-w-[120px] max-[479px]:px-1 lg:h-auto lg:min-h-[29px] lg:min-w-[101px] lg:max-w-[150px] lg:px-1 lg:leading-5 lg:whitespace-normal", props.offerClassName, props.highlighted ? "rounded-lg bg-[#fab8e5] text-black" : "text-[#5b20d1]"].filter(Boolean).join(" ")}>{props.offer}</span>
+      {props.secondaryOffer ? <span className="absolute top-1.5 right-2.5 z-[1] text-[9px] leading-3 font-medium tracking-[-0.02em] text-[#5b20d1] max-[479px]:top-1 max-[479px]:right-2 max-[479px]:text-[8px] lg:top-2.5 lg:right-4 lg:text-[11px]">{props.secondaryOffer}</span> : null}
+      <span className={["flex min-w-0 max-w-[140px] shrink-0 items-center justify-center break-words whitespace-normal px-2 text-center font-medium leading-tight tracking-[-0.02em] max-[479px]:max-w-[120px] max-[479px]:px-1 lg:min-h-[29px] lg:min-w-[101px] lg:max-w-[150px] lg:px-1", props.offerClassName, props.highlighted ? "rounded-lg bg-[#fab8e5] text-black" : "text-[#5b20d1]"].filter(Boolean).join(" ")}>{props.offer}</span>
     </div>
   );
 }
@@ -297,7 +309,7 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
               </div>
             </div>
             <div className="grid content-start gap-2 lg:content-normal lg:gap-3">
-              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeToTry} offerClassName={offerTextClassByLocale[locale]} highlighted />
+              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeToTry} secondaryOffer={copy.limited} offerClassName={offerTextClassByLocale[locale]} highlighted />
               <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Pro" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/zai.svg" logoAlt="GLM" name="GLM 5.3flash" description={copy.multimodalModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
             </div>
