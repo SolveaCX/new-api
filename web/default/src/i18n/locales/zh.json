@@ -6860,6 +6860,22 @@
     "Use a site path such as /pricing or a full https:// URL.": "请输入 /pricing 这样的站内路径，或完整的 https:// URL。",
     "Optional logo shown before the announcement content (64 KB max).": "可选 Logo，会显示在公告内容前（最大 64 KB）。",
     "Choose a model logo": "选择模型 Logo",
-    "Custom upload": "自定义上传"
+    "Custom upload": "自定义上传",
+    "Human verification": "人机验证",
+    "Rotate the image until it is upright.": "拖动滑块，将图片旋转至正向。",
+    "Drag the slider until the puzzle piece fits.": "拖动滑块，将拼图移动到缺口位置。",
+    "Verification type": "验证类型",
+    "Slide puzzle": "滑块拼图",
+    "Slide": "拖拽",
+    "Rotate image": "旋转图片",
+    "Rotate": "旋转",
+    "Slide puzzle verification image": "滑块拼图验证图片",
+    "Drag the puzzle piece": "拖动拼图",
+    "Rotation verification image": "旋转验证图片",
+    "Rotate the image": "旋转图片",
+    "Unable to load verification. Please try again.": "无法加载图形验证，请重试。",
+    "Verification failed. A new challenge has been loaded.": "验证失败，已加载新的图形验证。",
+    "Refresh challenge": "刷新图形验证",
+    "Complete the graphical verification before creating your account.": "创建账户前，请先完成图形验证。"
   }
 }

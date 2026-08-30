@@ -6860,6 +6860,22 @@
     "Use a site path such as /pricing or a full https:// URL.": "Dùng đường dẫn trang như /pricing hoặc URL https:// đầy đủ.",
     "Optional logo shown before the announcement content (64 KB max).": "Logo tùy chọn hiển thị trước nội dung thông báo (tối đa 64 KB).",
     "Choose a model logo": "Chọn logo mô hình",
-    "Custom upload": "Tải lên tùy chỉnh"
+    "Custom upload": "Tải lên tùy chỉnh",
+    "Human verification": "Xác minh người dùng",
+    "Rotate the image until it is upright.": "Xoay hình ảnh cho đến khi đúng chiều.",
+    "Drag the slider until the puzzle piece fits.": "Kéo thanh trượt cho đến khi mảnh ghép khớp với vị trí trống.",
+    "Verification type": "Loại xác minh",
+    "Slide puzzle": "Ghép hình kéo trượt",
+    "Slide": "Kéo",
+    "Rotate image": "Xoay hình ảnh",
+    "Rotate": "Xoay",
+    "Slide puzzle verification image": "Hình ảnh xác minh ghép hình kéo trượt",
+    "Drag the puzzle piece": "Kéo mảnh ghép",
+    "Rotation verification image": "Hình ảnh xác minh xoay",
+    "Rotate the image": "Xoay hình ảnh",
+    "Unable to load verification. Please try again.": "Không thể tải xác minh. Vui lòng thử lại.",
+    "Verification failed. A new challenge has been loaded.": "Xác minh thất bại. Một thử thách mới đã được tải.",
+    "Refresh challenge": "Làm mới thử thách",
+    "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản."
   }
 }

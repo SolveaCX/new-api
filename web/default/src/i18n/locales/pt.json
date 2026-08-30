@@ -6860,6 +6860,22 @@
     "Use a site path such as /pricing or a full https:// URL.": "Use um caminho do site, como /pricing, ou uma URL https:// completa.",
     "Optional logo shown before the announcement content (64 KB max).": "Logo opcional exibido antes do conteúdo do anúncio (máximo de 64 KB).",
     "Choose a model logo": "Escolher um logo de modelo",
-    "Custom upload": "Upload personalizado"
+    "Custom upload": "Upload personalizado",
+    "Human verification": "Verificação humana",
+    "Rotate the image until it is upright.": "Gire a imagem até que fique na posição correta.",
+    "Drag the slider until the puzzle piece fits.": "Arraste o controle até que a peça se encaixe no espaço.",
+    "Verification type": "Tipo de verificação",
+    "Slide puzzle": "Quebra-cabeça deslizante",
+    "Slide": "Deslizar",
+    "Rotate image": "Girar imagem",
+    "Rotate": "Girar",
+    "Slide puzzle verification image": "Imagem de verificação com quebra-cabeça deslizante",
+    "Drag the puzzle piece": "Arraste a peça do quebra-cabeça",
+    "Rotation verification image": "Imagem de verificação por rotação",
+    "Rotate the image": "Gire a imagem",
+    "Unable to load verification. Please try again.": "Não foi possível carregar a verificação. Tente novamente.",
+    "Verification failed. A new challenge has been loaded.": "A verificação falhou. Um novo desafio foi carregado.",
+    "Refresh challenge": "Atualizar desafio",
+    "Complete the graphical verification before creating your account.": "Conclua a verificação gráfica antes de criar sua conta."
   }
 }
