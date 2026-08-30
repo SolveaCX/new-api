@@ -615,11 +615,15 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         .intelligence-tab{display:flex;align-items:center;justify-content:center;gap:11px;padding:0 0 19px;border-bottom:4px solid #eee8fb;color:#5a565f;font-size:17px;font-weight:600;cursor:pointer;transition:color .2s,border-color .2s}
         .intelligence-tab-input:checked + .intelligence-tab{border-color:#7538f2;color:#26232a}
         .intelligence-tab svg{display:block;flex:none;width:auto;height:auto;stroke:none;fill:none}
-        .intelligence-panel{position:relative;display:grid;grid-column:1/-1;grid-template-columns:340px minmax(0,1fr) 340px;gap:62px;min-height:614px;margin-top:29px;padding:34px 52px 38px;border-radius:28px;background:radial-gradient(circle at 18% 12%,rgba(235,222,255,.86),transparent 43%),linear-gradient(135deg,#f2eaff 0%,#f8f1ff 43%,#fffafc 100%);overflow:hidden}
+        .intelligence-panel{--intelligence-card-gap:clamp(32px,calc((100vw - var(--fk-site-gutter) - var(--fk-site-gutter) - 1187px)/2),111px);--intelligence-connector-width:var(--intelligence-card-gap);--intelligence-panel-pad-right:52px;--intelligence-model-column:320px;position:relative;display:grid;grid-column:1/-1;grid-template-columns:320px minmax(0,443px) var(--intelligence-model-column);justify-content:space-between;gap:0;min-height:614px;margin-top:29px;padding:34px 52px 38px;border-radius:28px;background:radial-gradient(circle at 18% 12%,rgba(235,222,255,.86),transparent 43%),linear-gradient(135deg,#f2eaff 0%,#f8f1ff 43%,#fffafc 100%);overflow:hidden}
+        .intelligence-panel-image,.intelligence-panel-video{display:none;background:linear-gradient(180deg,rgba(202,179,253,.4) 0%,rgba(251,224,240,.4) 50%,rgba(250,248,249,.4) 100%)}
+        .intelligence-panel-media{--intelligence-card-gap:clamp(32px,calc((100vw - var(--fk-site-gutter) - var(--fk-site-gutter) - 1179px)/2),115px);--intelligence-connector-width:var(--intelligence-card-gap);--intelligence-panel-pad-right:48px;min-height:575px;padding:32px 48px;border-radius:24px}
+        .intelligence-wrap:has(#intelligence-tab-1:checked) .intelligence-panel-text,.intelligence-wrap:has(#intelligence-tab-2:checked) .intelligence-panel-text{display:none}
+        .intelligence-wrap:has(#intelligence-tab-1:checked) .intelligence-panel-image,.intelligence-wrap:has(#intelligence-tab-2:checked) .intelligence-panel-video{display:grid}
         .intelligence-panel:before{content:"";position:absolute;inset:0;background-image:linear-gradient(90deg,rgba(137,89,227,.07) 1px,transparent 1px),linear-gradient(rgba(137,89,227,.07) 1px,transparent 1px);background-size:72px 72px;mask-image:linear-gradient(135deg,rgba(0,0,0,.62),transparent 70%);pointer-events:none}
-        .intelligence-panel:after{content:"";position:absolute;z-index:0;left:392px;top:50%;width:382px;height:1px;background:#b79af0;pointer-events:none}
+        .intelligence-panel:after{display:none}
         .intelligence-prompt,.intelligence-analysis{position:relative;z-index:1}
-        .intelligence-prompt{align-self:center;min-height:454px;border:1px solid #e4dfe8;border-radius:14px;background:#fff;box-shadow:0 18px 35px -27px rgba(55,32,76,.35);overflow:hidden}
+        .intelligence-prompt{align-self:center;min-height:454px;border:1px solid #e4dfe8;border-radius:14px;background:#fff;box-shadow:0 18px 35px -27px rgba(55,32,76,.35);overflow:visible}
         .intelligence-card-head{display:flex;align-items:center;gap:11px;padding:20px 24px 17px;border-bottom:1px solid #ece9ef;font-size:18px;font-weight:700;letter-spacing:-.025em}
         .intelligence-card-head span{display:grid;place-items:center;width:22px;height:22px;color:#bf3ee8;font-size:18px;line-height:1}
         .pixel-mark{position:relative;display:block!important;width:20px!important;height:20px!important;background:radial-gradient(circle,#c84ae9 2.5px,transparent 3px);background-size:7px 7px;background-position:0 0}
@@ -649,25 +653,42 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         .criteria-metric span{display:block;color:#88818d;font-size:13px;line-height:1.25}
         .criteria-metric strong{display:block;margin-top:10px;color:#241f28;font-family:var(--mono);font-size:19px;line-height:1.1;letter-spacing:-.04em}
         .criteria-pay{margin:17px 25px 20px;padding:13px 15px;border-radius:9px;background:#9c65ec;color:#fff;text-align:center;font-size:16px;font-weight:700;line-height:1.25}
-        .intelligence-models{position:relative;z-index:1;align-self:center;display:grid;gap:24px}
-        .model-card{min-height:74px;display:flex;align-items:center;gap:14px;padding:15px 18px;border:1px solid rgba(225,218,232,.9);border-radius:13px;background:rgba(255,255,255,.78);box-shadow:0 13px 28px -26px rgba(55,32,76,.38)}
+        .intelligence-media-card{position:relative;z-index:1;align-self:center;border:1px solid #e6e0e9;border-radius:18px;background:#fff;box-shadow:0 18px 35px -27px rgba(55,32,76,.35);overflow:hidden}
+        .intelligence-media-body{padding:17px 25px 0}
+        .intelligence-result-media{display:block;width:100%;aspect-ratio:1.975/1;border-radius:14px;object-fit:cover}
+        .media-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:18px 0}
+        .media-metric{min-height:91px;padding:17px 16px;border-radius:14px;background:#f7f5f8}
+        .media-metric span{display:block;color:#88818d;font-size:13px;line-height:1.25}
+        .media-metric strong{display:block;margin-top:10px;color:#241f28;font-family:var(--mono);font-size:19px;line-height:1.1;letter-spacing:-.04em}
+        .media-pay{padding:0 25px 20px;border-top:1px solid #ece9ef}
+        .media-pay div{margin-top:17px;padding:13px 15px;border-radius:9px;background:#9c65ec;color:#fff;text-align:center;font-size:16px;font-weight:700;line-height:1.25}
+        .prompt-reference{display:block;width:60px;height:60px;margin:25px 24px 0;border-radius:10px;object-fit:cover}
+        .intelligence-panel-media .intelligence-prompt-body{padding-top:14px;font-size:17px;line-height:1.52}
+        .intelligence-panel-media .intelligence-models{gap:20px}
+        .intelligence-panel-media .model-card{min-height:70px}
+        .intelligence-panel-media .model-selected-label{margin:0 0 -10px}
+        .intelligence-models{position:relative;z-index:1;align-self:center;display:grid;gap:24px;min-width:0}
+        .model-card{min-width:0;min-height:74px;display:flex;align-items:center;gap:14px;padding:15px 18px;border:1px solid rgba(225,218,232,.9);border-radius:13px;background:rgba(255,255,255,.78);box-shadow:0 13px 28px -26px rgba(55,32,76,.38)}
         .model-card.selected{min-height:76px;background:#fff;border-color:#e3dce8;box-shadow:0 16px 30px -23px rgba(55,32,76,.4)}
         .model-card img{width:32px;height:32px;flex:none;object-fit:contain}
         .model-card-copy{min-width:0}
         .model-card-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#34303a;font-size:16px;line-height:1.25}
         .model-card-copy span{display:block;margin-top:4px;color:#9a939e;font-size:13px;line-height:1.2}
-        .model-card-price{margin-left:auto;flex:none;padding:8px 10px;border-radius:10px;background:#f5f3f6;color:#8c8790;font-size:12px;white-space:nowrap}
+        .model-card-price{min-width:max-content;max-width:none;margin-left:auto;flex:none;overflow:visible;text-overflow:clip;padding:8px 10px;border-radius:10px;background:#f5f3f6;color:#8c8790;font-size:12px;white-space:nowrap}
         .model-selected-label{margin:2px 0 -12px;color:#3bb969;font-size:14px;font-weight:600}
         .model-placeholder{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:50%;background:#e7e5e8;color:#818087;font-size:22px;font-weight:700}
-        .intelligence-connectors{position:absolute;z-index:0;top:50%;right:372px;width:80px;height:200px;transform:translateY(-50%);pointer-events:none;overflow:visible}
-        .intelligence-connectors line,.intelligence-connectors path{fill:none;stroke-width:1}
+        .intelligence-connectors{position:absolute;z-index:2;top:calc(50% + 16px);right:calc(var(--intelligence-panel-pad-right) + var(--intelligence-model-column));width:var(--intelligence-connector-width);height:200px;transform:translateY(-50%);pointer-events:none;overflow:visible}
+        .intelligence-connectors line,.intelligence-connectors path{fill:none;stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
         .intelligence-prompt{min-height:454px;display:flex;flex-direction:column}
+        .intelligence-prompt:after{content:"";position:absolute;z-index:2;left:100%;top:50%;width:var(--intelligence-card-gap);height:1px;background:#b79af0;pointer-events:none}
         .intelligence-prompt-body{max-width:290px}
         .intelligence-prompt-input{display:flex;align-items:center;gap:11px;margin:auto 16px 17px;padding:0 10px;height:39px;border:1px solid #e7e4e9;border-radius:999px}
         .intelligence-prompt-input span{flex:1}
         .intelligence-prompt-input b{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#d4d4d5;color:#fff;font-size:20px;line-height:1}
-        @media(max-width:900px){.intelligence-section{padding:72px 20px 78px}.intelligence-tabs{gap:10px;margin-top:47px}.intelligence-tab{font-size:14px}.intelligence-panel{grid-template-columns:1fr;gap:25px;min-height:0;padding:26px 24px 30px}.intelligence-panel:after{display:none}.intelligence-prompt{min-height:0}.intelligence-criteria{align-self:stretch}.intelligence-models{align-self:stretch}.intelligence-connectors{display:none}}
+        @media(max-width:1450px) and (min-width:901px){.intelligence-panel{--intelligence-card-gap:clamp(14px,2.5vw,32px);--intelligence-connector-width:var(--intelligence-card-gap);--intelligence-panel-pad-right:clamp(24px,4vw,52px);--intelligence-model-column:clamp(220px,28vw,320px);grid-template-columns:var(--intelligence-model-column) minmax(0,1fr) var(--intelligence-model-column);gap:var(--intelligence-card-gap);padding-inline:var(--intelligence-panel-pad-right)}.intelligence-panel-media{--intelligence-panel-pad-right:clamp(24px,4vw,48px);padding-inline:var(--intelligence-panel-pad-right)}.model-card-price{min-width:0;max-width:44%;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;padding-inline:8px;font-size:10px}}
+        @media(max-width:900px){.intelligence-section{padding:72px 20px 78px}.intelligence-tabs{gap:10px;margin-top:47px}.intelligence-tab{font-size:14px}.intelligence-panel{grid-template-columns:1fr;gap:25px;min-height:0;padding:26px 24px 30px}.intelligence-panel:after{display:none}.intelligence-prompt{min-height:0}.intelligence-prompt:after{display:none}.intelligence-prompt-body{max-width:none}.intelligence-criteria,.intelligence-media-card,.intelligence-models{align-self:stretch;width:100%}.intelligence-connectors{display:none}}
         @media(max-width:560px){.intelligence-heading h2{font-size:42px}.intelligence-heading p{font-size:16px}.intelligence-tabs{grid-template-columns:1fr;gap:8px}.intelligence-tab{justify-content:flex-start;padding:13px 8px;border-bottom-width:2px}.intelligence-panel{margin-top:18px;padding:18px 14px 22px;border-radius:20px}.intelligence-card-head{padding:17px 18px 14px;font-size:16px}.intelligence-prompt-body{padding:19px 18px;font-size:15px}.intelligence-attachment{margin:23px 14px 14px}.intelligence-checklist li{padding:14px 14px;font-size:14px}.intelligence-metrics{grid-template-columns:1fr}.intelligence-metric{padding:14px}.intelligence-footer{font-size:13px}}
+        @media(max-width:420px){.intelligence-heading h2{font-size:36px}.intelligence-heading p{font-size:14px;line-height:1.45}.intelligence-panel{gap:20px;padding-inline:12px}.intelligence-panel-media{padding-inline:12px}.criteria-metrics,.media-metrics{grid-template-columns:1fr;gap:10px}.criteria-metric,.media-metric{min-height:0;padding:13px 14px}.criteria-head{padding-inline:18px}.model-card{padding-inline:14px}.model-card-price{padding:7px 8px;font-size:11px}}
         .hero{background:linear-gradient(180deg,#FFFFFF 0%,#F7F5FD 100%);border-bottom:1px solid var(--line)}.heroGrid{max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:56px var(--fk-site-gutter) 52px;display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:48px;align-items:start}.eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.6px;color:var(--violet-deep);background:var(--violet-tint);border-radius:999px;padding:7px 14px;font-weight:600;margin-bottom:22px}.hero h1 .price{color:var(--violet)}.hero h1 .toolLine,.hero h1 .costLine{display:block}.hero .sub{margin-top:18px;max-width:560px}.heroCtas{display:flex;gap:12px;margin-top:26px}.heroSavings{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 24px 60px -18px rgba(46,16,101,.18)}.saveRow{display:flex;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line2);padding:14px 0}.saveRow s{color:var(--ink3);font-weight:700}.saveRow small{font-family:var(--mono);color:var(--ink2)}.balanceCard{margin-top:18px;background:var(--violet-tint);border-radius:14px;padding:22px}.balanceCard span{font-family:var(--mono);font-size:11px;color:var(--violet-deep);font-weight:700;letter-spacing:.8px}.balanceCard strong{display:block;margin-top:8px;font-size:28px;letter-spacing:-1px}.balanceCard p{color:var(--ink2);margin-top:4px}.mini{margin-top:18px}.mbar{display:grid;grid-template-columns:66px 1fr 54px;align-items:center;gap:10px;font:600 11px/1 var(--mono);margin-top:10px}.mtrack{height:8px;border-radius:999px;background:#eee;overflow:hidden}.mfill{height:100%}.mcap{font-size:11px!important;margin-top:12px!important}.labs,.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.lab{width:72px;height:54px;border-radius:12px;color:#fff;display:grid;place-items:center;font-weight:800}.lab span{display:block;font:500 8px/1 var(--mono)}.chips span{background:#f4f0ff;border:1px solid #ded6f4;border-radius:999px;padding:8px 10px;font-size:12px}.wcode{margin-top:16px;background:#0d0d10;color:#eee;border-radius:12px;padding:16px;font:500 12px/1.65 var(--mono);white-space:pre-wrap}.wcode span{color:#67e8f9}.wcode em{font-style:normal;color:#c4b5fd}.home-cta-link{display:inline-block;margin-top:24px;color:#fff;font-weight:800}.vcard video{display:block}.home-section-actions{display:flex;gap:12px;margin-top:24px}.home-section-actions a{text-decoration:none}
         .price-proof{position:relative;overflow:hidden;background:#fff;border-bottom:1px solid var(--line)}.price-proof:before{content:"";position:absolute;inset:0;background:linear-gradient(to right,rgba(124,58,237,.055) 1px,transparent 1px),linear-gradient(to bottom,rgba(124,58,237,.05) 1px,transparent 1px);background-size:72px 72px;mask-image:linear-gradient(180deg,rgba(0,0,0,.78),transparent 86%);pointer-events:none}.price-proof-in{position:relative;z-index:1;max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:76px var(--fk-site-gutter);display:grid;grid-template-columns:minmax(0,.86fr) minmax(420px,1fr);gap:56px;align-items:center}.price-proof-copy{max-width:520px}.price-proof-copy .kick2{margin-bottom:16px}.price-proof-copy h2{font-family:var(--disp);font-size:clamp(36px,4vw,58px);line-height:.98;letter-spacing:-.055em;font-weight:700;text-wrap:balance}.price-proof-copy p{margin-top:18px;color:var(--ink2);font-size:16.5px;line-height:1.7}.price-proof-list{display:grid;gap:10px;margin-top:26px}.price-proof-list li{list-style:none;display:flex;align-items:flex-start;gap:10px;color:var(--ink2);font-size:14px;line-height:1.55}.price-proof-list li:before{content:"";margin-top:7px;width:8px;height:8px;flex:none;border-radius:999px;background:linear-gradient(135deg,var(--violet-hi),#c026d3);box-shadow:0 0 0 4px rgba(124,58,237,.09)}.price-board{position:relative;border:1px solid rgba(76,29,149,.14);border-radius:20px;background:rgba(255,255,255,.94);box-shadow:0 34px 90px -56px rgba(46,16,101,.48);overflow:hidden}.price-board-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#fbfaff,#f4edff)}.price-board-head span{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--violet-deep);font-weight:700}.price-board-head b{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;background:#111;color:#dff36e;padding:8px 12px;font:800 12px/1 var(--mono);letter-spacing:.04em}.price-board-body{padding:24px 24px 22px}.price-bars{display:grid;gap:18px}.price-bar-row{display:grid;grid-template-columns:112px minmax(0,1fr) 72px;align-items:center;gap:14px}.price-bar-row span{font-size:13px;font-weight:750;color:var(--ink2)}.price-bar-row strong{font-family:var(--mono);font-size:13px;text-align:right;color:var(--ink)}.price-track{position:relative;height:20px;border-radius:999px;background:#eeeaf7;overflow:hidden}.price-fill{position:absolute;inset:0 auto 0 0;border-radius:999px}.price-fill.official{width:100%;background:#c9c4d3}.price-fill.flatkey{width:50%;background:linear-gradient(90deg,var(--violet-hi),#c026d3)}.price-save{margin-top:22px;border-radius:16px;background:#111;color:#fff;padding:20px}.price-save small{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#dff36e;font-weight:750}.price-save strong{display:block;margin-top:9px;font-size:22px;line-height:1.16;letter-spacing:-.03em}.price-board a{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 24px;border-top:1px solid var(--line);color:var(--violet-deep);font-size:13px;font-weight:800;text-decoration:none}.price-board a:after{content:"→";font-family:var(--mono)}
         .why{background:var(--home-surface);border-bottom:1px solid var(--line);position:relative;overflow:hidden}.whyIn{max-width:var(--fk-site-frame-max-width);margin:0 auto;padding:80px var(--fk-site-gutter);display:grid;grid-template-columns:300px 1fr;gap:48px;position:relative;z-index:1}.whyHead{position:sticky;top:40px;align-self:start}.whyGrid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.why .wcard{background:var(--paper2);border:1px solid var(--line);border-radius:16px;padding:26px 28px}.why .wcard h3{font-family:var(--disp);font-size:20px;letter-spacing:-.5px;font-weight:700;margin-bottom:10px}.why .wcard p{font-size:13.5px;color:var(--ink2);line-height:1.6}.why .wcard.dark{background:var(--dark);border-color:transparent}.why .wcard.dark h3{color:#fff}.why .wcard.dark p{color:#B9B9C6}.why .mini{margin-top:20px}.why .mbar{display:grid;grid-template-columns:56px 1fr 52px;gap:10px;align-items:center;margin-bottom:8px;margin-top:0;font:inherit}.why .mbar span{font-family:var(--mono);font-size:11px;color:var(--ink3)}.why .mbar b{font-family:var(--mono);font-size:12px;text-align:right}.why .mtrack{height:20px;border-radius:5px;background:var(--line2);position:relative;overflow:visible}.why .mfill{position:absolute;inset:0 auto 0 0;border-radius:5px;height:auto}.why .mcap{font-size:11px!important;color:var(--ink3)!important;margin-top:10px!important}.why .labs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}.why .lab{width:auto;height:auto;border-radius:10px;color:#fff;font-family:var(--disp);font-weight:700;font-size:20px;padding:14px 14px 10px;display:flex;flex-direction:column;gap:6px;place-items:initial}.why .lab span{font-family:var(--mono);font-size:9.5px;font-weight:400;color:#ffffffcc;letter-spacing:.4px;line-height:1}.why .wcode{margin-top:18px;font-family:var(--mono);font-size:11.5px;line-height:1.75;color:#C9E8D4;background:#ffffff0d;border-radius:10px;padding:14px 16px;overflow-x:auto;white-space:pre-wrap}.why .wcode span{color:#A7F3C8}.why .wcode em{color:#8E8E9C;font-style:normal}.why .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.why .chips span{font-size:12px;font-weight:650;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;color:var(--ink2)}
@@ -714,6 +735,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
               <>
                 <div className="intelligence-heading">
                   <h2 id="intelligence-heading">{intelligence.title}</h2>
+                  <p>Just use one Key — our system intelligently picks the best model/tools for every task, input, and scenario.</p>
                 </div>
                 <div className="intelligence-tabs" role="tablist" aria-label={intelligence.eyebrow}>
                   {intelligence.tabs.map((tab, index) => (
@@ -739,7 +761,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     </div>
                   ))}
                 </div>
-                <div className="intelligence-panel" role="tabpanel">
+                <div className="intelligence-panel intelligence-panel-text" role="tabpanel">
                   <div className="intelligence-prompt">
                     <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />{intelligence.promptTitle}</div>
                     <p className="intelligence-prompt-body">{intelligence.promptBody}</p>
@@ -781,6 +803,83 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                       <linearGradient id="criteria-line" x1="0" y1="101" x2="80" y2="101" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
                       <linearGradient id="criteria-top" x1="0" y1="74.5" x2="80" y2="74.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
                       <linearGradient id="criteria-bottom" x1="0" y1="124.5" x2="80" y2="124.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+                <div className="intelligence-panel intelligence-panel-media intelligence-panel-image" role="tabpanel">
+                  <div className="intelligence-prompt">
+                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />Test Prompt</div>
+                    <img className="prompt-reference" src="/assets/home-tabs/headphones-reference.png" alt="Rose-gold wireless headphones reference" />
+                    <p className="intelligence-prompt-body">Generate a fashion ad-style product scene for these headphones. A young female model wears rose-gold wireless over-ear headphones in a bright outdoor garden with oversized artistic flowers in orange-red, pink, lavender, and cream—a dreamlike floral backdrop.</p>
+                    <div className="intelligence-prompt-input" aria-hidden="true"><span /><b>↑</b></div>
+                  </div>
+                  <div className="intelligence-media-card">
+                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
+                    <div className="intelligence-media-body">
+                      <img className="intelligence-result-media" src="/assets/home-tabs/image-fashion-result.png" alt="Fashion image generated from the headphones reference" />
+                      <div className="media-metrics">
+                        <div className="media-metric"><span>Model</span><strong>nano-banana</strong></div>
+                        <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
+                        <div className="media-metric"><span>One invoice</span><strong>$0.06</strong></div>
+                      </div>
+                    </div>
+                    <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
+                  </div>
+                  <div className="intelligence-models">
+                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-pro</strong><span>DeepSeek · reasoning model</span></div></div>
+                    <div className="model-selected-label">Selected model</div>
+                    <div className="model-card selected"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>OpenAI/image-2</strong><span>OpenAI · image model</span></div><span className="model-card-price">$4 / 1M tokens</span></div>
+                    <div className="model-card"><img src="/assets/logos/minimax.svg" alt="" /><div className="model-card-copy"><strong>MiniMax-H3</strong><span>MiniMax · video generation model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/qwen.svg" alt="" /><div className="model-card-copy"><strong>qwen/qwen3.8-max</strong><span>Qwen · reasoning model</span></div></div>
+                  </div>
+                  <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
+                    <line y1="100" x2="80" y2="100" stroke="url(#image-line)" />
+                    <path d="M0 49.5C12.4079 49.5 23.9061 56.0101 30.2899 66.6499L41.2609 84.9349C46.6826 93.971 56.4478 99.5 66.9857 99.5H80" stroke="url(#image-top)" />
+                    <path d="M0 149.5C12.4079 149.5 23.9061 142.99 30.2899 132.35L41.2609 114.065C46.6826 105.029 56.4478 99.5 66.9857 99.5H80" stroke="url(#image-bottom)" />
+                    <defs>
+                      <linearGradient id="image-line" x1="0" y1="101" x2="80" y2="101" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                      <linearGradient id="image-top" x1="0" y1="74.5" x2="80" y2="74.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                      <linearGradient id="image-bottom" x1="0" y1="124.5" x2="80" y2="124.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+                <div className="intelligence-panel intelligence-panel-media intelligence-panel-video" role="tabpanel">
+                  <div className="intelligence-prompt">
+                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />Test Prompt</div>
+                    <p className="intelligence-prompt-body">Black-and-silver F1 car tearing through a wet forest track, low rear follow-cam. Tires throw white rooster tails of spray; body trembles at speed. Misty pines and faint grandstands in background. Overcast, cool light. Blue-gray, mist-white, deep green tones. Rainy, fast, cinematic.</p>
+                    <div className="intelligence-prompt-input" aria-hidden="true"><span /><b>↑</b></div>
+                  </div>
+                  <div className="intelligence-media-card">
+                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
+                    <div className="intelligence-media-body">
+                      <video className="intelligence-result-media" autoPlay muted loop playsInline preload="auto" poster="/assets/home-tabs/video-f1-result.png" aria-label="F1 car racing on a wet forest track">
+                        <source src="/assets/home-tabs/video-f1-result.mp4" type="video/mp4" />
+                      </video>
+                      <div className="media-metrics">
+                        <div className="media-metric"><span>Model</span><strong>Seedance-2.5</strong></div>
+                        <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
+                        <div className="media-metric"><span>One invoice</span><strong>$0.16</strong></div>
+                      </div>
+                    </div>
+                    <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
+                  </div>
+                  <div className="intelligence-models">
+                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-pro</strong><span>DeepSeek · reasoning model</span></div></div>
+                    <div className="model-selected-label">Selected model</div>
+                    <div className="model-card selected"><img src="/assets/logos/bytedance.svg" alt="" /><div className="model-card-copy"><strong>ByteDance/<br />seedance-2.5</strong><span>ByteDance · video model</span></div><span className="model-card-price">$0.084 / 1M</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · multimodal model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/qwen.svg" alt="" /><div className="model-card-copy"><strong>qwen/qwen3.8-max</strong><span>Qwen · reasoning model</span></div></div>
+                  </div>
+                  <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
+                    <line y1="100" x2="80" y2="100" stroke="url(#video-line)" />
+                    <path d="M0 49.5C12.4079 49.5 23.9061 56.0101 30.2899 66.6499L41.2609 84.9349C46.6826 93.971 56.4478 99.5 66.9857 99.5H80" stroke="url(#video-top)" />
+                    <path d="M0 149.5C12.4079 149.5 23.9061 142.99 30.2899 132.35L41.2609 114.065C46.6826 105.029 56.4478 99.5 66.9857 99.5H80" stroke="url(#video-bottom)" />
+                    <defs>
+                      <linearGradient id="video-line" x1="0" y1="101" x2="80" y2="101" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                      <linearGradient id="video-top" x1="0" y1="74.5" x2="80" y2="74.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
+                      <linearGradient id="video-bottom" x1="0" y1="124.5" x2="80" y2="124.5" gradientUnits="userSpaceOnUse"><stop stopColor="#9377DB" /><stop offset="1" stopColor="#9377DB" stopOpacity="0.2" /></linearGradient>
                     </defs>
                   </svg>
                 </div>
