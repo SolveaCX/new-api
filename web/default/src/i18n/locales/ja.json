@@ -6862,6 +6862,22 @@
     "Choose a model logo": "モデルロゴを選択",
     "Custom upload": "カスタムアップロード",
     "One connection, All models. Start building with your free credits.": "1つの接続ですべてのモデルを利用できます。無料クレジットで始めましょう。",
-    "Fast": "高速"
+    "Fast": "高速",
+    "Human verification": "人間による確認",
+    "Rotate the image until it is upright.": "画像が正しい向きになるまで回転させてください。",
+    "Drag the slider until the puzzle piece fits.": "ピースがくぼみに合うまでスライダーを動かしてください。",
+    "Verification type": "確認方法",
+    "Slide puzzle": "スライドパズル",
+    "Slide": "スライド",
+    "Rotate image": "画像を回転",
+    "Rotate": "回転",
+    "Slide puzzle verification image": "スライドパズル確認画像",
+    "Drag the puzzle piece": "パズルのピースを移動",
+    "Rotation verification image": "回転確認画像",
+    "Rotate the image": "画像を回転",
+    "Unable to load verification. Please try again.": "確認を読み込めませんでした。もう一度お試しください。",
+    "Verification failed. A new challenge has been loaded.": "確認に失敗しました。新しい問題を読み込みました。",
+    "Refresh challenge": "問題を更新",
+    "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。"
   }
 }

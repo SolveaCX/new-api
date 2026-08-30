@@ -383,3 +383,8 @@ notify.subscription_quota_warning_title: "您的訂閱額度即將用盡"
 notify.quota_warning_email: "{{.Warning}}，目前剩餘額度為 {{.Quota}}，為了不影響您的使用，請及時儲值。<br/>儲值連結：<a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}，剩餘額度：{{.Quota}}，請及時儲值"
 notify.quota_warning_gotify: "{{.Warning}}，目前剩餘額度為 {{.Quota}}，請及時儲值。"
+
+# Registration CAPTCHA messages
+registration_captcha.required: "請先完成圖形驗證"
+registration_captcha.invalid: "圖形驗證失敗或已過期，請重試。"
+registration_captcha.unavailable: "圖形驗證暫時無法使用，請稍後再試。"

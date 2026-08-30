@@ -6862,6 +6862,22 @@
     "Choose a model logo": "Choose a model logo",
     "Custom upload": "Custom upload",
     "One connection, All models. Start building with your free credits.": "One connection, All models. Start building with your free credits.",
-    "Fast": "Fast"
+    "Fast": "Fast",
+    "Human verification": "Human verification",
+    "Rotate the image until it is upright.": "Rotate the image until it is upright.",
+    "Drag the slider until the puzzle piece fits.": "Drag the slider until the puzzle piece fits.",
+    "Verification type": "Verification type",
+    "Slide puzzle": "Slide puzzle",
+    "Slide": "Slide",
+    "Rotate image": "Rotate image",
+    "Rotate": "Rotate",
+    "Slide puzzle verification image": "Slide puzzle verification image",
+    "Drag the puzzle piece": "Drag the puzzle piece",
+    "Rotation verification image": "Rotation verification image",
+    "Rotate the image": "Rotate the image",
+    "Unable to load verification. Please try again.": "Unable to load verification. Please try again.",
+    "Verification failed. A new challenge has been loaded.": "Verification failed. A new challenge has been loaded.",
+    "Refresh challenge": "Refresh challenge",
+    "Complete the graphical verification before creating your account.": "Complete the graphical verification before creating your account."
   }
 }

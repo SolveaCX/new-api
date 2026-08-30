@@ -6862,6 +6862,22 @@
     "Choose a model logo": "Choisir un logo de modèle",
     "Custom upload": "Importation personnalisée",
     "One connection, All models. Start building with your free credits.": "Une connexion, tous les modèles. Commencez à créer avec vos crédits gratuits.",
-    "Fast": "Rapide"
+    "Fast": "Rapide",
+    "Human verification": "Vérification humaine",
+    "Rotate the image until it is upright.": "Faites pivoter l’image jusqu’à ce qu’elle soit droite.",
+    "Drag the slider until the puzzle piece fits.": "Faites glisser le curseur jusqu’à ce que la pièce s’emboîte.",
+    "Verification type": "Type de vérification",
+    "Slide puzzle": "Puzzle coulissant",
+    "Slide": "Faire glisser",
+    "Rotate image": "Image à faire pivoter",
+    "Rotate": "Faire pivoter",
+    "Slide puzzle verification image": "Image de vérification par puzzle coulissant",
+    "Drag the puzzle piece": "Faire glisser la pièce du puzzle",
+    "Rotation verification image": "Image de vérification par rotation",
+    "Rotate the image": "Faire pivoter l’image",
+    "Unable to load verification. Please try again.": "Impossible de charger la vérification. Réessayez.",
+    "Verification failed. A new challenge has been loaded.": "La vérification a échoué. Un nouveau défi a été chargé.",
+    "Refresh challenge": "Actualiser le défi",
+    "Complete the graphical verification before creating your account.": "Effectuez la vérification graphique avant de créer votre compte."
   }
 }
