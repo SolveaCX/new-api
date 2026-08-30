@@ -34,18 +34,23 @@ interface IntegrationCard {
 }
 
 function getCardBackground(tone: IntegrationCard['tone']): string {
-  if (tone === 'blue') return 'bg-linear-to-r from-white via-white to-[#f0f5ff]'
+  if (tone === 'blue')
+    return 'bg-linear-to-r from-white via-white to-[#f0f5ff] dark:from-[#252a36] dark:via-[#252a36] dark:to-[#29334a]'
   if (tone === 'amber')
-    return 'bg-linear-to-r from-white via-white to-[#fffaf1]'
-  if (tone === 'teal') return 'bg-linear-to-r from-white via-white to-[#effcf8]'
-  return 'bg-linear-to-r from-white via-white to-[#f9f9fa]'
+    return 'bg-linear-to-r from-white via-white to-[#fffaf1] dark:from-[#2a2824] dark:via-[#2a2824] dark:to-[#332d23]'
+  if (tone === 'teal')
+    return 'bg-linear-to-r from-white via-white to-[#effcf8] dark:from-[#222d2b] dark:via-[#222d2b] dark:to-[#263a35]'
+  return 'bg-linear-to-r from-white via-white to-[#f9f9fa] dark:from-[#252527] dark:via-[#252527] dark:to-[#29292d]'
 }
 
 function getIconTone(tone: IntegrationCard['tone']): string {
-  if (tone === 'blue') return 'bg-[#e6eeff] text-[#386fe5]'
-  if (tone === 'amber') return 'bg-[#fff2dc] text-[#b87921]'
-  if (tone === 'teal') return 'bg-[#d8f5ec] text-[#1d9d79]'
-  return 'bg-[#f4f1f8] text-foreground'
+  if (tone === 'blue')
+    return 'bg-[#e6eeff] text-[#386fe5] dark:bg-violet-900/45 dark:text-violet-200'
+  if (tone === 'amber')
+    return 'bg-[#fff2dc] text-[#b87921] dark:bg-amber-900/35 dark:text-amber-200'
+  if (tone === 'teal')
+    return 'bg-[#d8f5ec] text-[#1d9d79] dark:bg-emerald-900/35 dark:text-emerald-200'
+  return 'bg-[#f4f1f8] text-foreground dark:bg-violet-900/35 dark:text-violet-100'
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -106,7 +111,7 @@ export function IntegrationCards(props: {
         <h2 className='text-xl font-medium tracking-[-0.02em]'>
           {t("Choose how you'll use Flatkey")}
         </h2>
-        <p className='text-sm tracking-[-0.01em] text-[#454545]'>
+        <p className='dark:text-muted-foreground text-sm tracking-[-0.01em] text-[#454545]'>
           {t('All four options use the same account and model catalog.')}
         </p>
       </div>
@@ -120,7 +125,7 @@ export function IntegrationCards(props: {
               <button
                 type='button'
                 onClick={() => props.onSelect(card.id)}
-                className={`group focus-visible:ring-ring relative flex h-full min-h-[170px] w-full flex-col items-start gap-5 rounded-2xl border border-black/[0.1] p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none sm:min-h-[184px] sm:p-6 ${getCardBackground(card.tone)}`}
+                className={`group focus-visible:ring-ring relative flex h-full min-h-[170px] w-full flex-col items-start gap-5 rounded-2xl border border-black/[0.1] p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none sm:min-h-[184px] sm:p-6 dark:border-white/10 dark:text-violet-50 dark:hover:border-violet-300/30 dark:hover:shadow-black/20 ${getCardBackground(card.tone)}`}
               >
                 <span
                   className={`flex size-9 items-center justify-center rounded-lg ${getIconTone(card.tone)}`}
@@ -128,7 +133,7 @@ export function IntegrationCards(props: {
                   <Icon className='size-[18px]' aria-hidden='true' />
                 </span>
                 {card.id === 'agent' && (
-                  <span className='absolute top-6 right-6 inline-flex items-center gap-1 text-sm font-medium text-[#386fe5]'>
+                  <span className='absolute top-6 right-6 inline-flex items-center gap-1 text-sm font-medium text-[#386fe5] dark:text-violet-300'>
                     {t('Preview')}
                     <ArrowRight className='size-4' aria-hidden='true' />
                   </span>
@@ -141,14 +146,14 @@ export function IntegrationCards(props: {
                         className={`rounded-md px-2 py-0.5 text-xs font-medium ${
                           card.tone === 'teal'
                             ? 'bg-[#d8f5ec] text-[#1d9d79]'
-                            : 'bg-[#e9efff] text-[#386fe5]'
+                            : 'bg-[#e9efff] text-[#386fe5] dark:bg-violet-900/45 dark:text-violet-200'
                         }`}
                       >
                         {card.badge}
                       </span>
                     )}
                   </span>
-                  <span className='text-sm leading-relaxed text-[#454545]'>
+                  <span className='text-sm leading-relaxed text-[#454545] dark:text-violet-100/75'>
                     {card.description}
                   </span>
                 </span>
