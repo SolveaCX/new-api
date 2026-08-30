@@ -1,15 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { getModelPromotions, modelPromotionLabel } from "./model-promotions";
+import {
+  getModelPromotions,
+  modelPromotionLabel,
+  sortModelsByPromotion,
+} from "./model-promotions";
 
 describe("model promotions", () => {
   test("marks the requested models", () => {
-    expect(getModelPromotions("glm-5.3")).toEqual([]);
+    expect(getModelPromotions("glm-5.3")).toEqual(["new"]);
     expect(getModelPromotions("glm-5.3-flash")).toEqual(["limited", "new"]);
     expect(getModelPromotions("deepseek-v4-pro")).toEqual(["limited"]);
     expect(getModelPromotions("deepseek-v4-flash")).toEqual(["free"]);
     expect(getModelPromotions("deepseek-v4-pro-0813")).toEqual([]);
     expect(getModelPromotions("deepseek-v4-flash-0813")).toEqual([]);
     expect(getModelPromotions("glm-5.3-flash-0813")).toEqual([]);
+    expect(getModelPromotions("glm-5.3-0813")).toEqual([]);
     expect(getModelPromotions("qwen3.8-max")).toEqual([]);
     expect(getModelPromotions("qwen3.8-max-free")).toEqual([]);
     expect(getModelPromotions("kimi-k3")).toEqual([]);
@@ -26,14 +31,31 @@ describe("model promotions", () => {
     expect(getModelPromotions("claude-sonnet-5")).toEqual(["hot"]);
   });
 
+  test("sorts free and campaign models ahead of the existing order", () => {
+    const models = [
+      { model_name: "plain" },
+      { model_name: "glm-5.3" },
+      { model_name: "deepseek-v4-pro" },
+      { model_name: "gpt-5.6-sol" },
+      { model_name: "deepseek-v4-flash" },
+    ];
+    expect(sortModelsByPromotion(models).map((model) => model.model_name)).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "gpt-5.6-sol",
+      "plain",
+      "glm-5.3",
+    ]);
+  });
+
   test("localizes the new-release label", () => {
     expect(modelPromotionLabel("en", "new")).toBe("New release");
     expect(modelPromotionLabel("zh", "new")).toBe("新发布");
   });
 
-  test("uses Limited for the limited label outside Chinese", () => {
-    expect(modelPromotionLabel("en", "limited")).toBe("Limited");
-    expect(modelPromotionLabel("fr", "limited")).toBe("Limited");
+  test("uses the complete localized limited-discount label", () => {
+    expect(modelPromotionLabel("en", "limited")).toBe("Limited discount");
+    expect(modelPromotionLabel("fr", "limited")).toBe("Remise à durée limitée");
     expect(modelPromotionLabel("zh", "limited")).toBe("限时折扣");
   });
 });

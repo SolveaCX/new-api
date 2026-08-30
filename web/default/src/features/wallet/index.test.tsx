@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import {
   parseStripeCurrencyPrices,
@@ -56,5 +57,14 @@ describe('Wallet checkout currency resolution', () => {
         currencyTouched: true,
       })
     ).toBe('BRL')
+  })
+})
+
+describe('Wallet Stripe checkout layering', () => {
+  test('hides the recharge picker while the shared Stripe checkout is open', () => {
+    const source = readFileSync(new URL('./index.tsx', import.meta.url), 'utf8')
+
+    expect(source).toContain('open={topupDialogOpen && !checkoutDialog}')
+    expect(source).toContain('<StripeCheckoutDialog')
   })
 })

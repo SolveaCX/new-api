@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'vitest'
-import { getModelPromotions } from './model-promotions'
+import {
+  getModelPromotions,
+  modelPromotionPriority,
+  sortModelsByPromotion,
+} from './model-promotions'
 
 describe('model promotions', () => {
-  test('marks only the requested models with free and limited discount', () => {
-    expect(getModelPromotions('glm-5.3')).toEqual([])
+  test('recognizes the requested free, limited, new and hot models', () => {
+    expect(getModelPromotions('glm-5.3')).toEqual(['new'])
     expect(getModelPromotions('glm-5.3-flash')).toEqual(['limited', 'new'])
     expect(getModelPromotions('deepseek-v4-pro')).toEqual(['limited'])
     expect(getModelPromotions('deepseek-v4-flash')).toEqual(['free'])
@@ -19,5 +23,23 @@ describe('model promotions', () => {
     expect(getModelPromotions('claude-opus-4-8')).toContain('hot')
     expect(getModelPromotions('claude-opus-5')).toContain('hot')
     expect(getModelPromotions('claude-sonnet-5')).toContain('hot')
+  })
+
+  test('sorts promoted models first while preserving stable order', () => {
+    const models = [
+      { id: 'plain' },
+      { id: 'glm-5.3' },
+      { id: 'deepseek-v4-pro' },
+      { id: 'gpt-5.6-sol' },
+      { id: 'deepseek-v4-flash' },
+    ] as never[]
+    expect(sortModelsByPromotion(models).map((model) => model.id)).toEqual([
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'gpt-5.6-sol',
+      'plain',
+      'glm-5.3',
+    ])
+    expect(modelPromotionPriority('plain')).toBe(Number.POSITIVE_INFINITY)
   })
 })

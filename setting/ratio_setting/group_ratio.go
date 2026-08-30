@@ -2,6 +2,8 @@ package ratio_setting
 
 import (
 	"errors"
+	"os"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -30,6 +32,22 @@ var defaultGroupGroupRatio = map[string]map[string]float64{
 var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
 
 var groupModelRatioMap = types.NewRWMap[string, map[string]float64]()
+
+// promotionFreeModels contains the PLG models made free by an environment-
+// scoped promotion. Keeping the switch in deployment configuration prevents a
+// staging campaign from silently changing production billing.
+var promotionFreeModels = parsePromotionFreeModels(os.Getenv("PROMOTION_FREE_MODELS"))
+
+func parsePromotionFreeModels(value string) map[string]struct{} {
+	models := make(map[string]struct{})
+	for _, modelName := range strings.Split(value, ";") {
+		modelName = strings.TrimSpace(modelName)
+		if modelName != "" {
+			models[modelName] = struct{}{}
+		}
+	}
+	return models
+}
 
 var defaultGroupSpecialUsableGroup = map[string]map[string]string{
 	"vip": {
@@ -134,12 +152,18 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 }
 
 func GetGroupModelRatio(groupName, modelName string) (float64, bool, string) {
+	matchedModel := FormatMatchingModelName(modelName)
+	if groupName == "plg" {
+		if _, ok := promotionFreeModels[matchedModel]; ok {
+			return 0, true, matchedModel
+		}
+	}
+
 	models, ok := groupModelRatioMap.Get(groupName)
 	if !ok {
 		return -1, false, ""
 	}
 
-	matchedModel := FormatMatchingModelName(modelName)
 	ratio, ok := models[matchedModel]
 	if !ok {
 		return -1, false, matchedModel
@@ -154,6 +178,14 @@ func GetGroupModelRatioCopy() map[string]map[string]float64 {
 		copied[group] = make(map[string]float64, len(ratios))
 		for modelName, ratio := range ratios {
 			copied[group][modelName] = ratio
+		}
+	}
+	if len(promotionFreeModels) > 0 {
+		if copied["plg"] == nil {
+			copied["plg"] = make(map[string]float64, len(promotionFreeModels))
+		}
+		for modelName := range promotionFreeModels {
+			copied["plg"][modelName] = 0
 		}
 	}
 	return copied

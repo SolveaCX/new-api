@@ -47,6 +47,8 @@ const TEST_METADATA: Record<string, ModelDirectoryMetadata> = {
   }),
   "gpt-4o-mini": metadata("OpenAI", "GPT", 24, { providers: ["OpenAI", "Azure"] }),
   "deepseek-v4-pro": metadata("DeepSeek", "DeepSeek", 10, { top_ten_rank: 4, context_tokens: 1048576 }),
+  "glm-5.3": metadata("Zhipu AI", "GLM", 11, { top_ten_rank: 5 }),
+  "glm-5.3-flash": metadata("Zhipu AI", "GLM", 12, { top_ten_rank: 6 }),
   "seedance-2.5": metadata("ByteDance", "Seedance", 94, {
     providers: ["ByteDance"], modalities: ["text", "image", "video"], context_tokens: null,
     categories: ["Marketing"], top_ten_rank: 8, released_at: "2026-08-04",
@@ -321,8 +323,22 @@ describe("facet counts", () => {
 describe("sorting", () => {
   test("most popular leads with the board order, then overall rank", () => {
     const sorted = sortDirectoryRows(SAMPLE, "rank");
-    expect(sorted[0].name).toBe("gpt-5.6-sol"); // TOP 2 — the lowest board position present
-    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["gpt-5.6-sol", "seedance-2.5", "deepseek-v4-pro"]);
+    expect(sorted[0].name).toBe("deepseek-v4-pro");
+    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["deepseek-v4-pro", "gpt-5.6-sol", "seedance-2.5"]);
+  });
+
+  test("keeps limited models ahead of new-only models", () => {
+    const campaignRows = rows([
+      { name: "glm-5.3-flash", vendor: "Zhipu AI", inputUsd: 0.12 },
+      { name: "deepseek-v4-pro", vendor: "DeepSeek", inputUsd: 1.056 },
+      { name: "glm-5.3", vendor: "Zhipu AI", inputUsd: 1.12 },
+    ]);
+
+    expect(sortDirectoryRows(campaignRows, "rank").map((row) => row.name)).toEqual([
+      "deepseek-v4-pro",
+      "glm-5.3-flash",
+      "glm-5.3",
+    ]);
   });
 
   test("longest context first, unknown context last", () => {

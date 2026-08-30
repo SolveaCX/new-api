@@ -178,7 +178,7 @@ describe("ModelsDirectoryTable", () => {
     expect(cells[3]).toContain("$0.072");
   });
 
-  test("defers optional price columns until wide desktop layouts", () => {
+  test("keeps every column available through horizontal scrolling", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
         locale="en"
@@ -198,13 +198,14 @@ describe("ModelsDirectoryTable", () => {
       />
     );
 
-    expect(html).toContain("w-full min-w-0 table-fixed border-collapse text-sm");
-    expect(html).toContain("sticky left-0 z-10 w-[65%] min-w-[220px]");
-    expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:table-cell");
-    expect(html).not.toContain("whitespace-normal xl:table-cell");
+    expect(html).toContain("touch-pan-x overflow-x-auto overscroll-x-contain");
+    expect(html).toContain("w-max min-w-full table-auto border-collapse text-sm");
+    expect(html).toContain("sticky left-0 z-10 min-w-[320px]");
+    expect(html).toContain("min-w-[132px] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal");
+    expect(html).not.toContain("hidden w-[11%]");
   });
 
-  test("keeps promotion badges beside the model name", () => {
+  test("keeps the full model name above promotion badges", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
         locale="en"
@@ -218,21 +219,28 @@ describe("ModelsDirectoryTable", () => {
             officialUsd: 1,
             discountedUsd: 0.8,
             iconKey: "zai",
+            top10: 1,
           },
         ]}
       />
     );
 
     const nameIndex = html.indexOf(">glm-5.3-flash</span>");
-    const nameRowIndex = html.indexOf('class="flex min-w-0 flex-wrap items-center gap-1.5"');
-    const nameRowEnd = html.indexOf('class="text-muted-foreground/70', nameRowIndex);
-    const nameRow = html.slice(nameRowIndex, nameRowEnd);
+    const attributionIndex = html.indexOf(">Z.ai</span>");
+    const limitedIndex = html.indexOf(">Limited discount</span>");
+    const newReleaseIndex = html.indexOf(">New release</span>");
+    const modelCell = html.slice(html.indexOf("<td"), html.indexOf("</td>"));
 
     expect(nameIndex).toBeGreaterThanOrEqual(0);
-    expect(nameRowIndex).toBeLessThan(nameIndex);
-    expect(nameRowEnd).toBeGreaterThan(nameRowIndex);
-    expect(nameRow).toContain("Limited");
-    expect(nameRow).toContain("New release");
+    expect(attributionIndex).toBeGreaterThan(nameIndex);
+    expect(limitedIndex).toBeGreaterThan(attributionIndex);
+    expect(newReleaseIndex).toBeGreaterThan(limitedIndex);
+    expect(modelCell).not.toContain("TOP");
+    expect(modelCell).toContain('title="glm-5.3-flash"');
+    expect(modelCell).toContain("shrink-0 whitespace-nowrap font-mono");
+    expect(modelCell).not.toContain("truncate font-mono");
+    expect(modelCell).toContain("text-muted-foreground/70 block truncate text-[11px]");
+    expect(modelCell).toContain("mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5");
   });
 });
 

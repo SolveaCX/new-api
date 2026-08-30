@@ -10,16 +10,16 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
 };
 
 const LABELS: Record<Locale, Record<ModelPromotion, string>> = {
-  en: { free: "Free", limited: "Limited", hot: "HOT", new: "New release" },
+  en: { free: "Free", limited: "Limited discount", hot: "HOT", new: "New release" },
   zh: { free: "免费", limited: "限时折扣", hot: "热门", new: "新发布" },
-  es: { free: "Gratis", limited: "Limited", hot: "Popular", new: "Nuevo lanzamiento" },
-  fr: { free: "Gratuit", limited: "Limited", hot: "Tendance", new: "Nouvelle sortie" },
-  pt: { free: "Grátis", limited: "Limited", hot: "Em alta", new: "Novo lançamento" },
-  ru: { free: "Бесплатно", limited: "Limited", hot: "Популярно", new: "Новый релиз" },
-  ja: { free: "無料", limited: "Limited", hot: "人気", new: "新リリース" },
-  vi: { free: "Miễn phí", limited: "Limited", hot: "Nổi bật", new: "Phát hành mới" },
-  de: { free: "Kostenlos", limited: "Limited", hot: "Beliebt", new: "Neu veröffentlicht" },
-  id: { free: "Gratis", limited: "Limited", hot: "Populer", new: "Rilis baru" },
+  es: { free: "Gratis", limited: "Descuento por tiempo limitado", hot: "Popular", new: "Nuevo lanzamiento" },
+  fr: { free: "Gratuit", limited: "Remise à durée limitée", hot: "Tendance", new: "Nouvelle sortie" },
+  pt: { free: "Grátis", limited: "Desconto por tempo limitado", hot: "Em alta", new: "Novo lançamento" },
+  ru: { free: "Бесплатно", limited: "Временная скидка", hot: "Популярно", new: "Новый релиз" },
+  ja: { free: "無料", limited: "期間限定割引", hot: "人気", new: "新リリース" },
+  vi: { free: "Miễn phí", limited: "Giảm giá có thời hạn", hot: "Nổi bật", new: "Phát hành mới" },
+  de: { free: "Kostenlos", limited: "Zeitlich begrenzter Rabatt", hot: "Beliebt", new: "Neu veröffentlicht" },
+  id: { free: "Gratis", limited: "Diskon terbatas", hot: "Populer", new: "Rilis baru" },
 };
 
 export function getModelPromotions(modelName: string): ModelPromotion[] {
@@ -39,7 +39,9 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
     /(^|[/])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
     /(^|[/])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(name)
   ) promotions.push("hot");
-  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) promotions.push("new");
+  if (
+    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name)
+  ) promotions.push("new");
   return promotions;
 }
 

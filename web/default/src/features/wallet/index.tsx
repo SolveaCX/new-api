@@ -973,7 +973,10 @@ export function Wallet(props: WalletProps) {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <Dialog open={topupDialogOpen} onOpenChange={setTopupDialogOpen}>
+      <Dialog
+        open={topupDialogOpen && !checkoutDialog}
+        onOpenChange={setTopupDialogOpen}
+      >
         <DialogContent className='sm:max-w-lg' showCloseButton>
           <DialogHeader>
             <DialogTitle>{t('Add to your balance')}</DialogTitle>

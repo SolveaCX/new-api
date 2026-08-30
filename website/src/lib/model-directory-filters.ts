@@ -272,6 +272,17 @@ const AGE_ORDER: AgeBand[] = ["new", "1-3m", "3-6m", "6-12m", "12m+"];
 const byPopularity = (a: DirectoryRow, b: DirectoryRow) =>
   (a.top10 ?? Number.MAX_SAFE_INTEGER) - (b.top10 ?? Number.MAX_SAFE_INTEGER) || a.rank - b.rank;
 
+// Within one promotion tier, keep models from the same catalog series
+// together. Unknown series sort after named series and still fall back to the
+// popularity board for a deterministic order.
+const seriesKey = (row: DirectoryRow) => row.series?.trim().toLocaleLowerCase() || "";
+
+const bySeriesThenPopularity = (a: DirectoryRow, b: DirectoryRow) => {
+  const aSeries = seriesKey(a);
+  const bSeries = seriesKey(b);
+  return aSeries.localeCompare(bSeries, "en") || byPopularity(a, b);
+};
+
 // Newest sorts by release band, then by prominence inside the band. An unknown
 // age sorts last rather than first, and the tiebreak leads with the popularity
 // board because `rank` is the source listing order and would otherwise push
@@ -296,6 +307,27 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
       return sorted.sort((a, b) => (b.saving ?? -1) - (a.saving ?? -1) || byPopularity(a, b));
     case "rank":
     default:
-      return sorted.sort((a, b) => modelPromotionPriority(a.name) - modelPromotionPriority(b.name) || byPopularity(a, b));
+      {
+        const seriesCounts = new Map<string, number>();
+        for (const row of sorted) {
+          const series = seriesKey(row);
+          if (!series) continue;
+          const key = `${modelPromotionPriority(row.name)}::${series}`;
+          seriesCounts.set(key, (seriesCounts.get(key) ?? 0) + 1);
+        }
+        return sorted.sort((a, b) => {
+          const aPriority = modelPromotionPriority(a.name);
+          const bPriority = modelPromotionPriority(b.name);
+          if (aPriority !== bPriority) return aPriority - bPriority;
+
+          const aSeries = seriesKey(a);
+          const bSeries = seriesKey(b);
+          const aSeriesGroup = aSeries ? seriesCounts.get(`${aPriority}::${aSeries}`) ?? 0 : 0;
+          const bSeriesGroup = bSeries ? seriesCounts.get(`${bPriority}::${bSeries}`) ?? 0 : 0;
+          return aSeriesGroup > 1 || bSeriesGroup > 1
+            ? bySeriesThenPopularity(a, b)
+            : byPopularity(a, b);
+        });
+      }
   }
 }
