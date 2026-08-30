@@ -46,6 +46,7 @@ import {
   CurrentPlanCard,
   CurrentPlanRenewalDialogContent,
 } from './current-plan-card'
+import { PlanLimitSummary } from './plan-limit-summary'
 import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
@@ -189,6 +190,17 @@ function renderWalletCardWithPlans(
         initialLoading={false}
         userQuota={12345}
       />
+    </I18nextProvider>
+  )
+}
+
+function renderPlanLimitSummary(plan: {
+  window_5h_amount?: number
+  window_week_amount?: number
+}) {
+  return renderToStaticMarkup(
+    <I18nextProvider i18n={testI18n}>
+      <PlanLimitSummary plan={plan} />
     </I18nextProvider>
   )
 }
@@ -438,17 +450,28 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('data-subscription-reference-price="$450"')
     expect(html).not.toContain('data-subscription-reference-price="$45"')
     expect(html).not.toContain('data-subscription-reference-price="$300"')
-    expect(html).toContain('data-plan-limit="5h"')
-    expect(html).toContain('data-plan-limit="7d"')
-    expect(html).toContain('5-Hour Window')
-    expect(html).toContain('7 Days')
-    expect(html).not.toContain('window limit (USD)')
+    expect(html).toContain('data-plan-limit-summary="true"')
+    expect(html).toContain('data-plan-limit-label="all-models"')
+    expect(html).toContain('Short-term caps: $8 / 5h · $12 / 7d')
+    expect(html).toContain('Short-term caps: $18 / 5h · $45 / 7d')
+    expect(html).toContain('Short-term caps: $78 / 5h · $220 / 7d')
+    expect(html).not.toContain('5-hour window limit (USD)')
+    expect(html).not.toContain('7-day window limit (USD)')
     expect(html).toContain('$8')
     expect(html).toContain('$12')
     expect(html).toContain('$18')
     expect(html).toContain('$45')
     expect(html).toContain('$78')
     expect(html).toContain('$220')
+  })
+
+  test('renders only the configured window in a compact summary', () => {
+    const html = renderPlanLimitSummary({ window_5h_amount: 4_000_000 })
+
+    expect(html).toContain('data-plan-limit-summary="true"')
+    expect(html).toContain('Short-term cap: $8 / 5h')
+    expect(html).not.toContain('7d')
+    expect(html).not.toContain('5-hour window limit (USD)')
   })
 
   test('keeps the Pro most-popular badge visible when there is an active plan', () => {
@@ -604,8 +627,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain(
       'data-wallet-usage-meter="Media generation credits"'
     )
-    expect(html).toContain('data-plan-limit="5h"')
-    expect(html).toContain('data-plan-limit="7d"')
+    expect(html).toContain('data-plan-limit-summary="true"')
     expect(html).toContain('$18')
     expect(html).toContain('$45')
     expect(html).not.toContain('Media generation credits')
