@@ -6860,6 +6860,8 @@
     "Use a site path such as /pricing or a full https:// URL.": "Use a site path such as /pricing or a full https:// URL.",
     "Optional logo shown before the announcement content (64 KB max).": "Optional logo shown before the announcement content (64 KB max).",
     "Choose a model logo": "Choose a model logo",
-    "Custom upload": "Custom upload"
+    "Custom upload": "Custom upload",
+    "One connection, All models. Start building with your free credits.": "One connection, All models. Start building with your free credits.",
+    "Fast": "Fast"
   }
 }

@@ -6860,6 +6860,8 @@
     "Use a site path such as /pricing or a full https:// URL.": "Используйте путь сайта, например /pricing, или полный URL https://.",
     "Optional logo shown before the announcement content (64 KB max).": "Необязательный логотип перед содержанием объявления (не более 64 КБ).",
     "Choose a model logo": "Выберите логотип модели",
-    "Custom upload": "Пользовательская загрузка"
+    "Custom upload": "Пользовательская загрузка",
+    "One connection, All models. Start building with your free credits.": "Одно подключение — все модели. Начните создавать с бесплатными кредитами.",
+    "Fast": "Быстро"
   }
 }
