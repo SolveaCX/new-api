@@ -610,11 +610,19 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('href="/usage-logs"')
     expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(3)
     expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(3)
-    expect(html).toContain('data-wallet-usage-meter="Monthly model quota"')
-    expect(html).toContain(
-      'data-wallet-usage-meter="5-hour window limit (USD)"'
+    const fiveHourLabel = html.indexOf(
+      'data-wallet-usage-meter="5-Hour Window"'
     )
-    expect(html).toContain('data-wallet-usage-meter="7-day window limit (USD)"')
+    const sevenDayLabel = html.indexOf('data-wallet-usage-meter="7 Days"')
+    const monthlyLabel = html.indexOf(
+      'data-wallet-usage-meter="Monthly model quota"'
+    )
+    expect(fiveHourLabel).toBeGreaterThanOrEqual(0)
+    expect(sevenDayLabel).toBeGreaterThanOrEqual(0)
+    expect(monthlyLabel).toBeGreaterThanOrEqual(0)
+    expect(fiveHourLabel).toBeLessThan(monthlyLabel)
+    expect(sevenDayLabel).toBeLessThan(monthlyLabel)
+    expect(html).not.toContain('window limit (USD)')
     expect(html).toContain('grid grid-cols-2 gap-3')
     expect(html).not.toContain(
       'data-wallet-usage-meter="Media generation credits"'

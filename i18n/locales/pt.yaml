@@ -385,3 +385,8 @@ notify.subscription_quota_warning_title: "Sua cota de assinatura está acabando"
 notify.quota_warning_email: "{{.Warning}}. Sua cota restante atual é {{.Quota}}. Para evitar interrupções no serviço, recarregue a tempo.<br/>Link de recarga: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Cota restante: {{.Quota}}. Recarregue a tempo."
 notify.quota_warning_gotify: "{{.Warning}}. Sua cota restante atual é {{.Quota}}. Recarregue a tempo."
+
+# Registration CAPTCHA messages
+registration_captcha.required: "Conclua a verificação gráfica"
+registration_captcha.invalid: "A verificação gráfica é inválida ou expirou. Tente novamente."
+registration_captcha.unavailable: "A verificação gráfica está temporariamente indisponível. Tente novamente mais tarde."

@@ -18,15 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
-import { ArrowRight, Sparkles } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { computeTimeRange } from '@/lib/time'
 import { useStatus } from '@/hooks/use-status'
-import { Button } from '@/components/ui/button'
 import { StaggerContainer, StaggerItem } from '@/components/page-transition'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
@@ -93,44 +91,29 @@ export function UsageMetrics() {
   })
 
   return (
-    <section className='flex flex-col gap-3'>
-      <div className='flex flex-wrap items-end justify-between gap-3'>
-        <div className='flex flex-col gap-1'>
-          <h2 className='text-lg font-semibold'>{t('Your usage')}</h2>
-          <p className='text-muted-foreground text-sm'>
-            {t('A quick look at your workspace activity.')}
-          </p>
-        </div>
-        <Link
-          to='/usage-logs'
-          className='text-primary flex items-center gap-1 text-sm font-semibold hover:underline'
-        >
-          {t('View activity')}
-          <ArrowRight className='size-4' aria-hidden='true' />
-        </Link>
-      </div>
-
-      <StaggerContainer className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
+    <section className='bg-card rounded-[20px] border border-black/[0.04] p-4 shadow-[0_1px_8px_rgba(0,0,0,0.04)] sm:p-6 dark:border-white/10 dark:bg-[#1d1d1f] dark:shadow-none'>
+      <StaggerContainer className='grid gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4'>
         {items.map((item) => (
           <StaggerItem
             key={item.key}
-            className='bg-card rounded-xl border p-4 shadow-xs'
+            className='bg-card rounded-2xl border border-black/[0.1] px-6 py-4 dark:border-white/10 dark:bg-[#242426]'
           >
             <StatCard
               title={item.title}
               value={item.value}
               description={item.description}
               icon={item.icon}
+              showIcon={false}
               action={
                 item.key === 'balance' ? (
-                  <Button
-                    variant='ghost'
-                    size='xs'
+                  <button
+                    type='button'
                     onClick={() => setBoostOpen(true)}
+                    className='inline-flex items-center gap-0.5 text-xs font-medium text-[#386fe5] hover:underline'
                   >
-                    <Sparkles data-icon='inline-start' />
                     {t('Boost balance')}
-                  </Button>
+                    <ArrowUpRight className='size-3.5' aria-hidden='true' />
+                  </button>
                 ) : undefined
               }
               loading={

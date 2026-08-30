@@ -38,7 +38,10 @@ export function getModelPromotions(modelId: string): ModelPromotion[] {
   ) {
     promotions.push('hot')
   }
-  if (/(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)) {
+  if (
+    /(^|[/])glm[-_.]?5[-_.]?3$/.test(name) ||
+    /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name)
+  ) {
     promotions.push('new')
   }
   return promotions

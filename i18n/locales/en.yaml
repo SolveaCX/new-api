@@ -385,3 +385,8 @@ notify.subscription_quota_warning_title: "Your subscription quota is running low
 notify.quota_warning_email: "{{.Warning}}. Your current remaining quota is {{.Quota}}. To avoid service interruption, please top up in time.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Remaining quota: {{.Quota}}. Please top up in time."
 notify.quota_warning_gotify: "{{.Warning}}. Your current remaining quota is {{.Quota}}. Please top up in time."
+
+# Registration CAPTCHA messages
+registration_captcha.required: "Please complete the graphical verification"
+registration_captcha.invalid: "The graphical verification is invalid or expired. Please try again."
+registration_captcha.unavailable: "Graphical verification is temporarily unavailable. Please try again later."

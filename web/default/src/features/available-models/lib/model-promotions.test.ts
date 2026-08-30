@@ -7,8 +7,9 @@ import {
 
 describe('model promotions', () => {
   test('recognizes the requested free, limited, new and hot models', () => {
-    expect(getModelPromotions('glm-5.3')).toEqual([])
+    expect(getModelPromotions('glm-5.3')).toEqual(['new'])
     expect(getModelPromotions('glm-5.3-flash')).toEqual(['limited', 'new'])
+    expect(getModelPromotions('glm-5.3-0813')).toEqual([])
     expect(getModelPromotions('deepseek-v4-pro')).toEqual(['limited'])
     expect(getModelPromotions('deepseek-v4-flash')).toEqual(['free'])
     expect(getModelPromotions('qwen3.8-max')).not.toContain('limited')

@@ -261,7 +261,7 @@ export function OverviewDashboard({
   )
 
   return (
-    <div className='flex flex-col gap-8'>
+    <div className='font-inter mx-auto flex w-full max-w-[1200px] flex-col gap-8 pb-8 antialiased sm:gap-11'>
       <OverviewHero />
       <UsageMetrics />
       <IntegrationCards onSelect={setOpenIntegration} />

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Braces, Bot, Terminal, TerminalSquare } from 'lucide-react'
+import { ArrowRight, Braces, Bot, Terminal, TerminalSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   CardStaggerContainer,
@@ -29,6 +29,28 @@ interface IntegrationCard {
   title: string
   description: string
   icon: typeof Braces
+  tone: 'neutral' | 'blue' | 'amber' | 'teal'
+  badge?: string
+}
+
+function getCardBackground(tone: IntegrationCard['tone']): string {
+  if (tone === 'blue')
+    return 'bg-linear-to-r from-white via-white to-[#f0f5ff] dark:from-[#252a36] dark:via-[#252a36] dark:to-[#29334a]'
+  if (tone === 'amber')
+    return 'bg-linear-to-r from-white via-white to-[#fffaf1] dark:from-[#2a2824] dark:via-[#2a2824] dark:to-[#332d23]'
+  if (tone === 'teal')
+    return 'bg-linear-to-r from-white via-white to-[#effcf8] dark:from-[#222d2b] dark:via-[#222d2b] dark:to-[#263a35]'
+  return 'bg-linear-to-r from-white via-white to-[#f9f9fa] dark:from-[#252527] dark:via-[#252527] dark:to-[#29292d]'
+}
+
+function getIconTone(tone: IntegrationCard['tone']): string {
+  if (tone === 'blue')
+    return 'bg-[#e6eeff] text-[#386fe5] dark:bg-violet-900/45 dark:text-violet-200'
+  if (tone === 'amber')
+    return 'bg-[#fff2dc] text-[#b87921] dark:bg-amber-900/35 dark:text-amber-200'
+  if (tone === 'teal')
+    return 'bg-[#d8f5ec] text-[#1d9d79] dark:bg-emerald-900/35 dark:text-emerald-200'
+  return 'bg-[#f4f1f8] text-foreground dark:bg-violet-900/35 dark:text-violet-100'
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -43,6 +65,7 @@ export function useIntegrationCards(): IntegrationCard[] {
         'Call any model with an OpenAI-compatible API. Copy a ready-to-run example for your model and language.'
       ),
       icon: TerminalSquare,
+      tone: 'neutral',
     },
     {
       id: 'sdk',
@@ -51,6 +74,7 @@ export function useIntegrationCards(): IntegrationCard[] {
         'Use the OpenAI SDK you already know — with Flatkey as the gateway.'
       ),
       icon: Braces,
+      tone: 'blue',
     },
     {
       id: 'cli',
@@ -59,6 +83,8 @@ export function useIntegrationCards(): IntegrationCard[] {
         'Generate images and videos from your terminal. Let your AI assistant drive the workflow.'
       ),
       icon: Terminal,
+      tone: 'amber',
+      badge: t('Fast'),
     },
     {
       id: 'agent',
@@ -67,6 +93,8 @@ export function useIntegrationCards(): IntegrationCard[] {
         'Connect your coding agent with one command, then use Flatkey from your existing projects.'
       ),
       icon: Bot,
+      tone: 'teal',
+      badge: t('Simple'),
     },
   ]
 }
@@ -78,17 +106,17 @@ export function IntegrationCards(props: {
   const cards = useIntegrationCards()
 
   return (
-    <section className='flex flex-col gap-3'>
-      <div className='flex flex-col gap-1'>
-        <h2 className='text-lg font-semibold'>
+    <section className='flex flex-col gap-5'>
+      <div className='flex flex-col gap-1 px-1 sm:px-5'>
+        <h2 className='text-xl font-medium tracking-[-0.02em]'>
           {t("Choose how you'll use Flatkey")}
         </h2>
-        <p className='text-muted-foreground text-sm'>
+        <p className='dark:text-muted-foreground text-sm tracking-[-0.01em] text-[#454545]'>
           {t('All four options use the same account and model catalog.')}
         </p>
       </div>
 
-      <CardStaggerContainer className='grid gap-3 md:grid-cols-2'>
+      <CardStaggerContainer className='bg-card grid gap-3 rounded-[20px] border border-black/[0.04] p-4 shadow-[0_1px_8px_rgba(0,0,0,0.04)] sm:gap-5 sm:p-6 md:grid-cols-2 dark:border-white/10'>
         {cards.map((card) => {
           const Icon = card.icon
 
@@ -97,14 +125,35 @@ export function IntegrationCards(props: {
               <button
                 type='button'
                 onClick={() => props.onSelect(card.id)}
-                className='bg-card hover:border-primary/50 focus-visible:ring-ring flex h-full w-full flex-col items-start gap-4 rounded-xl border p-5 text-left shadow-xs transition-colors hover:shadow-md focus-visible:ring-2 focus-visible:outline-none'
+                className={`group focus-visible:ring-ring relative flex h-full min-h-[170px] w-full flex-col items-start gap-5 rounded-2xl border border-black/[0.1] p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none sm:min-h-[184px] sm:p-6 dark:border-white/10 dark:text-violet-50 dark:hover:border-violet-300/30 dark:hover:shadow-black/20 ${getCardBackground(card.tone)}`}
               >
-                <span className='bg-primary/10 text-primary flex size-10 items-center justify-center rounded-xl'>
-                  <Icon className='size-5' aria-hidden='true' />
+                <span
+                  className={`flex size-9 items-center justify-center rounded-lg ${getIconTone(card.tone)}`}
+                >
+                  <Icon className='size-[18px]' aria-hidden='true' />
                 </span>
-                <span className='flex flex-col gap-1'>
-                  <span className='font-semibold'>{card.title}</span>
-                  <span className='text-muted-foreground text-sm leading-relaxed'>
+                {card.id === 'agent' && (
+                  <span className='absolute top-6 right-6 inline-flex items-center gap-1 text-sm font-medium text-[#386fe5] dark:text-violet-300'>
+                    {t('Preview')}
+                    <ArrowRight className='size-4' aria-hidden='true' />
+                  </span>
+                )}
+                <span className='flex flex-col gap-2'>
+                  <span className='flex items-center gap-2 text-xl font-medium tracking-[-0.02em]'>
+                    {card.title}
+                    {card.badge && (
+                      <span
+                        className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+                          card.tone === 'teal'
+                            ? 'bg-[#d8f5ec] text-[#1d9d79]'
+                            : 'bg-[#e9efff] text-[#386fe5] dark:bg-violet-900/45 dark:text-violet-200'
+                        }`}
+                      >
+                        {card.badge}
+                      </span>
+                    )}
+                  </span>
+                  <span className='text-sm leading-relaxed text-[#454545] dark:text-violet-100/75'>
                     {card.description}
                   </span>
                 </span>

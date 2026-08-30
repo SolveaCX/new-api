@@ -88,6 +88,7 @@ import {
   startEmailVerificationStatusSync,
 } from '@/features/auth/sign-up/lib/email-verification-status'
 import { subscribeRegistrationEmailVerified } from '@/features/auth/sign-up/lib/registration-email-verification-channel'
+import { RegistrationCaptcha } from './registration-captcha'
 
 export function SignUpForm({
   className,
@@ -100,6 +101,10 @@ export function SignUpForm({
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
+  const [isCaptchaDialogOpen, setIsCaptchaDialogOpen] = useState(false)
+  const pendingRegistrationRef = useRef<z.infer<
+    typeof registerFormSchema
+  > | null>(null)
   const [emailVerificationState, setEmailVerificationState] = useState(
     createEmailVerificationState
   )
@@ -294,6 +299,28 @@ export function SignUpForm({
       return
     }
 
+    pendingRegistrationRef.current = data
+    setIsLoading(false)
+    setIsCaptchaDialogOpen(true)
+  }
+
+  function handleCaptchaDialogChange(open: boolean) {
+    if (!open) pendingRegistrationRef.current = null
+    setIsCaptchaDialogOpen(open)
+  }
+
+  function handleCaptchaVerified(captchaToken: string) {
+    const data = pendingRegistrationRef.current
+    if (!data || !captchaToken) return
+    pendingRegistrationRef.current = null
+    setIsCaptchaDialogOpen(false)
+    void submitRegistration(data, captchaToken)
+  }
+
+  async function submitRegistration(
+    data: z.infer<typeof registerFormSchema>,
+    captchaToken: string
+  ) {
     setIsLoading(true)
     try {
       const adsAttribution = getAdsAttributionPayload()
@@ -309,6 +336,7 @@ export function SignUpForm({
         invite: getCustomerInvite() || undefined,
         ads_attribution: adsAttribution || undefined,
         turnstile: turnstileToken,
+        captcha_token: captchaToken,
         website: data.website || undefined,
       })
 
@@ -603,6 +631,19 @@ export function SignUpForm({
           {t('Get free test credits')}
         </Button>
       </form>
+
+      <Dialog
+        open={isCaptchaDialogOpen}
+        onOpenChange={handleCaptchaDialogChange}
+        title={t('Human verification')}
+        description={t('Drag the slider until the puzzle piece fits.')}
+        contentClassName='sm:max-w-sm'
+        contentHeight='auto'
+      >
+        {isCaptchaDialogOpen && (
+          <RegistrationCaptcha onVerified={handleCaptchaVerified} />
+        )}
+      </Dialog>
 
       {hasWeChatLogin && (
         <Dialog
