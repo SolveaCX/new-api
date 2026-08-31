@@ -29,9 +29,14 @@ type AnnouncementTranslation struct {
 }
 
 type announcementTranslationRequest struct {
-	Model    string                           `json:"model"`
-	Messages []announcementTranslationMessage `json:"messages"`
-	Stream   bool                             `json:"stream"`
+	Model          string                           `json:"model"`
+	Messages       []announcementTranslationMessage `json:"messages"`
+	Stream         bool                             `json:"stream"`
+	ResponseFormat announcementTranslationFormat    `json:"response_format"`
+}
+
+type announcementTranslationFormat struct {
+	Type string `json:"type"`
 }
 
 type announcementTranslationMessage struct {
@@ -88,7 +93,8 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 			{Role: "system", Content: "You are a precise product announcement translator."},
 			{Role: "user", Content: prompt},
 		},
-		Stream: false,
+		Stream:         false,
+		ResponseFormat: announcementTranslationFormat{Type: "json_object"},
 	})
 	if err != nil {
 		return nil, err
