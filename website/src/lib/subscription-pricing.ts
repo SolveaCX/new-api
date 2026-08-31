@@ -6,9 +6,9 @@
  * copy without coupling it to the installation's quota-unit setting.
  */
 export const STANDARD_SUBSCRIPTION_LIMITS = {
-  go: { priceUsd: 10, fiveHourUsd: 8, sevenDayUsd: 12, monthlyUsd: 25 },
+  go: { priceUsd: 10, fiveHourUsd: 8, sevenDayUsd: 12, monthlyUsd: 45 },
   pro: { priceUsd: 30, fiveHourUsd: 18, sevenDayUsd: 45, monthlyUsd: 90 },
-  max: { priceUsd: 100, fiveHourUsd: 78, sevenDayUsd: 220, monthlyUsd: 450 },
+  max: { priceUsd: 100, fiveHourUsd: 78, sevenDayUsd: 220, monthlyUsd: 300 },
 } as const;
 
 export function formatUsd(amount: number): string {

@@ -73,6 +73,7 @@ require (
 	github.com/stripe/stripe-go/v86 v86.1.1
 	github.com/waffo-com/waffo-pancake-sdk-go v0.3.1
 	github.com/wenlng/go-captcha/v2 v2.0.5
+	github.com/xuri/excelize/v2 v2.11.0
 	google.golang.org/api v0.290.0
 	gorm.io/hints v1.1.2
 )
@@ -118,9 +119,14 @@ require (
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/mostynb/zstdpool-freelist v0.0.0-20201229113212-927304c0c3b1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	github.com/richardlehane/mscfb v1.0.7 // indirect
+	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/streamingfast/logging v0.0.0-20230608130331-f22c91403091 // indirect
 	github.com/supranational/blst v0.3.13 // indirect
+	github.com/tiendc/go-deepcopy v1.7.2 // indirect
+	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.mongodb.org/mongo-driver v1.12.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
