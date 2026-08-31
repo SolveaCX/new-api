@@ -21,7 +21,7 @@ import { PT_DEFAULT_LEGAL_DOCUMENTS } from './localized-default-documents-pt'
 
 export const DEFAULT_TERMS_OF_SERVICE = `# flatkey.ai User Agreement
 
-Last Updated: June 4, 2026
+Last Updated: August 31, 2026
 
 This User Agreement ("Agreement") applies to the flatkey.ai services provided by VOC AI INC ("VOC AI," "we," "us," or "our") through flatkey.ai, the dashboard, APIs, checkout pages, documentation, and support channels (the "Services"). By registering an account, creating an organization, adding prepaid account balance, generating or using an API key, calling model APIs, accessing the dashboard, or otherwise using the Services, you agree to this Agreement, our Privacy Policy, Refund Policy, documentation, pricing pages, and any applicable supplemental rules.
 
@@ -99,12 +99,15 @@ You may not access or use the Services for the purpose of reselling API access, 
 
 Unauthorized resale, relay, account sharing, hiding the true user, bulk account creation, abnormal concentrated calling, limit circumvention, or risk-control evasion is a material breach. We may suspend or terminate related accounts, API keys, balance, credits, and orders, and may deny or limit related refunds, balance restoration, or credit adjustments.
 
+Referral rewards and free credits are intended only for genuine users and ordinary use. You may not create bulk accounts, fake identities, self-referrals, referral farms, or other artificial registrations to obtain free credits, discounts, or other benefits. We may automatically detect and review such activity and may restrict, freeze, or terminate related accounts and benefits, whether or not a payment has been made.
+
 ## 9. Prohibited Conduct
 
 You may not:
 
 - use the Services for illegal, fraudulent, infringing, harassing, spam, malware, phishing, system attack, regulatory evasion, privacy invasion, sensitive data scraping, sanctions evasion, export control violation, or other harmful activity;
 - create false identities, impersonate others, misrepresent affiliations, or use multiple accounts to avoid limits, risk controls, pricing, refunds, or compliance review;
+- use bulk registrations, fake accounts, self-referrals, or other artificial signups to obtain free credits, referral rewards, discounts, or other benefits;
 - bypass or interfere with account limits, regional limits, billing rules, credit limits, rate limits, safety mechanisms, anti-abuse rules, third-party service restrictions, or payment review processes;
 - reverse engineer, scan, attack, stress test, disrupt, crawl, copy, scrape, or access without authorization the Services, APIs, systems, data, or other users' accounts;
 - conduct adversarial testing, prompt injection, jailbreak testing, safety bypass testing, stress testing, or other testing that may impair models, the Services, third-party rules, or user interests without our written approval;
@@ -120,6 +123,8 @@ We use reasonable efforts to keep metering and billing records accurate, but com
 To protect service stability and other users, we may monitor abnormal requests, abnormal deductions, abnormal logins, abnormal payments, bulk calls, key leakage, malicious requests, chargeback abuse, and usage patterns that violate this Agreement, and we may temporarily restrict related features during an investigation.
 
 We may conduct manual or automated review of high-risk orders, large top-ups, abnormal top-up frequency, inconsistent billing information, abnormal login regions, abnormal request sources, short-period high concurrency, or payment service provider alerts. During review, delivery, balance use, refunds, invoices, or account features may be delayed or restricted. After review, we will restore or handle relevant matters according to applicable records.
+
+Our systems may also automatically review bulk registrations, referral abuse, and other abnormal sign-up patterns, and may restrict or terminate the related accounts and benefits even if the accounts have paid.
 
 ## 11. Refunds
 
