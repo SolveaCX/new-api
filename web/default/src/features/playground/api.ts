@@ -171,6 +171,38 @@ export async function getUserModels(group?: string): Promise<string[]> {
     .map((model: string) => model.trim())
     .filter(Boolean)
 }
+
+export type PlaygroundModelPricing = {
+  model_name: string
+  model_price?: number
+  featured_order?: number
+  release_date?: string
+  directory_metadata?: { released_at?: string }
+  display_pricing?: {
+    prices?: Record<string, { plg?: number | string } | undefined>
+  }
+}
+
+type PlaygroundPricingResponse = {
+  success?: boolean
+  data?: PlaygroundModelPricing[]
+  display_pricing?: Record<string, PlaygroundModelPricing['display_pricing']>
+}
+
+export async function getPlaygroundModelPricing(): Promise<
+  PlaygroundModelPricing[]
+> {
+  const res = await api.get<PlaygroundPricingResponse>('/api/website/pricing', {
+    params: { group: 'plg' },
+  })
+  const payload = res.data
+  if (!payload?.success || !Array.isArray(payload.data)) return []
+  return payload.data.map((model) => ({
+    ...model,
+    display_pricing:
+      model.display_pricing ?? payload.display_pricing?.[model.model_name],
+  }))
+}
 /**
  * Get user groups
  */
