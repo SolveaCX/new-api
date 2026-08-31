@@ -10,7 +10,7 @@ describe("OnlinePricingPage", () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const html = renderToStaticMarkup(<OnlinePricingPage locale="en" />);
 
-    const starterReferencePrice = html.indexOf('<del class="toldprice">$25</del>');
+    const starterReferencePrice = html.indexOf('<del class="toldprice">$45</del>');
     const starterPrice = html.indexOf("<b>$10</b>");
     const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div>');
     const enterpriseCustom = html.indexOf(">Custom<");
@@ -94,7 +94,7 @@ describe("OnlinePricingPage", () => {
       expect(html).toContain(`<div class="badge limited">${item.limited}</div>`);
       expect(html).toContain('class="tdiscount">80% off</div>');
       expect(html.match(/class="tdiscount">70% off<\/div>/g)?.length).toBe(2);
-      for (const referencePrice of ["$25", "$90", "$450"]) {
+      for (const referencePrice of ["$45", "$90", "$450"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
       expect(html).not.toContain(item.legacyQuota);
@@ -145,7 +145,7 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(`<b>${price}</b>`);
       }
       expect(html).toContain(item.cta);
-      expect(html).toContain('<del class="toldprice">$25</del>');
+      expect(html).toContain('<del class="toldprice">$45</del>');
       expect(html).toContain('<del class="toldprice">$90</del>');
       expect(html).toContain('<del class="toldprice">$450</del>');
       if (item.locale === "pt") expect(html).not.toContain("<b>R$ 499,90</b>");
