@@ -48,13 +48,10 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain('src="/assets/logos/payment/alipay.svg"');
     expect(html).toContain("All models");
     expect(html).toContain('<del class="toldprice">$90</del>');
-    expect(html).toContain('<del class="toldprice">$450</del>');
+    expect(html).toContain('<del class="toldprice">$300</del>');
     expect(html.match(/class="tdiscount">80% off<\/div>/g)?.length).toBe(1);
     expect(html.match(/class="tdiscount">70% off<\/div>/g)?.length).toBe(2);
     expect(html).not.toContain('class="tdiscount">80% off</div><div class="tname">Enterprise');
-    expect(html).not.toContain("Up to $45 model usage / mo");
-    expect(html).not.toContain("Up to $90 model usage / mo");
-    expect(html).not.toContain("Up to $300 model usage / mo");
     expect(html).not.toContain("Text models");
     expect(html).not.toContain("B2B");
   });
@@ -94,10 +91,10 @@ describe("OnlinePricingPage", () => {
       expect(html).toContain(`<div class="badge limited">${item.limited}</div>`);
       expect(html).toContain('class="tdiscount">80% off</div>');
       expect(html.match(/class="tdiscount">70% off<\/div>/g)?.length).toBe(2);
-      for (const referencePrice of ["$45", "$90", "$450"]) {
+      for (const referencePrice of ["$45", "$90", "$300"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
-      expect(html).not.toContain(item.legacyQuota);
+      expect(html).not.toContain("$25");
       expect(html).not.toContain("For individuals & light daily use");
       expect(html).not.toContain(">Go<");
       expect(html).not.toContain("Text models");
@@ -147,7 +144,7 @@ describe("OnlinePricingPage", () => {
       expect(html).toContain(item.cta);
       expect(html).toContain('<del class="toldprice">$45</del>');
       expect(html).toContain('<del class="toldprice">$90</del>');
-      expect(html).toContain('<del class="toldprice">$450</del>');
+      expect(html).toContain('<del class="toldprice">$300</del>');
       if (item.locale === "pt") expect(html).not.toContain("<b>R$ 499,90</b>");
       expect(html).not.toContain("<b>$10</b>");
       expect(html).not.toContain("<b>$30</b>");

@@ -6,13 +6,13 @@ describe("standard subscription pricing", () => {
     expect(STANDARD_SUBSCRIPTION_LIMITS).toEqual({
       go: { priceUsd: 10, fiveHourUsd: 8, sevenDayUsd: 12, monthlyUsd: 45 },
       pro: { priceUsd: 30, fiveHourUsd: 18, sevenDayUsd: 45, monthlyUsd: 90 },
-      max: { priceUsd: 100, fiveHourUsd: 78, sevenDayUsd: 220, monthlyUsd: 450 },
+      max: { priceUsd: 100, fiveHourUsd: 78, sevenDayUsd: 220, monthlyUsd: 300 },
     });
   });
 
   test("formats contract values consistently for public copy", () => {
     expect(formatUsd(STANDARD_SUBSCRIPTION_LIMITS.go.monthlyUsd)).toBe("$45");
-    expect(formatUsd(STANDARD_SUBSCRIPTION_LIMITS.max.monthlyUsd)).toBe("$450");
+    expect(formatUsd(STANDARD_SUBSCRIPTION_LIMITS.max.monthlyUsd)).toBe("$300");
     expect(formatUsd(12.5)).toBe("$12.5");
   });
 });

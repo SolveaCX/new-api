@@ -14,7 +14,7 @@ func TestStandardSubscriptionPlanLimitsMatchProductContract(t *testing.T) {
 	require.Equal(t, []StandardSubscriptionPlanLimit{
 		{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 45},
 		{Title: "Pro", PriceUSD: 30, Window5hUSD: 18, WindowWeekUSD: 45, MonthlyUSD: 90},
-		{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 450},
+		{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 300},
 	}, got)
 }
 
@@ -64,7 +64,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRestoresExistingRows(t *testing.T)
 	require.NoError(t, db.First(&gotMax, maxPlan.Id).Error)
 	require.Equal(t, int64(78000), gotMax.Window5hAmount)
 	require.Equal(t, int64(220000), gotMax.WindowWeekAmount)
-	require.Equal(t, int64(450000), gotMax.TotalAmount)
+	require.Equal(t, int64(300000), gotMax.TotalAmount)
 	require.NoError(t, db.First(&gotCustom, customPlan.Id).Error)
 	require.Equal(t, int64(123), gotCustom.TotalAmount)
 	require.Zero(t, gotCustom.Window5hAmount)
