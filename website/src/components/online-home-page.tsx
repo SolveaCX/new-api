@@ -856,7 +856,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                   <div className="intelligence-media-card">
                     <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
                     <div className="intelligence-media-body">
-                      <video className="intelligence-result-media" autoPlay muted loop playsInline preload="auto" poster="/assets/home-tabs/video-f1-result.png" aria-label="F1 car racing on a wet forest track">
+                      <video className="intelligence-result-media" autoPlay muted loop playsInline preload="auto" poster="/assets/home-tabs/video-f1-result.png" aria-label="F1 car racing on a wet forest track" onCanPlay={(event) => { void event.currentTarget.play().catch(() => undefined); }}>
                         <source src="/assets/home-tabs/video-f1-result.mp4" type="video/mp4" />
                       </video>
                       <div className="media-metrics">

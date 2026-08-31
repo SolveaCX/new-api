@@ -2,6 +2,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+html,
+body {
+  color-scheme: light !important;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

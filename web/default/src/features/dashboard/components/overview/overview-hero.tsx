@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ComponentType } from 'react'
+import { type ComponentType, useState } from 'react'
 import {
   Claude,
   DeepSeek,
@@ -47,15 +47,23 @@ const featuredModels: Array<{ label: string; logo: ModelLogo }> = [
 const WELCOME_LOGO_URL =
   'https://cdn.shulex-voc.com/flatkey/console/overview-welcome-logo.png'
 
+const FALLBACK_WELCOME_LOGO_URL = '/flatkey-overview-welcome-logo.png'
+
 function WelcomeLogo() {
+  const [imageFailed, setImageFailed] = useState(false)
+  const src = imageFailed ? FALLBACK_WELCOME_LOGO_URL : WELCOME_LOGO_URL
+
   return (
     <img
-      src={WELCOME_LOGO_URL}
+      src={src}
       alt=''
       width={68}
       height={68}
       aria-hidden='true'
       decoding='async'
+      onError={() => {
+        if (!imageFailed) setImageFailed(true)
+      }}
       className='size-[68px] shrink-0'
     />
   )
@@ -99,7 +107,7 @@ export function OverviewHero() {
           </span>
         </div>
         <span className='text-muted-foreground max-w-[15rem] pr-1 text-[13px] sm:max-w-none sm:pr-2'>
-          {t('One key connects you to the models shaping AI:')}
+          {t('One key connects you to the models shaping AI')}
         </span>
       </div>
     </section>
