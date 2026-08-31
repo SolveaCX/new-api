@@ -116,10 +116,7 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 		return nil, fmt.Errorf("translation provider returned no choices")
 	}
 
-	translatedJSON := strings.TrimSpace(envelope.Choices[0].Message.Content)
-	translatedJSON = strings.TrimPrefix(translatedJSON, "```json")
-	translatedJSON = strings.TrimPrefix(translatedJSON, "```")
-	translatedJSON = strings.TrimSuffix(strings.TrimSpace(translatedJSON), "```")
+	translatedJSON := extractAnnouncementTranslationJSON(envelope.Choices[0].Message.Content)
 	var translations map[string]AnnouncementTranslation
 	if err := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &translations); err != nil {
 		return nil, fmt.Errorf("translation provider returned invalid JSON")
@@ -134,4 +131,23 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 		translations[locale] = translation
 	}
 	return translations, nil
+}
+
+func extractAnnouncementTranslationJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "```json") {
+		raw = strings.TrimSpace(strings.TrimPrefix(raw, "```json"))
+	}
+	if strings.HasPrefix(raw, "```") {
+		raw = strings.TrimSpace(strings.TrimPrefix(raw, "```"))
+	}
+	if strings.HasSuffix(raw, "```") {
+		raw = strings.TrimSpace(strings.TrimSuffix(raw, "```"))
+	}
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start >= 0 && end >= start {
+		return raw[start : end+1]
+	}
+	return raw
 }
