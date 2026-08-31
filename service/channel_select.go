@@ -199,6 +199,9 @@ func buildEndpointChannelFilter(c *gin.Context, modelName string) model.ChannelF
 }
 
 func ChannelSupportsRequestEndpoint(c *gin.Context, channel *model.Channel, modelName string) bool {
+	if !ChannelSupportsServerWebTools(c, channel) {
+		return false
+	}
 	if !blockRunSolanaSupportsRequest(c, channel) {
 		return false
 	}
