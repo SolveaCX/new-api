@@ -21,3 +21,13 @@ func TestStripePromotionCodeOption(t *testing.T) {
 	defer common.OptionMapRWMutex.RUnlock()
 	require.Equal(t, "true", common.OptionMap["StripePromotionCodeEnabled"])
 }
+
+func TestDefaultSystemNoticeIsSeeded(t *testing.T) {
+	setupOptionGroupRenameTestDB(t)
+	InitOptionMap()
+
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	require.Contains(t, common.OptionMap["Notice"], "反滥用/邀请规则")
+	require.Contains(t, common.OptionMap["Notice"], "所有支持语言")
+}
