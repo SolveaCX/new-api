@@ -30,10 +30,13 @@ func customerUsageWindow() (time.Time, time.Time) {
 func TestCustomerUsageSnapshotTransactionsAndSummary(t *testing.T) {
 	setupUsageDB(t)
 	start, end := customerUsageWindow()
-	if err := model.DB.Create(&model.User{Id: 1842, Username: "acme@example.com", DisplayName: "Acme AI", Status: common.UserStatusEnabled}).Error; err != nil {
+	if err := model.DB.Create(&model.User{Id: 1842, Username: "acme@example.com", DisplayName: "Acme AI", Status: common.UserStatusEnabled, CreatedAt: 1736899200}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := model.DB.Create(&model.User{Id: 1843, Username: "other@example.com", DisplayName: "Other", AffCode: "other-customer", Status: common.UserStatusEnabled}).Error; err != nil {
+	if err := model.DB.Create(&model.User{Id: 1843, Username: "other@example.com", DisplayName: "Other", AffCode: "other-customer", Status: common.UserStatusEnabled, CreatedAt: 1736985600}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := model.DB.Create(&model.Token{Id: 991, UserId: 1842, Key: "sk-acme-secret", Name: "acme-production"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	seedUsageChannel(t, 302, 1, "Fluere-Acme-OpenAI")
@@ -49,8 +52,12 @@ func TestCustomerUsageSnapshotTransactionsAndSummary(t *testing.T) {
 		t.Fatalf("snapshot status=%d body=%s", code, body)
 	}
 	customer := snapshot["customer"].(map[string]interface{})
-	if customer["display_name"] != "A***" || strings.Contains(body, "acme@example.com") {
+	if customer["customer_id"] != "1842" || customer["display_name"] != "A***" || customer["created_at"] != "2025-01-15T00:00:00.000Z" || strings.Contains(body, "acme@example.com") || strings.Contains(body, "sk-acme-secret") {
 		t.Fatalf("customer snapshot leaked identity: %s", body)
+	}
+	code, secondSnapshot, body := doUsageGET(t, e, "/usage/customers/1843")
+	if code != http.StatusOK || secondSnapshot["customer"].(map[string]interface{})["created_at"] != "2025-01-16T00:00:00.000Z" || strings.Contains(body, "other@example.com") {
+		t.Fatalf("second customer snapshot=%d body=%s", code, body)
 	}
 
 	code, txPage, body := doUsageGET(t, e, "/usage/customer-transactions?customer_id=1842&"+window+"&limit=1")
@@ -80,6 +87,21 @@ func TestCustomerUsageSnapshotTransactionsAndSummary(t *testing.T) {
 		t.Fatalf("summary totals=%v", totals)
 	}
 
+}
+
+func TestCustomerUsageRequiresUsersCreatedAt(t *testing.T) {
+	setupUsageDB(t)
+	if err := model.DB.Create(&model.User{Id: 1901, Username: "missing-created-at", DisplayName: "Missing", Status: common.UserStatusEnabled, CreatedAt: 1736899200}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := model.DB.Model(&model.User{}).Where("id = ?", 1901).Update("created_at", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	code, response, _ := doUsageGET(t, customerUsageEngine(), "/usage/customers/1901")
+	if code != http.StatusInternalServerError || response["error"] != "customer_created_at_missing" {
+		t.Fatalf("missing created_at response status=%d body=%v", code, response)
+	}
 }
 
 func TestCustomerUsageRejectsExpiredRetentionAndUnknownCustomer(t *testing.T) {

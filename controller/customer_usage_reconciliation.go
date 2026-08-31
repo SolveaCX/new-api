@@ -22,6 +22,7 @@ type customerUsageCustomer struct {
 	CustomerID  string `json:"customer_id"`
 	DisplayName string `json:"display_name"`
 	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type customerUsageTransaction struct {
@@ -99,6 +100,11 @@ func parseCustomerUsageCustomer(c *gin.Context, raw string) (int, customerUsageC
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query customer failed"})
 		return 0, customerUsageCustomer{}, false
 	}
+	if user.CreatedAt <= 0 {
+		common.SysError("customer usage contract error: users.created_at is missing for customer_id=" + strconv.Itoa(customerID))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "customer_created_at_missing"})
+		return 0, customerUsageCustomer{}, false
+	}
 	status := "ACTIVE"
 	if user.Status != common.UserStatusEnabled {
 		status = "DISABLED"
@@ -107,6 +113,7 @@ func parseCustomerUsageCustomer(c *gin.Context, raw string) (int, customerUsageC
 		CustomerID:  strconv.Itoa(customerID),
 		DisplayName: customerUsageDisplayName(user),
 		Status:      status,
+		CreatedAt:   usageFormatTime(time.Unix(user.CreatedAt, 0)),
 	}, true
 }
 
@@ -337,4 +344,3 @@ func GetCustomerUsageSummary(c *gin.Context) {
 		Totals: totals.metrics(), ByModel: buildUsageByModel(byModel), ByChannel: byChannelItems, GeneratedAt: usageFormatTime(time.Now()),
 	})
 }
-
