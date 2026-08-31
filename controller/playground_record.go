@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -220,7 +219,8 @@ func DeletePlaygroundConversations(c *gin.Context) {
 
 // ExportPlaygroundRecords downloads durable Playground records for
 // administrators. Without a user_id query parameter it includes all users;
-// otherwise it is restricted to the requested positive user ID.
+// otherwise it is restricted to the requested positive user ID. Excel is the
+// default format; format=json preserves the legacy JSON download.
 func ExportPlaygroundRecords(c *gin.Context) {
 	rawUserID, hasUserID := c.GetQuery("user_id")
 	userID, err := parsePlaygroundExportUserID(rawUserID, hasUserID)
@@ -232,24 +232,35 @@ func ExportPlaygroundRecords(c *gin.Context) {
 		return
 	}
 
+	rawFormat, hasFormat := c.GetQuery("format")
+	format, err := parsePlaygroundExportFormat(rawFormat, hasFormat)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgInvalidParams),
+		})
+		return
+	}
+
 	records, err := model.ListPlaygroundRecordsForExport(userID)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	data, err := common.Marshal(records)
+
+	if format == "json" {
+		exportPlaygroundRecordsJSON(c, records, userID)
+		return
+	}
+
+	data, err := buildPlaygroundRecordsWorkbook(records)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-
-	filename := "playground-records"
-	if userID != nil {
-		filename += fmt.Sprintf("-%d", *userID)
-	}
-	filename += "-" + time.Now().UTC().Format("20060102T150405Z") + ".json"
+	filename := playgroundExportFilename(userID, "xlsx")
 	c.Header("Content-Disposition", "attachment; filename="+filename)
-	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+	c.Data(http.StatusOK, playgroundExportMimeType, data)
 }
 
 func parsePlaygroundExportUserID(raw string, present bool) (*int, error) {
