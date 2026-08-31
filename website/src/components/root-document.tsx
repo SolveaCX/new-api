@@ -161,7 +161,7 @@ export function RootDocument({
     process.env.COOKIE_SESSION_DOMAIN?.trim() || undefined;
 
   return (
-    <html lang={localeLanguageTag(lang)} suppressHydrationWarning>
+    <html lang={localeLanguageTag(lang)} className="light" suppressHydrationWarning>
       <body>
         <script
           dangerouslySetInnerHTML={{

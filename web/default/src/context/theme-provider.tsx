@@ -24,15 +24,17 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
+import { setCookie, removeCookie } from '@/lib/cookies'
 
 type Theme = 'dark' | 'light' | 'system'
 type ResolvedTheme = Exclude<Theme, 'system'>
 
-const DEFAULT_THEME = 'system'
+// The console intentionally uses a single, light appearance. Keep the public
+// theme shape for backwards compatibility with existing consumers, but do not
+// derive it from the browser's `prefers-color-scheme` setting.
+const DEFAULT_THEME: Theme = 'light'
 const THEME_COOKIE_NAME = 'vite-ui-theme'
 const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
-const THEMES = new Set<Theme>(['dark', 'light', 'system'])
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -58,82 +60,45 @@ const initialState: ThemeProviderState = {
 
 const ThemeContext = createContext<ThemeProviderState>(initialState)
 
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window === 'undefined') return 'light'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light'
-}
-
-function resolveTheme(theme: Theme): ResolvedTheme {
-  return theme === 'system' ? getSystemTheme() : theme
-}
-
-function getStoredTheme(storageKey: string, fallback: Theme): Theme {
-  const storedTheme = getCookie(storageKey) as Theme | undefined
-  return storedTheme && THEMES.has(storedTheme) ? storedTheme : fallback
-}
-
 export function ThemeProvider({
   children,
-  defaultTheme = DEFAULT_THEME,
   storageKey = THEME_COOKIE_NAME,
-  ...props
 }: ThemeProviderProps) {
-  const [theme, _setTheme] = useState<Theme>(() =>
-    getStoredTheme(storageKey, defaultTheme)
-  )
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(getStoredTheme(storageKey, defaultTheme))
-  )
+  const [theme, _setTheme] = useState<Theme>(DEFAULT_THEME)
+  const resolvedTheme: ResolvedTheme = 'light'
 
   useEffect(() => {
     const root = window.document.documentElement
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-
-    const applyTheme = () => {
-      const nextResolvedTheme = theme === 'system' ? getSystemTheme() : theme
-      root.classList.remove('light', 'dark')
-      root.classList.add(nextResolvedTheme)
-      setResolvedTheme(nextResolvedTheme)
-    }
-
-    applyTheme()
-
-    mediaQuery.addEventListener('change', applyTheme)
-
-    return () => mediaQuery.removeEventListener('change', applyTheme)
-  }, [theme])
+    root.classList.remove('dark')
+    root.classList.add('light')
+    root.style.colorScheme = 'light'
+  }, [])
 
   const setTheme = useCallback(
-    (theme: Theme) => {
-      setCookie(storageKey, theme, THEME_COOKIE_MAX_AGE)
-      _setTheme(theme)
+    (_theme: Theme) => {
+      setCookie(storageKey, DEFAULT_THEME, THEME_COOKIE_MAX_AGE)
+      _setTheme(DEFAULT_THEME)
     },
     [storageKey]
   )
 
   const resetTheme = useCallback(() => {
     removeCookie(storageKey)
-    _setTheme(defaultTheme)
-  }, [defaultTheme, storageKey])
+    _setTheme(DEFAULT_THEME)
+  }, [storageKey])
 
   const contextValue = useMemo(
     () => ({
-      defaultTheme,
+      defaultTheme: DEFAULT_THEME,
       resolvedTheme,
       resetTheme,
       theme,
       setTheme,
     }),
-    [defaultTheme, resolvedTheme, resetTheme, theme, setTheme]
+    [resolvedTheme, resetTheme, theme, setTheme]
   )
 
-  return (
-    <ThemeContext value={contextValue} {...props}>
-      {children}
-    </ThemeContext>
-  )
+  return <ThemeContext value={contextValue}>{children}</ThemeContext>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
