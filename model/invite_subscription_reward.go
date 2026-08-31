@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -24,7 +25,8 @@ const (
 	InviteSubRewardStatusRevoked = "revoked"
 	InviteSubRewardStatusBlocked = "blocked"
 
-	InviteSubRewardReasonLimitReached = InviteRewardBlockReasonInviterLimitReached
+	InviteSubRewardReasonLimitReached                  = InviteRewardBlockReasonInviterLimitReached
+	InviteSubscriptionRewardReasonInviterRewardReentry = "inviter_reward_reentry"
 )
 
 type InviteSubscriptionReward struct {
@@ -46,6 +48,7 @@ type InviteSubscriptionReward struct {
 type inviteSubRewardCreateResult struct {
 	handled     bool
 	blocked     bool
+	reason      string
 	inviteeId   int
 	inviterId   int
 	rewardQuota int
@@ -133,6 +136,17 @@ func grantInviteSubscriptionDiscountAfterPaidOrderTx(tx *gorm.DB, order *Subscri
 		return repairInviteSubscriptionRewardFromLedgerTx(tx, order, invitee.Id, inviter.Id, existingLedgerSnapshot, now)
 	}
 
+	fundingSource, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(tx, order)
+	if err != nil {
+		return inviteSubRewardCreateResult{}, err
+	}
+	// Allow only the two explicitly safe outcomes.  Keeping the default branch
+	// blocked makes newly introduced/invalid provenance values fail closed too.
+	if fundingSource != SubscriptionDiscountFundingSourceNone &&
+		fundingSource != SubscriptionDiscountFundingSourceInvitee {
+		return blockInviteSubscriptionRewardForFundingSourceTx(tx, order, invitee.Id, inviter.Id, now)
+	}
+
 	rewardQuota := common.QuotaForInviter
 	reward := InviteSubscriptionReward{
 		InviteeId:   invitee.Id,
@@ -189,6 +203,7 @@ func grantInviteSubscriptionDiscountAfterPaidOrderTx(tx *gorm.DB, order *Subscri
 			return inviteSubRewardCreateResult{}, err
 		}
 		result.blocked = true
+		result.reason = InviteSubRewardReasonLimitReached
 		result.rewardQuota = 0
 		return result, nil
 	}
@@ -223,6 +238,115 @@ func grantInviteSubscriptionDiscountAfterPaidOrderTx(tx *gorm.DB, order *Subscri
 		return inviteSubRewardCreateResult{}, err
 	}
 	return result, nil
+}
+
+// blockInviteSubscriptionRewardForFundingSourceTx records a reward-only
+// safety decision. The subscription order has already succeeded; this path
+// intentionally creates no positive ledger grant and does not consume an
+// inviter cap slot.
+func blockInviteSubscriptionRewardForFundingSourceTx(tx *gorm.DB, order *SubscriptionOrder, inviteeId int, inviterId int, now int64) (inviteSubRewardCreateResult, error) {
+	if tx == nil || order == nil || inviteeId <= 0 || inviterId <= 0 {
+		return inviteSubRewardCreateResult{}, errors.New("invalid invite subscription reward block context")
+	}
+	reward := InviteSubscriptionReward{
+		InviteeId:   inviteeId,
+		InviterId:   inviterId,
+		OrderId:     order.Id,
+		TradeNo:     order.TradeNo,
+		OrderMoney:  order.Money,
+		RewardQuota: 0,
+		Status:      InviteSubRewardStatusBlocked,
+		UnlockAt:    0,
+		GrantedAt:   0,
+		Reason:      InviteSubscriptionRewardReasonInviterRewardReentry,
+	}
+	insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&reward)
+	if insert.Error != nil {
+		return inviteSubRewardCreateResult{}, insert.Error
+	}
+	handled := insert.RowsAffected > 0
+	reason := InviteSubscriptionRewardReasonInviterRewardReentry
+	if !handled {
+		var existing InviteSubscriptionReward
+		err := tx.Where("invitee_id = ?", inviteeId).First(&existing).Error
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return inviteSubRewardCreateResult{}, err
+			}
+		} else {
+			switch existing.Status {
+			case InviteSubRewardStatusPending, "":
+				updates := map[string]any{
+					"status":       InviteSubRewardStatusBlocked,
+					"reward_quota": 0,
+					"unlock_at":    0,
+					"granted_at":   0,
+					"reason":       InviteSubscriptionRewardReasonInviterRewardReentry,
+				}
+				if existing.OrderId == 0 {
+					updates["order_id"] = order.Id
+				}
+				if strings.TrimSpace(existing.TradeNo) == "" {
+					updates["trade_no"] = order.TradeNo
+				}
+				if result := tx.Model(&InviteSubscriptionReward{}).
+					Where("id = ? AND (status = ? OR status = '' OR status IS NULL)", existing.Id, InviteSubRewardStatusPending).
+					Updates(updates); result.Error != nil {
+					return inviteSubRewardCreateResult{}, result.Error
+				} else {
+					handled = result.RowsAffected > 0
+				}
+			default:
+				// Unknown legacy statuses are not safe to treat as a positive
+				// reward.  Normalize them to the explicit blocked state so a
+				// retry cannot fall through without an auditable decision.
+				updates := map[string]any{
+					"status":       InviteSubRewardStatusBlocked,
+					"reward_quota": 0,
+					"unlock_at":    0,
+					"granted_at":   0,
+					"reason":       InviteSubscriptionRewardReasonInviterRewardReentry,
+				}
+				if existing.OrderId == 0 {
+					updates["order_id"] = order.Id
+				}
+				if strings.TrimSpace(existing.TradeNo) == "" {
+					updates["trade_no"] = order.TradeNo
+				}
+				if result := tx.Model(&InviteSubscriptionReward{}).
+					Where("id = ? AND status = ?", existing.Id, existing.Status).
+					Updates(updates); result.Error != nil {
+					return inviteSubRewardCreateResult{}, result.Error
+				} else {
+					handled = result.RowsAffected > 0
+				}
+			case InviteSubRewardStatusBlocked:
+				handled = true
+				if strings.TrimSpace(existing.Reason) != "" {
+					reason = existing.Reason
+				} else if result := tx.Model(&InviteSubscriptionReward{}).
+					Where("id = ? AND status = ? AND (reason IS NULL OR reason = '')", existing.Id, InviteSubRewardStatusBlocked).
+					Update("reason", InviteSubscriptionRewardReasonInviterRewardReentry); result.Error != nil {
+					return inviteSubRewardCreateResult{}, result.Error
+				}
+			case InviteSubRewardStatusGranted, InviteSubRewardStatusRevoked:
+				// A positive/revoked historical row is authoritative; do not
+				// overwrite it from a later duplicate callback.
+				return inviteSubRewardCreateResult{}, nil
+			}
+		}
+	}
+	if err := finalizeInviteSubscriptionRewardInviteeTx(tx, inviteeId, now); err != nil {
+		return inviteSubRewardCreateResult{}, err
+	}
+	return inviteSubRewardCreateResult{
+		handled:     handled,
+		blocked:     true,
+		reason:      reason,
+		inviteeId:   inviteeId,
+		inviterId:   inviterId,
+		rewardQuota: 0,
+	}, nil
 }
 
 func repairInviteSubscriptionRewardFromLedgerTx(tx *gorm.DB, order *SubscriptionOrder, inviteeId int, inviterId int, snapshot inviteSubscriptionRewardLedgerSnapshot, now int64) (inviteSubRewardCreateResult, error) {
@@ -450,6 +574,10 @@ func runInviteSubRewardPostCreateHooks(result inviteSubRewardCreateResult) {
 		common.SysLog(fmt.Sprintf("failed to invalidate invitee %d cache after invite sub reward: %v", result.inviteeId, err))
 	}
 	if result.blocked {
+		if result.reason == InviteSubscriptionRewardReasonInviterRewardReentry {
+			RecordLog(result.inviterId, LogTypeSystem, "本次订阅抵扣来源为邀请奖励，已阻止再次生成上游邀请奖励")
+			return
+		}
 		RecordLog(result.inviterId, LogTypeSystem, "已达到邀请奖励上限，本次邀请不再获得奖励")
 		return
 	}
@@ -539,6 +667,32 @@ func CreateSubscriptionOrderWithInviteDiscount(order *SubscriptionOrder, planPri
 		}
 		order.Money = planPrice - discount
 		order.DiscountUSD = discount
+		order.DiscountKind = "none"
+		order.SubscriptionDiscountUSDMinor = 0
+		order.SubscriptionDiscountAmountMinor = 0
+		order.InvitationFundingSource = SubscriptionDiscountFundingSourceNone
+		order.DiscountPricingSnapshot = ""
+		if discount > 0 {
+			discountMinor, conversionErr := subscriptionDiscountUSDToMinor(discount)
+			if conversionErr != nil {
+				return conversionErr
+			}
+			if discountMinor > 0 {
+				order.DiscountKind = "invitation"
+				order.SubscriptionDiscountUSDMinor = discountMinor
+				order.SubscriptionDiscountAmountMinor = discountMinor
+				order.InvitationFundingSource = SubscriptionDiscountFundingSourceInvitee
+				data, marshalErr := common.Marshal(map[string]any{
+					"discount_kind":  order.DiscountKind,
+					"funding_source": order.InvitationFundingSource,
+					"usd_minor":      discountMinor,
+				})
+				if marshalErr != nil {
+					return marshalErr
+				}
+				order.DiscountPricingSnapshot = string(data)
+			}
+		}
 		if order.CreateTime == 0 {
 			order.CreateTime = common.GetTimestamp()
 		}

@@ -596,6 +596,7 @@ type SubscriptionOrder struct {
 	DiscountKind                       string `json:"discount_kind" gorm:"type:varchar(32);not null;default:'none';index"`
 	SubscriptionDiscountUSDMinor       int64  `json:"subscription_discount_usd_minor" gorm:"type:bigint;not null;default:0"`
 	SubscriptionDiscountAmountMinor    int64  `json:"subscription_discount_amount_minor" gorm:"type:bigint;not null;default:0"`
+	InvitationFundingSource            string `json:"invitation_funding_source" gorm:"type:varchar(16);not null;default:'unknown';index"`
 	SubscriptionDiscountReservationKey string `json:"subscription_discount_reservation_key" gorm:"type:varchar(191);not null;default:'';index"`
 	DiscountPricingSnapshot            string `json:"discount_pricing_snapshot" gorm:"type:text"`
 
@@ -1463,17 +1464,49 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 
 		now := common.GetTimestamp()
 		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
+		discountKind := "none"
+		invitationFundingSource := SubscriptionDiscountFundingSourceNone
+		invitationDiscountUSDMinor := int64(0)
+		if discountUSD > 0 {
+			invitationDiscountUSDMinor, err = subscriptionDiscountUSDToMinor(discountUSD)
+			if err != nil {
+				return err
+			}
+			if invitationDiscountUSDMinor > 0 {
+				discountKind = "invitation"
+				// This legacy balance path applies only the invitee's own
+				// first-subscription discount; it does not spend inviter credit.
+				invitationFundingSource = SubscriptionDiscountFundingSourceInvitee
+			}
+		}
+		var discountPricingSnapshot string
+		if invitationDiscountUSDMinor > 0 {
+			data, marshalErr := common.Marshal(map[string]any{
+				"discount_kind":  discountKind,
+				"funding_source": invitationFundingSource,
+				"usd_minor":      invitationDiscountUSDMinor,
+			})
+			if marshalErr != nil {
+				return marshalErr
+			}
+			discountPricingSnapshot = string(data)
+		}
 		order := &SubscriptionOrder{
-			UserId:          userId,
-			PlanId:          plan.Id,
-			Money:           chargedPrice,
-			DiscountUSD:     discountUSD,
-			TradeNo:         tradeNo,
-			PaymentMethod:   PaymentMethodBalance,
-			PaymentProvider: PaymentProviderBalance,
-			Status:          common.TopUpStatusPending,
-			CreateTime:      now,
-			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+			UserId:                          userId,
+			PlanId:                          plan.Id,
+			Money:                           chargedPrice,
+			DiscountUSD:                     discountUSD,
+			DiscountKind:                    discountKind,
+			SubscriptionDiscountUSDMinor:    invitationDiscountUSDMinor,
+			SubscriptionDiscountAmountMinor: invitationDiscountUSDMinor,
+			InvitationFundingSource:         invitationFundingSource,
+			DiscountPricingSnapshot:         discountPricingSnapshot,
+			TradeNo:                         tradeNo,
+			PaymentMethod:                   PaymentMethodBalance,
+			PaymentProvider:                 PaymentProviderBalance,
+			Status:                          common.TopUpStatusPending,
+			CreateTime:                      now,
+			ProviderPayload:                 fmt.Sprintf("charged_quota=%d", requiredQuota),
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err

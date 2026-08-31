@@ -4,7 +4,7 @@
 
 **Goal:** Preserve valid zero-price subscription orders while preventing any order funded by an inviter reward from generating another upstream inviter reward.
 
-**Architecture:** Persist a validated funding-origin marker on subscription orders and discount-ledger reservation/terminal rows. Resolve the marker inside the locked reservation transaction using the user’s inviter-grant history; treat mixed or missing provenance as ineligible for a new reward, while leaving entitlement creation and zero-price checkout unchanged. The existing direct-inviter idempotency flow remains the only positive reward path.
+**Architecture:** Persist a validated funding-origin marker on subscription orders and discount-ledger reservation/terminal rows. Resolve the marker inside the locked reservation transaction using the user’s inviter-grant history; consume provable invitee registration credit first, mark a request that crosses into inviter credit as mixed, and treat missing provenance as ineligible for a new reward. Entitlement creation and zero-price checkout remain unchanged. The existing direct-inviter idempotency flow remains the only positive reward path.
 
 **Tech Stack:** Go, GORM, SQLite/MySQL/PostgreSQL model migrations, `testify/require`, existing subscription purchase and invoice lifecycle services.
 
@@ -351,4 +351,3 @@ git log --oneline --decorate -5
 ```
 
 Confirm that only planned model/service/test/docs files changed, no production credentials or data dumps are present, and the design document still matches the implementation. Commit any final adjustment with the Lore trailers required by `AGENTS.md`.
-

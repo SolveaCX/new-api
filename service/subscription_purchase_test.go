@@ -1205,6 +1205,46 @@ func TestPurchaseSubscriptionInvitationBalanceZeroFinalCommitsOnceWithoutWalletD
 	require.Equal(t, int64(1), entitlementCount)
 }
 
+func TestReserveSubscriptionDiscountForOrderMarksMixedFunding(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	userID := 7790
+	insertPurchaseServiceUser(t, userID, 100000)
+	plan := insertPurchaseServicePlan(t, 7890, 1, 20, 2000)
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := model.GrantSubscriptionDiscountTx(tx, model.SubscriptionDiscountGrantInput{
+			UserID: userID, USDMinor: 500,
+			EntryType:  model.SubscriptionDiscountEntryTypeGrantInvitee,
+			SourceType: "test_invitee", SourceKey: "mixed-invitee", IdempotencyKey: "mixed-invitee",
+		}); err != nil {
+			return err
+		}
+		_, err := model.GrantSubscriptionDiscountTx(tx, model.SubscriptionDiscountGrantInput{
+			UserID: userID, USDMinor: 3000,
+			EntryType:  model.SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType: "invite_subscription_reward", SourceKey: "mixed-inviter", IdempotencyKey: "mixed-inviter",
+		})
+		return err
+	}))
+	quoteResult, err := QuoteSubscriptionPurchase(PurchaseSubscriptionCommand{
+		UserID: userID, PlanID: plan.Id, PaymentChoice: SubscriptionPaymentChoiceBalance, Months: 1,
+	})
+	require.NoError(t, err)
+	require.True(t, quoteResult.Available)
+	quote := *purchaseQuoteFromResult(quoteResult)
+	require.Equal(t, SubscriptionDiscountKindInvitation, quote.DiscountKind)
+	require.Zero(t, quote.PaymentAmountMinor)
+	order := &model.SubscriptionOrder{UserId: userID, PlanId: plan.Id, TradeNo: "mixed-funding-order"}
+	cmd := PurchaseSubscriptionCommand{UserID: userID, PlanID: plan.Id, PaymentChoice: SubscriptionPaymentChoiceBalance, Months: 1}
+	require.NoError(t, model.DB.Transaction(func(tx *gorm.DB) error {
+		return reserveSubscriptionDiscountForOrderTx(tx, order, &plan, cmd, quote,
+			subscriptionReservationDiscountFacts{}, common.GetTimestamp()+3600)
+	}))
+	require.Equal(t, model.SubscriptionDiscountFundingSourceMixed, order.InvitationFundingSource)
+	var reserve model.SubscriptionDiscountEntry
+	require.NoError(t, model.DB.Where("idempotency_key = ?", order.SubscriptionDiscountReservationKey).First(&reserve).Error)
+	require.Equal(t, model.SubscriptionDiscountFundingSourceMixed, reserve.FundingSource)
+}
+
 func TestPurchaseSubscriptionInvitationInvalidReplacementDoesNotSupersedeExistingCheckout(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	require.NoError(t, model.DB.AutoMigrate(&model.TopUp{}))

@@ -165,7 +165,7 @@ func normalizeInvitationRecord(record *InvitationRecord, row invitationUserRow, 
 
 func normalizeBlockedInvitationReason(reason string) string {
 	switch reason {
-	case InviteRewardBlockReasonInviterLimitReached, "unavailable":
+	case InviteRewardBlockReasonInviterLimitReached, InviteSubscriptionRewardReasonInviterRewardReentry, "unavailable":
 		return reason
 	default:
 		return "unavailable"

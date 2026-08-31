@@ -41,6 +41,7 @@ func TestSubscriptionRequestBalancePayInvitationDiscountUsesUnifiedPurchasePath(
 	require.Zero(t, order.PaymentAmountMinor)
 	require.Equal(t, int64(999), order.SubscriptionDiscountUSDMinor)
 	require.Equal(t, int64(999), order.SubscriptionDiscountAmountMinor)
+	require.Equal(t, model.SubscriptionDiscountFundingSourceInvitee, order.InvitationFundingSource)
 	require.NotEmpty(t, order.SubscriptionDiscountReservationKey)
 	require.NotZero(t, order.ChangeIntentId)
 

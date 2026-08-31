@@ -25,6 +25,7 @@ var errStripeSubscriptionDiscountInvoiceReconciliationCursorAdvanced = errors.Ne
 type stripeSubscriptionDiscountInvoiceSnapshot struct {
 	Version                           int    `json:"version"`
 	Source                            string `json:"source"`
+	FundingSource                     string `json:"funding_source"`
 	InvoiceID                         string `json:"invoice_id"`
 	SubscriptionID                    string `json:"subscription_id"`
 	BindingID                         int64  `json:"binding_id"`
@@ -191,6 +192,10 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 		if incrementalUSDMinor <= 0 || incrementalUSDMinor > account.AvailableUSDMinor {
 			return model.ErrSubscriptionDiscountInvalidAmount
 		}
+		fundingSource, err := model.ResolveSubscriptionDiscountFundingSourceTx(tx, binding.UserId, incrementalUSDMinor)
+		if err != nil {
+			return err
+		}
 		reservationKey := stripeSubscriptionDiscountInvoiceReservationKey(facts.InvoiceID)
 		expectedFinal := facts.Amount - existingDiscount - incremental
 		if expectedFinal < 0 {
@@ -199,6 +204,7 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 		snapshotFacts := stripeSubscriptionDiscountInvoiceSnapshot{
 			Version:                           1,
 			Source:                            "stripe_renewal_invoice_discount",
+			FundingSource:                     fundingSource,
 			InvoiceID:                         facts.InvoiceID,
 			SubscriptionID:                    facts.SubscriptionID,
 			BindingID:                         binding.Id,
@@ -233,6 +239,7 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 			AppliedAmountMinor: incremental,
 			PricingSnapshot:    snapshot,
 			IdempotencyKey:     reservationKey,
+			FundingSource:      fundingSource,
 			ExpiresAt:          common.GetTimestamp() + int64((7 * 24 * time.Hour).Seconds()),
 		})
 		if err != nil {
@@ -271,6 +278,9 @@ func existingStripeSubscriptionDiscountInvoicePrepareTx(tx *gorm.DB, facts strip
 	snapshot, err := parseStripeSubscriptionDiscountInvoiceSnapshot(reserve.PricingSnapshot)
 	if err != nil {
 		return stripeSubscriptionDiscountInvoicePrepare{}, false, err
+	}
+	if source := strings.TrimSpace(reserve.FundingSource); source != "" && source != model.SubscriptionDiscountFundingSourceNone {
+		snapshot.FundingSource = normalizeStripeSubscriptionDiscountFundingSource(source)
 	}
 	return stripeSubscriptionDiscountInvoicePrepare{
 		InvoiceID:              facts.InvoiceID,
@@ -466,6 +476,7 @@ func parseStripeSubscriptionDiscountInvoiceSnapshot(raw string) (stripeSubscript
 	if err := common.Unmarshal([]byte(raw), &snapshot); err != nil {
 		return stripeSubscriptionDiscountInvoiceSnapshot{}, fmt.Errorf("subscription discount invoice snapshot is invalid: %w", err)
 	}
+	snapshot.FundingSource = normalizeStripeSubscriptionDiscountFundingSource(snapshot.FundingSource)
 	if snapshot.Version != 1 ||
 		strings.TrimSpace(snapshot.Source) != "stripe_renewal_invoice_discount" ||
 		strings.TrimSpace(snapshot.InvoiceID) == "" ||
@@ -489,6 +500,23 @@ func parseStripeSubscriptionDiscountInvoiceSnapshot(raw string) (stripeSubscript
 	return snapshot, nil
 }
 
+func normalizeStripeSubscriptionDiscountFundingSource(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case model.SubscriptionDiscountFundingSourceNone:
+		return model.SubscriptionDiscountFundingSourceNone
+	case model.SubscriptionDiscountFundingSourceInvitee:
+		return model.SubscriptionDiscountFundingSourceInvitee
+	case model.SubscriptionDiscountFundingSourceInviter:
+		return model.SubscriptionDiscountFundingSourceInviter
+	case model.SubscriptionDiscountFundingSourceMixed:
+		return model.SubscriptionDiscountFundingSourceMixed
+	case model.SubscriptionDiscountFundingSourceUnknown, "":
+		return model.SubscriptionDiscountFundingSourceUnknown
+	default:
+		return model.SubscriptionDiscountFundingSourceUnknown
+	}
+}
+
 func stripeSubscriptionDiscountInvoiceMetadata(snapshot stripeSubscriptionDiscountInvoiceSnapshot) map[string]string {
 	if snapshot.Version == 0 {
 		return nil
@@ -505,6 +533,7 @@ func stripeSubscriptionDiscountInvoiceMetadata(snapshot stripeSubscriptionDiscou
 		"subscription_discount_existing_minor":         strconv.FormatInt(snapshot.ExistingDiscountMinor, 10),
 		"subscription_discount_incremental_item_minor": strconv.FormatInt(snapshot.IncrementalItemMinor, 10),
 		"subscription_discount_expected_final_minor":   strconv.FormatInt(snapshot.ExpectedFinalPaymentMinor, 10),
+		"subscription_discount_funding_source":         strings.TrimSpace(snapshot.FundingSource),
 		"subscription_discount_binding_id":             strconv.FormatInt(snapshot.BindingID, 10),
 		"subscription_discount_contract_id":            strconv.FormatInt(snapshot.ContractID, 10),
 		"subscription_discount_plan_id":                strconv.Itoa(snapshot.PlanID),

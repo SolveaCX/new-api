@@ -1070,6 +1070,7 @@ func subscriptionPurchaseOrderPaymentMethod(cmd PurchaseSubscriptionCommand) str
 
 type subscriptionDiscountPricingSnapshot struct {
 	DiscountKind                       string `json:"discount_kind"`
+	FundingSource                      string `json:"funding_source"`
 	Currency                           string `json:"currency"`
 	UnitAmountMinor                    int64  `json:"unit_amount_minor"`
 	OriginalTotalAmountMinor           int64  `json:"original_total_amount_minor"`
@@ -1110,6 +1111,7 @@ func reserveSubscriptionDiscountForOrderTx(tx *gorm.DB, order *model.Subscriptio
 		quote.DiscountKind = SubscriptionDiscountKindNone
 	}
 	order.DiscountKind = quote.DiscountKind
+	order.InvitationFundingSource = model.SubscriptionDiscountFundingSourceNone
 	order.SubscriptionDiscountUSDMinor = 0
 	order.SubscriptionDiscountAmountMinor = 0
 	order.SubscriptionDiscountReservationKey = ""
@@ -1131,8 +1133,13 @@ func reserveSubscriptionDiscountForOrderTx(tx *gorm.DB, order *model.Subscriptio
 	if err := validateCurrentInvitationQuoteForReservationTx(tx, order, plan, cmd, quote, discountFacts); err != nil {
 		return err
 	}
+	fundingSource, err := model.ResolveSubscriptionDiscountFundingSourceTx(tx, order.UserId, quote.InvitationDiscountUSDMinor)
+	if err != nil {
+		return err
+	}
+	order.InvitationFundingSource = fundingSource
 	reservationKey := "subscription-order:" + strings.TrimSpace(order.TradeNo) + ":reserve"
-	snapshot, err = subscriptionDiscountSnapshotJSON(quote, reservationKey)
+	snapshot, err = subscriptionDiscountSnapshotJSONWithFundingSource(quote, reservationKey, fundingSource)
 	if err != nil {
 		return err
 	}
@@ -1145,6 +1152,7 @@ func reserveSubscriptionDiscountForOrderTx(tx *gorm.DB, order *model.Subscriptio
 		AppliedAmountMinor: quote.InvitationDiscountAmountMinor,
 		PricingSnapshot:    snapshot,
 		IdempotencyKey:     reservationKey,
+		FundingSource:      fundingSource,
 		ExpiresAt:          expiresAt,
 	})
 	if err != nil {
@@ -1213,8 +1221,13 @@ func validateCurrentInvitationQuoteForReservationTx(tx *gorm.DB, order *model.Su
 }
 
 func subscriptionDiscountSnapshotJSON(quote SubscriptionPurchaseQuote, reservationKey string) (string, error) {
+	return subscriptionDiscountSnapshotJSONWithFundingSource(quote, reservationKey, model.SubscriptionDiscountFundingSourceNone)
+}
+
+func subscriptionDiscountSnapshotJSONWithFundingSource(quote SubscriptionPurchaseQuote, reservationKey string, fundingSource string) (string, error) {
 	payload := subscriptionDiscountPricingSnapshot{
 		DiscountKind:                       strings.TrimSpace(quote.DiscountKind),
+		FundingSource:                      strings.TrimSpace(fundingSource),
 		Currency:                           strings.ToUpper(strings.TrimSpace(quote.Currency)),
 		UnitAmountMinor:                    quote.UnitAmountMinor,
 		OriginalTotalAmountMinor:           quote.OriginalTotalAmountMinor,
