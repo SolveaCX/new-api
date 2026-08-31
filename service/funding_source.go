@@ -2,9 +2,11 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -89,8 +91,9 @@ type SubscriptionFunding struct {
 	amount         int64   // 预扣的订阅额度（subConsume，list 等值，未加权）
 	weight         float64 // 模型权重（全局权重表，缺省 1.0）；池扣量 = list × weight
 	subscriptionId int
-	preConsumed    int64 // 实际预扣的池额度（加权后）
-	extraWeighted  int64 // Reserve 阶段追加预扣的池额度（加权后）
+	preConsumed    int64                    // 实际预扣的池额度（加权后）
+	extraWeighted  int64                    // Reserve 阶段追加预扣的池额度（加权后）
+	windowGuard    *subscriptionWindowGuard // 窗口计数守卫（可能为 nil = 窗口未启用/fail-open）
 	// 以下字段在 PreConsume 成功后填充，供 RelayInfo 同步使用
 	AmountTotal     int64
 	AmountUsedAfter int64
@@ -117,10 +120,61 @@ func (s *SubscriptionFunding) PreConsume(_ int) error {
 	// amount 参数被忽略，使用内部 s.amount（已在构造时根据 preConsumedQuota 计算）
 	weightedAmount := s.weighted(s.amount)
 
+	// 先按只读预测选出将被月度池扣款的订阅，再原子预留其 5h/7d 窗口。
+	// 月度池事务随后会再次选择并锁定订阅，因此下面还要校验实际选中的 ID。
+	windowInfo, err := model.GetChargeableSubscriptionWindowInfo(s.userId, weightedAmount)
+	if err != nil {
+		// 窗口是可用性增强；读取失败时仍由月度池负责硬限制。
+		common.SysLog("subscription window info query failed (fail-open): " + err.Error())
+		windowInfo = nil
+	}
+	guard, windowErr := reserveSubscriptionWindows(windowInfo, weightedAmount)
+	if windowErr != nil {
+		return windowErr
+	}
+
 	res, err := model.PreConsumeUserSubscription(s.requestId, s.userId, s.modelName, 0, weightedAmount)
 	if err != nil {
+		if guard != nil {
+			guard.Release()
+		}
 		return err
 	}
+	// 幂等重试只读取已有月度预扣记录，不能再次累计窗口用量。
+	if res.AlreadyConsumed {
+		if guard != nil {
+			guard.Release()
+		}
+		guard = nil
+	}
+	// 并发请求可能让只读预测失效；若实际扣款订阅不同，释放预测订阅
+	// 的窗口预留并按实际订阅重新预留。
+	// The Redis key identity may be the contract ID for current-contract
+	// entitlements, so compare the actual entitlement ID from the prediction
+	// rather than guard.subId (which intentionally stores the key identity).
+	if guard != nil && windowInfo != nil && res.UserSubscriptionId != windowInfo.UserSubscriptionId {
+		guard.Release()
+		guard = nil
+	}
+	if guard == nil && !res.AlreadyConsumed {
+		actualInfo, infoErr := model.GetSubscriptionWindowInfoBySubId(res.UserSubscriptionId)
+		if infoErr != nil {
+			common.SysLog("subscription window info re-query failed (fail-open): " + infoErr.Error())
+		} else if actualInfo != nil {
+			reGuard, reErr := reserveSubscriptionWindows(actualInfo, weightedAmount)
+			if reErr != nil {
+				// 月度池已经扣款，窗口拒绝时必须回滚月度预扣再返回。
+				if refundErr := refundWithRetry(func() error {
+					return model.RefundSubscriptionPreConsume(s.requestId)
+				}); refundErr != nil {
+					return fmt.Errorf("subscription window rejected but pre-consume refund failed (request_id=%s): %w", s.requestId, refundErr)
+				}
+				return reErr
+			}
+			guard = reGuard
+		}
+	}
+	s.windowGuard = guard
 	s.subscriptionId = res.UserSubscriptionId
 	s.preConsumed = res.PreConsumed
 	s.AmountTotal = res.AmountTotal
@@ -141,6 +195,7 @@ func (s *SubscriptionFunding) Settle(delta int) error {
 	if err := model.PostConsumeUserSubscriptionDelta(s.subscriptionId, weightedDelta); err != nil {
 		return err
 	}
+	s.windowGuard.Adjust(weightedDelta)
 	return nil
 }
 
@@ -151,6 +206,9 @@ func (s *SubscriptionFunding) Refund() error {
 	err := refundWithRetry(func() error {
 		return model.RefundSubscriptionPreConsume(s.requestId)
 	})
+	if err == nil {
+		s.windowGuard.Release()
+	}
 	return err
 }
 
@@ -165,6 +223,7 @@ func (s *SubscriptionFunding) ReserveExtra(delta int64) error {
 		return err
 	}
 	s.extraWeighted += weightedDelta
+	s.windowGuard.Adjust(weightedDelta)
 	return nil
 }
 
@@ -181,6 +240,7 @@ func (s *SubscriptionFunding) RollbackExtra(delta int64) error {
 	if s.extraWeighted < 0 {
 		s.extraWeighted = 0
 	}
+	s.windowGuard.Adjust(-weightedDelta)
 	return nil
 }
 
@@ -195,10 +255,11 @@ func (s *SubscriptionFunding) ExtraWeighted() int64 { return s.extraWeighted }
 // Weight 返回本次请求的模型权重快照（池扣量 = list × weight）。
 func (s *SubscriptionFunding) Weight() float64 { return s.weight }
 
-// WindowSnapshot is retained for compatibility while synchronous
-// subscription billing no longer persists short-window snapshots.
+// WindowSnapshot returns the held Redis-key ledger for an in-flight async task.
+// The ledger lets a later worker refund the exact bucket/week keys even after
+// the wall clock has crossed a bucket boundary.
 func (s *SubscriptionFunding) WindowSnapshot() *model.TaskSubscriptionWindow {
-	return nil
+	return s.windowGuard.Snapshot()
 }
 
 // refundWithRetry 尝试多次执行退款操作以提高成功率，只能用于基于事务的退款函数！！！！！！

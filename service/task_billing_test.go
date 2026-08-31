@@ -466,7 +466,7 @@ func TestRefundTaskQuota_Subscription(t *testing.T) {
 	assert.Equal(t, model.LogTypeRefund, log.Type)
 }
 
-func TestRefundTaskSubscriptionWindowSnapshotLeavesRedisCounters(t *testing.T) {
+func TestRefundTaskSubscriptionWindowSnapshotReleasesRedisCounters(t *testing.T) {
 	truncate(t)
 	restoreRedis := useTaskBillingRedisForTest(t)
 	defer restoreRedis()
@@ -505,11 +505,11 @@ func TestRefundTaskSubscriptionWindowSnapshotLeavesRedisCounters(t *testing.T) {
 	require.NoError(t, err)
 	weekValue, err := common.RDB.Get(ctx, weekKey).Int64()
 	require.NoError(t, err)
-	require.EqualValues(t, 150, bucketValue, "legacy 5h window counter must not be changed by async refund")
-	require.EqualValues(t, 150, weekValue, "legacy weekly window counter must not be changed by async refund")
+	require.EqualValues(t, 0, bucketValue, "async refund must release the held 5h window amount")
+	require.EqualValues(t, 0, weekValue, "async refund must release the held weekly window amount")
 }
 
-func TestAcceptedTaskSubscriptionWindowStepOnlyMarksCompatibilityLedger(t *testing.T) {
+func TestAcceptedTaskSubscriptionWindowStepAdjustsRedisCounters(t *testing.T) {
 	truncate(t)
 	restoreRedis := useTaskBillingRedisForTest(t)
 	defer restoreRedis()
@@ -541,6 +541,7 @@ func TestAcceptedTaskSubscriptionWindowStepOnlyMarksCompatibilityLedger(t *testi
 		BucketHeld: map[string]int64{bucketKey: 150},
 		WeekHeld:   map[string]int64{weekKey: 150},
 	}
+	require.NoError(t, model.DB.Create(task).Error)
 
 	require.NoError(t, ApplyAcceptedTaskSubscriptionWindowOnce(ctx, task))
 
@@ -549,8 +550,15 @@ func TestAcceptedTaskSubscriptionWindowStepOnlyMarksCompatibilityLedger(t *testi
 	require.NoError(t, err)
 	weekValue, err := common.RDB.Get(ctx, weekKey).Int64()
 	require.NoError(t, err)
-	require.EqualValues(t, 150, bucketValue, "legacy 5h window counter must not be changed by accepted accounting")
-	require.EqualValues(t, 150, weekValue, "legacy weekly window counter must not be changed by accepted accounting")
+	require.EqualValues(t, 300, bucketValue, "accepted accounting must add the weighted delta to the 5h window")
+	require.EqualValues(t, 300, weekValue, "accepted accounting must add the weighted delta to the weekly window")
+	var persisted model.Task
+	require.NoError(t, model.DB.Where("task_id = ?", task.TaskID).First(&persisted).Error)
+	require.NotNil(t, persisted.PrivateData.BillingContext)
+	require.NotNil(t, persisted.PrivateData.BillingContext.SubscriptionWindow)
+	require.True(t, persisted.PrivateData.BillingContext.SubscriptionWindow.AcceptedAccountingApplied)
+	require.EqualValues(t, 300, persisted.PrivateData.BillingContext.SubscriptionWindow.BucketHeld[bucketKey])
+	require.EqualValues(t, 300, persisted.PrivateData.BillingContext.SubscriptionWindow.WeekHeld[weekKey])
 }
 
 func TestRefundTaskQuota_ZeroQuota(t *testing.T) {
