@@ -27,15 +27,6 @@ type Option struct {
 
 const OptionKeyPlaygroundDefaultModel = "PlaygroundDefaultModel"
 
-const defaultSystemNotice = `flatkey.ai 更新通知
-
-我们已更新服务条款和网站政策页，主要包括：
-- 新增反滥用/邀请规则，禁止批量注册、虚假身份、自我邀请和邀请农场；
-- 明确系统会自动检测并处置批量注册与异常邀请行为，相关账号及权益可能被限制、冻结或终止；
-- 上述条款已同步到所有支持语言的 Terms 页面。
-
-请仅邀请真实用户，并确保正常使用。`
-
 // OptionKeyCompanyLogRoutingEnabled persists the default-off write-routing gate
 // for root-account Codex token logs.
 const OptionKeyCompanyLogRoutingEnabled = "CompanyLogRoutingEnabled"
@@ -148,7 +139,7 @@ func InitOptionMap() {
 	common.OptionMap["SMTPToken"] = ""
 	common.OptionMap["SMTPSSLEnabled"] = strconv.FormatBool(common.SMTPSSLEnabled)
 	common.OptionMap["SMTPForceAuthLogin"] = strconv.FormatBool(common.SMTPForceAuthLogin)
-	common.OptionMap["Notice"] = defaultSystemNotice
+	common.OptionMap["Notice"] = ""
 	common.OptionMap["About"] = ""
 	common.OptionMap["HomePageContent"] = ""
 	common.OptionMap["Footer"] = common.Footer
