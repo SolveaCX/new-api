@@ -82,6 +82,7 @@ For commercial licensing, please contact support@quantumnous.com
   }
   html {
     @apply overflow-x-hidden font-sans;
+    color-scheme: light !important;
   }
   body {
     @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;

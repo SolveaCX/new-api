@@ -14,6 +14,10 @@
 }
 
 /* ==================== 全局基础样式 ==================== */
+html {
+  color-scheme: light !important;
+}
+
 :root {
   --sidebar-width: 180px;
   --sidebar-width-collapsed: 60px;

@@ -69,6 +69,11 @@ interface PlaygroundConversationListProps {
 
 const conversationsQueryKey = ['playground-conversations']
 
+function getDefaultCollapsedState() {
+  if (typeof window === 'undefined' || !window.matchMedia) return true
+  return !window.matchMedia('(min-width: 768px)').matches
+}
+
 function PlaygroundConversationListContent(
   props: PlaygroundConversationListProps
 ) {
@@ -77,7 +82,7 @@ function PlaygroundConversationListContent(
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
-  const [isCollapsed, setIsCollapsed] = useState(true)
+  const [isCollapsed, setIsCollapsed] = useState(getDefaultCollapsedState)
   const [isBatchMode, setIsBatchMode] = useState(false)
   const [loadingConversationId, setLoadingConversationId] = useState<
     string | null
