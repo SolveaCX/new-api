@@ -8,6 +8,7 @@ func TestPath2RelayModeSupportsPlaygroundMediaAliases(t *testing.T) {
 		want int
 	}{
 		{path: "/pg/chat/completions", want: RelayModeChatCompletions},
+		{path: "/pg/audio/speech", want: RelayModeAudioSpeech},
 		{path: "/pg/images/generations", want: RelayModeImagesGenerations},
 	}
 
