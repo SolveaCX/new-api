@@ -2,7 +2,7 @@ package gemini
 
 var ModelList = []string{
 	// stable version
-	"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash",
+	"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-tts", "gemini-2.5-pro-tts", "gemini-2.0-flash",
 	"gemini-2.0-flash-001", "gemini-2.0-flash-lite-001", "gemini-2.0-flash-lite",
 	"gemini-2.5-flash-lite",
 	// latest version
@@ -10,6 +10,7 @@ var ModelList = []string{
 	"gemini-2.5-flash-native-audio-latest",
 	// preview version
 	"gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts",
+	"gemini-3.1-flash-tts-preview",
 	"gemini-2.5-flash-image", "gemini-2.5-flash-lite-preview-09-2025",
 	"gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-3.1-pro-preview",
 	"gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite-preview",
