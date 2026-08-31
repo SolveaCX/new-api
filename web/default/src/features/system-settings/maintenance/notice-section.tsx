@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import {
   Form,
   FormControl,
@@ -30,6 +31,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Textarea } from '@/components/ui/textarea'
+import { api } from '@/lib/api'
 import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -41,6 +43,26 @@ const noticeSchema = z.object({
 
 type NoticeFormValues = z.infer<typeof noticeSchema>
 
+type NoticeTranslation = {
+  content: string
+  extra?: string
+}
+
+type LocalizedNotice = {
+  content: string
+  translations?: Record<string, NoticeTranslation>
+}
+
+function parseNotice(value: string): LocalizedNotice {
+  try {
+    const parsed = JSON.parse(value) as LocalizedNotice
+    if (typeof parsed.content === 'string') return parsed
+  } catch {
+    // Legacy Notice values are plain text.
+  }
+  return { content: value ?? '' }
+}
+
 type NoticeSectionProps = {
   defaultValue: string
 }
@@ -48,25 +70,48 @@ type NoticeSectionProps = {
 export function NoticeSection({ defaultValue }: NoticeSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const [isTranslating, setIsTranslating] = useState(false)
+  const initialNotice = parseNotice(defaultValue ?? '')
   const form = useForm<NoticeFormValues>({
     resolver: zodResolver(noticeSchema),
     defaultValues: {
-      Notice: defaultValue ?? '',
+      Notice: initialNotice.content,
     },
   })
 
   useEffect(() => {
-    form.reset({ Notice: defaultValue ?? '' })
+    form.reset({ Notice: parseNotice(defaultValue ?? '').content })
   }, [defaultValue, form])
 
   const onSubmit = async (values: NoticeFormValues) => {
     const normalized = values.Notice ?? ''
-    if (normalized === (defaultValue ?? '')) {
+    if (normalized === parseNotice(defaultValue ?? '').content) {
       return
+    }
+
+    setIsTranslating(true)
+    let value = normalized
+    try {
+      const response = await api.post<{
+        success: boolean
+        message?: string
+        data?: Record<string, NoticeTranslation>
+      }>('/api/option/translate-announcement', { content: normalized })
+      if (!response.data.success || !response.data.data) {
+        throw new Error(response.data.message)
+      }
+      value = JSON.stringify({
+        content: normalized,
+        translations: response.data.data,
+      })
+    } catch {
+      toast.error(t('Translation generation failed'))
+    } finally {
+      setIsTranslating(false)
     }
     await updateOption.mutateAsync({
       key: 'Notice',
-      value: normalized,
+      value,
     })
   }
 
@@ -77,7 +122,9 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
-            saveLabel='Save notice'
+            saveLabel={
+              isTranslating ? t('Generating translations') : 'Save notice'
+            }
           />
           <FormField
             control={form.control}
