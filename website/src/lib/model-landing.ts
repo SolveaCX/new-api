@@ -1,6 +1,6 @@
-import type { Locale } from "./locales";
+import { LOCALES, type Locale } from "./locales";
 import { withIdFallback } from "@/lib/locales";
-import type { PricingModel } from "./pricing";
+import { formatUsdPrice, type PricingModel } from "./pricing";
 import {
   getPriorityModelCopy,
   getPriorityModelTranslationMapForSource,
@@ -25,11 +25,141 @@ export type ModelGeneratorField = {
   help?: string;
 };
 
+export type ModelGeneratorProtocol =
+  | "openai-image"
+  | "gemini-image"
+  | "seedance-video"
+  | "veo-video"
+  | "grok-video"
+  | "audio";
+
+/**
+ * Input workflows exposed by the documented Seedance content[] contract.
+ *
+ * This is deliberately opt-in metadata rather than something inferred from
+ * `protocol`: other video adapters use different request shapes and action
+ * support.  A mode that is not supported by the selected route stays visible
+ * in the Playground as disabled, but is never serialized as a made-up API
+ * field.
+ */
+export type ModelVideoMode =
+  | "text-to-video"
+  | "image-to-video"
+  | "reference-to-video"
+  | "video-edit"
+  | "video-extend";
+
+export type ModelVideoModeOption = {
+  value: ModelVideoMode;
+  supported: boolean;
+};
+
+export const SEEDANCE_VIDEO_MODE_OPTIONS: readonly ModelVideoModeOption[] = [
+  { value: "text-to-video", supported: true },
+  { value: "image-to-video", supported: true },
+  { value: "reference-to-video", supported: true },
+  { value: "video-edit", supported: false },
+  { value: "video-extend", supported: false },
+];
+
+type ModelVideoModeUiCopy = {
+  label: string;
+  helper: string;
+  unavailable: string;
+};
+
+/**
+ * Keep these labels identical across locales: they are Seedance's documented
+ * workflow names and are also used when users map a Playground mode to the
+ * provider contract.
+ */
+const MODEL_VIDEO_MODE_ENGLISH_LABELS: Record<ModelVideoMode, string> = {
+  "text-to-video": "Text-to-Video",
+  "image-to-video": "Image-to-Video",
+  "reference-to-video": "Reference-to-Video",
+  "video-edit": "Video Edit",
+  "video-extend": "Video Extend",
+};
+
+const MODEL_VIDEO_MODE_UI_COPY: Record<Locale, ModelVideoModeUiCopy> = {
+  en: {
+    label: "Video mode",
+    helper: "Choose the documented input workflow. The request keeps Seedance's content[] contract.",
+    unavailable: "Not available on this route",
+  },
+  zh: {
+    label: "视频模式",
+    helper: "选择文档化的输入工作流，请求仍使用 Seedance 的 content[] 契约。",
+    unavailable: "当前路由不可用",
+  },
+  es: {
+    label: "Modo de vídeo",
+    helper: "Elige el flujo de entrada documentado. La solicitud mantiene el contrato content[] de Seedance.",
+    unavailable: "No disponible en esta ruta",
+  },
+  fr: {
+    label: "Mode vidéo",
+    helper: "Choisissez le flux d’entrée documenté. La requête conserve le contrat content[] de Seedance.",
+    unavailable: "Indisponible sur cette route",
+  },
+  pt: {
+    label: "Modo de vídeo",
+    helper: "Escolha o fluxo de entrada documentado. A solicitação mantém o contrato content[] do Seedance.",
+    unavailable: "Indisponível nesta rota",
+  },
+  ru: {
+    label: "Режим видео",
+    helper: "Выберите документированный способ ввода. Запрос сохраняет контракт Seedance content[].",
+    unavailable: "Недоступно для этого маршрута",
+  },
+  ja: {
+    label: "ビデオモード",
+    helper: "ドキュメント化された入力ワークフローを選択します。リクエストはSeedanceのcontent[]契約を保持します。",
+    unavailable: "このルートでは利用できません",
+  },
+  vi: {
+    label: "Chế độ video",
+    helper: "Chọn quy trình đầu vào đã được tài liệu hóa. Yêu cầu vẫn giữ hợp đồng content[] của Seedance.",
+    unavailable: "Không khả dụng trên tuyến này",
+  },
+  de: {
+    label: "Videomodus",
+    helper: "Wählen Sie den dokumentierten Eingabeworkflow. Die Anfrage behält den Seedance-content[]-Vertrag bei.",
+    unavailable: "Auf dieser Route nicht verfügbar",
+  },
+  id: {
+    label: "Mode video",
+    helper: "Pilih alur input yang terdokumentasi. Permintaan tetap menggunakan kontrak content[] Seedance.",
+    unavailable: "Tidak tersedia di rute ini",
+  },
+};
+
+export function getModelVideoModeLabel(_locale: Locale, mode: ModelVideoMode): string {
+  return MODEL_VIDEO_MODE_ENGLISH_LABELS[mode];
+}
+
+export function getModelVideoModeUiCopy(locale: Locale): ModelVideoModeUiCopy {
+  return MODEL_VIDEO_MODE_UI_COPY[locale] ?? MODEL_VIDEO_MODE_UI_COPY.en;
+}
+
+export type ModelReferenceLimits = Partial<Record<"image" | "video" | "audio", number>>;
+
 export type ModelGeneratorConfig = {
   kind: "image" | "video" | "audio";
   endpoint: string;
   storageKey: string;
   fields: ModelGeneratorField[];
+  /** Wire contract used by the Playground request preview and builder. */
+  protocol?: ModelGeneratorProtocol;
+  /** Maximum reference files accepted by this model's documented route. */
+  referenceLimits?: ModelReferenceLimits;
+  /**
+   * Optional, route-specific video workflows. Do not infer this from the
+   * protocol: a shared protocol name does not imply shared action support.
+   */
+  videoModes?: readonly ModelVideoModeOption[];
+  /** Default UI workflow for an explicitly configured video mode selector. */
+  defaultVideoMode?: ModelVideoMode;
 };
 
 /**
@@ -354,6 +484,10 @@ export const SEEDANCE_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:seedance-2-0",
+    protocol: "seedance-video",
+    referenceLimits: { image: 30, video: 10, audio: 10 },
+    videoModes: SEEDANCE_VIDEO_MODE_OPTIONS,
+    defaultVideoMode: "text-to-video",
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "1080p", options: ["720p", "1080p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
@@ -411,6 +545,10 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:seedance-2-5",
+    protocol: "seedance-video",
+    referenceLimits: { image: 30, video: 10, audio: 10 },
+    videoModes: SEEDANCE_VIDEO_MODE_OPTIONS,
+    defaultVideoMode: "text-to-video",
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "720p", options: ["480p", "720p"] },
       { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "adaptive", options: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"] },
@@ -430,19 +568,19 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     "A cinematic product shot of a sports car on a wet track, soft studio lighting, high detail.",
   priceUnit: "Pricing",
   rows: [
-    { label: "480p · no video reference", flatkey: "$0.140 × duration", official: "See request formula" },
-    { label: "720p · no video reference", flatkey: "$0.314 × duration", official: "See request formula" },
-    { label: "Video reference input", flatkey: "$0.084–$0.188 × video seconds", official: "Depends on resolution" },
+    { label: "Request price", flatkey: "$0.140 × duration", official: "See request formula" },
+    { label: "Request price", flatkey: "$0.314 × duration", official: "See request formula" },
+    { label: "Video reference input", flatkey: "$0.084–$0.188 × video seconds", official: "See request formula" },
     { label: "Coverage", flatkey: "", value: "Seedance 2.5 · Seedance 2.0 · Kling · Veo · Sora" },
   ],
   seo: {
-    title: "Seedance 2.5 AI Video Generator & API Pricing | Flatkey",
+    title: "Seedance 2.5 AI video generator — API and pricing | Flatkey",
     description:
       "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
   },
   seoByLocale: {
     en: {
-      title: "Seedance 2.5 AI Video Generator & API Pricing | Flatkey",
+      title: "Seedance 2.5 AI video generator — API and pricing | Flatkey",
       description: "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
     },
     pt: {
@@ -496,23 +634,23 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   ],
   landingContent: {
     hero: {
-      title: "Seedance 2.5 AI Video Generator & API",
+      title: "Seedance 2.5 AI video generator and API",
       description: "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.",
       logo: "/logos/seedance.png",
       breadcrumb: ["Models", "Video generation", "Seedance 2.5 API"],
       actionLabel: "Quick Start",
       provider: "ByteDance",
-      flatkeyPrice: "From $0.140 × duration",
-      referencePrice: "Variable by resolution and input",
+      flatkeyPrice: "$0.140 × duration",
+      referencePrice: "See request formula",
     },
     performance: {
       eyebrow: "Performance",
-      title: "Reliability over the last 30 days",
+      title: "Seedance 2.5 AI video API performance and uptime",
       description: "Live request telemetry appears here when enough Flatkey traffic is available.",
     },
     activity: {
       eyebrow: "Activity",
-      title: "Seedance 2.5 usage activity",
+      title: "Seedance 2.5 video API usage activity",
       description: "Only live Flatkey request data is shown here; a chart appears after enough traffic is collected.",
       sampleChart: false,
     },
@@ -523,11 +661,11 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
       { title: "Duration and output controls", body: "Choose 4–30 seconds, 480p or 720p, adaptive or supported fixed ratios, and the audio setting before submitting the task." },
     ],
     capabilitiesEyebrow: "Seedance 2.5 features",
-    capabilitiesTitle: "What is Seedance 2.5? Features for AI video generation",
+    capabilitiesTitle: "Seedance 2.5 AI video generator features for references and audio",
     capabilitiesDescription: "The documented contract covers text-to-video and image-to-video inputs, reference media, optional audio, and bounded output settings.",
     comparison: {
-      eyebrow: "Seedance 2.5 features",
-      title: "Seedance 2.5 features: references, audio, and 30-second video",
+      eyebrow: "Compare",
+      title: "Compare Seedance 2.5 with Seedance 2.0: documented video fields",
       description: "This comparison records documented Seedance 2.5 behavior. Seedance 2.0 values are marked as not verified rather than inferred.",
       baselineLabel: "Seedance 2.0 (not re-audited)",
       currentLabel: "Seedance 2.5",
@@ -589,11 +727,11 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
         alt: "Market-research creative variant example",
       },
     ],
-    promptLibraryTitle: "Seedance 2.5 prompt guide: six workflows",
+    promptLibraryTitle: "Seedance 2.5 prompt guide for text-to-video and image-to-video",
     promptLibraryDescription: "Use these workflow-specific prompts as starting points. Output depends on the supplied references and request settings.",
     why: {
       eyebrow: "Why Flatkey",
-      title: "Why use Seedance 2.5 through Flatkey?",
+      title: "Use Seedance 2.5 through a unified video API",
       description: "Use one key for the model catalog, inspect the request contract, and keep pricing tied to the selected settings.",
       cards: [
         { title: "One key for the model catalog", body: "Use the same Flatkey account and API key across video, image, audio, and text workloads." },
@@ -604,7 +742,7 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     },
     api: {
       eyebrow: "API",
-      title: "Seedance 2.5 API: how to use /v1/videos",
+      title: "Use the Seedance 2.5 API at /v1/videos",
       description: "Send Seedance content[] items, keep the task id, and fetch the result from /v1/videos/{task_id}/content.",
       items: [
         { title: "POST /v1/videos", detail: "Send the model id, a content[] array, and supported duration, resolution, ratio, and audio fields." },
@@ -615,15 +753,15 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     },
     related: {
       eyebrow: "Related Models",
-      title: "Other video generation models",
+      title: "Other Seedance and AI video generator APIs",
       // Related cards are populated from the live model catalog. Keeping this
       // list empty prevents a stale hand-authored list from mixing text and
       // video models when the catalog changes.
       cards: [],
     },
     faq: [
-      { question: "What is seedance-2.5?", answer: "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls." },
-      { question: "How much does seedance-2.5 cost?", answer: "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution." },
+      { question: "What is Seedance 2.5?", answer: "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls." },
+      { question: "How much does Seedance 2.5 cost?", answer: "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution." },
       { question: "What can I use it for?", answer: "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests." },
       { question: "How do I use the model in my app?", answer: "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content." },
       { question: "Can I control output features?", answer: "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields." },
@@ -634,7 +772,7 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     ],
     faqTitle: {
       beforeBreak: "Seedance 2.5",
-      afterBreak: "API–frequently asked questions",
+      afterBreak: "API, pricing, and release-date questions",
     },
   },
 };
@@ -648,6 +786,8 @@ export const GPT_IMAGE_2_CONFIG: ModelConfig = {
     kind: "image",
     endpoint: "/v1/images/generations",
     storageKey: "flatkey:model-generator-draft:gpt-image-2",
+    protocol: "openai-image",
+    referenceLimits: { image: 4 },
     fields: [
       { name: "n", label: "Images", type: "number", defaultValue: 1, min: 1, max: 10 },
       { name: "size", label: "Size", type: "select", defaultValue: "1024x1024", options: ["1024x1024", "1536x1024", "1024x1536", "auto"] },
@@ -658,15 +798,18 @@ export const GPT_IMAGE_2_CONFIG: ModelConfig = {
     ],
   },
   officialName: "OpenAI",
-  officialPrice: "$0.06",
-  flatkeyPrice: "$0.04",
-  estFlatkey: "$0.04",
-  estOfficial: "$0.06",
+  // Image pricing is dimension/modality based; these fields are only
+  // fallbacks for the shared card when the live catalog is unavailable.
+  // Keep the actual catalog rows in the editorial pricing block below.
+  officialPrice: "Varies by modality/batch",
+  flatkeyPrice: "$4.00–$24.00 / 1M catalog units",
+  estFlatkey: "$4.00–$24.00 / 1M catalog units",
+  estOfficial: "Varies by modality/batch",
   examplePrompt:
     "A complex AI image generation mood wall photographed as one premium studio scene: a large violet-and-gold abstract floral artwork surrounded by pinned botanical sketches, macro insect study, translucent vellum flower sheets, black-and-white portrait, crystal minerals, perfume product render, architectural arch and staircase studies, film strips, fabric swatches, tape, brass pins, graphite notes, and warm spotlights on a charcoal wall.",
   priceUnit: "/ image",
   rows: [
-    { label: "GPT-image-2 image", flatkey: "$0.04", official: "$0.06" },
+    { label: "GPT Image 2 catalog dimensions", flatkey: "$4.00–$24.00 / 1M units", official: "Varies by modality/batch" },
     { label: "Square output", flatkey: "", value: "1024 × 1024" },
     { label: "Fast product mockups", flatkey: "", value: "image, ads, ecommerce" },
     { label: "Coverage", flatkey: "", value: "GPT-image-2 · Nano Banana Pro · Imagen · Qwen Image" },
@@ -696,18 +839,18 @@ export const KIMI_K3_CONFIG: ModelConfig = {
   displayName: "Kimi K3",
   modelId: "kimi-k3",
   officialName: "Moonshot AI",
-  officialPrice: "$12.00",
+  officialPrice: "$15.00",
   flatkeyPrice: "$12.00",
   estFlatkey: "$12.00",
-  estOfficial: "$12.00",
+  estOfficial: "$15.00",
   examplePrompt: "Extract the action items from this document and return owners, deadlines, and open questions.",
   priceUnit: "/ million output tokens",
   rows: [
-    { label: "Kimi K3 input", flatkey: "$2.40", official: "$2.40" },
-    { label: "Kimi K3 output", flatkey: "$12.00", official: "$12.00" },
-    { label: "Cache", flatkey: "$0.24", official: "$0.24" },
+    { label: "Kimi K3 input", flatkey: "$2.40", official: "$3.00" },
+    { label: "Kimi K3 output", flatkey: "$12.00", official: "$15.00" },
+    { label: "Cache-hit input", flatkey: "$0.24", official: "$0.30" },
     { label: "Context", flatkey: "", value: "1,048,576 tokens" },
-    { label: "Modalities", flatkey: "", value: "Text · file" },
+    { label: "Modalities", flatkey: "", value: "Text · image · file (upstream vision; Flatkey fields vary)" },
   ],
   seo: {
     title: "Kimi K3 API and pricing | Flatkey",
@@ -730,6 +873,8 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:minimax-h3",
+    protocol: "seedance-video",
+    referenceLimits: { image: 9, video: 3, audio: 3 },
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "768P", options: ["768P", "2K"] },
       { name: "duration", label: "Duration", type: "number", defaultValue: 6, min: 4, max: 15 },
@@ -778,95 +923,101 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
 const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
   "gpt-5-6-sol": {
     seo: {
-      title: "GPT-5.6 Sol API and pricing | Flatkey",
-      description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key.",
+      title: "GPT-5.6 Sol API and pricing for developers | Flatkey",
+      description: "Build with GPT-5.6 Sol through Flatkey: OpenAI-compatible API access, a long context window, image input, current Flatkey token rates, and one API key.",
     },
     seoByLocale: {
-      en: { title: "GPT-5.6 Sol API and pricing | Flatkey", description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key." },
+      en: { title: "GPT-5.6 Sol API and pricing for developers | Flatkey", description: "Build with GPT-5.6 Sol through Flatkey: OpenAI-compatible API access, a long context window, image input, current Flatkey token rates, and one API key." },
     },
     rows: [
       { label: "GPT-5.6 Sol input", flatkey: "$4.00", official: "$4.00" },
-      { label: "GPT-5.6 Sol output", flatkey: "$24.00", official: "$24.00" },
-      { label: "Cache read", flatkey: "$0.40", official: "$0.40" },
-      { label: "Cache creation", flatkey: "$5.00", official: "$5.00" },
+      { label: "GPT-5.6 Sol output", flatkey: "$24.00", official: "$20.00" },
+      { label: "Cached input", flatkey: "$0.40", official: "$0.40" },
+      { label: "Cache writes (Flatkey catalog)", flatkey: "$5.00", official: "$5.00" },
       { label: "Context", flatkey: "", value: "1,048,576 tokens" },
-      { label: "Modalities", flatkey: "", value: "Text · image · file" },
+      { label: "Modalities", flatkey: "", value: "Text · image (file tools are route-specific)" },
     ],
     landingContent: {
-      hero: { title: "GPT-5.6 Sol API, pricing, and model details", description: "GPT-5.6 Sol is an OpenAI catalog model available through Flatkey's /v1/chat/completions endpoint. The catalog records a 1,048,576-token context and text, image, and file modalities. This page shows the exact model ID, current token rates, and request path before production traffic." },
-      pricing: { title: "GPT-5.6 Sol pricing", description: "Current Flatkey catalog token-dimension rates. They are not a universal per-request price.", note: "Rates are per 1M tokens; check the dated catalog block for current values.", rows: [
-        { label: "Input", value: "$4.00", detail: "per 1M tokens" }, { label: "Output", value: "$24.00", detail: "per 1M tokens" }, { label: "Cache read", value: "$0.40", detail: "per 1M tokens" }, { label: "Cache creation", value: "$5.00", detail: "per 1M tokens" },
+      hero: { title: "GPT-5.6 Sol API for long-context work", description: "GPT-5.6 Sol is OpenAI's GPT-5.6 catalog model. OpenAI documents a roughly 1.05M-token context, text output, image input, and Chat Completions and Responses access; Flatkey exposes the gpt-5.6-sol route and its current catalog rates below." },
+      performance: { eyebrow: "Performance", title: "GPT-5.6 Sol API performance and availability", description: "Live Flatkey request telemetry appears here when enough traffic is available; no benchmark score is inferred." },
+      activity: { eyebrow: "Activity", title: "GPT-5.6 Sol API usage and request activity", description: "This chart uses live Flatkey request data for the selected model and stays unreported until enough traffic is collected." },
+      pricing: { title: "GPT-5.6 Sol API pricing by token", description: "These are current Flatkey catalog rates, not a universal OpenAI direct price. The live catalog and account group determine the amount you pay.", note: "Rates are shown per 1M tokens. OpenAI's standard reference is $4 input, $0.40 cached input, $5 cache writes, and $20 output; inputs above 272K tokens use the higher long-context tier. Flatkey's catalog row remains the settlement source.", rows: [
+        { label: "Flatkey input", value: "$4.00", detail: "per 1M tokens" }, { label: "Flatkey output", value: "$24.00", detail: "per 1M tokens" }, { label: "Flatkey cache read", value: "$0.40", detail: "per 1M tokens" }, { label: "Flatkey cache creation", value: "$5.00", detail: "per 1M tokens; catalog-specific" },
       ] },
       capabilitiesEyebrow: "GPT-5.6 Sol capabilities",
-      capabilitiesTitle: "GPT-5.6 Sol context, modalities, and endpoint",
-      capabilitiesDescription: "Documented integration fields are shown below; no benchmark or quality promise is inferred.",
+      capabilitiesTitle: "GPT-5.6 Sol capabilities for documents, code, and agents",
+      capabilitiesDescription: "These cards describe practical workflows; exact context, modality, and route fields remain in the API section below.",
       capabilities: [
-        { title: "Long context field", body: "The catalog records a 1,048,576-token context window." },
-        { title: "Documented input modalities", body: "Catalog metadata lists text, image, and file modalities." },
-        { title: "Chat-completions route", body: "Requests use /v1/chat/completions with model ID gpt-5.6-sol." },
-        { title: "One integration surface", body: "Flatkey supplies the API-key and billing layer with endpoint/request compatibility." },
+        { title: "Long-context document and code work", body: "Use the model to plan, summarize, transform, and reason across large documents, codebases, and research notes." },
+        { title: "Text and image understanding", body: "Ground answers in written material and supported image input when a workflow needs more than text alone." },
+        { title: "Structured agent workflows", body: "Connect reasoning, structured output, tools, and streaming to assistants and application backends." },
+        { title: "Production integration", body: "Keep one stable model identity and account surface as experiments become repeatable product workflows." },
       ],
-      comparison: { eyebrow: "Compare fields", title: "GPT-5.6 Sol vs GPT-5.5, Terra, and Luna", description: "This table compares documented integration fields only; no performance ranking is asserted.", baselineLabel: "GPT-5.5 / Terra / Luna", currentLabel: "GPT-5.6 Sol", rows: [
+      comparison: { eyebrow: "Compare fields", title: "GPT-5.6 Sol vs GPT-5.5, GPT-5.6 Terra, and GPT-5.6 Luna", description: "This table compares documented integration fields only; no performance ranking is asserted.", baselineLabel: "GPT-5.5 / GPT-5.6 Terra / GPT-5.6 Luna", currentLabel: "GPT-5.6 Sol", rows: [
         { label: "Catalog model ID", baseline: "Unknown in this verified fact set", current: "gpt-5.6-sol" },
-        { label: "Endpoint", baseline: "Unknown", current: "/v1/chat/completions" },
-        { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
-        { label: "Modalities", baseline: "Unknown", current: "Text, image, file" },
+        { label: "Endpoint", baseline: "Unknown", current: "/v1/chat/completions; /v1/responses" },
+        { label: "Context", baseline: "Unknown", current: "About 1.05M tokens; 128K max output" },
+        { label: "Modalities", baseline: "Unknown", current: "Text input/output; image input" },
         { label: "Relative quality/benchmark", baseline: "Not asserted", current: "Not asserted" },
       ] },
-      api: { eyebrow: "API", title: "Call GPT-5.6 Sol with the API", description: "Use the exact model ID and documented endpoint in your existing client.", items: [
+      api: { eyebrow: "API", title: "Call the GPT-5.6 Sol API from your existing client", description: "Use the exact model ID with Flatkey's Chat Completions or Responses endpoint in an OpenAI-shaped client.", items: [
         { title: "Endpoint", detail: "POST /v1/chat/completions" },
+        { title: "Responses endpoint", detail: "POST /v1/responses" },
         { title: "Model ID", detail: "gpt-5.6-sol" },
-        { title: "Modalities", detail: "Text, image, and file are listed in catalog metadata." },
+        { title: "Modalities", detail: "Text input/output and image input are documented by OpenAI; Flatkey route fields may vary." },
         { title: "Compatibility", detail: "Use OpenAI-compatible request fields; do not infer Codex, streaming, or ChatGPT availability." },
       ] },
-      why: { eyebrow: "Why use Flatkey for GPT-5.6 Sol?", title: "A controlled GPT-5.6 Sol integration surface", description: "Keep the model ID, endpoint, context, and token dimensions visible while you move from a test request to production traffic.", cards: [
+      why: { eyebrow: "Why use Flatkey for GPT-5.6 Sol?", title: "A practical GPT-5.6 Sol API workflow", description: "Keep the model ID, endpoint, context, and token dimensions visible while you move from a test request to production traffic.", cards: [
         { title: "Exact model routing", body: "Set gpt-5.6-sol explicitly and keep the /v1/chat/completions path in your client configuration." },
         { title: "Token-dimension visibility", body: "Review input, output, cache-read, and cache-creation rates instead of treating one headline price as universal." },
-        { title: "Long-context workflows", body: "Use the catalog's 1,048,576-token context field for document, code, and agent workflow planning." },
+        { title: "Long-context workflows", body: "Use the documented long context for document, code, and agent workflow planning, then verify your account limits." },
         { title: "One account for model testing", body: "Keep API keys, limits, usage, and adjacent model experiments in the same Flatkey workspace." },
       ] },
-      faqTitle: { beforeBreak: "GPT-5.6 Sol API", afterBreak: "frequently asked questions" },
+      related: { eyebrow: "Related models", title: "More OpenAI GPT models and API options", description: "Compare adjacent OpenAI routes when you need a different context, modality, or price point.", cards: [] },
+      faqTitle: { beforeBreak: "GPT-5.6 Sol API", afterBreak: "questions and pricing" },
       faqDescription: "Answers about the GPT-5.6 Sol API model ID, endpoint, token pricing, context, inputs, and catalog release metadata.",
       faq: [
-        { question: "What is GPT-5.6 Sol?", answer: "GPT-5.6 Sol is an OpenAI catalog model routed on Flatkey through /v1/chat/completions with a 1,048,576-token context and text, image, and file modalities." },
-        { question: "How do I use GPT-5.6 Sol?", answer: "Create a Flatkey API key, send a chat-completions request, and set model to gpt-5.6-sol." },
-        { question: "What is the GPT-5.6 Sol API model ID?", answer: "The verified model ID is gpt-5.6-sol; the documented endpoint is /v1/chat/completions." },
-        { question: "How much does GPT-5.6 Sol cost?", answer: "Current catalog rates are $4 input, $24 output, $0.40 cache read, and $5 cache creation per 1M tokens. Check the dated pricing block." },
-        { question: "What context window and inputs does GPT-5.6 Sol support?", answer: "The catalog records 1,048,576 tokens and text, image, and file modalities." },
+        { question: "What is GPT-5.6 Sol?", answer: "GPT-5.6 Sol is OpenAI's GPT-5.6 catalog model. OpenAI documents a roughly 1.05M-token context, text output, and image input; Flatkey routes the model through /v1/chat/completions or /v1/responses." },
+        { question: "How do I use GPT-5.6 Sol?", answer: "Create a Flatkey API key, send a request to /v1/chat/completions or /v1/responses, and set model to gpt-5.6-sol." },
+        { question: "What is the GPT-5.6 Sol API model ID?", answer: "The verified model ID is gpt-5.6-sol; documented Flatkey endpoints are /v1/chat/completions and /v1/responses." },
+        { question: "How much does GPT-5.6 Sol cost?", answer: "The current Flatkey catalog lists $4 input, $24 output, $0.40 cache read, and $5 cache creation per 1M tokens. OpenAI's standard reference lists $4 input, $5 cache writes, $0.40 cached input, and $20 output, with a higher tier above 272K input tokens; these are separate price sources, so check the dated Flatkey block before scaling." },
+        { question: "What context window and inputs does GPT-5.6 Sol support?", answer: "OpenAI documents about 1.05M context tokens, text input/output, and image input. File tools and account limits remain route-specific, so check the Flatkey request contract." },
         { question: "When was GPT-5.6 Sol released?", answer: "The catalog snapshot records 2026-06-20 as the release date; treat this as catalog metadata rather than a launch announcement." },
       ],
     },
   },
   "gpt-image-2": {
-    seo: { title: "GPT Image 2 API and image generator | Flatkey", description: "Prepare GPT Image 2 requests through Flatkey with image API access, current token-dimension pricing, size and quality controls, formats, background, and moderation settings." },
+    seo: { title: "GPT Image 2 image generator — API and pricing | Flatkey", description: "Create and edit images with GPT Image 2 through Flatkey: image API access, current catalog pricing, size and quality controls, formats, background, and moderation settings." },
     rows: [
-      { label: "Input tokens", flatkey: "$4.00", official: "$4.00" },
-      { label: "Output tokens", flatkey: "$24.00", official: "$24.00" },
-      { label: "Cache tokens", flatkey: "$1.00", official: "$1.00" },
-      { label: "Image dimensions", flatkey: "$6.40", official: "$6.40" },
+      { label: "Input tokens", flatkey: "$4.00", official: "Provider table varies by modality/batch" },
+      { label: "Output tokens", flatkey: "$24.00", official: "Provider table varies by modality/batch" },
+      { label: "Cache tokens", flatkey: "$1.00", official: "Provider table varies by modality/batch" },
+      { label: "Image input tokens", flatkey: "$6.40", official: "Provider table varies by modality/batch" },
     ],
     landingContent: {
-      hero: { title: "GPT Image 2 API, pricing, and image generation", description: "GPT Image 2 is the OpenAI image model exposed in Flatkey's image-generation flow. Use /v1/images/generations and configure count, size, quality, format, background, and moderation fields." },
-      pricing: { title: "GPT Image 2 pricing by token and image dimensions", description: "The catalog exposes token-dimension pricing; the final amount depends on request and usage fields.", rows: [
-        { label: "Input tokens", value: "$4.00", detail: "per 1M units" }, { label: "Output tokens", value: "$24.00", detail: "per 1M units" }, { label: "Cache tokens", value: "$1.00", detail: "per 1M units" }, { label: "Image dimensions", value: "$6.40", detail: "per 1M units" },
+      hero: { title: "GPT Image 2 AI image generator and API", description: "GPT Image 2 is OpenAI's image-generation model. OpenAI documents image generation and editing with flexible sizes; Flatkey exposes the image routes and request controls shown below." },
+      performance: { eyebrow: "Performance", title: "GPT Image 2 API performance and availability", description: "Live Flatkey request telemetry appears here when enough image-generation traffic is available." },
+      activity: { eyebrow: "Activity", title: "GPT Image 2 API usage and generation activity", description: "This chart reflects live Flatkey generation requests and remains unreported until enough traffic is collected." },
+      pricing: { title: "GPT Image 2 API pricing by token and image input", description: "These are current Flatkey catalog rates. Image cost depends on request fields and usage; they are not a universal OpenAI direct price.", note: "Flatkey rows are shown per 1M catalog units; the image-input row is a catalog input-token dimension, not a separate fee for pixel dimensions. OpenAI's current reference separates text input ($5/M standard), image input ($8/M), cached image input ($2/M), and image output ($30/M), with Batch rates of $2.50/$4/$1/$15; verify the applicable modality and dated Flatkey block.", rows: [
+        { label: "Flatkey input tokens", value: "$4.00", detail: "per 1M units" }, { label: "Flatkey output tokens", value: "$24.00", detail: "per 1M units" }, { label: "Flatkey cache tokens", value: "$1.00", detail: "per 1M units" }, { label: "Flatkey image input tokens", value: "$6.40", detail: "per 1M units; not a pixel-size fee" },
       ] },
-      capabilitiesEyebrow: "GPT Image 2 controls", capabilitiesTitle: "GPT Image 2 sizes, quality, formats, and controls", capabilitiesDescription: "Configure the documented request fields before sending an image-generation task.",
+      capabilitiesEyebrow: "GPT Image 2 capabilities", capabilitiesTitle: "GPT Image 2 image generation and editing capabilities", capabilitiesDescription: "Use the documented image workflows for new visuals, reference-led edits, and production-ready creative variants.",
       capabilities: [
-        { title: "Image count", body: "n accepts 1–10 in the page generator." },
-        { title: "Sizes", body: "1024x1024, 1536x1024, 1024x1536, or auto." },
-        { title: "Quality", body: "auto, high, medium, or low." },
-        { title: "Output format", body: "PNG, JPEG, or WebP." },
-        { title: "Background and moderation", body: "background is opaque or auto; moderation is auto or low." },
+        { title: "Text-to-image creation", body: "Generate new product, editorial, and campaign visuals from a structured natural-language prompt." },
+        { title: "Reference-based editing", body: "Supply an image input to revise an existing visual while preserving important subject and composition details." },
+        { title: "Flexible image composition", body: "Create square, portrait, or landscape assets with flexible image sizes for different placements and channels." },
+        { title: "High-fidelity visual input", body: "Combine text and image context in one workflow for richer visual direction; audio and video inputs are not supported by this model." },
       ],
-      comparison: { eyebrow: "Migration fields", title: "GPT Image 2 compared with GPT Image 1", description: "GPT Image 1 values are not verified in this fact set, so only documented GPT Image 2 fields are shown.", baselineLabel: "GPT Image 1", currentLabel: "GPT Image 2", rows: [
-        { label: "Endpoint", baseline: "Unknown here", current: "/v1/images/generations" },
+      comparison: { eyebrow: "Migration fields", title: "GPT Image 2 and GPT Image 1: image API controls", description: "GPT Image 1 values are not verified in this fact set, so only documented GPT Image 2 fields are shown.", baselineLabel: "GPT Image 1", currentLabel: "GPT Image 2", rows: [
+        { label: "Endpoints", baseline: "Unknown here", current: "/v1/images/generations; /v1/images/edits" },
         { label: "Sizes", baseline: "Unknown here", current: "1024x1024, 1536x1024, 1024x1536, auto" },
         { label: "Formats", baseline: "Unknown here", current: "PNG, JPEG, WebP" },
         { label: "Quality/background/moderation", baseline: "Unknown here", current: "Documented above" },
         { label: "Image quality ranking", baseline: "Not asserted", current: "Not asserted" },
       ] },
-      api: { eyebrow: "API", title: "GPT Image 2 API endpoint and request setup", description: "Send the model ID with the supported image controls.", items: [
-        { title: "Endpoint", detail: "POST /v1/images/generations" },
+      api: { eyebrow: "API", title: "Use the GPT Image 2 API for generation and edits", description: "Send the model ID with the supported image controls through the documented generation or edits route.", items: [
+        { title: "Generation endpoint", detail: "POST /v1/images/generations" },
+        { title: "Edits endpoint", detail: "POST /v1/images/edits" },
         { title: "Model ID", detail: "gpt-image-2" },
         { title: "Controls", detail: "n, size, quality, format, background, and moderation." },
         { title: "Access", detail: "Use the normal Flatkey account and API-key flow; no free or no-signup promise is made." },
@@ -878,156 +1029,166 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
         { key: "gpt-image-2-ad", label: "Ad creative", prompt: "Square social ad still for a citrus skincare launch: glass dropper bottle, sliced bergamot, warm cream background, crisp condensation, editorial daylight, no logo or legible text.", poster: "/assets/prompts/awesome-images/ugc-coffee-ad.png", alt: "GPT Image 2 advertising prompt example" },
         { key: "gpt-image-2-storyboard", label: "Storyboard frame", prompt: "Wide storyboard frame of a cyclist entering a rain-lit city tunnel at blue hour, camera low behind the wheel, reflective pavement, clear subject silhouette, cinematic but physically plausible lighting.", poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png", alt: "GPT Image 2 storyboard prompt example" },
       ],
-      why: { eyebrow: "Why use Flatkey for GPT Image 2?", title: "A request-aware GPT Image 2 workflow", description: "Keep image controls and token/image dimensions together so a prompt test can become a reproducible API request.", cards: [
+      why: { eyebrow: "Why use Flatkey for GPT Image 2?", title: "A repeatable GPT Image 2 workflow for product images", description: "Keep image controls and image-input token dimensions together so a prompt test can become a reproducible API request.", cards: [
         { title: "All documented controls in one place", body: "Set n, size, quality, output format, background, and moderation before you hand the request to the console." },
-        { title: "Dimensions stay explicit", body: "The catalog exposes token and image-dimension rates; the final amount depends on the request and usage fields." },
+        { title: "Image input stays explicit", body: "The catalog exposes token and image-input dimensions; this is not a separate fee for output pixel size, and the final amount depends on request and usage fields." },
         { title: "Marketing-ready starting points", body: "Use product, ad, and storyboard examples as editable starting prompts rather than generic image filler." },
         { title: "No unsupported promises", body: "The page does not promise transparent output, free generation, or a fixed per-image price when those facts are not verified." },
       ] },
-      faqTitle: { beforeBreak: "GPT Image 2 API", afterBreak: "frequently asked questions" },
-      faqDescription: "Answers about GPT Image 2 API access, image-generation fields, token and image-dimension pricing, formats, and background behavior.",
+      related: { eyebrow: "Related models", title: "More GPT Image 2 alternatives and image generator APIs", description: "Explore other image routes when you need a different generation or editing workflow.", cards: [] },
+      faqTitle: { beforeBreak: "GPT Image 2 API", afterBreak: "pricing and prompt questions" },
+      faqDescription: "Answers about GPT Image 2 API access, image-generation fields, token and image-input pricing, formats, and background behavior.",
       faq: [
         { question: "What is GPT Image 2?", answer: "GPT Image 2 is the OpenAI image model available through /v1/images/generations." },
         { question: "How do I access GPT Image 2?", answer: "Configure a request, then use the normal Flatkey account and API-key flow." },
-        { question: "What is the GPT Image 2 API endpoint?", answer: "Use /v1/images/generations with model ID gpt-image-2 and the supported fields." },
-        { question: "How much does GPT Image 2 cost?", answer: "The catalog lists $4 input tokens, $24 output tokens, $1 cache tokens, and $6.40 image dimensions per 1M units; it is not one fixed per-image price." },
-        { question: "What sizes and formats are supported?", answer: "Sizes are 1024x1024, 1536x1024, 1024x1536, and auto. Formats are PNG, JPEG, and WebP." },
-        { question: "Can GPT Image 2 create transparent backgrounds?", answer: "The verified field is background: opaque | auto; this page does not promise transparent output." },
+        { question: "What are the GPT Image 2 API endpoints?", answer: "Use /v1/images/generations for new images or /v1/images/edits for image edits with model ID gpt-image-2." },
+        { question: "How much does GPT Image 2 cost?", answer: "The Flatkey catalog lists $4 input tokens, $24 output tokens, $1 cache tokens, and $6.40 image-input tokens per 1M units; this is not one fixed per-image price or a separate pixel-size fee. OpenAI's standard image reference is $8/M image input, $2/M cached image input, and $30/M image output, while Batch uses $4/$1/$15." },
+        { question: "What sizes and formats are supported?", answer: "Flatkey presets are 1024x1024, 1536x1024, 1024x1536, and auto. OpenAI documents a wider size range; PNG, JPEG, and WebP are listed here, with transparent output requiring PNG or WebP upstream." },
+        { question: "Can GPT Image 2 create transparent backgrounds?", answer: "Yes, OpenAI's image guide documents gpt-image-2 preview support for background=transparent with PNG or WebP. The Flatkey route may expose only the controls shown in its current request form, so verify the live request before relying on transparency." },
         { question: "Is GPT Image 2 free or available without signup?", answer: "Free or no-signup generation is not verified. Use the normal Flatkey access flow and dated pricing block." },
       ],
     },
   },
   "kimi-k3": {
-    seo: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing." },
+    seo: { title: "Kimi K3 API and pricing for long-context workflows | Flatkey", description: "Use Moonshot AI's Kimi K3 through Flatkey's compatible API routes for long-horizon coding and knowledge work, with a 1M-token context, native vision, and current catalog pricing." },
     seoByLocale: {
-      en: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing." },
+      en: { title: "Kimi K3 API and pricing for long-context workflows | Flatkey", description: "Use Moonshot AI's Kimi K3 through Flatkey's compatible API routes for long-horizon coding and knowledge work, with a 1M-token context, native vision upstream, file fields on Flatkey, and current catalog pricing." },
     },
     landingContent: {
-      hero: { title: "Kimi K3 API, pricing, and model details", description: "Kimi K3 is the Moonshot AI catalog model available through Flatkey's compatible chat and messages routes. The verified catalog records a 1,048,576-token context and file input." },
-      pricing: { title: "Kimi K3 pricing", description: "Current Flatkey catalog token rates; they do not establish a free tier or consumer subscription price.", rows: [
-        { label: "Input", value: "$2.40", detail: "per 1M tokens" }, { label: "Output", value: "$12.00", detail: "per 1M tokens" }, { label: "Cache", value: "$0.24", detail: "per 1M tokens" },
+      hero: { title: "Kimi K3 API for long-context coding and research", description: "Kimi K3 is Moonshot AI's flagship model for long-horizon coding and knowledge work. Moonshot documents a 1M-token context, native visual understanding, and open-weight availability; Flatkey exposes compatible chat and messages routes with the catalog rates below." },
+      performance: { eyebrow: "Performance", title: "Kimi K3 API performance and availability", description: "Live Flatkey request telemetry appears here when enough Kimi K3 traffic is available; no benchmark ranking is inferred." },
+      activity: { eyebrow: "Activity", title: "Kimi K3 API usage and request activity", description: "This chart uses live Flatkey request data for Kimi K3 and stays unreported until enough traffic is collected." },
+      pricing: { title: "Kimi K3 API pricing for long-context requests", description: "These are current Flatkey catalog token rates; they are not a consumer subscription price or a promise of free access.", note: "Rates are shown per 1M tokens; verify the dated Flatkey catalog block before scaling.", rows: [
+        { label: "Flatkey input", value: "$2.40", detail: "per 1M tokens" }, { label: "Flatkey output", value: "$12.00", detail: "per 1M tokens" }, { label: "Flatkey cache", value: "$0.24", detail: "per 1M tokens" },
       ] },
-      capabilitiesEyebrow: "Kimi K3 capabilities", capabilitiesTitle: "Kimi K3 context, file input, and compatible endpoints", capabilitiesDescription: "Hosted API metadata is verified; local and open-weight assumptions are not.",
+      capabilitiesEyebrow: "Kimi K3 capabilities", capabilitiesTitle: "Kimi K3 capabilities for coding, files, and research", capabilitiesDescription: "These cards describe practical workflows; upstream facts and Flatkey route fields remain separated below.",
       capabilities: [
-        { title: "Context field", body: "1,048,576 tokens in verified catalog metadata." },
-        { title: "File input", body: "File modality is listed; do not extrapolate additional media types." },
-        { title: "Two documented routes", body: "/v1/chat/completions and /v1/messages are recorded compatible paths." },
-        { title: "Knowledge-work positioning", body: "Coding, document, and research examples are editorial use cases, not benchmark claims." },
+        { title: "Long-context knowledge work", body: "Work across long documents, codebases, and research notes while keeping the relevant material in one workflow." },
+        { title: "Vision and file-aware analysis", body: "Use visual understanding upstream and the file inputs listed for the hosted route when a task needs richer context." },
+        { title: "Coding and research assistance", body: "Draft, inspect, explain, and transform technical material for engineering and knowledge teams." },
+        { title: "Flexible client integration", body: "Bring the model into compatible chat or messages clients while keeping the same model identity and account controls." },
       ],
-      comparison: { eyebrow: "Hosted API facts", title: "Kimi K3 hosted API vs local or open-source assumptions", description: "The verified catalog confirms hosted API metadata only.", baselineLabel: "Local / open-source assumptions", currentLabel: "Verified Kimi K3", rows: [
+      comparison: { eyebrow: "Hosted API facts", title: "Kimi K3 hosted API vs open-weight and local options", description: "Moonshot documents open-weight availability upstream; this page describes Flatkey's hosted API route and does not promise native local execution inside Flatkey.", baselineLabel: "Moonshot open-weight / local option", currentLabel: "Verified Flatkey hosted API", rows: [
         { label: "Hosted endpoint", baseline: "Unknown", current: "/v1/chat/completions and /v1/messages" },
         { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
-        { label: "Input modality", baseline: "Unknown", current: "Text/file fields" },
-        { label: "Downloadable weights", baseline: "Unknown / not verified", current: "Unknown / not verified" },
+        { label: "Input modality", baseline: "Native vision plus documented upstream inputs", current: "Text/file fields in Flatkey catalog" },
+        { label: "Downloadable weights", baseline: "Documented by Moonshot upstream", current: "Flatkey local delivery not verified" },
         { label: "Free access", baseline: "Unknown", current: "Not promised; paid token rates apply" },
+        { label: "Upstream vs Flatkey", baseline: "Moonshot open-weight release and local use are upstream options", current: "Flatkey routes and bills hosted API access" },
       ] },
-      api: { eyebrow: "API", title: "Kimi K3 API and model ID", description: "Choose the compatible route documented by your client.", items: [
+      api: { eyebrow: "API", title: "Use the Kimi K3 API with OpenAI or Anthropic clients", description: "Choose the compatible route documented by your client and set model to kimi-k3; Moonshot upstream access and Flatkey hosted routing are separate services.", items: [
         { title: "Model ID", detail: "kimi-k3" },
         { title: "OpenAI-compatible", detail: "POST /v1/chat/completions" },
         { title: "Anthropic-compatible", detail: "POST /v1/messages" },
         { title: "Boundary", detail: "Compatible routes do not prove local or open-source support." },
       ] },
-      why: { eyebrow: "Why use Flatkey for Kimi K3?", title: "A long-context Kimi K3 API workflow", description: "Make the two compatible routes, file input, and token dimensions visible before you build an agent or knowledge workflow.", cards: [
+      why: { eyebrow: "Why use Flatkey for Kimi K3?", title: "A long-context Kimi K3 workflow for coding and research", description: "Make the two compatible routes, file input, and token dimensions visible before you build an agent or knowledge workflow.", cards: [
         { title: "Two client paths", body: "Choose /v1/chat/completions for an OpenAI-shaped client or /v1/messages for an Anthropic-shaped client." },
         { title: "Document-first use cases", body: "Use the verified file modality and 1,048,576-token context for long documents, codebases, and research notes." },
-        { title: "Hosted boundary is clear", body: "The page separates hosted API access from unverified claims about downloadable weights or local hardware." },
+        { title: "Hosted boundary is clear", body: "Moonshot's open-weight release is an upstream option; this page only promises Flatkey hosted API access, not native local hardware support." },
         { title: "Predictable token accounting", body: "See input, output, and cache rates in the pricing block before scaling a workflow." },
       ] },
-      faqTitle: { beforeBreak: "Kimi K3 API", afterBreak: "frequently asked questions" },
+      related: { eyebrow: "Related models", title: "More Moonshot AI and long-context API models", description: "Compare adjacent text models when your workload needs a different context or endpoint.", cards: [] },
+      faqTitle: { beforeBreak: "Kimi K3 API", afterBreak: "pricing and local-use questions" },
       faqDescription: "Answers about Kimi K3 API routes, model ID, long context, file input, pricing, hosted access, and local-deployment boundaries.",
       faq: [
-        { question: "What is Kimi K3?", answer: "Kimi K3 is a Moonshot AI catalog model with file input and a verified 1,048,576-token context." },
+        { question: "What is Kimi K3?", answer: "Kimi K3 is Moonshot AI's long-context model with a documented 1,048,576-token context and native visual understanding. Flatkey exposes a hosted compatible API route." },
         { question: "How do I use Kimi K3?", answer: "Create a Flatkey API key, choose /v1/chat/completions or /v1/messages, and set model to kimi-k3." },
         { question: "What is the Kimi K3 API model ID?", answer: "The verified model ID is kimi-k3." },
-        { question: "How much does Kimi K3 cost?", answer: "Current catalog rates are $2.40 input, $12 output, and $0.24 cache per 1M tokens." },
+        { question: "How much does Kimi K3 cost?", answer: "Flatkey's current catalog rates are $2.40 input, $12 output, and $0.24 cache per 1M tokens. Moonshot's direct API reference is $3 input, $0.30 cache-hit input, and $15 output; check the applicable account and route." },
         { question: "Is Kimi K3 free?", answer: "The current catalog shows paid token rates; do not promise free access." },
-        { question: "Is Kimi K3 open source or available locally?", answer: "Downloadable weights, local deployment, and hardware requirements are not verified." },
+        { question: "Is Kimi K3 open source or available locally?", answer: "Moonshot documents an open-weight release that can be downloaded upstream. Flatkey's page provides hosted API access; native Flatkey local deployment and hardware requirements are not promised." },
         { question: "Who makes Kimi K3?", answer: "The catalog vendor is Moonshot AI; Flatkey provides routing and billing." },
       ],
     },
   },
   "deepseek-v4-pro": {
-    seo: { title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey", description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing." },
+    seo: { title: "DeepSeek V4 Pro API and pricing | Flatkey", description: "Use DeepSeek V4 Pro through Flatkey's OpenAI- or Anthropic-compatible API routes for reasoning and coding workflows, with a 1M-token context and UTC time-tiered catalog pricing." },
     seoByLocale: {
-      en: { title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey", description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing." },
+      en: { title: "DeepSeek V4 Pro API and pricing | Flatkey", description: "Use DeepSeek V4 Pro through Flatkey's OpenAI- or Anthropic-compatible API routes for reasoning and coding workflows, with a 1M-token context and UTC time-tiered catalog pricing." },
     },
     rows: [
-      { label: "Peak UTC input / cache / output", flatkey: "$1.32 / $0.044 / $3.96", official: "$1.32 / $0.044 / $3.96" },
-      { label: "Off-peak UTC input / cache / output", flatkey: "$0.66 / $0.022 / $1.98", official: "$0.66 / $0.022 / $1.98" },
+      { label: "Peak UTC cache-miss / cache-hit / output", flatkey: "$1.32 / $0.044 / $3.96", official: "DeepSeek direct reference" },
+      { label: "Off-peak UTC cache-miss / cache-hit / output", flatkey: "$0.66 / $0.022 / $1.98", official: "DeepSeek direct reference" },
       { label: "Context", flatkey: "", value: "1,048,576 tokens" },
       { label: "Modalities", flatkey: "", value: "Text · file" },
     ],
     landingContent: {
-      hero: { title: "DeepSeek V4 Pro API, pricing, and model details", description: "DeepSeek V4 Pro is documented here with text and file modalities, a 1,048,576-token context, and /v1/chat/completions plus /v1/messages. Pricing is time-tiered in UTC." },
-      pricing: { title: "DeepSeek V4 Pro pricing by UTC time tier", description: "Keep peak and off-peak token dimensions together; no blended always-active price is implied.", rows: [
-        { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "input / cache read / output per 1M tokens" }, { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "input / cache read / output per 1M tokens" },
+      hero: { title: "DeepSeek V4 Pro API for reasoning and coding", description: "DeepSeek V4 Pro is the documented model ID for Flatkey's compatible chat and messages routes. DeepSeek documents a 1M-token context and up to 384K output tokens; Flatkey's current catalog applies UTC time-tiered rates below." },
+      performance: { eyebrow: "Performance", title: "DeepSeek V4 Pro API performance and availability", description: "Live Flatkey request telemetry appears here when enough DeepSeek V4 Pro traffic is available; no coding benchmark is inferred." },
+      activity: { eyebrow: "Activity", title: "DeepSeek V4 Pro API usage and request activity", description: "This chart uses live Flatkey request data for DeepSeek V4 Pro and stays unreported until enough traffic is collected." },
+      pricing: { title: "DeepSeek V4 Pro API pricing by UTC tier", description: "These are Flatkey's current UTC catalog tiers. Keep peak and off-peak token dimensions together; they are not a single official direct rate.", note: "Rates are shown per 1M tokens. DeepSeek's direct reference uses cache-miss input / cache-hit input / output and peak UTC windows (01–04 and 06–10 Monday–Friday); verify the dated Flatkey catalog block before scaling.", rows: [
+        { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "cache-miss input / cache-hit input / output per 1M tokens" }, { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
       ] },
-      capabilitiesEyebrow: "DeepSeek V4 Pro capabilities", capabilitiesTitle: "DeepSeek V4 Pro context, file input, and API paths", capabilitiesDescription: "Documented fields are separated from unverified performance or deployment claims.",
+      capabilitiesEyebrow: "DeepSeek V4 Pro capabilities", capabilitiesTitle: "DeepSeek V4 Pro capabilities for reasoning and coding", capabilitiesDescription: "These cards describe practical workflows; exact route, context, and billing fields remain in the API and comparison sections.",
       capabilities: [
-        { title: "Long context field", body: "1,048,576 tokens in catalog metadata." },
-        { title: "Text and file input", body: "These are the verified modalities for this page." },
-        { title: "OpenAI-compatible route", body: "/v1/chat/completions." },
-        { title: "Anthropic-compatible route", body: "/v1/messages." },
-        { title: "Distillable metadata", body: "Do not rewrite the catalog flag as open-source, downloadable, or locally runnable." },
+        { title: "Long-context reasoning", body: "Plan, compare, and transform large technical materials within the documented context available to the model route." },
+        { title: "Text and file workflows", body: "Use the verified text and file inputs for coding, document analysis, and research tasks on the hosted route." },
+        { title: "Engineering and coding assistance", body: "Turn technical prompts into explanations, implementation drafts, reviews, and structured next steps." },
+        { title: "Compatible application integration", body: "Connect the model to OpenAI-shaped or Anthropic-shaped clients while keeping routing and account controls in Flatkey." },
       ],
-      comparison: { eyebrow: "Compare documented fields", title: "DeepSeek V4 Pro vs V4 Flash", description: "No quality or coding-performance ranking is asserted.", baselineLabel: "DeepSeek V4 Flash", currentLabel: "DeepSeek V4 Pro", rows: [
+      comparison: { eyebrow: "Compare documented fields", title: "DeepSeek V4 Pro vs V4 Flash: API and context fields", description: "No quality or coding-performance ranking is asserted.", baselineLabel: "DeepSeek V4 Flash", currentLabel: "DeepSeek V4 Pro", rows: [
         { label: "Model ID", baseline: "deepseek-v4-flash", current: "deepseek-v4-pro" },
         { label: "Endpoint paths", baseline: "Verify before publishing", current: "/v1/chat/completions, /v1/messages" },
-        { label: "Context", baseline: "Unknown", current: "1,048,576 tokens" },
-        { label: "Modalities", baseline: "Unknown", current: "Text/file" },
+        { label: "Context", baseline: "Unknown", current: "1M tokens; up to 384K output" },
+        { label: "Modalities", baseline: "Verify the selected V4 Flash route", current: "Text/file fields verified for Flatkey" },
         { label: "Benchmark/coding ranking", baseline: "Not asserted", current: "Not asserted" },
       ] },
-      api: { eyebrow: "API", title: "DeepSeek V4 Pro API model name and endpoints", description: "Use the compatible path selected by your client.", items: [
+      api: { eyebrow: "API", title: "Use the DeepSeek V4 Pro API with compatible clients", description: "Set the exact model ID and choose the compatible path selected by your client.", items: [
         { title: "Model ID", detail: "deepseek-v4-pro" },
         { title: "OpenAI-compatible", detail: "POST /v1/chat/completions" },
         { title: "Anthropic-compatible", detail: "POST /v1/messages" },
-        { title: "Verified inputs", detail: "Text and file modalities only in this fact set." },
+        { title: "Verified inputs", detail: "Text and file fields for this Flatkey route; provider vision/file support is endpoint-specific." },
       ] },
-      why: { eyebrow: "Why use Flatkey for DeepSeek V4 Pro?", title: "Keep DeepSeek V4 Pro's API and UTC pricing rules visible", description: "The page makes the time tier, endpoint choice, context field, and deployment boundaries explicit for production planning.", cards: [
+      why: { eyebrow: "Why use Flatkey for DeepSeek V4 Pro?", title: "A clear DeepSeek V4 Pro API workflow for coding", description: "The page makes the time tier, endpoint choice, context field, and deployment boundaries explicit for production planning.", cards: [
         { title: "UTC-aware billing", body: "Keep peak and off-peak expressions together; do not replace the catalog rule with one blended rate." },
         { title: "OpenAI or Anthropic route", body: "Use /v1/chat/completions or /v1/messages with the exact deepseek-v4-pro model ID." },
         { title: "Text and file boundary", body: "The verified catalog lists text and file modalities; vision and other inputs are not inferred." },
         { title: "Model facts over rankings", body: "Compare integration fields and context data without publishing an unsupported benchmark or coding-superiority claim." },
       ] },
-      faqTitle: { beforeBreak: "DeepSeek V4 Pro API", afterBreak: "frequently asked questions" },
+      related: { eyebrow: "Related models", title: "More DeepSeek API models and pricing", description: "Compare adjacent DeepSeek routes when you need another context or billing profile.", cards: [] },
+      faqTitle: { beforeBreak: "DeepSeek V4 Pro API", afterBreak: "pricing and local-use questions" },
       faqDescription: "Answers about DeepSeek V4 Pro API paths, UTC peak and off-peak pricing, context, verified inputs, and deployment boundaries.",
       faq: [
-        { question: "What is DeepSeek V4 Pro?", answer: "DeepSeek V4 Pro is documented with text/file modalities and a 1,048,576-token context." },
+        { question: "What is DeepSeek V4 Pro?", answer: "DeepSeek V4 Pro is documented with a 1M-token context and up to 384K output tokens. The Flatkey page exposes its compatible API routes and catalog pricing." },
         { question: "How do I use DeepSeek V4 Pro?", answer: "Send a request to /v1/chat/completions or /v1/messages with model ID deepseek-v4-pro." },
         { question: "What is the DeepSeek V4 Pro API model name?", answer: "The verified model ID is deepseek-v4-pro." },
-        { question: "How is DeepSeek V4 Pro priced?", answer: "UTC peak input/cache-read/output are $1.32/$0.044/$3.96 and off-peak are $0.66/$0.022/$1.98 per 1M tokens." },
-        { question: "Does DeepSeek V4 Pro support local download or open-source use?", answer: "Downloadable weights or local deployment are not verified; do not infer them from metadata." },
-        { question: "Does DeepSeek V4 Pro support vision or multimodal input?", answer: "Only text and file modalities are verified in this fact set." },
+        { question: "How is DeepSeek V4 Pro priced?", answer: "Flatkey's current catalog lists UTC peak cache-miss/cache-hit/output at $1.32/$0.044/$3.96 and off-peak at $0.66/$0.022/$1.98 per 1M tokens. DeepSeek's direct reference uses the same dimensions and publishes peak windows at 01–04 and 06–10 UTC Monday–Friday; direct account terms can differ." },
+        { question: "Does DeepSeek V4 Pro support local download or open-source use?", answer: "DeepSeek has documented an open-source V4 Preview upstream. This Flatkey page provides hosted API routing; local packaging and hardware requirements are not promised here." },
+        { question: "Does DeepSeek V4 Pro support vision or multimodal input?", answer: "Text and file fields are verified for this Flatkey route. Do not infer native V4 Pro vision support from the separate V4 Flash Vision Files API documentation." },
         { question: "Is DeepSeek V4 Pro better for coding than V4 Flash?", answer: "This page does not publish a benchmark or quality ranking." },
       ],
     },
   },
   "minimax-h3": {
-    seo: { title: "MiniMax-H3 video generator API and pricing | Flatkey", description: "Configure MiniMax-H3 video requests through Flatkey with 768P or 2K resolution, duration, ratio, AIGC watermark, and current per-second pricing." },
+    seo: { title: "MiniMax H3 video model — API, prompting, and pricing | Flatkey", description: "Create multimodal videos with MiniMax-H3 through Flatkey: 768P or 2K output, 4–15 seconds, supported ratios, prompting examples, and catalog pricing." },
     landingContent: {
-      hero: { title: "MiniMax-H3 video generator API and pricing", description: "MiniMax-H3 is available through Flatkey's asynchronous /v1/videos flow. Configure resolution, duration, ratio, and AIGC watermark before opening the console." },
-      pricing: { title: "MiniMax-H3 pricing", description: "The current public catalog lists a $0.08 per-second base; resolution and reference inputs should be checked against the live request estimate.", note: "Prices are a dated catalog snapshot, not a promise that every resolution or reference input settles at one rate.", rows: [
-        { label: "Catalog base", value: "$0.08", detail: "per second" }, { label: "768P / 2K", value: "Live estimate", detail: "resolution-dependent" }, { label: "Reference video", value: "Live estimate", detail: "input-video seconds and resolution" }, { label: "Input image", value: "Check catalog", detail: "free allowance and later images may differ" },
+      hero: { title: "MiniMax H3 AI video generator and API", description: "MiniMax-H3 is MiniMax's multimodal video model. Official documentation lists text, image, video, and audio references, 768P or 2K output, and 4–15-second clips; Flatkey exposes the asynchronous /v1/videos flow." },
+      performance: { eyebrow: "Performance", title: "MiniMax-H3 video API performance and availability", description: "Live Flatkey request telemetry appears here when enough MiniMax-H3 traffic is available; no quality ranking is inferred." },
+      activity: { eyebrow: "Activity", title: "MiniMax-H3 video API usage and generation activity", description: "This chart uses live Flatkey generation requests and stays unreported until enough traffic is collected." },
+      pricing: { title: "MiniMax H3 video API pricing by resolution and duration", description: "Flatkey's catalog base is $0.08 per second at the 768P reference. Official MiniMax pay-as-you-go rates differ by resolution, so review the live estimate for your request.", note: "Use the dated Flatkey catalog estimate for settlement. MiniMax documents $0.08/sec at 768P and $0.13/sec at 2K; the first five input images are free, later images are $0.04 each, and video input is billed from input seconds and output resolution.", rows: [
+        { label: "Flatkey catalog base (768P reference)", value: "$0.08", detail: "per second" }, { label: "Official 768P reference", value: "$0.08", detail: "per second; verify current provider terms" }, { label: "Official 2K reference", value: "$0.13", detail: "per second; verify current provider terms" }, { label: "Reference video", value: "Live estimate", detail: "input-video seconds and resolution" },
       ] },
-      capabilitiesEyebrow: "MiniMax-H3 controls", capabilitiesTitle: "MiniMax-H3 resolution, duration, ratio, and watermark", capabilitiesDescription: "Use the documented request fields and review live pricing before submitting.",
+      capabilitiesEyebrow: "MiniMax-H3 video capabilities", capabilitiesTitle: "MiniMax H3 video generation and production capabilities", capabilitiesDescription: "Use these documented capabilities to plan a production workflow; request fields remain in the API section below.",
       capabilities: [
-        { title: "Resolution", body: "Choose 768P or 2K." },
-        { title: "Duration", body: "Configure a 4–15 second request." },
-        { title: "Aspect ratio", body: "Use a supported fixed ratio or adaptive." },
-        { title: "AIGC watermark", body: "Set the AIGC watermark boolean explicitly." },
-        { title: "Reference-aware requests", body: "The catalog metadata lists text, image, video, and audio modalities; use only reference fields accepted by the selected route." },
+        { title: "Text-to-video and image-to-video", body: "Start a scene from a written brief or a designed frame and develop it into a short clip." },
+        { title: "Reference-led motion", body: "Use text, image, video, or audio references to keep the subject and creative direction coherent." },
+        { title: "Camera and pacing direction", body: "Shape how the camera, subject movement, duration, and framing progress through the shot." },
+        { title: "Production-ready variants", body: "Create product, UGC, and storyboard versions that can move from testing into an editing workflow." },
       ],
-      comparison: { eyebrow: "Video controls", title: "MiniMax-H3 ComfyUI and local setup: verified boundaries", description: "Compare request settings and the available integration evidence rather than asserting a quality ranking.", baselineLabel: "Unverified local assumption", currentLabel: "Verified hosted fields", rows: [
-        { label: "Resolution", baseline: "768P", current: "768P or 2K" },
-        { label: "Duration", baseline: "6 seconds", current: "4–15 seconds" },
-        { label: "Ratio", baseline: "16:9", current: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16, adaptive" },
-        { label: "AIGC watermark", baseline: "Off", current: "Explicit boolean" },
-        { label: "ComfyUI or local weights", baseline: "Not verified", current: "Not verified in Flatkey catalog" },
+      comparison: { eyebrow: "Hosted API facts", title: "MiniMax H3 hosted API vs open-weight or local deployment", description: "Compare documented hosted request fields with open-weight or local assumptions; MiniMax upstream terms and Flatkey routing are separate.", baselineLabel: "Open-weight / local deployment", currentLabel: "Verified hosted API", rows: [
+        { label: "Resolution", baseline: "768P base; 2K via hosted regeneration", current: "768P or 2K" },
+        { label: "Duration", baseline: "4–15 seconds", current: "4–15 seconds" },
+        { label: "Ratio", baseline: "Text-to-video requires a fixed ratio; adaptive is for reference routes", current: "Route-specific fixed/adaptive ratio rules" },
+        { label: "AIGC watermark", baseline: "Not verified", current: "Flatkey route field; availability varies" },
+        { label: "ComfyUI or local weights", baseline: "MiniMax documents open-source weights and ComfyUI options upstream", current: "Native Flatkey local/ComfyUI delivery not verified" },
+        { label: "Upstream vs Flatkey", baseline: "Open-source/local use follows MiniMax upstream documentation", current: "Flatkey routes and bills hosted API access" },
       ] },
-      api: { eyebrow: "API", title: "MiniMax-H3 video API setup", description: "Save the task ID returned by the asynchronous request and retrieve the result when ready.", items: [
-        { title: "Endpoint", detail: "POST /v1/videos" },
+      api: { eyebrow: "API", title: "Use the MiniMax H3 video API with an async task", description: "MiniMax's upstream API and Flatkey's hosted route use different paths; save the returned task ID and retrieve the result when ready.", items: [
+        { title: "MiniMax upstream", detail: "POST /v2/video_generation" },
+        { title: "Flatkey hosted route", detail: "POST /v1/videos" },
         { title: "Model ID", detail: "MiniMax-H3" },
-        { title: "Fields", detail: "resolution, duration, ratio, and aigc_watermark." },
+        { title: "Fields", detail: "content[] with a non-empty text item, resolution, duration, and ratio; aigc_watermark is a Flatkey route field whose availability is route-specific." },
         { title: "Result", detail: "Use the returned task ID with the content endpoint." },
       ] },
       promptLibraryTitle: "MiniMax-H3 prompting guide: product, UGC, and storyboard shots",
@@ -1037,21 +1198,22 @@ const PRIORITY_MODEL_OVERRIDES: Record<string, Partial<ModelConfig>> = {
         { key: "minimax-h3-ugc", label: "UGC ad clip", prompt: "Eight-second vertical UGC-style clip: a creator lifts a compact coffee maker, points to the front control, then smiles to camera; handheld but stable, natural window light, leave the spoken words to the audio track.", poster: "/assets/cli/ugc-ad-clips.png", video: "/assets/cli/ugc-ad-clips.mp4", alt: "MiniMax-H3 UGC ad prompt example" },
         { key: "minimax-h3-storyboard", label: "Storyboard shot", prompt: "Ten-second wide establishing shot: a courier crosses a rain-soaked plaza toward a lit station, a slow lateral camera move follows, reflections remain consistent, finish with the subject centered under the sign.", poster: "/assets/cli/localized-variants.png", video: "/assets/cli/localized-variants.mp4", alt: "MiniMax-H3 storyboard prompt example" },
       ],
-      why: { eyebrow: "Why use Flatkey for MiniMax-H3?", title: "A controllable MiniMax-H3 video API handoff", description: "Keep video settings, asynchronous task handling, and pricing boundaries visible while you move from a prompt draft to a real request.", cards: [
+      why: { eyebrow: "Why use Flatkey for MiniMax-H3?", title: "A practical MiniMax H3 video API workflow", description: "Keep video settings, asynchronous task handling, and pricing boundaries visible while you move from a prompt draft to a real request.", cards: [
         { title: "Video fields are explicit", body: "Choose 768P or 2K, 4–15 seconds, a supported ratio, and the AIGC watermark boolean." },
         { title: "Prompting guide included", body: "Product, UGC, and storyboard examples describe subject, action, camera, and ending rather than repeating a generic cinematic prompt." },
         { title: "Async result path", body: "Save the task ID returned by POST /v1/videos and retrieve the generated content when the task is ready." },
-        { title: "ComfyUI/local boundary", body: "The catalog does not verify native Flatkey ComfyUI delivery or local weights; this page does not imply either." },
+        { title: "ComfyUI/local boundary", body: "MiniMax documents open-source H3 weights and ComfyUI/local options upstream; this page only promises Flatkey hosted delivery, not native local packaging." },
       ] },
-      faqTitle: { beforeBreak: "MiniMax-H3 video API", afterBreak: "frequently asked questions" },
+      related: { eyebrow: "Related models", title: "More MiniMax H3 alternatives and AI video generator APIs", description: "Explore other video routes when you need different durations, ratios, or audio controls.", cards: [] },
+      faqTitle: { beforeBreak: "MiniMax H3 video API", afterBreak: "pricing and ComfyUI questions" },
       faqDescription: "Answers about MiniMax-H3 video API fields, prompting, per-second pricing, asynchronous tasks, ComfyUI/local boundaries, and moderation claims.",
       faq: [
         { question: "Which MiniMax-H3 fields can I configure here?", answer: "Configure resolution, duration, ratio, and AIGC watermark before opening the console." },
-        { question: "What is MiniMax-H3?", answer: "MiniMax-H3 is a video model available through Flatkey's /v1/videos flow." },
-        { question: "How much does MiniMax-H3 cost?", answer: "The current public catalog lists a $0.08 per-second base. Resolution and reference-input estimates can vary, so review the live request estimate before submitting." },
+        { question: "What is MiniMax-H3?", answer: "MiniMax-H3 is MiniMax's multimodal video model, with documented text, image, video, and audio references and 768P or 2K output up to 15 seconds." },
+        { question: "How much does MiniMax-H3 cost?", answer: "Flatkey's catalog base is $0.08 per second at the 768P reference. MiniMax's published pay-as-you-go references are $0.08/sec at 768P and $0.13/sec at 2K; the first five input images are free, later images are $0.04 each, and final Flatkey estimates can vary with request inputs." },
         { question: "How do I use the MiniMax-H3 video API?", answer: "Configure the fields, create a Flatkey API key, send POST /v1/videos with model MiniMax-H3, then keep the asynchronous task ID for the content lookup." },
         { question: "Does MiniMax-H3 have a prompting guide?", answer: "Use the page examples as a starting point: name the subject, action, camera movement, duration, and ending, then set ratio and resolution as request fields." },
-        { question: "Does Flatkey provide native MiniMax-H3 ComfyUI or local installation?", answer: "Native Flatkey ComfyUI delivery, downloadable weights, and local hardware requirements are not verified in the current catalog." },
+        { question: "Does Flatkey provide native MiniMax-H3 ComfyUI or local installation?", answer: "MiniMax documents open-source H3 weights and ComfyUI/local options upstream. Flatkey's hosted route is available here; native Flatkey ComfyUI delivery and local hardware packaging are not promised." },
         { question: "Is MiniMax-H3 censored or unrestricted?", answer: "The current catalog does not publish a moderation policy for this model, so the page makes no unrestricted-use claim." },
         { question: "Are MiniMax-H3 prompt drafts executed on this public page?", answer: "The public page saves the video settings and prompt draft first. Sign up or open the console to run POST /v1/videos with an API key." },
       ],
@@ -1081,8 +1243,8 @@ const PRIORITY_CANONICAL_SLUGS: Record<string, string> = {
 const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: string; description: string }>>> = {
   "gpt-5-6-sol": {
     en: {
-      title: "GPT-5.6 Sol API and pricing | Flatkey",
-      description: "Use GPT-5.6 Sol through Flatkey with OpenAI-compatible API access, a 1,048,576-token context, text/image/file modalities, current token pricing, and one API key.",
+      title: "GPT-5.6 Sol API and pricing for developers | Flatkey",
+      description: "Build with GPT-5.6 Sol through Flatkey: OpenAI-compatible API access, a long context window, image input, current Flatkey token rates, and one API key.",
     },
     zh: {
       title: "GPT-5.6 Sol API 与价格 | Flatkey",
@@ -1097,8 +1259,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
       description: "Utilisez GPT-5.6 Sol avec Flatkey via une API compatible OpenAI, un contexte de 1 048 576 tokens, des entrées texte, image et fichier, les tarifs actuels et une seule clé API.",
     },
     pt: {
-      title: "API e preços do GPT-5.6 Sol | Flatkey",
-      description: "Use o GPT-5.6 Sol com a Flatkey por uma API compatível com OpenAI, contexto de 1.048.576 tokens, entradas de texto, imagem e arquivo, preços atuais e uma única chave de API.",
+      title: "API e preços do GPT-5.6 Sol para desenvolvedores | Flatkey",
+      description: "Crie com o GPT-5.6 Sol pela Flatkey: API compatível com OpenAI, contexto longo, entrada de imagens, preços atuais do catálogo e uma única chave de API.",
     },
     ru: {
       title: "API и цены GPT-5.6 Sol | Flatkey",
@@ -1123,8 +1285,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
   },
   "gpt-image-2": {
     en: {
-      title: "GPT Image 2 API and image generator | Flatkey",
-      description: "Prepare GPT Image 2 requests through Flatkey with image API access, current token-dimension pricing, size and quality controls, formats, background, and moderation settings.",
+      title: "GPT Image 2 image generator — API and pricing | Flatkey",
+      description: "Create and edit images with GPT Image 2 through Flatkey: image API access, current catalog pricing, size and quality controls, formats, background, and moderation settings.",
     },
     zh: {
       title: "GPT Image 2 API 与图像生成器 | Flatkey",
@@ -1139,8 +1301,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
       description: "Préparez des requêtes GPT Image 2 avec Flatkey : accès à l’API d’image, tarifs par tokens et dimensions, contrôles de taille et de qualité, formats, arrière-plan et modération.",
     },
     pt: {
-      title: "API e gerador de imagens do GPT Image 2 | Flatkey",
-      description: "Prepare solicitações do GPT Image 2 com a Flatkey: acesso à API de imagens, preços por tokens e dimensões, controles de tamanho e qualidade, formatos, fundo e moderação.",
+      title: "Gerador de imagens GPT Image 2 — API e preços | Flatkey",
+      description: "Crie e edite imagens com o GPT Image 2 pela Flatkey: acesso à API de imagens, preços do catálogo, controles de tamanho e qualidade, formatos, fundo e moderação.",
     },
     ru: {
       title: "API и генератор изображений GPT Image 2 | Flatkey",
@@ -1165,8 +1327,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
   },
   "kimi-k3": {
     en: {
-      title: "Kimi K3 API and pricing | Flatkey",
-      description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing.",
+      title: "Kimi K3 API and pricing for long-context workflows | Flatkey",
+      description: "Use Moonshot AI's Kimi K3 through Flatkey's compatible API routes for long-horizon coding and knowledge work, with a 1M-token context, file input, and current catalog pricing.",
     },
     zh: {
       title: "Kimi K3 API 与价格 | Flatkey",
@@ -1181,8 +1343,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
       description: "Utilisez Kimi K3 de Moonshot AI avec Flatkey via des endpoints compatibles OpenAI et Anthropic, un contexte de 1 048 576 tokens, l’entrée de fichiers et les tarifs actuels.",
     },
     pt: {
-      title: "API e preços do Kimi K3 | Flatkey",
-      description: "Use o Kimi K3 da Moonshot AI com a Flatkey por endpoints compatíveis com OpenAI e Anthropic, contexto de 1.048.576 tokens, entrada de arquivos e preços atuais.",
+      title: "API e preços do Kimi K3 para contexto longo | Flatkey",
+      description: "Use o Kimi K3 da Moonshot AI pela Flatkey em fluxos de programação e conhecimento de longo prazo, com contexto de 1 milhão de tokens, arquivos e preços atuais do catálogo.",
     },
     ru: {
       title: "API и цены Kimi K3 | Flatkey",
@@ -1207,8 +1369,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
   },
   "deepseek-v4-pro": {
     en: {
-      title: "DeepSeek V4 Pro API and dynamic pricing | Flatkey",
-      description: "Call DeepSeek V4 Pro through OpenAI-compatible or Anthropic-compatible endpoints with a 1,048,576-token context, file input, and UTC time-tiered pricing.",
+      title: "DeepSeek V4 Pro API and pricing | Flatkey",
+      description: "Use DeepSeek V4 Pro through Flatkey's OpenAI- or Anthropic-compatible API routes for reasoning and coding workflows, with a 1M-token context and UTC time-tiered catalog pricing.",
     },
     zh: {
       title: "DeepSeek V4 Pro API 与动态价格 | Flatkey",
@@ -1223,8 +1385,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
       description: "Appelez DeepSeek V4 Pro via Flatkey avec des endpoints compatibles OpenAI ou Anthropic, un contexte de 1 048 576 tokens, l’entrée de fichiers et des tarifs horaires en UTC.",
     },
     pt: {
-      title: "API e preços dinâmicos do DeepSeek V4 Pro | Flatkey",
-      description: "Chame o DeepSeek V4 Pro pela Flatkey com endpoints compatíveis com OpenAI ou Anthropic, contexto de 1.048.576 tokens, entrada de arquivos e preços por faixa horária UTC.",
+      title: "API e preços do DeepSeek V4 Pro | Flatkey",
+      description: "Use o DeepSeek V4 Pro pela Flatkey em fluxos de raciocínio e programação, com endpoints compatíveis com OpenAI ou Anthropic, contexto de 1 milhão de tokens e preços do catálogo por faixa UTC.",
     },
     ru: {
       title: "API и динамические цены DeepSeek V4 Pro | Flatkey",
@@ -1249,8 +1411,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
   },
   "minimax-h3": {
     en: {
-      title: "MiniMax H3 video API and pricing | Flatkey",
-      description: "Use MiniMax H3 through Flatkey's /v1/videos endpoint with 768P or 2K settings, 4–15 second clips, ratio controls, and current per-second pricing.",
+      title: "MiniMax H3 video model — API, prompting, and pricing | Flatkey",
+      description: "Create multimodal videos with MiniMax-H3 through Flatkey: 768P or 2K output, 4–15 seconds, supported ratios, prompting examples, and catalog pricing.",
     },
     zh: {
       title: "MiniMax H3 视频 API 与价格 | Flatkey",
@@ -1265,8 +1427,8 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
       description: "Utilisez MiniMax H3 via l’endpoint /v1/videos de Flatkey avec des réglages 768P ou 2K, des clips de 4 à 15 secondes, le ratio et les tarifs actuels par seconde.",
     },
     pt: {
-      title: "API de vídeo e preços do MiniMax H3 | Flatkey",
-      description: "Use o MiniMax H3 pelo endpoint /v1/videos da Flatkey com configurações 768P ou 2K, clipes de 4–15 segundos, proporção e preço atual por segundo.",
+      title: "Modelo de vídeo MiniMax H3 — API, prompts e preços | Flatkey",
+      description: "Crie vídeos multimodais com o MiniMax-H3 pela Flatkey: saída 768P ou 2K, clipes de 4–15 segundos, proporções compatíveis, exemplos de prompts e preços do catálogo.",
     },
     ru: {
       title: "Видео API и цены MiniMax H3 | Flatkey",
@@ -1293,7 +1455,15 @@ const PRIORITY_SEO_BY_LOCALE: Record<string, Partial<Record<Locale, { title: str
 
 for (const [modelKey, seoByLocale] of Object.entries(PRIORITY_SEO_BY_LOCALE)) {
   const override = PRIORITY_MODEL_OVERRIDES[modelKey];
-  if (override) override.seoByLocale = { ...seoByLocale, ...override.seoByLocale };
+  if (override) {
+    const mergedSeo = { ...seoByLocale, ...override.seoByLocale };
+    override.seoByLocale = Object.fromEntries(
+      Object.entries(mergedSeo).map(([locale, value]) => [
+        locale,
+        value ? { ...value, description: limitSeoDescription(value.description) } : value,
+      ]),
+    ) as Partial<Record<Locale, { title: string; description: string }>>;
+  }
 }
 
 // The editorial overrides above are intentionally authored in English so the
@@ -1356,6 +1526,7 @@ export const SONILO_VIDEO_TO_MUSIC_CONFIG: ModelConfig = {
     kind: "audio",
     endpoint: "/v1/video-to-music",
     storageKey: "flatkey:model-generator-draft:sonilo-video-to-music",
+    protocol: "audio",
     fields: [
       { name: "video_url", label: "Video URL", type: "text", defaultValue: "" },
       { name: "duration_seconds", label: "Duration", type: "number", defaultValue: 30, min: 5, max: 300 },
@@ -1440,10 +1611,74 @@ const GENERIC_MEDIA_FIELDS: Record<ModelGeneratorConfig["kind"], ModelGeneratorF
   ],
 };
 
+// Catalog models do not share one universal media request. These profiles
+// mirror the gateway adapters/docs so the public Playground never presents a
+// control that the selected route silently ignores.
+const GROK_IMAGE_FIELDS: ModelGeneratorField[] = [
+  { name: "n", label: "Images", type: "number", defaultValue: 1, min: 1, max: 10 },
+  { name: "resolution", label: "Resolution", type: "select", defaultValue: "1k", options: ["1k", "2k"] },
+  { name: "quality", label: "Quality", type: "select", defaultValue: "medium", options: ["low", "medium"] },
+  { name: "aspect_ratio", label: "Aspect ratio", type: "select", defaultValue: "auto", options: ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20"] },
+  { name: "response_format", label: "Output format", type: "select", defaultValue: "url", options: ["url", "b64_json"] },
+];
+
+const GEMINI_IMAGE_BASE_FIELDS: ModelGeneratorField[] = [
+  { name: "aspect_ratio", label: "Aspect ratio", type: "select", defaultValue: "1:1", options: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] },
+];
+
+const GROK_VIDEO_FIELDS: ModelGeneratorField[] = [
+  { name: "duration", label: "Duration", type: "number", defaultValue: 5, min: 1, max: 15 },
+];
+
+const VEO_VIDEO_FIELDS: ModelGeneratorField[] = [
+  { name: "size", label: "Size", type: "select", defaultValue: "1280x720", options: ["1280x720", "1920x1080", "3840x2160"] },
+  { name: "duration", label: "Duration", type: "select", defaultValue: "8", options: ["4", "6", "8"] },
+];
+
+function isGeminiImageModel(modelName: string) {
+  const normalized = normalizeModelId(modelName);
+  return normalized.startsWith("gemini-2-5-flash-image") ||
+    normalized.startsWith("gemini-3-pro-image") ||
+    normalized.startsWith("gemini-3-1-flash-image") ||
+    normalized.startsWith("gemini-3-1-flash-lite-image") ||
+    normalized.startsWith("nano-banana-pro-preview");
+}
+
+function getGenericMediaProfile(model: PricingModel, kind: ModelGeneratorConfig["kind"]): Pick<ModelGeneratorConfig, "endpoint" | "fields" | "protocol" | "referenceLimits"> {
+  const normalized = normalizeModelId(model.model_name);
+  if (kind === "video" && normalized.startsWith("grok-imagine-video")) {
+    return { endpoint: "/v1/videos", fields: GROK_VIDEO_FIELDS, protocol: "grok-video", referenceLimits: { image: 1 } };
+  }
+  if (kind === "video" && normalized.startsWith("veo-")) {
+    return { endpoint: "/v1/videos", fields: VEO_VIDEO_FIELDS, protocol: "veo-video", referenceLimits: { image: 1 } };
+  }
+  if (kind === "image" && isGeminiImageModel(model.model_name)) {
+    const includeSize = !normalized.startsWith("gemini-2-5-flash-image");
+    return {
+      endpoint: `/v1beta/models/${model.model_name}:generateContent`,
+      fields: includeSize
+        ? [...GEMINI_IMAGE_BASE_FIELDS, { name: "image_size", label: "Size", type: "select", defaultValue: "1K", options: ["1K", "2K", "4K"] }]
+        : GEMINI_IMAGE_BASE_FIELDS,
+      protocol: "gemini-image",
+      referenceLimits: { image: 4 },
+    };
+  }
+  if (kind === "image" && normalized.startsWith("grok-imagine-image")) {
+    return { endpoint: "/v1/images/generations", fields: GROK_IMAGE_FIELDS, protocol: "openai-image", referenceLimits: { image: 3 } };
+  }
+  return {
+    endpoint: mediaEndpointForModel(kind, model),
+    fields: GENERIC_MEDIA_FIELDS[kind],
+    protocol: kind === "image" ? "openai-image" : kind === "video" ? "seedance-video" : "audio",
+    referenceLimits: kind === "image" ? { image: 4 } : kind === "video" ? { image: 30, video: 10, audio: 10 } : {},
+  };
+}
+
 export type ModelLandingKey =
   | "All models"
   | "Back to Models"
   | "View Pricing"
+  | "View API"
   | "Docs"
   | "Rankings"
   | "Related pages"
@@ -1558,6 +1793,7 @@ export type ModelLandingKey =
   | "Text, image and video in one plan · overage billed as you go · cancel anytime"
   | "Playground (edit before sign-up)"
   | "Pricing vs official"
+  | "Compare"
   | "Compare the current model with the previous generation before you migrate."
   | "Best for"
   | "Same {{official}} upstream, same quality — plans from $10/month include every frontier model, with monthly usage worth up to 4.5× the price. Change one line of base_url and your existing OpenAI SDK just works. Try it below, sign in when you are ready."
@@ -1572,8 +1808,8 @@ export type ModelLandingKey =
   | "from $10/month"
   | "Pro — $30/mo, up to $90 usage"
   | "Most popular"
-  | "Go — $10/mo, up to $45 usage"
-  | "Max — $100/mo, up to $300 usage"
+  | "Go — $10/mo, up to $25 usage"
+  | "Max — $100/mo, up to $450 usage"
   | "Opus 4 output"
   | "Sonnet 4 output"
   | "Haiku output"
@@ -1798,10 +2034,221 @@ export function getModelLandingConfig(slug: string): ModelConfig | null {
   return MODEL_CONFIGS[slug] ?? null;
 }
 
+export type ModelLandingMetadataOptions = {
+  displayName?: string;
+  pathname?: string;
+  locale?: Locale;
+  /** Prefer the resolved landing kind when the catalog endpoint label is ambiguous. */
+  task?: string;
+};
+
+export type ModelLandingMetadata = {
+  title: string;
+  description: string;
+  pathname: string;
+  locale?: Locale;
+};
+
+/** Build short, live-data metadata for any catalog model (including models
+ * without a curated landing config). Curated copy remains the fallback when
+ * the pricing endpoint has no matching model.
+ */
+export function buildModelLandingMetadata(
+  model: PricingModel,
+  options: ModelLandingMetadataOptions = {},
+): ModelLandingMetadata {
+  const name = options.displayName?.trim() || metadataDisplayName(model.model_name);
+  const provider = model.vendor_name?.trim() || model.directory_metadata?.author?.trim() || "AI";
+  const task = options.task ?? modelTaskLabel(model);
+  const pricing = modelPricingSummary(model, task);
+  const context = model.directory_metadata?.context_tokens;
+  const locale = options.locale ?? "en";
+  const title = buildMetadataTitle(name, task, locale);
+  const description = limitSeoDescription(buildMetadataDescription({
+    name,
+    provider,
+    task,
+    pricing: pricing[locale] ?? pricing.en,
+    context,
+    locale,
+  }));
+  return { title, description, pathname: options.pathname ?? `/models/${encodeURIComponent(model.model_name)}`, ...(options.locale ? { locale: options.locale } : {}) };
+}
+
+const PRIORITY_METADATA_DISPLAY_NAMES: Record<string, string> = {
+  "gpt-5-6-sol": "GPT-5.6 Sol",
+  "gpt-image-2": "GPT Image 2",
+  "kimi-k3": "Kimi K3",
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "minimax-h3": "MiniMax H3",
+};
+
+function metadataDisplayName(modelId: string): string {
+  return PRIORITY_METADATA_DISPLAY_NAMES[normalizeModelId(modelId)] ?? modelId;
+}
+
+function modelTaskLabel(model: PricingModel): string {
+  const endpoints = (model.supported_endpoint_types ?? []).map(normalizeModelId);
+  const modalities = (model.directory_metadata?.modalities ?? []).map((item) => item.toLowerCase());
+  const has = (...needles: string[]) => needles.some((needle) => endpoints.some((endpoint) => endpoint.includes(needle)));
+  if (has("video-to-music")) return "video-to-music";
+  if (has("image-generation")) return "image generation";
+  if (has("openai-video", "video") || modalities.includes("video")) return "video generation";
+  if (has("embedding") || /(^|-)embedding(s)?(-|$)/.test(normalizeModelId(model.model_name))) return "embedding";
+  if (has("rerank") || /(^|-)rerank(-|$)/.test(normalizeModelId(model.model_name))) return "reranking";
+  if (has("audio", "music", "sound", "tts") || modalities.includes("audio")) return "audio";
+  if (
+    has("openai", "anthropic", "gemini", "response", "chat", "completion", "message", "text") ||
+    modalities.includes("text")
+  ) return "chat/completions";
+  return "AI model";
+}
+
+const METADATA_TASK_LABELS: Record<string, Partial<Record<Locale, string>>> = {
+  "image generation": { en: "image generation", pt: "geração de imagens", zh: "图像生成", es: "generación de imágenes", fr: "génération d’images", ru: "генерация изображений", ja: "画像生成", vi: "tạo ảnh", de: "Bildgenerierung", id: "generasi gambar" },
+  "video generation": { en: "video generation", pt: "geração de vídeo", zh: "视频生成", es: "generación de vídeo", fr: "génération vidéo", ru: "генерация видео", ja: "動画生成", vi: "tạo video", de: "Videogenerierung", id: "generasi video" },
+  "video-to-music": { en: "video-to-music", pt: "vídeo para música", zh: "视频转音乐", es: "vídeo a música", fr: "vidéo vers musique", ru: "видео в музыку", ja: "動画から音楽", vi: "video thành nhạc", de: "Video-zu-Musik", id: "video ke musik" },
+  embedding: { en: "embedding", pt: "embeddings", zh: "向量嵌入", es: "embeddings", fr: "embeddings", ru: "эмбеддинги", ja: "埋め込み", vi: "embedding", de: "Embeddings", id: "embedding" },
+  reranking: { en: "reranking", pt: "reranking", zh: "重排序", es: "reranking", fr: "reclassement", ru: "reranking", ja: "リランキング", vi: "xếp hạng lại", de: "Reranking", id: "reranking" },
+  audio: { en: "audio", pt: "áudio", zh: "音频", es: "audio", fr: "audio", ru: "аудио", ja: "音声", vi: "âm thanh", de: "Audio", id: "audio" },
+  "chat/completions": { en: "text and chat", pt: "texto e chat", zh: "文本与对话", es: "texto y chat", fr: "texte et chat", ru: "текст и чат", ja: "テキストとチャット", vi: "văn bản và chat", de: "Text und Chat", id: "teks dan chat" },
+  "AI model": { en: "AI model", pt: "modelo de IA", zh: "AI 模型", es: "modelo de IA", fr: "modèle d’IA", ru: "модель ИИ", ja: "AIモデル", vi: "mô hình AI", de: "KI-Modell", id: "model AI" },
+};
+
+function taskLabel(task: string, locale: Locale): string {
+  return METADATA_TASK_LABELS[task]?.[locale] ?? METADATA_TASK_LABELS[task]?.en ?? task;
+}
+
+function buildMetadataTitle(name: string, task: string, locale: Locale): string {
+  const apiName = name.endsWith(" API") ? name : `${name} API`;
+  if (task === "chat/completions") {
+    const endpoint = " (chat/completions)";
+    const suffix: Record<Locale, string> = { en: ", pricing & FAQs | Flatkey", pt: ", preços e FAQs | Flatkey", zh: "、价格与常见问题 | Flatkey", es: ", precios y FAQ | Flatkey", fr: ", tarifs et FAQ | Flatkey", ru: ", цены и FAQ | Flatkey", ja: "・料金・FAQ | Flatkey", vi: ", giá và FAQ | Flatkey", de: ", Preise & FAQs | Flatkey", id: ", harga & FAQ | Flatkey" };
+    return `${apiName}${endpoint}${suffix[locale]}`;
+  }
+  const taskName = taskLabel(task, locale);
+  const suffix: Record<Locale, string> = { en: ", pricing & FAQs | Flatkey", pt: ", preços e FAQs | Flatkey", zh: "、价格与常见问题 | Flatkey", es: ", precios y FAQ | Flatkey", fr: ", tarifs et FAQ | Flatkey", ru: ", цены и FAQ | Flatkey", ja: "・料金・FAQ | Flatkey", vi: ", giá và FAQ | Flatkey", de: ", Preise & FAQs | Flatkey", id: ", harga & FAQ | Flatkey" };
+  const prefix: Record<Locale, string> = { en: `${name} ${taskName} API`, pt: `${name} API de ${taskName}`, zh: `${name}${taskName} API`, es: `${name} API de ${taskName}`, fr: `${name} API de ${taskName}`, ru: `${name}: API для ${taskName}`, ja: `${name} ${taskName} API`, vi: `${name} API ${taskName}`, de: `${name} ${taskName}-API`, id: `${name} API ${taskName}` };
+  return `${prefix[locale]}${suffix[locale]}`;
+}
+
+function buildMetadataDescription(input: { name: string; provider: string; task: string; pricing: string; context: number | null | undefined; locale: Locale }): string {
+  const taskName = taskLabel(input.task, input.locale);
+  const context = input.context && input.context > 0 ? formatLocalizedContext(input.context, input.locale) : null;
+  const facts = (providerLabel: string) => [providerLabel, input.pricing, context].filter(Boolean).join("; ");
+  switch (input.locale) {
+    case "pt": return `${input.name}: API de ${taskName} pela Flatkey; ${facts(`modelo ${input.provider}`)}.`;
+    case "zh": return `${input.name}提供${taskName} API，可通过 Flatkey 使用；${facts(`${input.provider} 模型`)}。`;
+    case "es": return `${input.name}: ${taskName} mediante la API de Flatkey; ${facts(`modelo de ${input.provider}`)}.`;
+    case "fr": return `${input.name} : ${taskName} via l’API Flatkey ; ${facts(`modèle ${input.provider}`)}.`;
+    case "ru": return `${input.name}: ${taskName} через API Flatkey; ${facts(`модель ${input.provider}`)}.`;
+    case "ja": return `${input.name}の${taskName}をFlatkey APIで利用。${facts(`${input.provider}モデル`)}。`;
+    case "vi": return `${input.name}: ${taskName} qua API Flatkey; ${facts(`mô hình ${input.provider}`)}.`;
+    case "de": return `${input.name}: ${taskName} über die Flatkey-API; ${facts(`${input.provider}-Modell`)}.`;
+    case "id": return `${input.name}: ${taskName} melalui API Flatkey; ${facts(`model ${input.provider}`)}.`;
+    default: return `${input.name} ${taskName} via Flatkey; ${facts(`${input.provider} model`)}.`;
+  }
+}
+
+function formatLocalizedContext(tokens: number, locale: Locale): string {
+  const value = formatContext(tokens);
+  switch (locale) {
+    case "en": return `${value} context`;
+    case "pt": return `contexto de ${value.replace("-token", " tokens")}`;
+    case "zh": return `${value.replace("-token", " token")} 上下文`;
+    case "es": return `contexto de ${value.replace("-token", " tokens")}`;
+    case "fr": return `contexte de ${value.replace("-token", " tokens")}`;
+    case "ru": return `контекст ${value.replace("-token", " токенов")}`;
+    case "ja": return `${value.replace("-token", "トークン")}のコンテキスト`;
+    case "vi": return `ngữ cảnh ${value.replace("-token", " token")}`;
+    case "de": return `${value.replace("-token", "-Token")}-Kontext`;
+    case "id": return `konteks ${value.replace("-token", " token")}`;
+  }
+}
+
+function modelPricingSummary(model: PricingModel, task: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  const kind = model.display_pricing?.billing_kind;
+  const prices = model.display_pricing?.prices ?? {};
+  const valueFor = (dimension: keyof typeof prices): number | undefined => {
+    const pair = prices[dimension];
+    return pair?.plg ?? pair?.configured;
+  };
+  const valueText = (value: number | undefined): string | null => value == null || !Number.isFinite(value) ? null : formatUsdPrice(value);
+  // Image-generation and audio-generation routes can be token-billed with a
+  // dedicated media dimension. Prefer that dimension when it is present so
+  // metadata describes the actual unit instead of incorrectly saying only
+  // "token pricing".
+  if (task === "image generation") {
+    const value = valueText(valueFor("image"));
+    if (value) return mediaPriceCopy(value, "image");
+  }
+  if (task === "audio") {
+    const value = valueText(valueFor("audio_output")) ?? valueText(valueFor("audio_input"));
+    if (value) return mediaPriceCopy(value, "audio");
+  }
+  if (kind === "per_second") {
+    const value = valueText(valueFor("second"));
+    return value ? secondPriceCopy(value) : genericPriceCopy("per-second pricing", "preço por segundo");
+  }
+  if (kind === "request") {
+    const value = valueText(valueFor("request"));
+    return value ? requestPriceCopy(value) : genericPriceCopy("per-request pricing", "preço por solicitação");
+  }
+  if (kind === "token" || kind === "tiered_expr" || model.quota_type === 0) {
+    const input = valueText(valueFor("input"));
+    const output = valueText(valueFor("output"));
+    if (input && output) return tokenPriceCopy(`${input} input/${output} output per 1M tokens`, `${input} entrada/${output} saída por 1M tokens`, input, output);
+    if (input) return tokenPriceCopy(`${input} input per 1M tokens`, `${input} entrada por 1M tokens`, input);
+    return kind === "tiered_expr" ? genericPriceCopy("time-tiered token pricing", "preço de tokens por faixa de horário") : genericPriceCopy("token pricing", "preço por tokens");
+  }
+  const request = valueText(valueFor("request")) ?? valueText(model.model_price);
+  return request ? requestPriceCopy(request) : genericPriceCopy("request pricing", "preço por solicitação");
+}
+
+function genericPriceCopy(en: string, pt: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  return { en, pt, zh: en === "token pricing" ? "按 token 计价" : "按请求计价", es: en.replace("pricing", "precios"), fr: en.replace("pricing", "tarifs"), ru: "цена зависит от тарификации", ja: "料金は課金単位によります", vi: "giá theo đơn vị tính", de: "Preis nach Abrechnungseinheit", id: "harga berdasarkan unit penagihan" };
+}
+
+function mediaPriceCopy(value: string, unit: "image" | "audio"): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  const units = { image: { pt: "imagem", zh: "图像", es: "imagen", fr: "image", ru: "изображение", ja: "画像", vi: "ảnh", de: "Bild", id: "gambar" }, audio: { pt: "áudio", zh: "音频", es: "audio", fr: "audio", ru: "аудио", ja: "音声", vi: "âm thanh", de: "Audio", id: "audio" } }[unit];
+  return { en: `from ${value}/${unit} pricing`, pt: `preço a partir de ${value}/${units.pt}`, zh: `价格从 ${value}/${units.zh}起`, es: `precios desde ${value}/${units.es}`, fr: `tarifs à partir de ${value}/${units.fr}`, ru: `цена от ${value} за ${units.ru}`, ja: `${value}/${units.ja}から`, vi: `giá từ ${value}/${units.vi}`, de: `ab ${value}/${units.de}`, id: `mulai ${value}/${units.id}` };
+}
+
+function secondPriceCopy(value: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  return { en: `from ${value}/second pricing`, pt: `preço a partir de ${value}/segundo`, zh: `价格从 ${value}/秒起`, es: `precios desde ${value}/segundo`, fr: `tarifs à partir de ${value}/seconde`, ru: `цена от ${value} за секунду`, ja: `${value}/秒から`, vi: `giá từ ${value}/giây`, de: `ab ${value}/Sekunde`, id: `mulai ${value}/detik` };
+}
+
+function requestPriceCopy(value: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  return { en: `from ${value}/request pricing`, pt: `preço a partir de ${value}/solicitação`, zh: `价格从 ${value}/请求起`, es: `precios desde ${value}/solicitud`, fr: `tarifs à partir de ${value}/requête`, ru: `цена от ${value} за запрос`, ja: `${value}/リクエストから`, vi: `giá từ ${value}/yêu cầu`, de: `ab ${value}/Anfrage`, id: `mulai ${value}/permintaan` };
+}
+
+function tokenPriceCopy(en: string, pt: string, input: string, output?: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  const zh = output ? `${input} 输入/${output} 输出，每 100 万 token` : `${input} 输入，每 100 万 token`;
+  const es = output ? `${input} entrada/${output} salida por 1M tokens` : `${input} entrada por 1M tokens`;
+  const fr = output ? `${input} entrée/${output} sortie par 1M de tokens` : `${input} entrée par 1M de tokens`;
+  const ru = output ? `${input} ввод/${output} вывод за 1 млн токенов` : `${input} ввод за 1 млн токенов`;
+  const ja = output ? `入力${input}/出力${output}（100万トークンあたり）` : `入力${input}（100万トークンあたり）`;
+  const vi = output ? `đầu vào ${input}/đầu ra ${output} mỗi 1M token` : `đầu vào ${input} mỗi 1M token`;
+  const de = output ? `${input} Eingabe/${output} Ausgabe je 1M Token` : `${input} Eingabe je 1M Token`;
+  const id = output ? `input ${input}/output ${output} per 1M token` : `input ${input} per 1M token`;
+  return { en, pt, zh, es, fr, ru, ja, vi, de, id };
+}
+
+function formatContext(tokens: number): string {
+  return tokens >= 1_000_000 && tokens % 1_000_000 === 0 ? `${tokens / 1_000_000}M-token` : `${tokens.toLocaleString("en-US")}-token`;
+}
+
+export function limitSeoDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 160) return normalized;
+  const clipped = normalized.slice(0, 159).replace(/\s+\S*$/, "").trim();
+  return `${clipped || normalized.slice(0, 159).trim()}…`;
+}
+
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
   const normalized = normalizeModelId(modelId);
   const config = getModelLandingConfigs().find((candidate) =>
-    matchesModelConfig(candidate, normalized)
+    candidate.modelIds.some((configuredId) => matchesModelId(normalized, configuredId))
   ) ?? null;
   const priorityOverride = PRIORITY_MODEL_OVERRIDES[normalized];
   if (!config || !priorityOverride) return config;
@@ -1812,6 +2259,9 @@ export function getModelLandingConfigForModel(modelId: string): ModelConfig | nu
     modelIds: [modelId, ...config.modelIds],
     displayName: modelId,
     modelId,
+    ...(priorityOverride.seo
+      ? { seo: { ...priorityOverride.seo, description: limitSeoDescription(priorityOverride.seo.description) } }
+      : {}),
     landingContent: priorityOverride.landingContent
       ? { ...config.landingContent, ...priorityOverride.landingContent }
       : config.landingContent,
@@ -1820,13 +2270,31 @@ export function getModelLandingConfigForModel(modelId: string): ModelConfig | nu
 
 export function getModelLandingConfigForPricingModel(model: PricingModel): ModelConfig {
   const explicitConfig = getModelLandingConfigForModel(model.model_name);
-  if (explicitConfig) return modelLandingConfigForModel(explicitConfig, model);
+  if (explicitConfig) {
+    // A family config can match a more specific media model by prefix (for
+    // example `gemini-2.5-flash-image` matches the Gemini chat family). Let the
+    // model name/endpoint classification win when it disagrees with that
+    // broad family config, otherwise the image page loses its generator and
+    // prompt-library assets entirely.
+    const inferredKind = inferMediaKind(model);
+    if (inferredKind && explicitConfig.generator?.kind !== inferredKind) {
+      return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
+    }
+    return modelLandingConfigForModel(explicitConfig, model);
+  }
   return buildGenericMediaLandingConfig(model) ?? buildGenericTextLandingConfig(model);
 }
 
 export function modelLandingConfigForModel(config: ModelConfig, model: PricingModel): ModelConfig {
   const normalizedModelId = normalizeModelId(model.model_name);
   const priorityOverride = PRIORITY_MODEL_OVERRIDES[normalizedModelId];
+  const editorialContent = priorityOverride?.landingContent
+    ? { ...config.landingContent, ...priorityOverride.landingContent }
+    : config.landingContent ?? buildGenericLandingContent(model, config.generator?.kind ?? inferMediaKind(model) ?? "text");
+  const metadataTask = config.generator?.kind ? metadataTaskForLandingKind(config.generator.kind) : undefined;
+  const dynamicMetadata = priorityOverride?.seo
+    ? null
+    : buildModelLandingMetadata(model, { locale: "en", task: metadataTask });
   return {
     ...config,
     ...priorityOverride,
@@ -1835,9 +2303,16 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
     displayName: model.model_name,
     modelId: model.model_name,
     officialName: model.vendor_name ?? config.officialName,
-    landingContent: priorityOverride?.landingContent
-      ? { ...config.landingContent, ...priorityOverride.landingContent }
-      : config.landingContent,
+    ...(priorityOverride?.seo
+      ? { seo: { ...priorityOverride.seo, description: limitSeoDescription(priorityOverride.seo.description) } }
+      : {}),
+    ...(dynamicMetadata
+      ? {
+          seo: { title: dynamicMetadata.title, description: dynamicMetadata.description },
+          seoByLocale: buildModelSeoByLocale(model, metadataTask),
+        }
+      : {}),
+    landingContent: editorialContent,
   };
 }
 
@@ -1854,7 +2329,26 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
 export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Locale): ModelConfig {
   if (locale === "en") return config;
   const localized = getPriorityModelCopy(config.modelId || config.slug, locale);
-  if (!localized) return config;
+  if (!localized) {
+    // Hand-audited packs (notably Seedance 2.5) already carry their own
+    // localized content map. Only the generated catalog fallback should be
+    // rebuilt here; preserving object identity keeps curated packs immutable.
+    const isGeneratedGeneric = config.landingContent?.faq?.some(
+      (item) => item.question === `What is ${config.displayName} used for?`,
+    );
+    if (!isGeneratedGeneric) return config;
+    const localizedSeo = config.seoByLocale?.[locale];
+    return {
+      ...config,
+      ...(localizedSeo ? { seo: localizedSeo } : {}),
+      landingContent: localizeGenericLandingContent(
+        config.landingContent!,
+        locale,
+        config.displayName,
+        config.generator?.kind,
+      ),
+    };
+  }
 
   const sourceContent = config.landingContent;
   const localizedContent = localized.landingContent;
@@ -1892,7 +2386,10 @@ export function getPriorityModelLandingPathnames(): string[] {
 }
 
 export function resolveModelLandingModels(config: ModelConfig, models: PricingModel[]): PricingModel[] {
-  return models.filter((model) => matchesModelConfig(config, normalizeModelId(model.model_name)));
+  return models.filter((model) => {
+    const normalized = normalizeModelId(model.model_name);
+    return config.modelIds.some((configuredId) => matchesModelId(normalized, configuredId));
+  });
 }
 
 export function normalizeModelId(modelId: string): string {
@@ -1907,18 +2404,6 @@ function matchesModelId(normalizedModelId: string, configuredId: string): boolea
   );
 }
 
-function isImageModelId(normalizedModelId: string): boolean {
-  return /(^|-)(image|imagen|banana)(-|$)/.test(normalizedModelId);
-}
-
-function matchesModelConfig(config: ModelConfig, normalizedModelId: string): boolean {
-  // A model such as gemini-2.5-flash-image shares a text-family prefix with
-  // gemini-2.5-flash. Let the image suffix select the generic image landing
-  // config instead of silently rendering a text-only page.
-  if (isImageModelId(normalizedModelId) && config.generator?.kind !== "image") return false;
-  return config.modelIds.some((configuredId) => matchesModelId(normalizedModelId, configuredId));
-}
-
 function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null {
   const kind = inferMediaKind(model);
   if (!kind) return null;
@@ -1929,6 +2414,9 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
   const liveOfficialSecond = model.display_pricing?.prices.second?.configured ?? liveSecond;
   const liveFlatkeyPrice = liveSecond != null ? formatPriceLiteral(liveSecond) : price.flatkey;
   const liveOfficialPrice = liveOfficialSecond != null ? formatPriceLiteral(liveOfficialSecond) : price.official;
+  const landingContent = buildGenericLandingContent(model, kind);
+  const mediaProfile = getGenericMediaProfile(model, kind);
+  const metadata = buildModelLandingMetadata(model, { locale: "en", task: metadataTaskForLandingKind(kind) });
   return {
     slug: encodeURIComponent(model.model_name),
     modelIds: [model.model_name],
@@ -1936,9 +2424,11 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
     modelId: model.model_name,
     generator: {
       kind,
-      endpoint: mediaEndpointForModel(kind, model),
+      endpoint: mediaProfile.endpoint,
       storageKey: `flatkey:model-generator-draft:${normalizeModelId(model.model_name)}`,
-      fields: GENERIC_MEDIA_FIELDS[kind],
+      fields: mediaProfile.fields,
+      protocol: mediaProfile.protocol,
+      referenceLimits: mediaProfile.referenceLimits,
     },
     officialName,
     officialPrice: liveOfficialPrice,
@@ -1952,10 +2442,8 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
       { label: "Live model data from pricing API", flatkey: "", value: officialName },
       { label: "Coverage", flatkey: "", value: "Text · image · video · audio" },
     ],
-    seo: {
-      title: `${displayName} generator — configure prompts before signup`,
-      description: `Configure ${displayName} requests on flatkey.ai, save prompt settings locally, then continue to signup or the console.`,
-    },
+    seo: { title: metadata.title, description: metadata.description },
+    seoByLocale: buildModelSeoByLocale(model, metadataTaskForLandingKind(kind)),
     positioning: kind === "image"
       ? "Best for product images, ad creatives, and ecommerce visual variants"
       : kind === "audio"
@@ -1976,6 +2464,7 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
         answer: "They are stored in this browser's localStorage so the draft survives the signup handoff.",
       },
     ],
+    landingContent,
   };
 }
 
@@ -1989,6 +2478,8 @@ function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
   const flatkeyUnitPrice = officialUnitPrice * 0.67;
   const officialPrice = officialUnitPrice > 0 ? formatPriceLiteral(officialUnitPrice) : "$0";
   const flatkeyPrice = flatkeyUnitPrice > 0 ? formatPriceLiteral(flatkeyUnitPrice) : "$0";
+  const landingContent = buildGenericLandingContent(model, "text");
+  const metadata = buildModelLandingMetadata(model, { locale: "en" });
 
   return {
     slug: encodeURIComponent(model.model_name),
@@ -2008,10 +2499,8 @@ function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
       { label: "Live model data from pricing API", flatkey: "", value: officialName },
       { label: "Coverage", flatkey: "", value: COVERAGE },
     ],
-    seo: {
-      title: `${displayName} — pricing, availability & API`,
-      description: `Live pricing, 30-day availability and a ready-to-run API example for ${displayName} on flatkey.ai.`,
-    },
+    seo: { title: metadata.title, description: metadata.description },
+    seoByLocale: buildModelSeoByLocale(model),
     positioning: "Best for general AI apps, agents, search, and high-volume API workloads",
     useCases: ["AI app backends", "Agent workflows", "Batch content generation"],
     faq: [
@@ -2024,6 +2513,341 @@ function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
         answer: "Yes. Plan limits, usage analytics, and one invoice keep spend bounded.",
       },
     ],
+    landingContent,
+  };
+}
+
+/**
+ * Build a distinct editorial pack for catalog models that do not have a
+ * hand-written priority brief. The page shell stays shared, but every H2,
+ * pricing explanation, capability card and FAQ is anchored to the actual
+ * model id, provider, endpoint, modalities and catalog billing dimensions.
+ * Unknown upstream facts are deliberately described as catalog facts rather
+ * than guessed as official product claims.
+ */
+function buildGenericLandingContent(
+  model: PricingModel,
+  kind: ModelGeneratorConfig["kind"] | "text",
+): ModelLandingContent {
+  const name = model.model_name;
+  const provider = model.vendor_name?.trim() || model.directory_metadata?.author?.trim() || "Provider";
+  const endpoint = kind === "text" ? textEndpointForModel(model) : mediaEndpointForModel(kind, model);
+  const task = modelTaskLabel(model);
+  const taskPhrase = kind === "image"
+    ? "AI image generator and API"
+    : kind === "video"
+      ? "AI video generator and API"
+      : kind === "audio"
+        ? "audio generation API"
+        : "AI model API";
+  const keywordPhrase = kind === "image"
+    ? "image generation"
+    : kind === "video"
+      ? "video generation"
+      : kind === "audio"
+        ? "audio generation"
+        : "chat and coding";
+  const modalities = model.directory_metadata?.modalities?.join(" · ") || "Not listed in the catalog";
+  const context = model.directory_metadata?.context_tokens && model.directory_metadata.context_tokens > 0
+    ? formatContext(model.directory_metadata.context_tokens)
+    : "Context window not listed in the catalog";
+  const pricing = modelPricingSummary(model, task).en;
+  const categories = model.directory_metadata?.categories?.filter(Boolean).slice(0, 3).join(", ");
+  const categoryLine = categories ? `Catalog categories: ${categories}.` : "The catalog does not list a category for this model.";
+  const endpointLine = `Flatkey routes this model through ${endpoint}.`;
+
+  const capabilities = kind === "image"
+    ? [
+        { title: `${name} visual creation`, body: `Turn a written brief into product, editorial, or campaign imagery through ${endpoint}.` },
+        { title: `${name} reference-led editing`, body: `Use an existing image as creative direction for revisions and consistent visual variants when the route accepts references.` },
+        { title: `${name} channel-ready variants`, body: `Adapt one concept into the image compositions your storefront, campaign, or content pipeline needs.` },
+        { title: `${name} creative production workflow`, body: `Move an approved visual from prompt exploration into a repeatable Flatkey generation workflow.` },
+      ]
+    : kind === "video"
+      ? [
+          { title: `${name} scene creation`, body: `Turn a written brief into short-form scenes through ${endpoint}, ready for creative iteration.` },
+          { title: `${name} reference-led motion`, body: `Animate a designed frame, product, character, or storyboard when the route accepts reference media.` },
+          { title: `${name} camera and action direction`, body: `Shape how the camera, subject, pacing, and framing develop into a coherent clip.` },
+          { title: `${name} production handoff`, body: `Move a tested concept from prompt exploration into an authenticated Flatkey video workflow.` },
+        ]
+      : kind === "audio"
+        ? [
+            { title: `${name} soundtrack and sound design`, body: `Create music, ambience, speech layers, or other audio outputs through ${endpoint}.` },
+            { title: `${name} media-aware audio work`, body: `Use the listed modalities (${modalities}) to plan soundtrack, speech, or video-to-audio workflows.` },
+            { title: `${name} creator and localization use`, body: `Connect the model to creator tools, dubbing, localization, or batch-production pipelines.` },
+            { title: `${name} repeatable delivery`, body: `Move a tested audio brief into an authenticated Flatkey workflow with predictable account controls.` },
+          ]
+        : [
+            { title: `${name} chat and coding API`, body: `Call ${name} through ${endpoint} for chat, coding or agent workflows supported by the model's listed modalities.` },
+            { title: `${name} long-context work`, body: `${name} is listed with ${context}; use that catalog value as an integration planning reference and validate limits for your account.` },
+            { title: `${name} tool and agent workflows`, body: `Keep tool calls, structured output and streaming behavior aligned with the endpoint contract instead of assuming every provider feature is interchangeable.` },
+            { title: `${name} production routing`, body: `Use one Flatkey key for ${name}, usage controls and model routing while retaining the exact model id in your SDK configuration.` },
+          ];
+
+  const useCases = kind === "image"
+    ? ["Product and ecommerce images", "Advertising creative variants", "CMS and batch image jobs"]
+    : kind === "video"
+      ? ["Short-form creator clips", "Product and UGC video variants", "Storyboard and previsualization tests"]
+      : kind === "audio"
+        ? ["Soundtrack and audio beds", "Speech or localization workflows", "Batch audio production"]
+        : ["AI application backends", "Coding and agent workflows", "Document and research automation"];
+
+  const content: ModelLandingContent = {
+    hero: {
+      title: `${name} ${taskPhrase}`,
+      description: `${provider} ${name} for ${keywordPhrase}; ${endpointLine} ${pricing}${context.startsWith("Context window") ? "" : ` ${context} context window.`}`,
+      provider,
+    },
+    performance: {
+      eyebrow: `${name} API performance`,
+      title: `${name} API reliability and uptime`,
+      description: `Live Flatkey request telemetry for ${name} appears here when enough production traffic is available.`,
+    },
+    activity: {
+      eyebrow: `${name} API activity`,
+      title: `${name} API usage and request activity`,
+      description: `Track request volume and successful inference activity for ${name} over the latest reporting window.`,
+    },
+    pricing: {
+      eyebrow: `${name} pricing`,
+      title: `${name} API pricing and billing`,
+      description: `${pricing}. Rates below come from the live Flatkey catalog; they are not a promise about a provider's direct public price.`,
+      note: `Billing follows the selected ${name} route and account group. Recheck the live estimate before running production volume.`,
+      rows: buildGenericPricingRows(model, kind),
+    },
+    capabilities,
+    capabilitiesTitle: `${name} ${keywordPhrase}: core capabilities`,
+    capabilitiesDescription: `${provider}'s ${name} route supports ${modalities}. ${categoryLine}`,
+    comparison: {
+      eyebrow: "Compare",
+      title: `${name} API comparison: capabilities and access`,
+      description: `Compare the catalog facts for ${name} with the previous-generation baseline before changing your integration.`,
+      baselineLabel: "Previous generation",
+      currentLabel: name,
+      rows: [
+        { label: "Provider", baseline: "Not verified in this catalog snapshot", current: provider },
+        { label: "Modalities", baseline: "Not verified in this catalog snapshot", current: modalities },
+        { label: "Context", baseline: "Not verified in this catalog snapshot", current: context },
+        { label: "Endpoint", baseline: "Not verified in this catalog snapshot", current: endpoint },
+        { label: "Billing", baseline: "Not verified in this catalog snapshot", current: pricing },
+      ],
+    },
+    promptLibraryTitle: `${name} ${keywordPhrase} prompt examples`,
+    promptLibraryDescription: kind === "audio"
+      ? `Review ${name} API examples and billing dimensions, then use the documented endpoint for authenticated requests.`
+      : `Start with a ${name} prompt for ${useCases[0].toLowerCase()}, then adjust the request fields shown in the playground.`,
+    why: {
+      eyebrow: `Why ${name} API`,
+      title: `Why use ${name} through Flatkey?`,
+      description: `Use one gateway for ${name}, account controls and the rest of your model catalog.`,
+      cards: [
+        { title: `${name} in one API`, body: `Keep the ${name} model id and endpoint explicit while using the same Flatkey key as other workloads.` },
+        { title: "Live catalog pricing", body: `See the current ${name} billing dimensions before a request is sent, then confirm the final estimate in your account.` },
+        {
+          title: kind === "audio" ? "API integration" : "A practical model handoff",
+          body: kind === "audio"
+            ? `Use ${endpoint} with a Flatkey API key in your server or agent.`
+            : `Test a ${name} prompt in the public playground and carry the same settings into an authenticated integration.`,
+        },
+        { title: "Usage and routing controls", body: `Centralize keys, quotas and routing for ${name} without changing your application’s provider-facing workflow.` },
+      ],
+    },
+    api: {
+      eyebrow: `${name} API`,
+      title: `${name} API integration guide`,
+      description: `Use the model id above with ${endpoint}; keep the request fields and billing unit documented for your route.`,
+      items: [
+        { title: `Call ${endpoint}`, detail: `Send an authenticated request to ${endpoint} with model set to ${name}.` },
+        { title: "Keep the model id stable", detail: `Use ${name} in your SDK configuration so routing and usage reports map to the intended catalog entry.` },
+        { title: "Check the live estimate", detail: `Review ${pricing} and account limits before scaling ${name} requests.` },
+        {
+          title: kind === "audio" ? "Integrate with the API" : "Move from test to production",
+          detail: kind === "audio"
+            ? `Use ${endpoint} with a Flatkey API key in your server or agent.`
+            : `Start in the playground, then reuse the request shape with a Flatkey API key in your server or agent.`,
+        },
+      ],
+    },
+    related: {
+      eyebrow: "Related model APIs",
+      title: `Related ${keywordPhrase} models`,
+      description: `Explore other ${keywordPhrase} routes in the Flatkey catalog.`,
+      cards: [],
+    },
+    faqTitle: { beforeBreak: `${name} API`, afterBreak: "pricing, features, and usage FAQs" },
+    faqDescription: `Answers about ${name} pricing, capabilities, endpoint access and catalog limits.`,
+    faq: [
+      { question: `What is ${name} used for?`, answer: `${name} is listed by ${provider} for ${keywordPhrase}; the catalog lists these modalities: ${modalities}.` },
+      { question: `How is ${name} priced?`, answer: `${name} currently shows ${pricing}. The applicable rate can vary by route, account group and request settings.` },
+      { question: `Which API endpoint calls ${name}?`, answer: `${endpointLine} Set the model field to ${name} and follow the fields supported by that endpoint.` },
+      { question: `What context or input limits does ${name} have?`, answer: `${name} is listed with ${context}. Other limits depend on the route and current account availability, so verify them before production use.` },
+    ],
+  };
+  return content;
+}
+
+function textEndpointForModel(model: PricingModel): string {
+  const endpoint = (model.supported_endpoint_types ?? []).map(normalizeModelId).find((item) =>
+    /chat|completion|response|message|anthropic|gemini|openai/.test(item),
+  );
+  return endpoint?.includes("anthropic") ? "/v1/messages" : "/v1/chat/completions";
+}
+
+function buildGenericPricingRows(
+  model: PricingModel,
+  kind: ModelGeneratorConfig["kind"] | "text",
+): Array<{ label: string; value: string; detail?: string }> {
+  const pricing = model.display_pricing;
+  const rows: Array<{ label: string; value: string; detail?: string }> = [];
+  const add = (label: string, dimension: keyof NonNullable<PricingModel["display_pricing"]>["prices"], detail: string) => {
+    const pair = pricing?.prices?.[dimension];
+    const value = pair?.plg ?? pair?.configured;
+    if (value != null && Number.isFinite(value)) rows.push({ label, value: `${formatUsdPrice(value)} / ${kind === "text" ? "1M tokens" : dimension === "second" ? "second" : dimension}`, detail });
+  };
+  if (pricing?.billing_kind === "token" || pricing?.billing_kind === "tiered_expr" || model.quota_type === 0) {
+    add("Input tokens", "input", "Catalog input rate");
+    add("Output tokens", "output", "Catalog output rate");
+    add("Cached input", "cache", "Catalog cache rate");
+  } else if (pricing?.billing_kind === "per_second") {
+    add("Generation seconds", "second", "Rate follows generated seconds");
+  } else {
+    add(kind === "image" ? "Generated image" : kind === "audio" ? "Audio request" : kind === "video" ? "Generated video" : "API request", "request", "Catalog request rate");
+  }
+  if (rows.length === 0) rows.push({ label: "Live catalog pricing", value: "See current estimate", detail: "The catalog did not expose a numeric rate in this snapshot" });
+  return rows;
+}
+
+function buildModelSeoByLocale(model: PricingModel, task?: string): Partial<Record<Locale, { title: string; description: string }>> {
+  return Object.fromEntries(LOCALES.map((locale) => {
+    const metadata = buildModelLandingMetadata(model, { locale, task });
+    return [locale, { title: metadata.title, description: metadata.description }];
+  })) as Partial<Record<Locale, { title: string; description: string }>>;
+}
+
+function metadataTaskForLandingKind(kind: ModelGeneratorConfig["kind"]): string {
+  return kind === "image" ? "image generation" : kind === "video" ? "video generation" : "audio";
+}
+
+type GenericLocaleCopy = {
+  task: { image: string; video: string; audio: string; text: string };
+  performance: string;
+  performanceTitle: string;
+  activity: string;
+  activityTitle: string;
+  pricing: string;
+  pricingTitle: string;
+  capabilitiesTitle: string;
+  comparisonTitle: string;
+  whyTitle: string;
+  apiTitle: string;
+  relatedTitle: string;
+  faqAfter: string;
+  faqDescription: string;
+  faqQuestions: string[];
+  faqAnswers: string[];
+};
+
+const GENERIC_LOCALE_COPY: Record<Locale, GenericLocaleCopy> = {
+  en: {
+    task: { image: "AI image generator and API", video: "AI video generator and API", audio: "audio generation API", text: "AI model API" },
+    performance: "API performance", performanceTitle: "API reliability and uptime", activity: "API activity", activityTitle: "API usage and request activity", pricing: "pricing", pricingTitle: "API pricing and billing", capabilitiesTitle: "core capabilities", comparisonTitle: "API comparison: capabilities and access", whyTitle: "Why use this model through Flatkey?", apiTitle: "API integration guide", relatedTitle: "Related model APIs", faqAfter: "pricing, features, and usage FAQs", faqDescription: "Answers about pricing, capabilities, endpoint access and catalog limits.",
+    faqQuestions: ["What is this model used for?", "How is this model priced?", "Which API endpoint calls this model?", "What context or input limits apply?"],
+    faqAnswers: ["The model is listed in the Flatkey catalog for the modalities shown on this page.", "The current rate is shown in the live Flatkey pricing table and can vary by route and account group.", "Use the endpoint and model id shown in the API section for this catalog entry.", "Context and input limits are catalog or route facts; verify them before production use."],
+  },
+  zh: {
+    task: { image: "AI 图像生成器与 API", video: "AI 视频生成器与 API", audio: "音频生成 API", text: "AI 模型 API" },
+    performance: "API 性能", performanceTitle: "API 可靠性与可用性", activity: "API 活动", activityTitle: "API 使用量与请求活动", pricing: "价格", pricingTitle: "API 价格与计费", capabilitiesTitle: "核心能力", comparisonTitle: "API 对比：能力与访问方式", whyTitle: "为什么通过 Flatkey 使用此模型？", apiTitle: "API 集成指南", relatedTitle: "相关模型 API", faqAfter: "价格、功能与使用常见问题", faqDescription: "关于价格、能力、端点访问和目录限制的答案。",
+    faqQuestions: ["此模型用于什么任务？", "此模型如何计费？", "调用此模型使用哪个 API 端点？", "此模型有哪些上下文或输入限制？"],
+    faqAnswers: ["该模型已列入 Flatkey 目录，支持的模态见本页说明。", "当前费率显示在 Flatkey 实时价格表中，可能因路由和账户组而变化。", "请使用 API 区域显示的端点和模型 ID 调用此目录条目。", "上下文和输入限制以目录或路由事实为准，生产使用前请再次确认。"],
+  },
+  pt: {
+    task: { image: "gerador de imagens por IA e API", video: "gerador de vídeo por IA e API", audio: "API de geração de áudio", text: "API de modelo de IA" },
+    performance: "Desempenho da API", performanceTitle: "Confiabilidade e disponibilidade da API", activity: "Atividade da API", activityTitle: "Uso e atividade de solicitações da API", pricing: "preços", pricingTitle: "Preços e cobrança da API", capabilitiesTitle: "principais capacidades", comparisonTitle: "Comparação de API: capacidades e acesso", whyTitle: "Por que usar este modelo pela Flatkey?", apiTitle: "Guia de integração da API", relatedTitle: "APIs de modelos relacionados", faqAfter: "perguntas sobre preço, recursos e uso", faqDescription: "Respostas sobre preço, capacidades, endpoints e limites do catálogo.",
+    faqQuestions: ["Para que este modelo é usado?", "Como este modelo é cobrado?", "Qual endpoint da API chama este modelo?", "Quais limites de contexto ou entrada se aplicam?"],
+    faqAnswers: ["O modelo está no catálogo Flatkey com as modalidades indicadas nesta página.", "A tarifa atual aparece na tabela de preços ao vivo e pode variar por rota e grupo da conta.", "Use o endpoint e o ID do modelo mostrados na seção API para esta entrada do catálogo.", "Os limites de contexto e entrada são fatos do catálogo ou da rota; confirme antes de usar em produção."],
+  },
+  es: {
+    task: { image: "generador de imágenes IA y API", video: "generador de vídeo IA y API", audio: "API de generación de audio", text: "API de modelo de IA" },
+    performance: "Rendimiento de la API", performanceTitle: "Fiabilidad y disponibilidad de la API", activity: "Actividad de la API", activityTitle: "Uso y actividad de solicitudes de la API", pricing: "precios", pricingTitle: "Precios y facturación de la API", capabilitiesTitle: "capacidades principales", comparisonTitle: "Comparación de API: capacidades y acceso", whyTitle: "¿Por qué usar este modelo mediante Flatkey?", apiTitle: "Guía de integración de la API", relatedTitle: "APIs de modelos relacionados", faqAfter: "preguntas sobre precios, funciones y uso", faqDescription: "Respuestas sobre precios, capacidades, endpoints y límites del catálogo.",
+    faqQuestions: ["¿Para qué se usa este modelo?", "¿Cómo se factura este modelo?", "¿Qué endpoint de API llama a este modelo?", "¿Qué límites de contexto o entrada se aplican?"],
+    faqAnswers: ["El modelo aparece en el catálogo Flatkey con las modalidades indicadas en esta página.", "La tarifa actual aparece en la tabla de precios de Flatkey y puede variar según la ruta y la cuenta.", "Usa el endpoint y el ID de modelo mostrados en la sección API.", "Los límites de contexto y entrada son datos del catálogo o de la ruta; verifícalos antes de producción."],
+  },
+  fr: {
+    task: { image: "générateur d’images IA et API", video: "générateur vidéo IA et API", audio: "API de génération audio", text: "API de modèle IA" },
+    performance: "Performances de l’API", performanceTitle: "Fiabilité et disponibilité de l’API", activity: "Activité de l’API", activityTitle: "Utilisation et activité des requêtes API", pricing: "tarifs", pricingTitle: "Tarifs et facturation de l’API", capabilitiesTitle: "capacités principales", comparisonTitle: "Comparaison API : capacités et accès", whyTitle: "Pourquoi utiliser ce modèle via Flatkey ?", apiTitle: "Guide d’intégration API", relatedTitle: "API de modèles associés", faqAfter: "questions sur les tarifs, fonctions et l’usage", faqDescription: "Réponses sur les tarifs, capacités, endpoints et limites du catalogue.",
+    faqQuestions: ["À quoi sert ce modèle ?", "Comment ce modèle est-il facturé ?", "Quel endpoint API appelle ce modèle ?", "Quelles limites de contexte ou d’entrée s’appliquent ?"],
+    faqAnswers: ["Le modèle figure dans le catalogue Flatkey avec les modalités indiquées sur cette page.", "Le tarif actuel apparaît dans le tableau Flatkey et peut varier selon la route et le compte.", "Utilisez l’endpoint et l’identifiant du modèle indiqués dans la section API.", "Les limites de contexte et d’entrée sont des faits du catalogue ou de la route ; vérifiez-les avant la production."],
+  },
+  ru: {
+    task: { image: "ИИ-генератор изображений и API", video: "ИИ-генератор видео и API", audio: "API генерации аудио", text: "API модели ИИ" },
+    performance: "Производительность API", performanceTitle: "Надёжность и доступность API", activity: "Активность API", activityTitle: "Использование и активность запросов API", pricing: "цены", pricingTitle: "Цены и расчёты API", capabilitiesTitle: "основные возможности", comparisonTitle: "Сравнение API: возможности и доступ", whyTitle: "Зачем использовать эту модель через Flatkey?", apiTitle: "Руководство по интеграции API", relatedTitle: "API похожих моделей", faqAfter: "вопросы о ценах, функциях и использовании", faqDescription: "Ответы о ценах, возможностях, конечных точках и лимитах каталога.",
+    faqQuestions: ["Для чего используется эта модель?", "Как тарифицируется эта модель?", "Какой API endpoint вызывает эту модель?", "Какие ограничения контекста или входных данных действуют?"],
+    faqAnswers: ["Модель есть в каталоге Flatkey с модальностями, указанными на этой странице.", "Текущая ставка указана в таблице цен Flatkey и может зависеть от маршрута и аккаунта.", "Используйте endpoint и ID модели из раздела API.", "Ограничения контекста и входа зависят от каталога или маршрута; проверьте их перед запуском в продакшене."],
+  },
+  ja: {
+    task: { image: "AI画像生成とAPI", video: "AI動画生成とAPI", audio: "音声生成API", text: "AIモデルAPI" },
+    performance: "APIパフォーマンス", performanceTitle: "APIの信頼性と可用性", activity: "APIアクティビティ", activityTitle: "APIの利用状況とリクエスト", pricing: "料金", pricingTitle: "API料金と課金", capabilitiesTitle: "主な機能", comparisonTitle: "API比較：機能とアクセス", whyTitle: "Flatkey経由でこのモデルを使う理由", apiTitle: "API統合ガイド", relatedTitle: "関連モデルAPI", faqAfter: "料金・機能・利用に関するFAQ", faqDescription: "料金、機能、エンドポイント、カタログ制限に関する回答です。",
+    faqQuestions: ["このモデルは何に使えますか？", "このモデルの料金体系は？", "どのAPIエンドポイントで呼び出せますか？", "コンテキストや入力の制限は？"],
+    faqAnswers: ["このモデルはページに示すモダリティでFlatkeyカタログに掲載されています。", "現在の料金はFlatkeyのライブ料金表に表示され、経路やアカウントで変わる場合があります。", "APIセクションに示すエンドポイントとモデルIDを使用してください。", "コンテキストと入力制限はカタログまたは経路の事実を確認してください。"],
+  },
+  vi: {
+    task: { image: "trình tạo ảnh AI và API", video: "trình tạo video AI và API", audio: "API tạo âm thanh", text: "API mô hình AI" },
+    performance: "Hiệu suất API", performanceTitle: "Độ tin cậy và khả dụng của API", activity: "Hoạt động API", activityTitle: "Mức sử dụng và hoạt động yêu cầu API", pricing: "giá", pricingTitle: "Giá và thanh toán API", capabilitiesTitle: "năng lực chính", comparisonTitle: "So sánh API: năng lực và quyền truy cập", whyTitle: "Vì sao dùng mô hình này qua Flatkey?", apiTitle: "Hướng dẫn tích hợp API", relatedTitle: "API mô hình liên quan", faqAfter: "câu hỏi về giá, tính năng và cách dùng", faqDescription: "Giải đáp về giá, năng lực, endpoint và giới hạn danh mục.",
+    faqQuestions: ["Mô hình này dùng để làm gì?", "Mô hình này được tính giá thế nào?", "Endpoint API nào gọi mô hình này?", "Giới hạn ngữ cảnh hoặc đầu vào là gì?"],
+    faqAnswers: ["Mô hình có trong danh mục Flatkey với các phương thức được nêu trên trang.", "Giá hiện tại nằm trong bảng giá trực tiếp của Flatkey và có thể đổi theo tuyến hoặc tài khoản.", "Dùng endpoint và model ID trong phần API.", "Giới hạn ngữ cảnh và đầu vào là dữ kiện của danh mục hoặc tuyến; hãy kiểm tra trước khi chạy production."],
+  },
+  de: {
+    task: { image: "KI-Bildgenerator und API", video: "KI-Videogenerator und API", audio: "Audio-Generierungs-API", text: "KI-Modell-API" },
+    performance: "API-Leistung", performanceTitle: "Zuverlässigkeit und Verfügbarkeit der API", activity: "API-Aktivität", activityTitle: "API-Nutzung und Anfrageaktivität", pricing: "Preise", pricingTitle: "API-Preise und Abrechnung", capabilitiesTitle: "zentrale Funktionen", comparisonTitle: "API-Vergleich: Funktionen und Zugriff", whyTitle: "Warum dieses Modell über Flatkey nutzen?", apiTitle: "API-Integrationsleitfaden", relatedTitle: "Verwandte Modell-APIs", faqAfter: "Fragen zu Preisen, Funktionen und Nutzung", faqDescription: "Antworten zu Preisen, Funktionen, Endpunkten und Kataloglimits.",
+    faqQuestions: ["Wofür wird dieses Modell verwendet?", "Wie wird dieses Modell abgerechnet?", "Welcher API-Endpunkt ruft dieses Modell auf?", "Welche Kontext- oder Eingabelimits gelten?"],
+    faqAnswers: ["Das Modell ist mit den auf dieser Seite genannten Modalitäten im Flatkey-Katalog aufgeführt.", "Der aktuelle Tarif steht in der Live-Preistabelle und kann je nach Route und Konto variieren.", "Verwende den im API-Bereich genannten Endpunkt und die Modell-ID.", "Kontext- und Eingabelimits sind Katalog- oder Routenfakten; prüfe sie vor dem Produktionseinsatz."],
+  },
+  id: {
+    task: { image: "generator gambar AI dan API", video: "generator video AI dan API", audio: "API generasi audio", text: "API model AI" },
+    performance: "Performa API", performanceTitle: "Keandalan dan ketersediaan API", activity: "Aktivitas API", activityTitle: "Penggunaan dan aktivitas permintaan API", pricing: "harga", pricingTitle: "Harga dan penagihan API", capabilitiesTitle: "kemampuan utama", comparisonTitle: "Perbandingan API: kemampuan dan akses", whyTitle: "Mengapa memakai model ini melalui Flatkey?", apiTitle: "Panduan integrasi API", relatedTitle: "API model terkait", faqAfter: "pertanyaan harga, fitur, dan penggunaan", faqDescription: "Jawaban tentang harga, kemampuan, endpoint, dan batas katalog.",
+    faqQuestions: ["Untuk apa model ini digunakan?", "Bagaimana harga model ini?", "Endpoint API mana yang memanggil model ini?", "Apa batas konteks atau inputnya?"],
+    faqAnswers: ["Model ini tercantum di katalog Flatkey dengan modalitas yang ditampilkan di halaman ini.", "Tarif saat ini ada di tabel harga live Flatkey dan dapat berbeda menurut rute dan akun.", "Gunakan endpoint dan ID model pada bagian API.", "Batas konteks dan input adalah fakta katalog atau rute; verifikasi sebelum produksi."],
+  },
+};
+
+function localizeGenericLandingContent(
+  source: ModelLandingContent,
+  locale: Locale,
+  name: string,
+  forcedKind?: ModelGeneratorConfig["kind"],
+): ModelLandingContent {
+  const copy = GENERIC_LOCALE_COPY[locale] ?? GENERIC_LOCALE_COPY.en;
+  // Prefer the resolved generator kind. Model names such as
+  // `sonilo-video-to-music` contain the word "video" even though the route is
+  // audio, so inferring from a title alone can localize the page incorrectly.
+  const kind = forcedKind ?? (source.hero?.title?.includes("image") || source.capabilitiesTitle?.includes("image")
+    ? "image"
+    : source.hero?.title?.includes("video") || source.capabilitiesTitle?.includes("video")
+      ? "video"
+      : source.hero?.title?.includes("audio") || source.capabilitiesTitle?.includes("audio")
+        ? "audio"
+        : "text");
+  const endpoint = source.api?.items?.[0]?.title ?? "/v1/chat/completions";
+  const task = copy.task[kind];
+  const sourceFacts = source.hero?.description?.split(";").slice(1).join(";").trim() ?? "";
+  const heroDescription = locale === "zh"
+    ? `${name} 可通过 Flatkey 使用；${sourceFacts}`.trim()
+    : `${name} ${task} via Flatkey. ${sourceFacts}`.trim();
+  return {
+    ...source,
+    hero: source.hero ? { ...source.hero, title: `${name} ${task}`, description: heroDescription } : source.hero,
+    performance: source.performance ? { ...source.performance, eyebrow: copy.performance, title: `${name} ${copy.performanceTitle}` } : source.performance,
+    activity: source.activity ? { ...source.activity, eyebrow: copy.activity, title: `${name} ${copy.activityTitle}` } : source.activity,
+    pricing: source.pricing ? { ...source.pricing, eyebrow: `${name} ${copy.pricing}`, title: `${name} ${copy.pricingTitle}` } : source.pricing,
+    capabilitiesTitle: `${name} ${task}: ${copy.capabilitiesTitle}`,
+    comparison: source.comparison ? { ...source.comparison, title: `${name} ${copy.comparisonTitle}` } : source.comparison,
+    promptLibraryTitle: source.promptLibraryTitle ? `${name} ${task} prompt examples` : source.promptLibraryTitle,
+    why: source.why ? { ...source.why, eyebrow: `Why ${name} API`, title: `${copy.whyTitle.replace("this model", name).replace("ce modèle", name).replace("dieses Modell", name)}` } : source.why,
+    api: source.api ? { ...source.api, eyebrow: `${name} API`, title: `${name} ${copy.apiTitle}`, items: source.api.items.map((item, index) => index === 0 ? { ...item, title: endpoint } : item) } : source.api,
+    related: source.related ? { ...source.related, eyebrow: copy.relatedTitle, title: `${name} ${copy.relatedTitle}` } : source.related,
+    faqTitle: source.faqTitle ? { beforeBreak: `${name} API`, afterBreak: copy.faqAfter } : source.faqTitle,
+    faqDescription: copy.faqDescription,
+    faq: source.faq?.map((item, index) => ({ question: copy.faqQuestions[index] ?? item.question, answer: copy.faqAnswers[index] ?? item.answer })),
   };
 }
 
@@ -2083,6 +2907,7 @@ const en: Record<ModelLandingKey, string> = {
   "All models": "All models",
   "Back to Models": "Back to Models",
   "View Pricing": "View Pricing",
+  "View API": "View API",
   Docs: "Docs",
   Rankings: "Rankings",
   "Related pages": "Related pages",
@@ -2123,6 +2948,7 @@ const en: Record<ModelLandingKey, string> = {
   Apps: "Apps",
   Activity: "Activity",
   FAQ: "FAQ",
+  Compare: "Compare",
   Playground: "Playground",
   Parameters: "Parameters",
   "Prompt library": "Prompt library",
@@ -2209,8 +3035,8 @@ const en: Record<ModelLandingKey, string> = {
   "Starter / individual": "Starter / individual",
   "Team / high-volume": "Team / high-volume",
   "The same {{model}},": "The same {{model}},",
-  "Go — $10/mo, up to $45 usage": "Go — $10/mo, up to $45 usage",
-  "Max — $100/mo, up to $300 usage": "Max — $100/mo, up to $300 usage",
+  "Go — $10/mo, up to $25 usage": "Go — $10/mo, up to $25 usage",
+  "Max — $100/mo, up to $450 usage": "Max — $100/mo, up to $450 usage",
   "/ image": "/ image",
   "/ request": "/ request",
   "Opus 4 output": "Opus 4 output",
@@ -2671,8 +3497,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "入门 / 个人",
     "Team / high-volume": "团队 / 大用量",
     "The same {{model}},": "同样的 {{model}}，",
-    "Go — $10/mo, up to $45 usage": "Go —— $10/月，可用 $45",
-    "Max — $100/mo, up to $300 usage": "Max —— $100/月，可用 $300",
+    "Go — $10/mo, up to $25 usage": "Go —— $10/月，可用 $25",
+    "Max — $100/mo, up to $450 usage": "Max —— $100/月，可用 $450",
     "/ image": "/ 张图片",
     "Opus 4 output": "Opus 4 输出",
     "Sonnet 4 output": "Sonnet 4 输出",
@@ -2781,8 +3607,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Inicial / individual",
     "Team / high-volume": "Equipo / alto volumen",
     "The same {{model}},": "El mismo {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/mes, hasta $45 de uso",
-    "Max — $100/mo, up to $300 usage": "Max — $100/mes, hasta $300 de uso",
+    "Go — $10/mo, up to $25 usage": "Go — $10/mes, hasta $25 de uso",
+    "Max — $100/mo, up to $450 usage": "Max — $100/mes, hasta $450 de uso",
     "Opus 4 output": "Salida de Opus 4",
     "Sonnet 4 output": "Salida de Sonnet 4",
     "Haiku output": "Salida de Haiku",
@@ -2890,8 +3716,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Débutant / individuel",
     "Team / high-volume": "Équipe / gros volume",
     "The same {{model}},": "Le même {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/mois, jusqu'à $45 d'usage",
-    "Max — $100/mo, up to $300 usage": "Max — $100/mois, jusqu'à $300 d'usage",
+    "Go — $10/mo, up to $25 usage": "Go — $10/mois, jusqu'à $25 d'usage",
+    "Max — $100/mo, up to $450 usage": "Max — $100/mois, jusqu'à $450 d'usage",
     "Opus 4 output": "Sortie Opus 4",
     "Sonnet 4 output": "Sortie Sonnet 4",
     "Haiku output": "Sortie Haiku",
@@ -2999,8 +3825,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Inicial / individual",
     "Team / high-volume": "Equipe / alto volume",
     "The same {{model}},": "O mesmo {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/mês, até $45 de uso",
-    "Max — $100/mo, up to $300 usage": "Max — $100/mês, até $300 de uso",
+    "Go — $10/mo, up to $25 usage": "Go — $10/mês, até $25 de uso",
+    "Max — $100/mo, up to $450 usage": "Max — $100/mês, até $450 de uso",
     "Opus 4 output": "Saída do Opus 4",
     "Sonnet 4 output": "Saída do Sonnet 4",
     "Haiku output": "Saída do Haiku",
@@ -3108,8 +3934,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Начальный / индивидуальный",
     "Team / high-volume": "Команда / большой объём",
     "The same {{model}},": "Та же {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/мес, до $45 использования",
-    "Max — $100/mo, up to $300 usage": "Max — $100/мес, до $300 использования",
+    "Go — $10/mo, up to $25 usage": "Go — $10/мес, до $25 использования",
+    "Max — $100/mo, up to $450 usage": "Max — $100/мес, до $450 использования",
     "Opus 4 output": "Вывод Opus 4",
     "Sonnet 4 output": "Вывод Sonnet 4",
     "Haiku output": "Вывод Haiku",
@@ -3217,8 +4043,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "スターター / 個人",
     "Team / high-volume": "チーム / 大量利用",
     "The same {{model}},": "同じ {{model}}、",
-    "Go — $10/mo, up to $45 usage": "Go — $10/月、利用枠 $45",
-    "Max — $100/mo, up to $300 usage": "Max — $100/月、利用枠 $300",
+    "Go — $10/mo, up to $25 usage": "Go — $10/月、利用枠 $25",
+    "Max — $100/mo, up to $450 usage": "Max — $100/月、利用枠 $450",
     "Opus 4 output": "Opus 4 出力",
     "Sonnet 4 output": "Sonnet 4 出力",
     "Haiku output": "Haiku 出力",
@@ -3326,8 +4152,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Khởi đầu / cá nhân",
     "Team / high-volume": "Nhóm / khối lượng lớn",
     "The same {{model}},": "Cùng {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/tháng, dùng tới $45",
-    "Max — $100/mo, up to $300 usage": "Max — $100/tháng, dùng tới $300",
+    "Go — $10/mo, up to $25 usage": "Go — $10/tháng, dùng tới $25",
+    "Max — $100/mo, up to $450 usage": "Max — $100/tháng, dùng tới $450",
     "Opus 4 output": "Đầu ra Opus 4",
     "Sonnet 4 output": "Đầu ra Sonnet 4",
     "Haiku output": "Đầu ra Haiku",
@@ -3435,8 +4261,8 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
     "Starter / individual": "Starter / Einzelperson",
     "Team / high-volume": "Team / hohes Volumen",
     "The same {{model}},": "Das gleiche {{model}},",
-    "Go — $10/mo, up to $45 usage": "Go — $10/Monat, bis zu $45 Nutzung",
-    "Max — $100/mo, up to $300 usage": "Max — $100/Monat, bis zu $300 Nutzung",
+    "Go — $10/mo, up to $25 usage": "Go — $10/Monat, bis zu $25 Nutzung",
+    "Max — $100/mo, up to $450 usage": "Max — $100/Monat, bis zu $450 Nutzung",
     "Opus 4 output": "Opus 4 Output",
     "Sonnet 4 output": "Sonnet 4 Output",
     "Haiku output": "Haiku Output",
@@ -5258,24 +6084,14 @@ const modelDetailUiCopy: Partial<Record<Locale, Record<string, string>>> = {
 // on localized model pages.
 const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = {
   en: {
-    "Game UI interaction and equipment switching": "Game UI interaction and equipment switching",
-    "Live sports broadcast simulation": "Live sports broadcast simulation",
-    "Brand TVC and seamless ecommerce showcase": "Brand TVC and seamless ecommerce showcase",
-    "Cinematic character and storyboard direction": "Cinematic character and storyboard direction",
-    "Comedy sketch and physical storytelling": "Comedy sketch and physical storytelling",
-    "Historical photo restoration and revival": "Historical photo restoration and revival",
+    "Add credits": "Add credits",
   },
   zh: {
+    "Add credits": "充值余额",
     vs: "对比",
     "Flatkey Router": "Flatkey 路由器",
     Endpoint: "接口",
     Prompt: "提示词",
-    "Game UI interaction and equipment switching": "游戏 UI 交互与装备动态切换",
-    "Live sports broadcast simulation": "高逼真电视 / 体育赛事直播模拟",
-    "Brand TVC and seamless ecommerce showcase": "品牌商业 TVC 与电商产品无缝展示",
-    "Cinematic character and storyboard direction": "影视级角色与多视角分镜演播",
-    "Comedy sketch and physical storytelling": "喜剧段子与物理剧情演播",
-    "Historical photo restoration and revival": "老旧照片修复与历史 / 人文动态复活",
     "Product Reveal": "产品展示",
     "UGC Ad": "UGC 广告",
     "Cinematic Scene": "电影感场景",
@@ -5297,6 +6113,7 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "开发者流水线",
   },
   es: {
+    "Add credits": "Añadir crédito",
     vs: "frente a",
     "Flatkey Router": "Router de Flatkey",
     "Configure a {{model}} request on the public page. Flatkey saves the draft locally, then opens the console so you can run it with your account and API key.": "Configura una solicitud de {{model}} en la página pública. Flatkey guarda el borrador localmente y abre la consola para que puedas ejecutarla con tu cuenta y clave API.",
@@ -5343,12 +6160,6 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Use one Flatkey account to test prompts, compare models, and move the saved request into the console.": "Usa una cuenta de Flatkey para probar prompts, comparar modelos y pasar la solicitud guardada a la consola.",
     Endpoint: "Punto final",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "Interfaz de juego y cambio de equipamiento",
-    "Live sports broadcast simulation": "Simulación de retransmisión deportiva en directo",
-    "Brand TVC and seamless ecommerce showcase": "TVC de marca y presentación fluida de productos para ecommerce",
-    "Cinematic character and storyboard direction": "Personajes cinematográficos y dirección de storyboard",
-    "Comedy sketch and physical storytelling": "Sketch cómico y narración física",
-    "Historical photo restoration and revival": "Restauración y reactivación de fotos históricas",
     "Product Reveal": "Presentación de producto",
     "UGC Ad": "Anuncio UGC",
     "Cinematic Scene": "Escena cinematográfica",
@@ -5370,6 +6181,7 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Pipelines para desarrolladores",
   },
   fr: {
+    "Add credits": "Ajouter des crédits",
     vs: "vs",
     "Flatkey Router": "Routeur Flatkey",
     "/ image": "/ image",
@@ -5417,12 +6229,6 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Use one Flatkey account to test prompts, compare models, and move the saved request into the console.": "Utilisez un compte Flatkey pour tester des prompts, comparer les modèles et transférer la requête enregistrée dans la console.",
     Endpoint: "Point de terminaison",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "Interface de jeu et changement d’équipement",
-    "Live sports broadcast simulation": "Simulation de retransmission sportive en direct",
-    "Brand TVC and seamless ecommerce showcase": "TVC de marque et présentation fluide de produits e-commerce",
-    "Cinematic character and storyboard direction": "Personnages de cinéma et direction de storyboard",
-    "Comedy sketch and physical storytelling": "Sketch comique et narration physique",
-    "Historical photo restoration and revival": "Restauration et réanimation de photos historiques",
     "Product Reveal": "Présentation du produit",
     "UGC Ad": "Publicité UGC",
     "Cinematic Scene": "Scène cinématographique",
@@ -5444,16 +6250,11 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Pipelines développeur",
   },
   pt: {
+    "Add credits": "Adicionar créditos",
     vs: "vs",
     "Flatkey Router": "Roteador Flatkey",
     Endpoint: "Endpoint",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "Interface de jogo e troca de equipamento",
-    "Live sports broadcast simulation": "Simulação de transmissão esportiva ao vivo",
-    "Brand TVC and seamless ecommerce showcase": "TVC de marca e apresentação fluida de produtos para e-commerce",
-    "Cinematic character and storyboard direction": "Personagens cinematográficos e direção de storyboard",
-    "Comedy sketch and physical storytelling": "Esquete cômico e narrativa física",
-    "Historical photo restoration and revival": "Restauração e revitalização de fotos históricas",
     "Product Reveal": "Revelação de produto",
     "UGC Ad": "Anúncio UGC",
     "Cinematic Scene": "Cena cinematográfica",
@@ -5475,16 +6276,11 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Pipelines para desenvolvedores",
   },
   ru: {
+    "Add credits": "Пополнить баланс",
     vs: "против",
     "Flatkey Router": "Роутер Flatkey",
     Endpoint: "Эндпоинт",
     Prompt: "Промпт",
-    "Game UI interaction and equipment switching": "Игровой интерфейс и смена снаряжения",
-    "Live sports broadcast simulation": "Симуляция прямой спортивной трансляции",
-    "Brand TVC and seamless ecommerce showcase": "Брендовый TVC и бесшовная демонстрация товаров для e-commerce",
-    "Cinematic character and storyboard direction": "Кинематографичные персонажи и постановка раскадровки",
-    "Comedy sketch and physical storytelling": "Комедийный скетч и физическое повествование",
-    "Historical photo restoration and revival": "Восстановление и оживление исторических фотографий",
     "Product Reveal": "Демонстрация продукта",
     "UGC Ad": "UGC-реклама",
     "Cinematic Scene": "Кинематографичная сцена",
@@ -5506,16 +6302,11 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Пайплайны для разработчиков",
   },
   ja: {
+    "Add credits": "クレジットを追加",
     "Flatkey Router": "Flatkeyルーター",
     vs: "対",
     Endpoint: "エンドポイント",
     Prompt: "プロンプト",
-    "Game UI interaction and equipment switching": "ゲームUIと装備切り替え",
-    "Live sports broadcast simulation": "高精細なテレビ・スポーツ中継シミュレーション",
-    "Brand TVC and seamless ecommerce showcase": "ブランドTVCとシームレスなEC商品展示",
-    "Cinematic character and storyboard direction": "映画的キャラクターと多視点ストーリーボード演出",
-    "Comedy sketch and physical storytelling": "コメディスケッチとフィジカルストーリーテリング",
-    "Historical photo restoration and revival": "古写真の修復と歴史・人文シーンの再生",
     "Product Reveal": "商品紹介",
     "UGC Ad": "UGC 広告",
     "Cinematic Scene": "シネマティックシーン",
@@ -5537,18 +6328,13 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "開発者パイプライン",
   },
   vi: {
+    "Add credits": "Nạp thêm tín dụng",
     vs: "so với",
     "Flatkey Router": "Router Flatkey",
     "/ request": "/ yêu cầu",
     Uptime: "Thời gian hoạt động",
     Endpoint: "Endpoint",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "UI trò chơi và chuyển đổi trang bị",
-    "Live sports broadcast simulation": "Mô phỏng phát sóng thể thao trực tiếp chân thực",
-    "Brand TVC and seamless ecommerce showcase": "TVC thương hiệu và trưng bày sản phẩm thương mại điện tử liền mạch",
-    "Cinematic character and storyboard direction": "Nhân vật điện ảnh và chỉ đạo storyboard đa góc",
-    "Comedy sketch and physical storytelling": "Tiểu phẩm hài và kể chuyện bằng chuyển động vật lý",
-    "Historical photo restoration and revival": "Phục hồi ảnh cũ và tái hiện lịch sử / nhân văn",
     "Product Reveal": "Giới thiệu sản phẩm",
     "UGC Ad": "Quảng cáo UGC",
     "Cinematic Scene": "Cảnh điện ảnh",
@@ -5570,16 +6356,11 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Quy trình cho nhà phát triển",
   },
   de: {
+    "Add credits": "Guthaben hinzufügen",
     vs: "gegenüber",
     "Flatkey Router": "Flatkey-Router",
     Endpoint: "Endpunkt",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "Spiel-UI und Ausrüstungswechsel",
-    "Live sports broadcast simulation": "Simulation einer hochwertigen Sport-Liveübertragung",
-    "Brand TVC and seamless ecommerce showcase": "Marken-TVC und nahtlose E-Commerce-Produktpräsentation",
-    "Cinematic character and storyboard direction": "Filmische Figuren und Storyboard-Inszenierung",
-    "Comedy sketch and physical storytelling": "Comedy-Sketch und physisches Storytelling",
-    "Historical photo restoration and revival": "Restaurierung und Wiederbelebung historischer Fotos",
     "Product Reveal": "Produktpräsentation",
     "UGC Ad": "UGC-Anzeige",
     "Cinematic Scene": "Kinematografische Szene",
@@ -5601,6 +6382,7 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Developer pipelines": "Entwickler-Pipelines",
   },
   id: {
+    "Add credits": "Tambah kredit",
     Input: "Masukan",
     Output: "Keluaran",
     vs: "vs",
@@ -5617,12 +6399,6 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
     "Generated with {{model}}": "Dibuat dengan {{model}}",
     Endpoint: "Endpoint",
     Prompt: "Prompt",
-    "Game UI interaction and equipment switching": "UI game dan pergantian perlengkapan",
-    "Live sports broadcast simulation": "Simulasi siaran olahraga langsung berkualitas tinggi",
-    "Brand TVC and seamless ecommerce showcase": "TVC merek dan showcase produk e-commerce yang mulus",
-    "Cinematic character and storyboard direction": "Karakter sinematik dan pengarahan storyboard",
-    "Comedy sketch and physical storytelling": "Sketsa komedi dan storytelling fisik",
-    "Historical photo restoration and revival": "Restorasi foto bersejarah dan menghidupkan kembali kisah manusia",
     "Product Reveal": "Perkenalan produk",
     "UGC Ad": "Iklan UGC",
     "Cinematic Scene": "Adegan sinematik",
@@ -6542,13 +7318,87 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
   },
 };
 
+// The Seedance 2.5 editorial block uses a few deliberately natural headings
+// whose English source wording differs from the older Seedance translation
+// keys. Keep those headings localized instead of letting the shared fallback
+// return an English H2 on /pt, /es, or another translated route. For the
+// remaining locales, aliases reuse the audited translations of the equivalent
+// Seedance key so the page stays complete without duplicating the whole copy
+// tree.
+const seedance25SourceAliases: Record<string, string> = {
+  "Seedance 2.5 AI video generator and API": "Seedance 2.5 AI Video Generator & API",
+  "Seedance 2.5 AI video API performance and uptime": "Seedance 2.5 usage activity",
+  "Seedance 2.5 video API usage activity": "Seedance 2.5 usage activity",
+  "Seedance 2.5 AI video generator features for references and audio": "Seedance 2.5 features",
+  "Seedance 2.5 features: 30-second video, references, and audio": "Seedance 2.5 features: references, audio, and 30-second video",
+  "Seedance 2.5 prompt guide for text-to-video and image-to-video": "Seedance 2.5 prompt guide: six workflows",
+  "Use Seedance 2.5 through a unified video API": "Why use Seedance 2.5 through Flatkey?",
+  "Use the Seedance 2.5 API at /v1/videos": "Seedance 2.5 API: how to use /v1/videos",
+  "Other Seedance and AI video generator APIs": "Other video generation models",
+  "API, pricing, and release-date questions": "API–frequently asked questions",
+};
+
+const seedance25DirectTranslations: Partial<Record<Locale, Record<string, string>>> = {
+  en: {
+    "Seedance 2.5 AI video generator and API": "Seedance 2.5 AI video generator and API",
+    "Seedance 2.5 AI video API performance and uptime": "Seedance 2.5 AI video API performance and availability",
+    "Seedance 2.5 video API usage activity": "Seedance 2.5 video API usage activity",
+    "Seedance 2.5 AI video generator features for references and audio": "Seedance 2.5 AI video generator features for references and audio",
+    "Seedance 2.5 features: 30-second video, references, and audio": "Seedance 2.5 features: 30-second video, references, and audio",
+    "Seedance 2.5 prompt guide for text-to-video and image-to-video": "Seedance 2.5 prompt guide for text-to-video and image-to-video",
+    "Use Seedance 2.5 through a unified video API": "Use Seedance 2.5 through a unified video API",
+    "Use the Seedance 2.5 API at /v1/videos": "Use the Seedance 2.5 API at /v1/videos",
+    "Other Seedance and AI video generator APIs": "Other Seedance and AI video generator APIs",
+    "API, pricing, and release-date questions": "API, pricing, and release-date questions",
+  },
+  pt: {
+    "Seedance 2.5 AI video generator and API": "Gerador de vídeo IA Seedance 2.5 e API",
+    "Seedance 2.5 AI video API performance and uptime": "Desempenho e disponibilidade da API de vídeo IA Seedance 2.5",
+    "Seedance 2.5 video API usage activity": "Uso da API de vídeo Seedance 2.5 e atividade das solicitações",
+    "Seedance 2.5 AI video generator features for references and audio": "Recursos do gerador de vídeo IA Seedance 2.5 para referências e áudio",
+    "Seedance 2.5 features: 30-second video, references, and audio": "Recursos do Seedance 2.5: vídeo de 30 segundos, referências e áudio",
+    "Seedance 2.5 prompt guide for text-to-video and image-to-video": "Guia de prompts do Seedance 2.5 para texto em vídeo e imagem em vídeo",
+    "Use Seedance 2.5 through a unified video API": "Use o Seedance 2.5 por uma API de vídeo unificada",
+    "Use the Seedance 2.5 API at /v1/videos": "Use a API do Seedance 2.5 em /v1/videos",
+    "Other Seedance and AI video generator APIs": "Outras APIs do Seedance e de geração de vídeo com IA",
+    "API, pricing, and release-date questions": "Perguntas sobre a API, preços e data de lançamento",
+  },
+};
+
+// Keep the hero's API jump action translated on every localized model route.
+const modelViewApiCopy: Record<Locale, string> = {
+  en: "View API",
+  zh: "查看 API",
+  es: "Ver API",
+  fr: "Voir l’API",
+  pt: "Ver API",
+  ru: "Открыть API",
+  ja: "APIを見る",
+  vi: "Xem API",
+  de: "API anzeigen",
+  id: "Lihat API",
+};
+
+function seedanceSourceCopy(locale: Locale, key: string): string | undefined {
+  const direct = seedance25DirectTranslations[locale]?.[key];
+  if (direct) return direct;
+  const alias = seedance25SourceAliases[key];
+  if (!alias) return undefined;
+  return seedanceFactCopy[locale]?.[alias] ?? seedanceFactCopy.en?.[alias];
+}
+
 export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Record<string, string> = {}) {
   // Priority pages have a dedicated editorial copy pack.  Resolve those
   // strings only after the established Seedance/shared maps so a priority
   // phrase cannot change legacy pages that happen to reuse a short label
   // such as "Input" or "Context".
-  const priorityTranslations = getPrioritySourceTranslations(locale);
-  let value = seedanceFactCopy[locale]?.[key] ?? seedanceFactCopy.en?.[key] ?? seedanceModelCopy[locale]?.[key] ?? modelDetailUiAdditions[locale]?.[key] ?? modelDetailUiCopy[locale]?.[key] ?? modelDetailPrototypeCopy[locale]?.[key] ?? modelDetailCommonCopy[locale]?.[key] ?? supplementalModelLandingCopy[locale]?.[key] ?? modelComparisonCopy[locale]?.[key] ?? priorityTranslations[key] ?? translations[locale][key] ?? translations.en[key] ?? key;
+  // English is the source language for the editorial overrides.  Resolving
+  // the generated priority map for `en` would translate a hand-written source
+  // heading back into an older generated variant (for example, swapping the
+  // natural H1 order to "API, pricing, and model details").  Non-English
+  // locales still use the coherent priority map below.
+  const priorityTranslations = locale === "en" ? {} : getPrioritySourceTranslations(locale);
+  let value = (key === "View API" ? modelViewApiCopy[locale] : undefined) ?? seedanceFactCopy[locale]?.[key] ?? seedanceFactCopy.en?.[key] ?? seedanceSourceCopy(locale, key) ?? seedanceModelCopy[locale]?.[key] ?? modelDetailUiAdditions[locale]?.[key] ?? modelDetailUiCopy[locale]?.[key] ?? modelDetailPrototypeCopy[locale]?.[key] ?? modelDetailCommonCopy[locale]?.[key] ?? supplementalModelLandingCopy[locale]?.[key] ?? modelComparisonCopy[locale]?.[key] ?? priorityTranslations[key] ?? translations[locale][key] ?? translations.en[key] ?? key;
   for (const [name, replacement] of Object.entries(vars)) {
     value = value.replaceAll(`{{${name}}}`, replacement);
   }

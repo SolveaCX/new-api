@@ -48,6 +48,8 @@ func TestSQLiteMigrateDBCanRunTwiceOnSameDatabase(t *testing.T) {
 	require.True(t, db.Migrator().HasIndex(&StripeBonusClaim{}, "idx_stripe_bonus_claims_card_fingerprint"))
 	require.True(t, db.Migrator().HasTable(&TopUpBonusClaim{}))
 	require.True(t, db.Migrator().HasIndex(&TopUpBonusClaim{}, "idx_topup_bonus_user_tier_seq"))
+	require.True(t, db.Migrator().HasTable(&InviteBenefitBlacklist{}))
+	require.True(t, db.Migrator().HasIndex(&InviteBenefitBlacklist{}, "idx_invite_benefit_blacklists_inviter_id"))
 
 	require.True(t, db.Migrator().HasIndex(&SubscriptionTermSegment{}, "idx_subscription_term_order_segment"))
 	assertSQLiteSubscriptionTermConstraints(t, db)
@@ -69,6 +71,7 @@ func TestMigrationModelDescriptorsIncludeCriticalSQLiteModels(t *testing.T) {
 
 	require.True(t, seen["StripeBonusClaim"])
 	require.True(t, seen["TopUpBonusClaim"])
+	require.True(t, seen["InviteBenefitBlacklist"])
 	require.True(t, seen["SubscriptionOrder"])
 	require.True(t, seen["SubscriptionTermSegment"])
 	require.True(t, seen["WalletLedgerEntry"])

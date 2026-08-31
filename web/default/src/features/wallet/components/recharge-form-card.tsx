@@ -28,7 +28,6 @@ import {
   getRecallPriceDiscount,
   getTopupStripePriceId,
   selectBestRecallOffer,
-  type RecallPriceDiscount,
 } from '../lib/recall-claim'
 import {
   STRIPE_CHECKOUT_CURRENCY_OPTIONS,
@@ -57,20 +56,6 @@ const CURRENCY_SYMBOLS: Record<StripeCheckoutCurrency, string> = {
   INR: '₹',
   BRL: 'R$',
   JPY: '¥',
-}
-
-type Translate = (key: string, options?: Record<string, unknown>) => string
-
-function getRecallDiscountLabel(
-  discount: RecallPriceDiscount,
-  percentOff: number,
-  t: Translate
-): string {
-  if (discount.type === 'percent') return `${percentOff}% OFF`
-  return t('{{amount}} {{currency}} off', {
-    amount: discount.discountAmount.toFixed(2),
-    currency: discount.currency,
-  }).toUpperCase()
 }
 
 function getConfiguredPresetAmounts(
@@ -188,45 +173,53 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
               type='button'
               variant='outline'
               className={cn(
-                'h-auto min-h-12 py-2 text-base font-semibold',
+                'relative h-auto min-h-12 py-2 text-base font-semibold',
                 isSelected &&
                   'border-[#5b21b6] bg-[#f0ebfa] text-[#4c1d95] hover:bg-[#e9e0f8] dark:bg-[#5b21b6]/20 dark:text-[#c4b5fd]'
               )}
               onClick={() => props.onSelectPreset(preset)}
             >
-              <span className='flex flex-col items-center gap-1 leading-tight'>
-                <span className='flex items-baseline justify-center gap-1'>
-                  <span>
-                    {recallDiscount
-                      ? `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountedAmount)}`
-                      : `${checkoutCurrencySymbol}${formatNumber(displayAmount)}`}
+              <span
+                className={cn(
+                  'flex flex-col items-center gap-1 leading-tight',
+                  recallDiscount && 'pt-2'
+                )}
+              >
+                {recallDiscount ? (
+                  <span className='absolute top-1 right-1 inline-flex rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] leading-none font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'>
+                    {t('80% off')}
                   </span>
+                ) : null}
+                <span className='flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5'>
                   {recallDiscount ? (
-                    <span className='text-[10px] font-medium line-through opacity-75'>
+                    <span
+                      data-recharge-original-price={
+                        recallDiscount.originalAmount
+                      }
+                      className='text-muted-foreground text-xs tabular-nums line-through'
+                    >
                       {checkoutCurrencySymbol}
                       {formatNumber(recallDiscount.originalAmount)}
                     </span>
                   ) : null}
+                  <span
+                    data-recharge-final-price={
+                      recallDiscount
+                        ? recallDiscount.discountedAmount
+                        : displayAmount
+                    }
+                  >
+                    {checkoutCurrencySymbol}
+                    {formatNumber(
+                      recallDiscount
+                        ? recallDiscount.discountedAmount
+                        : displayAmount
+                    )}
+                  </span>
                 </span>
-                {recallDiscount ? (
-                  <span className='flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 text-[10px] font-medium text-[#166534] dark:text-[#86efac]'>
-                    <span className='inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 font-semibold text-[#166534] uppercase dark:bg-[#14532d]/40 dark:text-[#86efac]'>
-                      {getRecallDiscountLabel(
-                        recallDiscount,
-                        Number(recallOffer?.discount.percent_off || 0),
-                        t
-                      )}
-                    </span>
-                    <span>
-                      {t('Save {{amount}}', {
-                        amount: `${checkoutCurrencySymbol}${formatNumber(recallDiscount.discountAmount)}`,
-                      })}
-                    </span>
-                    {recallExpiryDate ? (
-                      <span>
-                        {t('Expires {{date}}', { date: recallExpiryDate })}
-                      </span>
-                    ) : null}
+                {recallDiscount && recallExpiryDate ? (
+                  <span className='text-muted-foreground text-[10px] font-medium'>
+                    {t('Expires {{date}}', { date: recallExpiryDate })}
                   </span>
                 ) : null}
               </span>

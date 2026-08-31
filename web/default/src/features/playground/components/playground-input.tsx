@@ -295,6 +295,7 @@ export function PlaygroundInput({
         accept={attachmentConfig.accept}
         className='dark:bg-card rounded-xl bg-white'
         groupClassName='rounded-xl border-border bg-white text-slate-900 shadow-sm has-disabled:!bg-white has-disabled:!opacity-100 dark:bg-card dark:text-foreground dark:has-disabled:!bg-card overflow-hidden'
+        globalDrop
         maxFileSize={10 * 1024 * 1024}
         maxFiles={5}
         multiple

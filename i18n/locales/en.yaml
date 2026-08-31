@@ -144,6 +144,8 @@ quota.user_insufficient: "Insufficient user quota, remaining quota: {{.Quota}}"
 quota.topup_hint: "Add credits at {{.URL}} to keep going."
 quota.pre_consume_failed: "Failed to pre-deduct quota, user remaining quota: {{.Remaining}}, required pre-deduct quota: {{.Required}}"
 quota.subscription_insufficient: "Insufficient subscription quota or no subscription configured: {{.Detail}}"
+quota.subscription_window_5h_exceeded: "Your plan's 5-hour usage window is full. Capacity frees up as older usage ages out (about {{.Minutes}} minutes to the next release). Top up balance to continue without waiting."
+quota.subscription_window_week_exceeded: "Your plan's weekly usage window is full. It resets in about {{.Hours}} hours. Top up balance to continue without waiting."
 quota.token_insufficient: "Token quota is not enough, token remaining quota: {{.Remain}}, required quota: {{.Required}}"
 quota.user_insufficient_need: "User quota is not enough, user quota: {{.Quota}}, required quota: {{.Required}}"
 
@@ -383,3 +385,8 @@ notify.subscription_quota_warning_title: "Your subscription quota is running low
 notify.quota_warning_email: "{{.Warning}}. Your current remaining quota is {{.Quota}}. To avoid service interruption, please top up in time.<br/>Top-up link: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Remaining quota: {{.Quota}}. Please top up in time."
 notify.quota_warning_gotify: "{{.Warning}}. Your current remaining quota is {{.Quota}}. Please top up in time."
+
+# Registration CAPTCHA messages
+registration_captcha.required: "Please complete the graphical verification"
+registration_captcha.invalid: "The graphical verification is invalid or expired. Please try again."
+registration_captcha.unavailable: "Graphical verification is temporarily unavailable. Please try again later."

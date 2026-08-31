@@ -46,6 +46,7 @@ import {
   CurrentPlanCard,
   CurrentPlanRenewalDialogContent,
 } from './current-plan-card'
+import { PlanLimitSummary } from './plan-limit-summary'
 import { PlanPurchaseDialogContent } from './plan-purchase-dialog'
 import { SubscriptionPlansCard } from './subscription-plans-card'
 
@@ -189,6 +190,17 @@ function renderWalletCardWithPlans(
         initialLoading={false}
         userQuota={12345}
       />
+    </I18nextProvider>
+  )
+}
+
+function renderPlanLimitSummary(plan: {
+  window_5h_amount?: number
+  window_week_amount?: number
+}) {
+  return renderToStaticMarkup(
+    <I18nextProvider i18n={testI18n}>
+      <PlanLimitSummary plan={plan} />
     </I18nextProvider>
   )
 }
@@ -401,6 +413,67 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.match(/Most Popular/g)?.length).toBe(1)
   })
 
+  test('renders migrated monthly quota values as strike-through prices for staging plans', () => {
+    const stagingPlans = [
+      {
+        ...plan(21, '[TEST] Go', 10),
+        plan: {
+          ...plan(21, '[TEST] Go', 10).plan,
+          total_amount: 12_500_000,
+          window_5h_amount: 4_000_000,
+          window_week_amount: 6_000_000,
+        },
+      },
+      {
+        ...plan(22, '[TEST] Pro', 30),
+        plan: {
+          ...plan(22, '[TEST] Pro', 30).plan,
+          total_amount: 45_000_000,
+          window_5h_amount: 9_000_000,
+          window_week_amount: 22_500_000,
+        },
+      },
+      {
+        ...plan(23, '[TEST] Max', 100),
+        plan: {
+          ...plan(23, '[TEST] Max', 100).plan,
+          total_amount: 225_000_000,
+          window_5h_amount: 39_000_000,
+          window_week_amount: 110_000_000,
+        },
+      },
+    ]
+    const html = renderWalletCardWithPlans(stagingPlans)
+
+    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$90"')
+    expect(html).toContain('data-subscription-reference-price="$450"')
+    expect(html).not.toContain('data-subscription-reference-price="$45"')
+    expect(html).not.toContain('data-subscription-reference-price="$300"')
+    expect(html).toContain('data-plan-limit-summary="true"')
+    expect(html).toContain('data-plan-limit-label="all-models"')
+    expect(html).toContain('Short-term caps: $8 / 5h · $12 / 7d')
+    expect(html).toContain('Short-term caps: $18 / 5h · $45 / 7d')
+    expect(html).toContain('Short-term caps: $78 / 5h · $220 / 7d')
+    expect(html).not.toContain('5-hour window limit (USD)')
+    expect(html).not.toContain('7-day window limit (USD)')
+    expect(html).toContain('$8')
+    expect(html).toContain('$12')
+    expect(html).toContain('$18')
+    expect(html).toContain('$45')
+    expect(html).toContain('$78')
+    expect(html).toContain('$220')
+  })
+
+  test('renders only the configured window in a compact summary', () => {
+    const html = renderPlanLimitSummary({ window_5h_amount: 4_000_000 })
+
+    expect(html).toContain('data-plan-limit-summary="true"')
+    expect(html).toContain('Short-term cap: $8 / 5h')
+    expect(html).not.toContain('7d')
+    expect(html).not.toContain('5-hour window limit (USD)')
+  })
+
   test('keeps the Pro most-popular badge visible when there is an active plan', () => {
     const html = renderWalletCard(
       normalizeSelfSubscriptionData({
@@ -440,8 +513,21 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('aria-label="Refresh subscription plans"')
   })
 
-  test('renders a read-only current card with correct badges and a linked monthly usage meter only', () => {
-    const html = renderWalletCard(
+  test('renders current monthly and short-window usage meters with short windows side by side', () => {
+    const plansWithConfiguredWindows = plans.map((item) =>
+      item.plan.id === 2
+        ? {
+            ...item,
+            plan: {
+              ...item.plan,
+              window_5h_amount: 9_000_000,
+              window_week_amount: 22_500_000,
+            },
+          }
+        : item
+    )
+    const html = renderWalletCardWithPlans(
+      plansWithConfiguredWindows,
       normalizeSelfSubscriptionData({
         contract: {
           contract_id: 9,
@@ -488,6 +574,20 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
           reset_at: 1,
           unlimited: false,
         },
+        window_5h: {
+          used: 2000,
+          total: 9000,
+          remaining: 7000,
+          reset_at: 1,
+          unlimited: false,
+        },
+        window_7d: {
+          used: 5000,
+          total: 22500,
+          remaining: 17500,
+          reset_at: 1,
+          unlimited: false,
+        },
         media_credits: { used: 3, total: 20, remaining: 17, reset_at: 1 },
       } as SelfSubscriptionDataResponse & {
         media_credits: {
@@ -508,16 +608,28 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Renewal time')
     expect(html).not.toContain('future charge')
     expect(html).toContain('href="/usage-logs"')
-    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(1)
-    expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(1)
-    expect(html).toContain('data-wallet-usage-meter="Monthly model quota"')
+    expect(html.match(/data-wallet-usage-meter=/g)?.length).toBe(3)
+    expect(html.match(/data-wallet-secondary-meter=/g)?.length).toBe(3)
+    const fiveHourLabel = html.indexOf(
+      'data-wallet-usage-meter="5-Hour Window"'
+    )
+    const sevenDayLabel = html.indexOf('data-wallet-usage-meter="7 Days"')
+    const monthlyLabel = html.indexOf(
+      'data-wallet-usage-meter="Monthly model quota"'
+    )
+    expect(fiveHourLabel).toBeGreaterThanOrEqual(0)
+    expect(sevenDayLabel).toBeGreaterThanOrEqual(0)
+    expect(monthlyLabel).toBeGreaterThanOrEqual(0)
+    expect(fiveHourLabel).toBeLessThan(monthlyLabel)
+    expect(sevenDayLabel).toBeLessThan(monthlyLabel)
+    expect(html).not.toContain('window limit (USD)')
+    expect(html).toContain('grid grid-cols-2 gap-3')
     expect(html).not.toContain(
       'data-wallet-usage-meter="Media generation credits"'
     )
-    expect(html).not.toContain('data-wallet-usage-meter="5-hour limit"')
-    expect(html).not.toContain('data-wallet-usage-meter="7-day limit"')
-    expect(html).not.toContain('5-hour limit')
-    expect(html).not.toContain('7-day limit')
+    expect(html).toContain('data-plan-limit-summary="true"')
+    expect(html).toContain('$18')
+    expect(html).toContain('$45')
     expect(html).not.toContain('Media generation credits')
     expect(html).toContain('$0.014 / $0.04 used')
     expect(html).not.toContain('3 / 20 used')
@@ -1208,6 +1320,22 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Monthly model quota:')
   })
 
+  test('shows the campaign badge before a backend checkout quote loads', () => {
+    const campaignPlan = {
+      ...plans[0],
+      plan: {
+        ...plans[0].plan,
+        total_amount: 22_500_000,
+      },
+    }
+    const html = renderWalletCardWithPlans([campaignPlan])
+
+    expect(html).toContain('data-discount-kind="campaign"')
+    expect(html).toContain('data-subscription-discount-label="80% off"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
+    expect(html).toContain('$10')
+  })
+
   test('keeps the model-value reference in USD when quota display uses another currency', async () => {
     const previousCurrency = useSystemConfigStore.getState().config.currency
     useSystemConfigStore.setState((state) => ({
@@ -1229,6 +1357,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         plan: {
           ...localizedPlans[0].plan,
           total_amount: 22_500_000,
+          window_5h_amount: 4_000_000,
+          window_week_amount: 6_000_000,
         },
       }
       const html = renderWalletCardWithPlans([
@@ -1238,6 +1368,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
       expect(html).toContain('data-subscription-reference-price="$45"')
       expect(html).not.toContain('¥315')
+      expect(html).toContain('$8')
+      expect(html).toContain('$12')
+      expect(html).not.toContain('¥56')
+      expect(html).not.toContain('¥84')
       expect(html).toContain('R$')
     } finally {
       await testI18n.changeLanguage('en')
@@ -1340,12 +1474,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('OFF')
-    expect(html).toContain('line-through')
-    expect(html).toContain('data-subscription-discount-original-price="$10"')
-    expect(html).toContain('$10')
+    expect(html).toContain('80% off')
     expect(html).toContain('$5')
-    expect(html).toContain('Save $5')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $5')
   })
 
   test('shows Recall when the backend quote selects it over invitation credit', () => {
@@ -1362,10 +1497,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('OFF')
-    expect(html).toContain('$10')
+    expect(html).toContain('80% off')
     expect(html).toContain('$4')
-    expect(html).toContain('Save $6')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $6')
     expect(html).not.toContain('Save $5')
   })
 
@@ -1382,11 +1520,16 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('Save $2')
-    expect(html).toContain('20% OFF')
+    expect(html).toContain('$8')
+    expect(html).toContain('$10')
+    expect(html).toContain('data-subscription-reference-price="$10"')
+    expect(html).toContain('line-through')
+    expect(html).toContain('80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
+    expect(html).not.toContain('OFF')
+    expect(html).not.toContain('Save $2')
   })
 
   test('formats backend preview amounts in the quote currency', () => {
@@ -1408,6 +1551,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
     expect(html).toContain('100,00')
+    expect(html).toContain('80% off')
   })
 
   test('formats JPY backend preview amounts without a USD fallback', () => {
@@ -1429,6 +1573,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('¥1,000')
     expect(html).toContain('¥2,000')
+    expect(html).toContain('80% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1445,9 +1590,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         })
       )
 
-      expect(html).toContain('$10')
       expect(html).toContain('$4')
-      expect(html).toContain('Save $6')
+      expect(html).toContain('$10')
+      expect(html).toContain('80% off')
+      expect(html).not.toContain('Save $6')
     }
   })
 
@@ -1550,9 +1696,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       brlPlan
     )
 
-    expect(html).toContain(formatBrl(50))
     expect(html).toContain(formatBrl(40))
-    expect(html).toContain(`Save ${formatBrl(10)}`)
+    expect(html).toContain(formatBrl(50))
+    expect(html).toContain('80% off')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')
     expect(html).not.toContain('$40')
     expect(html).not.toContain('Save $10')

@@ -348,11 +348,24 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgRegistrationCountryBlocked)
 		return
 	}
-	var user model.User
-	err := json.NewDecoder(c.Request.Body).Decode(&user)
+	var request struct {
+		model.User
+		Invite string `json:"invite"`
+	}
+	err := common.DecodeJson(c.Request.Body, &request)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
+	}
+	user := request.User
+	var customerInvite service.CustomerInvite
+	if strings.TrimSpace(request.Invite) != "" {
+		customerInvite, err = service.DecodeCustomerInvite(request.Invite)
+		if err != nil {
+			// Do not expose invite contents or decryption details to clients.
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
 	}
 	// Honeypot: bots auto-fill the hidden "website" field. Instead of blocking
 	// the request (which would teach the bot about the trap), let the
@@ -409,9 +422,12 @@ func Register(c *gin.Context) {
 		DisplayName:         user.Username,
 		InviterId:           inviterId,
 		Role:                common.RoleCommonUser, // 明确设置角色为普通用户
+		Status:              common.UserStatusEnabled,
 		RegistrationCountry: registrationCountry,
 		AdsAttribution:      sanitizeAdsAttribution(user.AdsAttribution),
 		EmailVerifiedAt:     user.EmailVerifiedAt,
+		CustomerReferralInviteCode:     customerInvite.Code,
+		CustomerReferralSourcePlatform: customerInvite.Platform,
 	}
 	// Honeypot accounts: the registration completes (so the bot sees success),
 	// but the account is created already disabled and can never be used. The

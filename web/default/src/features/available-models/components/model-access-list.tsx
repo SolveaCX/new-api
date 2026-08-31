@@ -59,6 +59,10 @@ import {
   getModelEndpointLabel,
   normalizeModelAvailabilityStatus,
 } from '../lib/model-access-browser'
+import {
+  getModelPromotionLabel,
+  getModelPromotions,
+} from '../lib/model-promotions'
 import type { ModelAccessModel } from '../types'
 
 type ModelAccessListProps = {
@@ -173,6 +177,7 @@ export function ModelAccessList({
           {visibleModels.map((model) => {
             const officiallyUnsupported =
               model.availability_status === 'official_unsupported'
+            const promotions = getModelPromotions(model.id)
             const availabilityConfig =
               availability[
                 normalizeModelAvailabilityStatus(model.availability_status)
@@ -231,7 +236,16 @@ export function ModelAccessList({
                 </ItemMedia>
                 <ItemContent className='min-w-0'>
                   <ItemTitle className='max-w-full font-mono'>
-                    <span className='truncate'>{model.id}</span>
+                    <span className='truncate' title={model.id}>{model.id}</span>
+                    {promotions.map((promotion) => (
+                      <Badge key={promotion} variant='outline' className={cn(
+                        'border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm',
+                        promotion === 'free' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                        promotion === 'limited' && 'border-amber-200 bg-amber-50 text-amber-700',
+                        promotion === 'hot' && 'border-rose-200 bg-rose-50 text-rose-700',
+                        promotion === 'new' && 'border-sky-200 bg-sky-50 text-sky-700'
+                      )}>{getModelPromotionLabel(promotion, t)}</Badge>
+                    ))}
                   </ItemTitle>
                   <ItemDescription>
                     {model.vendor?.name ?? t('Unknown')}

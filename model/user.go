@@ -107,6 +107,11 @@ type User struct {
 	// (card issuing country). Analytics-only: the most reliable geography signal
 	// for paid users. Persisted at webhook fulfillment.
 	PayCountry string `json:"pay_country" gorm:"type:varchar(8);default:'';column:pay_country"`
+	// Customer referral invite data is supplied only during registration and is
+	// persisted into the referral outbox transaction. It must never reach the
+	// users table or API responses.
+	CustomerReferralInviteCode     string `json:"-" gorm:"-"`
+	CustomerReferralSourcePlatform string `json:"-" gorm:"-"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

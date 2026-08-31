@@ -17,7 +17,7 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
-    expect(html).toContain(">Learn more →<");
+    expect(html).toContain(">Learn more<");
     expect(html).toContain('aria-label="Dismiss website banner"');
     expect(html).toContain(`href="${DEFAULT_PROMO_BANNER_HREF}"`);
     expect(html.indexOf(DEFAULT_PROMO_BANNER_CONTENT.en)).toBeLessThan(
@@ -41,7 +41,7 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain("Black Friday credits are live.");
-    expect(html).toContain(">Learn more →<");
+    expect(html).toContain(">Learn more<");
     expect(html).toContain('href="https://console.example.com/sign-up"');
     expect(html).toContain('src="data:image/png;base64,iVBORw0KGgo="');
     expect(html).not.toContain(DEFAULT_PROMO_BANNER_CONTENT.en);
@@ -67,7 +67,7 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain("加入活动领取额度。");
-    expect(html).toContain(">了解更多 →<");
+    expect(html).toContain(">了解更多<");
     expect(html).toContain('aria-label="关闭官网横幅"');
     expect(html).toContain('href="/zh/campaigns/summer"');
   });
@@ -91,7 +91,7 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).toContain("Join the campaign for free credit.");
-    expect(html).toContain(">詳細を見る →<");
+    expect(html).toContain(">詳細を見る<");
     expect(html).not.toContain("加入活动领取额度。");
   });
 
@@ -112,24 +112,21 @@ describe("SiteHeader promo banner", () => {
 
     expect(html).toContain("Scheduled maintenance this Sunday.");
     expect(html).toContain('aria-label="Dismiss website banner"');
-    expect(html).not.toContain(">Learn more →<");
+    expect(html).not.toContain(">Learn more<");
   });
 
-  test("renders the CTA as a solid pill on the brand gradient, not an inline link", () => {
+  test("renders the CTA as an underlined link on the lavender banner", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider docsUrl={null}>
         <SiteHeader locale="en" pathname="/" />
       </SiteConfigProvider>,
     );
 
-    // Deep-purple gradient band with white copy, kept to a single slim row.
-    expect(html).toContain("linear-gradient(90deg,#4c1d95_0%,#5b21b6_45%,#7c3aed_100%)");
-    expect(html).toContain("font-semibold");
+    // Light lavender band with centered, single-row copy.
+    expect(html).toContain("bg-[#EEE5FF]");
+    expect(html).toContain("border-[#D4C1FF]");
     expect(html).not.toContain("flex-wrap");
-    // The CTA is a filled white pill, not the old underlined text link.
-    expect(html).toContain("rounded-full bg-white");
-    expect(html).toContain("text-[#4c1d95]");
-    expect(html).not.toContain("underline decoration-[#AAA7B0]");
+    expect(html).toContain("underline decoration-[#6B6870]");
   });
 
   test("anchors the mobile menu below the header instead of a hardcoded offset", () => {
@@ -156,22 +153,15 @@ describe("SiteHeader promo banner", () => {
     }
   });
 
-  test("collapses the CTA to an arrow on mobile so the message keeps its width", () => {
+  test("keeps the announcement copy compact across viewport sizes", () => {
     const html = renderToStaticMarkup(
       <SiteConfigProvider docsUrl={null}>
         <SiteHeader locale="en" pathname="/" />
       </SiteConfigProvider>,
     );
 
-    // Circular arrow under 700px, labelled pill from 700px up.
-    expect(html).toContain("size-[26px]");
-    expect(html).toContain("min-[700px]:w-auto");
-    expect(html).toContain("lucide-arrow-right size-3.5 min-[700px]:hidden");
-    expect(html).toContain('class="hidden min-[700px]:inline"');
-    // Message wraps on mobile rather than being cut off, truncates on desktop.
-    expect(html).toContain("min-[700px]:truncate");
-    // Room reserved on the right so the CTA never collides with the dismiss button.
-    expect(html).toContain("pr-14");
+    expect(html).toContain("min-h-[60px]");
+    expect(html).toContain("text-[14px]");
   });
 
   test("hides the promo banner when it is disabled by site settings", () => {
@@ -232,8 +222,10 @@ describe("SiteHeader promo banner", () => {
     expect(html).toContain("Seedance 2.5 is available");
     expect(html).toContain("Video models");
     expect(html).toContain('href="/models/seedance-2-5"');
-    expect(html).toContain('aria-label="Previous advertisement"');
-    expect(html).toContain('aria-label="Next advertisement"');
+    expect(html).toContain('role="tablist"');
+    expect(html).toMatch(/role="tab"/g);
+    expect(html.match(/role="tab"/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Show announcement 1"');
     expect(html.indexOf("Product")).toBeLessThan(
       html.indexOf("Seedance 2.5 is available"),
     );
@@ -247,6 +239,6 @@ describe("SiteHeader promo banner", () => {
     );
 
     expect(html).not.toContain("DeepSeek V4 is here");
-    expect(html).not.toContain("Next advertisement");
+    expect(html).not.toContain("Show announcement");
   });
 });

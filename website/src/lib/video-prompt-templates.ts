@@ -27,6 +27,91 @@ const UI_ASSET = "/assets/prompts/awesome-images/saas-hero-phone.png";
 const LANDSCAPE_ASSET = "/assets/model-showcase/coastal-landmark.png";
 const CDN_VIDEO_BASE = "https://cdn.shulex-voc.com/flatkey/model-media/sample";
 const cdnVideo = (slug: string) => `${CDN_VIDEO_BASE}/${slug}.mp4`;
+const PROFESSION_VIDEO_BASE = "https://cdn.shulex-voc.com/flatkey/model-showcase";
+const professionVideo = (profession: number, filename: string) =>
+  `${PROFESSION_VIDEO_BASE}/video-profession-${String(profession).padStart(2, "0")}/${filename}`;
+
+/**
+ * Asset binding contract: these reviewed CDN clips are the canonical media for
+ * their model page. `getVideoPromptTemplates` is consumed by both the model
+ * Playground preview and the prompt library, so neither surface may replace
+ * these URLs with a generic/local sample. Local posters are allowed only as an
+ * explicit load-error fallback and must never be emitted as the primary asset.
+ */
+const VIDEO_PROFESSION_SETS: Record<string, readonly string[]> = {
+  "seedance-2-5": [
+    professionVideo(1, "video-profession-01-manga-seedance-2-5.mp4"),
+    professionVideo(2, "video-profession-02-seedance-2-5-tvc-kettle.mp4"),
+    professionVideo(3, "video-profession-03-seedance-2-5-sci-fi-set-extension.mp4"),
+    professionVideo(4, "video-profession-04-seedance-2-5-open-world-trailer.mp4"),
+    professionVideo(5, "video-profession-05-seedance-2-5-space-science-explainer.mp4"),
+    professionVideo(6, "video-profession-06-seedance-2-5-stage-projection.mp4"),
+  ],
+  "seedance-2-0": [
+    professionVideo(1, "video-profession-01-manga-seedance-2-0.mp4"),
+    professionVideo(2, "video-profession-02-seedance-2-0-tvc-bottle.mp4"),
+    professionVideo(3, "video-profession-03-seedance-2-0-observatory-previs.mp4"),
+    professionVideo(4, "video-profession-04-seedance-2-0-game-cinematic-hangar.mp4"),
+    professionVideo(5, "video-profession-05-seedance-2-0-history-explainer.mp4"),
+    professionVideo(6, "video-profession-06-seedance-2-0-studio-session.mp4"),
+  ],
+  "seedance-2-0-pro": [
+    professionVideo(1, "video-profession-01-seedance-2-0-pro-manga.mp4"),
+    professionVideo(2, "video-profession-02-seedance-2-0-pro-motion-comic-lamp.mp4"),
+    professionVideo(3, "video-profession-03-seedance-2-0-pro-storyboard-animatic.mp4"),
+    professionVideo(4, "video-profession-04-seedance-2-0-pro-character-pipeline.mp4"),
+    professionVideo(5, "video-profession-05-seedance-2-0-pro-comic-history.mp4"),
+    professionVideo(6, "video-profession-06-seedance-2-0-pro-motion-comic-mv.mp4"),
+  ],
+  "seedance-2-0-fast": [
+    professionVideo(1, "video-profession-01-seedance-2-0-fast-live-action.mp4"),
+    professionVideo(2, "video-profession-02-seedance-2-0-fast-ugc-lunchbox.mp4"),
+    professionVideo(3, "video-profession-03-seedance-2-0-fast-stunt-previs.mp4"),
+    professionVideo(4, "video-profession-04-seedance-2-0-fast-combat-trailer.mp4"),
+    professionVideo(5, "video-profession-05-seedance-2-0-fast-creator-desk.mp4"),
+    professionVideo(6, "video-profession-06-seedance-2-0-fast-beat-making.mp4"),
+  ],
+  "seedance-2-0-mini": [
+    professionVideo(1, "video-profession-01-seedance-2-0-mini-manga.mp4"),
+    professionVideo(2, "video-profession-02-seedance-2-0-mini-paper-organizer.mp4"),
+    professionVideo(3, "video-profession-03-seedance-2-0-mini-animatic-blocking.mp4"),
+    professionVideo(4, "video-profession-04-seedance-2-0-mini-game-loop.mp4"),
+    professionVideo(5, "video-profession-05-seedance-2-0-mini-paper-science.mp4"),
+    professionVideo(6, "video-profession-06-seedance-2-0-mini-paper-visualizer.mp4"),
+  ],
+  "grok-imagine-video": [
+    professionVideo(1, "video-profession-01-grok-imagine-video.mp4"),
+    professionVideo(2, "video-profession-02-grok-imagine-video.mp4"),
+    professionVideo(3, "video-profession-03-grok-imagine-video-location-scout.mp4"),
+    professionVideo(4, "video-profession-04-grok-imagine-video-character-turntable.mp4"),
+    professionVideo(5, "video-profession-05-grok-imagine-video-studio-explainer.mp4"),
+    professionVideo(6, "video-profession-06-grok-imagine-video-light-installation.mp4"),
+  ],
+  "grok-imagine-video-1-5": [
+    professionVideo(1, "video-profession-01-grok-imagine-video-1-5.mp4"),
+    professionVideo(2, "video-profession-02-grok-imagine-video-1-5.mp4"),
+    professionVideo(3, "video-profession-03-grok-imagine-video-1-5-comic-previs.mp4"),
+    professionVideo(4, "video-profession-04-grok-imagine-video-1-5-comic-game-skill.mp4"),
+    professionVideo(5, "video-profession-05-grok-imagine-video-1-5-comic-timeline.mp4"),
+    professionVideo(6, "video-profession-06-grok-imagine-video-1-5-comic-mv.mp4"),
+  ],
+  "veo-3-1-generate-preview": [
+    professionVideo(1, "video-profession-01-live-veo-3-1-generate-preview.mp4"),
+    professionVideo(2, "video-profession-02-veo-3-1-generate-preview.mp4"),
+    professionVideo(3, "video-profession-03-veo-3-1-generate-preview-cg-reveal.mp4"),
+    professionVideo(4, "video-profession-04-veo-3-1-generate-preview-creature-vfx.mp4"),
+    professionVideo(5, "video-profession-05-veo-3-1-generate-preview-archive-revival.mp4"),
+    professionVideo(6, "video-profession-06-veo-3-1-generate-preview-stage-vfx.mp4"),
+  ],
+  "veo-3-1-fast-generate-preview": [
+    professionVideo(1, "video-profession-01-veo-3-1-fast-generate-preview.mp4"),
+    professionVideo(2, "video-profession-02-veo-3-1-fast-generate-preview.mp4"),
+    professionVideo(3, "video-profession-03-veo-3-1-fast-generate-preview-anime-previz.mp4"),
+    professionVideo(4, "video-profession-04-veo-3-1-fast-generate-preview-anime-boss.mp4"),
+    professionVideo(5, "video-profession-05-veo-3-1-fast-generate-preview-anime-physics.mp4"),
+    professionVideo(6, "video-profession-06-veo-3-1-fast-generate-preview-anime-beat.mp4"),
+  ],
+};
 
 const PRODUCT_VIDEO = "/assets/model-examples/product-macro.mp4";
 const FOOD_VIDEO = "/assets/model-examples/food-motion.mp4";
@@ -313,7 +398,7 @@ export function getVideoPromptTemplates(modelId: string): readonly VideoPromptTe
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   const posters = getVideoPromptTemplateFallbackPosters(modelId);
-  const videos = VIDEO_MODEL_VIDEO_SETS[slug];
+  const videos = VIDEO_PROFESSION_SETS[slug] ?? VIDEO_MODEL_VIDEO_SETS[slug];
   const note = VIDEO_MODEL_PROMPT_NOTES[slug];
   if (posters.length !== VIDEO_PROMPT_TEMPLATES.length || videos?.length !== VIDEO_PROMPT_TEMPLATES.length || !note) return [];
   return VIDEO_PROMPT_TEMPLATES.map((template, index) => ({

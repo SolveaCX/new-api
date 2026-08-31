@@ -164,6 +164,8 @@ const (
 	MsgQuotaWarningInvalid            = "quota.warning_invalid"
 	MsgQuotaThresholdGtZero           = "quota.threshold_gt_zero"
 	MsgQuotaInviterRewardLimitInvalid = "quota.inviter_reward_limit_invalid"
+	MsgQuotaSubscriptionWindow5h      = "quota.subscription_window_5h_exceeded"
+	MsgQuotaSubscriptionWindowWeek    = "quota.subscription_window_week_exceeded"
 )
 
 // Log related messages
@@ -439,4 +441,11 @@ const (
 	MsgCustomOAuthHasBindings       = "custom_oauth.has_bindings"
 	MsgCustomOAuthBindingNotFound   = "custom_oauth.binding_not_found"
 	MsgCustomOAuthProviderIdInvalid = "custom_oauth.provider_id_field_invalid"
+)
+
+// Registration CAPTCHA messages
+const (
+	MsgRegistrationCaptchaRequired    = "registration_captcha.required"
+	MsgRegistrationCaptchaInvalid     = "registration_captcha.invalid"
+	MsgRegistrationCaptchaUnavailable = "registration_captcha.unavailable"
 )

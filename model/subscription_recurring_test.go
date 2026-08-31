@@ -79,6 +79,7 @@ func migrateSubscriptionRecurringTestDB(t *testing.T) {
 		&SubscriptionProviderBinding{},
 		&PaymentWebhookEvent{},
 		&InviteSubscriptionReward{},
+		&InviteBenefitBlacklist{},
 		&SubscriptionDiscountAccount{},
 		&SubscriptionDiscountEntry{},
 		&RecallLifecycleEvent{},

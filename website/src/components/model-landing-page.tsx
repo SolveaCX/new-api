@@ -47,13 +47,25 @@ import { SiteShell } from "@/components/site-shell";
 import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
+  getImagePlaygroundExample,
+  getImagePromptTemplateFallbackPosters,
+  getImagePromptTemplates,
+  type ImagePlaygroundExample,
+} from "@/lib/image-prompt-templates";
+import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
+import {
   modelLandingCopy,
+  getModelVideoModeLabel,
+  getModelVideoModeUiCopy,
   getLocalizedModelLandingConfig,
   getModelLandingConfigs,
   normalizeModelId,
   type ModelConfig,
   type ModelGeneratorField,
+  type ModelGeneratorProtocol,
   type ModelLandingKey,
+  type ModelVideoMode,
+  type ModelVideoModeOption,
 } from "@/lib/model-landing";
 import { consoleUrl } from "@/lib/origins";
 import {
@@ -69,12 +81,6 @@ import {
   type GroupModelRatio,
   type PricingModel,
 } from "@/lib/pricing";
-import {
-  getImagePlaygroundExample,
-  getImagePromptTemplateFallbackPosters,
-  getImagePromptTemplates,
-  type ImagePlaygroundExample,
-} from "@/lib/image-prompt-templates";
 import type { RankedModel, RankingsData } from "@/lib/rankings-live";
 import { buildModelSchema, stringifyJsonLd } from "@/lib/schema";
 
@@ -99,6 +105,8 @@ type MediaExample = {
   poster: string;
   video?: string;
 };
+
+const isProfessionVideo = (video?: string) => Boolean(video?.includes("/model-showcase/video-profession-"));
 
 type ReferenceImageDraft = {
   id: string;
@@ -171,6 +179,9 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
   );
   const [referenceImages, setReferenceImages] = useState<ReferenceImageDraft[]>([]);
   const [mediaUploadCounts, setMediaUploadCounts] = useState<MediaUploadCounts>({ image: 0, video: 0, audio: 0 });
+  const onMediaUploadCountChange = useCallback((kind: MediaUploadKind, count: number) => {
+    setMediaUploadCounts((current) => (current[kind] === count ? current : { ...current, [kind]: count }));
+  }, []);
   const generator = config.generator;
   const mediaKind = generator?.kind ?? "text";
   const t = useCallback(
@@ -225,7 +236,7 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
       onFieldChange={(name, value) => setFieldValues((current) => ({ ...current, [name]: value }))}
       onReferenceImagesChange={setReferenceImages}
       mediaUploadCounts={mediaUploadCounts}
-      onMediaUploadCountChange={(kind, count) => setMediaUploadCounts((current) => ({ ...current, [kind]: count }))}
+      onMediaUploadCountChange={onMediaUploadCountChange}
       onRunClick={onRunClick}
       primaryLiveModel={primaryLiveModel}
       liveModels={liveModels}
@@ -234,7 +245,7 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
       groupModelRatio={groupModelRatio}
       rankings={rankings}
       initialHealth={initialHealth}
-      playgroundExample={imagePlaygroundExample}
+      imagePlaygroundExample={imagePlaygroundExample}
       t={t}
     />
   );
@@ -259,7 +270,7 @@ function FlatkeyModelDetailPage(props: {
   groupModelRatio: GroupModelRatio;
   rankings: RankingsData | null;
   initialHealth?: HomeModelHealth;
-  playgroundExample?: ImagePlaygroundExample;
+  imagePlaygroundExample?: ImagePlaygroundExample;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const runHref = buildRunHref(props.config, props.locale, props.prompt, {
@@ -275,10 +286,11 @@ function FlatkeyModelDetailPage(props: {
   const relatedModels = buildCatalogRelatedModels(props.config, props.locale, props.allModels, props.t);
   const priceRows = buildFlatkeyPriceRows(props.config, model, effectiveGroupRatio, props.t);
   const configuredGenerator = props.config.generator;
+  const isAudioModel = configuredGenerator?.kind === "audio";
   // Audio model pages expose API and pricing details only. They do not have a
   // public prompt playground, so keep the configured kind for page metadata
   // while disabling the shared workbench/navigation entry below.
-  const generator = configuredGenerator?.kind === "audio" ? undefined : configuredGenerator;
+  const generator = isAudioModel ? undefined : configuredGenerator;
   const mediaKind = configuredGenerator?.kind ?? "text";
   const mediaReferenceCount = configuredGenerator?.kind === "video"
     ? Object.values(props.mediaUploadCounts).reduce((total, count) => total + count, 0)
@@ -356,7 +368,7 @@ function FlatkeyModelDetailPage(props: {
   const successRate = summary?.success_rate ?? trendSuccess;
   const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
   const heroPrice = priceRows.rows[0]?.flatkey ?? (model ? "—" : `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`);
-  const heroTags = buildHeroTags(props.config, props.t);
+  const heroTags = buildHeroTags(props.config, model, props.t);
   const referencePrice = priceRows.rows.find((row) => row.official)?.official ?? props.config.officialPrice;
   const landingContent = props.config.landingContent;
   const heroContent = landingContent?.hero;
@@ -380,6 +392,9 @@ function FlatkeyModelDetailPage(props: {
     .replaceAll("/ request", props.t("/ request"));
   const localizedHeroFlatkeyPrice = localizeHeroPrice(heroFlatkeyPrice);
   const localizedHeroReferencePrice = localizeHeroPrice(heroReferencePrice);
+  const isSeedanceCatalogFormula = props.config.slug === "seedance-2.5";
+  const isImageCatalogFallback = props.config.slug === "gpt-image-2" && !model;
+  const isMiniMaxCatalogFallback = props.config.slug === "minimax-h3" && !model;
   const inputPriceRow = priceRows.rows.find((row) => row.label === props.t("Input /M"));
   const outputPriceRow = priceRows.rows.find((row) => row.label === props.t("Output /M"));
   const showsTokenPriceBreakdown = Boolean(inputPriceRow && outputPriceRow);
@@ -418,6 +433,9 @@ function FlatkeyModelDetailPage(props: {
                 >
                   {props.t(heroContent?.actionLabel ?? "Get API Key")}
                 </a>
+                <a href="#api" className="model-view-api">
+                  {props.t("View API")}
+                </a>
               </div>
             </div>
 
@@ -442,7 +460,7 @@ function FlatkeyModelDetailPage(props: {
                       imageSize={28}
                     />
                   )}
-                  <h1>{props.t(heroContent?.title ?? "{{provider}}: {{model}}", { provider: providerName, model: props.config.displayName })}</h1>
+                  <h1>{props.config.displayName}</h1>
                 </div>
                 <div className="model-id-line">
                   <Link href={localizePath(`/models/${props.config.slug}`, props.locale)}>{props.config.modelId}</Link>
@@ -455,12 +473,13 @@ function FlatkeyModelDetailPage(props: {
                   </button>
                 </div>
                 <p className="model-hero-copy">{heroContent?.description ? props.t(heroContent.description) : modelDescription}</p>
-                <div className="model-hero-capabilities">
-                  <p className="model-eyebrow">{props.t("Capabilities")}</p>
-                  <div className="model-hero-tags">
-                    {heroTags.map((tag) => <span className="model-tag" key={tag}>{tag}</span>)}
+                {heroTags.length > 0 ? (
+                  <div className="model-hero-capabilities">
+                    <div className="model-hero-tags">
+                      {heroTags.map((tag) => <span className="model-tag" key={tag}>{tag}</span>)}
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               <div className="model-hero-stats">
@@ -485,12 +504,26 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">{heroProvider}</div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{props.config.slug === "seedance-2.5" ? props.t("480p · no video reference") : props.t("Flatkey price")}</div>
-                      <div className="model-stat-value">{localizedHeroFlatkeyPrice}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? (priceRows.rows[0]?.label ?? props.t("Catalog formula")) : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
+                      <div className="model-stat-value">
+                        {isSeedanceCatalogFormula
+                          ? (priceRows.rows[0]?.flatkey ?? localizedHeroFlatkeyPrice)
+                          : isImageCatalogFallback
+                            ? "$4.00–$24.00 / 1M catalog units"
+                            : localizedHeroFlatkeyPrice}
+                      </div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{props.t("Reference price")}</div>
-                      <div className="model-stat-value">{localizedHeroReferencePrice}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? (priceRows.rows[1]?.label ?? props.t("Catalog formula")) : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
+                      <div className="model-stat-value">
+                        {isSeedanceCatalogFormula
+                          ? (priceRows.rows[1]?.flatkey ?? localizedHeroReferencePrice)
+                          : isImageCatalogFallback
+                            ? "OpenAI table varies by modality/batch"
+                            : isMiniMaxCatalogFallback
+                              ? "$0.08 / sec 768P · $0.13 / sec 2K"
+                              : localizedHeroReferencePrice}
+                      </div>
                     </div>
                   </>
                 )}
@@ -513,6 +546,7 @@ function FlatkeyModelDetailPage(props: {
                   <MediaPromptEditor
                     generator={generator}
                     modelId={props.config.modelId}
+                    locale={props.locale}
                     prompt={props.prompt}
                     fieldValues={props.fieldValues}
                     referenceImages={props.referenceImages}
@@ -531,12 +565,13 @@ function FlatkeyModelDetailPage(props: {
                   <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
                   <OutputPreview
                     modelName={props.config.displayName}
+                    modelId={props.config.modelId}
                     prompt={props.prompt}
                     kind={generator.kind}
+                    protocol={generator.protocol}
                     endpoint={generator.endpoint}
                     fieldValues={props.fieldValues}
                     referenceCount={mediaReferenceCount}
-                    playgroundExample={props.playgroundExample}
                     t={props.t}
                   />
                   <div className="model-output-actions">
@@ -634,13 +669,15 @@ function FlatkeyModelDetailPage(props: {
 
         {landingContent?.pricing ? (
           <ModelPricingSection
+            config={props.config}
             content={landingContent.pricing}
             liveRows={priceRows.rows}
             liveNote={priceRows.note}
+            allowPlayground={Boolean(generator)}
             t={props.t}
           />
         ) : props.config.slug === "seedance-2.5" ? (
-          <SeedancePricingSection rows={priceRows.rows} note={priceRows.note} t={props.t} />
+          <SeedancePricingSection config={props.config} rows={priceRows.rows} note={priceRows.note} t={props.t} />
         ) : null}
 
         <ModelCapabilitiesSection config={props.config} t={props.t} />
@@ -656,15 +693,15 @@ function FlatkeyModelDetailPage(props: {
           />
         ) : null}
 
-        <ModelWhySection config={props.config} t={props.t} />
+        <ModelWhySection config={props.config} allowPlayground={Boolean(generator)} t={props.t} />
 
-        <ModelApiSection config={props.config} locale={props.locale} t={props.t} />
+        <ModelApiSection config={props.config} allowPlayground={Boolean(generator)} locale={props.locale} t={props.t} />
 
         <section id="related" className="model-section related">
           <div className="model-container">
             <FlatkeySectionHeading
               eyebrow={props.t(landingContent?.related?.eyebrow ?? "Related models")}
-              title={relatedModels.title}
+              title={landingContent?.related?.title ? props.t(landingContent.related.title) : relatedModels.title}
               description={landingContent?.related?.description
                 ? props.t(landingContent.related.description)
                 : landingContent?.related
@@ -712,11 +749,12 @@ function FlatkeyModelDetailPage(props: {
             <div className="faq-intro">
               <FlatkeySectionHeading
                 eyebrow={props.t("FAQ")}
-                title={props.t(landingContent?.faqTitle ? "Seedance-2.5 API–frequently asked questions" : "Frequently asked questions")}
+                title={props.t(landingContent?.faqTitle ? landingContent.faqTitle.beforeBreak : "Frequently asked questions")}
                 titleNode={landingContent?.faqTitle ? (
                   <>
                     {props.t(landingContent.faqTitle.beforeBreak)}
                     <br />
+                    {" "}
                     {props.t(landingContent.faqTitle.afterBreak)}
                   </>
                 ) : undefined}
@@ -830,6 +868,7 @@ function MediaModelLanding(props: {
                 <MediaPromptEditor
                   generator={generator}
                   modelId={props.config.modelId}
+                  locale={props.locale}
                   prompt={props.prompt}
                   fieldValues={props.fieldValues}
                   referenceImages={props.referenceImages}
@@ -855,8 +894,10 @@ function MediaModelLanding(props: {
                 <PanelHeader title={props.t("Output")} right={props.t("Preview")} />
                 <OutputPreview
                   modelName={props.config.displayName}
+                  modelId={props.config.modelId}
                   prompt={props.prompt}
                   kind={generator.kind}
+                  protocol={generator.protocol}
                   endpoint={generator.endpoint}
                   fieldValues={props.fieldValues}
                   referenceCount={props.referenceImages.length}
@@ -1342,6 +1383,7 @@ function ModelLandingBreadcrumb(props: {
 function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
+  locale: Locale;
   prompt: string;
   fieldValues: Record<string, string | number | boolean>;
   referenceImages: ReferenceImageDraft[];
@@ -1355,10 +1397,10 @@ function MediaPromptEditor(props: {
     if (props.generator.kind !== "video") return props.generator.fields;
 
     // Keep the controls in the same reading order as the approved prototype:
-    // ratio, resolution, duration, then audio.  Generator configs are shared
+    // ratio, resolution/size, duration, then audio. Generator configs are shared
     // with the request builder and historically put resolution first, so sort
     // only the presentation list instead of changing request semantics.
-    const prototypeOrder = ["ratio", "resolution", "duration", "generate_audio"];
+    const prototypeOrder = ["ratio", "resolution", "size", "duration", "generate_audio"];
     return [...props.generator.fields].sort((left, right) => {
       const leftIndex = prototypeOrder.indexOf(left.name);
       const rightIndex = prototypeOrder.indexOf(right.name);
@@ -1367,7 +1409,7 @@ function MediaPromptEditor(props: {
   }, [props.generator.kind, props.generator.fields]);
   const fieldRows = useMemo(() => {
     if (props.generator.kind !== "video") return [fields];
-    const leading = fields.filter((field) => field.name === "ratio" || field.name === "resolution");
+    const leading = fields.filter((field) => field.name === "ratio" || field.name === "resolution" || field.name === "size");
     const secondary = fields.filter((field) => field.name === "duration" || field.name === "generate_audio");
     const rest = fields.filter((field) => !leading.includes(field) && !secondary.includes(field));
     const rows: ModelGeneratorField[][] = [];
@@ -1379,12 +1421,17 @@ function MediaPromptEditor(props: {
   const quickPrompts = props.generator.kind === "video"
     ? ["Product Reveal", "UGC Ad", "Cinematic Scene", "Social Clip"]
     : ["Product Photo", "Anime Portrait", "Realistic Human", "YouTube Thumbnail", "Fantasy Landscape"];
-  const supportsReferenceImages = props.generator.kind === "image";
+  const videoModeOptions = props.generator.kind === "video" ? (props.generator.videoModes ?? []) : [];
+  const selectedVideoMode = videoModeOptions.find((option) => option.value === props.fieldValues.video_mode)?.value
+    ?? videoModeOptions.find((option) => option.value === props.generator.defaultVideoMode)?.value
+    ?? videoModeOptions.find((option) => option.supported)?.value;
+  const referenceImageLimit = props.generator.referenceLimits?.image ?? (props.generator.kind === "image" ? 4 : 0);
+  const supportsReferenceImages = props.generator.kind === "image" && referenceImageLimit > 0;
 
   const onReferenceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? []);
     if (files.length === 0) return;
-    const remainingSlots = Math.max(0, 4 - props.referenceImages.length);
+    const remainingSlots = Math.max(0, referenceImageLimit - props.referenceImages.length);
     const nextImages = files.slice(0, remainingSlots).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
@@ -1403,45 +1450,27 @@ function MediaPromptEditor(props: {
 
   return (
     <div className="input-fields">
+      {selectedVideoMode && videoModeOptions.length > 0 ? (
+        <VideoModeSelector
+          locale={props.locale}
+          options={videoModeOptions}
+          value={selectedVideoMode}
+          onChange={(value) => props.onFieldChange("video_mode", value)}
+        />
+      ) : null}
       <label className="field prompt-field block text-sm font-semibold text-[#2c2d33] dark:text-white/88">
         <span className="field-label">
           <span>{props.t("Prompt")}</span>
-          <span className="counter">{props.prompt.length} / 10000</span>
         </span>
-        <textarea
-          value={props.prompt}
-          onChange={(event) => props.onPromptChange(event.target.value)}
-          className="mt-2 h-[100px] min-h-[100px] w-full resize-y rounded-[1.1rem] border border-[#ded8ea] bg-[#fcfbff] p-4 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-[0_10px_28px_-26px_rgba(76,29,149,.72)] outline-none transition focus:border-[#7c3aed] focus:bg-white focus:ring-4 focus:ring-[#7c3aed]/10"
-        />
+        <span className="prompt-control">
+          <textarea
+            value={props.prompt}
+            onChange={(event) => props.onPromptChange(event.target.value)}
+            className="mt-2 h-[100px] min-h-[100px] w-full resize-y rounded-[1.1rem] border border-[#ded8ea] bg-[#fcfbff] p-4 font-mono text-sm leading-6 font-medium text-[#20222a] shadow-[0_10px_28px_-26px_rgba(76,29,149,.72)] outline-none transition focus:border-[#7c3aed] focus:bg-white focus:ring-4 focus:ring-[#7c3aed]/10"
+          />
+          <span className="counter" aria-live="polite">{props.prompt.length} / 10000</span>
+        </span>
       </label>
-      {props.generator.kind === "video" ? (
-        <>
-          <MediaUploadField
-            label={props.t("Reference image")}
-            accept="image/*"
-            kind="image"
-            maxFiles={30}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
-          <MediaUploadField
-            label={props.t("Reference videos")}
-            accept="video/*"
-            kind="video"
-            maxFiles={10}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
-          <MediaUploadField
-            label={props.t("Reference Audios")}
-            accept="audio/*"
-            kind="audio"
-            maxFiles={10}
-            onCountChange={props.onMediaUploadCountChange}
-            t={props.t}
-          />
-        </>
-      ) : null}
       <div className="quick-prompts mt-5">
         <div className="mb-3 text-sm font-semibold text-[#2c2d33] dark:text-white/88">{props.t("Quick Prompts")}</div>
         <div className="flex flex-wrap gap-2.5">
@@ -1457,11 +1486,31 @@ function MediaPromptEditor(props: {
           ))}
         </div>
       </div>
+      {props.generator.kind === "video" ? (
+        <div className="input-reference-fields mt-6">
+          {([
+            ["image", props.t("Reference image"), "image/*"],
+            ["video", props.t("Reference videos"), "video/*"],
+            ["audio", props.t("Reference Audios"), "audio/*"],
+          ] as const).map(([kind, label, accept]) => {
+            const maxFiles = props.generator.referenceLimits?.[kind] ?? 0;
+            if (maxFiles <= 0) return null;
+            return (
+              <MediaUploadField
+                key={kind}
+                label={label}
+                accept={accept}
+                kind={kind}
+                maxFiles={maxFiles}
+                onCountChange={props.onMediaUploadCountChange}
+                t={props.t}
+              />
+            );
+          })}
+        </div>
+      ) : null}
       <div className="advanced-options mt-6">
         <div className="rounded-[1.35rem] border border-[#e2dbea] bg-[linear-gradient(180deg,#ffffff_0%,#fbf9ff_100%)] p-4 shadow-[0_18px_38px_-32px_rgba(76,29,149,.55)] sm:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="text-sm font-extrabold text-[#2c2d33]">{props.t("Advanced Options")}</div>
-          </div>
           {fieldRows.map((row, rowIndex) => (
             <div className="field-grid grid grid-cols-1 gap-3.5 sm:grid-cols-6" key={"field-row-" + rowIndex}>
               {row.map((field) => (
@@ -1515,6 +1564,52 @@ function MediaPromptEditor(props: {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function VideoModeSelector(props: {
+  locale: Locale;
+  options: readonly ModelVideoModeOption[];
+  value: ModelVideoMode;
+  onChange: (value: ModelVideoMode) => void;
+}) {
+  const copy = getModelVideoModeUiCopy(props.locale);
+  const selectedOption = props.options.find((option) => option.value === props.value) ?? props.options[0];
+
+  if (!selectedOption) return null;
+
+  return (
+    <label
+      data-video-mode-selector
+      data-video-mode-value={selectedOption.value}
+      className="grid w-full min-w-0 gap-1.5 text-[11px] leading-5 font-extrabold tracking-normal text-[#77717f] uppercase"
+    >
+      <span>{copy.label}</span>
+      <select
+        value={selectedOption.value}
+        aria-describedby="seedance-video-mode-help"
+        data-video-mode-options
+        onChange={(event) => {
+          const nextMode = props.options.find((option) => option.value === event.currentTarget.value);
+          if (nextMode?.supported) props.onChange(nextMode.value);
+        }}
+        data-video-mode-control
+        className="h-9 w-full min-w-0 appearance-none rounded-lg border border-[#ded8ea] bg-white px-3.5 pr-9 text-sm font-bold tracking-normal text-[#20222a] shadow-[0_10px_22px_-20px_rgba(76,29,149,.5)] outline-none transition focus:border-[#7c3aed] focus:ring-4 focus:ring-[#7c3aed]/10"
+      >
+        {props.options.map((option) => {
+          const label = getModelVideoModeLabel(props.locale, option.value);
+          return (
+            <option
+              key={option.value}
+              disabled={!option.supported}
+              data-video-mode={option.value}
+              data-video-mode-supported={option.supported}
+            >{option.supported ? label : `${label} — ${copy.unavailable}`}</option>
+          );
+        })}
+      </select>
+      <span id="seedance-video-mode-help" className="sr-only">{copy.helper}</span>
+    </label>
   );
 }
 
@@ -1653,9 +1748,10 @@ function MediaUploadField(props: {
                     {props.kind === "video" ? (
                       <video src={upload.previewUrl} muted loop autoPlay playsInline />
                     ) : props.kind === "image" ? (
-                      // Blob URLs are client-local preview sources. A native
-                      // image element renders them immediately without going
-                      // through Next's remote image loader.
+                      // Blob URLs are client-local preview sources, not remote
+                      // image assets. Use a native image element here so the
+                      // preview renders immediately after the file input
+                      // changes, without going through Next's image loader.
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={upload.previewUrl} alt="" className="object-cover" />
                     ) : (
@@ -1880,34 +1976,63 @@ function parsePrice(value: string) {
 
 function OutputPreview(props: {
   modelName: string;
+  modelId: string;
   prompt: string;
   kind: "image" | "video" | "audio";
+  protocol?: ModelGeneratorProtocol;
   endpoint: string;
   fieldValues: Record<string, string | number | boolean>;
   referenceCount: number;
-  playgroundExample?: ImagePlaygroundExample;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const endpoint = props.endpoint;
-  const videoExample = props.kind === "video" ? MEDIA_EXAMPLES.video[0] : undefined;
+  const protocol = props.protocol ?? (props.kind === "image" ? "openai-image" : props.kind === "video" ? "seedance-video" : "audio");
+  const videoExample = props.kind === "video"
+    ? getVideoPromptTemplates(props.modelId)[0] ?? MEDIA_EXAMPLES.video[0]
+    : undefined;
+  const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
   const rows = props.kind === "video"
     ? [
         [props.t("Endpoint"), `POST ${endpoint}`],
         [props.t("Model ID"), props.modelName],
-        [props.t("Aspect ratio"), String(field("ratio", "adaptive"))],
-        [props.t("Resolution"), String(field("resolution", "720p"))],
-        [props.t("Duration"), `${field("duration", 5)}s`],
-        [props.t("Generate audio"), field("generate_audio", true) ? props.t("On") : props.t("Off")],
+        ...(protocol === "grok-video"
+          ? []
+          : protocol === "veo-video"
+            ? [[props.t("Size"), String(field("size", "1280x720"))]]
+            : [
+                [props.t("Aspect ratio"), String(field("ratio", "adaptive"))],
+                [props.t("Resolution"), String(field("resolution", "720p"))],
+              ]),
+        [props.t("Duration"), `${field("duration", protocol === "veo-video" ? "8" : 5)}s`],
+        ...(protocol === "seedance-video"
+          ? [[props.t("Generate audio"), field("generate_audio", true) ? props.t("On") : props.t("Off")]]
+          : []),
         [props.t("Reference media"), props.referenceCount > 0 ? `${props.referenceCount}` : props.t("None")],
       ]
     : props.kind === "image"
       ? [
           [props.t("Endpoint"), `POST ${endpoint}`],
           [props.t("Model ID"), props.modelName],
-          [props.t("Size"), String(field("size", "1024x1024"))],
-          [props.t("Quality"), String(field("quality", "standard"))],
-          [props.t("Outputs"), String(field("n", 1))],
+          ...(protocol === "gemini-image"
+            ? [
+                [props.t("Aspect ratio"), String(field("aspect_ratio", "1:1"))],
+                ...(props.fieldValues.image_size ? [[props.t("Size"), String(field("image_size", "1K"))]] : []),
+              ]
+            : protocol === "openai-image" && props.fieldValues.resolution
+              ? [
+                  [props.t("Resolution"), String(field("resolution", "1k"))],
+                  [props.t("Quality"), String(field("quality", "medium"))],
+                  [props.t("Aspect ratio"), String(field("aspect_ratio", "auto"))],
+                ]
+              : [
+                  [props.t("Size"), String(field("size", "1024x1024"))],
+                  [props.t("Quality"), String(field("quality", "standard"))],
+                ]),
+          ...(protocol === "openai-image" && props.fieldValues.resolution
+            ? [[props.t("Output format"), String(field("response_format", "url"))]]
+            : []),
+          ...(protocol === "gemini-image" ? [] : [[props.t("Outputs"), String(field("n", 1))]]),
         ]
       : [
           [props.t("Endpoint"), `POST ${endpoint}`],
@@ -1918,30 +2043,25 @@ function OutputPreview(props: {
         ];
   return (
     <div className="output-preview">
-      <div
-        className={`video-preview ${props.kind === "image" ? "image-preview" : ""}`}
-        data-playground-industry={props.playgroundExample?.industry}
-        data-playground-poster={props.playgroundExample?.poster}
-      >
+      <div className={`video-preview ${props.kind === "image" ? "image-preview" : ""}`}>
         {videoExample?.video ? (
           <video
             className="preview-media"
             src={videoExample.video}
-            poster={videoExample.poster}
+            poster={isProfessionVideo(videoExample.video) ? undefined : videoExample.poster}
             autoPlay
             muted
             loop
             playsInline
             aria-label={props.t("Video preview")}
           />
-        ) : props.kind === "image" && props.playgroundExample ? (
+        ) : imageExample ? (
           <Image
-            src={props.playgroundExample.poster}
+            src={imageExample.poster}
             alt={props.t("Image preview")}
             fill
-            sizes="(min-width: 1280px) 40vw, (min-width: 1024px) 45vw, 100vw"
-            className="preview-media object-contain"
-            style={{ objectFit: "contain" }}
+            sizes="(min-width: 1024px) 40vw, 100vw"
+            className="preview-media object-cover"
           />
         ) : (
           <span className="preview-label">
@@ -2202,21 +2322,57 @@ function relatedModelKindLabel(
   return t("Text");
 }
 
+/**
+ * Keep the compact hero tags useful without presenting a generic
+ * "Capabilities" heading.  For live catalog models, only show modality and
+ * control tags that are backed by directory metadata, endpoint names, or the
+ * configured generator fields.  Dedicated editorial pages can therefore
+ * expose their documented reference/audio controls while generic pages do not
+ * inherit the same three video labels indiscriminately.
+ */
 function buildHeroTags(
   config: ModelConfig,
+  model: PricingModel | null,
   t: (key: string, vars?: Record<string, string>) => string
 ) {
-  if (config.generator?.kind === "video") {
-    return [t("Image to Video"), t("Reference-guided Video"), t("Short-form Video")];
+  const generator = config.generator;
+  const fields = new Set((generator?.fields ?? []).map((field) => field.name.toLowerCase()));
+  const endpoints = (model?.supported_endpoint_types ?? []).map((endpoint) => normalizeModelId(endpoint));
+  const modalities = new Set((model?.directory_metadata?.modalities ?? []).map((modality) => modality.toLowerCase()));
+  const modelName = normalizeModelId(model?.model_name ?? config.modelId);
+  const hasEndpoint = (...needles: string[]) => needles.some((needle) => endpoints.some((endpoint) => endpoint.includes(needle)));
+  const hasField = (...needles: string[]) => needles.some((needle) => Array.from(fields).some((field) => field.includes(needle)));
+  const translateUnique = (keys: string[]) => Array.from(new Set(keys)).map((key) => t(key));
+
+  if (generator?.kind === "video") {
+    const tags: string[] = [];
+    const knownReferenceModel = /seedance|minimax|kling|sora|veo/.test(modelName);
+    if (modalities.has("image") || hasField("image", "reference") || knownReferenceModel) tags.push("Image to Video");
+    if (modalities.has("video") || modalities.has("audio") || hasField("reference", "frame") || knownReferenceModel) {
+      tags.push("Reference-guided Video");
+    }
+    if (hasField("audio") || modalities.has("audio")) tags.push("Audio generation");
+    if (hasField("duration")) tags.push("Short-form Video");
+    if (tags.length === 0 || (tags.length === 1 && !modalities.has("image"))) tags.unshift("Video generation");
+    return translateUnique(tags);
   }
-  if (config.generator?.kind === "image") {
-    return [t("Text to Image"), t("Reference-guided Image"), t("Image Editing")];
+  if (generator?.kind === "image") {
+    const tags = ["Text to Image"];
+    if (modalities.has("image") || hasField("reference", "image", "input")) tags.push("Reference-guided Image");
+    if (hasEndpoint("image-generation") || hasField("edit", "mask", "background")) tags.push("Image Editing");
+    return translateUnique(tags);
   }
-  if (config.generator?.kind === "audio") {
-    const isVideoToAudio = config.generator.endpoint.includes("video-to-music");
-    return [t(isVideoToAudio ? "Video to Audio" : "Text to Audio"), t(isVideoToAudio ? "Speech preservation" : "Speech synthesis"), t("Audio generation")];
+  if (generator?.kind === "audio") {
+    const isVideoToAudio = generator.endpoint.includes("video-to-music") || hasEndpoint("video-to-music");
+    return translateUnique(isVideoToAudio
+      ? ["Video to Audio", "Speech preservation", "Audio generation"]
+      : ["Text to Audio", "Speech synthesis", "Audio generation"]);
   }
-  return [t("Chat and coding"), t("Long context"), t("Tool workflows")];
+
+  const tags = ["Chat and coding"];
+  if ((model?.directory_metadata?.context_tokens ?? 0) > 0 || /context|long/.test(modelName)) tags.push("Long context");
+  if (hasEndpoint("response", "chat", "completion", "message") || modalities.has("text")) tags.push("Tool workflows");
+  return translateUnique(tags);
 }
 
 function FlatkeySectionHeading(props: { eyebrow?: string; title: string; titleNode?: ReactNode; description?: string }) {
@@ -2269,6 +2425,19 @@ function ModelSectionNav(props: {
     return items.some((item) => item.href === hash) ? hash : defaultHref;
   });
   useEffect(() => {
+    const updateHeaderOffset = () => {
+      const header = document.querySelector<HTMLElement>(".fk-site-header");
+      if (!header) return;
+      const height = Math.max(0, Math.round(header.getBoundingClientRect().height));
+      document.documentElement.style.setProperty("--model-site-header-height", `${height}px`);
+    };
+    const header = document.querySelector<HTMLElement>(".fk-site-header");
+    const headerResizeObserver = header && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(updateHeaderOffset)
+      : null;
+    if (headerResizeObserver && header) headerResizeObserver.observe(header);
+    updateHeaderOffset();
+
     const syncActiveDom = (href: string) => {
       document.querySelectorAll<HTMLAnchorElement>(".model-anchor-link").forEach((link) => {
         const active = link.getAttribute("href") === href;
@@ -2278,26 +2447,40 @@ function ModelSectionNav(props: {
       });
     };
     const updateActiveSection = () => {
-      const marker = window.scrollY + (window.matchMedia("(max-width: 900px)").matches ? 180 : 166);
+      const isCompact = window.matchMedia("(max-width: 900px)").matches;
+      const fallbackHeaderHeight = isCompact ? 132 : 126;
+      const siteHeaderHeight = document.querySelector<HTMLElement>(".fk-site-header")?.getBoundingClientRect().height ?? fallbackHeaderHeight;
+      const marker = window.scrollY + siteHeaderHeight + 48;
       const sections = items
         .map((item) => {
           const element = document.querySelector<HTMLElement>(item.href);
           if (!element) return null;
-          return { href: item.href, top: element.getBoundingClientRect().top + window.scrollY };
+          const rect = element.getBoundingClientRect();
+          return {
+            href: item.href,
+            top: rect.top + window.scrollY,
+            bottom: rect.bottom + window.scrollY,
+          };
         })
-        .filter((section): section is { href: string; top: number } => section !== null)
+        .filter((section): section is { href: string; top: number; bottom: number } => section !== null)
         .sort((left, right) => left.top - right.top);
       let nextHref = sections[0]?.href ?? items[0]?.href ?? "";
       const hash = window.location.hash;
       const hashedSection = sections.find((section) => section.href === hash);
-      // Keep a deep link/click target selected while its section is near the
-      // sticky rail. This also avoids SSR hydration briefly falling back to
-      // Playground before the browser finishes restoring an anchor position.
-      if (hashedSection && Math.abs(hashedSection.top - marker) < 220) {
+      // A hash is a navigation hint, not a permanent active-tab override. It
+      // should win while its target is entering or sitting near the sticky
+      // rail, but the visible section must take over again after the user
+      // scrolls back to the top. This prevents a stale #api hash from leaving
+      // API selected while the hero/workbench is on screen.
+      const hashIsNearMarker = hashedSection
+        ? hashedSection.top <= marker + 360 && hashedSection.bottom >= marker - 360
+        : false;
+      if (hashedSection && hashIsNearMarker) {
         nextHref = hashedSection.href;
-      }
-      for (const section of sections) {
-        if (section.top <= marker) nextHref = section.href;
+      } else {
+        for (const section of sections) {
+          if (section.top <= marker) nextHref = section.href;
+        }
       }
       setActiveHref((current) => (current === nextHref ? current : nextHref));
       syncActiveDom(nextHref);
@@ -2307,26 +2490,22 @@ function ModelSectionNav(props: {
     window.addEventListener("scroll", updateActiveSection, { passive: true });
     document.addEventListener("scroll", updateActiveSection, { passive: true, capture: true });
     window.addEventListener("resize", updateActiveSection);
-    const updateHash = () => {
-      const hash = window.location.hash;
-      if (items.some((item) => item.href === hash)) {
-        setActiveHref(hash);
-        syncActiveDom(hash);
-      }
-    };
+    window.addEventListener("resize", updateHeaderOffset);
+    const updateHash = () => updateActiveSection();
     window.addEventListener("hashchange", updateHash);
     // Hash navigation can complete after the first effect pass (especially
-    // when the page is restored from a deep link). Re-apply the hash before
-    // the scroll marker runs so the rail never falls back to Playground.
+    // when the page is restored from a deep link). Recalculate from the
+    // target's actual position instead of forcing the hash tab unconditionally.
     updateHash();
-    window.setTimeout(updateHash, 0);
     const activeSectionTimer = window.setInterval(updateActiveSection, 250);
     return () => {
       window.removeEventListener("scroll", updateActiveSection);
       document.removeEventListener("scroll", updateActiveSection, { capture: true });
       window.removeEventListener("resize", updateActiveSection);
+      window.removeEventListener("resize", updateHeaderOffset);
       window.removeEventListener("hashchange", updateHash);
       window.clearInterval(activeSectionTimer);
+      headerResizeObserver?.disconnect();
     };
   }, [items]);
 
@@ -2432,7 +2611,9 @@ function ModelCapabilitiesSection(props: {
     <section id="capabilities" className="model-section capabilities">
       <div className="model-container">
         <FlatkeySectionHeading
-          eyebrow={props.t(props.config.landingContent?.capabilitiesEyebrow ?? "Capabilities")}
+          // The model-specific H2 carries the search phrase; do not render a
+          // generic “Capabilities” eyebrow above it.
+          eyebrow={undefined}
           title={props.t(props.config.landingContent?.capabilitiesTitle ?? (isSeedance25 ? "What seedance-2.5 can do" : "Core capabilities and practical engineering value"))}
           description={props.t(props.config.landingContent?.capabilitiesDescription ?? (isSeedance25
             ? "Its capabilities, and what changed from Seedance 2.0 — so you can tell whether it is worth switching."
@@ -2499,7 +2680,13 @@ function ModelComparisonSection(props: {
       <div className="model-container">
         <div className="comparison-block">
           <FlatkeySectionHeading
-            eyebrow={props.t(content.eyebrow)}
+            // This block renders a side-by-side table. Keep its semantic
+            // label as Compare even when older model configs called the
+            // eyebrow “Features”, “Capabilities”, or “Hosted API facts”.
+            // The model-specific title and rows carry the verified fields;
+            // the shared label should never suggest that a generic feature
+            // card is a comparison.
+            eyebrow={props.t("Compare")}
             title={props.t(content.title)}
             description={props.t(content.description)}
           />
@@ -2556,7 +2743,7 @@ function buildPreviousGenerationComparison(
         : "Chat and coding";
   const context = config.generator ? "Reference media" : "Long context";
   return {
-    eyebrow: "Capabilities",
+    eyebrow: "Compare",
     title: "What changed from the previous generation, so you can tell whether it is worth switching.",
     description: "Compare the current model with the previous generation before you migrate.",
     baselineLabel: previous,
@@ -2573,11 +2760,19 @@ function buildPreviousGenerationComparison(
 
 function ModelWhySection(props: {
   config: ModelConfig;
+  allowPlayground?: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const custom = props.config.landingContent?.why;
-  const cards = custom
-    ? custom.cards.map((card) => ({ ...card, Icon: ModelWhyIcon }))
+  const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
+  const configuredCustom = props.config.landingContent?.why;
+  const custom = configuredCustom && (allowPlayground || !/playground/i.test(JSON.stringify(configuredCustom)))
+    ? configuredCustom
+    : undefined;
+  const customCards = custom?.cards.filter((card) =>
+    allowPlayground || !/playground/i.test(`${card.title} ${card.body}`)
+  );
+  const cards = customCards && customCards.length > 0
+    ? customCards.map((card) => ({ ...card, Icon: ModelWhyIcon }))
     : (props.config.generator?.kind === "image" || props.config.generator?.kind === "video"
     ? [
         { title: "Lower generation pricing", body: "Route media workloads through Flatkey and keep prompt tests cheaper before scaling.", Icon: Zap },
@@ -2629,12 +2824,96 @@ type PromptLibraryItem = {
   alt?: string;
 };
 
+/**
+ * Local fallbacks stay paired with the workflow that owns the card. Do not
+ * rotate these by card index: the six profession sets have different orders
+ * on image and video pages, and index-based fallbacks make a food card show a
+ * shoe or a game card show an unrelated map when a remote object fails.
+ */
+const PROMPT_POSTER_FALLBACKS: Record<string, string> = {
+  // Image profession directions.
+  "product-hero": "/assets/prompts/awesome-images/saas-hero-phone.png",
+  "social-ad": "/assets/prompts/awesome-images/sports-shoe.png",
+  "catalog-variant": "/assets/prompts/awesome-images/ecommerce-skincare.png",
+  "editorial-portrait": "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png",
+  "product-ui": "/assets/prompts/awesome-images/liquid-bento.png",
+  "food-editorial": "/assets/cli/campaign-hero.png",
+  // Video workflow templates.
+  "product-launch": "/assets/model-examples/product-macro.png",
+  "food-beverage-loop": "/assets/model-examples/food-motion.png",
+  "hospitality-walkthrough": "/assets/model-examples/image2/flatkey-image2-hotel.png",
+  "mobility-launch": "/assets/model-examples/seedance-f1-wet-track.png",
+  "saas-product-demo": "/assets/prompts/awesome-images/saas-hero-phone.png",
+  "architecture-reveal": "/assets/model-showcase/coastal-landmark.png",
+};
+
+function getPromptPosterFallback(item: PromptLibraryItem): string {
+  return PROMPT_POSTER_FALLBACKS[item.key] ?? (item.example.poster || "/assets/prompts/awesome-images/playground-starter-product.png");
+}
+
+/**
+ * Load a prompt-library clip when it is close to the viewport. The first card
+ * is eager, while the remaining cards start the exact CDN asset as soon as
+ * they become visible. This keeps the page responsive without substituting an
+ * older poster for a reviewed generated clip.
+ */
+function PromptLibraryVideo(props: {
+  src: string;
+  poster?: string;
+  priority: boolean;
+  className: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVisible, setIsVisible] = useState(props.priority);
+
+  useEffect(() => {
+    if (props.priority || isVisible) return;
+    const video = videoRef.current;
+    if (!video || typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [isVisible, props.priority]);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    const playPromise = videoRef.current?.play();
+    playPromise?.catch(() => undefined);
+  }, [isVisible]);
+
+  return (
+    <video
+      ref={videoRef}
+      className={props.className}
+      src={props.src}
+      poster={props.poster}
+      muted
+      loop
+      autoPlay={isVisible}
+      playsInline
+      preload={isVisible ? "auto" : "none"}
+    />
+  );
+}
+
 function PromptLibrarySection(props: {
   config: ModelConfig;
   examples: readonly MediaExample[];
   onPromptChange: (prompt: string) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
+  const [failedPosters, setFailedPosters] = useState<Record<string, boolean>>({});
   const kind = props.config.generator?.kind;
   if (kind !== "image" && kind !== "video") return null;
   const items = buildPromptLibraryItems(props.config, props.examples, props.t);
@@ -2649,28 +2928,55 @@ function PromptLibrarySection(props: {
             title={props.t(props.config.landingContent?.promptLibraryTitle ?? "Explore what {{model}} can create", { model: props.config.displayName })}
             description={props.t(props.config.landingContent?.promptLibraryDescription ?? "Prompt testing and request handoff.")}
           />
-          {!isPrototypeContent ? (
-            <a href="#workbench" className="prompt-library-link">
-              {props.t("Open in Playground")} <span aria-hidden>↗</span>
-            </a>
-          ) : null}
         </div>
         <div className="prompt-grid">
-          {items.map((item) => (
+          {items.map((item, index) => {
+            const isPriorityMedia = index === 0;
+            // Generated profession clips are the canonical asset for video
+            // cards. Do not paint an older local poster behind them while the
+            // CDN clip is loading; the same clip is also used by the
+            // playground preview below.
+            const usesGeneratedVideo = isProfessionVideo(item.example.video);
+            const posterFallback = usesGeneratedVideo ? "" : getPromptPosterFallback(item);
+            const posterSource = failedPosters[item.example.poster]
+              ? posterFallback
+              : item.example.poster;
+            return (
             <article key={item.key} className="prompt-card">
-              <div className="prompt-media">
+              <div
+                className="prompt-media"
+                style={{
+                  ...(posterFallback ? { backgroundImage: `url("${posterFallback}")` } : {}),
+                  backgroundPosition: "center",
+                  backgroundSize: "cover",
+                }}
+              >
                 {item.example.video ? (
-                  <video
+                  <PromptLibraryVideo
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
-                    poster={item.example.poster}
-                    muted
-                    loop
-                    autoPlay
-                    playsInline
+                    poster={item.example.poster || undefined}
+                    priority={isPriorityMedia}
                   />
                 ) : (
-                  <Image src={item.example.poster} alt={item.alt ?? item.label} fill sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="prompt-image object-contain" />
+                  <Image
+                    src={posterSource}
+                    alt={item.alt ?? item.label}
+                    fill
+                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                    className="prompt-image object-cover"
+                    priority={isPriorityMedia}
+                    // Prompt posters are the primary content of this section.
+                    // Eager loading prevents visible cards from remaining as
+                    // empty placeholders when the browser's lazy threshold
+                    // does not account for the tall prompt-card layout.
+                    loading="eager"
+                    onError={() => setFailedPosters((current) => ({ ...current, [item.example.poster]: true }))}
+                    // The reviewed prompt posters live on the public CDN. Bypass
+                    // Next's server-side optimizer so a slow/large remote object
+                    // cannot leave the card stuck on a broken image placeholder.
+                    unoptimized
+                  />
                 )}
                 <div className="prompt-badge">{item.label}</div>
               </div>
@@ -2697,7 +3003,8 @@ function PromptLibrarySection(props: {
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -2712,33 +3019,64 @@ function buildPromptLibraryItems(
   if (config.generator?.kind === "image") {
     const templates = getImagePromptTemplates(config.modelId);
     const posters = getImagePromptTemplateFallbackPosters(config.modelId);
-    return templates.map((template, index) => ({
-      key: template.id,
-      label: t(template.label),
-      prompt: template.prompt,
-      alt: t(template.label),
-      example: { poster: posters[index] ?? template.poster },
-    }));
+    if (templates.length > 0) {
+      return templates.slice(0, 6).map((template, index) => ({
+        key: template.id,
+        label: t(template.label),
+        prompt: template.prompt,
+        alt: t(template.label),
+        example: { poster: posters[index] ?? template.poster },
+      }));
+    }
   }
+
+  if (config.generator?.kind === "video") {
+    const templates = getVideoPromptTemplates(config.modelId);
+    if (templates.length > 0) {
+      return templates.slice(0, 6).map((template) => ({
+        key: template.id,
+        label: t(template.label),
+        prompt: template.prompt,
+        alt: t(template.label),
+        // Keep the reviewed workflow poster visible while the generated
+        // profession clip loads. If the CDN video is unavailable, this exact
+        // product/food/hospitality/etc. reference remains in the card instead
+        // of falling through to an unrelated generic image.
+        example: {
+          // Keep the generated CDN clip as the primary asset. Do not attach an
+          // older local poster to a profession clip; this preserves the same
+          // source binding in both the card and the Playground preview.
+          poster: isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster),
+          video: template.video,
+        },
+      }));
+    }
+  }
+
   const configured = config.landingContent?.promptLibrary;
+  const labels = config.generator?.kind === "video"
+    ? ["UGC ad clips", "Product motion", "Social video variants"]
+    : ["Product mockups", "Ad creatives", "Ecommerce images"];
+  const fallbackItems = labels.flatMap((label) => [0, 1].map((copyIndex) => ({
+    key: `${label}-${copyIndex}`,
+    label: t(label),
+    prompt: `${t(label)} — ${config.examplePrompt}`,
+    example: examples[(copyIndex + labels.indexOf(label)) % Math.max(1, examples.length)] ?? { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
+  })));
+
   if (configured && configured.length > 0) {
-    return configured.map((item) => ({
+    const configuredItems = configured.slice(0, 6).map((item) => ({
       key: item.key,
       label: t(item.label),
       prompt: item.prompt,
       alt: t(item.alt),
       example: { poster: item.poster, video: item.video },
     }));
+    const configuredKeys = new Set(configuredItems.map((item) => item.key));
+    const supplementalItems = fallbackItems.filter((item) => !configuredKeys.has(item.key));
+    return [...configuredItems, ...supplementalItems].slice(0, 6);
   }
-  const labels = config.generator?.kind === "video"
-    ? ["UGC ad clips", "Product motion", "Social video variants"]
-    : ["Product mockups", "Ad creatives", "Ecommerce images"];
-  return labels.flatMap((label) => [0, 1].map((copyIndex) => ({
-    key: `${label}-${copyIndex}`,
-    label: t(label),
-    prompt: `${t(label)} — ${config.examplePrompt}`,
-    example: examples[(copyIndex + labels.indexOf(label)) % Math.max(1, examples.length)] ?? { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
-  })));
+  return fallbackItems.slice(0, 6);
 }
 
 const MODEL_USAGE_SAMPLE_POINTS = [0.26, 0.42, 0.33, 0.48, 0.38, 0.52, 0.31, 0.35, 0.59, 0.44, 0.72, 0.49, 0.66, 0.38, 0.55, 0.45, 0.72, 0.53, 0.81, 0.47, 0.62, 0.43, 0.68, 0.54, 0.77, 0.52, 0.69, 0.48, 0.74, 0.59, 0.78, 0.57, 0.68, 0.51, 0.75, 0.6];
@@ -2886,21 +3224,55 @@ function ModelActivitySection(props: {
 }
 
 function SeedancePricingSection(props: {
+  config: ModelConfig;
   rows: FlatkeyPriceTableRow[];
   note: string;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const videoReferenceLabel = props.t("Video reference input");
+  const displayRows = props.rows.map((row, index) => ({
+    ...row,
+    // Keep the commercial card easy to scan. The exact request formula stays
+    // visible, while resolution names remain available in the generator form
+    // instead of dominating the pricing headline.
+    label: index === 2 ? videoReferenceLabel : props.t("Request price"),
+  }));
+  const featured = displayRows[0];
+  const duration = props.config.generator?.fields.find((field) => field.name === "duration");
+  const productFacts = [
+    { label: "Provider", value: props.config.officialName },
+    { label: "API", value: props.config.generator?.endpoint ?? "/v1/videos" },
+    { label: "Duration", value: duration ? `${duration.min ?? ""}–${duration.max ?? ""}s` : "4–30s" },
+    { label: "Billing basis", value: props.t("Output duration") },
+  ];
   return (
     <section id="pricing" className="model-section model-pricing">
       <div className="model-container">
         <div className="pricing-block">
           <FlatkeySectionHeading
             eyebrow={props.t("Pricing")}
-            title={props.t("Seedance 2.5 pricing: 480p, 720p, and video references")}
-            description={props.t("The catalog base is $0.14; the request formula depends on output resolution, duration, and video-reference input.")}
+            title={`${props.config.displayName} API ${props.t("Pricing")}`}
+            description={props.note}
           />
-          <div className="pricing-card">
+          <div className="pricing-conversion-grid">
+            <article className="pricing-feature-card">
+              <div className="pricing-feature-head">
+                <div>
+                  <span className="pricing-kicker">{props.t("Flatkey price")}</span>
+                  <h3>{props.t("Request price")}</h3>
+                </div>
+                <span className="pricing-live-badge">{props.t("Live catalog model")}</span>
+              </div>
+              <div className="pricing-feature-value">{featured?.flatkey ?? "—"}</div>
+              <p>{props.t("Output duration")}</p>
+              <PricingFeatureExamples
+                rows={displayRows.slice(0, 3).map((row) => ({ label: row.label, value: row.flatkey }))}
+              />
+              <a href="#workbench" className="pricing-feature-action">{props.t("Try a prompt")} <span aria-hidden="true">↗</span></a>
+            </article>
+            <PricingWalletCard facts={productFacts} t={props.t} />
+          </div>
+          <div className="pricing-card pricing-breakdown-card">
             <table>
               <caption className="sr-only">{props.t("Seedance 2.5 request pricing formulas")}</caption>
               <thead>
@@ -2911,21 +3283,80 @@ function SeedancePricingSection(props: {
                 </tr>
               </thead>
               <tbody>
-                {props.rows.map((row) => (
-                  <tr key={row.label}>
+                {displayRows.map((row, index) => (
+                  <tr key={`${row.label}-${row.flatkey}`}>
                     <td>{row.label}</td>
                     <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
-                    <td>{row.label === videoReferenceLabel ? props.t("Total input-video seconds") : props.t("Output duration")}</td>
+                    <td>{index === 2 ? props.t("Total input-video seconds") : props.t("Output duration")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="pricing-note">{props.note}</p>
             <p className="pricing-note">{props.t("The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.")}</p>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function PricingFeatureExamples(props: { rows: Array<{ label: string; value: string }> }) {
+  if (props.rows.length === 0) return null;
+  return (
+    <div className="pricing-example-list">
+      {props.rows.map((row) => (
+        <div className="pricing-example-row" key={`${row.label}-${row.value}`}>
+          <span>{row.label}</span>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PricingWalletCard(props: {
+  facts: Array<{ label: string; value: string }>;
+  t: (key: string, vars?: Record<string, string>) => string;
+}) {
+  const walletHref = consoleUrl("/wallet");
+  const creditOptions = [10, 20, 50];
+  return (
+    <div className="pricing-facts-card pricing-wallet-card">
+      <div className="pricing-facts-head">
+        <div>
+          <span className="pricing-kicker">{props.t("Shared balance")}</span>
+          <h3>{props.t("Add credits")}</h3>
+        </div>
+        <a className="pricing-wallet-action" href={walletHref}>
+          {props.t("Add credits")} <span aria-hidden="true">↗</span>
+        </a>
+      </div>
+      <p className="pricing-wallet-copy">
+        {props.t("Use the same Flatkey balance and API key across image, video, audio, and text models.")}
+      </p>
+      <div className="pricing-topup-options" aria-label={props.t("Add credits")}>
+        {creditOptions.map((amount) => (
+          <a
+            aria-label={`${props.t("Add credits")}: $${amount}`}
+            className="pricing-topup-option"
+            href={walletHref}
+            key={amount}
+          >
+            <strong>${amount}</strong>
+            <span>{props.t("Open wallet")}</span>
+          </a>
+        ))}
+      </div>
+      <div className="pricing-wallet-facts-label">{props.t("Model catalog")}</div>
+      <dl className="pricing-facts-list">
+        {props.facts.map((fact) => (
+          <div key={`${fact.label}-${fact.value}`}>
+            <dt>{props.t(fact.label)}</dt>
+            <dd>{props.t(fact.value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -2936,12 +3367,26 @@ function SeedancePricingSection(props: {
  * the compact comparison card cannot infer safely.
  */
 function ModelPricingSection(props: {
+  config: ModelConfig;
   content: NonNullable<NonNullable<ModelConfig["landingContent"]>["pricing"]>;
   liveRows: FlatkeyPriceTableRow[];
   liveNote: string;
+  allowPlayground?: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const rows = props.content.rows;
+  const editorialRows = props.content.rows ?? [];
+  const rows = editorialRows.length > 0
+    ? editorialRows
+    : props.liveRows.map((row) => ({ label: row.label, value: row.flatkey, detail: row.official }));
+  const featured = rows[0];
+  const productFacts = buildPricingProductFacts(props.config);
+  const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
+  const actionHref = allowPlayground ? "#workbench" : "#api";
+  const actionLabel = allowPlayground ? props.t("Try a prompt") : props.t("View API");
+  const featureExamples = rows.slice(0, 3).map((row) => ({
+    label: props.t(row.label),
+    value: props.t(row.value),
+  }));
   return (
     <section id="pricing" className="model-section model-pricing">
       <div className="model-container">
@@ -2951,7 +3396,23 @@ function ModelPricingSection(props: {
             title={props.t(props.content.title)}
             description={props.t(props.content.description)}
           />
-          <div className="pricing-card">
+          <div className="pricing-conversion-grid">
+            <article className="pricing-feature-card">
+              <div className="pricing-feature-head">
+                <div>
+                  <span className="pricing-kicker">{props.t("Flatkey price")}</span>
+                  <h3>{featured ? props.t(featured.label) : props.t("Pricing")}</h3>
+                </div>
+                <span className="pricing-live-badge">{props.t("Live catalog model")}</span>
+              </div>
+              <div className="pricing-feature-value">{featured ? props.t(featured.value) : "—"}</div>
+              <p>{featured?.detail ? props.t(featured.detail) : props.t(props.content.note ?? props.liveNote)}</p>
+              <PricingFeatureExamples rows={featureExamples} />
+              <a href={actionHref} className="pricing-feature-action">{actionLabel} <span aria-hidden="true">↗</span></a>
+            </article>
+            <PricingWalletCard facts={productFacts} t={props.t} />
+          </div>
+          <div className="pricing-card pricing-breakdown-card">
             {rows?.length ? (
               <table>
                 <caption className="sr-only">{props.t(props.content.title)}</caption>
@@ -3001,12 +3462,53 @@ function ModelPricingSection(props: {
   );
 }
 
+function buildPricingProductFacts(
+  config: ModelConfig,
+): Array<{ label: string; value: string }> {
+  const generator = config.generator;
+  if (generator?.kind === "image") {
+    const outputCount = generator.fields.find((field) => field.name === "n");
+    const size = generator.fields.find((field) => field.name === "size");
+    const quality = generator.fields.find((field) => field.name === "quality");
+    return [
+      { label: "Model Type", value: "Text to Image" },
+      { label: "API", value: generator.endpoint },
+      { label: "Outputs", value: outputCount ? `${outputCount.min ?? 1}–${outputCount.max ?? 1}` : "1" },
+      { label: "Size", value: size?.options?.join(" · ") ?? "auto" },
+      ...(quality?.options ? [{ label: "Quality", value: quality.options.join(" · ") }] : []),
+    ].slice(0, 4);
+  }
+  if (generator?.kind === "video") {
+    const duration = generator.fields.find((field) => field.name === "duration");
+    const ratio = generator.fields.find((field) => field.name === "ratio");
+    return [
+      { label: "Model Type", value: "Text to Video" },
+      { label: "API", value: generator.endpoint },
+      { label: "Duration", value: duration ? `${duration.min ?? ""}–${duration.max ?? ""}s` : "—" },
+      { label: "Aspect ratio", value: ratio?.options?.join(" · ") ?? "adaptive" },
+    ];
+  }
+  const context = config.rows.find((row) => /context/i.test(row.label) && row.value)?.value;
+  const modalities = config.rows.find((row) => /modalit/i.test(row.label) && row.value)?.value;
+  return [
+    { label: "Model Type", value: "Text" },
+    { label: "API", value: generator?.endpoint ?? "/v1/chat/completions" },
+    ...(context ? [{ label: "Context", value: context }] : []),
+    ...(modalities ? [{ label: "Modalities", value: modalities }] : []),
+  ].slice(0, 4);
+}
+
 function ModelApiSection(props: {
   config: ModelConfig;
+  allowPlayground?: boolean;
   locale: Locale;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const custom = props.config.landingContent?.api;
+  const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
+  const configuredCustom = props.config.landingContent?.api;
+  const custom = configuredCustom && (allowPlayground || !/playground/i.test(JSON.stringify(configuredCustom)))
+    ? configuredCustom
+    : undefined;
   const endpoint = props.config.generator?.endpoint ?? "/v1/chat/completions";
   const request = buildPublicApiRequest(props.config);
   const requestText = JSON.stringify(request, null, 2);
@@ -3017,7 +3519,10 @@ function ModelApiSection(props: {
     node: `const response = await fetch("https://router.flatkey.ai${endpoint}", {\n  method: "POST",\n  headers: { Authorization: "Bearer " + process.env.FLATKEY_API_KEY },\n  body: JSON.stringify(${requestText}),\n});`,
     python: `import os\nimport requests\n\nresponse = requests.post(\n    "https://router.flatkey.ai${endpoint}",\n    headers={"Authorization": "Bearer " + os.environ["FLATKEY_API_KEY"]},\n    json=${requestText},\n)`,
   };
-  const apiItems = custom?.items ?? [
+  const customItems = custom?.items?.filter((item) =>
+    allowPlayground || !/playground/i.test(`${item.title} ${item.detail}`)
+  );
+  const apiItems = customItems && customItems.length > 0 ? customItems : [
     { title: props.t("API"), detail: props.t("Call this model through the same OpenAI-compatible router and API key as the rest of the Flatkey catalog.") },
     { title: props.t("SDK for developers"), detail: props.t("Use your existing SDK and set its base URL to the Flatkey router origin.") },
     { title: props.t("Flatkey CLI"), detail: props.t("Keep prompts and request files in your terminal workflow with the Flatkey CLI.") },
@@ -3125,6 +3630,21 @@ function renderApiSample(source: string, tab: ApiCodeTab): ReactNode {
 function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
   if (config.generator?.kind === "video") {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
+    if (config.generator.protocol === "grok-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt: config.examplePrompt,
+        duration: defaults.duration ?? 5,
+      });
+    }
+    if (config.generator.protocol === "veo-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt: config.examplePrompt,
+        duration: Number(defaults.duration ?? 8),
+        size: defaults.size ?? "1280x720",
+      });
+    }
     return {
       model: config.modelId,
       content: [{ type: "text", text: config.examplePrompt }],
@@ -3136,6 +3656,20 @@ function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
   }
   if (config.generator?.kind === "image") {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
+    if (config.generator.protocol === "gemini-image") {
+      const imageConfig = compactRequest({
+        aspectRatio: defaults.aspect_ratio,
+        imageSize: defaults.image_size,
+      });
+      return {
+        model: config.modelId,
+        contents: [{ role: "user", parts: [{ text: config.examplePrompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig,
+        },
+      };
+    }
     return {
       model: config.modelId,
       prompt: config.examplePrompt,
@@ -3270,17 +3804,17 @@ function buildFlatkeyPriceRows(
   // catalog exposes only its $0.14 model-price base.
   if (config.slug === "seedance-2.5") {
     return {
-      note: t("Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate."),
+      note: t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API."),
       rows: [
         {
-          label: t("480p · no video reference"),
+          label: t("Request price"),
           flatkey: "$0.140 × duration",
           official: t("Catalog formula"),
           flatkeyPercent: 100,
           officialPercent: 100,
         },
         {
-          label: t("720p · no video reference"),
+          label: t("Request price"),
           flatkey: "$0.314 × duration",
           official: t("Catalog formula"),
           flatkeyPercent: 100,
@@ -3788,7 +4322,7 @@ function RequestPreview(props: {
 function PanelHeader(props: { title: string; right: string }) {
   return (
     <div className="panel-heading">
-      <h2>{props.title}</h2>
+      <h3>{props.title}</h3>
       <span className="panel-note">
         {props.right}
       </span>
@@ -3919,7 +4453,16 @@ function buildMediaPricingRows(config: ModelConfig) {
 }
 
 function buildInitialGeneratorValues(config: ModelConfig) {
-  return Object.fromEntries((config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue]));
+  const values: Record<string, string | number | boolean> = Object.fromEntries(
+    (config.generator?.fields ?? []).map((field) => [field.name, field.defaultValue])
+  );
+  const videoModes = config.generator?.videoModes;
+  if (config.generator?.kind === "video" && videoModes?.length) {
+    values.video_mode = config.generator.defaultVideoMode
+      ?? videoModes.find((option) => option.supported)?.value
+      ?? videoModes[0].value;
+  }
+  return values;
 }
 
 function buildGeneratorRequest(
@@ -3928,18 +4471,47 @@ function buildGeneratorRequest(
   values: Record<string, string | number | boolean>,
   referenceImages: ReferenceImageDraft[] = []
 ) {
+  // `video_mode` is Playground-only metadata. The gateway's documented
+  // Seedance wire contract infers the workflow from content[] item roles, so
+  // never leak this selector value as an unsupported API parameter.
+  const { video_mode: _videoMode, ...requestValues } = values;
   if (config.generator?.kind === "video") {
+    if (config.generator.protocol === "grok-video") {
+      return compactRequest({ model: config.modelId, prompt, duration: values.duration ?? 5 });
+    }
+    if (config.generator.protocol === "veo-video") {
+      return compactRequest({
+        model: config.modelId,
+        prompt,
+        duration: Number(values.duration ?? 8),
+        size: values.size ?? "1280x720",
+      });
+    }
     const content = [{ type: "text", text: prompt }];
-    return compactRequest({ model: config.modelId, content, ...values });
+    return compactRequest({ model: config.modelId, content, ...requestValues });
   }
   if (config.generator?.kind === "audio") {
-    return compactRequest({ model: config.modelId, input: prompt, ...values });
+    return compactRequest({ model: config.modelId, input: prompt, ...requestValues });
   }
   if (config.generator?.kind === "image") {
+    if (config.generator.protocol === "gemini-image") {
+      const imageConfig = compactRequest({
+        aspectRatio: values.aspect_ratio,
+        imageSize: values.image_size,
+      });
+      return {
+        model: config.modelId,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig,
+        },
+      };
+    }
     return compactRequest({
       model: config.modelId,
       prompt,
-      ...values,
+      ...requestValues,
       reference_images:
         referenceImages.length > 0
           ? referenceImages.map(({ name, size, type }) => ({ name, size, type }))
@@ -3961,6 +4533,10 @@ function buildRunHref(
   prompt: string,
   draft: DraftValue
 ) {
+  // Audio model detail pages are API-only. Keep accidental callers from
+  // constructing a public Playground URL if an older landing component is
+  // reintroduced or a new CTA forgets to apply the page-level gate.
+  if (config.generator?.kind === "audio") return consoleUrl("/dashboard");
   const playgroundParams = new URLSearchParams({
     model: config.modelId,
     prompt,

@@ -55,9 +55,19 @@ type Facts = {
   kind: "text" | "image" | "video";
   endpoint: string;
   secondEndpoint?: string;
+  /** Primary/provider fact used in model descriptions. */
   context?: string;
+  /** Flatkey catalog snapshot, kept separate from the provider fact. */
+  catalogContext?: string;
   modalities: string;
+  /** Catalog wording can intentionally differ from provider documentation. */
+  catalogModalities?: string;
   rates: Array<{ label: string; value: string; detail: string }>;
+  /** Provider-direct reference rates, never used as Flatkey settlement rates. */
+  officialRates?: Array<{ label: string; value: string; detail: string }>;
+  /** Provider output wording for media models. */
+  resolution?: string;
+  catalogResolution?: string;
 };
 
 const FACTS: Record<PriorityModelSlug, Facts> = {
@@ -68,11 +78,19 @@ const FACTS: Record<PriorityModelSlug, Facts> = {
     vendor: "OpenAI",
     kind: "text",
     endpoint: "/v1/chat/completions",
-    context: "1,048,576 tokens",
-    modalities: "text, image, and file",
+    context: "1,050,000 tokens",
+    catalogContext: "1,048,576 tokens",
+    modalities: "text input/output and image input",
+    catalogModalities: "text, image, and file",
     rates: [
       { label: "Input", value: "$4.00", detail: "per 1M tokens" },
       { label: "Output", value: "$24.00", detail: "per 1M tokens" },
+      { label: "Cache read", value: "$0.40", detail: "per 1M tokens" },
+      { label: "Cache creation", value: "$5.00", detail: "per 1M tokens" },
+    ],
+    officialRates: [
+      { label: "Input", value: "$4.00", detail: "per 1M tokens" },
+      { label: "Output", value: "$20.00", detail: "per 1M tokens" },
       { label: "Cache read", value: "$0.40", detail: "per 1M tokens" },
       { label: "Cache creation", value: "$5.00", detail: "per 1M tokens" },
     ],
@@ -84,12 +102,13 @@ const FACTS: Record<PriorityModelSlug, Facts> = {
     vendor: "OpenAI",
     kind: "image",
     endpoint: "/v1/images/generations",
+    secondEndpoint: "/v1/images/edits",
     modalities: "image generation",
     rates: [
       { label: "Input tokens", value: "$4.00", detail: "per 1M units" },
       { label: "Output tokens", value: "$24.00", detail: "per 1M units" },
       { label: "Cache tokens", value: "$1.00", detail: "per 1M units" },
-      { label: "Image dimensions", value: "$6.40", detail: "per 1M units" },
+      { label: "Image input tokens", value: "$6.40", detail: "per 1M units" },
     ],
   },
   "kimi-k3": {
@@ -101,11 +120,17 @@ const FACTS: Record<PriorityModelSlug, Facts> = {
     endpoint: "/v1/chat/completions",
     secondEndpoint: "/v1/messages",
     context: "1,048,576 tokens",
-    modalities: "text and file",
+    modalities: "native vision upstream; file fields on the Flatkey route",
+    catalogModalities: "text, image, and file fields (Flatkey route)",
     rates: [
       { label: "Input", value: "$2.40", detail: "per 1M tokens" },
       { label: "Output", value: "$12.00", detail: "per 1M tokens" },
-      { label: "Cache", value: "$0.24", detail: "per 1M tokens" },
+      { label: "Cache-hit input", value: "$0.24", detail: "per 1M tokens" },
+    ],
+    officialRates: [
+      { label: "Input", value: "$3.00", detail: "per 1M tokens; Moonshot reference" },
+      { label: "Output", value: "$15.00", detail: "per 1M tokens; Moonshot reference" },
+      { label: "Cache-hit input", value: "$0.30", detail: "per 1M tokens; Moonshot reference" },
     ],
   },
   "deepseek-v4-pro": {
@@ -116,11 +141,17 @@ const FACTS: Record<PriorityModelSlug, Facts> = {
     kind: "text",
     endpoint: "/v1/chat/completions",
     secondEndpoint: "/v1/messages",
-    context: "1,048,576 tokens",
-    modalities: "text and file",
+    context: "1M tokens",
+    catalogContext: "1,048,576 tokens",
+    modalities: "text/file fields on the Flatkey route; native vision not verified",
+    catalogModalities: "text and file fields (Flatkey route)",
     rates: [
-      { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "input / cache read / output per 1M tokens" },
-      { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "input / cache read / output per 1M tokens" },
+      { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
+      { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
+    ],
+    officialRates: [
+      { label: "Peak (UTC)", value: "$1.32 / $0.044 / $3.96", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
+      { label: "Off-peak (UTC)", value: "$0.66 / $0.022 / $1.98", detail: "cache-miss input / cache-hit input / output per 1M tokens" },
     ],
   },
   "minimax-h3": {
@@ -131,11 +162,19 @@ const FACTS: Record<PriorityModelSlug, Facts> = {
     kind: "video",
     endpoint: "/v1/videos",
     modalities: "video generation",
+    resolution: "768P default; 2K via the documented regeneration/API path",
+    catalogResolution: "768P or 2K",
     rates: [
       { label: "Catalog base", value: "$0.08", detail: "per second" },
       { label: "768P / 2K", value: "Live estimate", detail: "resolution-dependent" },
       { label: "Reference video", value: "Live estimate", detail: "input-video seconds and resolution" },
       { label: "Input image", value: "Check catalog", detail: "free allowance and later images may differ" },
+    ],
+    officialRates: [
+      { label: "Official 768P", value: "$0.08", detail: "per second; international API reference" },
+      { label: "Official 2K", value: "$0.13", detail: "per second; international API reference" },
+      { label: "Reference video", value: "Selected output rate", detail: "per input-video second at the selected resolution" },
+      { label: "Input image after free tier", value: "$0.04", detail: "per image after the first five" },
     ],
   },
 };
@@ -401,10 +440,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Coding, document, and research examples are editorial use cases, not benchmark claims.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "A distillable metadata flag is not a claim that the model is open source, downloadable, or locally runnable.",
-    resolutionBody: "Choose 768P or 2K.",
-    durationBody: "Configure a 4–15 second request.",
-    ratioBody: "Use a supported fixed ratio or adaptive.",
-    watermarkBody: "Set the AIGC watermark boolean explicitly.",
+    resolutionBody: "MiniMax documents 768P and 2K output; 2K is also available through the documented regeneration path.",
+    durationBody: "Configure an integer duration from 4–15 seconds.",
+    ratioBody: "Text-to-video requests require a supported fixed ratio; adaptive is for image/reference routes.",
+    watermarkBody: "aigc_watermark is a Flatkey route field; availability is route-specific.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Catalog metadata lists ${modalities}.`,
@@ -548,10 +587,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "编程、文档和研究示例是编辑性使用场景，不是基准测试结论。",
     routeBody: (endpoint) => `${endpoint}。`,
     distillableBody: "distillable 元数据标记不等于开源、可下载或可本地运行。",
-    resolutionBody: "选择 768P 或 2K。",
-    durationBody: "配置 4–15 秒的请求。",
-    ratioBody: "使用支持的固定比例或 adaptive。",
-    watermarkBody: "明确设置 AIGC 水印布尔值。",
+    resolutionBody: "MiniMax 文档列出 768P 和 2K 输出；2K 也可通过文档中的重新生成路径获取。",
+    durationBody: "配置 4–15 秒的整数时长。",
+    ratioBody: "文生视频请求需要支持的固定比例；adaptive 仅用于图像或参考素材路线。",
+    watermarkBody: "aigc_watermark 是 Flatkey 路由字段；是否可用取决于具体路线。",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `目录元数据列出 ${modalities}。`,
@@ -695,10 +734,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Los ejemplos de código, documentos e investigación son casos editoriales, no resultados de benchmarks.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Una marca de metadatos distillable no demuestra que el modelo sea de código abierto, descargable o ejecutable localmente.",
-    resolutionBody: "Elige 768P o 2K.",
-    durationBody: "Configura una solicitud de 4–15 segundos.",
-    ratioBody: "Usa una proporción fija compatible o adaptive.",
-    watermarkBody: "Configura explícitamente el booleano de marca de agua AIGC.",
+    resolutionBody: "MiniMax documenta salidas 768P y 2K; 2K también está disponible mediante la ruta de regeneración documentada.",
+    durationBody: "Configura una duración entera de 4–15 segundos.",
+    ratioBody: "Las solicitudes de texto a vídeo requieren una proporción fija compatible; adaptive se reserva para rutas con imagen o referencias.",
+    watermarkBody: "aigc_watermark es un campo de la ruta Flatkey; su disponibilidad depende de la ruta.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Los metadatos del catálogo enumeran ${modalities}.`,
@@ -842,10 +881,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Les exemples de code, de documents et de recherche sont des cas d'usage éditoriaux, pas des benchmarks.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Un indicateur de métadonnées distillable ne prouve pas que le modèle est open source, téléchargeable ou exécutable localement.",
-    resolutionBody: "Choisissez 768P ou 2K.",
-    durationBody: "Configurez une requête de 4–15 secondes.",
-    ratioBody: "Utilisez un ratio fixe pris en charge ou adaptive.",
-    watermarkBody: "Définissez explicitement le booléen de filigrane AIGC.",
+    resolutionBody: "MiniMax documente des sorties 768P et 2K ; la 2K est aussi disponible via la route de régénération documentée.",
+    durationBody: "Configurez une durée entière de 4–15 secondes.",
+    ratioBody: "Les requêtes texte-vers-vidéo exigent un ratio fixe pris en charge ; adaptive est réservé aux routes avec image ou référence.",
+    watermarkBody: "aigc_watermark est un champ de la route Flatkey ; sa disponibilité dépend de la route.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Les métadonnées du catalogue listent ${modalities}.`,
@@ -989,10 +1028,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Os exemplos de código, documentos e pesquisa são casos de uso editoriais, não resultados de benchmark.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Uma marca de metadados distillable não prova que o modelo seja open source, baixável ou executável localmente.",
-    resolutionBody: "Escolha 768P ou 2K.",
-    durationBody: "Configure uma solicitação de 4–15 segundos.",
-    ratioBody: "Use uma proporção fixa compatível ou adaptive.",
-    watermarkBody: "Defina explicitamente o booleano da marca-d'água AIGC.",
+    resolutionBody: "A MiniMax documenta saídas 768P e 2K; 2K também está disponível pela rota de regeneração documentada.",
+    durationBody: "Configure uma duração inteira de 4–15 segundos.",
+    ratioBody: "Solicitações de texto para vídeo exigem uma proporção fixa compatível; adaptive fica para rotas com imagem ou referências.",
+    watermarkBody: "aigc_watermark é um campo da rota Flatkey; a disponibilidade depende da rota.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Os metadados do catálogo listam ${modalities}.`,
@@ -1136,10 +1175,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Примеры для кода, документов и исследований — редакционные сценарии, а не результаты бенчмарков.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Метаданный флаг distillable не означает открытый исходный код, скачиваемые веса или локальный запуск.",
-    resolutionBody: "Выберите 768P или 2K.",
-    durationBody: "Настройте запрос длительностью 4–15 секунд.",
-    ratioBody: "Используйте поддерживаемое фиксированное соотношение или adaptive.",
-    watermarkBody: "Явно задайте логическое поле водяного знака AIGC.",
+    resolutionBody: "MiniMax документирует вывод 768P и 2K; 2K также доступен через документированный маршрут повторной генерации.",
+    durationBody: "Задайте целую длительность от 4 до 15 секунд.",
+    ratioBody: "Для запросов текст-видео требуется поддерживаемое фиксированное соотношение; adaptive используется в маршрутах с изображениями или референсами.",
+    watermarkBody: "aigc_watermark — поле маршрута Flatkey; доступность зависит от конкретного маршрута.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Метаданные каталога перечисляют: ${modalities}.`,
@@ -1283,10 +1322,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "コード、文書、調査の例は編集上の用途であり、ベンチマーク結果ではありません。",
     routeBody: (endpoint) => `${endpoint}。`,
     distillableBody: "distillable というメタデータは、オープンソース、ダウンロード可能、ローカル実行可能であることを意味しません。",
-    resolutionBody: "768P または 2K を選択します。",
-    durationBody: "4–15 秒のリクエストを設定します。",
-    ratioBody: "対応する固定比率または adaptive を使用します。",
-    watermarkBody: "AIGC 透かしの boolean を明示的に設定します。",
+    resolutionBody: "MiniMax は 768P と 2K の出力を文書化しており、2K は文書化された再生成ルートでも利用できます。",
+    durationBody: "4～15 秒の整数の長さを設定します。",
+    ratioBody: "テキストから動画へのリクエストでは対応する固定比率が必要です。adaptive は画像・参照素材のルート用です。",
+    watermarkBody: "aigc_watermark は Flatkey のルート項目です。利用可否はルートによって異なります。",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `カタログのメタデータには ${modalities} が記載されています。`,
@@ -1430,10 +1469,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Ví dụ về code, tài liệu và nghiên cứu là use case biên tập, không phải kết quả benchmark.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Cờ metadata distillable không chứng minh mô hình mã nguồn mở, tải xuống được hoặc chạy cục bộ.",
-    resolutionBody: "Chọn 768P hoặc 2K.",
-    durationBody: "Cấu hình yêu cầu 4–15 giây.",
-    ratioBody: "Dùng tỷ lệ cố định được hỗ trợ hoặc adaptive.",
-    watermarkBody: "Đặt rõ giá trị boolean của watermark AIGC.",
+    resolutionBody: "MiniMax ghi nhận đầu ra 768P và 2K; 2K cũng có qua route tái tạo được tài liệu hóa.",
+    durationBody: "Cấu hình thời lượng dạng số nguyên từ 4–15 giây.",
+    ratioBody: "Yêu cầu văn bản thành video cần tỷ lệ cố định được hỗ trợ; adaptive dành cho route có ảnh hoặc tham chiếu.",
+    watermarkBody: "aigc_watermark là trường của route Flatkey; khả dụng tùy route.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Metadata danh mục liệt kê ${modalities}.`,
@@ -1577,10 +1616,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Code-, Dokument- und Recherchebeispiele sind redaktionelle Anwendungsfälle, keine Benchmark-Ergebnisse.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Ein distillable-Metadatenflag beweist weder Open Source noch herunterladbare Gewichte oder lokale Ausführung.",
-    resolutionBody: "Wähle 768P oder 2K.",
-    durationBody: "Konfiguriere eine 4–15-Sekunden-Anfrage.",
-    ratioBody: "Verwende ein unterstütztes festes Verhältnis oder adaptive.",
-    watermarkBody: "Setze das AIGC-Wasserzeichen-Boolean ausdrücklich.",
+    resolutionBody: "MiniMax dokumentiert 768P- und 2K-Ausgabe; 2K ist auch über den dokumentierten Regenerationspfad verfügbar.",
+    durationBody: "Konfiguriere eine ganzzahlige Dauer von 4–15 Sekunden.",
+    ratioBody: "Text-zu-Video-Anfragen benötigen ein unterstütztes festes Seitenverhältnis; adaptive ist für Bild-/Referenzrouten vorgesehen.",
+    watermarkBody: "aigc_watermark ist ein Feld der Flatkey-Route; die Verfügbarkeit hängt von der Route ab.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Die Katalogmetadaten führen ${modalities} auf.`,
@@ -1724,10 +1763,10 @@ const PACKS: Record<Locale, LanguagePack> = {
     knowledgeBody: "Contoh coding, dokumen, dan riset adalah use case editorial, bukan hasil benchmark.",
     routeBody: (endpoint) => `${endpoint}.`,
     distillableBody: "Flag metadata distillable tidak membuktikan bahwa model open source, dapat diunduh, atau dapat dijalankan lokal.",
-    resolutionBody: "Pilih 768P atau 2K.",
-    durationBody: "Konfigurasikan permintaan 4–15 detik.",
-    ratioBody: "Gunakan rasio tetap yang didukung atau adaptive.",
-    watermarkBody: "Tetapkan boolean watermark AIGC secara eksplisit.",
+    resolutionBody: "MiniMax mendokumentasikan output 768P dan 2K; 2K juga tersedia melalui rute regenerasi yang terdokumentasi.",
+    durationBody: "Atur durasi bilangan bulat dari 4–15 detik.",
+    ratioBody: "Permintaan teks-ke-video memerlukan rasio tetap yang didukung; adaptive digunakan pada rute gambar atau referensi.",
+    watermarkBody: "aigc_watermark adalah bidang rute Flatkey; ketersediaannya bergantung pada rute.",
     apiEndpointDetail: (endpoint) => `POST ${endpoint}`,
     apiModelDetail: (id) => id,
     apiModalitiesDetail: (modalities) => `Metadata katalog mencantumkan ${modalities}.`,
@@ -2679,7 +2718,7 @@ function buildWhy(facts: Facts, locale: Locale): NonNullable<ModelLandingContent
     eyebrow: facts.slug === "gpt-5-6-sol" || facts.slug === "gpt-image-2" || facts.slug === "kimi-k3" || facts.slug === "deepseek-v4-pro" || facts.slug === "minimax-h3"
       ? pack.whyEyebrow
       : pack.whyEyebrow,
-    title: pack.whyTitle(facts.name),
+    title: localizedWhyTitle(facts, locale),
     description: pack.whyDescription(facts.name),
     cards: slots.map((slot) => ({ title: WHY_SLOT_TITLES[locale]?.[slot] ?? WHY_SLOT_TITLES.en[slot], body: whySlotBody(locale, slot, facts) })),
   };
@@ -2706,38 +2745,103 @@ function buildPromptLibrary(facts: Facts, locale: Locale): Pick<ModelLandingCont
 
 /** The split FAQ heading is rendered as two lines by the shared shell. */
 function buildFaqTitle(facts: Facts, locale: Locale): NonNullable<ModelLandingContent["faqTitle"]> {
-  const afterBreak: Record<Locale, string> = {
-    en: "frequently asked questions",
-    zh: "常见问题",
-    es: "preguntas frecuentes",
-    fr: "questions fréquentes",
-    pt: "perguntas frequentes",
-    ru: "часто задаваемые вопросы",
-    ja: "よくある質問",
-    vi: "câu hỏi thường gặp",
-    de: "häufig gestellte Fragen",
-    id: "pertanyaan umum",
+  // Keep the second line target-specific.  The shared FAQ shell still renders
+  // the heading as two lines, but a model/use-case phrase gives each page a
+  // distinct search intent instead of repeating a generic "frequently asked"
+  // label across all five priority pages.
+  const afterBreakByLocale: Record<Locale, Record<PriorityModelSlug, string>> = {
+    en: {
+      "gpt-5-6-sol": "questions and pricing",
+      "gpt-image-2": "pricing and prompt questions",
+      "kimi-k3": "pricing and local-use questions",
+      "deepseek-v4-pro": "pricing and local-use questions",
+      "minimax-h3": "pricing and ComfyUI questions",
+    },
+    zh: {
+      "gpt-5-6-sol": "价格与常见问题",
+      "gpt-image-2": "价格与提示词问题",
+      "kimi-k3": "价格与本地使用问题",
+      "deepseek-v4-pro": "价格与本地使用问题",
+      "minimax-h3": "价格与 ComfyUI 问题",
+    },
+    es: {
+      "gpt-5-6-sol": "preguntas y precios",
+      "gpt-image-2": "precios y preguntas sobre prompts",
+      "kimi-k3": "precios y uso local",
+      "deepseek-v4-pro": "precios y uso local",
+      "minimax-h3": "precios y ComfyUI",
+    },
+    fr: {
+      "gpt-5-6-sol": "questions et tarifs",
+      "gpt-image-2": "tarifs et questions de prompts",
+      "kimi-k3": "tarifs et usage local",
+      "deepseek-v4-pro": "tarifs et usage local",
+      "minimax-h3": "tarifs et ComfyUI",
+    },
+    pt: {
+      "gpt-5-6-sol": "perguntas e preços",
+      "gpt-image-2": "preços e perguntas sobre prompts",
+      "kimi-k3": "preços e uso local",
+      "deepseek-v4-pro": "preços e uso local",
+      "minimax-h3": "preços e ComfyUI",
+    },
+    ru: {
+      "gpt-5-6-sol": "вопросы и цены",
+      "gpt-image-2": "цены и вопросы о промптах",
+      "kimi-k3": "цены и локальное использование",
+      "deepseek-v4-pro": "цены и локальное использование",
+      "minimax-h3": "цены и ComfyUI",
+    },
+    ja: {
+      "gpt-5-6-sol": "料金とよくある質問",
+      "gpt-image-2": "料金とプロンプトの質問",
+      "kimi-k3": "料金とローカル利用",
+      "deepseek-v4-pro": "料金とローカル利用",
+      "minimax-h3": "料金と ComfyUI",
+    },
+    vi: {
+      "gpt-5-6-sol": "câu hỏi và giá",
+      "gpt-image-2": "giá và câu hỏi về prompt",
+      "kimi-k3": "giá và sử dụng cục bộ",
+      "deepseek-v4-pro": "giá và sử dụng cục bộ",
+      "minimax-h3": "giá và ComfyUI",
+    },
+    de: {
+      "gpt-5-6-sol": "Fragen und Preise",
+      "gpt-image-2": "Preise und Prompt-Fragen",
+      "kimi-k3": "Preise und lokale Nutzung",
+      "deepseek-v4-pro": "Preise und lokale Nutzung",
+      "minimax-h3": "Preise und ComfyUI",
+    },
+    id: {
+      "gpt-5-6-sol": "pertanyaan dan harga",
+      "gpt-image-2": "harga dan pertanyaan prompt",
+      "kimi-k3": "harga dan penggunaan lokal",
+      "deepseek-v4-pro": "harga dan penggunaan lokal",
+      "minimax-h3": "harga dan ComfyUI",
+    },
   };
-  const before = locale === "zh"
-    ? `${facts.name} API`
-    : locale === "es"
-      ? `API de ${facts.name}`
-      : locale === "fr"
-        ? `API ${facts.name}`
-        : locale === "pt"
-          ? `API do ${facts.name}`
-          : locale === "ru"
-            ? `API ${facts.name}`
-            : locale === "ja"
-              ? `${facts.name} API`
-              : locale === "vi"
-                ? `API ${facts.name}`
-                : locale === "de"
-                  ? `${facts.name}-API`
-                  : locale === "id"
-                    ? `API ${facts.name}`
-                    : facts.slug === "minimax-h3" ? `${facts.name} video API` : `${facts.name} API`;
-  return { beforeBreak: before, afterBreak: afterBreak[locale] ?? afterBreak.en };
+  // The shell inserts a line break and a space between these fields.  Keep
+  // the model name on the first line and put the API intent plus the topic on
+  // the second line so the combined heading remains grammatical (for example,
+  // “GPT-5.6 Sol API: questions and pricing” and “GPT Image 2 API: pricing…”).
+  const localizedBefore = facts.slug === "minimax-h3" ? "MiniMax H3" : facts.name;
+  const apiPrefix: Record<Locale, string> = {
+    en: facts.slug === "minimax-h3" ? "video API —" : "API —",
+    zh: facts.slug === "minimax-h3" ? "视频 API：" : "API：",
+    es: facts.slug === "minimax-h3" ? "API de vídeo:" : "API:",
+    fr: facts.slug === "minimax-h3" ? "API vidéo :" : "API :",
+    pt: facts.slug === "minimax-h3" ? "API de vídeo:" : "API:",
+    ru: facts.slug === "minimax-h3" ? "Видео API:" : "API:",
+    ja: facts.slug === "minimax-h3" ? "動画 API：" : "API：",
+    vi: facts.slug === "minimax-h3" ? "API video:" : "API:",
+    de: facts.slug === "minimax-h3" ? "Video-API:" : "API:",
+    id: facts.slug === "minimax-h3" ? "API video:" : "API:",
+  };
+  return {
+    beforeBreak: localizedBefore,
+    afterBreak: `${apiPrefix[locale] ?? apiPrefix.en} ${afterBreakByLocale[locale]?.[facts.slug] ?? afterBreakByLocale.en[facts.slug]}`,
+  };
 }
 
 type MinimaxExtraFaq = {
@@ -2881,11 +2985,11 @@ const SEO: Record<PriorityModelSlug, Record<Locale, PriorityModelSeo>> = {
     id: { title: "API dan generator gambar GPT Image 2 | Flatkey", description: "Siapkan permintaan GPT Image 2 melalui Flatkey dengan API gambar, harga berdasarkan dimensi token, kontrol ukuran/kualitas, format, latar, dan moderasi." },
   },
   "kimi-k3": {
-    en: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, file input, and current token pricing." },
+    en: { title: "Kimi K3 API and pricing | Flatkey", description: "Use Moonshot AI's Kimi K3 through OpenAI- and Anthropic-compatible endpoints with a 1,048,576-token context, native vision upstream, file fields on Flatkey, and current token pricing." },
     zh: { title: "Kimi K3 API 与价格 | Flatkey", description: "通过 Flatkey 的 OpenAI 与 Anthropic 兼容 endpoint 使用 Moonshot AI Kimi K3，支持 1,048,576 token 上下文、文件输入和当前 token 价格。" },
     es: { title: "API y precios de Kimi K3 | Flatkey", description: "Usa Kimi K3 de Moonshot AI mediante endpoints compatibles con OpenAI y Anthropic, contexto de 1.048.576 tokens, entrada de archivos y precios actuales." },
     fr: { title: "API et tarifs de Kimi K3 | Flatkey", description: "Utilisez Kimi K3 de Moonshot AI via des endpoints compatibles OpenAI et Anthropic, avec contexte de 1 048 576 tokens, fichiers et tarifs actuels." },
-    pt: { title: "API e preços do Kimi K3 | Flatkey", description: "Use o Kimi K3 da Moonshot AI por endpoints compatíveis com OpenAI e Anthropic, com contexto de 1.048.576 tokens, entrada de arquivos e preços atuais." },
+    pt: { title: "API e preços do Kimi K3 | Flatkey", description: "Use o Kimi K3 da Moonshot AI por endpoints compatíveis com OpenAI e Anthropic, com contexto de 1.048.576 tokens, visão nativa no upstream, campos de arquivo na Flatkey e preços atuais." },
     ru: { title: "Kimi K3: API и цены | Flatkey", description: "Используйте Kimi K3 от Moonshot AI через совместимые с OpenAI и Anthropic endpoint: контекст 1 048 576 токенов, файлы и текущие цены." },
     ja: { title: "Kimi K3 API と料金 | Flatkey", description: "Moonshot AI の Kimi K3 を Flatkey の OpenAI/Anthropic 互換エンドポイントで利用。1,048,576 トークンのコンテキスト、ファイル入力、現在の料金に対応。" },
     vi: { title: "API và giá Kimi K3 | Flatkey", description: "Dùng Kimi K3 của Moonshot AI qua endpoint tương thích OpenAI và Anthropic với ngữ cảnh 1.048.576 token, đầu vào file và giá hiện tại." },
@@ -2925,10 +3029,46 @@ function localizedRateLabel(label: string, pack: LanguagePack, locale: Locale): 
     "Cache read": pack.cacheRead,
     "Cache creation": pack.cacheCreation,
     Cache: pack.cache,
+    "Cache-hit input": ({
+      en: "Cache-hit input",
+      zh: "缓存命中输入",
+      es: "Entrada con caché activo",
+      fr: "Entrée avec cache actif",
+      pt: "Entrada com cache ativo",
+      ru: "Вход с попаданием в кэш",
+      ja: "キャッシュヒット入力",
+      vi: "Đầu vào cache-hit",
+      de: "Cache-Hit-Eingabe",
+      id: "Input cache-hit",
+    } as Record<Locale, string>)[locale],
+    "Cache-miss input": ({
+      en: "Cache-miss input",
+      zh: "缓存未命中输入",
+      es: "Entrada sin caché",
+      fr: "Entrée sans cache",
+      pt: "Entrada sem cache",
+      ru: "Вход без попадания в кэш",
+      ja: "キャッシュミス入力",
+      vi: "Đầu vào cache-miss",
+      de: "Cache-Miss-Eingabe",
+      id: "Input cache-miss",
+    } as Record<Locale, string>)[locale],
     "Input tokens": pack.inputTokens,
     "Output tokens": pack.outputTokens,
     "Cache tokens": pack.cacheTokens,
     "Image dimensions": pack.imageDimensions,
+    "Image input tokens": ({
+      en: "Image input tokens",
+      zh: "图像输入 token",
+      es: "Tokens de entrada de imagen",
+      fr: "Tokens d'entrée image",
+      pt: "Tokens de entrada de imagem",
+      ru: "Входные токены изображения",
+      ja: "画像入力トークン",
+      vi: "Token đầu vào hình ảnh",
+      de: "Bild-Eingabetoken",
+      id: "Token input gambar",
+    } as Record<Locale, string>)[locale],
     "Peak (UTC)": pack.peakUtc,
     "Off-peak (UTC)": pack.offPeakUtc,
     "Input image after free tier": `${pack.input} ${literal(locale, "image after free tier")}`,
@@ -2949,8 +3089,14 @@ function ratesText(facts: Facts, pack: LanguagePack, locale: Locale): string {
  * the labels and unit phrase should still read naturally in each locale.
  */
 function localizedRateDetail(detail: string, pack: LanguagePack, locale: Locale): string {
-  if (detail === "input / cache read / output per 1M tokens") {
-    const dimensions = ["Input", "Cache read", "Output"]
+  if (
+    detail === "input / cache read / output per 1M tokens" ||
+    detail === "cache-miss input / cache-hit input / output per 1M tokens"
+  ) {
+    const labels = detail.startsWith("cache-miss")
+      ? ["Cache-miss input", "Cache-hit input", "Output"]
+      : ["Input", "Cache read", "Output"];
+    const dimensions = labels
       .map((label) => localizedRateLabel(label, pack, locale))
       .join(" / ");
     if (locale === "zh") return `${dimensions}，${pack.perMillionTokens}`;
@@ -2975,6 +3121,92 @@ function localizedRateRows(facts: Facts, pack: LanguagePack, locale: Locale) {
   }));
 }
 
+function rateValuesText(
+  rates: Facts["rates"] | undefined,
+  pack: LanguagePack,
+  locale: Locale,
+): string {
+  if (!rates?.length) return "";
+  return rates
+    .map((rate) => `${localizedRateLabel(rate.label, pack, locale)} ${rate.value}`)
+    .join(", ");
+}
+
+/**
+ * Keep provider-direct references separate from the values used for Flatkey
+ * settlement.  The catalog rows are intentionally still rendered by
+ * `localizedRateRows`; this note is the audit trail that prevents readers from
+ * mistaking a gateway/catalog value for a provider-direct retail price.
+ */
+function localizedPricingSourceNote(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  const catalog = rateValuesText(facts.rates, pack, locale);
+  const direct = rateValuesText(facts.officialRates, pack, locale);
+  switch (facts.slug) {
+    case "gpt-5-6-sol":
+      switch (locale) {
+        case "zh": return `Flatkey 目录费率为 ${catalog}；OpenAI 官方直价参考为 ${direct}。两者是不同的价格来源。`;
+        case "es": return `El catálogo de Flatkey muestra ${catalog}; la referencia directa de OpenAI es ${direct}. Son fuentes de precio distintas.`;
+        case "fr": return `Le catalogue Flatkey indique ${catalog} ; la référence directe OpenAI est ${direct}. Ce sont deux sources tarifaires distinctes.`;
+        case "pt": return `O catálogo da Flatkey mostra ${catalog}; a referência direta da OpenAI é ${direct}. São fontes de preço diferentes.`;
+        case "ru": return `В каталоге Flatkey указано ${catalog}; прямая справочная цена OpenAI — ${direct}. Это разные источники тарификации.`;
+        case "ja": return `Flatkey カタログの料金は ${catalog}、OpenAI 直 API の参考料金は ${direct} です。別々の料金ソースとして確認してください。`;
+        case "vi": return `Catalog Flatkey hiện ghi ${catalog}; mức tham chiếu trực tiếp từ OpenAI là ${direct}. Đây là hai nguồn giá khác nhau.`;
+        case "de": return `Der Flatkey-Katalog weist ${catalog} aus; die direkte OpenAI-Referenz lautet ${direct}. Das sind getrennte Preisquellen.`;
+        case "id": return `Katalog Flatkey mencantumkan ${catalog}; referensi langsung OpenAI adalah ${direct}. Keduanya merupakan sumber harga yang berbeda.`;
+        default: return `Flatkey catalog rates are ${catalog}. OpenAI direct reference rates are ${direct}; these are separate price sources.`;
+      }
+    case "deepseek-v4-pro":
+      switch (locale) {
+        case "zh": return `Flatkey 按带日期的目录 UTC 费率结算（${catalog}）；DeepSeek 官方 API 参考为 ${direct}，账户或区域条款可能不同。`;
+        case "es": return `Flatkey liquida según su catálogo UTC fechado (${catalog}); la referencia de la API directa de DeepSeek es ${direct} y puede variar por cuenta o región.`;
+        case "fr": return `Flatkey applique son catalogue UTC daté (${catalog}) ; la référence de l'API directe DeepSeek est ${direct} et peut varier selon le compte ou la région.`;
+        case "pt": return `A Flatkey liquida pelo catálogo UTC datado (${catalog}); a referência da API direta da DeepSeek é ${direct} e pode variar por conta ou região.`;
+        case "ru": return `Flatkey рассчитывает по датированному каталогу UTC (${catalog}); справочные ставки прямого API DeepSeek — ${direct}, но условия зависят от аккаунта и региона.`;
+        case "ja": return `Flatkey は日付付き UTC カタログ（${catalog}）で精算します。DeepSeek 直 API の参考値は ${direct} ですが、アカウントや地域で変わる場合があります。`;
+        case "vi": return `Flatkey quyết toán theo catalog UTC có ngày (${catalog}); mức tham chiếu API trực tiếp DeepSeek là ${direct} và có thể thay đổi theo tài khoản hoặc khu vực.`;
+        case "de": return `Flatkey rechnet nach dem datierten UTC-Katalog (${catalog}) ab; die direkte DeepSeek-API-Referenz beträgt ${direct} und kann nach Konto oder Region abweichen.`;
+        case "id": return `Flatkey menyelesaikan tagihan berdasarkan katalog UTC bertanggal (${catalog}); referensi API langsung DeepSeek adalah ${direct} dan dapat berbeda menurut akun atau wilayah.`;
+        default: return `Flatkey settlement follows its dated UTC catalog (${catalog}); DeepSeek direct API references are ${direct} and may vary by account or region.`;
+      }
+    case "minimax-h3":
+      switch (locale) {
+        case "zh": return `Flatkey 目录基础值为 ${catalog}；国际 MiniMax API 参考为 ${direct}。最终结算请以请求的实时目录估算为准。`;
+        case "es": return `La base del catálogo de Flatkey es ${catalog}; la referencia de la API internacional de MiniMax es ${direct}. La liquidación final usa la estimación de la solicitud.`;
+        case "fr": return `La base du catalogue Flatkey est ${catalog} ; la référence de l'API internationale MiniMax est ${direct}. Le règlement final suit l'estimation de la requête.`;
+        case "pt": return `A base do catálogo da Flatkey é ${catalog}; a referência da API internacional da MiniMax é ${direct}. A cobrança final segue a estimativa da solicitação.`;
+        case "ru": return `Базовое значение каталога Flatkey — ${catalog}; справочные ставки международного API MiniMax — ${direct}. Итоговая сумма берётся из оценки запроса.`;
+        case "ja": return `Flatkey カタログの基準値は ${catalog}、MiniMax 国際 API の参考値は ${direct} です。最終精算はリクエストの見積もりに従います。`;
+        case "vi": return `Mức cơ bản trong catalog Flatkey là ${catalog}; tham chiếu API quốc tế MiniMax là ${direct}. Quyết toán cuối cùng dựa trên ước tính của request.`;
+        case "de": return `Die Flatkey-Katalogbasis beträgt ${catalog}; die Referenz der internationalen MiniMax-API lautet ${direct}. Für die Abrechnung gilt die Anfrage-Schätzung.`;
+        case "id": return `Nilai dasar katalog Flatkey adalah ${catalog}; referensi API internasional MiniMax adalah ${direct}. Penyelesaian akhir mengikuti estimasi permintaan.`;
+        default: return `Flatkey's catalog base is ${catalog}; international MiniMax API references are ${direct}. Use the live request estimate for final settlement.`;
+      }
+    default:
+      switch (locale) {
+        case "zh": return `这些是 Flatkey 目录费率（${catalog}），不是统一的官方直价。最终金额取决于请求与账户。`;
+        case "es": return `Son tarifas del catálogo de Flatkey (${catalog}), no un precio directo oficial universal. El importe final depende de la solicitud y la cuenta.`;
+        case "fr": return `Il s'agit des tarifs du catalogue Flatkey (${catalog}), pas d'un prix direct officiel universel. Le montant final dépend de la requête et du compte.`;
+        case "pt": return `Estas são tarifas do catálogo da Flatkey (${catalog}), não um preço direto oficial universal. O valor final depende da solicitação e da conta.`;
+        case "ru": return `Это тарифы каталога Flatkey (${catalog}), а не единая официальная прямая цена. Итог зависит от запроса и аккаунта.`;
+        case "ja": return `これは Flatkey カタログ料金（${catalog}）であり、共通の公式直 API 料金ではありません。最終額はリクエストとアカウントで変わります。`;
+        case "vi": return `Đây là giá trong catalog Flatkey (${catalog}), không phải một mức giá API trực tiếp chính thức áp dụng chung. Số tiền cuối phụ thuộc request và tài khoản.`;
+        case "de": return `Dies sind Flatkey-Katalogtarife (${catalog}), kein allgemeiner direkter Anbieterpreis. Der Endbetrag hängt von Anfrage und Konto ab.`;
+        case "id": return `Ini adalah tarif katalog Flatkey (${catalog}), bukan harga API langsung resmi yang berlaku universal. Jumlah akhir bergantung pada permintaan dan akun.`;
+        default: return `These are Flatkey catalog rates (${catalog}), not a universal official direct price. The final amount depends on the request and account.`;
+      }
+  }
+}
+
+function localizedPricingDescription(
+  facts: Facts,
+  pack: LanguagePack,
+  locale: Locale,
+  lead: string,
+): string {
+  const normalizedLead = lead.trim().replace(/[.!?]+$/, "");
+  return `${normalizedLead}. ${localizedPricingSourceNote(facts, pack, locale)}`;
+}
+
 function localizedRoutePair(locale: Locale, endpoint: string, secondEndpoint: string): string {
   const conjunctions: Record<Locale, string> = {
     en: "and",
@@ -2991,29 +3223,145 @@ function localizedRoutePair(locale: Locale, endpoint: string, secondEndpoint: st
   return `${endpoint} ${conjunctions[locale] ?? conjunctions.en} ${secondEndpoint}`;
 }
 
+const GPT_OFFICIAL_MODALITIES: Record<Locale, string> = {
+  en: "text input/output and image input",
+  zh: "文本输入/输出与图片输入",
+  es: "entrada/salida de texto y entrada de imágenes",
+  fr: "entrée/sortie texte et entrée d'images",
+  pt: "entrada/saída de texto e entrada de imagens",
+  ru: "текстовый ввод/вывод и ввод изображений",
+  ja: "テキスト入出力と画像入力",
+  vi: "đầu vào/đầu ra văn bản và đầu vào hình ảnh",
+  de: "Text-Ein-/Ausgabe und Bildeingabe",
+  id: "input/output teks dan input gambar",
+};
+
+const GPT_CATALOG_MODALITIES: Record<Locale, string> = {
+  en: "text, image, and file",
+  zh: "文本、图片和文件",
+  es: "texto, imagen y archivo",
+  fr: "texte, image et fichier",
+  pt: "texto, imagem e arquivo",
+  ru: "текст, изображения и файлы",
+  ja: "テキスト・画像・ファイル",
+  vi: "văn bản, hình ảnh và tệp",
+  de: "Text, Bild und Datei",
+  id: "teks, gambar, dan file",
+};
+
+const GPT_OFFICIAL_MODALITIES_TABLE: Record<Locale, string> = {
+  en: "Text input/output; image input",
+  zh: "文本输入/输出；图片输入",
+  es: "Entrada/salida de texto; entrada de imágenes",
+  fr: "Entrée/sortie texte ; entrée d'images",
+  pt: "Entrada/saída de texto; entrada de imagens",
+  ru: "Текстовый ввод/вывод; ввод изображений",
+  ja: "テキスト入出力・画像入力",
+  vi: "Đầu vào/đầu ra văn bản; đầu vào hình ảnh",
+  de: "Text-Ein-/Ausgabe; Bildeingabe",
+  id: "Input/output teks; input gambar",
+};
+
+const GPT_CATALOG_MODALITIES_TABLE: Record<Locale, string> = {
+  en: "Text, image, file",
+  zh: "文本、图片、文件",
+  es: "Texto, imagen y archivo",
+  fr: "Texte, image, fichier",
+  pt: "Texto, imagem e arquivo",
+  ru: "Текст, изображения, файлы",
+  ja: "テキスト・画像・ファイル",
+  vi: "Văn bản, hình ảnh, tệp",
+  de: "Text, Bild, Datei",
+  id: "Teks, gambar, file",
+};
+
+function localizedContext(facts: Facts, locale: Locale): string {
+  const context = facts.context ?? facts.catalogContext ?? "1,048,576 tokens";
+  if (locale === "zh" || locale === "ja") return context;
+  return context;
+}
+
 function localizedModalities(locale: Locale, facts: Facts): string {
-  if (facts.slug === "gpt-5-6-sol") return literal(locale, "text, image, and file");
-  if (facts.slug === "kimi-k3" || facts.slug === "deepseek-v4-pro") return literal(locale, "text and file");
+  if (facts.slug === "gpt-5-6-sol") return GPT_OFFICIAL_MODALITIES[locale] ?? GPT_OFFICIAL_MODALITIES.en;
+  if (facts.slug === "kimi-k3") {
+    const values: Record<Locale, string> = {
+      en: "native vision upstream; file fields on the Flatkey route",
+      zh: "上游原生视觉；Flatkey 路由的文件字段",
+      es: "visión nativa en el proveedor; campos de archivo en la ruta Flatkey",
+      fr: "vision native en amont ; champs de fichier sur la route Flatkey",
+      pt: "visão nativa no upstream; campos de arquivo na rota Flatkey",
+      ru: "нативное vision у провайдера; файловые поля в маршруте Flatkey",
+      ja: "上流のネイティブ vision、Flatkey 経路のファイル項目",
+      vi: "vision native ở upstream; trường file trên route Flatkey",
+      de: "native Vision beim Anbieter; Dateifelder auf der Flatkey-Route",
+      id: "vision native di upstream; bidang file pada rute Flatkey",
+    };
+    return values[locale] ?? values.en;
+  }
+  if (facts.slug === "deepseek-v4-pro") {
+    const values: Record<Locale, string> = {
+      en: "text/file fields on the Flatkey route; native vision not verified",
+      zh: "Flatkey 路由的文本/文件字段；尚未核实原生视觉",
+      es: "campos de texto/archivo en la ruta Flatkey; visión nativa no verificada",
+      fr: "champs texte/fichier sur la route Flatkey ; vision native non vérifiée",
+      pt: "campos de texto/arquivo na rota Flatkey; visão nativa não verificada",
+      ru: "текстовые/файловые поля в маршруте Flatkey; нативное vision не подтверждено",
+      ja: "Flatkey 経路のテキスト/ファイル項目、ネイティブ vision は未確認",
+      vi: "trường văn bản/file trên route Flatkey; vision native chưa xác minh",
+      de: "Text-/Dateifelder auf der Flatkey-Route; native Vision nicht verifiziert",
+      id: "bidang teks/file pada rute Flatkey; vision native belum diverifikasi",
+    };
+    return values[locale] ?? values.en;
+  }
   return facts.modalities;
 }
 
 function localizedModalitiesTable(locale: Locale, facts: Facts): string {
-  if (facts.slug === "gpt-5-6-sol") return literal(locale, "Text, image, file");
-  if (facts.slug === "kimi-k3" || facts.slug === "deepseek-v4-pro") return literal(locale, "Text/file fields");
+  if (facts.slug === "gpt-5-6-sol") return GPT_OFFICIAL_MODALITIES_TABLE[locale] ?? GPT_OFFICIAL_MODALITIES_TABLE.en;
+  if (facts.slug === "kimi-k3") {
+    const values: Record<Locale, string> = {
+      en: "Native vision upstream; Flatkey file fields",
+      zh: "上游原生视觉；Flatkey 文件字段",
+      es: "Visión nativa del proveedor; campos de archivo Flatkey",
+      fr: "Vision native en amont ; champs de fichier Flatkey",
+      pt: "Visão nativa no upstream; campos de arquivo Flatkey",
+      ru: "Нативное vision у провайдера; файловые поля Flatkey",
+      ja: "上流のネイティブ vision、Flatkey ファイル項目",
+      vi: "Vision native upstream; trường file Flatkey",
+      de: "Native Vision beim Anbieter; Flatkey-Dateifelder",
+      id: "Vision native di upstream; bidang file Flatkey",
+    };
+    return values[locale] ?? values.en;
+  }
+  if (facts.slug === "deepseek-v4-pro") {
+    const values: Record<Locale, string> = {
+      en: "Flatkey text/file fields; native vision not verified",
+      zh: "Flatkey 文本/文件字段；尚未核实原生视觉",
+      es: "Campos de texto/archivo Flatkey; visión nativa no verificada",
+      fr: "Champs texte/fichier Flatkey ; vision native non vérifiée",
+      pt: "Campos de texto/arquivo Flatkey; visão nativa não verificada",
+      ru: "Текстовые/файловые поля Flatkey; нативное vision не подтверждено",
+      ja: "Flatkey のテキスト/ファイル項目、ネイティブ vision は未確認",
+      vi: "Trường văn bản/file Flatkey; vision native chưa xác minh",
+      de: "Flatkey-Text-/Dateifelder; native Vision nicht verifiziert",
+      id: "Bidang teks/file Flatkey; vision native belum diverifikasi",
+    };
+    return values[locale] ?? values.en;
+  }
   return facts.modalities;
 }
 
 const MINIMAX_REFERENCE_BODY: Record<Locale, string> = {
-  en: "Catalog metadata lists text, image, video, and audio modalities; use only reference fields accepted by the selected route.",
-  zh: "目录元数据列出文本、图片、视频和音频模态；只使用所选路由接受的参考字段。",
-  es: "Los metadatos del catálogo enumeran texto, imagen, vídeo y audio; usa solo los campos de referencia aceptados por la ruta elegida.",
-  fr: "Les métadonnées du catalogue listent texte, image, vidéo et audio ; utilisez uniquement les champs de référence acceptés par la route choisie.",
-  pt: "Os metadados do catálogo listam texto, imagem, vídeo e áudio; use apenas os campos de referência aceitos pela rota escolhida.",
-  ru: "Метаданные каталога указывают текст, изображения, видео и аудио; используйте только референсные поля, поддерживаемые выбранным маршрутом.",
-  ja: "カタログのメタデータにはテキスト・画像・動画・音声が記載されています。選択した経路が受け付ける参照項目だけを使用します。",
-  vi: "Metadata catalog liệt kê văn bản, hình ảnh, video và âm thanh; chỉ dùng trường tham chiếu được route đã chọn chấp nhận.",
-  de: "Die Katalogmetadaten nennen Text, Bild, Video und Audio; verwende nur Referenzfelder, die der gewählte Pfad akzeptiert.",
-  id: "Metadata katalog mencantumkan teks, gambar, video, dan audio; gunakan hanya bidang referensi yang diterima rute terpilih.",
+  en: "MiniMax documents text, image, video, and audio inputs, with up to 9 images, 3 video clips, 3 audio clips, or 12 mixed files; prompts are limited to 7,000 characters upstream. Flatkey fields may differ by route.",
+  zh: "MiniMax 文档列出文本、图片、视频和音频输入：最多 9 张图片、3 段视频、3 段音频或 12 个混合文件；上游提示词上限为 7,000 个字符。Flatkey 字段可能因路由不同而变化。",
+  es: "MiniMax documenta entradas de texto, imagen, vídeo y audio: hasta 9 imágenes, 3 clips de vídeo, 3 clips de audio o 12 archivos mixtos; el prompt upstream admite 7.000 caracteres. Los campos de Flatkey pueden variar según la ruta.",
+  fr: "MiniMax documente des entrées texte, image, vidéo et audio : jusqu'à 9 images, 3 clips vidéo, 3 clips audio ou 12 fichiers mixtes ; le prompt upstream est limité à 7 000 caractères. Les champs Flatkey peuvent varier selon la route.",
+  pt: "A MiniMax documenta entradas de texto, imagem, vídeo e áudio: até 9 imagens, 3 clipes de vídeo, 3 clipes de áudio ou 12 arquivos mistos; o prompt upstream aceita até 7.000 caracteres. Os campos da Flatkey podem variar por rota.",
+  ru: "MiniMax документирует текстовые, графические, видео- и аудиовходы: до 9 изображений, 3 видеоклипов, 3 аудиоклипов или 12 смешанных файлов; upstream ограничивает prompt 7 000 символами. Поля Flatkey могут различаться по маршрутам.",
+  ja: "MiniMax はテキスト・画像・動画・音声入力を文書化しており、画像は最大 9 枚、動画 3 本、音声 3 本、混在ファイル 12 個までです。upstream のプロンプト上限は 7,000 文字で、Flatkey の項目は経路により異なる場合があります。",
+  vi: "MiniMax ghi nhận đầu vào văn bản, hình ảnh, video và âm thanh: tối đa 9 ảnh, 3 clip video, 3 clip âm thanh hoặc 12 tệp hỗn hợp; prompt upstream tối đa 7.000 ký tự. Trường Flatkey có thể khác theo route.",
+  de: "MiniMax dokumentiert Text-, Bild-, Video- und Audioeingaben: bis zu 9 Bilder, 3 Videoclips, 3 Audioclips oder 12 gemischte Dateien; der Upstream-Prompt ist auf 7.000 Zeichen begrenzt. Flatkey-Felder können je nach Pfad abweichen.",
+  id: "MiniMax mendokumentasikan input teks, gambar, video, dan audio: hingga 9 gambar, 3 klip video, 3 klip audio, atau 12 file campuran; prompt upstream dibatasi 7.000 karakter. Bidang Flatkey dapat berbeda menurut rute.",
 };
 
 /**
@@ -3061,6 +3409,60 @@ const MINIMAX_COMPARISON_CURRENT: Record<Locale, string> = {
   id: "Bidang hosted terverifikasi",
 };
 
+/** Final comparison row shared with the MiniMax source override. */
+const MINIMAX_UPSTREAM_FLATKEY_ROW: Record<Locale, { label: string; baseline: string; current: string }> = {
+  en: {
+    label: "Upstream vs Flatkey",
+    baseline: "Open-source/local use follows MiniMax upstream documentation",
+    current: "Flatkey routes and bills hosted API access",
+  },
+  zh: {
+    label: "上游与 Flatkey",
+    baseline: "开源/本地使用遵循 MiniMax 上游文档",
+    current: "Flatkey 提供路由并为托管 API 访问计费",
+  },
+  es: {
+    label: "Upstream frente a Flatkey",
+    baseline: "El uso open source/local sigue la documentación upstream de MiniMax",
+    current: "Flatkey enruta y factura el acceso a la API alojada",
+  },
+  fr: {
+    label: "Upstream face à Flatkey",
+    baseline: "L'usage open source/local suit la documentation upstream de MiniMax",
+    current: "Flatkey route et facture l'accès à l'API hébergée",
+  },
+  pt: {
+    label: "Upstream vs. Flatkey",
+    baseline: "O uso open source/local segue a documentação upstream da MiniMax",
+    current: "A Flatkey roteia e cobra pelo acesso à API hospedada",
+  },
+  ru: {
+    label: "Upstream и Flatkey",
+    baseline: "Открытое/локальное использование следует документации MiniMax upstream",
+    current: "Flatkey маршрутизирует и тарифицирует доступ к размещённому API",
+  },
+  ja: {
+    label: "上流と Flatkey",
+    baseline: "オープンソース/ローカル利用は MiniMax の上流ドキュメントに従います",
+    current: "Flatkey はホスト型 API のアクセスをルーティングし、課金します",
+  },
+  vi: {
+    label: "Upstream và Flatkey",
+    baseline: "Việc dùng mã nguồn mở/cục bộ theo tài liệu upstream của MiniMax",
+    current: "Flatkey định tuyến và tính phí quyền truy cập API hosted",
+  },
+  de: {
+    label: "Upstream vs. Flatkey",
+    baseline: "Open-Source-/lokale Nutzung folgt der MiniMax-Upstream-Dokumentation",
+    current: "Flatkey routet und berechnet den Zugriff auf die gehostete API",
+  },
+  id: {
+    label: "Upstream vs Flatkey",
+    baseline: "Penggunaan open source/lokal mengikuti dokumentasi upstream MiniMax",
+    current: "Flatkey merutekan dan menagih akses API hosted",
+  },
+};
+
 const MINIMAX_COMPARISON_TITLE: Record<Locale, string> = {
   en: "MiniMax-H3 ComfyUI and local setup: verified boundaries",
   zh: "MiniMax-H3 ComfyUI 与本地设置：已核实边界",
@@ -3075,16 +3477,16 @@ const MINIMAX_COMPARISON_TITLE: Record<Locale, string> = {
 };
 
 const MINIMAX_COMPARISON_RATIO: Record<Locale, string> = {
-  en: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16, adaptive",
-  zh: "21:9、16:9、4:3、1:1、3:4、9:16、自适应",
-  es: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 o adaptable",
-  fr: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 ou adaptatif",
-  pt: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 ou adaptável",
-  ru: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 или адаптивное",
-  ja: "21:9、16:9、4:3、1:1、3:4、9:16、アダプティブ",
-  vi: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 hoặc thích ứng",
-  de: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16 oder adaptiv",
-  id: "21:9, 16:9, 4:3, 1:1, 3:4, 9:16, atau adaptif",
+  en: "Fixed ratio for text-to-video; adaptive on image/reference routes",
+  zh: "文生视频使用固定比例；图像或参考素材路线使用 adaptive",
+  es: "Proporción fija para texto a vídeo; adaptive en rutas con imagen o referencias",
+  fr: "Ratio fixe pour le texte-vers-vidéo ; adaptive sur les routes avec image ou référence",
+  pt: "Proporção fixa para texto para vídeo; adaptive nas rotas com imagem ou referências",
+  ru: "Фиксированное соотношение для текста-видео; adaptive в маршрутах с изображением или референсом",
+  ja: "テキストから動画は固定比率、画像・参照素材のルートでは adaptive",
+  vi: "Tỷ lệ cố định cho văn bản thành video; adaptive ở route có ảnh hoặc tham chiếu",
+  de: "Festes Verhältnis für Text-zu-Video; adaptive bei Bild-/Referenzrouten",
+  id: "Rasio tetap untuk teks-ke-video; adaptive pada rute gambar atau referensi",
 };
 
 const MINIMAX_EXPLICIT_BOOLEAN: Record<Locale, string> = {
@@ -3154,12 +3556,252 @@ function localizedImageApiDescription(locale: Locale): string {
 }
 
 /**
+ * Search-facing headings for the audited priority pages.  These are written
+ * as normal reader language first, while retaining the model name and the
+ * intent term that the page is meant to serve (API, generator, pricing, or
+ * long-context work).  Keeping this in one map also prevents the translated
+ * routes from falling back to the old noun-stack such as "API, pricing, and
+ * model details".
+ */
+const PRIORITY_HERO_TITLES: Record<Locale, Record<PriorityModelSlug, string>> = {
+  en: {
+    "gpt-5-6-sol": "GPT-5.6 Sol API for long-context work",
+    "gpt-image-2": "GPT Image 2 AI image generator and API",
+    "kimi-k3": "Kimi K3 API for long-context coding and research",
+    "deepseek-v4-pro": "DeepSeek V4 Pro API for reasoning and coding",
+    "minimax-h3": "MiniMax H3 AI video generator and API",
+  },
+  pt: {
+    "gpt-5-6-sol": "API do GPT-5.6 Sol para contexto longo",
+    "gpt-image-2": "Gerador de imagens GPT Image 2 e API",
+    "kimi-k3": "API do Kimi K3 para programação e pesquisa com contexto longo",
+    "deepseek-v4-pro": "API do DeepSeek V4 Pro para raciocínio e programação",
+    "minimax-h3": "Gerador de vídeo MiniMax H3 e API",
+  },
+  zh: {
+    "gpt-5-6-sol": "GPT-5.6 Sol API 与长上下文工作流",
+    "gpt-image-2": "GPT Image 2 AI 图像生成器与 API",
+    "kimi-k3": "Kimi K3 长上下文编程与研究 API",
+    "deepseek-v4-pro": "DeepSeek V4 Pro 推理与编程 API",
+    "minimax-h3": "MiniMax H3 AI 视频生成器与 API",
+  },
+  es: {
+    "gpt-5-6-sol": "API de GPT-5.6 Sol para flujos de contexto largo",
+    "gpt-image-2": "Generador de imágenes GPT Image 2 y API",
+    "kimi-k3": "API de Kimi K3 para programación e investigación con contexto largo",
+    "deepseek-v4-pro": "API de DeepSeek V4 Pro para razonamiento y programación",
+    "minimax-h3": "Generador de vídeo MiniMax H3 y API",
+  },
+  fr: {
+    "gpt-5-6-sol": "API GPT-5.6 Sol pour les tâches à long contexte",
+    "gpt-image-2": "Générateur d'images GPT Image 2 et API",
+    "kimi-k3": "API Kimi K3 pour le code et la recherche à long contexte",
+    "deepseek-v4-pro": "API DeepSeek V4 Pro pour le raisonnement et le code",
+    "minimax-h3": "Générateur vidéo MiniMax H3 et API",
+  },
+  ru: {
+    "gpt-5-6-sol": "API GPT-5.6 Sol для задач с длинным контекстом",
+    "gpt-image-2": "Генератор изображений GPT Image 2 и API",
+    "kimi-k3": "API Kimi K3 для программирования и исследований с длинным контекстом",
+    "deepseek-v4-pro": "API DeepSeek V4 Pro для рассуждений и программирования",
+    "minimax-h3": "ИИ-генератор видео MiniMax H3 и API",
+  },
+  ja: {
+    "gpt-5-6-sol": "長いコンテキストに対応する GPT-5.6 Sol API",
+    "gpt-image-2": "GPT Image 2 の画像生成 API",
+    "kimi-k3": "長文のコーディングと調査に使う Kimi K3 API",
+    "deepseek-v4-pro": "推論とコーディングに使う DeepSeek V4 Pro API",
+    "minimax-h3": "MiniMax H3 AI 動画生成 API",
+  },
+  vi: {
+    "gpt-5-6-sol": "API GPT-5.6 Sol cho tác vụ ngữ cảnh dài",
+    "gpt-image-2": "API và trình tạo ảnh GPT Image 2",
+    "kimi-k3": "API Kimi K3 cho coding và nghiên cứu ngữ cảnh dài",
+    "deepseek-v4-pro": "API DeepSeek V4 Pro cho suy luận và coding",
+    "minimax-h3": "API và trình tạo video AI MiniMax H3",
+  },
+  de: {
+    "gpt-5-6-sol": "GPT-5.6 Sol API für Aufgaben mit langem Kontext",
+    "gpt-image-2": "GPT Image 2 Bildgenerator und API",
+    "kimi-k3": "Kimi K3 API für Coding und Recherche mit langem Kontext",
+    "deepseek-v4-pro": "DeepSeek V4 Pro API für Schlussfolgerungen und Coding",
+    "minimax-h3": "MiniMax H3 KI-Videogenerator und API",
+  },
+  id: {
+    "gpt-5-6-sol": "API GPT-5.6 Sol untuk pekerjaan dengan konteks panjang",
+    "gpt-image-2": "Generator gambar GPT Image 2 dan API",
+    "kimi-k3": "API Kimi K3 untuk coding dan riset dengan konteks panjang",
+    "deepseek-v4-pro": "API DeepSeek V4 Pro untuk penalaran dan coding",
+    "minimax-h3": "Generator video AI MiniMax H3 dan API",
+  },
+};
+
+function localizedHeroTitle(facts: Facts, locale: Locale): string {
+  return PRIORITY_HERO_TITLES[locale]?.[facts.slug] ?? PRIORITY_HERO_TITLES.en[facts.slug];
+}
+
+function localizedPerformanceTitle(facts: Facts, locale: Locale): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 image-generation API performance and availability";
+    if (facts.slug === "minimax-h3") return "MiniMax-H3 video API performance and availability";
+  }
+  if (locale === "pt") {
+    if (facts.slug === "gpt-image-2") return "Desempenho e disponibilidade da API de geração de imagens GPT Image 2";
+    if (facts.slug === "minimax-h3") return "Desempenho e disponibilidade da API de vídeo MiniMax-H3";
+  }
+  const suffix: Record<Locale, string> = {
+    en: "API performance and availability",
+    zh: "API 性能与可用性",
+    es: "rendimiento y disponibilidad de la API",
+    fr: "performances et disponibilité de l'API",
+    pt: "desempenho e disponibilidade da API",
+    ru: "производительность и доступность API",
+    ja: "API の性能と可用性",
+    vi: "hiệu năng và khả dụng của API",
+    de: "API-Leistung und Verfügbarkeit",
+    id: "performa dan ketersediaan API",
+  };
+  return locale === "pt" ? `Desempenho e disponibilidade da API ${facts.name}` : `${facts.name} ${suffix[locale]}`;
+}
+
+function localizedActivityTitle(facts: Facts, locale: Locale): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 image-generation API usage and activity";
+    if (facts.slug === "minimax-h3") return "MiniMax-H3 video API usage and generation activity";
+  }
+  if (locale === "pt") {
+    if (facts.slug === "gpt-image-2") return "Uso da API de geração de imagens GPT Image 2 e atividade";
+    if (facts.slug === "minimax-h3") return "Uso da API de vídeo MiniMax-H3 e atividade de geração de vídeo";
+    return `Uso da API ${facts.name} e atividade das solicitações`;
+  }
+  const suffix: Record<Locale, string> = {
+    en: "API usage and request activity",
+    zh: "API 使用与请求活动",
+    es: "uso de la API y actividad de solicitudes",
+    fr: "utilisation de l'API et activité des requêtes",
+    pt: "uso da API e atividade das solicitações",
+    ru: "использование API и активность запросов",
+    ja: "API の利用状況とリクエスト活動",
+    vi: "mức dùng API và hoạt động request",
+    de: "API-Nutzung und Anfrageaktivität",
+    id: "penggunaan API dan aktivitas permintaan",
+  };
+  return `${facts.name} ${suffix[locale]}`;
+}
+
+function localizedRelatedTitle(facts: Facts, locale: Locale): string {
+  const titles: Record<Locale, Record<PriorityModelSlug, string>> = {
+    en: {
+      "gpt-5-6-sol": "More GPT-5.6 Sol alternatives, OpenAI GPT models, and API options",
+      "gpt-image-2": "More GPT Image 2 alternatives and image generator APIs",
+      "kimi-k3": "More Kimi K3, Moonshot AI, and long-context API models",
+      "deepseek-v4-pro": "More DeepSeek V4 Pro API models and pricing",
+      "minimax-h3": "More MiniMax H3 alternatives and AI video generator APIs",
+    },
+    zh: {
+      "gpt-5-6-sol": "更多 GPT-5.6 Sol、OpenAI GPT 模型与 API 选项",
+      "gpt-image-2": "更多 GPT Image 2 替代方案与图像生成 API",
+      "kimi-k3": "更多 Moonshot AI 与长上下文 API 模型",
+      "deepseek-v4-pro": "更多 DeepSeek API 模型与价格",
+      "minimax-h3": "更多 MiniMax H3 替代方案与 AI 视频生成 API",
+    },
+    es: {
+      "gpt-5-6-sol": "Más modelos GPT de OpenAI y opciones de API para GPT-5.6 Sol",
+      "gpt-image-2": "Más alternativas a GPT Image 2 y APIs de generación de imágenes",
+      "kimi-k3": "Más modelos de API de Moonshot AI y contexto largo para Kimi K3",
+      "deepseek-v4-pro": "Más modelos de API y precios de DeepSeek V4 Pro",
+      "minimax-h3": "Más alternativas a MiniMax H3 y APIs de generación de vídeo con IA",
+    },
+    fr: {
+      "gpt-5-6-sol": "Plus de modèles GPT d'OpenAI et d'options API pour GPT-5.6 Sol",
+      "gpt-image-2": "Plus d'alternatives à GPT Image 2 et d'API de génération d'images",
+      "kimi-k3": "Plus de modèles API Moonshot AI et long contexte pour Kimi K3",
+      "deepseek-v4-pro": "Plus de modèles API et de tarifs DeepSeek V4 Pro",
+      "minimax-h3": "Plus d'alternatives à MiniMax H3 et d'API de génération vidéo IA",
+    },
+    pt: {
+      "gpt-5-6-sol": "Mais modelos GPT da OpenAI e opções de API para o GPT-5.6 Sol",
+      "gpt-image-2": "Mais alternativas ao GPT Image 2 e APIs de geração de imagens",
+      "kimi-k3": "Mais modelos da Moonshot AI e APIs de contexto longo para o Kimi K3",
+      "deepseek-v4-pro": "Mais modelos de API e preços do DeepSeek V4 Pro",
+      "minimax-h3": "Mais alternativas ao MiniMax H3 e APIs de geração de vídeo com IA",
+    },
+    ru: {
+      "gpt-5-6-sol": "Другие модели GPT от OpenAI и API-варианты для GPT-5.6 Sol",
+      "gpt-image-2": "Другие варианты GPT Image 2 и API генерации изображений",
+      "kimi-k3": "Другие модели API Moonshot AI и варианты длинного контекста Kimi K3",
+      "deepseek-v4-pro": "Другие модели API DeepSeek V4 Pro и цены",
+      "minimax-h3": "Другие варианты MiniMax H3 и API генерации видео с ИИ",
+    },
+    ja: {
+      "gpt-5-6-sol": "GPT-5.6 Sol と OpenAI GPT の関連モデル・API",
+      "gpt-image-2": "GPT Image 2 の代替モデルと画像生成 API",
+      "kimi-k3": "Moonshot AI の関連モデルと長文脈 API（Kimi K3）",
+      "deepseek-v4-pro": "DeepSeek V4 Pro の関連 API モデルと料金",
+      "minimax-h3": "MiniMax H3 の代替モデルと AI 動画生成 API",
+    },
+    vi: {
+      "gpt-5-6-sol": "Model GPT của OpenAI và lựa chọn API liên quan đến GPT-5.6 Sol",
+      "gpt-image-2": "Lựa chọn thay thế GPT Image 2 và API tạo ảnh",
+      "kimi-k3": "Model API Moonshot AI và ngữ cảnh dài liên quan đến Kimi K3",
+      "deepseek-v4-pro": "Model API và giá DeepSeek V4 Pro liên quan",
+      "minimax-h3": "Lựa chọn thay thế MiniMax H3 và API tạo video AI",
+    },
+    de: {
+      "gpt-5-6-sol": "Weitere OpenAI-GPT-Modelle und API-Optionen für GPT-5.6 Sol",
+      "gpt-image-2": "Weitere Alternativen zu GPT Image 2 und Bildgenerator-APIs",
+      "kimi-k3": "Weitere Moonshot-AI-Modelle und Long-Context-APIs für Kimi K3",
+      "deepseek-v4-pro": "Weitere DeepSeek-V4-Pro-API-Modelle und Preise",
+      "minimax-h3": "Weitere Alternativen zu MiniMax H3 und KI-Videogenerator-APIs",
+    },
+    id: {
+      "gpt-5-6-sol": "Model GPT OpenAI lain dan opsi API untuk GPT-5.6 Sol",
+      "gpt-image-2": "Alternatif GPT Image 2 dan API generator gambar lainnya",
+      "kimi-k3": "Model API Moonshot AI dan konteks panjang terkait untuk Kimi K3",
+      "deepseek-v4-pro": "Model API dan harga DeepSeek V4 Pro lainnya",
+      "minimax-h3": "Alternatif MiniMax H3 dan API generator video AI lainnya",
+    },
+  };
+  return titles[locale]?.[facts.slug] ?? titles.en[facts.slug];
+}
+
+function localizedWhyTitle(facts: Facts, locale: Locale): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-5-6-sol") return "A practical GPT-5.6 Sol API workflow";
+    if (facts.slug === "gpt-image-2") return "A repeatable GPT Image 2 workflow for product images";
+    if (facts.slug === "kimi-k3") return "A long-context Kimi K3 workflow for coding and research";
+    if (facts.slug === "deepseek-v4-pro") return "A clear DeepSeek V4 Pro API workflow for coding";
+    return "A practical MiniMax H3 video API workflow";
+  }
+  if (locale === "pt") {
+    if (facts.slug === "gpt-5-6-sol") return "Um fluxo prático para a API GPT-5.6 Sol";
+    if (facts.slug === "gpt-image-2") return "Um fluxo reproduzível do GPT Image 2 para imagens de produto";
+    if (facts.slug === "kimi-k3") return "Um fluxo de contexto longo com Kimi K3 para código e pesquisa";
+    if (facts.slug === "deepseek-v4-pro") return "Um fluxo claro da API DeepSeek V4 Pro para programação";
+    return "Um fluxo prático da API de vídeo MiniMax H3";
+  }
+  return ADDON_PACKS[locale]?.whyTitle(facts.name) ?? ADDON_PACKS.en.whyTitle(facts.name);
+}
+
+/**
  * Build section headings around the keyword cluster without forcing English
  * word order onto translated pages.  The model name and API/pricing intent
  * stay contiguous, while each locale gets a heading a native reader would
  * actually use as a search result or scan target.
  */
 function localizedTextApiTitle(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-5-6-sol") return "Call the GPT-5.6 Sol API from your existing client";
+    if (facts.slug === "gpt-image-2") return "Use the GPT Image 2 API for generation and edits";
+    if (facts.slug === "kimi-k3") return "Use the Kimi K3 API with OpenAI or Anthropic clients";
+    if (facts.slug === "deepseek-v4-pro") return "Use the DeepSeek V4 Pro API with compatible clients";
+  }
+  if (locale === "pt") {
+    if (facts.slug === "gpt-5-6-sol") return "Use a API do GPT-5.6 Sol com Chat Completions ou Responses";
+    if (facts.slug === "gpt-image-2") return "Use a API do GPT Image 2 para gerar e editar imagens";
+    if (facts.slug === "kimi-k3") return "Use a API do Kimi K3 com clientes OpenAI ou Anthropic";
+    if (facts.slug === "deepseek-v4-pro") return "Use a API do DeepSeek V4 Pro com clientes compatíveis";
+  }
   switch (locale) {
     case "zh": return `调用 ${facts.name} API`;
     case "es": return `API de ${facts.name}`;
@@ -3177,42 +3819,58 @@ function localizedTextApiTitle(facts: Facts, pack: LanguagePack, locale: Locale)
 type PricingHeadingVariant = "standard" | "utc" | "tokenDimensions";
 
 function localizedPricingTitle(facts: Facts, pack: LanguagePack, locale: Locale, variant: PricingHeadingVariant): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-5-6-sol") return "GPT-5.6 Sol API pricing by token";
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 API pricing by token and image input";
+    if (facts.slug === "kimi-k3") return "Kimi K3 API pricing for long-context requests";
+    if (facts.slug === "deepseek-v4-pro") return "DeepSeek V4 Pro API pricing by UTC tier";
+    if (facts.slug === "minimax-h3") return "MiniMax H3 video API pricing by resolution and duration";
+  }
   if (locale === "pt") {
-    if (variant === "utc") return `Preços do ${facts.name} por faixa de horário UTC`;
-    if (variant === "tokenDimensions") return `Preços do ${facts.name} por token e dimensões da imagem`;
-    return `Preços do ${facts.name}`;
+    if (facts.slug === "gpt-5-6-sol") return "Preços da API do GPT-5.6 Sol por token";
+    if (facts.slug === "gpt-image-2") return "Preços da API do GPT Image 2 por token de entrada de imagem";
+    if (facts.slug === "kimi-k3") return "Preços da API do Kimi K3 para solicitações de contexto longo";
+    if (facts.slug === "deepseek-v4-pro") return "Preços da API do DeepSeek V4 Pro por faixa UTC";
+    if (facts.slug === "minimax-h3") return "Preços da API de vídeo MiniMax H3 por resolução e duração";
   }
   if (locale === "es") {
+    if (facts.slug === "gpt-image-2") return "Precios de GPT Image 2 por token de entrada de imagen";
     if (variant === "utc") return `Precios de ${facts.name} por franja UTC`;
     if (variant === "tokenDimensions") return `Precios de ${facts.name} por token y dimensiones de imagen`;
     return `Precios de ${facts.name}`;
   }
   if (locale === "fr") {
+    if (facts.slug === "gpt-image-2") return "Tarifs de GPT Image 2 par token d'entrée image";
     if (variant === "utc") return `Tarifs de ${facts.name} par plage horaire UTC`;
     if (variant === "tokenDimensions") return `Tarifs de ${facts.name} par token et dimensions d'image`;
     return `Tarifs de ${facts.name}`;
   }
   if (locale === "de") {
+    if (facts.slug === "gpt-image-2") return "GPT Image 2: Preise nach Bild-Eingabetoken";
     if (variant === "utc") return `${facts.name}-Preise nach UTC-Zeitfenster`;
     if (variant === "tokenDimensions") return `${facts.name}-Preise nach Token und Bilddimensionen`;
     return `${facts.name}-Preise`;
   }
   if (locale === "ru") {
+    if (facts.slug === "gpt-image-2") return "Цены GPT Image 2 по входным токенам изображения";
     if (variant === "utc") return `Цены ${facts.name} по временным зонам UTC`;
     if (variant === "tokenDimensions") return `Цены ${facts.name} по токенам и размерам изображения`;
     return `Цены ${facts.name}`;
   }
   if (locale === "ja") {
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 の画像入力トークン別料金";
     if (variant === "utc") return `${facts.name} の UTC 時間帯別料金`;
     if (variant === "tokenDimensions") return `${facts.name} のトークン・画像サイズ別料金`;
     return `${facts.name} の料金`;
   }
   if (locale === "vi") {
+    if (facts.slug === "gpt-image-2") return "Giá GPT Image 2 theo token đầu vào hình ảnh";
     if (variant === "utc") return `Giá ${facts.name} theo khung giờ UTC`;
     if (variant === "tokenDimensions") return `Giá ${facts.name} theo token và kích thước ảnh`;
     return `Giá ${facts.name}`;
   }
   if (locale === "id") {
+    if (facts.slug === "gpt-image-2") return "Harga GPT Image 2 berdasarkan token input gambar";
     if (variant === "utc") return `Harga ${facts.name} berdasarkan waktu UTC`;
     if (variant === "tokenDimensions") return `Harga ${facts.name} berdasarkan token dan dimensi gambar`;
     return `Harga ${facts.name}`;
@@ -3228,11 +3886,12 @@ function localizedPricingTitle(facts: Facts, pack: LanguagePack, locale: Locale,
 }
 
 function localizedImageApiTitle(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  if (locale === "en") return "Use the GPT Image 2 API for generation and edits";
+  if (locale === "pt") return "Use a API do GPT Image 2 para gerar e editar imagens";
   switch (locale) {
     case "zh": return `${facts.name} API endpoint 与请求设置`;
     case "es": return `Endpoint de la API y configuración de la solicitud de ${facts.name}`;
     case "fr": return `Endpoint API et configuration de requête de ${facts.name}`;
-    case "pt": return `Endpoint da API e configuração da solicitação do ${facts.name}`;
     case "ru": return `Endpoint API ${facts.name} и настройка запроса`;
     case "ja": return `${facts.name} API のエンドポイントとリクエスト設定`;
     case "vi": return `Endpoint API và cấu hình yêu cầu ${facts.name}`;
@@ -3243,11 +3902,12 @@ function localizedImageApiTitle(facts: Facts, pack: LanguagePack, locale: Locale
 }
 
 function localizedVideoApiTitle(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  if (locale === "en") return "Use the MiniMax H3 video API with an async task";
+  if (locale === "pt") return "Use a API de vídeo MiniMax H3 com uma tarefa assíncrona";
   switch (locale) {
     case "zh": return `${facts.name} 视频 API 设置`;
     case "es": return `Configuración de la API de vídeo de ${facts.name}`;
     case "fr": return `Configuration de l'API vidéo de ${facts.name}`;
-    case "pt": return `Configuração da API de vídeo do ${facts.name}`;
     case "ru": return `Настройка видео API ${facts.name}`;
     case "ja": return `${facts.name} 動画 API の設定`;
     case "vi": return `Cấu hình API video ${facts.name}`;
@@ -3257,6 +3917,19 @@ function localizedVideoApiTitle(facts: Facts, pack: LanguagePack, locale: Locale
   }
 }
 
+const MINIMAX_API_FIELDS: Record<Locale, string> = {
+  en: "content[] with a non-empty text item, resolution, duration, and ratio; aigc_watermark is a Flatkey route field whose availability is route-specific.",
+  zh: "content[] 至少包含一个非空文本项，以及 resolution、duration、ratio；aigc_watermark 是 Flatkey 路由字段，是否可用取决于具体路线。",
+  es: "content[] con un elemento de texto no vacío, resolution, duration y ratio; aigc_watermark es un campo de la ruta Flatkey cuya disponibilidad depende de la ruta.",
+  fr: "content[] avec un élément texte non vide, resolution, duration et ratio ; aigc_watermark est un champ de la route Flatkey dont la disponibilité dépend de la route.",
+  pt: "content[] com um item de texto não vazio, resolution, duration e ratio; aigc_watermark é um campo da rota Flatkey cuja disponibilidade depende da rota.",
+  ru: "content[] с непустым текстовым элементом, resolution, duration и ratio; aigc_watermark — поле маршрута Flatkey, доступность которого зависит от маршрута.",
+  ja: "空でないテキスト項目を含む content[]、resolution、duration、ratio。aigc_watermark は Flatkey のルート項目で、利用可否はルートによって異なります。",
+  vi: "content[] có mục văn bản không rỗng, resolution, duration và ratio; aigc_watermark là trường của route Flatkey và khả dụng tùy route.",
+  de: "content[] mit einem nicht leeren Textelement sowie resolution, duration und ratio; aigc_watermark ist ein Feld der Flatkey-Route, dessen Verfügbarkeit von der Route abhängt.",
+  id: "content[] dengan item teks yang tidak kosong, resolution, duration, dan ratio; aigc_watermark adalah bidang rute Flatkey yang ketersediaannya bergantung pada rute.",
+};
+
 /**
  * Keep capability headings grammatical in the locale that is currently the
  * Brazil focus.  The model name remains adjacent to the relevant intent
@@ -3264,15 +3937,212 @@ function localizedVideoApiTitle(facts: Facts, pack: LanguagePack, locale: Locale
  * noun-stack such as "GPT Image 2 tamanhos".
  */
 function localizedCapabilitiesTitle(facts: Facts, pack: LanguagePack, locale: Locale): string {
-  if (locale === "pt") {
-    if (facts.kind === "image") return `Tamanhos, qualidade, formatos e controles do ${facts.name}`;
-    if (facts.kind === "video") return `Resolução, duração, proporção e marca-d'água do ${facts.name}`;
-    if (facts.slug === "gpt-5-6-sol") return `Contexto, modalidades e endpoint do ${facts.name}`;
-    return `Contexto, entrada de arquivos e endpoints compatíveis do ${facts.name}`;
+  if (locale === "en") {
+    if (facts.slug === "gpt-5-6-sol") return "GPT-5.6 Sol context and multimodal inputs";
+    if (facts.slug === "gpt-image-2") return "GPT Image 2 image generation and editing capabilities";
+    if (facts.slug === "kimi-k3") return "Kimi K3 1M-token context, native vision, and API endpoints";
+    if (facts.slug === "deepseek-v4-pro") return "DeepSeek V4 Pro 1M-token context, UTC pricing, and API endpoints";
+    if (facts.slug === "minimax-h3") return "MiniMax H3 video generation and production capabilities";
   }
-  if (facts.kind === "image") return `${facts.name} ${pack.imageControls}`;
-  if (facts.kind === "video") return `${facts.name} ${pack.videoControls}`;
+  if (locale === "pt") {
+    if (facts.slug === "gpt-5-6-sol") return "Contexto longo e entradas multimodais do GPT-5.6 Sol";
+    if (facts.slug === "gpt-image-2") return "Capacidades de geração e edição de imagens do GPT Image 2";
+    if (facts.slug === "kimi-k3") return "Contexto de 1 milhão de tokens, visão nativa e endpoints da API Kimi K3";
+    if (facts.slug === "deepseek-v4-pro") return "Contexto de 1 milhão de tokens, preços por UTC e endpoints da API DeepSeek V4 Pro";
+    if (facts.slug === "minimax-h3") return "Capacidades de geração e produção de vídeo do MiniMax H3";
+  }
+  if (facts.kind === "image") {
+    const titles: Record<Locale, string> = {
+      zh: `${facts.name} 图像生成与编辑能力`, es: `Capacidades de generación y edición de imágenes de ${facts.name}`,
+      fr: `Capacités de génération et d’édition d’images de ${facts.name}`, ru: `Возможности генерации и редактирования изображений ${facts.name}`,
+      ja: `${facts.name} の画像生成・編集機能`, vi: `Khả năng tạo và chỉnh sửa hình ảnh của ${facts.name}`,
+      de: `Bildgenerierungs- und Bearbeitungsfunktionen von ${facts.name}`, id: `Kemampuan pembuatan dan penyuntingan gambar ${facts.name}`,
+      en: `${facts.name} image generation and editing capabilities`, pt: `Capacidades de geração e edição de imagens do ${facts.name}`,
+    };
+    return titles[locale] ?? `${facts.name} image generation and editing capabilities`;
+  }
+  if (facts.kind === "video") {
+    const titles: Record<Locale, string> = {
+      zh: `${facts.name} 视频生成与制作能力`, es: `Capacidades de generación y producción de vídeo de ${facts.name}`,
+      fr: `Capacités de génération et de production vidéo de ${facts.name}`, ru: `Возможности генерации и производства видео ${facts.name}`,
+      ja: `${facts.name} の動画生成・制作機能`, vi: `Khả năng tạo và sản xuất video của ${facts.name}`,
+      de: `Videoerzeugungs- und Produktionsfunktionen von ${facts.name}`, id: `Kemampuan pembuatan dan produksi video ${facts.name}`,
+      en: `${facts.name} video generation and production capabilities`, pt: `Capacidades de geração e produção de vídeo do ${facts.name}`,
+    };
+    return titles[locale] ?? `${facts.name} video generation and production capabilities`;
+  }
+  if (facts.kind === "text") {
+    const labels: Record<Locale, { gpt: string; kimi: string; deepseek: string }> = {
+      en: { gpt: "capabilities for documents, code, and agents", kimi: "capabilities for coding, files, and research", deepseek: "capabilities for reasoning and coding" },
+      zh: { gpt: "面向文档、代码和智能体的能力", kimi: "面向编程、文件和研究的能力", deepseek: "面向推理和编程的能力" },
+      es: { gpt: "capacidades para documentos, código y agentes", kimi: "capacidades para código, archivos e investigación", deepseek: "capacidades para razonamiento y código" },
+      fr: { gpt: "capacités pour les documents, le code et les agents", kimi: "capacités pour le code, les fichiers et la recherche", deepseek: "capacités pour le raisonnement et le code" },
+      pt: { gpt: "capacidades para documentos, código e agentes", kimi: "capacidades para código, arquivos e pesquisa", deepseek: "capacidades para raciocínio e código" },
+      ru: { gpt: "возможности для документов, кода и агентов", kimi: "возможности для кода, файлов и исследований", deepseek: "возможности для рассуждений и кода" },
+      ja: { gpt: "文書・コード・エージェント向けの機能", kimi: "コーディング・ファイル・調査向けの機能", deepseek: "推論・コーディング向けの機能" },
+      vi: { gpt: "khả năng cho tài liệu, mã và agent", kimi: "khả năng cho mã, tệp và nghiên cứu", deepseek: "khả năng cho suy luận và mã" },
+      de: { gpt: "Funktionen für Dokumente, Code und Agenten", kimi: "Funktionen für Code, Dateien und Recherche", deepseek: "Funktionen für Reasoning und Code" },
+      id: { gpt: "kemampuan untuk dokumen, kode, dan agen", kimi: "kemampuan untuk kode, file, dan riset", deepseek: "kemampuan untuk penalaran dan kode" },
+    };
+    const label = labels[locale] ?? labels.en;
+    const key = facts.slug === "gpt-5-6-sol" ? "gpt" : facts.slug === "kimi-k3" ? "kimi" : "deepseek";
+    return `${facts.name} ${label[key]}`;
+  }
   return `${facts.name} ${facts.slug === "gpt-5-6-sol" ? pack.contextModalitiesEndpoint : pack.fileEndpoints}`;
+}
+
+type MediaCapabilityCard = { title: string; body: string };
+
+/** Feature-led cards for media models. API fields remain in the API section;
+ * these cards explain what a creator can accomplish with the selected model. */
+function localizedMediaCapabilityCards(facts: Facts, locale: Locale): MediaCapabilityCard[] {
+  const name = facts.name;
+  const endpoint = facts.endpoint;
+  const editEndpoint = facts.secondEndpoint ?? "/v1/images/edits";
+  const copy: Record<Locale, { image: MediaCapabilityCard[]; video: MediaCapabilityCard[] }> = {
+    en: {
+      image: [
+        { title: "Text-to-image and editing", body: `Create new visuals from a prompt or revise an existing image through ${endpoint} and ${editEndpoint}.` },
+        { title: "Reference-led creative", body: "Use image context to preserve important subjects and composition details across product, editorial, and campaign work." },
+        { title: "Flexible visual variants", body: "Turn one creative brief into square, portrait, or landscape assets for different placements and channels." },
+        { title: "Safe production delivery", body: "Prepare polished outputs with the model's documented quality, format, background, and moderation behavior." },
+      ],
+      video: [
+        { title: "Text-to-video and image-to-video", body: `Start a scene from a written brief or a designed frame through ${endpoint}.` },
+        { title: "Reference-led shot direction", body: "Use reference media to keep a product, character, or storyboard visually coherent while the shot develops." },
+        { title: "Controlled motion and pacing", body: "Shape a usable clip by deciding how the camera, subject movement, duration, and framing should progress." },
+        { title: "Audio-aware production handoff", body: "Keep optional sound and output choices explicit so a tested clip can move cleanly into editing and delivery." },
+      ],
+    },
+    zh: {
+      image: [
+        { title: "文生图与图像编辑", body: `通过 ${endpoint} 生成新画面，也可通过 ${editEndpoint} 修改已有图片。` },
+        { title: "参考图驱动创作", body: "使用图片上下文保留主体与构图细节，适合产品、编辑和营销素材制作。" },
+        { title: "多场景视觉变体", body: "围绕同一创意生成方形、竖版或横版素材，适配不同版位和渠道。" },
+        { title: "安全且适合交付", body: "结合模型已记录的质量、格式、背景和内容审核行为，整理可直接进入制作流程的结果。" },
+      ],
+      video: [
+        { title: "文生视频与图生视频", body: `通过 ${endpoint} 从文字脚本或已设计的画面开始生成场景。` },
+        { title: "参考素材驱动镜头", body: "使用参考素材保持产品、角色或分镜在镜头发展过程中的视觉连贯性。" },
+        { title: "可控的动作与节奏", body: "先确定镜头、主体动作、时长和构图如何推进，再得到可用于剪辑的片段。" },
+        { title: "音频感知的制作衔接", body: "明确处理可选声音和输出设置，让测试片段顺利进入剪辑与交付流程。" },
+      ],
+    },
+    es: {
+      image: [
+        { title: "Texto a imagen y edición", body: `Crea imágenes nuevas o revisa una existente mediante ${endpoint} y ${editEndpoint}.` },
+        { title: "Creación guiada por referencias", body: "Usa contexto visual para conservar sujetos y composición en trabajos de producto, editorial y campaña." },
+        { title: "Variantes visuales flexibles", body: "Convierte un mismo brief en piezas cuadradas, verticales u horizontales para cada canal." },
+        { title: "Entrega segura para producción", body: "Prepara resultados con el comportamiento documentado de calidad, formato, fondo y moderación." },
+      ],
+      video: [
+        { title: "Texto a vídeo e imagen a vídeo", body: `Inicia una escena desde un brief escrito o un fotograma diseñado mediante ${endpoint}.` },
+        { title: "Dirección de planos con referencias", body: "Usa medios de referencia para mantener coherentes un producto, personaje o storyboard." },
+        { title: "Movimiento y ritmo controlados", body: "Define la progresión de cámara, sujeto, duración y encuadre para obtener un clip utilizable." },
+        { title: "Entrega de producción con audio", body: "Mantén explícitos el sonido opcional y la salida para pasar del clip probado a la edición." },
+      ],
+    },
+    fr: {
+      image: [
+        { title: "Texte vers image et édition", body: `Créez de nouvelles images ou retouchez une image via ${endpoint} et ${editEndpoint}.` },
+        { title: "Création guidée par références", body: "Utilisez le contexte visuel pour préserver sujets et composition dans les travaux produit et campagne." },
+        { title: "Variantes visuelles flexibles", body: "Déclinez un brief en formats carré, portrait ou paysage pour chaque emplacement." },
+        { title: "Livraison sûre pour la production", body: "Préparez des résultats selon les comportements documentés de qualité, format, fond et modération." },
+      ],
+      video: [
+        { title: "Texte vers vidéo et image vers vidéo", body: `Commencez une scène avec un brief écrit ou une image conçue via ${endpoint}.` },
+        { title: "Direction de plan guidée par références", body: "Utilisez des médias de référence pour garder produit, personnage ou storyboard cohérents." },
+        { title: "Mouvement et rythme contrôlés", body: "Définissez la progression de la caméra, du sujet, de la durée et du cadrage." },
+        { title: "Passage en production avec audio", body: "Gardez le son facultatif et la sortie explicites pour passer du test au montage." },
+      ],
+    },
+    pt: {
+      image: [
+        { title: "Texto para imagem e edição", body: `Crie imagens novas ou edite uma existente por ${endpoint} e ${editEndpoint}.` },
+        { title: "Criação guiada por referência", body: "Use contexto visual para preservar assunto e composição em peças de produto, editorial e campanha." },
+        { title: "Variações visuais flexíveis", body: "Transforme um briefing em peças quadradas, verticais ou horizontais para cada canal." },
+        { title: "Entrega segura para produção", body: "Prepare resultados com o comportamento documentado de qualidade, formato, fundo e moderação." },
+      ],
+      video: [
+        { title: "Texto para vídeo e imagem para vídeo", body: `Comece uma cena a partir de um briefing ou quadro criado por ${endpoint}.` },
+        { title: "Direção de planos com referências", body: "Use mídias de referência para manter produto, personagem ou storyboard coerentes." },
+        { title: "Movimento e ritmo controlados", body: "Defina como câmera, assunto, duração e enquadramento devem avançar." },
+        { title: "Transição para produção com áudio", body: "Mantenha áudio opcional e saída explícitos ao levar o clipe testado para a edição." },
+      ],
+    },
+    ru: {
+      image: [
+        { title: "Текст в изображение и редактирование", body: `Создавайте новые изображения или изменяйте существующие через ${endpoint} и ${editEndpoint}.` },
+        { title: "Создание по референсам", body: "Используйте визуальный контекст, чтобы сохранять объект и композицию в продуктовых и рекламных задачах." },
+        { title: "Гибкие визуальные варианты", body: "Преобразуйте один бриф в квадратные, вертикальные и горизонтальные материалы для разных каналов." },
+        { title: "Безопасная передача в продакшен", body: "Готовьте результат с учетом задокументированных качества, формата, фона и модерации." },
+      ],
+      video: [
+        { title: "Текст в видео и изображение в видео", body: `Начните сцену с брифа или готового кадра через ${endpoint}.` },
+        { title: "Съемка по референсам", body: "Используйте референсы, чтобы сохранять целостность продукта, персонажа или раскадровки." },
+        { title: "Контролируемые движение и ритм", body: "Задайте развитие камеры, объекта, длительности и кадрирования для рабочего клипа." },
+        { title: "Передача в продакшен с аудио", body: "Явно укажите звук и параметры вывода при переходе от тестового клипа к монтажу." },
+      ],
+    },
+    ja: {
+      image: [
+        { title: "テキストから画像生成と編集", body: `${endpoint} で新しい画像を生成し、${editEndpoint} で既存画像を編集できます。` },
+        { title: "参照画像を使った制作", body: "画像コンテキストを使い、商品・編集・キャンペーンの主題と構図を保ちます。" },
+        { title: "柔軟なビジュアル展開", body: "1つの企画から正方形・縦長・横長の素材を各チャネル向けに展開します。" },
+        { title: "安全な制作納品", body: "記録された品質、形式、背景、モデレーションの挙動に沿って成果物を整えます。" },
+      ],
+      video: [
+        { title: "テキストから動画・画像から動画", body: `${endpoint} で文章のブリーフまたは設計済みフレームからシーンを始めます。` },
+        { title: "参照素材によるショット設計", body: "参照素材を使い、商品・キャラクター・絵コンテの見た目を一貫させます。" },
+        { title: "動きとテンポの制御", body: "カメラ、被写体、長さ、構図の進み方を決めて編集可能なクリップにします。" },
+        { title: "音声を考慮した制作連携", body: "任意の音声と出力を明示し、テストから編集・納品へつなげます。" },
+      ],
+    },
+    vi: {
+      image: [
+        { title: "Tạo và chỉnh sửa từ văn bản", body: `Tạo hình ảnh mới hoặc chỉnh sửa ảnh hiện có qua ${endpoint} và ${editEndpoint}.` },
+        { title: "Sáng tạo theo ảnh tham chiếu", body: "Dùng ngữ cảnh hình ảnh để giữ chủ thể và bố cục cho nội dung sản phẩm, biên tập và chiến dịch." },
+        { title: "Biến thể hình ảnh linh hoạt", body: "Chuyển một brief thành tài sản vuông, dọc hoặc ngang cho từng kênh." },
+        { title: "Bàn giao an toàn cho sản xuất", body: "Chuẩn bị kết quả theo hành vi đã ghi nhận về chất lượng, định dạng, nền và kiểm duyệt." },
+      ],
+      video: [
+        { title: "Văn bản thành video và ảnh thành video", body: `Bắt đầu cảnh từ brief hoặc khung hình đã thiết kế qua ${endpoint}.` },
+        { title: "Định hướng cảnh bằng tham chiếu", body: "Dùng tư liệu tham chiếu để giữ hình ảnh nhất quán cho sản phẩm, nhân vật hoặc storyboard." },
+        { title: "Kiểm soát chuyển động và nhịp", body: "Định hướng tiến triển của máy quay, chủ thể, thời lượng và khung hình cho clip dùng được." },
+        { title: "Bàn giao sản xuất có âm thanh", body: "Giữ âm thanh tùy chọn và đầu ra rõ ràng khi chuyển clip thử sang dựng và phát hành." },
+      ],
+    },
+    de: {
+      image: [
+        { title: "Text-zu-Bild und Bearbeitung", body: `Erzeuge neue Bilder oder bearbeite vorhandene über ${endpoint} und ${editEndpoint}.` },
+        { title: "Referenzgestützte Gestaltung", body: "Nutze Bildkontext, um Motive und Komposition in Produkt-, Editorial- und Kampagnenarbeit zu erhalten." },
+        { title: "Flexible Bildvarianten", body: "Leite aus einem Brief quadratische, Hoch- oder Querformat-Assets für verschiedene Kanäle ab." },
+        { title: "Sichere Übergabe in die Produktion", body: "Bereite Ergebnisse nach dem dokumentierten Verhalten von Qualität, Format, Hintergrund und Moderation vor." },
+      ],
+      video: [
+        { title: "Text-zu-Video und Bild-zu-Video", body: `Starte eine Szene aus Briefing oder gestaltetem Frame über ${endpoint}.` },
+        { title: "Referenzgestützte Shot-Regie", body: "Nutze Referenzmedien, damit Produkt, Figur oder Storyboard visuell konsistent bleiben." },
+        { title: "Kontrollierte Bewegung und Dramaturgie", body: "Lege die Entwicklung von Kamera, Motiv, Dauer und Bildausschnitt für einen nutzbaren Clip fest." },
+        { title: "Audio-bewusste Produktionsübergabe", body: "Halte optionales Audio und Ausgabe explizit, damit der Testclip in Schnitt und Ausspielung gelangt." },
+      ],
+    },
+    id: {
+      image: [
+        { title: "Teks ke gambar dan penyuntingan", body: `Buat gambar baru atau edit gambar yang ada melalui ${endpoint} dan ${editEndpoint}.` },
+        { title: "Kreatif berbasis referensi", body: "Gunakan konteks gambar untuk mempertahankan subjek dan komposisi pada karya produk, editorial, dan kampanye." },
+        { title: "Variasi visual fleksibel", body: "Ubah satu brief menjadi aset persegi, potret, atau lanskap untuk berbagai kanal." },
+        { title: "Pengiriman produksi yang aman", body: "Siapkan hasil sesuai perilaku kualitas, format, latar, dan moderasi yang terdokumentasi." },
+      ],
+      video: [
+        { title: "Teks ke video dan gambar ke video", body: `Mulai adegan dari brief tertulis atau frame rancangan melalui ${endpoint}.` },
+        { title: "Arahan shot berbasis referensi", body: "Gunakan media referensi agar produk, karakter, atau storyboard tetap konsisten secara visual." },
+        { title: "Gerak dan tempo terkontrol", body: "Tentukan perkembangan kamera, subjek, durasi, dan framing untuk klip yang siap dipakai." },
+        { title: "Serah terima produksi dengan audio", body: "Jaga audio opsional dan output tetap eksplisit saat memindahkan klip uji ke penyuntingan." },
+      ],
+    },
+  };
+  if (facts.kind === "image") return copy[locale]?.image ?? copy.en.image;
+  return copy[locale]?.video ?? copy.en.video;
 }
 
 const MINIMAX_DURATION_RANGE: Record<Locale, string> = {
@@ -3304,97 +4174,269 @@ const MINIMAX_RESOLUTION_RANGE: Record<Locale, string> = {
 function localizedComparisonTitle(locale: Locale, facts: Facts): string {
   const titles: Record<Locale, string> = {
     en: facts.slug === "gpt-5-6-sol"
-      ? `${facts.name} vs GPT-5.5, Terra, and Luna`
+      ? `${facts.name} vs GPT-5.5, GPT-5.6 Terra, and GPT-5.6 Luna`
       : facts.slug === "gpt-image-2"
-        ? `${facts.name} compared with GPT Image 1`
+        ? `${facts.name} and GPT Image 1: image API controls`
         : facts.slug === "kimi-k3"
-          ? `${facts.name} hosted API vs local or open-source assumptions`
+          ? `${facts.name} hosted API vs open-weight and local options`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} vs V4 Flash: compare documented fields`
+            ? `${facts.name} vs V4 Flash: API and context fields`
             : MINIMAX_COMPARISON_TITLE.en,
     zh: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} 与 GPT-5.5、Terra、Luna 对比`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} 与 GPT Image 1 的迁移字段对比`
         : facts.slug === "kimi-k3"
-          ? `${facts.name} 托管 API 与本地/开源假设对比`
+          ? `${facts.name} 托管 API 与开源、本地选项对比`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} 与 V4 Flash 的已记录字段对比`
+            ? `${facts.name} 与 V4 Flash 的 API 和上下文字段对比`
             : MINIMAX_COMPARISON_TITLE.zh,
     es: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} frente a GPT-5.5, Terra y Luna`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} frente a GPT Image 1: campos de migración`
         : facts.slug === "kimi-k3"
-          ? `API alojada de ${facts.name} frente a supuestos locales/open source`
+          ? `API alojada de ${facts.name} frente a opciones open source y locales`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} frente a V4 Flash: campos documentados`
+            ? `${facts.name} frente a V4 Flash: API y contexto`
             : MINIMAX_COMPARISON_TITLE.es,
     fr: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} face à GPT-5.5, Terra et Luna`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} face à GPT Image 1 : champs de migration`
         : facts.slug === "kimi-k3"
-          ? `API hébergée ${facts.name} face aux hypothèses locales/open source`
+          ? `API hébergée ${facts.name} face aux options open source et locales`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} face à V4 Flash : champs documentés`
+            ? `${facts.name} face à V4 Flash : API et contexte`
             : MINIMAX_COMPARISON_TITLE.fr,
     pt: facts.slug === "gpt-5-6-sol"
-      ? `${facts.name} vs. GPT-5.5, Terra e Luna`
+      ? `${facts.name} vs. GPT-5.5, GPT-5.6 Terra e GPT-5.6 Luna`
       : facts.slug === "gpt-image-2"
-        ? `${facts.name} comparado ao GPT Image 1: campos de migração`
+        ? `${facts.name} e GPT Image 1: controles da API de imagens`
         : facts.slug === "kimi-k3"
-          ? `API hospedada do ${facts.name} vs. suposições locais/open source`
+          ? `API hospedada do ${facts.name} vs. opções open source e locais`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} vs. V4 Flash: campos documentados`
+            ? `${facts.name} vs. V4 Flash: API e contexto`
             : MINIMAX_COMPARISON_TITLE.pt,
     ru: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} и GPT-5.5, Terra, Luna: сравнение`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} и GPT Image 1: поля миграции`
         : facts.slug === "kimi-k3"
-          ? `Размещённый API ${facts.name} и предположения о локальном/open-source запуске`
+          ? `Размещённый API ${facts.name} и варианты open source и локального запуска`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} и V4 Flash: сравнение документированных полей`
+            ? `${facts.name} и V4 Flash: API и контекст`
             : MINIMAX_COMPARISON_TITLE.ru,
     ja: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} と GPT-5.5、Terra、Luna の比較`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} と GPT Image 1：移行項目の比較`
         : facts.slug === "kimi-k3"
-          ? `${facts.name} のホステッド API とローカル/オープンソースの仮定`
+          ? `${facts.name} のホステッド API とローカル・オープンソースの選択肢`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} と V4 Flash：文書化項目の比較`
+            ? `${facts.name} と V4 Flash：API とコンテキスト`
             : MINIMAX_COMPARISON_TITLE.ja,
     vi: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} so với GPT-5.5, Terra và Luna`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} so với GPT Image 1: trường chuyển đổi`
         : facts.slug === "kimi-k3"
-          ? `API hosted của ${facts.name} so với giả định local/mã nguồn mở`
+          ? `API hosted của ${facts.name} so với lựa chọn local/mã nguồn mở`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} so với V4 Flash: so sánh trường đã ghi nhận`
+            ? `${facts.name} so với V4 Flash: API và ngữ cảnh`
             : MINIMAX_COMPARISON_TITLE.vi,
     de: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} im Vergleich zu GPT-5.5, Terra und Luna`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} im Vergleich zu GPT Image 1: Migrationsfelder`
         : facts.slug === "kimi-k3"
-          ? `Gehostete ${facts.name}-API vs. lokale/Open-Source-Annahmen`
+          ? `Gehostete ${facts.name}-API vs. lokale und Open-Source-Optionen`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} vs. V4 Flash: dokumentierte Felder vergleichen`
+            ? `${facts.name} vs. V4 Flash: API und Kontext`
             : MINIMAX_COMPARISON_TITLE.de,
     id: facts.slug === "gpt-5-6-sol"
       ? `${facts.name} dibandingkan dengan GPT-5.5, Terra, dan Luna`
       : facts.slug === "gpt-image-2"
         ? `${facts.name} dibandingkan dengan GPT Image 1: bidang migrasi`
         : facts.slug === "kimi-k3"
-          ? `API hosted ${facts.name} dibandingkan dengan asumsi lokal/open source`
+          ? `API hosted ${facts.name} dibandingkan dengan opsi lokal/open source`
           : facts.slug === "deepseek-v4-pro"
-            ? `${facts.name} dibandingkan dengan V4 Flash: bidang terdokumentasi`
+            ? `${facts.name} dibandingkan dengan V4 Flash: API dan konteks`
             : MINIMAX_COMPARISON_TITLE.id,
   };
   return titles[locale] ?? titles.en;
+}
+
+function localizedKimiStatement(facts: Facts, locale: Locale): string {
+  const routes = `${facts.endpoint} ${locale === "pt" ? "ou" : "or"} ${facts.secondEndpoint ?? "/v1/messages"}`;
+  if (locale === "en") return `Kimi K3 is Moonshot AI's open-weight, multimodal model with a 1,048,576-token context and native vision upstream. Flatkey exposes hosted compatible routes (${routes}) and its own file fields; upstream and Flatkey capabilities are separate.`;
+  if (locale === "pt") return `O Kimi K3 é um modelo multimodal de pesos abertos da Moonshot AI, com contexto de 1.048.576 tokens e visão nativa no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}) e seus próprios campos de arquivo; as capacidades do upstream e da Flatkey são separadas.`;
+  return `${facts.name} is a Moonshot AI model with a ${facts.context ?? "1,048,576-token"} context. Flatkey exposes hosted compatible routes (${routes}); upstream modalities and Flatkey route fields should be checked separately.`;
+}
+
+function localizedDeepseekStatement(facts: Facts, locale: Locale): string {
+  const routes = `${facts.endpoint} ${locale === "pt" ? "ou" : "or"} ${facts.secondEndpoint ?? "/v1/messages"}`;
+  if (locale === "en") return `DeepSeek V4 Pro is documented with a 1M-token context and open-source upstream release information. Flatkey exposes hosted compatible routes (${routes}); the text/file fields shown here describe the Flatkey route, not an unverified native vision contract.`;
+  if (locale === "pt") return `O DeepSeek V4 Pro é documentado com contexto de 1 milhão de tokens e informações de lançamento open source no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}); os campos de texto/arquivo desta página descrevem a rota Flatkey, não um contrato nativo de visão não verificado.`;
+  return `${facts.name} is documented with a ${facts.context ?? "1M-token"} context and separate upstream release information. Flatkey exposes hosted compatible routes (${routes}); verify native modalities independently.`;
+}
+
+function localizedTextInputBody(facts: Facts, locale: Locale, pack: LanguagePack): string {
+  if (facts.slug === "kimi-k3") {
+    if (locale === "en") return "Moonshot documents native vision and multimodal inputs upstream; this Flatkey route exposes the file fields listed in the catalog. Verify media-field support for the client you choose.";
+    if (locale === "pt") return "A Moonshot documenta visão nativa e entradas multimodais no upstream; esta rota Flatkey expõe os campos de arquivo listados no catálogo. Confirme os campos de mídia para o cliente escolhido.";
+  }
+  if (facts.slug === "deepseek-v4-pro") {
+    if (locale === "en") return "The verified Flatkey catalog lists text and file fields. Native vision or broader multimodal support is not asserted for this V4 Pro route.";
+    if (locale === "pt") return "O catálogo Flatkey verificado lista campos de texto e arquivo. A página não afirma suporte nativo a visão ou a multimodalidade mais ampla nesta rota V4 Pro.";
+  }
+  return pack.fileBody;
+}
+
+function localizedKimiLocalAnswer(locale: Locale, pack: LanguagePack): string {
+  if (locale === "en") return "Kimi K3 is published as an open-weight/open-source model upstream, with weights and code intended for local deployment or fine-tuning under Moonshot's terms. Flatkey provides the hosted API route here; hardware and VRAM needs depend on your own deployment.";
+  if (locale === "pt") return "O Kimi K3 é publicado como modelo de pesos abertos/open source no upstream, com pesos e código para implantação local ou fine-tuning conforme os termos da Moonshot. A Flatkey oferece aqui a rota de API hospedada; hardware e VRAM dependem da sua implantação.";
+  return pack.kimiLocalAnswer;
+}
+
+function localizedDeepseekLocalAnswer(locale: Locale, pack: LanguagePack): string {
+  if (locale === "en") return "DeepSeek's V4 Preview materials describe an open-source upstream release. This page covers Flatkey's hosted V4 Pro route; do not treat that upstream statement as proof that the same checkpoint or local packaging is included here.";
+  if (locale === "pt") return "Os materiais do DeepSeek V4 Preview descrevem um lançamento upstream open source. Esta página cobre a rota hospedada V4 Pro da Flatkey; isso não prova que o mesmo checkpoint ou pacote local esteja incluído aqui.";
+  return pack.deepseekLocalAnswer;
+}
+
+function localizedImageBackgroundBody(locale: Locale, pack: LanguagePack): string {
+  if (locale === "en") return "The page exposes opaque or auto background and auto or low moderation. OpenAI's image guide documents transparent preview output with background=transparent and PNG/WebP; verify whether the current Flatkey route exposes that upstream option.";
+  if (locale === "pt") return "A página expõe fundo opaque ou auto e moderação auto ou low. O guia de imagens da OpenAI documenta a prévia transparente com background=transparent e PNG/WebP; confirme se a rota Flatkey atual expõe essa opção do upstream.";
+  return pack.imageBackgroundBody;
+}
+
+function localizedTransparentAnswer(locale: Locale, pack: LanguagePack): string {
+  if (locale === "en") return "Yes, OpenAI's image guide documents GPT Image 2 preview output with background=transparent and PNG or WebP. The current Flatkey form may expose only opaque/auto, so verify the live route before relying on transparency.";
+  if (locale === "pt") return "Sim. O guia de imagens da OpenAI documenta a saída transparente do GPT Image 2 com background=transparent e PNG ou WebP. O formulário Flatkey atual pode expor apenas opaque/auto; confirme a rota ao vivo antes de depender da transparência.";
+  return pack.transparentAnswer;
+}
+
+function localizedMiniMaxLocalAnswer(locale: Locale, pack: LanguagePack): string {
+  if (locale === "en") return "MiniMax publishes open-source H3 weights and ComfyUI/local options upstream. Flatkey provides the hosted /v1/videos route here; native Flatkey local packaging and hardware requirements are not promised.";
+  if (locale === "pt") return "A MiniMax publica pesos H3 open source e opções de ComfyUI/local no upstream. A Flatkey oferece aqui a rota hospedada /v1/videos; não prometemos pacote local nativo da Flatkey nem requisitos de hardware.";
+  return pack.minimaxLocalAnswer;
+}
+
+function localizedPriorityPerformanceDescription(facts: Facts, locale: Locale): string {
+  if (locale === "en") return `Live Flatkey request telemetry for ${facts.name} appears when enough traffic is available; no benchmark or quality score is inferred.`;
+  if (locale === "pt") return `A telemetria de solicitações da Flatkey para ${facts.name} aparece quando há tráfego suficiente; nenhum benchmark ou nota de qualidade é inferido.`;
+  return `${facts.name} telemetry appears when enough live Flatkey traffic is available; no benchmark is inferred.`;
+}
+
+function localizedPriorityActivityDescription(facts: Facts, locale: Locale): string {
+  if (locale === "en") return `This section reflects live Flatkey requests for ${facts.name} and stays unreported until enough traffic is collected.`;
+  if (locale === "pt") return `Esta seção reflete solicitações reais da Flatkey para ${facts.name} e permanece sem dados até que haja tráfego suficiente.`;
+  return `This section reflects live Flatkey requests for ${facts.name} and remains unreported until enough traffic is collected.`;
+}
+
+function localizedRelatedDescription(facts: Facts, locale: Locale): string {
+  if (locale === "en") {
+    if (facts.slug === "gpt-image-2") return "Explore adjacent image-generation routes when a different edit workflow, output control, or price dimension fits your project.";
+    if (facts.slug === "minimax-h3") return "Explore adjacent video-generation routes when you need different duration, ratio, audio, or reference controls.";
+    if (facts.slug === "kimi-k3") return "Compare adjacent long-context API models when your coding or research workflow needs a different context or client surface.";
+    if (facts.slug === "deepseek-v4-pro") return "Compare adjacent DeepSeek API routes when you need a different context, modality, or billing profile.";
+    return "Compare adjacent GPT API routes when your long-context workflow needs a different context, modality, or price profile.";
+  }
+  if (locale === "pt") {
+    if (facts.slug === "gpt-image-2") return "Explore rotas de geração de imagens relacionadas quando outro fluxo de edição, controle de saída ou dimensão de preço atender melhor ao projeto.";
+    if (facts.slug === "minimax-h3") return "Explore rotas de geração de vídeo relacionadas quando precisar de outra duração, proporção, áudio ou controle de referências.";
+    if (facts.slug === "kimi-k3") return "Compare modelos de API de contexto longo quando seu fluxo de programação ou pesquisa exigir outro contexto ou cliente.";
+    if (facts.slug === "deepseek-v4-pro") return "Compare rotas de API DeepSeek relacionadas quando precisar de outro contexto, modalidade ou perfil de cobrança.";
+    return "Compare rotas de API GPT relacionadas quando seu fluxo de contexto longo exigir outro contexto, modalidade ou perfil de preço.";
+  }
+  return localizedPriorityActivityDescription(facts, locale);
+}
+
+function localizedGptHowUseAnswer(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  if (locale === "en") {
+    return `Create a Flatkey API key, send a request to ${facts.endpoint}, and set model to ${facts.id}. OpenAI also documents /v1/responses; verify that route is enabled for your Flatkey account.`;
+  }
+  if (locale === "pt") {
+    return `Crie uma API key da Flatkey, envie uma solicitação para ${facts.endpoint} e defina model como ${facts.id}. A OpenAI também documenta /v1/responses; confirme se essa rota está habilitada na sua conta Flatkey.`;
+  }
+  return `${pack.api} ${facts.id}: ${pack.apiEndpointDetail(facts.endpoint)}; set model=${facts.id}. OpenAI also documents /v1/responses; verify that route is enabled for your Flatkey account.`;
+}
+
+function localizedGptModelIdAnswer(facts: Facts, pack: LanguagePack, locale: Locale): string {
+  if (locale === "en") return `The verified model ID is ${facts.id}; the catalog route is ${facts.endpoint}. OpenAI documents /v1/responses separately.`;
+  if (locale === "pt") return `O ID de modelo verificado é ${facts.id}; a rota do catálogo é ${facts.endpoint}. A OpenAI documenta /v1/responses separadamente.`;
+  return `${pack.modelId}: ${facts.id}; ${pack.endpoint}: ${facts.endpoint}. OpenAI documents /v1/responses separately.`;
+}
+
+/** Feature-led copy for the remaining priority text models. Technical
+ * context, modalities, and route details stay in the API/comparison sections. */
+function localizedTextCapabilityCards(facts: Facts, locale: Locale): MediaCapabilityCard[] {
+  const context = facts.context ?? "1,048,576 tokens";
+  const routes = facts.secondEndpoint ? `${facts.endpoint} and ${facts.secondEndpoint}` : facts.endpoint;
+  const copy: Record<Locale, MediaCapabilityCard[]> = {
+    en: [
+      { title: "Long-context work", body: `${facts.name} is suited to document, code, and research workflows within its documented ${context} context.` },
+      { title: "Multimodal understanding", body: `Use the model's documented ${facts.modalities} to ground answers in the material your workflow provides.` },
+      { title: "Structured agent workflows", body: "Connect reasoning, structured output, tools, and streaming to the agent or application flow you are building." },
+      { title: "Production-ready integration", body: `Keep the model ID and compatible routes (${routes}) stable as you move from experiments into production.` },
+    ],
+    zh: [
+      { title: "长上下文工作", body: `${facts.name} 适合在已记录的 ${context} 上下文范围内处理文档、代码和研究任务。` },
+      { title: "多模态理解", body: `利用模型已记录的 ${facts.modalities}，让回答建立在工作流提供的材料之上。` },
+      { title: "结构化智能体工作流", body: "将推理、结构化输出、工具调用和流式响应接入正在构建的智能体或应用流程。" },
+      { title: "适合生产集成", body: `从实验进入生产时，保持模型 ID 与兼容路由（${routes}）稳定。` },
+    ],
+    es: [
+      { title: "Trabajo con contexto largo", body: `${facts.name} sirve para documentos, código e investigación dentro de su contexto documentado de ${context}.` },
+      { title: "Comprensión multimodal", body: `Usa las ${facts.modalities} documentadas para fundamentar las respuestas en el material de tu flujo.` },
+      { title: "Flujos de agentes estructurados", body: "Conecta razonamiento, salida estructurada, herramientas y streaming con tu aplicación o agente." },
+      { title: "Integración lista para producción", body: `Mantén estables el ID del modelo y las rutas compatibles (${routes}) al pasar de pruebas a producción.` },
+    ],
+    fr: [
+      { title: "Travail à long contexte", body: `${facts.name} convient aux documents, au code et à la recherche dans son contexte documenté de ${context}.` },
+      { title: "Compréhension multimodale", body: `Utilisez les ${facts.modalities} documentées pour ancrer les réponses dans les éléments fournis.` },
+      { title: "Flux d’agents structurés", body: "Reliez raisonnement, sortie structurée, outils et streaming à l’agent ou à l’application créée." },
+      { title: "Intégration prête pour la production", body: `Conservez l’ID du modèle et les routes compatibles (${routes}) en passant du test à la production.` },
+    ],
+    pt: [
+      { title: "Trabalho com contexto longo", body: `${facts.name} atende a documentos, código e pesquisa dentro do contexto documentado de ${context}.` },
+      { title: "Compreensão multimodal", body: `Use as ${facts.modalities} documentadas para fundamentar as respostas no material fornecido.` },
+      { title: "Fluxos estruturados de agentes", body: "Conecte raciocínio, saída estruturada, ferramentas e streaming ao agente ou aplicativo criado." },
+      { title: "Integração pronta para produção", body: `Mantenha o ID do modelo e as rotas compatíveis (${routes}) estáveis ao passar dos testes para a produção.` },
+    ],
+    ru: [
+      { title: "Работа с длинным контекстом", body: `${facts.name} подходит для документов, кода и исследований в пределах задокументированного контекста ${context}.` },
+      { title: "Мультимодальное понимание", body: `Используйте задокументированные ${facts.modalities}, чтобы связать ответы с материалами рабочего процесса.` },
+      { title: "Структурированные агентские процессы", body: "Подключайте рассуждения, структурированный вывод, инструменты и потоковую выдачу к своему приложению." },
+      { title: "Интеграция для продакшена", body: `Сохраняйте ID модели и совместимые маршруты (${routes}) при переходе от тестов к продакшену.` },
+    ],
+    ja: [
+      { title: "長いコンテキストの作業", body: `${facts.name} は、記録された ${context} のコンテキストで文書・コード・調査を扱えます。` },
+      { title: "マルチモーダル理解", body: `記録された ${facts.modalities} を使い、ワークフローが提供する資料に基づいて回答します。` },
+      { title: "構造化エージェントワークフロー", body: "推論、構造化出力、ツール、ストリーミングを構築中のエージェントやアプリに接続します。" },
+      { title: "本番向け統合", body: `検証から本番へ移るときも、モデル ID と互換ルート（${routes}）を維持します。` },
+    ],
+    vi: [
+      { title: "Tác vụ ngữ cảnh dài", body: `${facts.name} phù hợp với tài liệu, mã và nghiên cứu trong ngữ cảnh ${context} đã được ghi nhận.` },
+      { title: "Hiểu đa phương thức", body: `Dùng ${facts.modalities} được ghi nhận để neo câu trả lời vào tài liệu mà quy trình cung cấp.` },
+      { title: "Quy trình agent có cấu trúc", body: "Kết nối suy luận, đầu ra có cấu trúc, công cụ và streaming với agent hoặc ứng dụng bạn xây dựng." },
+      { title: "Tích hợp sẵn sàng sản xuất", body: `Giữ ID mô hình và các route tương thích (${routes}) ổn định khi chuyển từ thử nghiệm sang sản xuất.` },
+    ],
+    de: [
+      { title: "Arbeit mit langem Kontext", body: `${facts.name} eignet sich für Dokumente, Code und Recherche innerhalb des dokumentierten ${context}-Kontexts.` },
+      { title: "Multimodales Verständnis", body: `Nutze die dokumentierten ${facts.modalities}, um Antworten an den bereitgestellten Materialien auszurichten.` },
+      { title: "Strukturierte Agenten-Workflows", body: "Verbinde Reasoning, strukturierte Ausgaben, Tools und Streaming mit deinem Agenten oder deiner Anwendung." },
+      { title: "Produktionsreife Integration", body: `Halte Modell-ID und kompatible Routen (${routes}) beim Übergang von Tests in die Produktion stabil.` },
+    ],
+    id: [
+      { title: "Pekerjaan dengan konteks panjang", body: `${facts.name} cocok untuk dokumen, kode, dan riset dalam konteks ${context} yang terdokumentasi.` },
+      { title: "Pemahaman multimodal", body: `Gunakan ${facts.modalities} yang terdokumentasi agar jawaban berpijak pada materi alur kerja.` },
+      { title: "Alur kerja agen terstruktur", body: "Hubungkan penalaran, output terstruktur, alat, dan streaming ke agen atau aplikasi yang dibuat." },
+      { title: "Integrasi siap produksi", body: `Pertahankan ID model dan rute kompatibel (${routes}) saat berpindah dari eksperimen ke produksi.` },
+    ],
+  };
+  return copy[locale] ?? copy.en;
 }
 
 function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelLandingContent {
@@ -3406,29 +4448,9 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
   const heroDescription = isGpt
     ? pack.modelStatement(facts.name, facts.vendor, facts.endpoint, localizedGptFacts(locale, facts, modalities))
     : isKimi
-      ? pack.kimiStatement(facts.name, facts.endpoint, facts.secondEndpoint ?? "/v1/messages", facts.context ?? "1,048,576 tokens")
-      : pack.deepseekStatement(facts.name, facts.endpoint, facts.secondEndpoint ?? "/v1/messages", facts.context ?? "1,048,576 tokens");
-  const capabilityCards = isGpt
-    ? [
-        { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-        { title: pack.modalities, body: pack.modalitiesBody(modalities) },
-        { title: pack.endpoint, body: pack.endpointBody(facts.endpoint, facts.id) },
-        { title: "Flatkey", body: pack.keyBillingBody },
-      ]
-    : isKimi
-      ? [
-          { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-          { title: pack.inputModality, body: pack.fileBody },
-          { title: pack.endpoint, body: pack.twoRoutesBody(facts.endpoint, facts.secondEndpoint ?? "/v1/messages") },
-          { title: literal(locale, "Knowledge work"), body: pack.knowledgeBody },
-        ]
-      : [
-          { title: pack.context, body: pack.contextBody(facts.context ?? "1,048,576 tokens") },
-          { title: pack.inputModality, body: pack.modalitiesBody(modalities) },
-          { title: literal(locale, "OpenAI-compatible"), body: pack.routeBody(facts.endpoint) },
-          { title: literal(locale, "Anthropic-compatible"), body: pack.routeBody(facts.secondEndpoint ?? "/v1/messages") },
-          { title: literal(locale, "Distillable metadata"), body: pack.distillableBody },
-        ];
+      ? localizedKimiStatement(facts, locale)
+      : localizedDeepseekStatement(facts, locale);
+  const capabilityCards = localizedTextCapabilityCards(facts, locale);
   const comparison = isGpt
     ? {
         eyebrow: pack.compareFields,
@@ -3477,6 +4499,7 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
   const apiItems = isGpt
     ? [
         { title: pack.endpoint, detail: `POST ${facts.endpoint}` },
+        { title: literal(locale, "Responses endpoint"), detail: "POST /v1/responses (verify route availability)" },
         { title: pack.modelId, detail: facts.id },
         { title: pack.modalities, detail: pack.apiModalitiesDetail(modalities) },
         { title: literal(locale, "Compatibility"), detail: pack.apiCompatibilityDetail },
@@ -3497,8 +4520,8 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
   const faq = isGpt
     ? [
         { question: pack.whatIs(facts.name), answer: heroDescription },
-        { question: pack.howUse(facts.name), answer: locale === "en" ? `Create a Flatkey API key, send a request to ${facts.endpoint}, and set model to ${facts.id}.` : `${pack.api} ${facts.id}: ${pack.apiEndpointDetail(facts.endpoint)}; model=${facts.id}.` },
-        { question: pack.apiModelId(facts.name), answer: locale === "en" ? `The verified model ID is ${facts.id}; the documented endpoint is ${facts.endpoint}.` : `${pack.modelId}: ${facts.id}; ${pack.endpoint}: ${facts.endpoint}.` },
+          { question: pack.howUse(facts.name), answer: localizedGptHowUseAnswer(facts, pack, locale) },
+          { question: pack.apiModelId(facts.name), answer: localizedGptModelIdAnswer(facts, pack, locale) },
         { question: pack.cost(facts.name), answer: pack.costAnswer(facts.name, ratesText(facts, pack, locale)) },
         { question: pack.contextInputs(facts.name), answer: pack.contextAnswer(facts.context ?? "1,048,576 tokens", modalities) },
         { question: pack.release(facts.name), answer: pack.releaseAnswer("2026-06-20") },
@@ -3510,7 +4533,7 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
           { question: pack.apiModelId(facts.name), answer: pack.kimiIdAnswer(facts.id, facts.endpoint, facts.secondEndpoint ?? "/v1/messages") },
           { question: pack.cost(facts.name), answer: pack.kimiCostAnswer(ratesText(facts, pack, locale)) },
           { question: pack.freeQuestion(facts.name), answer: pack.kimiFreeAnswer },
-          { question: pack.localQuestion(facts.name), answer: pack.kimiLocalAnswer },
+          { question: pack.localQuestion(facts.name), answer: localizedKimiLocalAnswer(locale, pack) },
           { question: pack.vendorQuestion(facts.name), answer: pack.kimiVendorAnswer },
         ]
       : [
@@ -3518,17 +4541,28 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
           { question: pack.howUse(facts.name), answer: pack.deepseekUseAnswer(facts.id, facts.endpoint, facts.secondEndpoint ?? "/v1/messages") },
           { question: pack.apiModelId(facts.name), answer: pack.deepseekIdAnswer(facts.id, facts.endpoint, facts.secondEndpoint ?? "/v1/messages") },
           { question: pack.priceUtcQuestion(facts.name), answer: pack.deepseekCostAnswer },
-          { question: pack.localQuestion(facts.name), answer: pack.deepseekLocalAnswer },
+          { question: pack.localQuestion(facts.name), answer: localizedDeepseekLocalAnswer(locale, pack) },
           { question: pack.visionQuestion(facts.name), answer: pack.deepseekVisionAnswer },
           { question: pack.qualityQuestion(facts.name), answer: pack.deepseekQualityAnswer },
         ];
   const pricingTitle = localizedPricingTitle(facts, pack, locale, isDeepseek ? "utc" : "standard");
   return {
-    hero: { title: `${facts.name} ${pack.apiPricingDetails}`, description: heroDescription },
+    hero: { title: localizedHeroTitle(facts, locale), description: heroDescription },
+    performance: {
+      eyebrow: pack.capabilities,
+      title: localizedPerformanceTitle(facts, locale),
+      description: localizedPriorityPerformanceDescription(facts, locale),
+    },
+    activity: {
+      eyebrow: pack.api,
+      title: localizedActivityTitle(facts, locale),
+      description: localizedPriorityActivityDescription(facts, locale),
+      sampleChart: false,
+    },
     pricing: {
       title: pricingTitle,
-      description: isDeepseek ? pack.pricingNoteUtc : pack.pricingCurrent,
-      note: isDeepseek ? pack.pricingNoteUtc : pack.pricingNoteToken,
+      description: localizedPricingDescription(facts, pack, locale, isDeepseek ? pack.pricingNoteUtc : pack.pricingCurrent),
+      note: localizedPricingDescription(facts, pack, locale, isDeepseek ? pack.pricingNoteUtc : pack.pricingNoteToken),
       rows: localizedRateRows(facts, pack, locale),
     },
     capabilitiesEyebrow: `${facts.name} ${pack.capabilities}`,
@@ -3539,10 +4573,16 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
     api: {
       eyebrow: pack.api,
       title: localizedTextApiTitle(facts, pack, locale),
-      description: isGpt ? literal(locale, "Use the exact model ID and documented endpoint in your existing client.") : pack.textApiSetup,
+      description: isGpt ? literal(locale, "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.") : pack.textApiSetup,
       items: apiItems,
     },
     why: buildWhy(facts, locale),
+    related: {
+      eyebrow: literal(locale, "Related models"),
+      title: localizedRelatedTitle(facts, locale),
+      description: localizedRelatedDescription(facts, locale),
+      cards: [],
+    },
     faqTitle: buildFaqTitle(facts, locale),
     faqDescription: pack.faqDescription,
     faq,
@@ -3551,23 +4591,28 @@ function buildTextCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelL
 
 function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelLandingContent {
   return {
-    hero: { title: `${facts.name} ${pack.apiPricingDetails}`, description: pack.imageStatement(facts.name, facts.endpoint) },
+    hero: { title: localizedHeroTitle(facts, locale), description: pack.imageStatement(facts.name, facts.endpoint) },
+    performance: {
+      eyebrow: pack.capabilities,
+      title: localizedPerformanceTitle(facts, locale),
+      description: localizedPriorityPerformanceDescription(facts, locale),
+    },
+    activity: {
+      eyebrow: pack.api,
+      title: localizedActivityTitle(facts, locale),
+      description: localizedPriorityActivityDescription(facts, locale),
+      sampleChart: false,
+    },
     pricing: {
       title: localizedPricingTitle(facts, pack, locale, "tokenDimensions"),
-      description: pack.pricingNoteImage,
-      note: pack.pricingNoteImage,
+      description: localizedPricingDescription(facts, pack, locale, pack.pricingNoteImage),
+      note: localizedPricingDescription(facts, pack, locale, pack.pricingNoteImage),
       rows: localizedRateRows(facts, pack, locale),
     },
     capabilitiesEyebrow: `${facts.name} ${pack.controls}`,
     capabilitiesTitle: localizedCapabilitiesTitle(facts, pack, locale),
     capabilitiesDescription: pack.documentedFields,
-    capabilities: [
-      { title: pack.input, body: pack.imageCountBody },
-      { title: pack.sizes, body: pack.imageSizesBody },
-      { title: pack.quality, body: pack.imageQualityBody },
-      { title: pack.formats, body: pack.imageFormatsBody },
-      { title: literal(locale, "Background / moderation"), body: pack.imageBackgroundBody },
-    ],
+    capabilities: localizedMediaCapabilityCards(facts, locale),
     comparison: {
       eyebrow: pack.migrationFields,
       title: localizedComparisonTitle(locale, facts),
@@ -3575,7 +4620,7 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
       baselineLabel: "GPT Image 1",
       currentLabel: facts.name,
       rows: [
-        { label: pack.endpoint, baseline: localizedUnknownHere(locale, pack), current: facts.endpoint },
+        { label: pack.endpoint, baseline: localizedUnknownHere(locale, pack), current: `${facts.endpoint}; ${facts.secondEndpoint}` },
         { label: pack.sizes, baseline: localizedUnknownHere(locale, pack), current: "1024x1024, 1536x1024, 1024x1536, auto" },
         { label: pack.formats, baseline: localizedUnknownHere(locale, pack), current: "PNG, JPEG, WebP" },
         { label: literal(locale, "Quality/background/moderation"), baseline: localizedUnknownHere(locale, pack), current: literal(locale, "Documented above") },
@@ -3588,6 +4633,7 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
       description: localizedImageApiDescription(locale),
       items: [
         { title: pack.endpoint, detail: `POST ${facts.endpoint}` },
+        { title: literal(locale, "Edits endpoint"), detail: `POST ${facts.secondEndpoint ?? "/v1/images/edits"}` },
         { title: pack.modelId, detail: facts.id },
         { title: pack.controls, detail: pack.apiImageControlsDetail },
         { title: pack.access, detail: pack.apiAccessDetail },
@@ -3595,6 +4641,12 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
     },
     ...buildPromptLibrary(facts, locale),
     why: buildWhy(facts, locale),
+    related: {
+      eyebrow: literal(locale, "Related models"),
+      title: localizedRelatedTitle(facts, locale),
+      description: localizedRelatedDescription(facts, locale),
+      cards: [],
+    },
     faqTitle: buildFaqTitle(facts, locale),
     faqDescription: pack.faqDescription,
     faq: [
@@ -3603,7 +4655,7 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
       { question: pack.endpointQuestion(facts.name), answer: pack.imageEndpointAnswer(facts.id, facts.endpoint) },
       { question: pack.cost(facts.name), answer: pack.imageCostAnswer(ratesText(facts, pack, locale)) },
       { question: pack.sizeFormatQuestion(facts.name), answer: pack.imageSizeAnswer },
-      { question: pack.transparentQuestion, answer: pack.transparentAnswer },
+      { question: pack.transparentQuestion, answer: localizedTransparentAnswer(locale, pack) },
       { question: pack.freeSignupQuestion(facts.name), answer: pack.freeSignupAnswer },
     ],
   };
@@ -3611,23 +4663,28 @@ function buildImageCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
 
 function buildVideoCopy(facts: Facts, pack: LanguagePack, locale: Locale): ModelLandingContent {
   return {
-    hero: { title: `${facts.name} ${pack.videoApiPricing}`, description: pack.minimaxStatement(facts.name, facts.endpoint) },
+    hero: { title: localizedHeroTitle(facts, locale), description: pack.minimaxStatement(facts.name, facts.endpoint) },
+    performance: {
+      eyebrow: pack.capabilities,
+      title: localizedPerformanceTitle(facts, locale),
+      description: localizedPriorityPerformanceDescription(facts, locale),
+    },
+    activity: {
+      eyebrow: pack.api,
+      title: localizedActivityTitle(facts, locale),
+      description: localizedPriorityActivityDescription(facts, locale),
+      sampleChart: false,
+    },
     pricing: {
       title: localizedPricingTitle(facts, pack, locale, "standard"),
-      description: pack.pricingNoteVideo,
-      note: pack.pricingNoteVideo,
+      description: localizedPricingDescription(facts, pack, locale, pack.pricingNoteVideo),
+      note: localizedPricingDescription(facts, pack, locale, pack.pricingNoteVideo),
       rows: localizedRateRows(facts, pack, locale),
     },
     capabilitiesEyebrow: `${facts.name} ${pack.videoFields}`,
     capabilitiesTitle: localizedCapabilitiesTitle(facts, pack, locale),
     capabilitiesDescription: pack.documentedFields,
-    capabilities: [
-      { title: pack.resolution, body: pack.resolutionBody },
-      { title: pack.duration, body: pack.durationBody },
-      { title: pack.ratio, body: pack.ratioBody },
-      { title: pack.watermark, body: pack.watermarkBody },
-      { title: MINIMAX_REFERENCE_TITLE[locale] ?? MINIMAX_REFERENCE_TITLE.en, body: MINIMAX_REFERENCE_BODY[locale] ?? MINIMAX_REFERENCE_BODY.en },
-    ],
+    capabilities: localizedMediaCapabilityCards(facts, locale),
     comparison: {
       eyebrow: pack.videoFields,
       title: localizedComparisonTitle(locale, facts),
@@ -3635,11 +4692,12 @@ function buildVideoCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
       baselineLabel: MINIMAX_COMPARISON_BASELINE[locale] ?? MINIMAX_COMPARISON_BASELINE.en,
       currentLabel: MINIMAX_COMPARISON_CURRENT[locale] ?? MINIMAX_COMPARISON_CURRENT.en,
       rows: [
-        { label: pack.resolution, baseline: "768P", current: MINIMAX_RESOLUTION_RANGE[locale] ?? MINIMAX_RESOLUTION_RANGE.en },
-        { label: pack.duration, baseline: literal(locale, "6 seconds"), current: MINIMAX_DURATION_RANGE[locale] ?? MINIMAX_DURATION_RANGE.en },
-        { label: pack.ratio, baseline: "16:9", current: MINIMAX_COMPARISON_RATIO[locale] ?? MINIMAX_COMPARISON_RATIO.en },
-        { label: pack.watermark, baseline: MINIMAX_OFF[locale] ?? MINIMAX_OFF.en, current: MINIMAX_EXPLICIT_BOOLEAN[locale] ?? MINIMAX_EXPLICIT_BOOLEAN.en },
+        { label: pack.resolution, baseline: literal(locale, "768P base; 2K via hosted regeneration"), current: MINIMAX_RESOLUTION_RANGE[locale] ?? MINIMAX_RESOLUTION_RANGE.en },
+        { label: pack.duration, baseline: MINIMAX_DURATION_RANGE[locale] ?? MINIMAX_DURATION_RANGE.en, current: MINIMAX_DURATION_RANGE[locale] ?? MINIMAX_DURATION_RANGE.en },
+        { label: pack.ratio, baseline: MINIMAX_COMPARISON_RATIO[locale] ?? MINIMAX_COMPARISON_RATIO.en, current: MINIMAX_COMPARISON_RATIO[locale] ?? MINIMAX_COMPARISON_RATIO.en },
+        { label: pack.watermark, baseline: literal(locale, "Not verified"), current: MINIMAX_EXPLICIT_BOOLEAN[locale] ?? MINIMAX_EXPLICIT_BOOLEAN.en },
         { label: literal(locale, "ComfyUI or local weights"), baseline: literal(locale, "Not verified"), current: literal(locale, "Not verified in Flatkey catalog") },
+        MINIMAX_UPSTREAM_FLATKEY_ROW[locale] ?? MINIMAX_UPSTREAM_FLATKEY_ROW.en,
       ],
     },
     api: {
@@ -3648,13 +4706,20 @@ function buildVideoCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
       description: pack.minimaxUseAnswer,
       items: [
         { title: pack.endpoint, detail: `POST ${facts.endpoint}` },
+        { title: literal(locale, "MiniMax upstream"), detail: "POST /v2/video_generation (verify current provider terms)" },
         { title: pack.modelId, detail: facts.id },
-        { title: pack.fields, detail: literal(locale, "resolution, duration, ratio, and aigc_watermark.") },
+        { title: pack.fields, detail: MINIMAX_API_FIELDS[locale] },
         { title: pack.result, detail: pack.apiResultDetail },
       ],
     },
     ...buildPromptLibrary(facts, locale),
     why: buildWhy(facts, locale),
+    related: {
+      eyebrow: literal(locale, "Related models"),
+      title: localizedRelatedTitle(facts, locale),
+      description: localizedRelatedDescription(facts, locale),
+      cards: [],
+    },
     faqTitle: buildFaqTitle(facts, locale),
     faqDescription: pack.faqDescription,
     faq: (() => {
@@ -3665,7 +4730,7 @@ function buildVideoCopy(facts: Facts, pack: LanguagePack, locale: Locale): Model
         { question: pack.cost(facts.name), answer: pack.minimaxCostAnswer },
         { question: pack.howUse(facts.name), answer: pack.minimaxUseAnswer },
         { question: extra.promptQuestion, answer: extra.promptAnswer },
-        { question: extra.localQuestion, answer: extra.localAnswer },
+        { question: extra.localQuestion, answer: localizedMiniMaxLocalAnswer(locale, pack) },
         { question: extra.moderationQuestion, answer: extra.moderationAnswer },
         { question: extra.draftQuestion, answer: extra.draftAnswer },
       ];

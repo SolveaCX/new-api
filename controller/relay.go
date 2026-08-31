@@ -97,7 +97,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// reaches the client. No-op for non-whitelabel channels and for
 			// ordinary upstream errors. Runs after the log above so operators
 			// still see the original text server-side.
-			service.ScrubWhitelabelError(c, newAPIError, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
+			originalErr, _ := common.GetContextKeyType[*types.NewAPIError](c, constant.ContextKeyBlockRunUpstreamError)
+			service.ScrubWhitelabelErrorWithOriginal(c, newAPIError, originalErr, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			writeRelayError(c, relayFormat, ws, newAPIError)
 		}
@@ -891,8 +892,9 @@ func RelayTask(c *gin.Context) {
 		// 订阅计费：快照模型权重，供轮询阶段按加权额做退款/差额结算。
 		if relayInfo.BillingSource == service.BillingSourceSubscription {
 			if bs, ok := relayInfo.Billing.(*service.BillingSession); ok && bs != nil {
-				weight, _ := bs.SubscriptionTaskSnapshot()
+				weight, window := bs.SubscriptionTaskSnapshot()
 				task.PrivateData.BillingContext.SubscriptionWeight = weight
+				task.PrivateData.BillingContext.SubscriptionWindow = window
 			}
 		}
 		task.Quota = result.Quota

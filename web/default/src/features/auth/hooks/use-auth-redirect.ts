@@ -36,6 +36,7 @@ import {
   buildAuthContinuationSearch,
   consumePendingPostLoginRedirect,
   consumePendingOnboarding,
+  clearCustomerInvite,
   isSafeInternalPath,
   saveUserId,
 } from '../lib/storage'
@@ -56,6 +57,9 @@ export function useAuthRedirect() {
     userData?: { id?: number } | null,
     redirectTo?: string
   ) => {
+    // A referral invite is single-use and must not survive a successful login
+    // into a later account-registration attempt in the same tab.
+    clearCustomerInvite()
     // Save user ID if available
     if (userData?.id) {
       saveUserId(userData.id)

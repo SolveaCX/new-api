@@ -132,6 +132,7 @@ type OnlineCopy = {
     enterpriseCta: string;
     enterpriseLabel: string;
     local: ReactNode;
+    discountLabel: string;
     mostPopular: string;
     payAsYouGo: string;
     payCta: string;
@@ -236,7 +237,7 @@ const en: OnlineCopy = {
     invoice: "Every model Every tool One invoice",
     pay: "Pay per successful call",
     savings: ["Model subscriptions", "Data tool subscriptions", "Automation subscriptions"],
-    sub: "One balance covers over 100 official models and over 1000 pay per call tools No idle seats duplicate subscriptions or API keys scattered across providers",
+    sub: "One balance covers over 100 official models and over 1000 pay per call tools, No idle seats duplicate subscriptions or API keys scattered across providers",
     terminal: {
       billed: "✓ $0.83 billed · failed calls $0.00",
       contacts: "✓ 489 contacts waterfall enriched across 5 providers",
@@ -293,6 +294,7 @@ const en: OnlineCopy = {
     enterpriseCta: "Contact sales",
     enterpriseLabel: "Enterprise",
     local: <>Stripe Checkout · Adaptive Pricing (BRL/INR/CNY/EUR) · bank transfer & invoicing via <u>Enterprise billing</u> · cancel anytime — new users start with $1 free credit</>,
+    discountLabel: "80% off",
     mostPopular: "MOST POPULAR",
     payAsYouGo: "Starter top-up",
     payCta: "Subscribe Pro $30/mo sign in",
@@ -303,8 +305,8 @@ const en: OnlineCopy = {
       Go: {
         audience: "For individuals & light daily use",
         cta: "Subscribe",
-        text: "Up to $45 model usage / mo",
-        window: "Short-term caps: $10 / 5h · $22 / 7d",
+        text: "Up to $25 model usage / mo",
+        window: "Short-term caps: $8 / 5h · $12 / 7d",
       },
       Pro: {
         audience: "For daily development & high-frequency requests",
@@ -315,8 +317,8 @@ const en: OnlineCopy = {
       Max: {
         audience: "For teams & heavy workloads",
         cta: "Subscribe",
-        text: "Up to $300 model usage / mo",
-        window: "Short-term caps: $60 / 5h · $150 / 7d",
+        text: "Up to $450 model usage / mo",
+        window: "Short-term caps: $78 / 5h · $220 / 7d",
       },
     },
     subscriptionNotRequired: "Credit package",
@@ -430,7 +432,7 @@ const zh: OnlineCopy = {
     invoice: "每个模型 每个工具 只需一张账单",
     pay: "仅成功调用才付费",
     savings: ["模型订阅", "数据工具订阅", "自动化工具订阅"],
-    sub: "一个余额覆盖 100 个以上官方模型和 1000 个以上按调用付费工具 无需闲置席位 重复订阅 也无需管理散落在各供应商的 API Key",
+    sub: "一个余额覆盖 100 个以上官方模型和 1000 个以上按调用付费工具，无需闲置席位、重复订阅，也无需管理散落在各供应商的 API Key",
     terminal: {
       billed: "✓ 计费 $0.83 · 失败调用 $0.00",
       contacts: "✓ 通过 5 个供应商瀑布式补全 489 位联系人",
@@ -488,6 +490,7 @@ const zh: OnlineCopy = {
     enterpriseCta: "联系销售",
     enterpriseLabel: "企业版",
     local: <>Stripe Checkout · 自适应定价 (BRL/INR/CNY/EUR) · 企业账单支持银行转账与发票 · 随时取消，新用户送 $1 免费额度</>,
+    discountLabel: "80% off",
     mostPopular: "最受欢迎",
     payAsYouGo: "起始充值",
     payCta: "订阅 Pro $30/月并登录",
@@ -498,8 +501,8 @@ const zh: OnlineCopy = {
       Go: {
         audience: "适合个人与轻量日常使用",
         cta: "立即订阅",
-        text: "每月最多 $45 模型用量",
-        window: "短期上限：每 5 小时 $10 · 每 7 天 $22",
+        text: "每月最多 $25 模型用量",
+        window: "短期上限：每 5 小时 $8 · 每 7 天 $12",
       },
       Pro: {
         audience: "适合日常开发与高频请求",
@@ -510,8 +513,8 @@ const zh: OnlineCopy = {
       Max: {
         audience: "适合团队与高强度任务",
         cta: "立即订阅",
-        text: "每月最多 $300 模型用量",
-        window: "短期上限：每 5 小时 $60 · 每 7 天 $150",
+        text: "每月最多 $450 模型用量",
+        window: "短期上限：每 5 小时 $78 · 每 7 天 $220",
       },
     },
     subscriptionNotRequired: "额度包",
@@ -542,6 +545,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Contactar ventas",
     enterpriseLabel: "Empresa",
     local: <>Stripe Checkout · Precios adaptativos (BRL/INR/CNY/EUR) · transferencia bancaria y facturación mediante <u>facturación empresarial</u> · cancela cuando quieras; los nuevos usuarios empiezan con $1 de crédito gratis</>,
+    discountLabel: "80% off",
     mostPopular: "MÁS POPULAR",
     payAsYouGo: "Recarga inicial",
     payCta: "Suscríbete a Pro por $30/mes e inicia sesión",
@@ -552,8 +556,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Para uso individual y diario ligero",
         cta: "Suscribirse",
-        text: "Hasta $45 de uso de modelos / mes",
-        window: "Límites a corto plazo: $10 / 5 h · $22 / 7 d",
+        text: "Hasta $25 de uso de modelos / mes",
+        window: "Límites a corto plazo: $8 / 5 h · $12 / 7 d",
       },
       Pro: {
         audience: "Para desarrollo diario y solicitudes frecuentes",
@@ -564,8 +568,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Para equipos y cargas intensivas",
         cta: "Suscribirse",
-        text: "Hasta $300 de uso de modelos / mes",
-        window: "Límites a corto plazo: $60 / 5 h · $150 / 7 d",
+        text: "Hasta $450 de uso de modelos / mes",
+        window: "Límites a corto plazo: $78 / 5 h · $220 / 7 d",
       },
     },
     subscriptionNotRequired: "Paquete de créditos",
@@ -583,6 +587,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Contacter l'équipe commerciale",
     enterpriseLabel: "Entreprise",
     local: <>Stripe Checkout · Tarification adaptative (BRL/INR/CNY/EUR) · virement bancaire et facturation via <u>facturation entreprise</u> · annulation à tout moment; les nouveaux utilisateurs commencent avec $1 de crédit gratuit</>,
+    discountLabel: "80% off",
     mostPopular: "LE PLUS POPULAIRE",
     payAsYouGo: "Recharge de départ",
     payCta: "S'abonner à Pro pour $30/mois et se connecter",
@@ -593,8 +598,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Pour les particuliers et un usage quotidien léger",
         cta: "S'abonner",
-        text: "Jusqu'à $45 d'utilisation de modèles / mois",
-        window: "Limites court terme : $10 / 5 h · $22 / 7 j",
+        text: "Jusqu'à $25 d'utilisation de modèles / mois",
+        window: "Limites court terme : $8 / 5 h · $12 / 7 j",
       },
       Pro: {
         audience: "Pour le développement quotidien et les requêtes fréquentes",
@@ -605,8 +610,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Pour les équipes et les charges intensives",
         cta: "S'abonner",
-        text: "Jusqu'à $300 d'utilisation de modèles / mois",
-        window: "Limites court terme : $60 / 5 h · $150 / 7 j",
+        text: "Jusqu'à $450 d'utilisation de modèles / mois",
+        window: "Limites court terme : $78 / 5 h · $220 / 7 j",
       },
     },
     subscriptionNotRequired: "Pack de crédits",
@@ -624,6 +629,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Falar com vendas",
     enterpriseLabel: "Empresarial",
     local: <>Stripe Checkout · Preços adaptativos (BRL/INR/CNY/EUR) · transferência bancária e faturamento via <u>cobrança empresarial</u> · cancele quando quiser; novos usuários começam com $1 de crédito grátis</>,
+    discountLabel: "80% off",
     mostPopular: "MAIS POPULAR",
     payAsYouGo: "Recarga inicial",
     payCta: "Assine Pro por $30/mês e entre",
@@ -634,8 +640,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Para uso individual e diário leve",
         cta: "Assinar",
-        text: "Até $45 de uso de modelos / mês",
-        window: "Limites de curto prazo: $10 / 5 h · $22 / 7 d",
+        text: "Até $25 de uso de modelos / mês",
+        window: "Limites de curto prazo: $8 / 5 h · $12 / 7 d",
       },
       Pro: {
         audience: "Para desenvolvimento diário e solicitações frequentes",
@@ -646,8 +652,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Para equipes e cargas intensas",
         cta: "Assinar",
-        text: "Até $300 de uso de modelos / mês",
-        window: "Limites de curto prazo: $60 / 5 h · $150 / 7 d",
+        text: "Até $450 de uso de modelos / mês",
+        window: "Limites de curto prazo: $78 / 5 h · $220 / 7 d",
       },
     },
     subscriptionNotRequired: "Pacote de créditos",
@@ -665,6 +671,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Связаться с продажами",
     enterpriseLabel: "Корпоративный",
     local: <>Stripe Checkout · адаптивные цены (BRL/INR/CNY/EUR) · банковский перевод и счета через <u>корпоративный биллинг</u> · отмена в любое время; новые пользователи начинают с бесплатного кредита $1</>,
+    discountLabel: "80% off",
     mostPopular: "ПОПУЛЯРНО",
     payAsYouGo: "Стартовое пополнение",
     payCta: "Оформить Pro за $30/мес. и войти",
@@ -675,8 +682,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Для индивидуального и лёгкого ежедневного использования",
         cta: "Оформить",
-        text: "До $45 использования моделей / мес.",
-        window: "Краткосрочные лимиты: $10 / 5 ч · $22 / 7 дн.",
+        text: "До $25 использования моделей / мес.",
+        window: "Краткосрочные лимиты: $8 / 5 ч · $12 / 7 дн.",
       },
       Pro: {
         audience: "Для ежедневной разработки и частых запросов",
@@ -687,8 +694,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Для команд и тяжёлых нагрузок",
         cta: "Оформить",
-        text: "До $300 использования моделей / мес.",
-        window: "Краткосрочные лимиты: $60 / 5 ч · $150 / 7 дн.",
+        text: "До $450 использования моделей / мес.",
+        window: "Краткосрочные лимиты: $78 / 5 ч · $220 / 7 дн.",
       },
     },
     subscriptionNotRequired: "Пакет кредитов",
@@ -706,6 +713,7 @@ const localizedPricingCopy = {
     enterpriseCta: "営業に問い合わせる",
     enterpriseLabel: "エンタープライズ",
     local: <>Stripe Checkout · 適応型価格 (BRL/INR/CNY/EUR) · <u>エンタープライズ請求</u>で銀行振込と請求書に対応 · いつでも解約可能。新規ユーザーは $1 の無料クレジットから開始</>,
+    discountLabel: "80% off",
     mostPopular: "一番人気",
     payAsYouGo: "初回チャージ",
     payCta: "Pro を $30/月で登録してログイン",
@@ -716,8 +724,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "個人利用と軽い日常利用向け",
         cta: "登録する",
-        text: "月あたり最大 $45 のモデル利用",
-        window: "短期上限: $10 / 5時間 · $22 / 7日",
+        text: "月あたり最大 $25 のモデル利用",
+        window: "短期上限: $8 / 5時間 · $12 / 7日",
       },
       Pro: {
         audience: "日常的な開発と高頻度リクエスト向け",
@@ -728,8 +736,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "チームと高負荷ワークロード向け",
         cta: "登録する",
-        text: "月あたり最大 $300 のモデル利用",
-        window: "短期上限: $60 / 5時間 · $150 / 7日",
+        text: "月あたり最大 $450 のモデル利用",
+        window: "短期上限: $78 / 5時間 · $220 / 7日",
       },
     },
     subscriptionNotRequired: "クレジットパック",
@@ -747,6 +755,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Liên hệ kinh doanh",
     enterpriseLabel: "Doanh nghiệp",
     local: <>Stripe Checkout · giá thích ứng (BRL/INR/CNY/EUR) · chuyển khoản ngân hàng và hóa đơn qua <u>thanh toán doanh nghiệp</u> · hủy bất cứ lúc nào; người dùng mới bắt đầu với $1 credit miễn phí</>,
+    discountLabel: "80% off",
     mostPopular: "PHỔ BIẾN NHẤT",
     payAsYouGo: "Nạp khởi đầu",
     payCta: "Đăng ký Pro $30/tháng và đăng nhập",
@@ -757,8 +766,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Cho cá nhân và nhu cầu hằng ngày nhẹ",
         cta: "Đăng ký",
-        text: "Tối đa $45 mức sử dụng model / tháng",
-        window: "Giới hạn ngắn hạn: $10 / 5 giờ · $22 / 7 ngày",
+        text: "Tối đa $25 mức sử dụng model / tháng",
+        window: "Giới hạn ngắn hạn: $8 / 5 giờ · $12 / 7 ngày",
       },
       Pro: {
         audience: "Cho phát triển hằng ngày và yêu cầu tần suất cao",
@@ -769,8 +778,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Cho đội nhóm và tải công việc nặng",
         cta: "Đăng ký",
-        text: "Tối đa $300 mức sử dụng model / tháng",
-        window: "Giới hạn ngắn hạn: $60 / 5 giờ · $150 / 7 ngày",
+        text: "Tối đa $450 mức sử dụng model / tháng",
+        window: "Giới hạn ngắn hạn: $78 / 5 giờ · $220 / 7 ngày",
       },
     },
     subscriptionNotRequired: "Gói credit",
@@ -788,6 +797,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Vertrieb kontaktieren",
     enterpriseLabel: "Unternehmen",
     local: <>Stripe Checkout · adaptive Preise (BRL/INR/CNY/EUR) · Banküberweisung und Rechnungen über <u>Enterprise-Abrechnung</u> · jederzeit kündbar; neue Nutzer starten mit $1 Gratisguthaben</>,
+    discountLabel: "80% off",
     mostPopular: "BELIEBT",
     payAsYouGo: "Startguthaben",
     payCta: "Pro für $30/Monat abonnieren und anmelden",
@@ -798,8 +808,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Für Einzelpersonen und leichte tägliche Nutzung",
         cta: "Abonnieren",
-        text: "Bis zu $45 Modellnutzung / Monat",
-        window: "Kurzfristige Limits: $10 / 5 Std. · $22 / 7 Tage",
+        text: "Bis zu $25 Modellnutzung / Monat",
+        window: "Kurzfristige Limits: $8 / 5 Std. · $12 / 7 Tage",
       },
       Pro: {
         audience: "Für tägliche Entwicklung und häufige Anfragen",
@@ -810,8 +820,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Für Teams und hohe Workloads",
         cta: "Abonnieren",
-        text: "Bis zu $300 Modellnutzung / Monat",
-        window: "Kurzfristige Limits: $60 / 5 Std. · $150 / 7 Tage",
+        text: "Bis zu $450 Modellnutzung / Monat",
+        window: "Kurzfristige Limits: $78 / 5 Std. · $220 / 7 Tage",
       },
     },
     subscriptionNotRequired: "Guthabenpaket",
@@ -829,6 +839,7 @@ const localizedPricingCopy = {
     enterpriseCta: "Hubungi sales",
     enterpriseLabel: "Perusahaan",
     local: <>Stripe Checkout · harga adaptif (BRL/INR/CNY/EUR) · transfer bank dan faktur melalui <u>penagihan perusahaan</u> · batalkan kapan saja; pengguna baru mulai dengan kredit gratis $1</>,
+    discountLabel: "80% off",
     mostPopular: "PALING POPULER",
     payAsYouGo: "Top-up awal",
     payCta: "Berlangganan Pro $30/bulan dan masuk",
@@ -839,8 +850,8 @@ const localizedPricingCopy = {
       Go: {
         audience: "Untuk individu dan penggunaan harian ringan",
         cta: "Berlangganan",
-        text: "Hingga $45 penggunaan model / bulan",
-        window: "Batas jangka pendek: $10 / 5 jam · $22 / 7 hari",
+        text: "Hingga $25 penggunaan model / bulan",
+        window: "Batas jangka pendek: $8 / 5 jam · $12 / 7 hari",
       },
       Pro: {
         audience: "Untuk pengembangan harian dan permintaan frekuensi tinggi",
@@ -851,8 +862,8 @@ const localizedPricingCopy = {
       Max: {
         audience: "Untuk tim dan beban kerja berat",
         cta: "Berlangganan",
-        text: "Hingga $300 penggunaan model / bulan",
-        window: "Batas jangka pendek: $60 / 5 jam · $150 / 7 hari",
+        text: "Hingga $450 penggunaan model / bulan",
+        window: "Batas jangka pendek: $78 / 5 jam · $220 / 7 hari",
       },
     },
     subscriptionNotRequired: "Paket kredit",

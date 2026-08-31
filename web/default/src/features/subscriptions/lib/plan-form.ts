@@ -66,6 +66,8 @@ export function getPlanFormSchema(t: TFunction) {
     allow_balance_pay: z.boolean(),
     max_purchase_per_user: z.coerce.number().min(0),
     total_amount: z.coerce.number().min(0),
+    window_5h_amount: z.coerce.number().min(0),
+    window_week_amount: z.coerce.number().min(0),
     upgrade_group: z.string().optional(),
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
@@ -95,6 +97,8 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   allow_balance_pay: true,
   max_purchase_per_user: 0,
   total_amount: 0,
+  window_5h_amount: 0,
+  window_week_amount: 0,
   upgrade_group: '',
   stripe_price_id: '',
   creem_product_id: '',
@@ -122,6 +126,10 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     allow_balance_pay: plan.allow_balance_pay !== false,
     max_purchase_per_user: Number(plan.max_purchase_per_user || 0),
     total_amount: quotaUnitsToDollars(Number(plan.total_amount || 0)),
+    window_5h_amount: quotaUnitsToDollars(Number(plan.window_5h_amount || 0)),
+    window_week_amount: quotaUnitsToDollars(
+      Number(plan.window_week_amount || 0)
+    ),
     upgrade_group: plan.upgrade_group || '',
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
@@ -135,13 +143,9 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
 
 export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
   const {
-    window_5h_amount: _window5hAmount,
-    window_week_amount: _windowWeekAmount,
     media_credits_monthly: _mediaCreditsMonthly,
     ...planValues
   } = values as PlanFormValues & {
-    window_5h_amount?: unknown
-    window_week_amount?: unknown
     media_credits_monthly?: unknown
   }
 
@@ -162,6 +166,12 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       sort_order: Number(planValues.sort_order || 0),
       max_purchase_per_user: Number(planValues.max_purchase_per_user || 0),
       total_amount: parseQuotaFromDollars(Number(planValues.total_amount || 0)),
+      window_5h_amount: parseQuotaFromDollars(
+        Number(planValues.window_5h_amount || 0)
+      ),
+      window_week_amount: parseQuotaFromDollars(
+        Number(planValues.window_week_amount || 0)
+      ),
       upgrade_group: planValues.upgrade_group || '',
       model_count: Number(planValues.model_count || 0),
       rpm: 0,

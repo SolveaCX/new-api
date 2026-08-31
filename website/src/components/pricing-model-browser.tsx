@@ -49,6 +49,7 @@ import { localizePath, type Locale } from "@/lib/locales";
 import { getModelLandingConfigForPricingModel } from "@/lib/model-landing";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
+import { getModelPromotions, modelPromotionLabel } from "@/lib/model-promotions";
 import {
   CartesianGrid,
   Line,
@@ -318,6 +319,7 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
   const tokenBased = isTokenBasedModel(model);
   const endpoints = model.supported_endpoint_types ?? [];
   const tags = parseTags(model.tags);
+  const promotions = getModelPromotions(model.model_name);
   const initial = model.model_name.charAt(0).toUpperCase();
   const iconKey = model.icon || model.vendor_icon;
   const landingConfig = getModelLandingConfigForPricingModel(model);
@@ -348,7 +350,20 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
             <ModelLogo iconKey={iconKey} fallback={initial} size={28} />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">{model.model_name}</h3>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white" title={model.model_name}>{model.model_name}</h3>
+              {promotions.map((promotion) => (
+                <span key={promotion} className={cn(
+                  "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
+                  promotion === "free" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  promotion === "limited" && "border-amber-200 bg-amber-50 text-amber-700",
+                  promotion === "hot" && "border-rose-200 bg-rose-50 text-rose-700",
+                  promotion === "new" && "border-sky-200 bg-sky-50 text-sky-700"
+                )}>
+                  {modelPromotionLabel(props.locale, promotion)}
+                </span>
+              ))}
+            </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
               {displayPrice ? (
                 <span className="whitespace-nowrap text-slate-500 dark:text-slate-400">

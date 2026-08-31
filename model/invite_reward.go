@@ -25,6 +25,7 @@ const (
 
 	InviteRewardBlockReasonInviterMissing      = "inviter_missing"
 	InviteRewardBlockReasonInviterLimitReached = "inviter_limit_reached"
+	InviteRewardBlockReasonBenefitRisk         = "inviter_benefit_blacklisted"
 )
 
 type InviteRewardEvent struct {
@@ -181,6 +182,13 @@ func tryGrantInviteRewardForTriggerInTx(tx *gorm.DB, inviteeId int, trigger invi
 			return blockInviteRewardForTriggerInTx(tx, invitee.Id, invitee.InviterId, trigger, InviteRewardBlockReasonInviterMissing)
 		}
 		return inviteRewardGrantResult{}, err
+	}
+	blacklist, _, err := ensureInviteBenefitBlacklistForInviterTx(tx, inviter.Id)
+	if err != nil {
+		return inviteRewardGrantResult{}, err
+	}
+	if blacklist != nil {
+		return blockInviteRewardForTriggerInTx(tx, invitee.Id, inviter.Id, trigger, InviteRewardBlockReasonBenefitRisk)
 	}
 	result := inviteRewardGrantResult{
 		inviteeId:          invitee.Id,

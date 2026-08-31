@@ -177,6 +177,55 @@ describe("ModelsDirectoryTable", () => {
     expect(cells[2]).toContain("—");
     expect(cells[3]).toContain("$0.072");
   });
+
+  test("shows optional price columns on desktop layouts", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={{ ...getModelsDirectoryTableCopy("en"), colInput: "Our input", colOutput: "Our output" }}
+        hideOurPrice
+        rows={[
+          {
+            name: "gpt-5-mini",
+            vendor: "OpenAI",
+            official: "$0.5",
+            discounted: "$0.2",
+            officialUsd: 0.5,
+            discountedUsd: 0.2,
+            iconKey: "openai",
+          },
+        ]}
+      />
+    );
+
+    expect(html).toContain("w-full min-w-[680px] table-fixed border-collapse text-sm lg:min-w-0");
+    expect(html).toContain("hidden w-[11%] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal lg:table-cell");
+    expect(html).not.toContain("whitespace-normal 2xl:table-cell");
+  });
+
+  test("keeps the model tooltip while omitting legacy Top badges", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={getModelsDirectoryTableCopy("en")}
+        rows={[
+          {
+            name: "gpt-5.6-sol",
+            vendor: "OpenAI",
+            official: "$5",
+            discounted: "$4",
+            officialUsd: 5,
+            discountedUsd: 4,
+            top10: 2,
+            iconKey: "openai",
+          },
+        ]}
+      />
+    );
+
+    expect(html).toContain('title="gpt-5.6-sol"');
+    expect(html).not.toContain("TOP 2");
+  });
 });
 
 describe("attribution label", () => {

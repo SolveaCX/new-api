@@ -384,6 +384,17 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		}
 		applyHeaderOverrideToRequest(req, headerOverride)
 	}
+	// Staging does not have the general request-finalizer pipeline yet.
+	// Keep this compatibility hook restricted to Copilot.
+	if info.ApiType == rootconstant.APITypeCopilot {
+		if finalizer, ok := a.(interface {
+			FinalizeRequest(*gin.Context, *http.Request, *common.RelayInfo) error
+		}); ok {
+			if err := finalizer.FinalizeRequest(c, req, info); err != nil {
+				return nil, err
+			}
+		}
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)

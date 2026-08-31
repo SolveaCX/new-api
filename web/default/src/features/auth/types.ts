@@ -38,13 +38,47 @@ export interface RegisterPayload {
   email?: string
   verification_code?: string
   aff_code?: string
+  invite?: string
   ads_attribution?: string
   ga_client_id?: string
   ga_session_id?: string
   turnstile?: string
+  captcha_token: string
   // Honeypot: hidden from humans, bots auto-fill it. Server silently drops
   // registrations that carry a value.
   website?: string
+}
+
+export type RegistrationCaptchaType = 'slide' | 'rotate'
+
+export interface RegistrationCaptchaChallenge {
+  id: string
+  type: RegistrationCaptchaType
+  background_image: string
+  piece_image?: string
+  width: number
+  height: number
+  piece_width?: number
+  piece_height?: number
+  start_x?: number
+  start_y?: number
+}
+
+export interface RegistrationCaptchaAnswer {
+  id: string
+  x?: number
+  y?: number
+  angle?: number
+}
+
+export interface RegistrationCaptchaResponse extends ApiResponse {
+  data?: RegistrationCaptchaChallenge
+}
+
+export interface RegistrationCaptchaVerificationResponse extends ApiResponse {
+  data?: {
+    token: string
+  }
 }
 
 export interface PasswordResetPayload {

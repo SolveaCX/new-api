@@ -2915,7 +2915,11 @@ func buildStripeCheckoutSessionParamsForRevision(referenceId string, customerId 
 		Card: cardOptions,
 	}
 
-	if submitMessage != "" {
+	// Stripe rejects custom_text when the session uses a client-rendered UI mode
+	// (Elements or embedded). Keep the reassurance text for hosted Checkout,
+	// where Stripe renders it, but let the console render its own summary for
+	// client-rendered sessions.
+	if submitMessage != "" && !presentation.UsesClientSecret() {
 		params.CustomText = &stripe.CheckoutSessionCustomTextParams{
 			Submit: &stripe.CheckoutSessionCustomTextSubmitParams{
 				Message: stripe.String(submitMessage),

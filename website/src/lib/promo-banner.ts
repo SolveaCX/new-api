@@ -16,16 +16,16 @@ export type PromoBannerSettings = {
 };
 
 export const DEFAULT_PROMO_BANNER_CONTENT: Record<Locale, string> = {
-  en: "DeepSeek V4 is here. Join our Discord get $5 free credits.",
-  zh: "DeepSeek V4 来了。加入我们的 Discord，领取 5 美元免费额度。",
-  es: "DeepSeek V4 ya está aquí. Únete a nuestro Discord y recibe 5 USD en créditos gratis.",
-  fr: "DeepSeek V4 est arrivé. Rejoignez notre Discord et recevez 5 $ de crédits gratuits.",
-  pt: "O DeepSeek V4 chegou. Entre no nosso Discord e ganhe US$ 5 em créditos grátis.",
-  ru: "DeepSeek V4 уже здесь. Присоединяйтесь к нашему Discord и получите 5 $ бесплатных кредитов.",
-  ja: "DeepSeek V4 が登場。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
-  vi: "DeepSeek V4 đã ra mắt. Tham gia Discord của chúng tôi để nhận 5 USD tín dụng miễn phí.",
-  de: "DeepSeek V4 ist da. Tritt unserem Discord bei und sichere dir 5 $ Gratisguthaben.",
-  id: "DeepSeek V4 telah hadir. Gabung Discord kami dan dapatkan kredit gratis $5.",
+  en: "DeepSeek V4 Pro is 15% off for a limited time. Join our Discord to get $5 in free credit.",
+  zh: "DeepSeek V4 Pro 限时优惠 15% 折扣。加入我们的 Discord，领取 5 美元免费额度。",
+  es: "DeepSeek V4 Pro tiene un 15 % de descuento por tiempo limitado. Únete a nuestro Discord y recibe 5 USD de crédito gratis.",
+  fr: "DeepSeek V4 Pro est à -15 % pour une durée limitée. Rejoignez notre Discord pour recevoir 5 $ de crédit gratuit.",
+  pt: "O DeepSeek V4 Pro está com 15% de desconto por tempo limitado. Entre no nosso Discord e ganhe US$ 5 em crédito grátis.",
+  ru: "Скидка 15% на DeepSeek V4 Pro действует ограниченное время. Присоединяйтесь к нашему Discord и получите 5 $ бесплатного кредита.",
+  ja: "DeepSeek V4 Pro が期間限定で 15% オフ。Discord に参加して、5 ドル分の無料クレジットを獲得しましょう。",
+  vi: "DeepSeek V4 Pro giảm 15% trong thời gian có hạn. Tham gia Discord để nhận 5 USD tín dụng miễn phí.",
+  de: "DeepSeek V4 Pro ist für kurze Zeit 15 % günstiger. Tritt unserem Discord bei und erhalte 5 $ Gratisguthaben.",
+  id: "DeepSeek V4 Pro diskon 15% untuk waktu terbatas. Bergabunglah dengan Discord kami dan dapatkan kredit gratis senilai US$5.",
 };
 
 export const DEFAULT_PROMO_BANNER_HREF = "/blog/deepseek-v4-pro-vs-flash";

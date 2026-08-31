@@ -144,6 +144,8 @@ quota.user_insufficient: "用戶額度不足, 剩餘額度: {{.Quota}}"
 quota.topup_hint: "前往 {{.URL}} 儲值後即可繼續。"
 quota.pre_consume_failed: "預扣費額度失敗, 用戶剩餘額度: {{.Remaining}}, 需要預扣費額度: {{.Required}}"
 quota.subscription_insufficient: "訂閱額度不足或未配置訂閱: {{.Detail}}"
+quota.subscription_window_5h_exceeded: "您的方案 5 小時用量窗口已滿，約 {{.Minutes}} 分鐘後會釋出部分額度；充值餘額即可立即繼續使用。"
+quota.subscription_window_week_exceeded: "您的方案本週用量窗口已滿，約 {{.Hours}} 小時後刷新；充值餘額即可立即繼續使用。"
 quota.token_insufficient: "令牌額度不足, 令牌剩餘額度: {{.Remain}}, 需要額度: {{.Required}}"
 quota.user_insufficient_need: "用戶額度不足, 用戶額度: {{.Quota}}, 需要額度: {{.Required}}"
 
@@ -383,3 +385,8 @@ notify.subscription_quota_warning_title: "您的訂閱額度即將用盡"
 notify.quota_warning_email: "{{.Warning}}，目前剩餘額度為 {{.Quota}}，為了不影響您的使用，請及時儲值。<br/>儲值連結：<a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}，剩餘額度：{{.Quota}}，請及時儲值"
 notify.quota_warning_gotify: "{{.Warning}}，目前剩餘額度為 {{.Quota}}，請及時儲值。"
+
+# Registration CAPTCHA messages
+registration_captcha.required: "請先完成圖形驗證"
+registration_captcha.invalid: "圖形驗證失敗或已過期，請重試。"
+registration_captcha.unavailable: "圖形驗證暫時無法使用，請稍後再試。"

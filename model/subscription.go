@@ -45,7 +45,10 @@ var (
 )
 
 const (
-	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
+	// v2 prevents a rollout from reusing Redis plan snapshots written by a
+	// revision that did not yet know the current quota contract. The namespace
+	// bump also keeps startup migrations independent from Redis initialization.
+	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v2"
 	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
 )
 
@@ -1877,6 +1880,10 @@ type SubscriptionPreConsumeResult struct {
 	AmountTotal        int64
 	AmountUsedBefore   int64
 	AmountUsedAfter    int64
+	// AlreadyConsumed is true when requestId matched an existing consumed
+	// record. Callers that reserve auxiliary limits before entering the
+	// idempotent transaction can use it to release that duplicate reservation.
+	AlreadyConsumed bool
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
@@ -2070,7 +2077,11 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			if existing.Status == "refunded" {
 				return errors.New("subscription pre-consume already refunded")
 			}
-			return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, existing)
+			if err := fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, existing); err != nil {
+				return err
+			}
+			returnValue.AlreadyConsumed = true
+			return nil
 		}
 
 		subs, hasContract, contractStatus, err := getPreConsumableSubscriptionCandidatesTx(tx, userId, now)
@@ -2112,7 +2123,11 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 					if dup.Status == "refunded" {
 						return errors.New("subscription pre-consume already refunded")
 					}
-					return fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, dup)
+					if err := fillSubscriptionPreConsumeReturnFromRecordTx(tx, returnValue, dup); err != nil {
+						return err
+					}
+					returnValue.AlreadyConsumed = true
+					return nil
 				}
 				return err
 			}

@@ -158,14 +158,13 @@ func (s *BillingSession) needsRefundLocked() bool {
 	return false
 }
 
-// SubscriptionTaskSnapshot exports the subscription weight for async task
-// settlement. Short-window snapshots are no longer persisted from synchronous
-// subscription billing. Returns (0, nil) for non-subscription funding.
+// SubscriptionTaskSnapshot exports the subscription weight and held short-window
+// ledger for async task settlement. Returns (0, nil) for non-subscription funding.
 func (s *BillingSession) SubscriptionTaskSnapshot() (float64, *model.TaskSubscriptionWindow) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sf, ok := s.funding.(*SubscriptionFunding); ok {
-		return sf.Weight(), nil
+		return sf.Weight(), sf.WindowSnapshot()
 	}
 	return 0, nil
 }
@@ -247,6 +246,33 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 				)
 			}
 			s.tokenConsumed = 0
+		}
+		// A short-window rejection is a quota decision: subscription_first can
+		// fall back to wallet, while subscription_only receives a 429 with the
+		// next release estimate.
+		var windowErr *subscriptionWindowExceededError
+		if errors.As(err, &windowErr) {
+			now := common.GetTimestamp()
+			msgKey := i18n.MsgQuotaSubscriptionWindow5h
+			params := map[string]any{}
+			if windowErr.Window == "week" {
+				msgKey = i18n.MsgQuotaSubscriptionWindowWeek
+				hours := (windowErr.ResetAt - now + 3599) / 3600
+				if hours < 1 {
+					hours = 1
+				}
+				params["Hours"] = hours
+			} else {
+				minutes := (windowErr.ResetAt - now + 59) / 60
+				if minutes < 1 {
+					minutes = 1
+				}
+				params["Minutes"] = minutes
+			}
+			return types.NewErrorWithStatusCode(
+				fmt.Errorf("%s", common.TranslateMessage(c, msgKey, params)),
+				types.ErrorCodeInsufficientUserQuota, http.StatusTooManyRequests,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()

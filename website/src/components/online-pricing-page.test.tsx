@@ -10,9 +10,9 @@ describe("OnlinePricingPage", () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const html = renderToStaticMarkup(<OnlinePricingPage locale="en" />);
 
-    const goReferencePrice = html.indexOf('<del class="toldprice">$45</del>');
+    const goReferencePrice = html.indexOf('<del class="toldprice">$25</del>');
     const goPrice = html.indexOf("<b>$10</b>");
-    const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div><div class="tname">Pro</div>');
+    const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div>');
     const enterpriseCustom = html.indexOf(">Custom<");
     const goCta = html.indexOf("Subscribe", goPrice);
     const enterpriseCta = html.indexOf("Contact sales", enterpriseCustom);
@@ -22,6 +22,9 @@ describe("OnlinePricingPage", () => {
     expect(goPrice).toBeGreaterThanOrEqual(0);
     expect(goReferencePrice).toBeLessThan(goPrice);
     expect(goCta).toBeGreaterThan(goPrice);
+    expect(html).toContain("Short-term caps: $8 / 5h · $12 / 7d");
+    expect(html).toContain("Short-term caps: $18 / 5h · $45 / 7d");
+    expect(html).toContain("Short-term caps: $78 / 5h · $220 / 7d");
     expect(proBadge).toBeGreaterThanOrEqual(0);
     expect(html).not.toContain('<div class="tier hot"><div class="badge">MOST POPULAR</div><div class="tname">Go</div>');
     expect(enterpriseCta).toBeGreaterThanOrEqual(0);
@@ -39,7 +42,9 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain('src="/assets/logos/payment/alipay.svg"');
     expect(html).toContain("All models");
     expect(html).toContain('<del class="toldprice">$90</del>');
-    expect(html).toContain('<del class="toldprice">$300</del>');
+    expect(html).toContain('<del class="toldprice">$450</del>');
+    expect(html.match(/class="tdiscount">80% off<\/div>/g)?.length).toBe(3);
+    expect(html).not.toContain('class="tdiscount">80% off</div><div class="tname">Enterprise');
     expect(html).not.toContain("Up to $45 model usage / mo");
     expect(html).not.toContain("Up to $90 model usage / mo");
     expect(html).not.toContain("Up to $300 model usage / mo");
@@ -79,7 +84,8 @@ describe("OnlinePricingPage", () => {
       for (const snippet of item.snippets) {
         expect(html).toContain(snippet);
       }
-      for (const referencePrice of ["$45", "$90", "$300"]) {
+      expect(html).toContain('class="tdiscount">80% off</div>');
+      for (const referencePrice of ["$25", "$90", "$450"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
       expect(html).not.toContain(item.legacyQuota);

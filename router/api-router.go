@@ -89,6 +89,8 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
+		apiRouter.GET("/registration/captcha", middleware.CriticalRateLimit(), controller.GetRegistrationCaptcha)
+		apiRouter.POST("/registration/captcha/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.VerifyRegistrationCaptcha)
 		apiRouter.POST("/registration/email-verification/exchange", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ExchangeRegistrationEmailVerification)
 		apiRouter.POST("/registration/email-verification/status", middleware.RegistrationEmailVerificationStatusRateLimit(), anonymousRequestBodyLimit, controller.GetRegistrationEmailVerificationStatus)
 		apiRouter.GET("/reset_password", middleware.CriticalRateLimit(), middleware.TurnstileCheck(), controller.SendPasswordResetEmail)
@@ -148,7 +150,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		userRoute := apiRouter.Group("/user")
 		{
-			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Register)
+			userRoute.POST("/register", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), middleware.RegistrationCaptchaCheck(), controller.Register)
 			userRoute.POST("/login", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.TurnstileCheck(), controller.Login)
 			userRoute.POST("/login/2fa", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.Verify2FALogin)
 			userRoute.POST("/passkey/login/begin", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.PasskeyLoginBegin)

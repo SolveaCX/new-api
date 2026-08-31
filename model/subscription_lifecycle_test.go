@@ -386,7 +386,7 @@ func TestSubscriptionLifecycleProviderMatrixSuccessAndExpiryReplayOnce(t *testin
 func setupSubscriptionLifecycleTestDB(t *testing.T, maxOpenConns int) {
 	t.Helper()
 	setupLifecycleQuotaMutationTestDB(t, maxOpenConns)
-	require.NoError(t, DB.AutoMigrate(&SubscriptionOrder{}, &TopUp{}, &Log{}, &InviteSubscriptionReward{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &PaymentAnalyticsOutbox{}, &PaymentAnalyticsEventReceipt{}))
+	require.NoError(t, DB.AutoMigrate(&SubscriptionOrder{}, &TopUp{}, &Log{}, &InviteSubscriptionReward{}, &InviteBenefitBlacklist{}, &SubscriptionDiscountAccount{}, &SubscriptionDiscountEntry{}, &PaymentAnalyticsOutbox{}, &PaymentAnalyticsEventReceipt{}))
 }
 
 func createSubscriptionLifecyclePlan(t *testing.T, title string) *SubscriptionPlan {

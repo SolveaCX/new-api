@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { getAdsAttributionPayload } from '@/lib/analytics/attribution'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
 import { api } from '@/lib/api'
+import { getCustomerInvite } from './lib/storage'
 import type {
   LoginPayload,
   LoginResponse,
@@ -28,6 +29,10 @@ import type {
   ApiResponse,
   CliDeviceAuthorization,
   RegistrationEmailVerificationResponse,
+  RegistrationCaptchaAnswer,
+  RegistrationCaptchaResponse,
+  RegistrationCaptchaType,
+  RegistrationCaptchaVerificationResponse,
 } from './types'
 
 // ============================================================================
@@ -124,6 +129,7 @@ export async function getOAuthState(): Promise<string> {
   const res = await api.get('/api/oauth/state', {
     params: {
       aff,
+      invite: getCustomerInvite() || undefined,
       ads_attribution: adsAttribution || undefined,
       ...getGAMeasurementIdentifiers(),
     },
@@ -144,15 +150,40 @@ export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
 
 // User registration
 export async function register(payload: RegisterPayload): Promise<ApiResponse> {
+  const { turnstile, captcha_token, ...registrationPayload } = payload
   const res = await api.post(
     `/api/user/register`,
     {
-      ...payload,
+      ...registrationPayload,
       ...getGAMeasurementIdentifiers(),
     },
     {
-      params: { turnstile: payload.turnstile ?? '' },
+      params: {
+        turnstile: turnstile ?? '',
+        captcha_token,
+      },
     }
+  )
+  return res.data
+}
+
+export async function getRegistrationCaptcha(
+  type: RegistrationCaptchaType
+): Promise<RegistrationCaptchaResponse> {
+  const res = await api.get<RegistrationCaptchaResponse>(
+    '/api/registration/captcha',
+    { params: { type }, skipBusinessError: true }
+  )
+  return res.data
+}
+
+export async function verifyRegistrationCaptcha(
+  answer: RegistrationCaptchaAnswer
+): Promise<RegistrationCaptchaVerificationResponse> {
+  const res = await api.post<RegistrationCaptchaVerificationResponse>(
+    '/api/registration/captcha/verify',
+    answer,
+    { skipBusinessError: true }
   )
   return res.data
 }

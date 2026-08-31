@@ -27,6 +27,7 @@ import {
   isCallableModel,
   resolveCreateScope,
 } from './model-access'
+import { sortModelsByPromotion } from './model-promotions'
 
 export const ALL_MODEL_VENDORS = 'all'
 export const UNLABELLED_MODEL_VENDOR = 'unlabelled'
@@ -274,11 +275,12 @@ export function filterModelAccessModels(
   vendor: ModelVendorFilter
 ): ModelAccessModel[] {
   const normalizedQuery = query.trim().toLocaleLowerCase()
-  return models.filter((model) => {
+  const filtered = models.filter((model) => {
     if (!matchesVendor(model, vendor)) return false
     if (!normalizedQuery) return true
     return [model.id, model.description ?? '', model.vendor?.name ?? ''].some(
       (value) => value.toLocaleLowerCase().includes(normalizedQuery)
     )
   })
+  return sortModelsByPromotion(filtered)
 }
