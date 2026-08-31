@@ -241,6 +241,9 @@ type ToolCallRequest struct {
 	Type     string          `json:"type"`
 	Function FunctionRequest `json:"function,omitempty"`
 	Custom   json.RawMessage `json:"custom,omitempty"`
+
+	// Preserve native Claude web tool options across request copies and conversions.
+	claudeWebTool json.RawMessage
 }
 
 type FunctionRequest struct {

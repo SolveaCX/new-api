@@ -30,6 +30,8 @@ func TestRequestRequiresServerWebTools(t *testing.T) {
 		"web_fetch_20250910", "web_fetch_20260209", "web_fetch_20260309", "web_fetch_20260318",
 		"web_search_20270101", "web_fetch_20270101", // Preserve the versioned family on upgrades.
 		"web_search", "web_search_preview",
+		"web_search_2025_08_26", "web_search_preview_2025_03_11",
+		"web_search_2027_01_01", "web_search_preview_2027_01_01",
 	} {
 		t.Run(version, func(t *testing.T) {
 			body := fmt.Sprintf(`{"tools":[{"name":"Read","input_schema":{}},{"type":%q,"name":"web_search","max_uses":8,"allowed_domains":["example.com"],"allowed_callers":["code_execution_20260120"],"max_content_tokens":0,"citations":{"enabled":false}}],"tool_choice":{"type":"auto"}}`, version)
@@ -37,6 +39,7 @@ func TestRequestRequiresServerWebTools(t *testing.T) {
 				ctx := webToolContext(t, path, body)
 				require.True(t, RequestRequiresServerWebTools(ctx))
 				require.True(t, RequestRequiresServerWebTools(ctx)) // Cached detection must not consume the body.
+				require.False(t, ChannelSupportsServerWebTools(ctx, &model.Channel{Type: constant.ChannelTypeCopilot}))
 				got, err := io.ReadAll(ctx.Request.Body)
 				require.NoError(t, err)
 				require.Equal(t, body, string(got))
@@ -55,6 +58,8 @@ func TestRequestRequiresServerWebTools(t *testing.T) {
 		"message content":             `{"messages":[{"role":"user","content":"web_search_20250305 请联网查询"},{"role":"assistant","content":[{"type":"tool_use","name":"WebSearch","input":{"query":"weather"}}]}]}`,
 		"null":                        `{"tools":null,"web_search_options":null}`,
 		"similar unknown types":       `{"tools":[{"type":"web_search_custom"},{"type":"web_fetch_20260318_extra"}]}`,
+		"malformed OpenAI versions":   `{"tools":[{"type":"web_search_2025_8_26"},{"type":"web_search_preview_2025_03_11_extra"},{"type":"web_search_preview_20250311"},{"type":"web_search_2025_aa_26"},{"type":"web_fetch_2025_08_26"}]}`,
+		"dated function names":        `{"tools":[{"type":"function","function":{"name":"web_search_2025_08_26"}},{"type":"function","function":{"name":"web_search_preview_2025_03_11"}}]}`,
 		"no tool":                     `{}`,
 	} {
 		t.Run(name, func(t *testing.T) {
