@@ -143,7 +143,18 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 	translatedJSON := extractAnnouncementTranslationJSON(envelope.Choices[0].Message.Content)
 	var translations map[string]AnnouncementTranslation
 	if err := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &translations); err != nil {
-		return nil, fmt.Errorf("translation provider returned invalid JSON")
+		var encodedJSON string
+		if stringErr := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &encodedJSON); stringErr != nil || common.Unmarshal([]byte(encodedJSON), &translations) != nil {
+			return nil, fmt.Errorf("translation provider returned invalid JSON")
+		}
+	}
+	if nested, ok := translations["translations"]; ok && nested.Content == "" {
+		var envelope struct {
+			Translations map[string]AnnouncementTranslation `json:"translations"`
+		}
+		if err := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &envelope); err == nil && len(envelope.Translations) > 0 {
+			translations = envelope.Translations
+		}
 	}
 	for _, locale := range announcementTranslationLocales {
 		translation, ok := translations[locale]
