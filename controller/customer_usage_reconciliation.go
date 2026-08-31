@@ -22,7 +22,7 @@ type customerUsageCustomer struct {
 	CustomerID  string `json:"customer_id"`
 	DisplayName string `json:"display_name"`
 	Status      string `json:"status"`
-	CreatedAt   string `json:"created_at"`
+	CreatedAt   string `json:"created_at,omitempty"`
 }
 
 type customerUsageTransaction struct {
@@ -85,7 +85,7 @@ type customerUsageCursor struct {
 	ID         int    `json:"id"`
 }
 
-func parseCustomerUsageCustomer(c *gin.Context, raw string) (int, customerUsageCustomer, bool) {
+func parseCustomerUsageCustomer(c *gin.Context, raw string, includeCreatedAt bool) (int, customerUsageCustomer, bool) {
 	customerID, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || customerID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer_id"})
@@ -100,7 +100,7 @@ func parseCustomerUsageCustomer(c *gin.Context, raw string) (int, customerUsageC
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query customer failed"})
 		return 0, customerUsageCustomer{}, false
 	}
-	if user.CreatedAt <= 0 {
+	if includeCreatedAt && user.CreatedAt <= 0 {
 		common.SysError("customer usage contract error: users.created_at is missing for customer_id=" + strconv.Itoa(customerID))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "customer_created_at_missing"})
 		return 0, customerUsageCustomer{}, false
@@ -109,12 +109,15 @@ func parseCustomerUsageCustomer(c *gin.Context, raw string) (int, customerUsageC
 	if user.Status != common.UserStatusEnabled {
 		status = "DISABLED"
 	}
-	return customerID, customerUsageCustomer{
+	customer := customerUsageCustomer{
 		CustomerID:  strconv.Itoa(customerID),
 		DisplayName: customerUsageDisplayName(user),
 		Status:      status,
-		CreatedAt:   usageFormatTime(time.Unix(user.CreatedAt, 0)),
-	}, true
+	}
+	if includeCreatedAt {
+		customer.CreatedAt = usageFormatTime(time.Unix(user.CreatedAt, 0))
+	}
+	return customerID, customer, true
 }
 
 func customerUsageDisplayName(user *model.User) string {
@@ -192,7 +195,7 @@ func customerUsageChannelName(log *model.Log, channels map[int]model.BlockRunCha
 
 // GetCustomerUsageCustomer serves GET /usage/customers/:customer_id.
 func GetCustomerUsageCustomer(c *gin.Context) {
-	_, customer, ok := parseCustomerUsageCustomer(c, c.Param("customer_id"))
+	_, customer, ok := parseCustomerUsageCustomer(c, c.Param("customer_id"), true)
 	if !ok {
 		return
 	}
@@ -201,7 +204,7 @@ func GetCustomerUsageCustomer(c *gin.Context) {
 
 // GetCustomerUsageTransactions serves GET /usage/customer-transactions.
 func GetCustomerUsageTransactions(c *gin.Context) {
-	customerID, customer, ok := parseCustomerUsageCustomer(c, c.Query("customer_id"))
+	customerID, customer, ok := parseCustomerUsageCustomer(c, c.Query("customer_id"), false)
 	if !ok {
 		return
 	}
@@ -283,7 +286,7 @@ func buildCustomerUsageTransactions(customerID int, logs []*model.Log, channels 
 // bounded 31-day window in pages so summary generation does not materialize a
 // high-volume customer's entire history in memory.
 func GetCustomerUsageSummary(c *gin.Context) {
-	customerID, customer, ok := parseCustomerUsageCustomer(c, c.Query("customer_id"))
+	customerID, customer, ok := parseCustomerUsageCustomer(c, c.Query("customer_id"), false)
 	if !ok {
 		return
 	}
