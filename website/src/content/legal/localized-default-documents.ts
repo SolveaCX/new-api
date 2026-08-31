@@ -531,6 +531,8 @@ Vous ne pouvez pas accéder ou utiliser les Services dans le but de revendre l'a
 
 La revente non autorisée, le relais, le partage de compte, le masquage du véritable utilisateur, la création groupée de comptes, les appels concentrés anormaux, le contournement des limites ou l'évasion du contrôle des risques constituent une violation substantielle.Nous pouvons suspendre ou résilier les comptes, les clés API, le solde, les crédits et les commandes associés, et pouvons refuser ou limiter les remboursements, la restauration du solde ou les ajustements de crédit associés.
 
+Les récompenses de parrainage et les crédits gratuits sont réservés aux vrais utilisateurs et à un usage normal.Vous ne pouvez pas créer des comptes en masse, de fausses identités, des parrainages automatiques, des fermes de parrainage ou d'autres inscriptions artificielles pour obtenir des crédits gratuits, des remises ou d'autres avantages.Nous pouvons détecter et examiner automatiquement ce type d'activité et pouvons restreindre, geler ou résilier les comptes et avantages concernés, qu'un paiement ait été effectué ou non.
+
 ## 9. Conduite interdite
 
 Vous ne pouvez pas :
@@ -949,6 +951,8 @@ flatkey.ai アカウント、API キー、アカウント残高、サービス �
 API アクセスの再販、競合サービスの構築、サードパーティ モデル ルールの回避、真のエンド ユーザーの隠蔽、価格や制限の回避、地域制限の回避、セキュリティ レビューの回避、または支払いレビューの回避を目的として、サービスにアクセスしたり使用したりすることはできません。
 
 不正転売、中継、アカウント共有、真のユーザーの隠蔽、一括アカウント作成、異常な集中通話、制限回避、リスク管理回避は重大な違反となります。当社は、関連するアカウント、API キー、残高、クレジット、注文を一時停止または終了する場合があり、また関連する払い戻し、残高の回復、またはクレジットの調整を拒否または制限する場合があります。
+
+紹介特典と無料クレジットは、実在するユーザーによる通常利用のみを対象とします。大量アカウント、偽の身元、自己紹介、紹介ファーム、その他の人工的な登録によって無料クレジット、割引、その他の特典を得ることはできません。当社はこのような行為を自動的に検知し審査することがあり、支払いの有無にかかわらず、関連アカウントや特典を制限、凍結、または終了することがあります。
 
 ## 9. 禁止行為
 
@@ -1369,6 +1373,8 @@ flatkey.ai — это не сама модель.Мы не гарантируе�
 
 Несанкционированная перепродажа, передача, совместное использование учетной записи, сокрытие истинного пользователя, массовое создание учетной записи, ненормальные концентрированные звонки, обход ограничений или уклонение от контроля рисков являются существенным нарушением.Мы можем приостановить или прекратить действие связанных учетных записей, ключей API, баланса, кредитов и заказов, а также отказать или ограничить соответствующие возвраты средств, восстановление баланса или корректировку кредита.
 
+Реферальные бонусы и бесплатные кредиты предназначены только для реальных пользователей и обычного использования. Вы не можете создавать массовые учетные записи, поддельные личности, самоприглашения, реферальные фермы или иные искусственные регистрации, чтобы получить бесплатные кредиты, скидки или другие преимущества. Мы можем автоматически выявлять и проверять такую активность и можем ограничивать, замораживать или прекращать действие связанных учетных записей и преимуществ, независимо от того, была ли произведена оплата.
+
 ## 9. Запрещенное поведение
 
 Вы не можете:
@@ -1787,6 +1793,8 @@ Tài khoản flatkey.ai, khóa API, số dư tài khoản, tín dụng dịch v�
 Bạn không được truy cập hoặc sử dụng Dịch vụ nhằm mục đích bán lại quyền truy cập API, xây dựng dịch vụ cạnh tranh, bỏ qua các quy tắc mô hình của bên thứ ba, che giấu người dùng cuối thực sự, tránh giá hoặc giới hạn, bỏ qua các hạn chế khu vực, bỏ qua đánh giá bảo mật hoặc bỏ qua xem xét thanh toán.
 
 Bán lại, chuyển tiếp, chia sẻ tài khoản trái phép, ẩn người dùng thực, tạo tài khoản hàng loạt, gọi điện tập trung bất thường, vượt giới hạn hoặc trốn tránh kiểm soát rủi ro là vi phạm nghiêm trọng.Chúng tôi có thể tạm dừng hoặc chấm dứt các tài khoản, khóa API, số dư, tín dụng và đơn đặt hàng có liên quan, đồng thời có thể từ chối hoặc hạn chế hoàn tiền liên quan, khôi phục số dư hoặc điều chỉnh tín dụng.
+
+Phần thưởng giới thiệu và tín dụng miễn phí chỉ dành cho người dùng thật và việc sử dụng bình thường. Bạn không được tạo tài khoản hàng loạt, danh tính giả, tự giới thiệu, mạng lưới giới thiệu hoặc các lượt đăng ký nhân tạo khác để lấy tín dụng miễn phí, giảm giá hoặc lợi ích khác. Chúng tôi có thể tự động phát hiện và xem xét hoạt động này, đồng thời có thể hạn chế, đóng băng hoặc chấm dứt các tài khoản và quyền lợi liên quan, bất kể đã thanh toán hay chưa.
 
 ## 9. Hành vi bị cấm
 
