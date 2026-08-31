@@ -87,4 +87,4 @@
 
 - [x] **Step 5: Run `gitnexus detect_changes --scope compare --base-ref main`, inspect `git diff --stat`/`git status`, and confirm only route, Gemini TTS, Playground, tests, and design artifacts changed. `gitnexus status` reported `Repository not indexed. Run: gitnexus analyze`; the compare command also encountered the installed FTS storage-version mismatch (`Database file version: 42, Current build storage version: 40`) and reported no changes. `git diff --stat`, `git status`, and `git diff --check` were used as the fallback review.
 
-- [ ] **Step 6: Push the feature branch and open a PR against `main` only after all checks pass.** Include evidence, root cause, scope, router deploy requirement (`required`), and the remaining ElevenLabs non-goal in the PR note.
+- [x] **Step 6: Push the feature branch and open a PR against `main` only after all checks pass.** Pushed `codex/playground-audio-tts-20260831` and opened [PR #1003](https://github.com/SolveaCX/new-api/pull/1003) against `main`; the PR includes `plg` production evidence, root cause, verification, router deploy requirement (`required`), and the ElevenLabs/Sonilo non-goal.
