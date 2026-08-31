@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNotificationStore } from '@/stores/notification-store'
 import { getNotice } from '@/lib/api'
@@ -57,15 +57,22 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
   return `hash:${hashString(fingerprint)}`
 }
 
+export interface NotificationTimelineItem {
+  key: string
+  source: 'notice' | 'announcement'
+  type?: string
+  content?: string
+  extra?: string
+  publishDate?: string | Date
+  link?: string
+}
+
 /**
  * Hook to manage notifications (Notice + Announcements)
  * Provides unread counts and read status management
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
-    'notice'
-  )
 
   // Fetch Notice from API
   const {
@@ -99,16 +106,44 @@ export function useNotifications() {
     ? (noticeResponse.data || '').trim()
     : ''
 
+  const timeline = useMemo<NotificationTimelineItem[]>(() => {
+    const items: NotificationTimelineItem[] = announcements.map((item) => ({
+      key: getAnnouncementKey(item),
+      source: 'announcement' as const,
+      type: typeof item.type === 'string' ? item.type : undefined,
+      content: typeof item.content === 'string' ? item.content : undefined,
+      extra: typeof item.extra === 'string' ? item.extra : undefined,
+      publishDate:
+        typeof item.publishDate === 'string' || item.publishDate instanceof Date
+          ? item.publishDate
+          : undefined,
+      link: typeof item.link === 'string' ? item.link : undefined,
+    }))
+
+    if (noticeContent) {
+      items.push({
+        content: noticeContent,
+        key: `notice:${noticeContent}`,
+        source: 'notice' as const,
+        type: 'default',
+      })
+    }
+
+    return items.sort((a, b) => {
+      if (a.source === 'notice') return -1
+      if (b.source === 'notice') return 1
+      return (
+        new Date(String(b.publishDate || 0)).getTime() -
+        new Date(String(a.publishDate || 0)).getTime()
+      )
+    })
+  }, [announcements, noticeContent])
+
   // Calculate unread counts
   const unreadCounts = useMemo(() => {
-    const noticeUnread =
-      noticeContent && noticeContent !== lastReadNotice ? 1 : 0
-
-    const announcementsUnread = announcements.filter(
-      (item: Record<string, unknown>) => {
-        const key = getAnnouncementKey(item)
-        return !isAnnouncementRead(key)
-      }
+    const noticeUnread = noticeContent && noticeContent !== lastReadNotice ? 1 : 0
+    const announcementsUnread = announcements.filter((item) =>
+      !isAnnouncementRead(getAnnouncementKey(item))
     ).length
 
     return {
@@ -128,43 +163,27 @@ export function useNotifications() {
   }
 
   // Handle popover open
-  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
-    const nextTab = tab || activeTab
-
-    // Mark currently visible content as read when opening the notification center
+  const handleOpenPopover = () => {
     if (noticeContent) {
       markNoticeRead(noticeContent)
     }
-    if (nextTab === 'announcements') {
-      markAnnouncementsAsRead()
-    }
-
-    setActiveTab(nextTab)
+    markAnnouncementsAsRead()
     setPopoverOpen(true)
   }
 
   const handlePopoverOpenChange = (open: boolean) => {
     if (open) {
-      handleOpenPopover(activeTab)
+      handleOpenPopover()
       return
     }
 
     setPopoverOpen(false)
   }
 
-  // Handle tab change - mark announcements as read when switching to that tab
-  const handleTabChange = (tab: 'notice' | 'announcements') => {
-    setActiveTab(tab)
-
-    if (tab === 'announcements') {
-      markAnnouncementsAsRead()
-    }
-  }
-
   return {
     // Data
     notice: noticeContent,
-    announcements,
+    timeline,
     loading: noticeLoading || statusLoading,
 
     // Unread counts
@@ -175,8 +194,6 @@ export function useNotifications() {
     // Popover state
     popoverOpen,
     setPopoverOpen: handlePopoverOpenChange,
-    activeTab,
-    setActiveTab: handleTabChange,
 
     // Actions
     openPopover: handleOpenPopover,
