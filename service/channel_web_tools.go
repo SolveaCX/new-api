@@ -13,7 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var serverWebToolVersion = regexp.MustCompile(`^web_(search|fetch)_[0-9]{8}$`)
+// Claude uses YYYYMMDD; OpenAI search and search preview use YYYY_MM_DD.
+var serverWebToolVersion = regexp.MustCompile(`^(web_(search|fetch)_[0-9]{8}|web_search(_preview)?_[0-9]{4}_[0-9]{2}_[0-9]{2})$`)
 
 // RequestRequiresServerWebTools inspects only top-level tool declarations. CC's
 // client-side WebSearch/WebFetch and MCP functions must remain ordinary tools:
