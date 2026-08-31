@@ -21,7 +21,6 @@ import { Crown, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
-import { getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -288,52 +287,20 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-/**
- * Convert the plan's raw quota value into a monetary reference price.
- *
- * `total_amount` is stored in quota units, not major currency units.  Keep
- * the conversion here (rather than changing the plan or payment fields) so
- * the value is presentation-only and remains correct when an administrator
- * changes the configured quota-per-dollar ratio. The reference is the plan's
- * model value in USD, so it must stay in USD even when the payable price is
- * localized or the admin chooses CNY/custom/token quota display elsewhere.
- */
-function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
-  const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
-    ([currency]) => currency.trim().toUpperCase() === 'USD'
-  )?.[1]
-  const configuredAmount = Number(configuredUSDPrice)
-  if (Number.isFinite(configuredAmount) && configuredAmount >= 0) {
-    return configuredAmount
-  }
-
-  const canonicalCurrency = plan.currency?.trim().toUpperCase() || 'USD'
-  if (canonicalCurrency !== 'USD') return null
-
-  const priceAmount = Number(plan.price_amount)
-  return Number.isFinite(priceAmount) && priceAmount >= 0 ? priceAmount : null
+// These campaign reference prices are intentionally fixed in the wallet UI.
+// They must not be derived from plan.total_amount, quotaPerUnit, or a checkout
+// quote: those values are mutable billing data and previously caused the
+// crossed-out prices to drift (for example, $40/$30/$400).
+const STANDARD_PLAN_REFERENCE_PRICES_USD: Record<PlanTier, number> = {
+  go: 45,
+  pro: 90,
+  max: 300,
 }
 
 function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
-  const totalAmount = Number(plan.total_amount)
-  if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
-
-  const { config } = getCurrencyDisplay()
-  const quotaPerUnit = config.quotaPerUnit
-  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
-
-  const referenceAmountUSD = totalAmount / quotaPerUnit
-  const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
-  // A quota value below the payable plan price is not an “old price”.  This
-  // guard keeps custom/free plans and legacy fixtures from rendering a
-  // misleading crossed-out amount while still allowing plans whose included
-  // model value exceeds their price (for example, $45 → $10).
-  if (
-    currentAmountUSD !== null &&
-    (currentAmountUSD <= 0 || referenceAmountUSD <= currentAmountUSD)
-  ) {
-    return null
-  }
+  const tier = getPlanTier(plan.title)
+  if (!tier) return null
+  const referenceAmountUSD = STANDARD_PLAN_REFERENCE_PRICES_USD[tier]
 
   const formatted = formatPlanPrice(referenceAmountUSD, 'USD')
   return formatted === '-' ? null : formatted
@@ -891,9 +858,14 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ? formatPlanPrice(discountPreview.total, currency)
                 : formatPlanPrice(configuredDisplayPrice.amount, currency)
               const referencePrice = getPlanReferencePrice(plan)
-              const originalPrice = discountPreview
-                ? formatPlanPrice(discountPreview.originalTotal, currency)
-                : referencePrice
+              // The crossed-out campaign price is a fixed USD reference price,
+              // even when a live quote changes the payable amount or currency.
+              // Unknown/custom plans retain their quote-provided original total.
+              const originalPrice =
+                referencePrice ||
+                (discountPreview
+                  ? formatPlanPrice(discountPreview.originalTotal, currency)
+                  : null)
               // The campaign badge must be visible before a checkout quote is
               // loaded. The configured plan/reference price pair is the
               // source of truth for the static campaign presentation; a
