@@ -21,6 +21,7 @@ import { ChevronsUpDown, Check, CpuIcon, LayersIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -42,13 +43,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { getModelPromotionLabel } from '@/features/available-models/lib/model-promotions'
+import {
+  sortModelOptionsForSearch,
+  type ModelSelectorOption,
+} from './model-group-selector-utils'
 
-interface ModelOption {
-  label: string
-  value: string
-  category?: string
-  description?: string
-}
+type ModelOption = ModelSelectorOption
 
 interface GroupOption {
   label: string
@@ -181,7 +182,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
 
     // Filter models by search query
     const filteredModels = useMemo(() => {
-      if (!searchQuery.trim()) return groupedModels
+      if (!searchQuery.trim()) {
+        return Object.fromEntries(
+          Object.entries(groupedModels).map(([category, categoryModels]) => [
+            category,
+            sortModelOptionsForSearch(categoryModels),
+          ])
+        ) as Record<string, ModelOption[]>
+      }
 
       const query = searchQuery.toLowerCase()
       const filtered: Record<string, ModelOption[]> = {}
@@ -194,7 +202,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
             m.description?.toLowerCase().includes(query)
         )
         if (matches.length > 0) {
-          filtered[category] = matches
+          filtered[category] = sortModelOptionsForSearch(matches)
         }
       })
 
@@ -267,11 +275,30 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                       <div className='flex min-w-0 flex-1 items-center gap-1'>
                         <div
                           className={cn(
-                            'truncate font-medium',
+                            'flex min-w-0 flex-wrap items-center gap-1 font-medium',
                             isMobile ? 'text-sm' : 'text-[11px]'
                           )}
                         >
-                          <span className='inline'>{model.label}</span>
+                          <span className='min-w-0 truncate'>{model.label}</span>
+                          {model.promotions?.map((promotion) => (
+                            <Badge
+                              key={promotion}
+                              variant='outline'
+                              className={cn(
+                                'shrink-0 border px-1.5 py-0 text-[9px] leading-4 font-semibold whitespace-nowrap',
+                                promotion === 'free' &&
+                                  'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300',
+                                promotion === 'limited' &&
+                                  'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300',
+                                promotion === 'hot' &&
+                                  'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300',
+                                promotion === 'new' &&
+                                  'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300'
+                              )}
+                            >
+                              {getModelPromotionLabel(promotion, t)}
+                            </Badge>
+                          ))}
                         </div>
                         <Check
                           className={cn(

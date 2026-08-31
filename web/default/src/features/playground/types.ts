@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ModelPromotion } from '@/features/available-models/lib/model-promotions'
 // Message types
 export type MessageRole = 'user' | 'assistant' | 'system'
 
@@ -223,6 +224,10 @@ export interface PlaygroundRecordPayload {
 export interface ModelOption {
   label: string
   value: string
+  promotions?: ModelPromotion[]
+  price?: number
+  releaseDate?: string
+  featuredOrder?: number
 }
 
 export interface GroupOption {

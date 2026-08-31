@@ -43,7 +43,14 @@ import {
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { useCanUseGroups } from '@/hooks/use-enterprise'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { getPlaygroundConversation, getUserModels, getUserGroups } from './api'
+import { getModelPromotions } from '@/features/available-models/lib/model-promotions'
+import {
+  getPlaygroundConversation,
+  getPlaygroundModelPricing,
+  getUserModels,
+  getUserGroups,
+  type PlaygroundModelPricing,
+} from './api'
 import { PlaygroundChat } from './components/playground-chat'
 import { PlaygroundConversationList } from './components/playground-conversation-list'
 import { FirstRunWelcome, GetKeyCard } from './components/playground-first-run'
@@ -84,6 +91,29 @@ import type { Message as MessageType, PlaygroundAttachment } from './types'
 
 // PLG users are always pinned to the single `plg` group.
 const PLG_GROUP = 'plg'
+
+function getPublicModelPrice(model: PlaygroundModelPricing | undefined) {
+  if (!model) return undefined
+  const prices = model.display_pricing?.prices ?? {}
+  for (const dimension of [
+    'input',
+    'request',
+    'second',
+    'image',
+    'audio_input',
+    'output',
+  ]) {
+    const price = Number(prices[dimension]?.plg)
+    if (Number.isFinite(price) && price >= 0) return price
+  }
+  if (
+    typeof model.model_price === 'number' &&
+    Number.isFinite(model.model_price)
+  ) {
+    return model.model_price
+  }
+  return undefined
+}
 
 export function Playground({
   firstRun: firstRunFromUrl = false,
@@ -245,12 +275,38 @@ export function Playground({
     },
   })
 
+  const { data: publicModelPricingData } = useQuery({
+    queryKey: ['playground-public-model-pricing'],
+    queryFn: getPlaygroundModelPricing,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+
+  const publicModelPricing = useMemo(
+    () =>
+      new Map(
+        (publicModelPricingData ?? []).map((model) => [model.model_name, model])
+      ),
+    [publicModelPricingData]
+  )
+
   const playgroundModelsData = useMemo(
     () =>
       (availableModelsData ?? [])
         .filter(isSupportedPlaygroundModelName)
-        .map((model) => ({ label: model, value: model })),
-    [availableModelsData]
+        .map((model) => {
+          const pricing = publicModelPricing.get(model)
+          return {
+            label: model,
+            value: model,
+            promotions: getModelPromotions(model),
+            price: getPublicModelPrice(pricing),
+            releaseDate:
+              pricing?.directory_metadata?.released_at ?? pricing?.release_date,
+            featuredOrder: pricing?.featured_order,
+          }
+        }),
+    [availableModelsData, publicModelPricing]
   )
   const chatModelsData = useMemo(
     () =>
