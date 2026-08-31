@@ -1,7 +1,7 @@
 export const ES_DEFAULT_LEGAL_DOCUMENTS = {
   terms: `# Acuerdo de usuario de flatkey.ai
 
-Última actualización: 4 de junio de 2026
+Última actualización: 31 de agosto de 2026
 
 ## 1. Alcance del servicio
 
@@ -26,6 +26,8 @@ Conservas los derechos que tengas sobre tus entradas y salidas. Nos otorgas una 
 ## 6. Uso aceptable
 
 No puedes usar el servicio para actividades ilegales, fraudulentas, abusivas, infractoras, de spam, malware, phishing, evasión regulatoria, scraping de datos sensibles, elusión de sanciones, ataques a sistemas o cualquier actividad dañina. Tampoco puedes revender, compartir cuentas, ocultar al usuario real, crear cuentas masivas o eludir límites y controles de riesgo.
+
+Las recompensas por invitación y los créditos gratuitos están pensados solo para usuarios reales y uso normal. No puedes crear cuentas masivas, identidades falsas, auto-invitaciones, granjas de invitaciones u otros registros artificiales para obtener créditos gratuitos, descuentos u otros beneficios. Podemos detectar y revisar automáticamente esta actividad y limitar, congelar o cerrar las cuentas y beneficios relacionados, haya o no pago.
 
 ## 7. Medición, registros y revisión
 

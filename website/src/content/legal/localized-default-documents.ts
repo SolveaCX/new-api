@@ -29,7 +29,7 @@ export const LOCALIZED_DEFAULT_LEGAL_DOCUMENTS: Record<
   zh: {
     terms: `# flatkey.ai 用户协议
 
-最后更新时间：2026 年 6 月 4 日
+最后更新时间：2026 年 8 月 31 日
 
 本用户协议（“协议”）适用于 VOC AI INC（“VOC AI”、“我们”或“我们的”）通过 flatkey.ai、仪表板、API、结帐页面、文档和支持渠道（“服务”）提供的 flatkey.ai 服务。通过注册帐户、创建组织、添加预付帐户余额、生成或使用 API 密钥、调用模型 API、访问仪表板或以其他方式使用服务，即表示您同意本协议、我们的隐私政策、退款政策、文档、定价页面以及任何适用的补充规则。
 
@@ -107,12 +107,15 @@ flatkey.ai 帐户、API 密钥、帐户余额、服务积分、模型访问功�
 
 未经授权转售、转发、账户共享、隐藏真实用户、批量开户、异常集中调用、规避限额、规避风控等行为属于重大违规行为。我们可能暂停或终止相关账户、API 密钥、余额、信用和订单，并可能拒绝或限制相关退款、余额恢复或信用调整。
 
+邀请奖励和免费额度仅面向真实用户和正常使用。您不得通过批量注册、虚假身份、自我邀请、邀请农场或其他人为制造的注册行为获取免费额度、折扣或其他利益。我们可能自动检测并审核此类行为，并可能限制、冻结或终止相关账户及其权益，无论是否已付费。
+
 ## 9. 禁止行为
 
 你不可以：
 
 - 使用服务进行非法、欺诈、侵权、骚扰、垃圾邮件、恶意软件、网络钓鱼、系统攻击、逃避监管、侵犯隐私、抓取敏感数据、逃避制裁、违反出口管制或其他有害活动；
 - 创建虚假身份、冒充他人、歪曲关系或使用多个账户来逃避限制、风险控制、定价、退款或合规审查；
+- 通过批量注册、虚假账号、自我邀请或其他人为制造的注册行为获取免费额度、邀请奖励、折扣或其他利益；
 - 绕过或干扰账户限制、区域限制、计费规则、信用限额、费率限制、安全机制、反滥用规则、第三方服务限制或付款审查流程；
 - 对服务、API、系统、数据或其他用户帐户进行逆向工程、扫描、攻击、压力测试、破坏、爬行、复制、抓取或未经授权访问；
 - 未经我们书面批准，进行对抗性测试、提示注入、越狱测试、安全旁路测试、压力测试或其他可能损害模型、服务、第三方规则或用户利益的测试；
@@ -128,6 +131,8 @@ flatkey.ai 帐户、API 密钥、帐户余额、服务积分、模型访问功�
 为了保护服务稳定性和其他用户的利益，我们可能会监控异常请求、异常扣费、异常登录、异常支付、批量调用、密钥泄露、恶意请求、滥用退款以及违反本协议的使用模式，并在调查过程中暂时限制相关功能。
 
 我们可能会对高风险订单、充值金额大、充值频率异常、账单信息不一致、登录区域异常、请求来源异常、短时高并发、支付服务商提醒等进行人工或自动审核。在审核期间，交付、余额使用、退款、发票或帐户功能可能会延迟或受到限制。审核后，我们将根据适用记录恢复或处理相关事项。
+
+我们的系统也会自动识别和审核批量注册、邀请滥用及其他异常注册模式，并可能限制或终止相关账户及其权益，即使这些账户已经付费。
 
 ## 11. 退款
 
@@ -525,6 +530,8 @@ Les comptes flatkey.ai, les clés API, le solde du compte, les crédits de servi
 Vous ne pouvez pas accéder ou utiliser les Services dans le but de revendre l'accès à l'API, de créer un service concurrent, de contourner les règles des modèles tiers, de masquer le véritable utilisateur final, d'éviter les prix ou les limites, de contourner les restrictions régionales, de contourner l'examen de sécurité ou de contourner l'examen des paiements.
 
 La revente non autorisée, le relais, le partage de compte, le masquage du véritable utilisateur, la création groupée de comptes, les appels concentrés anormaux, le contournement des limites ou l'évasion du contrôle des risques constituent une violation substantielle.Nous pouvons suspendre ou résilier les comptes, les clés API, le solde, les crédits et les commandes associés, et pouvons refuser ou limiter les remboursements, la restauration du solde ou les ajustements de crédit associés.
+
+Les récompenses de parrainage et les crédits gratuits sont réservés aux vrais utilisateurs et à un usage normal.Vous ne pouvez pas créer des comptes en masse, de fausses identités, des parrainages automatiques, des fermes de parrainage ou d'autres inscriptions artificielles pour obtenir des crédits gratuits, des remises ou d'autres avantages.Nous pouvons détecter et examiner automatiquement ce type d'activité et pouvons restreindre, geler ou résilier les comptes et avantages concernés, qu'un paiement ait été effectué ou non.
 
 ## 9. Conduite interdite
 
@@ -945,6 +952,8 @@ API アクセスの再販、競合サービスの構築、サードパーティ 
 
 不正転売、中継、アカウント共有、真のユーザーの隠蔽、一括アカウント作成、異常な集中通話、制限回避、リスク管理回避は重大な違反となります。当社は、関連するアカウント、API キー、残高、クレジット、注文を一時停止または終了する場合があり、また関連する払い戻し、残高の回復、またはクレジットの調整を拒否または制限する場合があります。
 
+紹介特典と無料クレジットは、実在するユーザーによる通常利用のみを対象とします。大量アカウント、偽の身元、自己紹介、紹介ファーム、その他の人工的な登録によって無料クレジット、割引、その他の特典を得ることはできません。当社はこのような行為を自動的に検知し審査することがあり、支払いの有無にかかわらず、関連アカウントや特典を制限、凍結、または終了することがあります。
+
 ## 9. 禁止行為
 
 次のことは禁止されています:
@@ -1364,6 +1373,8 @@ flatkey.ai — это не сама модель.Мы не гарантируе�
 
 Несанкционированная перепродажа, передача, совместное использование учетной записи, сокрытие истинного пользователя, массовое создание учетной записи, ненормальные концентрированные звонки, обход ограничений или уклонение от контроля рисков являются существенным нарушением.Мы можем приостановить или прекратить действие связанных учетных записей, ключей API, баланса, кредитов и заказов, а также отказать или ограничить соответствующие возвраты средств, восстановление баланса или корректировку кредита.
 
+Реферальные бонусы и бесплатные кредиты предназначены только для реальных пользователей и обычного использования. Вы не можете создавать массовые учетные записи, поддельные личности, самоприглашения, реферальные фермы или иные искусственные регистрации, чтобы получить бесплатные кредиты, скидки или другие преимущества. Мы можем автоматически выявлять и проверять такую активность и можем ограничивать, замораживать или прекращать действие связанных учетных записей и преимуществ, независимо от того, была ли произведена оплата.
+
 ## 9. Запрещенное поведение
 
 Вы не можете:
@@ -1782,6 +1793,8 @@ Tài khoản flatkey.ai, khóa API, số dư tài khoản, tín dụng dịch v�
 Bạn không được truy cập hoặc sử dụng Dịch vụ nhằm mục đích bán lại quyền truy cập API, xây dựng dịch vụ cạnh tranh, bỏ qua các quy tắc mô hình của bên thứ ba, che giấu người dùng cuối thực sự, tránh giá hoặc giới hạn, bỏ qua các hạn chế khu vực, bỏ qua đánh giá bảo mật hoặc bỏ qua xem xét thanh toán.
 
 Bán lại, chuyển tiếp, chia sẻ tài khoản trái phép, ẩn người dùng thực, tạo tài khoản hàng loạt, gọi điện tập trung bất thường, vượt giới hạn hoặc trốn tránh kiểm soát rủi ro là vi phạm nghiêm trọng.Chúng tôi có thể tạm dừng hoặc chấm dứt các tài khoản, khóa API, số dư, tín dụng và đơn đặt hàng có liên quan, đồng thời có thể từ chối hoặc hạn chế hoàn tiền liên quan, khôi phục số dư hoặc điều chỉnh tín dụng.
+
+Phần thưởng giới thiệu và tín dụng miễn phí chỉ dành cho người dùng thật và việc sử dụng bình thường. Bạn không được tạo tài khoản hàng loạt, danh tính giả, tự giới thiệu, mạng lưới giới thiệu hoặc các lượt đăng ký nhân tạo khác để lấy tín dụng miễn phí, giảm giá hoặc lợi ích khác. Chúng tôi có thể tự động phát hiện và xem xét hoạt động này, đồng thời có thể hạn chế, đóng băng hoặc chấm dứt các tài khoản và quyền lợi liên quan, bất kể đã thanh toán hay chưa.
 
 ## 9. Hành vi bị cấm
 

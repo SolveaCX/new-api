@@ -21,7 +21,7 @@ import type { LegalDocumentKind } from './default-documents'
 export const PT_DEFAULT_LEGAL_DOCUMENTS: Record<LegalDocumentKind, string> = {
   terms: `# Contrato do usuário flatkey.ai
 
-Última atualização: 4 de junho de 2026
+Última atualização: 31 de agosto de 2026
 
 Este Contrato de Usuário ("Contrato") se aplica aos serviços flatkey.ai fornecidos por VOC AI INC ("VOC AI", "nós", "nos" ou "nosso") por meio de flatkey.ai, o painel, APIs, páginas de checkout, documentação e canais de suporte (os "Serviços"). Ao registrar uma conta, criar uma organização, adicionar saldo de conta pré-paga, gerar ou usar uma chave API, ligar para o modelo APIs, acessar o painel ou usar os Serviços de outra forma, você concorda com este Contrato, nossa Política de Privacidade, Política de Reembolso, documentação, páginas de preços e quaisquer regras complementares aplicáveis.
 
@@ -98,6 +98,8 @@ Contas flatkey.ai, chaves API, saldo de conta, créditos de serviço, capacidade
 Você não pode acessar ou usar os Serviços com a finalidade de revender o acesso API, construir um serviço concorrente, contornar regras de modelo de terceiros, ocultar o verdadeiro usuário final, evitar preços ou limites, contornar restrições regionais, contornar a revisão de segurança ou contornar a revisão de pagamento.
 
 Revenda não autorizada, retransmissão, compartilhamento de conta, ocultação do usuário verdadeiro, criação de conta em massa, chamadas concentradas anormais, evasão de limite ou evasão de controle de risco são violações materiais. Podemos suspender ou encerrar contas, chaves API, saldo, créditos e pedidos relacionados, e podemos negar ou limitar reembolsos, restauração de saldo ou ajustes de crédito relacionados.
+
+Recompensas de indicação e créditos gratuitos são destinados apenas a usuários reais e uso normal. Você não pode criar contas em massa, identidades falsas, autoindicações, fazendas de indicação ou outros cadastros artificiais para obter créditos gratuitos, descontos ou outros benefícios. Podemos detectar e revisar automaticamente essa atividade e restringir, congelar ou encerrar as contas e benefícios relacionados, com ou sem pagamento.
 
 ## 9. Conduta Proibida
 

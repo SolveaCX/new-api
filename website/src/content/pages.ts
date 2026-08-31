@@ -185,12 +185,18 @@ export function getPageContent(key: PublicPageKey, locale: Locale): PageContent 
   const document = legalKind ? getDefaultLegalDocument(legalKind, locale) : undefined;
   const localized = localizedPageCopy[locale]?.[key] ?? localizedPageCopy.en[key];
   const title = document ? (getMarkdownTitle(document) ?? localized.title) : localized.title;
+  const updated =
+    legalKind === "terms"
+      ? "August 31, 2026"
+      : legalKind
+        ? "June 4, 2026"
+        : undefined;
   return {
     ...generic[key],
     title,
     description: localized.description,
     eyebrow: eyebrowByLocale[locale] ?? eyebrowByLocale.en,
     document,
-    updated: legalKind ? "June 4, 2026" : undefined,
+    updated,
   };
 }
