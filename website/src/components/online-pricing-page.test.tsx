@@ -42,7 +42,7 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain('src="/assets/logos/payment/alipay.svg"');
     expect(html).toContain("All models");
     expect(html).toContain('<del class="toldprice">$90</del>');
-    expect(html).toContain('<del class="toldprice">$450</del>');
+    expect(html).toContain('<del class="toldprice">$300</del>');
     expect(html.match(/class="tdiscount">80% off<\/div>/g)?.length).toBe(3);
     expect(html).not.toContain('class="tdiscount">80% off</div><div class="tname">Enterprise');
     expect(html).not.toContain("Up to $45 model usage / mo");
@@ -85,7 +85,7 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(snippet);
       }
       expect(html).toContain('class="tdiscount">80% off</div>');
-      for (const referencePrice of ["$45", "$90", "$450"]) {
+      for (const referencePrice of ["$45", "$90", "$300"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
       expect(html).not.toContain(item.legacyQuota);

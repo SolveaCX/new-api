@@ -317,7 +317,7 @@ const en: OnlineCopy = {
       Max: {
         audience: "For teams & heavy workloads",
         cta: "Subscribe",
-        text: "Up to $450 model usage / mo",
+        text: "Up to $300 model usage / mo",
         window: "Short-term caps: $78 / 5h · $220 / 7d",
       },
     },
@@ -513,7 +513,7 @@ const zh: OnlineCopy = {
       Max: {
         audience: "适合团队与高强度任务",
         cta: "立即订阅",
-        text: "每月最多 $450 模型用量",
+        text: "每月最多 $300 模型用量",
         window: "短期上限：每 5 小时 $78 · 每 7 天 $220",
       },
     },
@@ -568,7 +568,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Para equipos y cargas intensivas",
         cta: "Suscribirse",
-        text: "Hasta $450 de uso de modelos / mes",
+        text: "Hasta $300 de uso de modelos / mes",
         window: "Límites a corto plazo: $78 / 5 h · $220 / 7 d",
       },
     },
@@ -610,7 +610,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Pour les équipes et les charges intensives",
         cta: "S'abonner",
-        text: "Jusqu'à $450 d'utilisation de modèles / mois",
+        text: "Jusqu'à $300 d'utilisation de modèles / mois",
         window: "Limites court terme : $78 / 5 h · $220 / 7 j",
       },
     },
@@ -652,7 +652,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Para equipes e cargas intensas",
         cta: "Assinar",
-        text: "Até $450 de uso de modelos / mês",
+        text: "Até $300 de uso de modelos / mês",
         window: "Limites de curto prazo: $78 / 5 h · $220 / 7 d",
       },
     },
@@ -694,7 +694,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Для команд и тяжёлых нагрузок",
         cta: "Оформить",
-        text: "До $450 использования моделей / мес.",
+        text: "До $300 использования моделей / мес.",
         window: "Краткосрочные лимиты: $78 / 5 ч · $220 / 7 дн.",
       },
     },
@@ -736,7 +736,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "チームと高負荷ワークロード向け",
         cta: "登録する",
-        text: "月あたり最大 $450 のモデル利用",
+        text: "月あたり最大 $300 のモデル利用",
         window: "短期上限: $78 / 5時間 · $220 / 7日",
       },
     },
@@ -778,7 +778,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Cho đội nhóm và tải công việc nặng",
         cta: "Đăng ký",
-        text: "Tối đa $450 mức sử dụng model / tháng",
+        text: "Tối đa $300 mức sử dụng model / tháng",
         window: "Giới hạn ngắn hạn: $78 / 5 giờ · $220 / 7 ngày",
       },
     },
@@ -820,7 +820,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Für Teams und hohe Workloads",
         cta: "Abonnieren",
-        text: "Bis zu $450 Modellnutzung / Monat",
+        text: "Bis zu $300 Modellnutzung / Monat",
         window: "Kurzfristige Limits: $78 / 5 Std. · $220 / 7 Tage",
       },
     },
@@ -862,7 +862,7 @@ const localizedPricingCopy = {
       Max: {
         audience: "Untuk tim dan beban kerja berat",
         cta: "Berlangganan",
-        text: "Hingga $450 penggunaan model / bulan",
+        text: "Hingga $300 penggunaan model / bulan",
         window: "Batas jangka pendek: $78 / 5 jam · $220 / 7 hari",
       },
     },
