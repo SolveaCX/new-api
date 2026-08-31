@@ -10,7 +10,7 @@ describe("OnlinePricingPage", () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const html = renderToStaticMarkup(<OnlinePricingPage locale="en" />);
 
-    const goReferencePrice = html.indexOf('<del class="toldprice">$25</del>');
+    const goReferencePrice = html.indexOf('<del class="toldprice">$45</del>');
     const goPrice = html.indexOf("<b>$10</b>");
     const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div>');
     const enterpriseCustom = html.indexOf(">Custom<");
@@ -68,15 +68,15 @@ describe("OnlinePricingPage", () => {
   test("localizes pricing plan details outside English", async () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const localizedCases = [
-      { locale: "zh", snippets: ["灵活定价", "适合个人与轻量日常使用", "全部模型", "短期上限", "定制", "/月"], legacyQuota: "每月最多 $45 模型用量" },
-      { locale: "es", snippets: ["Precios flexibles", "Para uso individual y diario ligero", "Todos los modelos", "Límites a corto plazo", "Personalizado", "/mes"], legacyQuota: "Hasta $45 de uso de modelos / mes" },
-      { locale: "fr", snippets: ["Tarifs flexibles", "Pour les particuliers", "Tous les modèles", "Limites court terme", "Sur mesure", "/mois"], legacyQuota: "Jusqu'à $45 d'utilisation de modèles / mois" },
-      { locale: "pt", snippets: ["Preços flexíveis", "Para uso individual", "Todos os modelos", "Limites de curto prazo", "Personalizado", "/mês"], legacyQuota: "Até $45 de uso de modelos / mês" },
-      { locale: "ru", snippets: ["Гибкие тарифы", "Для индивидуального", "Все модели", "Краткосрочные лимиты", "Индивидуально", "/мес."], legacyQuota: "До $45 использования моделей / мес." },
-      { locale: "ja", snippets: ["柔軟な料金", "個人利用と軽い日常利用向け", "すべてのモデル", "短期上限", "カスタム", "/月"], legacyQuota: "月あたり最大 $45 のモデル利用" },
-      { locale: "vi", snippets: ["Giá linh hoạt", "Cho cá nhân", "Tất cả model", "Giới hạn ngắn hạn", "Tùy chỉnh", "/tháng"], legacyQuota: "Tối đa $45 mức sử dụng model / tháng" },
-      { locale: "de", snippets: ["Flexible Preise", "Für Einzelpersonen", "Alle Modelle", "Kurzfristige Limits", "Individuell", "/Monat"], legacyQuota: "Bis zu $45 Modellnutzung / Monat" },
-      { locale: "id", snippets: ["Harga fleksibel", "Untuk individu", "Semua model", "Batas jangka pendek", "Kustom", "/bulan"], legacyQuota: "Hingga $45 penggunaan model / bulan" },
+      { locale: "zh", snippets: ["灵活定价", "适合个人与轻量日常使用", "全部模型", "短期上限", "定制", "/月"], legacyQuota: "每月最多 $25 模型用量" },
+      { locale: "es", snippets: ["Precios flexibles", "Para uso individual y diario ligero", "Todos los modelos", "Límites a corto plazo", "Personalizado", "/mes"], legacyQuota: "Hasta $25 de uso de modelos / mes" },
+      { locale: "fr", snippets: ["Tarifs flexibles", "Pour les particuliers", "Tous les modèles", "Limites court terme", "Sur mesure", "/mois"], legacyQuota: "Jusqu'à $25 d'utilisation de modèles / mois" },
+      { locale: "pt", snippets: ["Preços flexíveis", "Para uso individual", "Todos os modelos", "Limites de curto prazo", "Personalizado", "/mês"], legacyQuota: "Até $25 de uso de modelos / mês" },
+      { locale: "ru", snippets: ["Гибкие тарифы", "Для индивидуального", "Все модели", "Краткосрочные лимиты", "Индивидуально", "/мес."], legacyQuota: "До $25 использования моделей / мес." },
+      { locale: "ja", snippets: ["柔軟な料金", "個人利用と軽い日常利用向け", "すべてのモデル", "短期上限", "カスタム", "/月"], legacyQuota: "月あたり最大 $25 のモデル利用" },
+      { locale: "vi", snippets: ["Giá linh hoạt", "Cho cá nhân", "Tất cả model", "Giới hạn ngắn hạn", "Tùy chỉnh", "/tháng"], legacyQuota: "Tối đa $25 mức sử dụng model / tháng" },
+      { locale: "de", snippets: ["Flexible Preise", "Für Einzelpersonen", "Alle Modelle", "Kurzfristige Limits", "Individuell", "/Monat"], legacyQuota: "Bis zu $25 Modellnutzung / Monat" },
+      { locale: "id", snippets: ["Harga fleksibel", "Untuk individu", "Semua model", "Batas jangka pendek", "Kustom", "/bulan"], legacyQuota: "Hingga $25 penggunaan model / bulan" },
     ] as const;
 
     for (const item of localizedCases) {
@@ -85,7 +85,7 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(snippet);
       }
       expect(html).toContain('class="tdiscount">80% off</div>');
-      for (const referencePrice of ["$25", "$90", "$450"]) {
+      for (const referencePrice of ["$45", "$90", "$450"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
       expect(html).not.toContain(item.legacyQuota);
