@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LOCALES, type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
@@ -280,7 +281,9 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
     <div className={["fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 backdrop-blur-[2px] transition-opacity duration-300 ease-out motion-reduce:transition-none sm:p-5", isEntered ? "opacity-100" : "opacity-0"].join(" ")} onMouseDown={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}>
       <section role="dialog" aria-modal="true" aria-label={copy.dialogLabel} aria-labelledby="welcome-promo-title" aria-describedby="welcome-promo-description" className={["relative h-auto w-full max-w-[1000px] max-h-[calc(100svh-24px)] overflow-hidden rounded-3xl bg-white p-1 shadow-[0_30px_90px_-30px_rgba(15,23,42,0.55)] transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none sm:max-h-[calc(100svh-40px)] lg:aspect-[1000/498] lg:h-auto lg:w-[min(1000px,calc(100vw-32px))] lg:max-h-[calc(100dvh-32px)] lg:rounded-[32px] lg:p-2", isEntered ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.98] opacity-0"].join(" ")}>
         <div className="relative flex h-auto flex-col overflow-hidden rounded-[20px] bg-[linear-gradient(180deg,#cab3fd_0%,#fbe0f0_50%,#faf8f9_100%)] px-4 pt-[clamp(40px,10vh,56px)] pb-[clamp(12px,4vh,24px)] text-black max-[479px]:gap-0 max-[479px]:px-3 max-[479px]:pt-[clamp(44px,10vh,56px)] max-[479px]:pb-2 sm:gap-0 sm:px-8 sm:pt-[clamp(60px,12vh,64px)] sm:pb-[clamp(16px,4vh,24px)] sm:max-lg:pt-[clamp(68px,12vh,72px)] lg:block lg:h-full lg:overflow-hidden lg:rounded-[26px] lg:px-12 lg:py-12">
-          <button type="button" aria-label={copy.closeLabel} onClick={() => setIsOpen(false)} className="absolute top-3 right-3 z-10 inline-flex size-9 items-center justify-center rounded-xl bg-white/35 text-2xl leading-none transition hover:bg-white/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black max-[479px]:top-1.5 max-[479px]:right-1.5 max-[479px]:size-8 max-[479px]:text-xl sm:top-5 sm:right-5 sm:size-10 lg:top-6 lg:right-6 lg:rounded-2xl lg:text-3xl">×</button>
+          <button type="button" aria-label={copy.closeLabel} onClick={() => setIsOpen(false)} className="absolute top-3 right-3 z-10 inline-flex size-9 items-center justify-center rounded-xl bg-white/35 p-0 text-black transition hover:bg-white/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black max-[479px]:top-1.5 max-[479px]:right-1.5 max-[479px]:size-8 sm:top-5 sm:right-5 sm:size-10 lg:top-6 lg:right-6 lg:rounded-2xl">
+            <X aria-hidden="true" className="size-5 stroke-[2.5] max-[479px]:size-4 sm:size-5 lg:size-6" />
+          </button>
           <Image
             src="/assets/welcome-promo-bg.png"
             alt=""
