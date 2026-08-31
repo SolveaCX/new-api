@@ -951,6 +951,13 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	// Normal selection filters these candidates before priority/concurrency.
+	// Also guard explicitly pinned channels and callers bypassing Distribute.
+	if !service.ChannelSupportsServerWebTools(c, channel) {
+		return types.NewErrorWithStatusCode(errors.New(i18n.T(c, i18n.MsgDistributorUnsupportedWebTools)),
+			types.ErrorCodeUnsupportedWebTools, http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)
 	common.SetContextKey(c, constant.ContextKeyChannelType, channel.Type)
