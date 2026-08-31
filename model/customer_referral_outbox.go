@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	CustomerReferralOutboxDelivering = "delivering"
 	CustomerReferralOutboxDelivered  = "delivered"
 	CustomerReferralOutboxDead       = "dead"
+	customerReferralTimeLayout       = "2006-01-02T15:04:05.000Z07:00"
 )
 
 // CustomerReferralOutbox is the durable hand-off between registration and the
@@ -39,19 +41,24 @@ type CustomerReferralOutbox struct {
 }
 
 type customerReferralPayload struct {
-	SchemaVersion  string                        `json:"schema_version"`
-	EventId        string                        `json:"event_id"`
-	InviteCode     string                        `json:"invite_code"`
-	SourcePlatform string                        `json:"source_platform"`
-	Customer       customerReferralCustomer      `json:"customer"`
-	CreatedAt      string                        `json:"created_at"`
+	SchemaVersion  string                   `json:"schema_version"`
+	EventId        string                   `json:"event_id"`
+	InviteCode     string                   `json:"invite_code"`
+	SourcePlatform string                   `json:"source_platform"`
+	Customer       customerReferralCustomer `json:"customer"`
+	CreatedAt      string                   `json:"created_at"`
 }
 
 type customerReferralCustomer struct {
 	CustomerId  string `json:"customer_id"`
 	DisplayName string `json:"display_name"`
 	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
 }
+
+// ErrCustomerReferralCreatedAtMissing indicates that the user row cannot
+// satisfy the callback contract because users.created_at is empty.
+var ErrCustomerReferralCreatedAtMissing = errors.New("customer referral customer created_at is missing")
 
 // EnqueueCustomerReferralInTx snapshots the transient invite fields into the
 // same transaction as user creation. It is a no-op for non-ACTIVE users or
@@ -65,10 +72,12 @@ func EnqueueCustomerReferralInTx(tx *gorm.DB, user *User) error {
 	if strings.TrimSpace(inviteCode) == "" || strings.TrimSpace(sourcePlatform) == "" {
 		return nil
 	}
-	createdAt := time.Unix(user.CreatedAt, 0).UTC()
 	if user.CreatedAt <= 0 {
-		createdAt = time.Now().UTC()
+		common.SysError(fmt.Sprintf("customer referral contract error: users.created_at is missing for user_id=%d", user.Id))
+		return ErrCustomerReferralCreatedAtMissing
 	}
+	customerCreatedAt := time.Unix(user.CreatedAt, 0).UTC()
+	eventCreatedAt := time.Now().UTC()
 	eventID := fmt.Sprintf("flatkey-customer-created-%d", user.Id)
 	payload := customerReferralPayload{
 		SchemaVersion:  "flatkey-customer-referral-v1",
@@ -79,8 +88,9 @@ func EnqueueCustomerReferralInTx(tx *gorm.DB, user *User) error {
 			CustomerId:  strconv.Itoa(user.Id),
 			DisplayName: user.DisplayName,
 			Status:      "ACTIVE",
+			CreatedAt:   customerCreatedAt.Format(customerReferralTimeLayout),
 		},
-		CreatedAt: createdAt.Format(time.RFC3339Nano),
+		CreatedAt: eventCreatedAt.Format(customerReferralTimeLayout),
 	}
 	raw, err := common.Marshal(payload)
 	if err != nil {
