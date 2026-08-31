@@ -18,6 +18,11 @@ const announcementTranslationMaxResponseBytes = int64(128 * 1024)
 
 var announcementTranslationLocales = []string{"en", "fr", "ja", "ru", "vi", "es", "pt"}
 
+type LocalizedNotice struct {
+	Content      string                             `json:"content"`
+	Translations map[string]AnnouncementTranslation `json:"translations,omitempty"`
+}
+
 type AnnouncementTranslation struct {
 	Content string `json:"content"`
 	Extra   string `json:"extra,omitempty"`
@@ -43,6 +48,19 @@ type announcementTranslationResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+func LocalizeNotice(raw, language string) string {
+	notice := LocalizedNotice{}
+	if err := common.Unmarshal([]byte(raw), &notice); err != nil || strings.TrimSpace(notice.Content) == "" {
+		return raw
+	}
+	for _, candidate := range []string{language, strings.Split(language, "-")[0], "en", "zh"} {
+		if translation, ok := notice.Translations[candidate]; ok && strings.TrimSpace(translation.Content) != "" {
+			return translation.Content
+		}
+	}
+	return notice.Content
 }
 
 func TranslateAnnouncement(ctx context.Context, content, extra string) (map[string]AnnouncementTranslation, error) {
