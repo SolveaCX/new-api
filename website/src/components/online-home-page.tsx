@@ -10,6 +10,7 @@ import {
 import { consoleUrl } from "@/lib/origins";
 import { OnlineStaticShell } from "./online-static-shell";
 import { ModelStripCarousel } from "./model-strip-carousel";
+import { IntelligenceVideo } from "./intelligence-video";
 
 const providers = [
   ["logos/claude.svg", "Claude", "reasoning + coding"],
@@ -294,6 +295,10 @@ const FEATURED_MODEL_STRIP = [
 
 const IMAGE_SELECTED_MODEL = "gpt-image-2";
 const VIDEO_SELECTED_MODEL = "seedance-2.5";
+const VIDEO_RESULT_ASSET = {
+  poster: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.png",
+  video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
+} as const;
 
 type IntelligenceCopy = {
   title: string;
@@ -689,6 +694,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
         .intelligence-prompt-input span{flex:1}
         .intelligence-prompt-input b{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#d4d4d5;color:#fff;font-size:20px;line-height:1}
         @media(max-width:1450px) and (min-width:901px){.intelligence-panel{--intelligence-card-gap:clamp(14px,2.5vw,32px);--intelligence-connector-width:var(--intelligence-card-gap);--intelligence-panel-pad-right:clamp(24px,4vw,52px);--intelligence-model-column:clamp(220px,28vw,320px);grid-template-columns:var(--intelligence-model-column) minmax(0,1fr) var(--intelligence-model-column);gap:var(--intelligence-card-gap);padding-inline:var(--intelligence-panel-pad-right)}.intelligence-panel-media{--intelligence-panel-pad-right:clamp(24px,4vw,48px);padding-inline:var(--intelligence-panel-pad-right)}.model-card-price{min-width:0;max-width:44%;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;padding-inline:8px;font-size:10px}}
+        @media(max-width:1100px) and (min-width:901px){.intelligence-panel{--intelligence-card-gap:16px;--intelligence-panel-pad-right:24px;--intelligence-model-column:clamp(188px,22vw,240px);padding-inline:24px}.intelligence-panel-media{--intelligence-panel-pad-right:20px;padding-inline:20px}.intelligence-panel-media .model-card-price{display:none}}
         @media(max-width:900px){.intelligence-section{padding:72px 20px 78px}.intelligence-tabs{gap:10px;margin-top:47px}.intelligence-tab{font-size:14px}.intelligence-panel{grid-template-columns:1fr;gap:25px;min-height:0;padding:26px 24px 30px}.intelligence-panel:after{display:none}.intelligence-prompt{min-height:0}.intelligence-prompt:after{display:none}.intelligence-prompt-body{max-width:none}.intelligence-criteria,.intelligence-media-card,.intelligence-models{align-self:stretch;width:100%}.intelligence-connectors{display:none}}
         @media(max-width:560px){.intelligence-heading h2{font-size:42px}.intelligence-heading p{font-size:16px}.intelligence-tabs{grid-template-columns:1fr;gap:8px}.intelligence-tab{justify-content:flex-start;padding:13px 8px;border-bottom-width:2px}.intelligence-panel{margin-top:18px;padding:18px 14px 22px;border-radius:20px}.intelligence-card-head{padding:17px 18px 14px;font-size:16px}.intelligence-prompt-body{padding:19px 18px;font-size:15px}.intelligence-attachment{margin:23px 14px 14px}.intelligence-checklist li{padding:14px 14px;font-size:14px}.intelligence-metrics{grid-template-columns:1fr}.intelligence-metric{padding:14px}.intelligence-footer{font-size:13px}}
         @media(max-width:420px){.intelligence-heading h2{font-size:36px}.intelligence-heading p{font-size:14px;line-height:1.45}.intelligence-panel{gap:20px;padding-inline:12px}.intelligence-panel-media{padding-inline:12px}.criteria-metrics,.media-metrics{grid-template-columns:1fr;gap:10px}.criteria-metric,.media-metric{min-height:0;padding:13px 14px}.criteria-head{padding-inline:18px}.model-card{padding-inline:14px}.model-card-price{padding:7px 8px;font-size:11px}}
@@ -856,9 +862,12 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                   <div className="intelligence-media-card">
                     <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
                     <div className="intelligence-media-body">
-                      <video className="intelligence-result-media" autoPlay muted loop playsInline preload="auto" poster="/assets/home-tabs/video-f1-result.png" aria-label="F1 car racing on a wet forest track" onCanPlay={(event) => { void event.currentTarget.play().catch(() => undefined); }}>
-                        <source src="/assets/home-tabs/video-f1-result.mp4" type="video/mp4" />
-                      </video>
+                      <IntelligenceVideo
+                        className="intelligence-result-media"
+                        poster={VIDEO_RESULT_ASSET.poster}
+                        src={VIDEO_RESULT_ASSET.video}
+                        ariaLabel="F1 car racing on a wet forest track"
+                      />
                       <div className="media-metrics">
                         <div className="media-metric"><span>Model</span><strong>{VIDEO_SELECTED_MODEL}</strong></div>
                         <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
