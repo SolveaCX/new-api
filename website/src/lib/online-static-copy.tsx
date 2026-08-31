@@ -305,7 +305,7 @@ const en: OnlineCopy = {
       Go: {
         audience: "For individuals & light daily use",
         cta: "Subscribe",
-        text: "Up to $25 model usage / mo",
+        text: "Up to $45 model usage / mo",
         window: "Short-term caps: $8 / 5h · $12 / 7d",
       },
       Pro: {
@@ -501,7 +501,7 @@ const zh: OnlineCopy = {
       Go: {
         audience: "适合个人与轻量日常使用",
         cta: "立即订阅",
-        text: "每月最多 $25 模型用量",
+        text: "每月最多 $45 模型用量",
         window: "短期上限：每 5 小时 $8 · 每 7 天 $12",
       },
       Pro: {
@@ -556,7 +556,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Para uso individual y diario ligero",
         cta: "Suscribirse",
-        text: "Hasta $25 de uso de modelos / mes",
+        text: "Hasta $45 de uso de modelos / mes",
         window: "Límites a corto plazo: $8 / 5 h · $12 / 7 d",
       },
       Pro: {
@@ -598,7 +598,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Pour les particuliers et un usage quotidien léger",
         cta: "S'abonner",
-        text: "Jusqu'à $25 d'utilisation de modèles / mois",
+        text: "Jusqu'à $45 d'utilisation de modèles / mois",
         window: "Limites court terme : $8 / 5 h · $12 / 7 j",
       },
       Pro: {
@@ -640,7 +640,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Para uso individual e diário leve",
         cta: "Assinar",
-        text: "Até $25 de uso de modelos / mês",
+        text: "Até $45 de uso de modelos / mês",
         window: "Limites de curto prazo: $8 / 5 h · $12 / 7 d",
       },
       Pro: {
@@ -682,7 +682,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Для индивидуального и лёгкого ежедневного использования",
         cta: "Оформить",
-        text: "До $25 использования моделей / мес.",
+        text: "До $45 использования моделей / мес.",
         window: "Краткосрочные лимиты: $8 / 5 ч · $12 / 7 дн.",
       },
       Pro: {
@@ -724,7 +724,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "個人利用と軽い日常利用向け",
         cta: "登録する",
-        text: "月あたり最大 $25 のモデル利用",
+        text: "月あたり最大 $45 のモデル利用",
         window: "短期上限: $8 / 5時間 · $12 / 7日",
       },
       Pro: {
@@ -766,7 +766,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Cho cá nhân và nhu cầu hằng ngày nhẹ",
         cta: "Đăng ký",
-        text: "Tối đa $25 mức sử dụng model / tháng",
+        text: "Tối đa $45 mức sử dụng model / tháng",
         window: "Giới hạn ngắn hạn: $8 / 5 giờ · $12 / 7 ngày",
       },
       Pro: {
@@ -808,7 +808,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Für Einzelpersonen und leichte tägliche Nutzung",
         cta: "Abonnieren",
-        text: "Bis zu $25 Modellnutzung / Monat",
+        text: "Bis zu $45 Modellnutzung / Monat",
         window: "Kurzfristige Limits: $8 / 5 Std. · $12 / 7 Tage",
       },
       Pro: {
@@ -850,7 +850,7 @@ const localizedPricingCopy = {
       Go: {
         audience: "Untuk individu dan penggunaan harian ringan",
         cta: "Berlangganan",
-        text: "Hingga $25 penggunaan model / bulan",
+        text: "Hingga $45 penggunaan model / bulan",
         window: "Batas jangka pendek: $8 / 5 jam · $12 / 7 hari",
       },
       Pro: {

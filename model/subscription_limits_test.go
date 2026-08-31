@@ -12,7 +12,7 @@ import (
 func TestStandardSubscriptionPlanLimitsMatchProductContract(t *testing.T) {
 	got := StandardSubscriptionPlanLimits()
 	require.Equal(t, []StandardSubscriptionPlanLimit{
-		{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 25},
+		{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 45},
 		{Title: "Pro", PriceUSD: 30, Window5hUSD: 18, WindowWeekUSD: 45, MonthlyUSD: 90},
 		{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 450},
 	}, got)
@@ -51,7 +51,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRestoresExistingRows(t *testing.T)
 	require.NoError(t, db.First(&gotGo, goPlan.Id).Error)
 	require.Equal(t, int64(8000), gotGo.Window5hAmount)
 	require.Equal(t, int64(12000), gotGo.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotGo.TotalAmount)
+	require.Equal(t, int64(45000), gotGo.TotalAmount)
 	require.Equal(t, SubscriptionResetMonthly, gotGo.QuotaResetPeriod)
 	require.NoError(t, db.First(&gotPro, proPlan.Id).Error)
 	require.Equal(t, int64(18000), gotPro.Window5hAmount)
@@ -103,7 +103,7 @@ func TestMigrateStandardSubscriptionPlanLimitsUsesPersistedQuotaUnit(t *testing.
 	require.NoError(t, db.First(&got, plan.Id).Error)
 	require.Equal(t, int64(8000), got.Window5hAmount)
 	require.Equal(t, int64(12000), got.WindowWeekAmount)
-	require.Equal(t, int64(25000), got.TotalAmount)
+	require.Equal(t, int64(45000), got.TotalAmount)
 }
 
 func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *testing.T) {
@@ -142,7 +142,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *tes
 	require.NoError(t, db.First(&got, plan.Id).Error)
 	require.Equal(t, int64(8000), got.Window5hAmount)
 	require.Equal(t, int64(12000), got.WindowWeekAmount)
-	require.Equal(t, int64(25000), got.TotalAmount)
+	require.Equal(t, int64(45000), got.TotalAmount)
 
 	var marker Option
 	require.NoError(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error)
@@ -214,7 +214,7 @@ func TestMigrateStandardSubscriptionPlanLimitsContinuesPastDuplicateTier(t *test
 	require.NoError(t, db.First(&gotPro, duplicateProA.Id).Error)
 	require.Equal(t, int64(8000), gotGo.Window5hAmount)
 	require.Equal(t, int64(12000), gotGo.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotGo.TotalAmount)
+	require.Equal(t, int64(45000), gotGo.TotalAmount)
 	require.Equal(t, int64(78000), gotMax.Window5hAmount)
 	require.Equal(t, int64(220000), gotMax.WindowWeekAmount)
 	require.Equal(t, int64(450000), gotMax.TotalAmount)
@@ -224,7 +224,7 @@ func TestMigrateStandardSubscriptionPlanLimitsContinuesPastDuplicateTier(t *test
 
 	var updatedActiveGo UserSubscription
 	require.NoError(t, db.First(&updatedActiveGo, activeGo.Id).Error)
-	require.Equal(t, int64(25000), updatedActiveGo.AmountTotal)
+	require.Equal(t, int64(45000), updatedActiveGo.AmountTotal)
 	require.NotNil(t, updatedActiveGo.Window5hAmount)
 	require.NotNil(t, updatedActiveGo.WindowWeekAmount)
 	require.Equal(t, int64(8000), *updatedActiveGo.Window5hAmount)
@@ -281,11 +281,11 @@ func TestMigrateStandardSubscriptionPlanLimitsSelectsEnabledDuplicateTier(t *tes
 	require.Equal(t, int64(45000), gotA.TotalAmount)
 	require.Equal(t, int64(8000), gotB.Window5hAmount)
 	require.Equal(t, int64(12000), gotB.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotB.TotalAmount)
+	require.Equal(t, int64(45000), gotB.TotalAmount)
 
 	var updatedSubscription UserSubscription
 	require.NoError(t, db.First(&updatedSubscription, activeGo.Id).Error)
-	require.Equal(t, int64(25000), updatedSubscription.AmountTotal)
+	require.Equal(t, int64(45000), updatedSubscription.AmountTotal)
 	require.NotNil(t, updatedSubscription.Window5hAmount)
 	require.NotNil(t, updatedSubscription.WindowWeekAmount)
 	require.Equal(t, int64(8000), *updatedSubscription.Window5hAmount)
