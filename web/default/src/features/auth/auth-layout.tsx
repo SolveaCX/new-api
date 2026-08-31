@@ -343,7 +343,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </Link>
           )
         })()}
-        <div className='absolute top-4 right-4 z-10 sm:top-8 sm:right-8'>
+        <div className='absolute top-4 right-4 z-20 sm:top-8 sm:right-8'>
           <LanguageSwitcher />
         </div>
         <div className='relative z-10 flex flex-1 items-center justify-center px-4 pt-20 pb-10 sm:px-8 sm:pt-24 sm:pb-12'>
