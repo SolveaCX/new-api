@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test'
-import { sortModelOptionsForSearch } from './model-group-selector-utils'
+import {
+  sortModelOptionsForDefault,
+  sortModelOptionsForSearch,
+} from './model-group-selector-utils'
+
+test('default ordering matches the model list campaign order', () => {
+  const models = [
+    { label: 'plain', value: 'plain' },
+    { label: 'hot', value: 'hot', promotions: ['hot' as const] },
+    { label: 'discount', value: 'discount', promotions: ['limited' as const] },
+    { label: 'free', value: 'free', promotions: ['free' as const] },
+  ]
+
+  expect(
+    sortModelOptionsForDefault(models).map((model) => model.value)
+  ).toEqual(['free', 'discount', 'hot', 'plain'])
+})
 
 describe('sortModelOptionsForSearch', () => {
   test('sorts newest releases first, then cheapest prices', () => {
