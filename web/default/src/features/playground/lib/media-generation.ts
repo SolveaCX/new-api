@@ -19,7 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import type { PlaygroundAttachment } from '../types'
 import { isSafeAttachmentURL } from './message-utils'
 
-export type PlaygroundModelKind = 'chat' | 'image' | 'video' | 'unsupported'
+export type PlaygroundModelKind =
+  | 'chat'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'unsupported'
 
 export type MediaGenerationFamily =
   | 'gpt-image'
@@ -31,6 +36,7 @@ export type MediaGenerationFamily =
   | 'veo-3.1'
   | 'seedance-2.0'
   | 'seedance-2.5'
+  | 'tts'
 
 export type MediaParameterKey =
   | 'count'
@@ -43,6 +49,8 @@ export type MediaParameterKey =
   | 'aspectRatio'
   | 'duration'
   | 'responseFormat'
+  | 'voice'
+  | 'speed'
   | 'generateAudio'
   | 'seed'
 
@@ -89,7 +97,7 @@ export type MediaParameterField =
   | MediaSwitchParameterField
 
 export interface MediaGenerationProfile {
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
   family: MediaGenerationFamily
   fields: MediaParameterField[]
   defaults: MediaGenerationSettings
@@ -97,11 +105,12 @@ export interface MediaGenerationProfile {
 }
 
 export interface MediaGenerationRequest {
-  kind: 'image' | 'video'
+  kind: 'image' | 'video' | 'audio'
   endpoint:
     | '/pg/chat/completions'
     | '/pg/images/generations'
     | '/pg/images/edits'
+    | '/pg/audio/speech'
     | '/pg/videos'
   payload: Record<string, unknown>
 }
@@ -138,6 +147,9 @@ export function validateMediaGenerationAttachments(
         : undefined
     }
     return 'This image model does not support attachments in Playground'
+  }
+  if (profile.kind === 'audio') {
+    return 'Text-to-speech models do not support attachments in Playground'
   }
   if (profile.kind !== 'video') {
     return 'Attachments are supported only for chat models'
@@ -490,15 +502,124 @@ const seedance25Profile: MediaGenerationProfile = {
   ],
 }
 
+const ttsVoiceValues = [
+  'alloy',
+  'ash',
+  'coral',
+  'echo',
+  'fable',
+  'nova',
+  'onyx',
+  'sage',
+  'shimmer',
+  'Kore',
+  'Puck',
+  'Aoede',
+]
+
+const geminiTTSVoiceValues = [
+  'Zephyr',
+  'Puck',
+  'Charon',
+  'Kore',
+  'Fenrir',
+  'Leda',
+  'Orus',
+  'Aoede',
+  'Callirrhoe',
+  'Autonoe',
+  'Enceladus',
+  'Iapetus',
+  'Umbriel',
+  'Algieba',
+  'Despina',
+  'Erinome',
+  'Algenib',
+  'Rasalgethi',
+  'Laomedeia',
+  'Achernar',
+  'Alnilam',
+  'Schedar',
+  'Gacrux',
+  'Pulcherrima',
+  'Achird',
+  'Zubenelgenubi',
+  'Vindemiatrix',
+  'Sadachbia',
+  'Sadaltager',
+  'Sulafat',
+]
+
+function ttsVoiceField(): MediaSelectParameterField {
+  return selectField('voice', 'Voice', ttsVoiceValues)
+}
+
+function geminiTTSVoiceField(): MediaSelectParameterField {
+  return selectField('voice', 'Voice', geminiTTSVoiceValues)
+}
+
+const ttsOutputFields: MediaParameterField[] = [
+  selectField('responseFormat', 'Response format', [
+    'mp3',
+    'wav',
+    'opus',
+    'aac',
+    'flac',
+    'pcm',
+  ]),
+  {
+    key: 'speed',
+    labelKey: 'Speed',
+    control: 'number',
+    min: 0.25,
+    max: 4,
+    step: 0.05,
+  },
+]
+
+const ttsProfile: MediaGenerationProfile = {
+  kind: 'audio',
+  family: 'tts',
+  defaults: {
+    voice: 'alloy',
+    responseFormat: 'mp3',
+    speed: 1,
+  },
+  fields: [ttsVoiceField(), ...ttsOutputFields],
+}
+
+// Gemini's legacy generateContent TTS contract accepts a voice and returns
+// raw PCM; it has no OpenAI-style response_format or numeric speed controls.
+// Keep those controls out of the UI rather than silently pretending they are
+// applied by the adapter.
+const geminiTTSProfile: MediaGenerationProfile = {
+  kind: 'audio',
+  family: 'tts',
+  defaults: { voice: 'Kore' },
+  fields: [geminiTTSVoiceField()],
+}
+
 const unsupportedPatterns = [
   /(^|[-_/])(?:dall[ -]?e|imagen|flux|stable-diffusion|sdxl|midjourney|jimeng|qwen-image|z-image)(?:$|[-_/])/,
   /(^|\/)nano-banana(?:$|[-_/])/,
   /(^|\/)minimax-h3(?:$|[-_/])/,
   /(^|[-_/])(?:image|video|seedance|sora|kling|veo|wan|hailuo|runway|pika|luma)(?:$|[-_/])/,
-  /(^|[-_/])(?:tts|whisper|transcribe|speech|audio-preview|audio)(?:$|[-_/])/,
+  /(^|[-_/])(?:whisper|transcribe|audio-preview|audio|tts|speech|cosyvoice|fish(?:-speech)?)(?:$|[-_/])/,
   /(^|[-_/])(?:embedding|embeddings|rerank|reranker|moderation|suno|music|lyrics)(?:$|[-_/])/,
+  /(^|[-_/])(?:eleven(?:labs)?|sonilo)(?:$|[-_/])|^eleven[_-]/,
   /^mj_/,
 ]
+
+const unsupportedAudioModelPattern =
+  /(?:^|[-_/])(?:eleven(?:labs)?|sonilo)(?:$|[-_/])|^eleven[_-]/i
+
+const supportedTTSModelPattern =
+  /(?:^|\/)(?:gemini-[^/]*-tts[^/]*|gpt-4o-mini-tts[^/]*|tts-1(?:-[^/]*)?|speech-(?:2\.5-(?:hd|turbo)-preview|(?:01|02)-(?:hd|turbo)))(?:$|\/)/i
+
+function isPlaygroundTTSModel(model: string): boolean {
+  if (!model || unsupportedAudioModelPattern.test(model)) return false
+  return supportedTTSModelPattern.test(model)
+}
 
 function normalizeModelName(model: unknown): string {
   return typeof model === 'string' ? model.trim().toLowerCase() : ''
@@ -574,6 +695,11 @@ export function resolveMediaGenerationProfile(
         isEconomyVariant ? seedance20EconomyProfile : seedance20FullProfile
       )
     }
+  }
+  if (isPlaygroundTTSModel(normalized)) {
+    return cloneProfile(
+      normalized.includes('gemini') ? geminiTTSProfile : ttsProfile
+    )
   }
   return undefined
 }
@@ -812,6 +938,30 @@ export function buildMediaGenerationRequest(
   // The Playground state normalizes settings when the user edits them. Keep
   // request construction serialization-only so the submitted values always
   // match the values visible in the parameter panel.
+
+  if (profile.family === 'tts') {
+    const voice = String(settings.voice ?? profile.defaults.voice ?? 'alloy')
+    const normalizedModel = normalizeModelName(model)
+    const payload: Record<string, unknown> = {
+      model,
+      group,
+      input: prompt,
+      voice,
+    }
+    if (!normalizedModel.includes('gemini')) {
+      const responseFormat = String(
+        settings.responseFormat ?? profile.defaults.responseFormat ?? 'mp3'
+      )
+      const speed = Number(settings.speed ?? profile.defaults.speed ?? 1)
+      payload.response_format = responseFormat
+      if (Number.isFinite(speed)) payload.speed = speed
+    }
+    return {
+      kind: 'audio',
+      endpoint: '/pg/audio/speech',
+      payload,
+    }
+  }
 
   if (profile.family === 'gpt-image') {
     const hasImageAttachments = attachments.some(

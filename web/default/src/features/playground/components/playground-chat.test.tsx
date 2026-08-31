@@ -34,6 +34,7 @@ beforeAll(async () => {
           Copy: 'Copy',
           Download: 'Download',
           'Generated image': 'Generated image',
+          Audio: 'Audio',
           'Attachment preview unavailable': 'Attachment preview unavailable',
         },
       },
@@ -125,6 +126,37 @@ describe('PlaygroundChat', () => {
     expect(html).toContain(`src="${secondVersionSrc}"`)
     expect(html.match(new RegExp(firstVersionSrc, 'g'))?.length).toBe(2)
     expect(html.match(new RegExp(secondVersionSrc, 'g'))?.length).toBe(2)
+  })
+
+  test('renders generated audio with an inline player and download action', () => {
+    const audioSrc =
+      'blob:https://playground.example/550e8400-e29b-41d4-a716-446655440000'
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'assistant-audio',
+              from: 'assistant',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Audio result',
+                  generatedMedia: [
+                    { type: 'audio', url: audioSrc, mimeType: 'audio/mpeg' },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`<audio aria-label="Audio"`)
+    expect(html).toContain(`src="${audioSrc}"`)
+    expect(html).toContain('download="generated-audio-1.mp3"')
   })
 
   test('does not render or download unsafe generated media URLs', () => {

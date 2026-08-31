@@ -56,7 +56,11 @@ import {
   parseThinkTags,
   splitGeneratedImageMarkdown,
 } from '../lib/message-utils'
-import type { Message as MessageType, PlaygroundAttachment } from '../types'
+import type {
+  GeneratedMedia,
+  Message as MessageType,
+  PlaygroundAttachment,
+} from '../types'
 import { MessageActions } from './message-actions'
 import { MessageError } from './message-error'
 
@@ -99,6 +103,31 @@ function sanitizeAttachmentAudioUrl(
   }
   const safeURL = sanitizeGeneratedMediaUrl(attachment.url)
   return attachment.assetId?.trim() ? safeURL : undefined
+}
+
+function generatedAudioExtension(media: GeneratedMedia): string {
+  const mimeType = media.mimeType?.split(';', 1)[0]?.trim().toLowerCase()
+  switch (mimeType) {
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3'
+    case 'audio/ogg':
+    case 'audio/ogg_opus':
+      return 'ogg'
+    case 'audio/opus':
+      return 'opus'
+    case 'audio/aac':
+      return 'aac'
+    case 'audio/flac':
+      return 'flac'
+    case 'audio/pcm':
+    case 'audio/l16':
+      return 'pcm'
+    case 'audio/wav':
+    case 'audio/x-wav':
+    default:
+      return 'wav'
+  }
 }
 
 interface PlaygroundChatProps {
@@ -321,6 +350,12 @@ export function PlaygroundChat({
                                       .map((media, mediaIndex) => ({
                                         href: media.url,
                                         fileName: `generated-image-${mediaIndex + 1}.png`,
+                                      })),
+                                    ...generatedMedia
+                                      .filter((media) => media.type === 'audio')
+                                      .map((media, mediaIndex) => ({
+                                        href: media.url,
+                                        fileName: `generated-audio-${mediaIndex + 1}.${generatedAudioExtension(media)}`,
                                       })),
                                   ]}
                                 />
@@ -566,6 +601,22 @@ export function PlaygroundChat({
                                                               'Your browser does not support video playback.'
                                                             )}
                                                           </video>
+                                                        )
+                                                      }
+                                                      if (
+                                                        media.type === 'audio'
+                                                      ) {
+                                                        return (
+                                                          <audio
+                                                            aria-label={t(
+                                                              'Audio'
+                                                            )}
+                                                            className='w-full rounded-xl'
+                                                            controls
+                                                            key={`${message.key}-audio-${mediaIndex}`}
+                                                            preload='metadata'
+                                                            src={media.url}
+                                                          />
                                                         )
                                                       }
                                                       return (

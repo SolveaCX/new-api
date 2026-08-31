@@ -64,6 +64,37 @@ function responseMessageContent(response: unknown): string {
   return typeof content === 'string' ? content : ''
 }
 
+function responseAudioBlob(response: unknown): Blob | undefined {
+  if (typeof Blob !== 'undefined' && response instanceof Blob) {
+    const mediaType = response.type.trim().toLowerCase()
+    return response.size > 0 && mediaType.startsWith('audio/')
+      ? response
+      : undefined
+  }
+  if (typeof ArrayBuffer !== 'undefined' && response instanceof ArrayBuffer) {
+    return response.byteLength > 0
+      ? new Blob([response], { type: 'audio/wav' })
+      : undefined
+  }
+  return undefined
+}
+
+function collectLiveObjectURLs(messages: Message[]): Set<string> {
+  const urls = new Set<string>()
+  messages.forEach((message) => {
+    if (message.videoUrl?.startsWith('blob:')) urls.add(message.videoUrl)
+    message.generatedMedia?.forEach((media) => {
+      if (media.url.startsWith('blob:')) urls.add(media.url)
+    })
+    message.versions.forEach((version) => {
+      version.generatedMedia?.forEach((media) => {
+        if (media.url.startsWith('blob:')) urls.add(media.url)
+      })
+    })
+  })
+  return urls
+}
+
 function errorMessage(error: unknown): string {
   if (!error || typeof error !== 'object') {
     return i18next.t('Request error occurred')
@@ -140,7 +171,25 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
   const { messages, onMessageUpdate } = props
   const abortControllerRef = useRef<AbortController | null>(null)
   const activeMessageKeyRef = useRef<string | null>(null)
+  const generatedObjectURLsRef = useRef<Set<string>>(new Set())
   const [isGeneratingMedia, setIsGeneratingMedia] = useState(false)
+
+  const releaseMediaObjectURL = useCallback((url?: string) => {
+    if (
+      typeof url !== 'string' ||
+      !url.startsWith('blob:') ||
+      !generatedObjectURLsRef.current.has(url)
+    ) {
+      return
+    }
+    generatedObjectURLsRef.current.delete(url)
+    if (
+      typeof URL !== 'undefined' &&
+      typeof URL.revokeObjectURL === 'function'
+    ) {
+      URL.revokeObjectURL(url)
+    }
+  }, [])
 
   const updateProgress = useCallback(
     (
@@ -341,6 +390,29 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
           return
         }
 
+        if (request.kind === 'audio') {
+          const audio = responseAudioBlob(response)
+          if (!audio) {
+            throw new Error(
+              i18next.t('No audio was generated') || 'No audio was generated'
+            )
+          }
+          if (
+            typeof URL === 'undefined' ||
+            typeof URL.createObjectURL !== 'function'
+          ) {
+            throw new Error(
+              i18next.t('Audio playback failed') || 'Audio playback failed'
+            )
+          }
+          const url = URL.createObjectURL(audio)
+          generatedObjectURLsRef.current.add(url)
+          completeMedia(assistantMessageKey, i18next.t('Audio'), [
+            { type: 'audio', url, mimeType: audio.type || 'audio/wav' },
+          ])
+          return
+        }
+
         const submitted = parseVideoTaskResponse(response)
         if (!submitted) {
           throw new Error(i18next.t('Video task could not be created'))
@@ -390,11 +462,26 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
   }, [messages, runVideoPolling])
 
   useEffect(() => {
+    const liveObjectURLs = collectLiveObjectURLs(messages)
+    generatedObjectURLsRef.current.forEach((url) => {
+      if (!liveObjectURLs.has(url)) releaseMediaObjectURL(url)
+    })
+  }, [messages, releaseMediaObjectURL])
+
+  useEffect(() => {
+    const generatedObjectURLs = generatedObjectURLsRef.current
     return () => {
       const controller = abortControllerRef.current
       abortControllerRef.current = null
       activeMessageKeyRef.current = null
       controller?.abort()
+      if (
+        typeof URL !== 'undefined' &&
+        typeof URL.revokeObjectURL === 'function'
+      ) {
+        generatedObjectURLs.forEach((url) => URL.revokeObjectURL(url))
+        generatedObjectURLs.clear()
+      }
     }
   }, [])
 
@@ -422,6 +509,7 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
   return {
     generateMedia,
     isGeneratingMedia,
+    releaseMediaObjectURL,
     stopMediaGeneration,
   }
 }

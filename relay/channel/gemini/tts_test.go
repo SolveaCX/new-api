@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"io"
@@ -58,7 +59,7 @@ func TestConvertAudioRequestBuildsGeminiTTSPayload(t *testing.T) {
 				Model:          "gemini-2.5-flash-preview-tts",
 				Input:          "hello from playground",
 				Voice:          tc.voice,
-				ResponseFormat: "mp3",
+				ResponseFormat: "wav",
 			})
 			require.NoError(t, err)
 			require.NotNil(t, body)
@@ -107,6 +108,72 @@ func TestConvertAudioRequestPreservesInstructions(t *testing.T) {
 		"Speak warmly and slowly.\n\nThe weather is clear.",
 		req.Contents[0].Parts[0].Text,
 	)
+}
+
+func TestConvertAudioRequestRejectsBlankInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+
+	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeAudioSpeech}
+	body, err := (&Adaptor{}).ConvertAudioRequest(c, info, dto.AudioRequest{Input: " \t\n"})
+	require.Nil(t, body)
+	require.EqualError(t, err, "input is required")
+}
+
+func TestConvertAudioRequestRejectsNonDefaultGeminiSpeed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeAudioSpeech,
+		OriginModelName: "gemini-2.5-flash-preview-tts",
+	}
+	speed := 0.75
+	body, err := (&Adaptor{}).ConvertAudioRequest(c, info, dto.AudioRequest{
+		Input: "The weather is clear.",
+		Speed: &speed,
+	})
+	require.Nil(t, body)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not support")
+}
+
+func TestConvertAudioRequestRejectsUnsupportedGeminiOutputControls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeAudioSpeech,
+		OriginModelName: "gemini-2.5-flash-preview-tts",
+	}
+	speed := 1.25
+	_, err := (&Adaptor{}).ConvertAudioRequest(c, info, dto.AudioRequest{
+		Input:          "hello",
+		ResponseFormat: "mp3",
+		Speed:          &speed,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not support")
+}
+
+func TestConvertAudioRequestRejectsGeminiStreamFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeAudioSpeech,
+		OriginModelName: "gemini-2.5-flash-preview-tts",
+	}
+	_, err := (&Adaptor{}).ConvertAudioRequest(c, info, dto.AudioRequest{
+		Input:        "hello",
+		StreamFormat: "sse",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream")
 }
 
 func TestGeminiDoResponseWrapsPCMInlineDataAsWAV(t *testing.T) {
@@ -218,5 +285,20 @@ func TestGeminiDoResponseRejectsMissingAudioInlineData(t *testing.T) {
 	usage, newAPIError := (&Adaptor{}).DoResponse(c, resp, info)
 	require.Nil(t, usage)
 	require.NotNil(t, newAPIError)
+	require.Equal(t, http.StatusBadGateway, newAPIError.StatusCode)
 	require.Contains(t, newAPIError.Error(), "audio")
+}
+
+func TestNormalizeAudioContentTypeUsesSafeFallback(t *testing.T) {
+	require.Equal(t, "audio/mpeg", normalizeAudioContentType("audio/mp3;rate=24000"))
+	require.Equal(t, "audio/wav", normalizeAudioContentType("audio/unknown"))
+	require.Equal(t, "audio/wav", normalizeAudioContentType("audio/wav\r\nX-Injected: true"))
+}
+
+func TestDecodeGeminiTTSAudioRejectsEmptyData(t *testing.T) {
+	_, err := decodeGeminiTTSAudio(context.Background(), &dto.GeminiInlineData{
+		MimeType: "audio/L16;rate=24000",
+		Data:     "",
+	})
+	require.EqualError(t, err, "audio data is empty")
 }

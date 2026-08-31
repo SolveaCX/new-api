@@ -254,7 +254,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		}
 	}
 
-	if info.RelayMode == constant.RelayModeAudioSpeech && isGeminiTTSModel(info.UpstreamModelName) {
+	if info.RelayMode == constant.RelayModeAudioSpeech &&
+		(isGeminiTTSModel(info.UpstreamModelName) || isGeminiTTSModel(info.OriginModelName)) {
 		return GeminiTTSHandler(c, info, resp)
 	}
 

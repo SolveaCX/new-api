@@ -24,6 +24,12 @@ function isEmbeddedBase64DataUrl(value: unknown): boolean {
   return typeof value === 'string' && /^data:[^,]+;base64,/i.test(value.trim())
 }
 
+function isTransientObjectUrl(value: unknown): boolean {
+  return (
+    typeof value === 'string' && value.trim().toLowerCase().startsWith('blob:')
+  )
+}
+
 function scopedKey(base: string, userId: number): string {
   return `${base}:v2:${userId}`
 }
@@ -47,8 +53,7 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
   return messages.map((message) => {
     let messageChanged = false
     const versions = message.versions.map((version) => {
-      if (!version.attachments?.length) return version
-      const attachments = version.attachments.map((attachment) => {
+      const attachments = version.attachments?.map((attachment) => {
         const isDurableMedia =
           !!attachment.assetId &&
           (attachment.kind === 'image' ||
@@ -70,7 +75,17 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
         messageChanged = true
         return sanitized
       })
-      return messageChanged ? { ...version, attachments } : version
+      const generatedMedia = version.generatedMedia?.filter((media) => {
+        const transient = isTransientObjectUrl(media.url)
+        if (transient) messageChanged = true
+        return !transient
+      })
+      if (!messageChanged) return version
+      return {
+        ...version,
+        ...(attachments ? { attachments } : {}),
+        ...(generatedMedia ? { generatedMedia } : {}),
+      }
     })
 
     let sanitizedMessage = message
@@ -78,6 +93,15 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
     if (message.videoUrl?.startsWith('blob:')) {
       if (sanitizedMessage === message) sanitizedMessage = { ...message }
       delete sanitizedMessage.videoUrl
+    }
+    if (sanitizedMessage.generatedMedia) {
+      const generatedMedia = sanitizedMessage.generatedMedia.filter(
+        (media) => !isTransientObjectUrl(media.url)
+      )
+      if (generatedMedia.length !== sanitizedMessage.generatedMedia.length) {
+        if (sanitizedMessage === message) sanitizedMessage = { ...message }
+        sanitizedMessage.generatedMedia = generatedMedia
+      }
     }
     return sanitizedMessage
   })

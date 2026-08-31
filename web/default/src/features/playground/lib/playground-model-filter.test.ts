@@ -63,6 +63,18 @@ describe('isPlaygroundChatModelName', () => {
     }
   })
 
+  test('keeps implemented speech families selectable but out of first-run chat', () => {
+    for (const model of [
+      'gemini-2.5-flash-preview-tts',
+      'gemini-3.1-flash-tts-preview',
+      'tts-1',
+      'speech-2.5-hd-preview',
+    ]) {
+      expect(isSupportedPlaygroundModelName(model)).toBe(true)
+      expect(isPlaygroundChatModelName(model)).toBe(false)
+    }
+  })
+
   test('hides image, video, audio, embedding, and task models', () => {
     for (const model of [
       'gpt-image-1',

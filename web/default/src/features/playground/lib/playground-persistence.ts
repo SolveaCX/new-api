@@ -45,6 +45,12 @@ function isEmbeddedBase64DataUrl(value: unknown): boolean {
   return header.includes(';base64')
 }
 
+function isEphemeralObjectUrl(value: unknown): boolean {
+  return (
+    typeof value === 'string' && value.trim().toLowerCase().startsWith('blob:')
+  )
+}
+
 function sanitizePersistedText(value: string): string {
   if (isEmbeddedBase64DataUrl(value)) return '[embedded media omitted]'
   return value.replace(
@@ -76,7 +82,10 @@ function sanitizeAttachment(
 
 function sanitizeGeneratedMedia(media: GeneratedMedia[]): GeneratedMedia[] {
   return media
-    .filter((item) => !isEmbeddedBase64DataUrl(item.url))
+    .filter(
+      (item) =>
+        !isEmbeddedBase64DataUrl(item.url) && !isEphemeralObjectUrl(item.url)
+    )
     .map((item) => ({ ...item }))
 }
 

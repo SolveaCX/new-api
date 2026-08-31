@@ -18,7 +18,7 @@
 ### 前端模型与请求
 
 1. 将 `PlaygroundModelKind` 增加 `audio`，为已支持的 TTS 名称解析出音频 profile；TTS 模型从通用不支持列表移到可选择列表，并保持音频输入模型（例如 GPT Audio preview）仍属于 chat。
-2. 音频 profile 使用最小参数集：`voice`（默认 `alloy`）和 `response_format`（默认 `mp3`）；文本来自 Playground 输入框。请求体包含 `model`、`group`、`input`、`voice`、`response_format`，必要时发送 `speed`。
+2. 通用 OpenAI-compatible TTS profile 使用 `voice`、`response_format` 和 `speed`；Gemini legacy TTS profile 只显示 `voice`（默认 `Kore`），因为其 `generateContent` 音频契约没有 OpenAI 的格式/数值速度字段。文本来自 Playground 输入框；请求体包含 `model`、`group`、`input`、`voice`，通用 provider 再附加其格式/速度字段。
 3. 新增 Playground 路由 `POST /pg/audio/speech`。前端 API 以二进制 Blob 接收响应，不把音频 base64 放入持久化记录。
 
 ### 后端路由与适配器
@@ -26,20 +26,20 @@
 1. `router/relay-router.go` 在 Playground 组注册 `POST /audio/speech`，控制器复用现有 `preparePlayground` 与 `RelayFormatOpenAIAudio` 生命周期。
 2. 现有 MiniMax/火山适配器继续走各自的 `ConvertAudioRequest` 和响应处理。
 3. Gemini 适配器新增 TTS 转换：把 `AudioRequest` 转为 Gemini `generateContent` 请求，`responseModalities=["AUDIO"]`，并设置 `speechConfig` 的 prebuilt voice；URL 仍由现有 Gemini `GetRequestURL` 生成。
-4. Gemini TTS 响应处理只接受候选内容中的 audio `inlineData`，校验 base64 后解码为二进制，依据上游 MIME 设置 `Content-Type`（未知 MIME 使用 `audio/wav`）。没有音频数据时返回明确的上游响应错误，不把空响应当作成功。使用现有 usage metadata 结算，缺少 metadata 时回退到输入估算。
+4. Gemini TTS 响应处理只接受候选内容中的 audio `inlineData`，校验 base64 后解码为二进制。Google 常返回 `audio/L16` 原始 PCM；此时后端写入 RIFF/WAV 头后再返回 `audio/wav`，已封装的 WAV/MP3 则原样透传。没有音频数据时返回明确的上游响应错误，不把空响应当作成功。使用现有 usage metadata 结算，缺少 metadata 时回退到输入估算。
 5. 不改变 ElevenLabs native 路由或其计费逻辑。
 
 ### 播放、下载与生命周期
 
 - `sendMediaGeneration` 为 audio 请求使用 `responseType: 'blob'`。
-- Hook 为 Blob 创建 `URL.createObjectURL`，在当前消息中渲染 `<audio controls>` 和下载入口；删除消息、停止生成、组件卸载或替换结果时撤销 object URL。
+- Hook 为 Blob 创建 `URL.createObjectURL`，在当前消息中渲染 `<audio controls>` 和下载入口；记录 MIME 类型以生成正确扩展名。删除消息、停止生成、组件卸载或替换结果时撤销 object URL。
 - 音频 object URL 只存在于当前会话内，不写入 Playground 持久化记录；恢复历史记录时保留“已生成音频”的文本状态，但不伪造失效 URL。
 - 音频失败沿用现有 media generation 错误状态和 toast，不泄漏上游供应商内部地址或响应体。
 
 ## 错误处理与安全边界
 
-- 前端仅将 `Blob.type` 归一化为允许的音频 MIME；非音频 Blob 视为失败。
-- 后端拒绝空文本；`voice` 和 `response_format` 采用 OpenAI TTS 的默认值（`alloy`/`mp3`），具体 provider 的音色校验仍由对应适配器和上游负责。
+- 前端仅接受非空且 `Blob.type` 以 `audio/` 开头的响应；非音频 Blob 视为失败。
+- 后端拒绝空文本；Gemini 接受空或 `wav` 格式，并明确拒绝其不支持的 OpenAI 格式、非默认数值 `speed` 和 `stream_format`。通用 provider 继续使用 OpenAI TTS 的默认值（`alloy`/`mp3`），具体 provider 的音色校验仍由对应适配器和上游负责。
 - 所有新增 JSON 序列化/反序列化使用 `common.Marshal` / `common.Unmarshal`，遵守仓库 Rule 1。
 - `/pg/audio/speech` 继续经过现有鉴权、分组、渠道选择、预扣费和结算；不引入进程内状态，因此适配多节点部署。
 

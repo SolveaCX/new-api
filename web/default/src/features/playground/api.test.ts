@@ -34,6 +34,7 @@ const {
   getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
+  sendMediaGeneration,
   savePlaygroundRecord,
 } = await import('./api')
 
@@ -123,6 +124,30 @@ describe('Playground model API', () => {
     expect(get).toHaveBeenCalledWith('/api/user/models', {
       params: { group: 'plg', exclude_hidden: true },
     })
+  })
+})
+
+describe('Playground media API', () => {
+  beforeEach(() => {
+    post.mockClear()
+  })
+
+  test('requests generated audio as a binary blob', async () => {
+    const audio = new Blob(['RIFF'], { type: 'audio/wav' })
+    post.mockResolvedValueOnce({ data: audio })
+
+    const response = await sendMediaGeneration({
+      kind: 'audio',
+      endpoint: '/pg/audio/speech',
+      payload: { model: 'tts-1', input: 'hello' },
+    })
+
+    expect(response).toBe(audio)
+    expect(post).toHaveBeenCalledWith(
+      '/pg/audio/speech',
+      { model: 'tts-1', input: 'hello' },
+      expect.objectContaining({ responseType: 'blob', skipErrorHandler: true })
+    )
   })
 })
 

@@ -84,6 +84,7 @@ export async function sendMediaGeneration(
   const res = await api.post(request.endpoint, request.payload, {
     signal,
     skipErrorHandler: true,
+    ...(request.kind === 'audio' ? { responseType: 'blob' } : {}),
   } as Record<string, unknown>)
   return res.data
 }

@@ -62,13 +62,33 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 	if info != nil && info.RelayMode != relayconstant.RelayModeAudioSpeech {
 		return nil, errors.New("unsupported audio relay mode")
 	}
-	if request.Input == "" {
+	if streamFormat := strings.ToLower(strings.TrimSpace(request.StreamFormat)); streamFormat != "" {
+		return nil, errors.New("Gemini TTS does not support streaming audio; omit stream_format")
+	}
+	if strings.TrimSpace(request.Input) == "" {
 		return nil, errors.New("input is required")
+	}
+	if responseFormat := strings.ToLower(strings.TrimSpace(request.ResponseFormat)); responseFormat != "" && responseFormat != "wav" {
+		return nil, errors.New("Gemini TTS does not support this response format; use wav")
+	}
+	if request.Speed != nil {
+		speed := *request.Speed
+		if math.IsNaN(speed) || math.IsInf(speed, 0) || speed < 0.25 || speed > 4 {
+			return nil, errors.New("speed must be between 0.25 and 4")
+		}
+		if math.Abs(speed-1) > 0.0001 {
+			return nil, errors.New("Gemini TTS does not support numeric speed; use instructions")
+		}
 	}
 
 	inputText := request.Input
+	inputSections := make([]string, 0, 2)
 	if instructions := strings.TrimSpace(request.Instructions); instructions != "" {
-		inputText = instructions + "\n\n" + inputText
+		inputSections = append(inputSections, instructions)
+	}
+	if len(inputSections) > 0 {
+		inputSections = append(inputSections, inputText)
+		inputText = strings.Join(inputSections, "\n\n")
 	}
 
 	ttsRequest := dto.GeminiChatRequest{
@@ -96,10 +116,6 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 		return nil, fmt.Errorf("marshal gemini speech config: %w", err)
 	}
 	ttsRequest.GenerationConfig.SpeechConfig = speechConfig
-
-	if request.ResponseFormat != "" {
-		c.Set("response_format", request.ResponseFormat)
-	}
 
 	jsonData, err := common.Marshal(ttsRequest)
 	if err != nil {
@@ -133,7 +149,7 @@ func GeminiTTSHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return nil, types.NewErrorWithStatusCode(
 			errors.New("no audio data in gemini tts response"),
 			types.ErrorCodeBadResponseBody,
-			http.StatusBadRequest,
+			http.StatusBadGateway,
 		)
 	}
 
@@ -173,6 +189,9 @@ func decodeGeminiTTSAudio(ctx context.Context, inlineData *dto.GeminiInlineData)
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(inlineData.Data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode gemini tts audio: %w", err)
+	}
+	if len(decoded) == 0 {
+		return nil, errors.New("audio data is empty")
 	}
 
 	mimeType := strings.ToLower(strings.TrimSpace(inlineData.MimeType))
@@ -241,12 +260,12 @@ func normalizeAudioContentType(mimeType string) string {
 	switch normalized {
 	case "audio/mp3":
 		return "audio/mpeg"
-	case "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg", "audio/aac", "audio/flac":
+	case "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg", "audio/opus", "audio/aac", "audio/flac", "audio/webm", "audio/mp4", "audio/x-m4a", "audio/aiff", "audio/x-aiff":
 		return normalized
-	case "":
-		return "application/octet-stream"
 	default:
-		return normalized
+		// Keep the browser-facing response on an audio media type even when an
+		// upstream sends an unfamiliar or malformed audio MIME value.
+		return "audio/wav"
 	}
 }
 
@@ -259,10 +278,18 @@ func estimateAudioDuration(ctx context.Context, contentType string, data []byte)
 		ext = ".wav"
 	case "audio/ogg":
 		ext = ".ogg"
+	case "audio/opus":
+		ext = ".opus"
 	case "audio/aac":
 		ext = ".aac"
 	case "audio/flac":
 		ext = ".flac"
+	case "audio/mp4", "audio/x-m4a":
+		ext = ".m4a"
+	case "audio/aiff", "audio/x-aiff":
+		ext = ".aiff"
+	case "audio/webm":
+		ext = ".webm"
 	default:
 		return 0, fmt.Errorf("unsupported audio content type: %s", contentType)
 	}
@@ -329,12 +356,16 @@ func appendUint32LE(dst []byte, value uint32) []byte {
 }
 
 func buildGeminiTTSUsage(info *relaycommon.RelayInfo, metadata dto.GeminiUsageMetadata, duration float64) *dto.Usage {
+	fallbackPromptTokens := 0
+	if info != nil {
+		fallbackPromptTokens = info.GetEstimatePromptTokens()
+	}
 	if metadata.TotalTokenCount > 0 {
-		usage := buildUsageFromGeminiMetadata(metadata, info.GetEstimatePromptTokens())
+		usage := buildUsageFromGeminiMetadata(metadata, fallbackPromptTokens)
 		return &usage
 	}
 
-	promptTokens := info.GetEstimatePromptTokens()
+	promptTokens := fallbackPromptTokens
 	usage := &dto.Usage{
 		PromptTokens: promptTokens,
 	}

@@ -237,23 +237,25 @@ export function PlaygroundInput({
   const isGroupSelectDisabled = disabled || groups.length === 0
   const isSubmitDisabled = disabled || submitDisabled || !modelValue
   const attachmentConfig =
-    mediaProfile?.kind === 'video'
-      ? {
-          accept:
-            'image/jpeg,image/png,image/webp,video/mp4,.jpg,.jpeg,.png,.webp,.mp4',
-          extensions: '.jpg, .jpeg, .png, .webp, .mp4',
-        }
-      : mediaProfile?.kind === 'image'
+    mediaProfile?.kind === 'audio'
+      ? { accept: '', extensions: '' }
+      : mediaProfile?.kind === 'video'
         ? {
-            accept: 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
-            extensions: '.jpg, .jpeg, .png, .webp',
-          }
-        : {
             accept:
-              'application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,audio/*,audio/mpeg,audio/wav,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav,.m4a,.ogg,.flac,.aac',
-            extensions:
-              '.pdf, .csv, .jpg, .jpeg, .png, .webp, .mp4, .mp3, .wav, .m4a, .ogg, .flac, .aac',
+              'image/jpeg,image/png,image/webp,video/mp4,.jpg,.jpeg,.png,.webp,.mp4',
+            extensions: '.jpg, .jpeg, .png, .webp, .mp4',
           }
+        : mediaProfile?.kind === 'image'
+          ? {
+              accept: 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
+              extensions: '.jpg, .jpeg, .png, .webp',
+            }
+          : {
+              accept:
+                'application/pdf,text/csv,text/comma-separated-values,image/jpeg,image/png,image/webp,video/mp4,audio/*,audio/mpeg,audio/wav,.pdf,.csv,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav,.m4a,.ogg,.flac,.aac',
+              extensions:
+                '.pdf, .csv, .jpg, .jpeg, .png, .webp, .mp4, .mp3, .wav, .m4a, .ogg, .flac, .aac',
+            }
 
   const handleSubmit = async (message: PromptInputMessage) => {
     if ((!message.text?.trim() && !message.files?.length) || isSubmitDisabled) {
@@ -323,7 +325,9 @@ export function PlaygroundInput({
 
         <PromptInputFooter className='p-2.5'>
           <PromptInputTools>
-            <PlaygroundAttachButton disabled={disabled} />
+            <PlaygroundAttachButton
+              disabled={disabled || mediaProfile?.kind === 'audio'}
+            />
 
             <PromptInputButton
               className={`${PLAYGROUND_CONTROL_CLASS_NAME} font-medium`}

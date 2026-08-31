@@ -190,8 +190,12 @@ export function Playground({
     onMessageUpdate: updateMessages,
     minimalParameters: firstRun,
   })
-  const { generateMedia, stopMediaGeneration, isGeneratingMedia } =
-    useMediaGeneration({ messages, onMessageUpdate: updateMessages })
+  const {
+    generateMedia,
+    releaseMediaObjectURL,
+    stopMediaGeneration,
+    isGeneratingMedia,
+  } = useMediaGeneration({ messages, onMessageUpdate: updateMessages })
   const isGenerating = isGeneratingChat || isGeneratingMedia
   const generationDispatchRef = useRef(false)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
@@ -1018,6 +1022,14 @@ export function Playground({
     if (message.videoUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(message.videoUrl)
     }
+    message.versions.forEach((version) => {
+      version.generatedMedia?.forEach((media) => {
+        releaseMediaObjectURL(media.url)
+      })
+    })
+    message.generatedMedia?.forEach((media) => {
+      releaseMediaObjectURL(media.url)
+    })
     const newMessages = messages.filter((m) => m.key !== message.key)
     updateMessages(newMessages)
   }
