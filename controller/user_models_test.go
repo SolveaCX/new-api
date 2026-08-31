@@ -138,3 +138,64 @@ func TestGetUserModelsCanExcludeAdministrativelyHiddenModels(t *testing.T) {
 		requestUserModels(t, "/api/user/models?exclude_hidden=true", 3002),
 	)
 }
+
+func TestGetUserModelsSortsModelsWithinFamilyByCreatedTime(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+
+	originalUserGroups := setting.UserUsableGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUserGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{
+		"default": "Default group",
+		"vip": "VIP group",
+		"auto": "Auto group"
+	}`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","vip"]`))
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       3003,
+		Username: "playground-order-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "gpt-5.4", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "claude-sonnet-4", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "gpt-5.5", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "gpt-5.4", ChannelId: 2, Enabled: true},
+		{Group: "vip", Model: "gpt-5.5", ChannelId: 2, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Model{
+		{ModelName: "gpt-5.4", CreatedTime: 100},
+		{ModelName: "gpt-5.5", CreatedTime: 200},
+		{ModelName: "claude-sonnet-4", CreatedTime: 300},
+	}).Error)
+
+	for _, target := range []string{
+		"/api/user/models?group=default",
+		"/api/user/models?group=auto",
+		"/api/user/models",
+	} {
+		models := requestUserModels(t, target, 3003)
+		newerIndex := indexOfModel(t, models, "gpt-5.5")
+		olderIndex := indexOfModel(t, models, "gpt-5.4")
+		require.Less(t, newerIndex, olderIndex, "expected newer model first for %s", target)
+		require.Contains(t, models, "claude-sonnet-4")
+	}
+}
+
+func indexOfModel(t *testing.T, models []string, name string) int {
+	t.Helper()
+	for index, modelName := range models {
+		if modelName == name {
+			return index
+		}
+	}
+	t.Fatalf("model %q not found in %v", name, models)
+	return -1
+}

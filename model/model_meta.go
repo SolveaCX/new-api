@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -131,6 +132,41 @@ func GetAllModels(offset int, limit int) ([]*Model, error) {
 	var models []*Model
 	err := DB.Order("id DESC").Offset(offset).Limit(limit).Find(&models).Error
 	return models, err
+}
+
+// GetModelCreatedTimes returns creation timestamps for active model metadata
+// records matching the supplied names. Missing names are omitted from the map.
+func GetModelCreatedTimes(modelNames []string) (map[string]int64, error) {
+	createdTimes := make(map[string]int64)
+	if len(modelNames) == 0 {
+		return createdTimes, nil
+	}
+	if DB == nil {
+		return nil, errors.New("model database is not initialized")
+	}
+
+	var rows []struct {
+		ModelName   string `gorm:"column:model_name"`
+		CreatedTime int64  `gorm:"column:created_time"`
+	}
+	const queryBatchSize = 500
+	for start := 0; start < len(modelNames); start += queryBatchSize {
+		end := start + queryBatchSize
+		if end > len(modelNames) {
+			end = len(modelNames)
+		}
+		rows = rows[:0]
+		if err := DB.Model(&Model{}).
+			Select("model_name, created_time").
+			Where("model_name IN ?", modelNames[start:end]).
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			createdTimes[row.ModelName] = row.CreatedTime
+		}
+	}
+	return createdTimes, nil
 }
 
 func GetBoundChannelsByModelsMap(modelNames []string) (map[string][]BoundChannel, error) {
