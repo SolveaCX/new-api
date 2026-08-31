@@ -66,12 +66,17 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 		return nil, errors.New("input is required")
 	}
 
+	inputText := request.Input
+	if instructions := strings.TrimSpace(request.Instructions); instructions != "" {
+		inputText = instructions + "\n\n" + inputText
+	}
+
 	ttsRequest := dto.GeminiChatRequest{
 		Contents: []dto.GeminiChatContent{
 			{
 				Role: "user",
 				Parts: []dto.GeminiPart{
-					{Text: request.Input},
+					{Text: inputText},
 				},
 			},
 		},

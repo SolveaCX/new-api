@@ -81,6 +81,34 @@ func TestConvertAudioRequestBuildsGeminiTTSPayload(t *testing.T) {
 	}
 }
 
+func TestConvertAudioRequestPreservesInstructions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayMode:       relayconstant.RelayModeAudioSpeech,
+		OriginModelName: "gemini-2.5-flash-preview-tts",
+	}
+	body, err := (&Adaptor{}).ConvertAudioRequest(c, info, dto.AudioRequest{
+		Input:        "The weather is clear.",
+		Instructions: "Speak warmly and slowly.",
+	})
+	require.NoError(t, err)
+	raw, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	var req dto.GeminiChatRequest
+	require.NoError(t, common.Unmarshal(raw, &req))
+	require.Len(t, req.Contents, 1)
+	require.Len(t, req.Contents[0].Parts, 1)
+	require.Equal(
+		t,
+		"Speak warmly and slowly.\n\nThe weather is clear.",
+		req.Contents[0].Parts[0].Text,
+	)
+}
+
 func TestGeminiDoResponseWrapsPCMInlineDataAsWAV(t *testing.T) {
 	t.Parallel()
 
