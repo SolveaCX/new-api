@@ -359,7 +359,7 @@
       "get": {
         "summary": "导出 Playground 保存记录",
         "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）。默认导出所有用户已持久化的 Playground turn/clear 记录；可通过 user_id 筛选单个用户。响应为 JSON 下载文件。",
+        "description": "👨‍💼 需要管理员权限（Admin）。默认导出所有用户已持久化的 Playground turn/clear 记录为 Excel 文件；可通过 user_id 筛选单个用户。format=xlsx 可显式选择 Excel，format=json 保留旧 JSON 下载格式。",
         "tags": [
           "数据统计"
         ],
@@ -373,11 +373,25 @@
               "type": "integer",
               "minimum": 1
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "可选导出格式；缺省或 xlsx 返回 Excel，json 返回兼容 JSON。",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "xlsx",
+                "json"
+              ],
+              "default": "xlsx"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "JSON 文件下载",
+            "description": "Excel 或 JSON 文件下载",
             "headers": {
               "Content-Disposition": {
                 "description": "下载文件名",
@@ -387,6 +401,12 @@
               }
             },
             "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
               "application/json": {
                 "schema": {
                   "type": "array",
@@ -400,7 +420,7 @@
             }
           },
           "400": {
-            "description": "user_id 无效"
+            "description": "user_id 或 format 无效"
           }
         },
         "security": [

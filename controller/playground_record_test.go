@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -364,6 +366,10 @@ func TestExportPlaygroundRecords(t *testing.T) {
 		RecordID:          "record-a",
 		RecordType:        model.PlaygroundRecordTypeTurn,
 		ConversationID:    "conversation-a",
+		ConversationName:  "Export demo",
+		UserMessage:       `{"content":"=SUM(1,1)"}`,
+		RequestMessages:   `[{"role":"user","content":"hello"}]`,
+		Parameters:        `{"temperature":0.7}`,
 		OutputText:        "owned output",
 		Status:            model.PlaygroundStatusComplete,
 		ClientCompletedAt: 1000,
@@ -394,12 +400,20 @@ func TestExportPlaygroundRecords(t *testing.T) {
 		ExportPlaygroundRecords(c)
 
 		require.Equal(t, http.StatusOK, recorder.Code)
-		require.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
+		require.Equal(t, playgroundExportMimeType, recorder.Header().Get("Content-Type"))
 		require.Contains(t, recorder.Header().Get("Content-Disposition"), "attachment; filename=playground-records-211-")
-		var exported []model.PlaygroundRecord
-		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &exported))
-		require.Equal(t, []string{"record-a", "record-clear"}, exportedPlaygroundRecordIDs(exported))
-		require.Equal(t, "owned output", string(exported[0].OutputText))
+		require.Contains(t, recorder.Header().Get("Content-Disposition"), ".xlsx")
+		workbook := openPlaygroundWorkbook(t, recorder.Body.Bytes())
+		rows, err := workbook.GetRows(playgroundExportSheetName)
+		require.NoError(t, err)
+		require.Len(t, rows, 3)
+		require.Equal(t, expectedPlaygroundExportHeaders, rows[0])
+		require.Equal(t, []string{"record-a", "record-clear"}, []string{rows[1][2], rows[2][2]})
+		require.Equal(t, "Export demo", rows[1][5])
+		require.Equal(t, `{"content":"=SUM(1,1)"}`, rows[1][6])
+		require.Equal(t, `[{"role":"user","content":"hello"}]`, rows[1][7])
+		require.Equal(t, "owned output", rows[1][11])
+		require.Equal(t, model.PlaygroundRecordTypeClear, rows[2][3])
 	})
 
 	t.Run("without a filter returns every user", func(t *testing.T) {
@@ -408,18 +422,45 @@ func TestExportPlaygroundRecords(t *testing.T) {
 		ExportPlaygroundRecords(c)
 
 		require.Equal(t, http.StatusOK, recorder.Code)
-		var exported []model.PlaygroundRecord
-		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &exported))
-		require.Equal(t, []string{"record-a", "record-clear", "record-b"}, exportedPlaygroundRecordIDs(exported))
+		workbook := openPlaygroundWorkbook(t, recorder.Body.Bytes())
+		rows, err := workbook.GetRows(playgroundExportSheetName)
+		require.NoError(t, err)
+		require.Equal(t, []string{"record-a", "record-clear", "record-b"}, []string{rows[1][2], rows[2][2], rows[3][2]})
 	})
 
-	t.Run("empty filter result is an empty JSON array", func(t *testing.T) {
+	t.Run("empty filter result is a workbook with headers", func(t *testing.T) {
 		c, recorder := playgroundExportTestContext(t, 1, "user_id=999999")
 
 		ExportPlaygroundRecords(c)
 
 		require.Equal(t, http.StatusOK, recorder.Code)
-		require.JSONEq(t, `[]`, recorder.Body.String())
+		workbook := openPlaygroundWorkbook(t, recorder.Body.Bytes())
+		rows, err := workbook.GetRows(playgroundExportSheetName)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		require.Equal(t, expectedPlaygroundExportHeaders, rows[0])
+	})
+
+	t.Run("explicit JSON format remains compatible", func(t *testing.T) {
+		c, recorder := playgroundExportTestContext(t, 1, "user_id=211&format=json")
+
+		ExportPlaygroundRecords(c)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
+		var exported []model.PlaygroundRecord
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &exported))
+		require.Equal(t, []string{"record-a", "record-clear"}, exportedPlaygroundRecordIDs(exported))
+	})
+
+	t.Run("rejects unsupported format", func(t *testing.T) {
+		c, recorder := playgroundExportTestContext(t, 1, "format=csv")
+
+		ExportPlaygroundRecords(c)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Contains(t, recorder.Body.String(), "success")
+		require.NotContains(t, recorder.Header().Get("Content-Disposition"), "attachment")
 	})
 
 	for _, query := range []string{"user_id=not-a-number", "user_id=", "user_id=%20", "user_id=0", "user_id=-1"} {
@@ -431,6 +472,110 @@ func TestExportPlaygroundRecords(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, recorder.Code)
 			require.Contains(t, recorder.Body.String(), "success")
 			require.NotContains(t, recorder.Header().Get("Content-Disposition"), "attachment")
+		})
+	}
+}
+
+func openPlaygroundWorkbook(t *testing.T, data []byte) *excelize.File {
+	t.Helper()
+	require.True(t, bytes.HasPrefix(data, []byte("PK")), "XLSX should be a ZIP archive")
+	workbook, err := excelize.OpenReader(bytes.NewReader(data))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = workbook.Close() })
+	return workbook
+}
+
+var expectedPlaygroundExportHeaders = []string{
+	"id",
+	"user_id",
+	"record_id",
+	"record_type",
+	"conversation_id",
+	"conversation_name",
+	"user_message",
+	"request_messages",
+	"assistant_message",
+	"reasoning_content",
+	"input_text",
+	"output_text",
+	"model_name",
+	"group_name",
+	"parameters",
+	"status",
+	"error_code",
+	"error_message",
+	"relay_request_id",
+	"prompt_tokens",
+	"completion_tokens",
+	"total_tokens",
+	"latency_ms",
+	"messages_snapshot",
+	"is_latest",
+	"is_current",
+	"client_completed_at",
+	"created_at",
+	"updated_at",
+	"client_completed_at_utc",
+	"created_at_utc",
+	"updated_at_utc",
+}
+
+func TestBuildPlaygroundRecordsWorkbookPreservesLongText(t *testing.T) {
+	original := strings.Repeat("长", playgroundExcelCellLimit+11)
+	data, err := buildPlaygroundRecordsWorkbook([]model.PlaygroundRecord{{
+		UserID:      213,
+		RecordID:    "record-long",
+		RecordType:  model.PlaygroundRecordTypeTurn,
+		UserMessage: model.PlaygroundLargeText(original),
+	}})
+	require.NoError(t, err)
+
+	workbook := openPlaygroundWorkbook(t, data)
+	mainRows, err := workbook.GetRows(playgroundExportSheetName)
+	require.NoError(t, err)
+	require.Contains(t, mainRows[1][6], playgroundExportTextSheetName)
+
+	textRows, err := workbook.GetRows(playgroundExportTextSheetName)
+	require.NoError(t, err)
+	require.Greater(t, len(textRows), 1)
+	var rebuilt strings.Builder
+	for _, row := range textRows[1:] {
+		require.Equal(t, "record-long", row[1])
+		require.Equal(t, "user_message", row[2])
+		rebuilt.WriteString(row[5])
+	}
+	require.Equal(t, original, rebuilt.String())
+
+	emojiParts := splitPlaygroundExportText(strings.Repeat("😀", playgroundExcelCellLimit/2+1), playgroundExcelCellLimit)
+	require.Len(t, emojiParts, 2)
+	for _, part := range emojiParts {
+		require.LessOrEqual(t, playgroundExportUTF16Length(part), playgroundExcelCellLimit)
+	}
+}
+
+func TestParsePlaygroundExportFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		present bool
+		want    string
+		wantErr bool
+	}{
+		{name: "missing defaults to xlsx", want: "xlsx"},
+		{name: "explicit xlsx", raw: "XLSX", present: true, want: "xlsx"},
+		{name: "explicit json", raw: " json ", present: true, want: "json"},
+		{name: "blank rejected", raw: " ", present: true, wantErr: true},
+		{name: "unknown rejected", raw: "csv", present: true, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parsePlaygroundExportFormat(test.raw, test.present)
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.want, got)
 		})
 	}
 }
