@@ -140,21 +140,9 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 		return nil, fmt.Errorf("translation provider returned no choices")
 	}
 
-	translatedJSON := extractAnnouncementTranslationJSON(envelope.Choices[0].Message.Content)
-	var translations map[string]AnnouncementTranslation
-	if err := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &translations); err != nil {
-		var encodedJSON string
-		if stringErr := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &encodedJSON); stringErr != nil || common.Unmarshal([]byte(encodedJSON), &translations) != nil {
-			return nil, fmt.Errorf("translation provider returned invalid JSON")
-		}
-	}
-	if nested, ok := translations["translations"]; ok && nested.Content == "" {
-		var envelope struct {
-			Translations map[string]AnnouncementTranslation `json:"translations"`
-		}
-		if err := common.Unmarshal([]byte(strings.TrimSpace(translatedJSON)), &envelope); err == nil && len(envelope.Translations) > 0 {
-			translations = envelope.Translations
-		}
+	translations, err := parseAnnouncementTranslationResponse(envelope.Choices[0].Message.Content)
+	if err != nil {
+		return nil, fmt.Errorf("translation provider returned invalid JSON")
 	}
 	for _, locale := range announcementTranslationLocales {
 		translation, ok := translations[locale]
@@ -168,17 +156,71 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 	return translations, nil
 }
 
-func extractAnnouncementTranslationJSON(raw string) string {
+func parseAnnouncementTranslationResponse(raw string) (map[string]AnnouncementTranslation, error) {
 	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "```json") {
-		raw = strings.TrimSpace(strings.TrimPrefix(raw, "```json"))
+	for _, candidate := range []string{raw, trimAnnouncementTranslationFence(raw)} {
+		if translations, ok := decodeAnnouncementTranslations(candidate, 0); ok {
+			return translations, nil
+		}
 	}
-	if strings.HasPrefix(raw, "```") {
-		raw = strings.TrimSpace(strings.TrimPrefix(raw, "```"))
+
+	for _, candidate := range []string{raw, trimAnnouncementTranslationFence(raw)} {
+		extracted := extractAnnouncementTranslationJSON(candidate)
+		if extracted == candidate {
+			continue
+		}
+		if translations, ok := decodeAnnouncementTranslations(extracted, 0); ok {
+			return translations, nil
+		}
 	}
-	if strings.HasSuffix(raw, "```") {
-		raw = strings.TrimSpace(strings.TrimSuffix(raw, "```"))
+	return nil, fmt.Errorf("invalid announcement translation JSON")
+}
+
+func decodeAnnouncementTranslations(raw string, depth int) (map[string]AnnouncementTranslation, bool) {
+	if depth > 1 {
+		return nil, false
 	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, false
+	}
+
+	var wrapped struct {
+		Translations map[string]AnnouncementTranslation `json:"translations"`
+	}
+	if err := common.Unmarshal([]byte(raw), &wrapped); err == nil && len(wrapped.Translations) > 0 {
+		return wrapped.Translations, true
+	}
+
+	var translations map[string]AnnouncementTranslation
+	if err := common.Unmarshal([]byte(raw), &translations); err == nil && len(translations) > 0 {
+		return translations, true
+	}
+
+	var encoded string
+	if err := common.Unmarshal([]byte(raw), &encoded); err == nil {
+		return decodeAnnouncementTranslations(encoded, depth+1)
+	}
+	return nil, false
+}
+
+func trimAnnouncementTranslationFence(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !strings.HasPrefix(raw, "```") || !strings.HasSuffix(raw, "```") {
+		return raw
+	}
+	raw = strings.TrimSpace(strings.TrimPrefix(raw, "```"))
+	if newline := strings.IndexByte(raw, '\n'); newline >= 0 {
+		language := strings.TrimSpace(raw[:newline])
+		if language == "json" || language == "JSON" {
+			raw = strings.TrimSpace(raw[newline+1:])
+		}
+	}
+	return strings.TrimSpace(strings.TrimSuffix(raw, "```"))
+}
+
+func extractAnnouncementTranslationJSON(raw string) string {
+	raw = trimAnnouncementTranslationFence(raw)
 	start := strings.Index(raw, "{")
 	end := strings.LastIndex(raw, "}")
 	if start >= 0 && end >= start {
