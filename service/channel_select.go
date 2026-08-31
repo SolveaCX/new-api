@@ -199,6 +199,9 @@ func buildEndpointChannelFilter(c *gin.Context, modelName string) model.ChannelF
 }
 
 func ChannelSupportsRequestEndpoint(c *gin.Context, channel *model.Channel, modelName string) bool {
+	if !ChannelSupportsServerWebTools(c, channel) {
+		return false
+	}
 	if !blockRunSolanaSupportsRequest(c, channel) {
 		return false
 	}
@@ -223,6 +226,17 @@ func blockRunSolanaSupportsRequest(c *gin.Context, channel *model.Channel) bool 
 	default:
 		return false
 	}
+}
+
+// normalizePlaygroundRelayPath maps Playground aliases to canonical relay paths.
+func normalizePlaygroundRelayPath(path string) string {
+	if path == "/pg" {
+		return "/v1"
+	}
+	if strings.HasPrefix(path, "/pg/") {
+		return "/v1/" + strings.TrimPrefix(path, "/pg/")
+	}
+	return path
 }
 
 func requestedEndpointType(c *gin.Context) constant.EndpointType {

@@ -46,8 +46,16 @@ func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
 
 func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {
 	claudeTools := make([]any, 0, len(textRequest.Tools))
+	hasNativeWebSearch := false
 
 	for _, tool := range textRequest.Tools {
+		if nativeTool := tool.ClaudeWebTool(); len(nativeTool) > 0 {
+			claudeTools = append(claudeTools, nativeTool)
+			if strings.HasPrefix(tool.Type, "web_search_") {
+				hasNativeWebSearch = true
+			}
+			continue
+		}
 		if params, ok := tool.Function.Parameters.(map[string]any); ok {
 			claudeTool := dto.Tool{
 				Name:        tool.Function.Name,
@@ -71,7 +79,8 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 	// Web search tool
 	// https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool
-	if textRequest.WebSearchOptions != nil {
+	// An explicit native search declaration takes precedence over the shorthand.
+	if textRequest.WebSearchOptions != nil && !hasNativeWebSearch {
 		webSearchTool := dto.ClaudeWebSearchTool{
 			Type: "web_search_20250305",
 			Name: "web_search",
