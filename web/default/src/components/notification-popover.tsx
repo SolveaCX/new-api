@@ -17,9 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-import { Bell, Megaphone } from 'lucide-react'
+import { Bell, ExternalLink, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -41,23 +40,22 @@ import {
 } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface AnnouncementItem {
+  key?: string
+  source?: 'notice' | 'announcement'
   type?: string
   content?: string
   extra?: string
   publishDate?: string | Date
+  link?: string
 }
 
 interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
-  notice: string
-  announcements: AnnouncementItem[]
+  timeline: AnnouncementItem[]
   loading: boolean
   className?: string
 }
@@ -116,20 +114,6 @@ function getRelativeTime(publishDate: string | Date, t: TFunction): string {
 }
 
 /**
- * Announcement status dot indicator
- */
-function AnnouncementDot({ type }: { type?: string }) {
-  return (
-    <span
-      className={cn(
-        'mt-1.5 inline-block size-2 shrink-0 rounded-full',
-        getAnnouncementColorClass(type)
-      )}
-    />
-  )
-}
-
-/**
  * Empty state component
  */
 function EmptyState({
@@ -154,50 +138,12 @@ function EmptyState({
   )
 }
 
-/**
- * Notice tab content
- */
-function NoticeContent({
-  notice,
-  loading,
-  t,
-}: {
-  notice: string
-  loading: boolean
-  t: TFunction
-}) {
-  if (loading) {
-    return (
-      <EmptyState
-        icon={<Bell />}
-        title={t('Loading...')}
-        description={t('Latest platform updates and notices')}
-      />
-    )
-  }
-
-  if (!notice) {
-    return (
-      <EmptyState icon={<Bell />} title={t('No announcements at this time')} />
-    )
-  }
-
-  return (
-    <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
-      <Markdown>{notice}</Markdown>
-    </ScrollArea>
-  )
-}
-
-/**
- * Announcements tab content
- */
 function AnnouncementsContent({
-  announcements,
+  timeline,
   loading,
   t,
 }: {
-  announcements: AnnouncementItem[]
+  timeline: AnnouncementItem[]
   loading: boolean
   t: TFunction
 }) {
@@ -211,16 +157,14 @@ function AnnouncementsContent({
     )
   }
 
-  if (announcements.length === 0) {
-    return (
-      <EmptyState icon={<Megaphone />} title={t('No system announcements')} />
-    )
+  if (timeline.length === 0) {
+    return <EmptyState icon={<Bell />} title={t('No announcements at this time')} />
   }
 
   return (
     <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
       <div className='flex flex-col'>
-        {announcements.map((item, idx) => {
+        {timeline.map((item, idx) => {
           const publishDate = item.publishDate
             ? new Date(item.publishDate)
             : null
@@ -231,32 +175,44 @@ function AnnouncementsContent({
             ? formatDateTimeObject(publishDate)
             : ''
 
-          return (
-            <div key={idx}>
-              <div className='py-3'>
-                <div className='flex items-start gap-3'>
-                  <AnnouncementDot type={item.type} />
-                  <div className='flex min-w-0 flex-1 flex-col gap-2'>
-                    <div className='text-sm'>
-                      <Markdown>{item.content || ''}</Markdown>
-                    </div>
-
-                    {item.extra ? (
-                      <div className='text-muted-foreground text-xs'>
-                        <Markdown>{item.extra}</Markdown>
-                      </div>
-                    ) : null}
-
-                    {absoluteTime ? (
-                      <div className='text-muted-foreground text-xs'>
-                        {relativeTime ? `${relativeTime} • ` : null}
-                        {absoluteTime}
-                      </div>
-                    ) : null}
+          const content = (
+            <div className='py-3'>
+              <div className='flex items-start gap-3'>
+                <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                  <div className='text-sm'>
+                    <Markdown>{item.content || ''}</Markdown>
                   </div>
+
+                  {item.extra ? (
+                    <div className='text-muted-foreground text-xs'>
+                      <Markdown>{item.extra}</Markdown>
+                    </div>
+                  ) : null}
+
+                  {absoluteTime ? (
+                    <div className='text-muted-foreground text-xs'>
+                      {relativeTime ? `${relativeTime} • ` : null}
+                      {absoluteTime}
+                    </div>
+                  ) : null}
                 </div>
+                {item.link ? (
+                  <ExternalLink className='text-muted-foreground mt-1 size-3.5 shrink-0' />
+                ) : null}
               </div>
-              {idx < announcements.length - 1 ? <Separator /> : null}
+            </div>
+          )
+
+          return (
+            <div key={item.key || idx}>
+              {item.link ? (
+                <a href={item.link} target='_blank' rel='noopener noreferrer' className='hover:bg-muted/40 block transition-colors'>
+                  {content}
+                </a>
+              ) : (
+                content
+              )}
+              {idx < timeline.length - 1 ? <Separator /> : null}
             </div>
           )
         })}
@@ -266,16 +222,13 @@ function AnnouncementsContent({
 }
 
 /**
- * Notification popover with Notice and Announcements tabs
+ * Notification popover with a unified notification timeline
  */
 export function NotificationPopover({
   open,
   onOpenChange,
   unreadCount,
-  activeTab,
-  onTabChange,
-  notice,
-  announcements,
+  timeline,
   loading,
   className,
 }: NotificationPopoverProps) {
@@ -315,33 +268,7 @@ export function NotificationPopover({
           </p>
         </PopoverHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={onTabChange as (value: string) => void}
-        >
-          <TabsList className='grid w-full grid-cols-2'>
-            <TabsTrigger value='notice' className='gap-1.5'>
-              <Bell className='size-3.5' />
-              {t('Notice')}
-            </TabsTrigger>
-            <TabsTrigger value='announcements' className='gap-1.5'>
-              <Megaphone className='size-3.5' />
-              {t('Timeline')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='notice' className='mt-2'>
-            <NoticeContent notice={notice} loading={loading} t={t} />
-          </TabsContent>
-
-          <TabsContent value='announcements' className='mt-2'>
-            <AnnouncementsContent
-              announcements={announcements}
-              loading={loading}
-              t={t}
-            />
-          </TabsContent>
-        </Tabs>
+        <AnnouncementsContent timeline={timeline} loading={loading} t={t} />
 
         <div className='flex justify-end'>
           <Button size='sm' onClick={() => onOpenChange(false)}>
