@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { Bell, ExternalLink, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -115,20 +114,6 @@ function getRelativeTime(publishDate: string | Date, t: TFunction): string {
 }
 
 /**
- * Announcement status dot indicator
- */
-function AnnouncementDot({ type }: { type?: string }) {
-  return (
-    <span
-      className={cn(
-        'mt-1.5 inline-block size-2 shrink-0 rounded-full',
-        getAnnouncementColorClass(type)
-      )}
-    />
-  )
-}
-
-/**
  * Empty state component
  */
 function EmptyState({
@@ -193,7 +178,6 @@ function AnnouncementsContent({
           const content = (
             <div className='py-3'>
               <div className='flex items-start gap-3'>
-                <AnnouncementDot type={item.type} />
                 <div className='flex min-w-0 flex-1 flex-col gap-2'>
                   <div className='text-sm'>
                     <Markdown>{item.content || ''}</Markdown>
