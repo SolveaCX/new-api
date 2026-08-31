@@ -134,7 +134,11 @@ export function PlaygroundParameters(props: PlaygroundParametersProps) {
           <PopoverTitle>{t('Generation parameters')}</PopoverTitle>
           <PopoverDescription>
             {props.model} ·{' '}
-            {props.profile.kind === 'image' ? t('Image') : t('Video')}
+            {props.profile.kind === 'image'
+              ? t('Image')
+              : props.profile.kind === 'audio'
+                ? t('Audio')
+                : t('Video')}
           </PopoverDescription>
         </PopoverHeader>
         <Button

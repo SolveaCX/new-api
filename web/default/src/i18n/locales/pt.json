@@ -531,6 +531,8 @@
     "Audio output price": "Preço de saída de áudio",
     "Audio output price requires an audio input price.": "O preço de saída de áudio requer um preço de entrada de áudio.",
     "Audio playback failed": "Falha na reprodução de áudio",
+    "No audio was generated": "Nenhum áudio foi gerado",
+    "Text-to-speech models do not support attachments in Playground": "Os modelos de conversão de texto em fala não oferecem suporte a anexos no Playground",
     "Audio Preview": "Pré-visualização de áudio",
     "Audio ratio": "Proporção de áudio",
     "Audio Tokens": "Tokens de áudio",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "Não foi possível carregar a verificação. Tente novamente.",
     "Verification failed. A new challenge has been loaded.": "A verificação falhou. Um novo desafio foi carregado.",
     "Refresh challenge": "Atualizar desafio",
-    "Complete the graphical verification before creating your account.": "Conclua a verificação gráfica antes de criar sua conta."
+    "Complete the graphical verification before creating your account.": "Conclua a verificação gráfica antes de criar sua conta.",
+    "Voice": "Voz",
+    "Speed": "Velocidade"
   }
 }

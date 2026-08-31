@@ -531,6 +531,8 @@
     "Audio output price": "Audio output price",
     "Audio output price requires an audio input price.": "Audio output price requires an audio input price.",
     "Audio playback failed": "Audio playback failed",
+    "No audio was generated": "No audio was generated",
+    "Text-to-speech models do not support attachments in Playground": "Text-to-speech models do not support attachments in Playground",
     "Audio Preview": "Audio Preview",
     "Audio ratio": "Audio ratio",
     "Audio Tokens": "Audio Tokens",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "Unable to load verification. Please try again.",
     "Verification failed. A new challenge has been loaded.": "Verification failed. A new challenge has been loaded.",
     "Refresh challenge": "Refresh challenge",
-    "Complete the graphical verification before creating your account.": "Complete the graphical verification before creating your account."
+    "Complete the graphical verification before creating your account.": "Complete the graphical verification before creating your account.",
+    "Voice": "Voice",
+    "Speed": "Speed"
   }
 }

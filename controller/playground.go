@@ -79,6 +79,12 @@ func PlaygroundImage(c *gin.Context) {
 	})
 }
 
+func PlaygroundAudioSpeech(c *gin.Context) {
+	runPlaygroundRelay(c, types.RelayFormatOpenAIAudio, func() {
+		Relay(c, types.RelayFormatOpenAIAudio)
+	})
+}
+
 func PlaygroundVideoSubmit(c *gin.Context) {
 	runPlaygroundRelay(c, types.RelayFormatTask, func() {
 		RelayTask(c)

@@ -531,6 +531,8 @@
     "Audio output price": "Giá đầu ra âm thanh",
     "Audio output price requires an audio input price.": "Giá đầu ra âm thanh cần có giá đầu vào âm thanh.",
     "Audio playback failed": "Phát âm thanh thất bại",
+    "No audio was generated": "Không có âm thanh nào được tạo",
+    "Text-to-speech models do not support attachments in Playground": "Các mô hình chuyển văn bản thành giọng nói không hỗ trợ tệp đính kèm trong Playground",
     "Audio Preview": "Xem trước âm thanh",
     "Audio ratio": "Tỷ lệ âm thanh",
     "Audio Tokens": "Token âm thanh",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "Không thể tải xác minh. Vui lòng thử lại.",
     "Verification failed. A new challenge has been loaded.": "Xác minh thất bại. Một thử thách mới đã được tải.",
     "Refresh challenge": "Làm mới thử thách",
-    "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản."
+    "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản.",
+    "Voice": "Giọng nói",
+    "Speed": "Tốc độ"
   }
 }

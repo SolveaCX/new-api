@@ -338,3 +338,88 @@ describe('useMediaGeneration video task lifecycle', () => {
     await firstGeneration
   })
 })
+
+describe('useMediaGeneration audio lifecycle', () => {
+  test('turns the binary speech response into generated audio media', async () => {
+    const audio = new Blob(['RIFF\x00\x00\x00\x00WAVE'], {
+      type: 'audio/wav',
+    })
+    sendMediaGenerationMock.mockResolvedValue(audio)
+    const createObjectURL = URL.createObjectURL
+    URL.createObjectURL = (() =>
+      'blob:audio-result') as typeof URL.createObjectURL
+
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
+      await harness.hook.generateMedia(
+        'Hello from Playground',
+        'tts-1',
+        'plg',
+        { voice: 'alloy', responseFormat: 'wav', speed: 1 },
+        'target-assistant'
+      )
+
+      expect(harness.messages()[1]).toMatchObject({
+        status: MESSAGE_STATUS.COMPLETE,
+        versions: [
+          {
+            generatedMedia: [{ type: 'audio', url: 'blob:audio-result' }],
+          },
+        ],
+      })
+    } finally {
+      URL.createObjectURL = createObjectURL
+    }
+  })
+
+  test('rejects a non-audio binary response', async () => {
+    sendMediaGenerationMock.mockResolvedValue(
+      new Blob(['not audio'], { type: 'application/json' })
+    )
+    const harness = renderMediaGenerationHook(createMediaMessages())
+
+    await harness.hook.generateMedia(
+      'Hello from Playground',
+      'tts-1',
+      'plg',
+      { voice: 'alloy', responseFormat: 'wav', speed: 1 },
+      'target-assistant'
+    )
+
+    expect(harness.messages()[1].status).toBe(MESSAGE_STATUS.ERROR)
+    expect(harness.messages()[1].versions[0]?.content).toContain(
+      'No audio was generated'
+    )
+  })
+
+  test('releases a generated audio URL only once', async () => {
+    const audio = new Blob(['RIFF'], { type: 'audio/wav' })
+    sendMediaGenerationMock.mockResolvedValue(audio)
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const revoked: string[] = []
+    URL.createObjectURL = (() =>
+      'blob:audio-release') as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
+
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
+      await harness.hook.generateMedia(
+        'Release this audio',
+        'tts-1',
+        'plg',
+        { voice: 'alloy' },
+        'target-assistant'
+      )
+
+      harness.hook.releaseMediaObjectURL('blob:audio-release')
+      harness.hook.releaseMediaObjectURL('blob:audio-release')
+      expect(revoked).toEqual(['blob:audio-release'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL
+      URL.revokeObjectURL = originalRevokeObjectURL
+    }
+  })
+})

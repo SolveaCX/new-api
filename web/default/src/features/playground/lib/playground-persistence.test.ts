@@ -570,6 +570,30 @@ describe('Playground persistence payloads', () => {
     )
   })
 
+  test('does not persist ephemeral generated audio object URLs', () => {
+    const blobUrl =
+      'blob:https://playground.example/550e8400-e29b-41d4-a716-446655440000'
+    const assistant: Message = {
+      ...completeAssistant,
+      versions: [
+        {
+          ...completeAssistant.versions[0],
+          generatedMedia: [{ type: 'audio', url: blobUrl }],
+        },
+      ],
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      activeTurn(),
+      [userMessage, assistant],
+      false,
+      2500
+    )
+
+    expect(payload.assistant_message.versions[0]?.generatedMedia).toEqual([])
+    expect(JSON.stringify(payload)).not.toContain(blobUrl)
+  })
+
   test('binds the terminal payload to the assistant created for that turn', () => {
     const laterAssistant: Message = {
       key: 'assistant-later',

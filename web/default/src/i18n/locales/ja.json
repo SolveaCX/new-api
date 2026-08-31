@@ -531,6 +531,8 @@
     "Audio output price": "音声出力価格",
     "Audio output price requires an audio input price.": "音声出力価格には音声入力価格が必要です。",
     "Audio playback failed": "音声の再生に失敗しました",
+    "No audio was generated": "音声が生成されませんでした",
+    "Text-to-speech models do not support attachments in Playground": "Playground の音声合成モデルは添付ファイルに対応していません",
     "Audio Preview": "音声プレビュー",
     "Audio ratio": "音声倍率",
     "Audio Tokens": "音声トークン",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "確認を読み込めませんでした。もう一度お試しください。",
     "Verification failed. A new challenge has been loaded.": "確認に失敗しました。新しい問題を読み込みました。",
     "Refresh challenge": "問題を更新",
-    "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。"
+    "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。",
+    "Voice": "音声",
+    "Speed": "速度"
   }
 }

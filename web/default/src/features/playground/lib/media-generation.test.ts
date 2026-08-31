@@ -30,6 +30,31 @@ import { markTrustedAttachmentURL } from './message-utils'
 import { isSupportedPlaygroundModelName } from './playground-model-filter'
 
 describe('Playground media model profiles', () => {
+  test('classifies implemented audio families as audio', () => {
+    for (const model of [
+      'gemini-2.5-flash-preview-tts',
+      'gemini-2.5-flash-tts',
+      'gemini-2.5-pro-preview-tts',
+      'gemini-2.5-pro-tts',
+      'gemini-3.1-flash-tts-preview',
+      'tts-1',
+      'gpt-4o-mini-tts',
+      'speech-2.5-hd-preview',
+    ]) {
+      expect(resolvePlaygroundModelKind(model)).toBe('audio')
+      expect(resolveMediaGenerationProfile(model)?.kind).toBe('audio')
+    }
+    expect(resolvePlaygroundModelKind('eleven_multilingual_v2')).toBe(
+      'unsupported'
+    )
+    expect(resolvePlaygroundModelKind('sonilo-video-to-music')).toBe(
+      'unsupported'
+    )
+    for (const model of ['qwen-tts', 'fish-speech-1', 'seed-tts-custom']) {
+      expect(resolvePlaygroundModelKind(model)).toBe('unsupported')
+    }
+  })
+
   test('classifies only implemented media families as image or video', () => {
     expect(resolvePlaygroundModelKind('gpt-image-2')).toBe('image')
     expect(resolvePlaygroundModelKind('gemini-3-pro-image-preview')).toBe(
@@ -60,7 +85,51 @@ describe('Playground media model profiles', () => {
     expect(resolvePlaygroundModelKind('grok-imagine-video-1.5')).toBe('video')
     expect(resolvePlaygroundModelKind('minimax-h3')).toBe('unsupported')
     expect(resolvePlaygroundModelKind('gpt-4o')).toBe('chat')
-    expect(resolvePlaygroundModelKind('tts-1')).toBe('unsupported')
+    expect(resolvePlaygroundModelKind('tts-1')).toBe('audio')
+  })
+
+  test('builds an OpenAI-compatible speech request', () => {
+    const request = buildMediaGenerationRequest(
+      '你好，欢迎使用 Playground',
+      'gemini-2.5-flash-preview-tts',
+      'plg',
+      { voice: 'Kore', responseFormat: 'wav', speed: 1 }
+    )
+
+    expect(request).toEqual({
+      kind: 'audio',
+      endpoint: '/pg/audio/speech',
+      payload: {
+        model: 'gemini-2.5-flash-preview-tts',
+        group: 'plg',
+        input: '你好，欢迎使用 Playground',
+        voice: 'Kore',
+      },
+    })
+  })
+
+  test('does not expose unsupported Gemini TTS output controls', () => {
+    const profile = resolveMediaGenerationProfile(
+      'gemini-2.5-flash-preview-tts'
+    )
+    expect(profile?.fields.map((field) => field.key)).toEqual(['voice'])
+    expect(profile?.defaults).toEqual({ voice: 'Kore' })
+    const voiceField = profile?.fields[0]
+    expect(voiceField?.control).toBe('select')
+    const voiceOptions =
+      voiceField?.control === 'select' ? voiceField.options : []
+    const voiceValues = voiceOptions.map((option) => option.value)
+    expect(voiceValues).toEqual(
+      expect.arrayContaining(['Kore', 'Zephyr', 'Achernar', 'Sulafat'])
+    )
+    expect(voiceValues).toHaveLength(30)
+
+    const genericProfile = resolveMediaGenerationProfile('tts-1')
+    expect(genericProfile?.fields.map((field) => field.key)).toEqual([
+      'voice',
+      'responseFormat',
+      'speed',
+    ])
   })
 
   test('keeps supported media models visible without exposing other task models', () => {
@@ -359,12 +428,12 @@ describe('Playground media model profiles', () => {
     const profile = resolveMediaGenerationProfile('doubao-seedance-2-5-260628')
 
     expect(profile?.family).toBe('seedance-2.5')
-      expect(profile?.defaults).toEqual({
-        resolution: '720p',
-        duration: 5,
-        aspectRatio: 'adaptive',
-        generateAudio: false,
-      })
+    expect(profile?.defaults).toEqual({
+      resolution: '720p',
+      duration: 5,
+      aspectRatio: 'adaptive',
+      generateAudio: false,
+    })
     expect(
       profile?.fields
         .find((field) => field.key === 'resolution')

@@ -172,6 +172,31 @@ describe('Playground user-scoped storage', () => {
     )
   })
 
+  test('does not persist generated audio blob URLs', () => {
+    const blobUrl = 'blob:http://localhost/audio-result'
+    const messages: Message[] = [
+      {
+        key: 'audio-message',
+        from: 'assistant',
+        status: 'complete',
+        versions: [
+          {
+            id: 'audio-version',
+            content: 'Audio',
+            generatedMedia: [{ type: 'audio', url: blobUrl }],
+          },
+        ],
+      },
+    ]
+
+    saveMessages(10, messages)
+
+    const persisted = JSON.parse(
+      localStorage.getItem(`${STORAGE_KEYS.MESSAGES}:v2:10`) ?? 'null'
+    ) as Message[]
+    expect(persisted[0]?.versions[0]?.generatedMedia).toEqual([])
+  })
+
   test('isolates messages and config by user', () => {
     saveMessages(10, [aliceMessage])
     saveMessages(20, [bobMessage])

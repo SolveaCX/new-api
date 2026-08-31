@@ -17,14 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ModelPromotion } from '@/features/available-models/lib/model-promotions'
+
 // Message types
 export type MessageRole = 'user' | 'assistant' | 'system'
 
 export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export interface GeneratedMedia {
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
   url: string
+  mimeType?: string
 }
 
 export interface MessageVersion {

@@ -531,6 +531,8 @@
     "Audio output price": "Цена аудиовыхода",
     "Audio output price requires an audio input price.": "Для цены аудиовыхода нужна цена аудиовхода.",
     "Audio playback failed": "Ошибка воспроизведения аудио",
+    "No audio was generated": "Аудио не было создано",
+    "Text-to-speech models do not support attachments in Playground": "Модели преобразования текста в речь не поддерживают вложения в Playground",
     "Audio Preview": "Предпросмотр аудио",
     "Audio ratio": "Коэффициент аудио",
     "Audio Tokens": "Аудио токены",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "Не удалось загрузить проверку. Повторите попытку.",
     "Verification failed. A new challenge has been loaded.": "Проверка не пройдена. Загружено новое задание.",
     "Refresh challenge": "Обновить задание",
-    "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта."
+    "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта.",
+    "Voice": "Голос",
+    "Speed": "Скорость"
   }
 }

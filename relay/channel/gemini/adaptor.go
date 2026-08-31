@@ -52,11 +52,6 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	return a.ConvertOpenAIRequest(c, info, oaiReq.(*dto.GeneralOpenAIRequest))
 }
 
-func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
-	//TODO implement me
-	return nil, errors.New("not implemented")
-}
-
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
 	if !strings.HasPrefix(info.UpstreamModelName, "imagen") {
 		return nil, errors.New("not supported model for image generation, only imagen models are supported")
@@ -257,6 +252,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		} else {
 			return GeminiTextGenerationHandler(c, info, resp)
 		}
+	}
+
+	if info.RelayMode == constant.RelayModeAudioSpeech &&
+		(isGeminiTTSModel(info.UpstreamModelName) || isGeminiTTSModel(info.OriginModelName)) {
+		return GeminiTTSHandler(c, info, resp)
 	}
 
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {

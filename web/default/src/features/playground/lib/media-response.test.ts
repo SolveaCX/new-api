@@ -55,6 +55,18 @@ describe('sanitizeGeneratedMediaUrl', () => {
     ).toBeUndefined()
     expect(sanitizeGeneratedMediaUrl('https://')).toBeUndefined()
   })
+
+  test('accepts safe blob URLs created for generated audio', () => {
+    const url =
+      'blob:https://playground.example/550e8400-e29b-41d4-a716-446655440000'
+    expect(sanitizeGeneratedMediaUrl(url)).toBe(url)
+    expect(
+      sanitizeGeneratedMediaUrl('blob:javascript:alert(1)')
+    ).toBeUndefined()
+    expect(
+      sanitizeGeneratedMediaUrl('blob:https://user:pass@playground.example/id')
+    ).toBeUndefined()
+  })
 })
 
 describe('extractGeneratedImages', () => {

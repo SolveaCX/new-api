@@ -47,11 +47,34 @@ const safeDataImageUrlPattern =
 const safeHttpUrlPattern = /^https?:\/\/[^\s\\]+$/i
 const safeRelativeUrlPattern = /^\/(?!\/)[^\s\\]*$/
 
+function isSafeBlobUrl(value: string): boolean {
+  if (!/^blob:/i.test(value)) return false
+  const source = value.slice(5)
+  if (/^nodedata:[^\s\\]+$/i.test(source)) return true
+  if (!/^https?:\/\//i.test(source) || /[\s\\]/.test(source)) return false
+
+  try {
+    const parsed = new URL(source)
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      !!parsed.hostname &&
+      !parsed.username &&
+      !parsed.password
+    )
+  } catch {
+    return false
+  }
+}
+
 export function sanitizeGeneratedMediaUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const url = value.trim()
   if (!url) return undefined
-  if (safeRelativeUrlPattern.test(url) || safeDataImageUrlPattern.test(url)) {
+  if (
+    safeRelativeUrlPattern.test(url) ||
+    safeDataImageUrlPattern.test(url) ||
+    isSafeBlobUrl(url)
+  ) {
     return url
   }
   if (!safeHttpUrlPattern.test(url)) return undefined

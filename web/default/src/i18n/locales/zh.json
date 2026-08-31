@@ -531,6 +531,8 @@
     "Audio output price": "音频输出价格",
     "Audio output price requires an audio input price.": "音频输出价格需要先填写音频输入价格。",
     "Audio playback failed": "音频无法播放",
+    "No audio was generated": "未生成音频",
+    "Text-to-speech models do not support attachments in Playground": "Playground 中的文本转语音模型不支持附件",
     "Audio Preview": "音乐预览",
     "Audio ratio": "音频倍率",
     "Audio Tokens": "语音 Token",
@@ -6881,6 +6883,8 @@
     "Unable to load verification. Please try again.": "无法加载图形验证，请重试。",
     "Verification failed. A new challenge has been loaded.": "验证失败，已加载新的图形验证。",
     "Refresh challenge": "刷新图形验证",
-    "Complete the graphical verification before creating your account.": "创建账户前，请先完成图形验证。"
+    "Complete the graphical verification before creating your account.": "创建账户前，请先完成图形验证。",
+    "Voice": "音色",
+    "Speed": "语速"
   }
 }

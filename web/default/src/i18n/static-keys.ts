@@ -492,6 +492,9 @@ export const STATIC_I18N_KEYS = [
   'No backup',
   'Generate New Codes',
   'Audio Preview',
+  'Voice',
+  'Speed',
+  'Text-to-speech models do not support attachments in Playground',
 
   // Status-code risk dialog
   'High-risk status code retry risk check 1',
