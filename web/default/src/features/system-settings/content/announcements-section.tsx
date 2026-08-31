@@ -24,6 +24,7 @@ import { Plus, Edit, Trash2, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
+import { api } from '@/lib/api'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,6 +78,12 @@ type Announcement = {
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
   link?: string
+  translations?: Record<string, AnnouncementTranslation>
+}
+
+type AnnouncementTranslation = {
+  content: string
+  extra?: string
 }
 
 type AnnouncementsSectionProps = {
@@ -153,6 +160,10 @@ export function AnnouncementsSection({
   const [editingAnnouncement, setEditingAnnouncement] =
     useState<Announcement | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single')
+  const [isTranslating, setIsTranslating] = useState(false)
+  let submitLabel = t('Add')
+  if (editingAnnouncement) submitLabel = t('Update')
+  if (isTranslating) submitLabel = t('Generating translations')
 
   const form = useForm<AnnouncementFormValues>({
     resolver: zodResolver(announcementSchema),
@@ -260,17 +271,44 @@ export function AnnouncementsSection({
     setEditingAnnouncement(null)
   }
 
-  const handleSubmitForm = (values: AnnouncementFormValues) => {
+  const handleSubmitForm = async (values: AnnouncementFormValues) => {
+    setIsTranslating(true)
+    let translations: Record<string, AnnouncementTranslation> | undefined
+    try {
+      const response = await api.post<{
+        success: boolean
+        message?: string
+        data?: Record<string, AnnouncementTranslation>
+      }>('/api/option/translate-announcement', {
+        content: values.content,
+        extra: values.extra,
+      })
+      if (!response.data.success || !response.data.data) {
+        throw new Error(response.data.message || t('Translation generation failed'))
+      }
+      translations = response.data.data
+    } catch {
+      toast.error(t('Translation generation failed'))
+    } finally {
+      setIsTranslating(false)
+    }
+
+    const announcementValues = { ...values, translations }
     if (editingAnnouncement) {
       setAnnouncements((prev) =>
         prev.map((item) =>
-          item.id === editingAnnouncement.id ? { ...item, ...values } : item
+          item.id === editingAnnouncement.id
+            ? { ...item, ...announcementValues }
+            : item
         )
       )
       toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
     } else {
       const newId = Math.max(...announcements.map((item) => item.id), 0) + 1
-      setAnnouncements((prev) => [...prev, { id: newId, ...values }])
+      setAnnouncements((prev) => [
+        ...prev,
+        { id: newId, ...announcementValues },
+      ])
       toast.success(t('Announcement added. Click "Save Settings" to apply.'))
     }
     setHasChanges(true)
@@ -491,8 +529,12 @@ export function AnnouncementsSection({
             >
               {t('Cancel')}
             </Button>
-            <Button type='submit' form={ANNOUNCEMENT_FORM_ID}>
-              {editingAnnouncement ? t('Update') : t('Add')}
+            <Button
+              type='submit'
+              form={ANNOUNCEMENT_FORM_ID}
+              disabled={isTranslating}
+            >
+              {submitLabel}
             </Button>
           </>
         }

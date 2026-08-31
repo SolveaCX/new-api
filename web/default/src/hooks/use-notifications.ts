@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { useNotificationStore } from '@/stores/notification-store'
 import { getNotice } from '@/lib/api'
 import { useStatus } from '@/hooks/use-status'
@@ -67,12 +68,37 @@ export interface NotificationTimelineItem {
   link?: string
 }
 
+type AnnouncementTranslation = {
+  content?: unknown
+  extra?: unknown
+}
+
+function getLocalizedAnnouncementText(
+  item: Record<string, unknown>,
+  field: 'content' | 'extra',
+  language: string
+): string | undefined {
+  const translations = item.translations as
+    | Record<string, AnnouncementTranslation>
+    | undefined
+  const languageCandidates = [language, language.split('-')[0], 'en', 'zh']
+
+  for (const candidate of languageCandidates) {
+    const value = translations?.[candidate]?.[field]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+
+  const source = item[field]
+  return typeof source === 'string' ? source : undefined
+}
+
 /**
  * Hook to manage notifications (Notice + Announcements)
  * Provides unread counts and read status management
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const { i18n } = useTranslation()
 
   // Fetch Notice from API
   const {
@@ -107,12 +133,13 @@ export function useNotifications() {
     : ''
 
   const timeline = useMemo<NotificationTimelineItem[]>(() => {
+    const language = i18n.resolvedLanguage || i18n.language || 'en'
     const items: NotificationTimelineItem[] = announcements.map((item) => ({
       key: getAnnouncementKey(item),
       source: 'announcement' as const,
       type: typeof item.type === 'string' ? item.type : undefined,
-      content: typeof item.content === 'string' ? item.content : undefined,
-      extra: typeof item.extra === 'string' ? item.extra : undefined,
+      content: getLocalizedAnnouncementText(item, 'content', language),
+      extra: getLocalizedAnnouncementText(item, 'extra', language),
       publishDate:
         typeof item.publishDate === 'string' || item.publishDate instanceof Date
           ? item.publishDate
@@ -137,7 +164,7 @@ export function useNotifications() {
         new Date(String(a.publishDate || 0)).getTime()
       )
     })
-  }, [announcements, noticeContent])
+  }, [announcements, i18n.language, i18n.resolvedLanguage, noticeContent])
 
   // Calculate unread counts
   const unreadCounts = useMemo(() => {
