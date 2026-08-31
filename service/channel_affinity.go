@@ -548,6 +548,11 @@ func ApplyChannelAffinityOverrideTemplate(c *gin.Context, paramOverride map[stri
 }
 
 func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup string) (int, bool) {
+	// A server web-tool subrequest must not inherit chat affinity overrides or
+	// SkipRetry, nor replace that chat's affinity when the fallback succeeds.
+	if RequestRequiresServerWebTools(c) {
+		return 0, false
+	}
 	setting := operation_setting.GetChannelAffinitySetting()
 	if setting == nil || !setting.Enabled {
 		return 0, false
