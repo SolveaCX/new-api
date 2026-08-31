@@ -152,6 +152,363 @@ func TestSubscriptionDiscountUSDToMinor(t *testing.T) {
 	}
 }
 
+// This contract test is intentionally added before the implementation: source
+// provenance must survive both the reservation and terminal ledger rows.
+func TestSubscriptionDiscountReservationPreservesFundingSource(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	const key = "subscription-order:funding-source:reserve"
+	_, err := GrantSubscriptionDiscountTx(DB, SubscriptionDiscountGrantInput{
+		UserID:          111,
+		USDMinor:        1000,
+		EntryType:       SubscriptionDiscountEntryTypeGrantInvitee,
+		SourceType:      "invitee_registration",
+		SourceKey:       "invitee:111",
+		IdempotencyKey:  "invitee:111",
+		PricingSnapshot: `{}`,
+	})
+	require.NoError(t, err)
+	created, err := ReserveSubscriptionDiscountTx(DB, SubscriptionDiscountReservationInput{
+		UserID:             111,
+		USDMinor:           500,
+		TradeNo:            "funding-source-order",
+		PaymentCurrency:    "USD",
+		AppliedAmountMinor: 500,
+		PricingSnapshot:    `{}`,
+		IdempotencyKey:     key,
+		FundingSource:      SubscriptionDiscountFundingSourceInvitee,
+		ExpiresAt:          common.GetTimestamp() + 3600,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	var reserve SubscriptionDiscountEntry
+	require.NoError(t, DB.Where("idempotency_key = ?", key).First(&reserve).Error)
+	require.Equal(t, SubscriptionDiscountFundingSourceInvitee, reserve.FundingSource)
+	_, err = CommitSubscriptionDiscountTx(DB, key)
+	require.NoError(t, err)
+	var terminal SubscriptionDiscountEntry
+	require.NoError(t, DB.Where("terminal_reservation_key = ?", key).First(&terminal).Error)
+	require.Equal(t, SubscriptionDiscountFundingSourceInvitee, terminal.FundingSource)
+}
+
+func TestSubscriptionDiscountReleasePreservesFundingSource(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.True(t, grantSubscriptionDiscountForTest(t, 113, 1000, "release-funding-grant"))
+	const key = "subscription-order:funding-source:release"
+	created, err := ReserveSubscriptionDiscountTx(DB, SubscriptionDiscountReservationInput{
+		UserID:             113,
+		USDMinor:           500,
+		TradeNo:            "funding-source-release-order",
+		PaymentCurrency:    "USD",
+		AppliedAmountMinor: 500,
+		FundingSource:      SubscriptionDiscountFundingSourceInvitee,
+		PricingSnapshot:    `{}`,
+		IdempotencyKey:     key,
+		ExpiresAt:          common.GetTimestamp() + 3600,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	changed, err := ReleaseSubscriptionDiscountTx(DB, key)
+	require.NoError(t, err)
+	require.True(t, changed)
+	var terminal SubscriptionDiscountEntry
+	require.NoError(t, DB.Where("terminal_reservation_key = ?", key).First(&terminal).Error)
+	require.Equal(t, SubscriptionDiscountEntryTypeRelease, terminal.EntryType)
+	require.Equal(t, SubscriptionDiscountFundingSourceInvitee, terminal.FundingSource)
+}
+
+func TestSubscriptionDiscountReservationDoesNotTrustForgedFundingSource(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:         112,
+			USDMinor:       500,
+			EntryType:      SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType:     "invite_subscription_reward",
+			SourceKey:      "forged-source-grant",
+			IdempotencyKey: "forged-source-grant",
+		})
+		return err
+	}))
+	created, err := ReserveSubscriptionDiscountTx(DB, SubscriptionDiscountReservationInput{
+		UserID:             112,
+		USDMinor:           500,
+		TradeNo:            "forged-source-order",
+		PaymentCurrency:    "USD",
+		AppliedAmountMinor: 500,
+		FundingSource:      SubscriptionDiscountFundingSourceInvitee,
+		PricingSnapshot:    `{}`,
+		IdempotencyKey:     "forged-source-reserve",
+		ExpiresAt:          common.GetTimestamp() + 3600,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	var reserve SubscriptionDiscountEntry
+	require.NoError(t, DB.Where("idempotency_key = ?", "forged-source-reserve").First(&reserve).Error)
+	require.Equal(t, SubscriptionDiscountFundingSourceInviter, reserve.FundingSource)
+}
+
+func TestSubscriptionDiscountReservationDoesNotTrustForgedSnapshotFundingSource(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID: 119, USDMinor: 500, EntryType: SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType: "invite_subscription_reward", SourceKey: "forged-snapshot-grant",
+			IdempotencyKey: "forged-snapshot-grant",
+		})
+		return err
+	}))
+	const key = "forged-snapshot-reserve"
+	created, err := ReserveSubscriptionDiscountTx(DB, SubscriptionDiscountReservationInput{
+		UserID:             119,
+		USDMinor:           500,
+		OrderID:            1191,
+		TradeNo:            "forged-snapshot-order",
+		PaymentCurrency:    "USD",
+		AppliedAmountMinor: 500,
+		FundingSource:      SubscriptionDiscountFundingSourceInvitee,
+		PricingSnapshot:    `{"funding_source":"invitee"}`,
+		IdempotencyKey:     key,
+		ExpiresAt:          common.GetTimestamp() + 3600,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	var reserve SubscriptionDiscountEntry
+	require.NoError(t, DB.Where("idempotency_key = ?", key).First(&reserve).Error)
+	require.Equal(t, SubscriptionDiscountFundingSourceInviter, reserve.FundingSource)
+	order := &SubscriptionOrder{
+		Id:                                 1191,
+		UserId:                             119,
+		TradeNo:                            "forged-snapshot-order",
+		DiscountKind:                       "invitation",
+		SubscriptionDiscountUSDMinor:       500,
+		SubscriptionDiscountAmountMinor:    500,
+		InvitationFundingSource:            SubscriptionDiscountFundingSourceInvitee,
+		SubscriptionDiscountReservationKey: key,
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceInviter, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderRejectsConflictingSnapshotMarker(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	order := &SubscriptionOrder{
+		UserId:                       120,
+		TradeNo:                      "conflicting-snapshot-order",
+		DiscountKind:                 "invitation",
+		SubscriptionDiscountUSDMinor: 100,
+		InvitationFundingSource:      SubscriptionDiscountFundingSourceUnknown,
+		DiscountPricingSnapshot:      `{"funding_source":"invitee"}`,
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceUsesDeterministicPriority(t *testing.T) {
+	tests := []struct {
+		name       string
+		invitee    int64
+		inviter    int64
+		request    int64
+		expected   string
+		entryType  string
+		sourceType string
+	}{
+		{name: "zero", request: 0, expected: SubscriptionDiscountFundingSourceNone},
+		{name: "invitee_only", invitee: 500, request: 200, expected: SubscriptionDiscountFundingSourceInvitee},
+		{name: "inviter_only", inviter: 500, request: 200, expected: SubscriptionDiscountFundingSourceInviter, entryType: SubscriptionDiscountEntryTypeGrantInviter, sourceType: "invite_subscription_reward"},
+		{name: "mixed_crosses_invitee", invitee: 100, inviter: 500, request: 200, expected: SubscriptionDiscountFundingSourceMixed, entryType: SubscriptionDiscountEntryTypeGrantInviter, sourceType: "invite_subscription_reward"},
+		{name: "invitee_priority", invitee: 500, inviter: 500, request: 200, expected: SubscriptionDiscountFundingSourceInvitee, entryType: SubscriptionDiscountEntryTypeGrantInviter, sourceType: "invite_subscription_reward"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setupSubscriptionDiscountCreditMemoryDB(t)
+			if tc.invitee > 0 {
+				require.True(t, grantSubscriptionDiscountForTest(t, 114, tc.invitee, "source-priority-invitee"))
+			}
+			if tc.inviter > 0 {
+				require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+					_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+						UserID: 114, USDMinor: tc.inviter, EntryType: tc.entryType,
+						SourceType: tc.sourceType, SourceKey: "source-priority-inviter",
+						IdempotencyKey: "source-priority-inviter",
+					})
+					return err
+				}))
+			}
+			got, err := ResolveSubscriptionDiscountFundingSourceTx(DB, 114, tc.request)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestResolveSubscriptionDiscountFundingSourceRejectsUnknownResidueEvenWithInviteeCredit(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.True(t, grantSubscriptionDiscountForTest(t, 123, 500, "unknown-residue-invitee"))
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		changed, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:          123,
+			USDMinor:        300,
+			EntryType:       SubscriptionDiscountEntryTypeMigration,
+			SourceType:      "manual_unknown_source",
+			SourceKey:       "unknown-residue-lot",
+			IdempotencyKey:  "unknown-residue-lot",
+			PricingSnapshot: `{}`,
+		})
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return ErrSubscriptionDiscountInvalidAccountState
+		}
+		return nil
+	}))
+
+	got, err := ResolveSubscriptionDiscountFundingSourceTx(DB, 123, 500)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+	got, err = ResolveSubscriptionDiscountFundingSourceTx(DB, 123, 600)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderPrefersReservationEvidence(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID: 115, USDMinor: 500, EntryType: SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType: "invite_subscription_reward", SourceKey: "order-evidence-grant",
+			IdempotencyKey: "order-evidence-grant",
+		})
+		return err
+	}))
+	order := &SubscriptionOrder{
+		Id:                              2001,
+		UserId:                          115,
+		TradeNo:                         "order-evidence",
+		DiscountKind:                    "invitation",
+		SubscriptionDiscountUSDMinor:    500,
+		SubscriptionDiscountAmountMinor: 500,
+		InvitationFundingSource:         SubscriptionDiscountFundingSourceInvitee,
+	}
+	const reservationKey = "order-evidence-reservation"
+	created, err := ReserveSubscriptionDiscountTx(DB, SubscriptionDiscountReservationInput{
+		UserID:             115,
+		USDMinor:           500,
+		OrderID:            order.Id,
+		TradeNo:            order.TradeNo,
+		PaymentCurrency:    "USD",
+		AppliedAmountMinor: 500,
+		FundingSource:      SubscriptionDiscountFundingSourceInviter,
+		PricingSnapshot:    `{"funding_source":"inviter"}`,
+		IdempotencyKey:     reservationKey,
+		ExpiresAt:          common.GetTimestamp() + 3600,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	order.SubscriptionDiscountReservationKey = reservationKey
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceInviter, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderKeepsLegacyBalanceDiscountInvitee(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	order := &SubscriptionOrder{
+		UserId:          116,
+		TradeNo:         "legacy-balance-order",
+		Money:           5,
+		DiscountUSD:     5,
+		PaymentMethod:   PaymentMethodBalance,
+		PaymentProvider: PaymentProviderBalance,
+		DiscountKind:    "none",
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceInvitee, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderTreatsInvalidMarkerAsUnknown(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	order := &SubscriptionOrder{
+		UserId:                       117,
+		TradeNo:                      "invalid-source-order",
+		DiscountKind:                 "invitation",
+		SubscriptionDiscountUSDMinor: 100,
+		InvitationFundingSource:      "client-controlled",
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderDoesNotTrustInviteeMarkerAlone(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	order := &SubscriptionOrder{
+		UserId:                       121,
+		TradeNo:                      "marker-only-order",
+		DiscountKind:                 "invitation",
+		SubscriptionDiscountUSDMinor: 100,
+		InvitationFundingSource:      SubscriptionDiscountFundingSourceInvitee,
+		CompleteTime:                 common.GetTimestamp(),
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceForOrderRejectsSameSecondHistoryAmbiguity(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	const userID = 122
+	const grantKey = "same-second-history-grant"
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:          userID,
+			USDMinor:        500,
+			EntryType:       SubscriptionDiscountEntryTypeGrantInvitee,
+			SourceType:      "invitee_registration",
+			SourceKey:       grantKey,
+			IdempotencyKey:  grantKey,
+			PricingSnapshot: `{}`,
+		})
+		return err
+	}))
+	cutoff := common.GetTimestamp()
+	// Make the boundary collision deterministic instead of relying on both
+	// writes happening in the same wall-clock second during the test.
+	require.NoError(t, DB.Exec("UPDATE subscription_discount_entries SET created_at = ? WHERE idempotency_key = ?", cutoff, grantKey).Error)
+	order := &SubscriptionOrder{
+		UserId:                       userID,
+		TradeNo:                      "same-second-history-order",
+		DiscountKind:                 "invitation",
+		SubscriptionDiscountUSDMinor: 100,
+		CompleteTime:                 cutoff,
+	}
+	got, err := ResolveSubscriptionDiscountFundingSourceForOrderTx(DB, order)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceUnknown, got)
+}
+
+func TestResolveSubscriptionDiscountFundingSourceInfersLegacyGrantTypeWhenColumnDefaultIsUnknown(t *testing.T) {
+	setupSubscriptionDiscountCreditMemoryDB(t)
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID: 118, USDMinor: 500, EntryType: SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType: "invite_subscription_reward", SourceKey: "legacy-grant-source",
+			IdempotencyKey: "legacy-grant-source",
+		})
+		return err
+	}))
+	// Simulate an old row after adding the NOT NULL column: the schema default
+	// is unknown, but the immutable grant type still proves inviter origin.
+	require.NoError(t, DB.Exec("UPDATE subscription_discount_entries SET funding_source = ? WHERE idempotency_key = ?", SubscriptionDiscountFundingSourceUnknown, "legacy-grant-source").Error)
+	got, err := ResolveSubscriptionDiscountFundingSourceTx(DB, 118, 100)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionDiscountFundingSourceInviter, got)
+}
+
 func TestSubscriptionDiscountGrantCreatesAccountAndImmutableEntry(t *testing.T) {
 	setupSubscriptionDiscountCreditMemoryDB(t)
 

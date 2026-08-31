@@ -37,6 +37,9 @@ func fundUser(t *testing.T, userId int, usd float64) {
 // they must trigger the same referral-reward bookkeeping themselves.
 func TestBalancePurchaseGrantsInviteSubscriptionReward(t *testing.T) {
 	plan := setupBalancePurchaseTest(t)
+	originalDiscount := common.InviteFirstSubDiscountUSD
+	t.Cleanup(func() { common.InviteFirstSubDiscountUSD = originalDiscount })
+	common.InviteFirstSubDiscountUSD = 5
 
 	inviter := createInviteRewardUser(t, "inviter", 0)
 	invitee := createInviteRewardUser(t, "invitee", inviter.Id)
@@ -50,6 +53,9 @@ func TestBalancePurchaseGrantsInviteSubscriptionReward(t *testing.T) {
 	require.Equal(t, inviter.Id, reward.InviterId)
 	require.Equal(t, common.QuotaForInviter, reward.RewardQuota)
 	requireInviteSubRewardLedger(t, inviter.Id, invitee.Id, 750)
+	var order SubscriptionOrder
+	require.NoError(t, DB.Where("user_id = ? AND payment_provider = ?", invitee.Id, PaymentProviderBalance).First(&order).Error)
+	require.Equal(t, SubscriptionDiscountFundingSourceInvitee, order.InvitationFundingSource)
 }
 
 func TestCompleteSubscriptionOrderRewardFailureDoesNotRollbackOrder(t *testing.T) {

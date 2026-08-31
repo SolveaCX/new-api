@@ -374,6 +374,7 @@ func createLegacyInvitationZeroMigrationEntryTx(tx *gorm.DB, idempotencyKey stri
 	entry := SubscriptionDiscountEntry{
 		UserID:                 userId,
 		EntryType:              SubscriptionDiscountEntryTypeMigration,
+		FundingSource:          subscriptionDiscountFundingSourceForGrantInput(SubscriptionDiscountEntryTypeMigration, sourceType),
 		AvailableDeltaUSDMinor: 0,
 		ReservedDeltaUSDMinor:  0,
 		AvailableAfterUSDMinor: account.AvailableUSDMinor,

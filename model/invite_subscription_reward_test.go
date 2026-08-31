@@ -949,3 +949,191 @@ func TestInvitationPageOverlaysSubscriptionReward(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, locked)
 }
+
+func TestInviteSubRewardAllowsZeroPriceInviteeFunding(t *testing.T) {
+	setupInviteSubRewardTest(t)
+
+	inviter := createInviteRewardUser(t, "root-zero-invitee", 0)
+	invitee := createInviteRewardUser(t, "invitee-zero-invitee", inviter.Id)
+	order := createCompletedSubscriptionOrder(t, invitee.Id, 0, "sub-zero-invitee-funding")
+	// The order is free at checkout, but it carries the server-generated
+	// invitation discount evidence that proves the discount was invitee-origin.
+	order.DiscountKind = "invitation"
+	order.SubscriptionDiscountUSDMinor = 500
+	order.SubscriptionDiscountAmountMinor = 500
+	order.InvitationFundingSource = SubscriptionDiscountFundingSourceInvitee
+	order.DiscountPricingSnapshot = `{"funding_source":"invitee"}`
+	require.NoError(t, order.Update())
+
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+	var reward InviteSubscriptionReward
+	require.NoError(t, DB.Where("invitee_id = ?", invitee.Id).First(&reward).Error)
+	require.Equal(t, InviteSubRewardStatusGranted, reward.Status)
+	require.Equal(t, common.QuotaForInviter, reward.RewardQuota)
+	var ledgerCount int64
+	require.NoError(t, DB.Model(&SubscriptionDiscountEntry{}).
+		Where("user_id = ? AND entry_type = ?", inviter.Id, SubscriptionDiscountEntryTypeGrantInviter).
+		Count(&ledgerCount).Error)
+	require.EqualValues(t, 1, ledgerCount)
+}
+
+func TestInviteSubRewardBlocksInviterFundingWithoutClawback(t *testing.T) {
+	setupInviteSubRewardTest(t)
+
+	inviter := createInviteRewardUser(t, "root-zero-inviter", 0)
+	invitee := createInviteRewardUser(t, "invitee-zero-inviter", inviter.Id)
+	order := createCompletedSubscriptionOrder(t, invitee.Id, 0, "sub-zero-inviter-funding")
+	order.InvitationFundingSource = SubscriptionDiscountFundingSourceInviter
+	require.NoError(t, order.Update())
+
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+	var reward InviteSubscriptionReward
+	require.NoError(t, DB.Where("invitee_id = ?", invitee.Id).First(&reward).Error)
+	require.Equal(t, InviteSubRewardStatusBlocked, reward.Status)
+	require.Equal(t, InviteSubscriptionRewardReasonInviterRewardReentry, reward.Reason)
+	var ledgerCount int64
+	require.NoError(t, DB.Model(&SubscriptionDiscountEntry{}).
+		Where("user_id = ? AND entry_type = ?", inviter.Id, SubscriptionDiscountEntryTypeGrantInviter).
+		Count(&ledgerCount).Error)
+	require.Zero(t, ledgerCount)
+	var refreshedInviter User
+	require.NoError(t, DB.First(&refreshedInviter, inviter.Id).Error)
+	require.Zero(t, refreshedInviter.AffCount)
+}
+
+func TestInviteSubRewardNormalizesEmptyLegacyRewardStatusWhenBlocked(t *testing.T) {
+	setupInviteSubRewardTest(t)
+
+	inviter := createInviteRewardUser(t, "root-empty-reward-status", 0)
+	invitee := createInviteRewardUser(t, "invitee-empty-reward-status", inviter.Id)
+	order := createCompletedSubscriptionOrder(t, invitee.Id, 0, "sub-empty-reward-status")
+	order.DiscountKind = "invitation"
+	order.SubscriptionDiscountUSDMinor = 500
+	order.SubscriptionDiscountAmountMinor = 500
+	order.InvitationFundingSource = SubscriptionDiscountFundingSourceInviter
+	require.NoError(t, order.Update())
+	reward := InviteSubscriptionReward{
+		InviteeId: invitee.Id,
+		InviterId: inviter.Id,
+		Status:    "",
+	}
+	require.NoError(t, DB.Create(&reward).Error)
+
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+	var refreshed InviteSubscriptionReward
+	require.NoError(t, DB.First(&refreshed, reward.Id).Error)
+	require.Equal(t, InviteSubRewardStatusBlocked, refreshed.Status)
+	require.Equal(t, InviteSubscriptionRewardReasonInviterRewardReentry, refreshed.Reason)
+}
+
+func TestInviteSubRewardUsesCurrentAvailableInviteeCreditAfterInviterCreditIsConsumed(t *testing.T) {
+	setupInviteSubRewardTest(t)
+
+	inviter := createInviteRewardUser(t, "root-current-source", 0)
+	invitee := createInviteRewardUser(t, "invitee-current-source", inviter.Id)
+
+	// The account once received inviter-origin credit, but that lot was fully
+	// reserved and committed before the later invitee-registration credit.
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		changed, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:         invitee.Id,
+			USDMinor:       500,
+			EntryType:      SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType:     "invite_subscription_reward",
+			SourceKey:      "historical-inviter-lot-invitee",
+			IdempotencyKey: "historical-inviter-lot-invitee",
+		})
+		if err != nil || !changed {
+			return fmt.Errorf("seed invitee inviter lot: changed=%v err=%w", changed, err)
+		}
+		return nil
+	}))
+	require.True(t, reserveSubscriptionDiscountForTest(t, invitee.Id, 500, "consume-historical-inviter-lot"))
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		_, err := CommitSubscriptionDiscountTx(tx, "consume-historical-inviter-lot")
+		return err
+	}))
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		changed, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:         invitee.Id,
+			USDMinor:       500,
+			EntryType:      SubscriptionDiscountEntryTypeGrantInvitee,
+			SourceType:     "invitee_registration",
+			SourceKey:      "current-invitee-lot",
+			IdempotencyKey: "current-invitee-lot",
+		})
+		if err != nil || !changed {
+			return fmt.Errorf("seed invitee lot: changed=%v err=%w", changed, err)
+		}
+		return nil
+	}))
+
+	order := createCompletedSubscriptionOrder(t, invitee.Id, 0, "sub-current-invitee-source")
+	order.DiscountKind = "invitation"
+	order.SubscriptionDiscountUSDMinor = 500
+	order.SubscriptionDiscountAmountMinor = 500
+	// Keep the legacy history boundary strictly after all seeded ledger rows so
+	// this test exercises source reconstruction rather than the same-second
+	// ambiguity fail-closed guard.
+	order.CompleteTime = common.GetTimestamp() + 10
+	// Leave InvitationFundingSource at its legacy/default value so the reward
+	// path must reconstruct the source from the current ledger state.
+	require.NoError(t, order.Update())
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+
+	var reward InviteSubscriptionReward
+	require.NoError(t, DB.Where("invitee_id = ?", invitee.Id).First(&reward).Error)
+	require.Equal(t, InviteSubRewardStatusGranted, reward.Status)
+	var inviterLedger int64
+	require.NoError(t, DB.Model(&SubscriptionDiscountEntry{}).
+		Where("user_id = ? AND entry_type = ?", inviter.Id, SubscriptionDiscountEntryTypeGrantInviter).
+		Count(&inviterLedger).Error)
+	require.EqualValues(t, 1, inviterLedger)
+}
+
+func TestInviteSubRewardAllowsInviteeFundingWhenInviterCreditAlsoRemains(t *testing.T) {
+	setupInviteSubRewardTest(t)
+
+	inviter := createInviteRewardUser(t, "root-mixed-remaining", 0)
+	invitee := createInviteRewardUser(t, "invitee-mixed-remaining", inviter.Id)
+
+	// The invitee has an older inviter-origin lot, but the registration lot is
+	// large enough to fund this order on its own.  The reservation resolver
+	// prioritizes the registration lot, so the direct inviter reward remains
+	// eligible instead of being blocked merely because another lot exists.
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:         invitee.Id,
+			USDMinor:       1000,
+			EntryType:      SubscriptionDiscountEntryTypeGrantInviter,
+			SourceType:     "invite_subscription_reward",
+			SourceKey:      "remaining-inviter-lot",
+			IdempotencyKey: "remaining-inviter-lot",
+		}); err != nil {
+			return err
+		}
+		_, err := GrantSubscriptionDiscountTx(tx, SubscriptionDiscountGrantInput{
+			UserID:         invitee.Id,
+			USDMinor:       3000,
+			EntryType:      SubscriptionDiscountEntryTypeGrantInvitee,
+			SourceType:     "invitee_registration",
+			SourceKey:      "remaining-invitee-lot",
+			IdempotencyKey: "remaining-invitee-lot",
+		})
+		return err
+	}))
+
+	order := createCompletedSubscriptionOrder(t, invitee.Id, 0, "sub-mixed-remaining")
+	order.DiscountKind = "invitation"
+	order.SubscriptionDiscountUSDMinor = 2000
+	order.SubscriptionDiscountAmountMinor = 2000
+	order.CompleteTime = common.GetTimestamp() + 10
+	require.NoError(t, order.Update())
+
+	require.NoError(t, TryGrantInviteSubscriptionRewardAfterOrderCompleted(order.TradeNo))
+	var reward InviteSubscriptionReward
+	require.NoError(t, DB.Where("invitee_id = ?", invitee.Id).First(&reward).Error)
+	require.Equal(t, InviteSubRewardStatusGranted, reward.Status)
+	require.Equal(t, common.QuotaForInviter, reward.RewardQuota)
+}
