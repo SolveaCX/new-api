@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/popover'
 import { getModelPromotionLabel } from '@/features/available-models/lib/model-promotions'
 import {
+  sortModelOptionsForDefault,
   sortModelOptionsForSearch,
   type ModelSelectorOption,
 } from './model-group-selector-utils'
@@ -186,7 +187,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
         return Object.fromEntries(
           Object.entries(groupedModels).map(([category, categoryModels]) => [
             category,
-            sortModelOptionsForSearch(categoryModels),
+            sortModelOptionsForDefault(categoryModels),
           ])
         ) as Record<string, ModelOption[]>
       }
@@ -279,7 +280,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                             isMobile ? 'text-sm' : 'text-[11px]'
                           )}
                         >
-                          <span className='min-w-0 truncate'>{model.label}</span>
+                          <span className='min-w-0 truncate'>
+                            {model.label}
+                          </span>
                           {model.promotions?.map((promotion) => (
                             <Badge
                               key={promotion}
