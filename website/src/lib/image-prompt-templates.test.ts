@@ -48,7 +48,7 @@ describe("image prompt templates", () => {
     expect(second).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
     expect(first).not.toBe(IMAGE_PROMPT_TEMPLATES);
     expect(first[0]).not.toBe(IMAGE_PROMPT_TEMPLATES[0]);
-    expect(first[0].prompt).toBe(second[0].prompt);
+    expect(first[0].prompt).not.toBe(second[0].prompt);
 
     first[0].tags.push("test-only");
     expect(second[0].tags).not.toContain("test-only");
@@ -75,6 +75,83 @@ describe("image prompt templates", () => {
     expect(first[4]).toMatch(/comedy-physical/);
     expect(first[5]).toMatch(/historical-revival/);
     expect(first.some((poster) => /creator|portrait|ugc|medical|developer|terminal|fitness-app|streetwear/i.test(poster))).toBe(false);
+  });
+
+  test("keeps each model's six prompt posters bound to its six scene prompts", () => {
+    const modelIds = [
+      "gpt-image-2",
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.1-flash-lite-image",
+      "grok-imagine-image",
+      "grok-imagine-image-pro",
+      "grok-imagine-image-quality",
+      "nano-banana-pro-preview",
+    ];
+
+    for (const modelId of modelIds) {
+      const templates = getImagePromptTemplates(modelId);
+      const posters = getImagePromptTemplateFallbackPosters(modelId);
+      expect(templates.map((template) => template.poster)).toEqual(posters);
+      expect(templates.map((template) => template.prompt)).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
+      expect(templates.every((template) => template.prompt.length > 120)).toBe(true);
+      expect(templates.every((template) => !/\[[^\]]+\]/.test(template.prompt))).toBe(true);
+    }
+  });
+
+  test("uses a fact-based English prompt set for every canonical image model", () => {
+    const modelIds = [
+      "gpt-image-2",
+      "gemini-2.5-flash-image",
+      "gemini-3-pro-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.1-flash-lite-image",
+      "grok-imagine-image",
+      "grok-imagine-image-pro",
+      "grok-imagine-image-quality",
+      "nano-banana-pro-preview",
+    ];
+    const expectedSceneTokens = [
+      /game|loadout|character|controller|camera/i,
+      /soccer|basketball|swimmer|volleyball|hockey|race|sport/i,
+      /product|watch|shoe|bottle|camera|perfume|espresso|controller|earbuds/i,
+      /observatory|train|city|astronaut|coast|desert|stage|mountain|theater|traveler|cinematic|storyboard/i,
+      /kitchen|laundry|beach|dog|theater|boxes|pancake|towel|physical|comedy|park|umbrella/i,
+      /historical|period|vintage|archive|weaving|camel|harbor|market|school|train|boat|dock|riverside/i,
+    ];
+
+    const promptSets = modelIds.map((modelId) => getImagePromptTemplates(modelId).map((template) => template.prompt));
+    expect(new Set(promptSets.map((prompts) => prompts.join("\n"))).size).toBe(modelIds.length);
+
+    for (const prompts of promptSets) {
+      expect(prompts).toHaveLength(6);
+      prompts.forEach((prompt, index) => {
+        expect(prompt).toMatch(expectedSceneTokens[index]);
+        expect(prompt).not.toMatch(/use seedance|high-quality|production-ready framing/i);
+        expect(prompt).not.toMatch(/\[[^\]]+\]/);
+      });
+    }
+  });
+
+  test("describes the visible content of the four previously mismatched image assets", () => {
+    const flashCards = getImagePromptTemplates("gemini-3.1-flash-image");
+    expect(flashCards[4].prompt).toMatch(/coral-red raincoat/i);
+    expect(flashCards[4].prompt).toMatch(/inverted rainbow umbrella/i);
+    expect(flashCards[4].prompt).toMatch(/wet green park/i);
+    expect(flashCards[5].prompt).toMatch(/workers.*repairing.*wooden boat/i);
+    expect(flashCards[5].prompt).toMatch(/riverside boatyard/i);
+
+    const flashLiteCards = getImagePromptTemplates("gemini-3.1-flash-lite-image");
+    expect(flashLiteCards[0].prompt).toMatch(/white robot/i);
+    expect(flashLiteCards[0].prompt).toMatch(/floating-island garden/i);
+    expect(flashLiteCards[0].prompt).toMatch(/plant blaster/i);
+    expect(flashLiteCards[0].prompt).toMatch(/equipment wheel/i);
+
+    const qualityCards = getImagePromptTemplates("grok-imagine-image-quality");
+    expect(qualityCards[0].prompt).toMatch(/cloaked wizard/i);
+    expect(qualityCards[0].prompt).toMatch(/crystal equipment wheel/i);
+    expect(qualityCards[0].prompt).toMatch(/pink crystal/i);
   });
 
   test("gives every canonical image model a distinct non-human poster set", () => {
@@ -139,6 +216,12 @@ describe("image prompt templates", () => {
   test("resolves image model aliases used by the pricing catalog", () => {
     expect(getImagePlaygroundExample("gemini-3.1-flash-image-preview")?.poster).toContain("high-end-skincare-product-poster");
     expect(getImagePlaygroundExample("gemini_2_5_flash_image_preview")?.poster).toContain("three-day-travel-guide-card");
+    expect(getImagePromptTemplates("gemini-3.1-flash-image-preview").map((template) => template.poster)).toEqual(
+      getImagePromptTemplates("gemini-3.1-flash-image").map((template) => template.poster),
+    );
+    expect(getImagePromptTemplates("gemini_2_5_flash_image_preview").map((template) => template.poster)).toEqual(
+      getImagePromptTemplates("gemini-2.5-flash-image").map((template) => template.poster),
+    );
     expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
   });
 

@@ -48,6 +48,7 @@ import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   getImagePlaygroundExample,
+  getImagePromptTemplateLocalFallbackPosters,
   getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
   localizeImagePromptText,
@@ -55,6 +56,7 @@ import {
 } from "@/lib/image-prompt-templates";
 import {
   getVideoPlaygroundPrompt,
+  getVideoPromptTemplateLocalFallbackPosters,
   getVideoPromptTemplates,
   localizeVideoPromptText,
 } from "@/lib/video-prompt-templates";
@@ -110,6 +112,8 @@ type DraftValue = Record<string, unknown>;
 type MediaExample = {
   poster: string;
   video?: string;
+  /** Packaged same-source poster used only if the primary media fails. */
+  fallbackPoster?: string;
 };
 
 const isProfessionVideo = (video?: string) => Boolean(video?.includes("/model-showcase/video-profession-"));
@@ -467,6 +471,8 @@ function FlatkeyModelDetailPage(props: {
   const localizedHeroFlatkeyPrice = localizeHeroPrice(heroFlatkeyPrice);
   const localizedHeroReferencePrice = localizeHeroPrice(heroReferencePrice);
   const isSeedanceCatalogFormula = props.config.slug === "seedance-2.5";
+  const seedanceHeroPerSecondPrice = (priceRows.rows[0]?.flatkey ?? localizedHeroFlatkeyPrice)
+    .replace(/\s*×\s*duration/i, ` ${props.t("/ second")}`);
   const isImageCatalogFallback = props.config.slug === "gpt-image-2" && !model;
   const isMiniMaxCatalogFallback = props.config.slug === "minimax-h3" && !model;
   const inputPriceRow = priceRows.rows.find((row) => row.label === props.t("Input /M"));
@@ -578,20 +584,20 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">{heroProvider}</div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t(priceRows.rows[0]?.label ?? "Catalog formula") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
+                      <div className="model-stat-label">{isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
-                          ? (priceRows.rows[0]?.flatkey ?? localizedHeroFlatkeyPrice)
+                          ? `from ${seedanceHeroPerSecondPrice}`
                           : isImageCatalogFallback
                             ? props.t("$4.00–$24.00 / 1M catalog units")
                             : localizedHeroFlatkeyPrice}
                       </div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t(priceRows.rows[1]?.label ?? "Catalog formula") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t("Reference price") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
-                          ? (priceRows.rows[1]?.flatkey ?? localizedHeroReferencePrice)
+                          ? props.t("Varies by resolution and video input")
                           : isImageCatalogFallback
                             ? props.t("OpenAI table varies by modality/batch")
                             : isMiniMaxCatalogFallback
@@ -2073,6 +2079,9 @@ function OutputPreview(props: {
   const videoExample = props.kind === "video"
     ? getVideoPromptTemplates(props.modelId, props.locale)[0] ?? props.fallbackVideo ?? MEDIA_EXAMPLES.video[0]
     : undefined;
+  const videoFallbackPoster = props.kind === "video"
+    ? getVideoPromptTemplateLocalFallbackPosters(props.modelId)[0] ?? props.fallbackVideo?.fallbackPoster
+    : undefined;
   const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId, props.locale) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
   const rows = props.kind === "video"
@@ -2128,18 +2137,12 @@ function OutputPreview(props: {
     <div className="output-preview">
       <div className={`video-preview ${props.kind === "image" ? "image-preview" : ""}`}>
         {videoExample?.video ? (
-          <video
-            className="preview-media"
+          <VideoPreviewMedia
+            key={videoExample.video}
             src={videoExample.video}
-            // Reviewed profession clips provide a same-source first frame;
-            // use it immediately so the preview never flashes a blank panel
-            // while the remote video is buffering.
-            poster={videoExample.poster || undefined}
-            autoPlay
-            muted
-            loop
-            playsInline
-            aria-label={props.t("Video preview")}
+            poster={videoExample.poster || videoFallbackPoster || undefined}
+            fallbackPoster={videoFallbackPoster}
+            alt={props.t("Video preview")}
           />
         ) : imageExample ? (
           <Image
@@ -2486,6 +2489,45 @@ const MODEL_TAB_ICONS: Record<ModelTabIconName, ReactNode> = {
 
 function ModelTabIcon({ name }: { name: ModelTabIconName }) {
   return MODEL_TAB_ICONS[name];
+}
+
+function VideoPreviewMedia(props: {
+  src: string;
+  poster?: string;
+  fallbackPoster?: string;
+  alt: string;
+}) {
+  const [hasFailed, setHasFailed] = useState(false);
+
+  if (hasFailed && props.fallbackPoster) {
+    return (
+      <Image
+        src={props.fallbackPoster}
+        alt={props.alt}
+        fill
+        sizes="(min-width: 1024px) 40vw, 100vw"
+        className="preview-media object-cover"
+        unoptimized
+      />
+    );
+  }
+
+  return (
+    <video
+      className="preview-media"
+      src={props.src}
+      // Reviewed profession clips provide a same-source first frame;
+      // use it immediately so the preview never flashes a blank panel
+      // while the remote video is buffering.
+      poster={props.poster}
+      autoPlay
+      muted
+      loop
+      playsInline
+      onError={() => setHasFailed(true)}
+      aria-label={props.alt}
+    />
+  );
 }
 
 function ModelSectionNav(props: {
@@ -2946,11 +2988,13 @@ function getPromptPosterFallback(item: PromptLibraryItem): string {
 function PromptLibraryVideo(props: {
   src: string;
   poster?: string;
+  fallbackPoster?: string;
   priority: boolean;
   className: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVisible, setIsVisible] = useState(props.priority);
+  const [hasFailed, setHasFailed] = useState(false);
 
   useEffect(() => {
     if (props.priority || isVisible) return;
@@ -2978,17 +3022,31 @@ function PromptLibraryVideo(props: {
     playPromise?.catch(() => undefined);
   }, [isVisible]);
 
+  if (hasFailed && props.fallbackPoster) {
+    return (
+      <Image
+        src={props.fallbackPoster}
+        alt=""
+        fill
+        sizes="(min-width: 1024px) 33vw, 100vw"
+        className={props.className}
+        unoptimized
+      />
+    );
+  }
+
   return (
     <video
       ref={videoRef}
       className={props.className}
       src={props.src}
-      poster={props.poster}
+      poster={props.poster || props.fallbackPoster}
       muted
       loop
       autoPlay={isVisible}
       playsInline
       preload={isVisible ? "auto" : "none"}
+      onError={() => setHasFailed(true)}
     />
   );
 }
@@ -3023,7 +3081,7 @@ function PromptLibrarySection(props: {
             // CDN clip is loading; the same clip is also used by the
             // playground preview below.
             const usesGeneratedVideo = isProfessionVideo(item.example.video);
-            const posterFallback = usesGeneratedVideo ? "" : getPromptPosterFallback(item);
+            const posterFallback = item.example.fallbackPoster ?? (usesGeneratedVideo ? "" : getPromptPosterFallback(item));
             const posterSource = failedPosters[item.example.poster]
               ? posterFallback
               : item.example.poster;
@@ -3039,9 +3097,11 @@ function PromptLibrarySection(props: {
               >
                 {item.example.video ? (
                   <PromptLibraryVideo
+                    key={item.example.video}
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
-                    poster={item.example.poster || undefined}
+                    poster={item.example.poster || posterFallback || undefined}
+                    fallbackPoster={posterFallback || undefined}
                     priority={isPriorityMedia}
                   />
                 ) : (
@@ -3103,22 +3163,27 @@ function buildPromptLibraryItems(
   if (config.generator?.kind === "image") {
     const templates = getImagePromptTemplates(config.modelId, locale);
     const posters = getImagePromptTemplateFallbackPosters(config.modelId);
+    const localFallbackPosters = getImagePromptTemplateLocalFallbackPosters(config.modelId);
     if (templates.length > 0) {
       return templates.slice(0, 6).map((template, index) => ({
         key: template.id,
         label: t(template.label),
         prompt: template.prompt,
         alt: t(template.label),
-        example: { poster: posters[index] ?? template.poster },
+        example: {
+          poster: posters[index] ?? template.poster,
+          fallbackPoster: localFallbackPosters[index],
+        },
       }));
     }
   }
 
   if (config.generator?.kind === "video") {
     const templates = getVideoPromptTemplates(config.modelId, locale);
+    const localFallbackPosters = getVideoPromptTemplateLocalFallbackPosters(config.modelId);
     hasReviewedVideoTemplates = templates.length > 0;
     if (templates.length > 0) {
-      return templates.slice(0, 6).map((template) => ({
+      return templates.slice(0, 6).map((template, index) => ({
         // The profession is the semantic identity of a card. The legacy
         // template id is retained inside the template for serialized prompts,
         // but must not be used as the media join key.
@@ -3135,6 +3200,7 @@ function buildPromptLibraryItems(
           // rather than inheriting an unrelated local industry image.
           poster: template.poster || (isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster)),
           video: template.video,
+          fallbackPoster: localFallbackPosters[index],
         },
       }));
     }

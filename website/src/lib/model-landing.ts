@@ -1760,6 +1760,7 @@ export type ModelLandingKey =
   | "Cache write"
   | "Request price"
   | "Reference price"
+  | "Varies by resolution and video input"
   | "Flatkey routes your request to available upstream channels for this model and keeps billing under one account."
   | "Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API."
   | "Performance uses Flatkey request telemetry from the last 30 days when enough traffic is available."
@@ -3916,6 +3917,7 @@ const en: Record<ModelLandingKey, string> = {
   Pricing: "Pricing",
   "Price type": "Price type",
   "Price / image": "Price / image",
+  "Varies by resolution and video input": "Varies by resolution and video input",
   "Previous generation": "Previous generation",
   Breadcrumb: "Breadcrumb",
   "Model sections": "Model sections",
@@ -8062,6 +8064,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Catalog formula",
     "Video reference input": "Video reference input",
     "Depends on resolution": "Depends on resolution",
+    "Varies by resolution and video input": "Varies by resolution and video input",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.",
@@ -8137,6 +8140,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Fórmula del catálogo",
     "Video reference input": "Entrada de referencia de vídeo",
     "Depends on resolution": "Depende de la resolución",
+    "Varies by resolution and video input": "Varía según la resolución y la entrada de vídeo",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "El precio de Seedance 2.5 varía según la resolución, la duración y la entrada de referencia de vídeo; la base del catálogo no es una tarifa universal por segundo.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 es el modelo de generación audiovisual de ByteDance para solicitudes de texto a vídeo e imagen a vídeo, con medios de referencia y controles de audio opcionales.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "La base del catálogo es $0.14, pero la fórmula de la solicitud varía: 480p sin entrada de vídeo cuesta $0.140 × duration; 720p cuesta $0.314 × duration; las fórmulas con referencia de vídeo usan los segundos totales de vídeo y la resolución.",
@@ -8212,6 +8216,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Formule du catalogue",
     "Video reference input": "Entrée de référence vidéo",
     "Depends on resolution": "Dépend de la résolution",
+    "Varies by resolution and video input": "Varie selon la résolution et l’entrée vidéo",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Le prix de Seedance 2.5 varie selon la résolution, la durée et l'entrée de référence vidéo ; la base du catalogue n'est pas un tarif universel par seconde.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 est le modèle de génération audiovisuelle de ByteDance pour les requêtes texte-vers-vidéo et image-vers-vidéo, avec médias de référence et contrôles audio facultatifs.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "La base du catalogue est de 0,14 $, mais la formule de requête varie : en 480p sans entrée vidéo, elle est de 0,140 $ × durée ; en 720p, de 0,314 $ × durée ; les formules avec référence vidéo utilisent le nombre total de secondes vidéo et la résolution.",
@@ -8287,6 +8292,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Формула каталога",
     "Video reference input": "Входной видео-референс",
     "Depends on resolution": "Зависит от разрешения",
+    "Varies by resolution and video input": "Зависит от разрешения и видеовхода",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Цена Seedance 2.5 зависит от разрешения, длительности и входного видео-референса; база каталога не является универсальной ставкой за секунду.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 — аудио-видеомодель ByteDance для запросов text-to-video и image-to-video с референсными материалами и необязательными настройками аудио.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "База каталога — $0.14, но формула запроса различается: без видеовхода 480p стоит $0.140 × duration; 720p — $0.314 × duration; формулы с видео-референсом используют общее число видеосекунд и разрешение.",
@@ -8362,6 +8368,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "カタログの計算式",
     "Video reference input": "動画参照入力",
     "Depends on resolution": "解像度に依存",
+    "Varies by resolution and video input": "解像度と動画入力により異なります",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5の料金は解像度、長さ、動画参照入力で変わります。カタログの基準値は一律の秒単価ではありません。",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5はByteDanceの音声・動画生成モデルで、参照メディアとオプションの音声制御を使ったtext-to-videoおよびimage-to-videoリクエストに対応します。",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "カタログ基準値は$0.14ですが、リクエスト式は異なります。動画入力なしの480pは$0.140 × duration、720pは$0.314 × durationです。動画参照の式では動画の合計秒数と解像度を使います。",
@@ -8437,6 +8444,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Công thức danh mục",
     "Video reference input": "Đầu vào tham chiếu video",
     "Depends on resolution": "Phụ thuộc vào độ phân giải",
+    "Varies by resolution and video input": "Thay đổi theo độ phân giải và đầu vào video",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Giá Seedance 2.5 thay đổi theo độ phân giải, thời lượng và đầu vào tham chiếu video; giá cơ sở trong danh mục không phải mức giá cố định cho mỗi giây.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 là mô hình tạo video kèm âm thanh của ByteDance cho các yêu cầu văn bản thành video và hình ảnh thành video, với media tham chiếu và điều khiển âm thanh tùy chọn.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Giá cơ sở trong danh mục là $0.14, nhưng công thức yêu cầu thay đổi: 480p không có đầu vào video là $0.140 × thời lượng; 720p là $0.314 × thời lượng; công thức có tham chiếu video sử dụng tổng số giây video và độ phân giải.",
@@ -8512,6 +8520,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
       "Catalog formula": "Katalogformel",
       "Video reference input": "Videoreferenzeingabe",
       "Depends on resolution": "Abhängig von der Auflösung",
+      "Varies by resolution and video input": "Variiert je nach Auflösung und Videoeingabe",
       "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Die Preise für Seedance 2.5 variieren je nach Auflösung, Dauer und Video-Referenzeingabe; der Katalogbasiswert ist kein allgemeingültiger Preis pro Sekunde.",
       "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 ist das Audio- und Videogenerierungsmodell von ByteDance für Text-zu-Video- und Bild-zu-Video-Anfragen mit Referenzmedien und optionaler Audiosteuerung.",
       "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Der Katalogbasiswert beträgt $0.14, aber die Anfrageformel variiert: 480p ohne Videoeingabe entspricht $0.140 × duration; 720p entspricht $0.314 × duration; Formeln mit Videoreferenz verwenden die gesamte Videodauer in Sekunden und die Auflösung.",
@@ -8587,6 +8596,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Rumus katalog",
     "Video reference input": "Input referensi video",
     "Depends on resolution": "Bergantung pada resolusi",
+    "Varies by resolution and video input": "Bervariasi menurut resolusi dan input video",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Harga Seedance 2.5 bervariasi menurut resolusi, durasi, dan input referensi video; dasar katalog bukan tarif universal per detik.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 adalah model generasi audio-video ByteDance untuk permintaan teks-ke-video dan gambar-ke-video, dengan media referensi dan kontrol audio opsional.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "Dasar katalog adalah $0.14, tetapi rumus permintaan bervariasi: 480p tanpa input video adalah $0.140 × durasi; 720p adalah $0.314 × durasi; rumus dengan referensi video menggunakan total detik video dan resolusi.",
@@ -8662,6 +8672,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "Fórmula do catálogo",
     "Video reference input": "Entrada de referência de vídeo",
     "Depends on resolution": "Depende da resolução",
+    "Varies by resolution and video input": "Varia conforme a resolução e a entrada de vídeo",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "O preço do Seedance 2.5 varia por resolução, duração e entrada de referência de vídeo; a base do catálogo não é uma tarifa universal por segundo.",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "O Seedance 2.5 é o modelo audiovisual da ByteDance para solicitações de texto para vídeo e imagem para vídeo, com mídia de referência e controles de áudio opcionais.",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "A base do catálogo é US$ 0,14, mas a fórmula varia: 480p sem entrada de vídeo é US$ 0,140 × duração; 720p é US$ 0,314 × duração; referências de vídeo usam os segundos totais e a resolução.",
@@ -8737,6 +8748,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
     "Catalog formula": "目录公式",
     "Video reference input": "视频参考输入",
     "Depends on resolution": "取决于分辨率",
+    "Varies by resolution and video input": "因分辨率和视频输入而异",
     "Seedance 2.5 pricing varies by resolution, duration, and video-reference input; the catalog base is not a universal per-second rate.": "Seedance 2.5 价格取决于分辨率、时长和视频参考输入；目录基础值不是统一的每秒费率。",
     "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls.": "Seedance 2.5 是 ByteDance 的音视频生成模型，支持文生视频、图生视频、参考素材和可选音频控制。",
     "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution.": "目录基础值为 $0.14，但请求公式会变化：无视频输入的 480p 为 $0.140 × 时长，720p 为 $0.314 × 时长；视频参考公式还取决于视频总秒数和分辨率。",
