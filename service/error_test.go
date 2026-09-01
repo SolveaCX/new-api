@@ -168,13 +168,31 @@ func TestScrubWhitelabelError(t *testing.T) {
 		return newUpstreamErr(types.OpenAIError{Message: msg, Type: "server_error", Code: "server_error"})
 	}
 
-	t.Run("blockrun message leak scrubbed on both render paths", func(t *testing.T) {
+	t.Run("blockrun non-payment messages pass through on both render paths", func(t *testing.T) {
 		for _, msg := range []string{leak, brand} {
 			e := plain(msg)
 			ScrubWhitelabelError(context.Background(), e, constant.ChannelTypeBlockRun)
-			require.Equal(t, whitelabelGenericErrorMessage, e.ToClaudeError().Message)
+			require.Equal(t, msg, e.ToClaudeError().Message)
+			require.Equal(t, msg, e.ToOpenAIError().Message)
+		}
+	})
+
+	t.Run("blockrun payment message remains scrubbed", func(t *testing.T) {
+		for _, e := range []*types.NewAPIError{
+			types.NewErrorWithStatusCode(
+				errors.New("BlockRun payment was rejected after signing"),
+				types.ErrorCodeBlockRunPaymentRejected,
+				http.StatusPaymentRequired,
+				types.ErrOptionWithSkipRetry(),
+			),
+			types.NewErrorWithStatusCode(
+				errors.New("x402 payment required"),
+				types.ErrorCodeBadResponseStatusCode,
+				http.StatusPaymentRequired,
+			),
+		} {
+			ScrubWhitelabelError(context.Background(), e, constant.ChannelTypeBlockRun)
 			require.Equal(t, whitelabelGenericErrorMessage, e.ToOpenAIError().Message)
-			require.NotContains(t, e.ToOpenAIError().Message, "blockrun")
 		}
 	})
 
@@ -230,7 +248,7 @@ func TestScrubWhitelabelError(t *testing.T) {
 		require.True(t, types.IsSkipRetryError(clientErr))
 	})
 
-	t.Run("settlement unknown does not restore an allowlisted message with a leaking sibling field", func(t *testing.T) {
+	t.Run("settlement unknown restores the original message and clears sibling fields", func(t *testing.T) {
 		clientErr := types.NewErrorWithStatusCode(
 			errors.New("BlockRun signed payment settlement is unknown"),
 			types.ErrorCodeBlockRunSettlementUnknown,
@@ -246,20 +264,24 @@ func TestScrubWhitelabelError(t *testing.T) {
 
 		ScrubWhitelabelErrorWithOriginal(context.Background(), clientErr, originalErr, constant.ChannelTypeBlockRun)
 
-		require.Equal(t, whitelabelGenericErrorMessage, clientErr.ToOpenAIError().Message)
+		require.Equal(t, allowlistedWithBackticks, clientErr.ToOpenAIError().Message)
+		require.Empty(t, clientErr.ToOpenAIError().Param)
 		require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, clientErr.GetErrorCode())
 		require.True(t, types.IsSkipRetryError(clientErr))
 	})
 
-	t.Run("settlement unknown does not restore near-match formats", func(t *testing.T) {
+	t.Run("settlement unknown restores all upstream business messages", func(t *testing.T) {
 		for _, message := range []string{
 			"messages.1.content.0: Invalid `signature` in thinking block",
 			"messages.1.content.0: Invalid signature in `thinking` block",
 			"messages.1.content.0: Invalid `signature` in `thinking` block (details)",
+			"This model does not support assistant message prefill. End the conversation with a user message, or provide the tools array required to preserve tool_use/tool_result history during compatibility fallback.",
 		} {
 			clientErr := types.NewErrorWithStatusCode(errors.New("BlockRun signed payment settlement is unknown"), types.ErrorCodeBlockRunSettlementUnknown, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			ScrubWhitelabelErrorWithOriginal(context.Background(), clientErr, plain(message), constant.ChannelTypeBlockRun)
-			require.Equal(t, whitelabelGenericErrorMessage, clientErr.ToOpenAIError().Message)
+			require.Equal(t, message, clientErr.ToOpenAIError().Message)
+			require.Equal(t, types.ErrorCodeBlockRunSettlementUnknown, clientErr.GetErrorCode())
+			require.True(t, types.IsSkipRetryError(clientErr))
 		}
 	})
 
@@ -274,7 +296,7 @@ func TestScrubWhitelabelError(t *testing.T) {
 		require.Equal(t, string(types.ErrorTypeUpstreamError), claude.Type)
 	})
 
-	t.Run("allowlisted message with a leaking sibling field is scrubbed", func(t *testing.T) {
+	t.Run("blockrun message with a leaking sibling field keeps the message and clears the envelope", func(t *testing.T) {
 		cases := []types.OpenAIError{
 			{
 				Message: allowlisted,
@@ -292,8 +314,9 @@ func TestScrubWhitelabelError(t *testing.T) {
 		for _, upstreamErr := range cases {
 			e := newUpstreamErr(upstreamErr)
 			ScrubWhitelabelError(context.Background(), e, constant.ChannelTypeBlockRun)
-			require.Equal(t, whitelabelGenericErrorMessage, e.ToOpenAIError().Message)
-			require.NotContains(t, e.ToOpenAIError().Message, allowlisted)
+			require.Equal(t, allowlisted, e.ToOpenAIError().Message)
+			require.Empty(t, e.ToOpenAIError().Param)
+			require.Empty(t, e.ToOpenAIError().Metadata)
 		}
 	})
 
@@ -344,7 +367,7 @@ func TestScrubWhitelabelError(t *testing.T) {
 		}
 	})
 
-	t.Run("leak only in Param (clean message) is detected via surface and envelope cleared", func(t *testing.T) {
+	t.Run("blockrun leak only in Param keeps the message and clears the envelope", func(t *testing.T) {
 		e := newUpstreamErr(types.OpenAIError{
 			Message: "Internal error", // clean — no brand/internal pattern
 			Type:    "server_error",
@@ -353,12 +376,12 @@ func TestScrubWhitelabelError(t *testing.T) {
 		})
 		ScrubWhitelabelError(context.Background(), e, constant.ChannelTypeBlockRun)
 		oe := e.ToOpenAIError()
-		require.Equal(t, whitelabelGenericErrorMessage, oe.Message)
+		require.Equal(t, "Internal error", oe.Message)
 		require.Empty(t, oe.Param)
 		require.NotContains(t, oe.Param, "GenerateOpenAIRequest")
 	})
 
-	t.Run("leak in Metadata is cleared from the rendered envelope", func(t *testing.T) {
+	t.Run("blockrun metadata is cleared while the message passes through", func(t *testing.T) {
 		e := newUpstreamErr(types.OpenAIError{
 			Message:  "boom",
 			Type:     "server_error",
@@ -367,7 +390,7 @@ func TestScrubWhitelabelError(t *testing.T) {
 		})
 		ScrubWhitelabelError(context.Background(), e, constant.ChannelTypeBlockRun)
 		oe := e.ToOpenAIError()
-		require.Equal(t, whitelabelGenericErrorMessage, oe.Message)
+		require.Equal(t, "boom", oe.Message)
 		require.Empty(t, string(oe.Metadata))
 		require.NotContains(t, string(oe.Metadata), "blockrun")
 	})
