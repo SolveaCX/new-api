@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 import { getStatus } from '@/lib/api'
 import type { SystemStatus } from '@/features/auth/types'
@@ -36,8 +37,9 @@ function getInitialStatus(): SystemStatus | undefined {
 }
 
 export function useStatus() {
+  const { i18n } = useTranslation()
   const { data, isLoading, error } = useQuery({
-    queryKey: ['status'],
+    queryKey: ['status', i18n.language],
     queryFn: async () => {
       const status = await getStatus()
       try {

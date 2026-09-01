@@ -16,20 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Markdown } from '@/components/ui/markdown'
 import { Textarea } from '@/components/ui/textarea'
+import { api } from '@/lib/api'
 import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -41,6 +45,26 @@ const noticeSchema = z.object({
 
 type NoticeFormValues = z.infer<typeof noticeSchema>
 
+type NoticeTranslation = {
+  content: string
+  extra?: string
+}
+
+type LocalizedNotice = {
+  content: string
+  translations?: Record<string, NoticeTranslation>
+}
+
+function parseNotice(value: string): LocalizedNotice {
+  try {
+    const parsed = JSON.parse(value) as LocalizedNotice
+    if (typeof parsed.content === 'string') return parsed
+  } catch {
+    // Legacy Notice values are plain text.
+  }
+  return { content: value ?? '' }
+}
+
 type NoticeSectionProps = {
   defaultValue: string
 }
@@ -48,25 +72,49 @@ type NoticeSectionProps = {
 export function NoticeSection({ defaultValue }: NoticeSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const [isTranslating, setIsTranslating] = useState(false)
+  const initialNotice = parseNotice(defaultValue ?? '')
   const form = useForm<NoticeFormValues>({
     resolver: zodResolver(noticeSchema),
     defaultValues: {
-      Notice: defaultValue ?? '',
+      Notice: initialNotice.content,
     },
   })
+  const noticeContent = form.watch('Notice')?.trim()
 
   useEffect(() => {
-    form.reset({ Notice: defaultValue ?? '' })
+    form.reset({ Notice: parseNotice(defaultValue ?? '').content })
   }, [defaultValue, form])
 
   const onSubmit = async (values: NoticeFormValues) => {
     const normalized = values.Notice ?? ''
-    if (normalized === (defaultValue ?? '')) {
+    if (normalized === parseNotice(defaultValue ?? '').content) {
       return
+    }
+
+    setIsTranslating(true)
+    let value = normalized
+    try {
+      const response = await api.post<{
+        success: boolean
+        message?: string
+        data?: Record<string, NoticeTranslation>
+      }>('/api/option/translate-announcement', { content: normalized })
+      if (!response.data.success || !response.data.data) {
+        throw new Error(response.data.message)
+      }
+      value = JSON.stringify({
+        content: normalized,
+        translations: response.data.data,
+      })
+    } catch {
+      toast.error(t('Translation generation failed'))
+    } finally {
+      setIsTranslating(false)
     }
     await updateOption.mutateAsync({
       key: 'Notice',
-      value: normalized,
+      value,
     })
   }
 
@@ -77,7 +125,9 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
-            saveLabel='Save notice'
+            saveLabel={
+              isTranslating ? t('Generating translations') : 'Save notice'
+            }
           />
           <FormField
             control={form.control}
@@ -94,10 +144,29 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
                     {...field}
                   />
                 </FormControl>
+                <FormDescription>
+                  {t('Announcement displayed to users (supports Markdown & HTML)')}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
+          {noticeContent ? (
+            <section aria-label={t('Preview')} className='space-y-2'>
+              <p className='text-sm font-medium'>{t('Preview')}</p>
+              <div className='rounded-lg border bg-muted/30 p-4'>
+                <Markdown
+                  className={
+                    '[&_h1]:mt-0 [&_h1]:mb-4 [&_h2]:mt-4 [&_h2]:mb-3 [&_h3]:mt-3 [&_h3]:mb-2 ' +
+                    '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
+                    '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
+                  }
+                >
+                  {noticeContent}
+                </Markdown>
+              </div>
+            </section>
+          ) : null}
         </SettingsForm>
       </Form>
     </SettingsSection>

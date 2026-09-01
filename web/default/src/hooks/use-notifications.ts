@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { useNotificationStore } from '@/stores/notification-store'
 import { getNotice } from '@/lib/api'
 import { useStatus } from '@/hooks/use-status'
@@ -73,6 +74,7 @@ export interface NotificationTimelineItem {
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const { i18n } = useTranslation()
 
   // Fetch Notice from API
   const {
@@ -80,7 +82,7 @@ export function useNotifications() {
     isLoading: noticeLoading,
     refetch: refetchNotice,
   } = useQuery({
-    queryKey: ['notice'],
+    queryKey: ['notice', i18n.language],
     queryFn: getNotice,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })

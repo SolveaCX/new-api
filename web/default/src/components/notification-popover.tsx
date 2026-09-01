@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
+import { useEffect, useRef, useState } from 'react'
 import { Bell, ExternalLink, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatDateTimeObject } from '@/lib/time'
@@ -38,6 +39,12 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 
@@ -58,6 +65,88 @@ interface NotificationPopoverProps {
   timeline: AnnouncementItem[]
   loading: boolean
   className?: string
+}
+
+const announcementMarkdownClassName =
+  '[&_h1]:mt-0 [&_h1]:mb-4 [&_h2]:mt-4 [&_h2]:mb-3 [&_h3]:mt-3 [&_h3]:mb-2 ' +
+  '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
+  '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
+
+function ExpandableMarkdown({ content }: { content: string }) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [canExpand, setCanExpand] = useState(false)
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+
+    const measure = () => {
+      setCanExpand(element.scrollHeight > 72 + 1)
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [content])
+
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (
+      !canExpand ||
+      target.closest('a') ||
+      target.closest('[data-slot="dialog-content"]')
+    )
+      return
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(true)
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (
+      !canExpand ||
+      target.closest('a') ||
+      target.closest('[data-slot="dialog-content"]')
+    )
+      return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    setOpen(true)
+  }
+
+  return (
+    <div
+      ref={contentRef}
+      role={canExpand ? 'button' : undefined}
+      tabIndex={canExpand ? 0 : undefined}
+      aria-haspopup={canExpand ? 'dialog' : undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      className={
+        canExpand
+          ? "relative max-h-[4.5rem] cursor-pointer overflow-hidden after:absolute after:right-0 after:bottom-0 after:bg-popover after:px-1 after:font-medium after:content-['...']"
+          : undefined
+      }
+    >
+      <Markdown className={announcementMarkdownClassName}>
+        {content}
+      </Markdown>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className='max-h-[min(80vh,40rem)] overflow-y-auto sm:max-w-2xl'>
+          <DialogHeader>
+            <DialogTitle>{t('System Announcements')}</DialogTitle>
+          </DialogHeader>
+          <Markdown className={announcementMarkdownClassName}>
+            {content}
+          </Markdown>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
 }
 
 /**
@@ -176,16 +265,16 @@ function AnnouncementsContent({
             : ''
 
           const content = (
-            <div className='py-3'>
+            <div className='rounded-md py-3 transition-colors hover:bg-muted/40'>
               <div className='flex items-start gap-3'>
                 <div className='flex min-w-0 flex-1 flex-col gap-2'>
                   <div className='text-sm'>
-                    <Markdown>{item.content || ''}</Markdown>
+                    <ExpandableMarkdown content={item.content || ''} />
                   </div>
 
                   {item.extra ? (
                     <div className='text-muted-foreground text-xs'>
-                      <Markdown>{item.extra}</Markdown>
+                      <ExpandableMarkdown content={item.extra} />
                     </div>
                   ) : null}
 
