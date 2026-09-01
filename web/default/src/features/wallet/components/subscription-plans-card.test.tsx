@@ -78,9 +78,9 @@ function plan(id: number, title: string, price: number): PlanRecord {
     .trim()
     .toLowerCase()
   const monthlyQuotaUSD: Record<string, number> = {
-    go: 25,
+    go: 45,
     pro: 90,
-    max: 450,
+    max: 300,
   }
   return {
     plan: {
@@ -430,9 +430,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         ...plan(21, '[TEST] Go', 10),
         plan: {
           ...plan(21, '[TEST] Go', 10).plan,
-          total_amount: 12_500_000,
-          window_5h_amount: 4_000_000,
-          window_week_amount: 6_000_000,
+          total_amount: 22_500_000,
+          window_5h_amount: 5_000_000,
+          window_week_amount: 9_000_000,
         },
       },
       {
@@ -440,47 +440,47 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         plan: {
           ...plan(22, '[TEST] Pro', 30).plan,
           total_amount: 45_000_000,
-          window_5h_amount: 9_000_000,
-          window_week_amount: 22_500_000,
+          window_5h_amount: 15_000_000,
+          window_week_amount: 30_000_000,
         },
       },
       {
         ...plan(23, '[TEST] Max', 100),
         plan: {
           ...plan(23, '[TEST] Max', 100).plan,
-          total_amount: 225_000_000,
-          window_5h_amount: 39_000_000,
-          window_week_amount: 110_000_000,
+          total_amount: 150_000_000,
+          window_5h_amount: 40_000_000,
+          window_week_amount: 120_000_000,
         },
       },
     ]
     const html = renderWalletCardWithPlans(stagingPlans)
 
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).toContain('data-subscription-reference-price="$450"')
-    expect(html).not.toContain('data-subscription-reference-price="$45"')
-    expect(html).not.toContain('data-subscription-reference-price="$300"')
+    expect(html).toContain('data-subscription-reference-price="$300"')
+    expect(html).not.toContain('data-subscription-reference-price="$25"')
+    expect(html).not.toContain('data-subscription-reference-price="$450"')
     expect(html).toContain('data-plan-limit-summary="true"')
     expect(html).toContain('data-plan-limit-label="all-models"')
-    expect(html).toContain('Short-term caps: $8 / 5h · $12 / 7d')
-    expect(html).toContain('Short-term caps: $18 / 5h · $45 / 7d')
-    expect(html).toContain('Short-term caps: $78 / 5h · $220 / 7d')
+    expect(html).toContain('Short-term caps: $10 / 5h · $18 / 7d')
+    expect(html).toContain('Short-term caps: $30 / 5h · $60 / 7d')
+    expect(html).toContain('Short-term caps: $80 / 5h · $240 / 7d')
     expect(html).not.toContain('5-hour window limit (USD)')
     expect(html).not.toContain('7-day window limit (USD)')
-    expect(html).toContain('$8')
-    expect(html).toContain('$12')
+    expect(html).toContain('$10')
     expect(html).toContain('$18')
-    expect(html).toContain('$45')
-    expect(html).toContain('$78')
-    expect(html).toContain('$220')
+    expect(html).toContain('$30')
+    expect(html).toContain('$60')
+    expect(html).toContain('$80')
+    expect(html).toContain('$240')
   })
 
   test('renders only the configured window in a compact summary', () => {
-    const html = renderPlanLimitSummary({ window_5h_amount: 4_000_000 })
+    const html = renderPlanLimitSummary({ window_5h_amount: 5_000_000 })
 
     expect(html).toContain('data-plan-limit-summary="true"')
-    expect(html).toContain('Short-term cap: $8 / 5h')
+    expect(html).toContain('Short-term cap: $10 / 5h')
     expect(html).not.toContain('7d')
     expect(html).not.toContain('5-hour window limit (USD)')
   })
@@ -531,8 +531,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
             ...item,
             plan: {
               ...item.plan,
-              window_5h_amount: 9_000_000,
-              window_week_amount: 22_500_000,
+              window_5h_amount: 15_000_000,
+              window_week_amount: 30_000_000,
             },
           }
         : item
@@ -587,15 +587,15 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         },
         window_5h: {
           used: 2000,
-          total: 9000,
-          remaining: 7000,
+          total: 15000,
+          remaining: 13000,
           reset_at: 1,
           unlimited: false,
         },
         window_7d: {
           used: 5000,
-          total: 22500,
-          remaining: 17500,
+          total: 30000,
+          remaining: 25000,
           reset_at: 1,
           unlimited: false,
         },
@@ -639,8 +639,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       'data-wallet-usage-meter="Media generation credits"'
     )
     expect(html).toContain('data-plan-limit-summary="true"')
-    expect(html).toContain('$18')
-    expect(html).toContain('$45')
+    expect(html).toContain('$30')
+    expect(html).toContain('$60')
     expect(html).not.toContain('Media generation credits')
     expect(html).toContain('$0.014 / $0.04 used')
     expect(html).not.toContain('3 / 20 used')
@@ -1306,9 +1306,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
   test('uses persisted monthly quota for standard reference prices', () => {
     const html = renderWalletCard()
 
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).toContain('data-subscription-reference-price="$450"')
+    expect(html).toContain('data-subscription-reference-price="$300"')
   })
 
   test('does not present a lower quota value as an old price', () => {
@@ -1364,14 +1364,14 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       ...plans[0],
       plan: {
         ...plans[0].plan,
-        total_amount: 12_500_000,
+        total_amount: 22_500_000,
       },
     }
     const html = renderWalletCardWithPlans([campaignPlan])
 
     expect(html).toContain('data-discount-kind="campaign"')
     expect(html).toContain('data-subscription-discount-label="80% off"')
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('$10')
   })
 
@@ -1395,9 +1395,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         ...localizedPlans[0],
         plan: {
           ...localizedPlans[0].plan,
-          total_amount: 12_500_000,
-          window_5h_amount: 4_000_000,
-          window_week_amount: 6_000_000,
+          total_amount: 22_500_000,
+          window_5h_amount: 5_000_000,
+          window_week_amount: 9_000_000,
         },
       }
       const html = renderWalletCardWithPlans([
@@ -1405,10 +1405,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
         ...localizedPlans.slice(1),
       ])
 
-      expect(html).toContain('data-subscription-reference-price="$25"')
+      expect(html).toContain('data-subscription-reference-price="$45"')
       expect(html).not.toContain('¥315')
-      expect(html).toContain('$8')
-      expect(html).toContain('$12')
+      expect(html).toContain('$10')
+      expect(html).toContain('$18')
       expect(html).not.toContain('¥56')
       expect(html).not.toContain('¥84')
       expect(html).toContain('R$')
@@ -1515,7 +1515,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('80% off')
     expect(html).toContain('$5')
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
     expect(html).not.toContain('OFF')
     expect(html).not.toContain('Save $5')
@@ -1537,7 +1537,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('80% off')
     expect(html).toContain('$4')
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
     expect(html).not.toContain('OFF')
     expect(html).not.toContain('Save $6')
@@ -1558,7 +1558,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain('$8')
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
     expect(html).toContain('80% off')
     expect(html).toContain('Expires ')
@@ -1586,7 +1586,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('80% off')
   })
 
@@ -1627,7 +1627,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       )
 
       expect(html).toContain('$4')
-      expect(html).toContain('data-subscription-reference-price="$25"')
+      expect(html).toContain('data-subscription-reference-price="$45"')
       expect(html).toContain('80% off')
       expect(html).not.toContain('Save $6')
     }
@@ -1644,7 +1644,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(goSlice).toContain('$10')
     expect(goSlice).not.toContain('20% OFF')
-    expect(goSlice).toContain('data-subscription-reference-price="$25"')
+    expect(goSlice).toContain('data-subscription-reference-price="$45"')
     expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('$8')
     expect(proSlice).not.toContain('20% OFF')
@@ -1677,7 +1677,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const goSlice = html.slice(goStart, proStart)
 
     expect(goSlice).toContain('$10')
-    expect(goSlice).toContain('data-subscription-reference-price="$25"')
+    expect(goSlice).toContain('data-subscription-reference-price="$45"')
     expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('50% OFF')
     expect(goSlice).not.toContain('$5')

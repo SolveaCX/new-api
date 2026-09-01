@@ -12,9 +12,9 @@ import (
 func TestStandardSubscriptionPlanLimitsMatchProductContract(t *testing.T) {
 	got := StandardSubscriptionPlanLimits()
 	require.Equal(t, []StandardSubscriptionPlanLimit{
-		{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 25},
-		{Title: "Pro", PriceUSD: 30, Window5hUSD: 18, WindowWeekUSD: 45, MonthlyUSD: 90},
-		{Title: "Max", PriceUSD: 100, Window5hUSD: 78, WindowWeekUSD: 220, MonthlyUSD: 450},
+		{Title: "Go", PriceUSD: 10, Window5hUSD: 10, WindowWeekUSD: 18, MonthlyUSD: 45},
+		{Title: "Pro", PriceUSD: 30, Window5hUSD: 30, WindowWeekUSD: 60, MonthlyUSD: 90},
+		{Title: "Max", PriceUSD: 100, Window5hUSD: 80, WindowWeekUSD: 240, MonthlyUSD: 300},
 	}, got)
 }
 
@@ -47,24 +47,24 @@ func TestMigrateStandardSubscriptionPlanLimitsRestoresExistingRows(t *testing.T)
 	}
 	// Existing installations may still have the previous migration marker; the
 	// bumped key must allow the corrected contract to run once more.
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v5", Value: "applied"}).Error)
 
 	require.NoError(t, migrateStandardSubscriptionPlanLimits())
 	var gotGo, gotPro, gotCustom SubscriptionPlan
 	require.NoError(t, db.First(&gotGo, goPlan.Id).Error)
-	require.Equal(t, int64(8000), gotGo.Window5hAmount)
-	require.Equal(t, int64(12000), gotGo.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotGo.TotalAmount)
+	require.Equal(t, int64(10000), gotGo.Window5hAmount)
+	require.Equal(t, int64(18000), gotGo.WindowWeekAmount)
+	require.Equal(t, int64(45000), gotGo.TotalAmount)
 	require.Equal(t, SubscriptionResetMonthly, gotGo.QuotaResetPeriod)
 	require.NoError(t, db.First(&gotPro, proPlan.Id).Error)
-	require.Equal(t, int64(18000), gotPro.Window5hAmount)
-	require.Equal(t, int64(45000), gotPro.WindowWeekAmount)
+	require.Equal(t, int64(30000), gotPro.Window5hAmount)
+	require.Equal(t, int64(60000), gotPro.WindowWeekAmount)
 	require.Equal(t, int64(90000), gotPro.TotalAmount)
 	var gotMax SubscriptionPlan
 	require.NoError(t, db.First(&gotMax, maxPlan.Id).Error)
-	require.Equal(t, int64(78000), gotMax.Window5hAmount)
-	require.Equal(t, int64(220000), gotMax.WindowWeekAmount)
-	require.Equal(t, int64(450000), gotMax.TotalAmount)
+	require.Equal(t, int64(80000), gotMax.Window5hAmount)
+	require.Equal(t, int64(240000), gotMax.WindowWeekAmount)
+	require.Equal(t, int64(300000), gotMax.TotalAmount)
 	require.NoError(t, db.First(&gotCustom, customPlan.Id).Error)
 	require.Equal(t, int64(123), gotCustom.TotalAmount)
 	require.Zero(t, gotCustom.Window5hAmount)
@@ -104,9 +104,9 @@ func TestMigrateStandardSubscriptionPlanLimitsUsesPersistedQuotaUnit(t *testing.
 	require.NoError(t, migrateStandardSubscriptionPlanLimits())
 	var got SubscriptionPlan
 	require.NoError(t, db.First(&got, plan.Id).Error)
-	require.Equal(t, int64(8000), got.Window5hAmount)
-	require.Equal(t, int64(12000), got.WindowWeekAmount)
-	require.Equal(t, int64(25000), got.TotalAmount)
+	require.Equal(t, int64(10000), got.Window5hAmount)
+	require.Equal(t, int64(18000), got.WindowWeekAmount)
+	require.Equal(t, int64(45000), got.TotalAmount)
 }
 
 func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *testing.T) {
@@ -131,7 +131,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *tes
 
 	// A staging database may already have applied the previous contract marker
 	// before its test plans were created or renamed with the [TEST] prefix.
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v5", Value: "applied"}).Error)
 	plan := &SubscriptionPlan{
 		Title:       "[TEST] Go",
 		PriceAmount: 10,
@@ -143,9 +143,9 @@ func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *tes
 	require.NoError(t, migrateStandardSubscriptionPlanLimits())
 	var got SubscriptionPlan
 	require.NoError(t, db.First(&got, plan.Id).Error)
-	require.Equal(t, int64(8000), got.Window5hAmount)
-	require.Equal(t, int64(12000), got.WindowWeekAmount)
-	require.Equal(t, int64(25000), got.TotalAmount)
+	require.Equal(t, int64(10000), got.Window5hAmount)
+	require.Equal(t, int64(18000), got.WindowWeekAmount)
+	require.Equal(t, int64(45000), got.TotalAmount)
 
 	var marker Option
 	require.NoError(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error)
@@ -215,23 +215,23 @@ func TestMigrateStandardSubscriptionPlanLimitsContinuesPastDuplicateTier(t *test
 	require.NoError(t, db.First(&gotGo, goPlan.Id).Error)
 	require.NoError(t, db.First(&gotMax, maxPlan.Id).Error)
 	require.NoError(t, db.First(&gotPro, duplicateProA.Id).Error)
-	require.Equal(t, int64(8000), gotGo.Window5hAmount)
-	require.Equal(t, int64(12000), gotGo.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotGo.TotalAmount)
-	require.Equal(t, int64(78000), gotMax.Window5hAmount)
-	require.Equal(t, int64(220000), gotMax.WindowWeekAmount)
-	require.Equal(t, int64(450000), gotMax.TotalAmount)
+	require.Equal(t, int64(10000), gotGo.Window5hAmount)
+	require.Equal(t, int64(18000), gotGo.WindowWeekAmount)
+	require.Equal(t, int64(45000), gotGo.TotalAmount)
+	require.Equal(t, int64(80000), gotMax.Window5hAmount)
+	require.Equal(t, int64(240000), gotMax.WindowWeekAmount)
+	require.Equal(t, int64(300000), gotMax.TotalAmount)
 	require.Equal(t, int64(90000), gotPro.TotalAmount)
 	require.Zero(t, gotPro.Window5hAmount)
 	require.Zero(t, gotPro.WindowWeekAmount)
 
 	var updatedActiveGo UserSubscription
 	require.NoError(t, db.First(&updatedActiveGo, activeGo.Id).Error)
-	require.Equal(t, int64(25000), updatedActiveGo.AmountTotal)
+	require.Equal(t, int64(45000), updatedActiveGo.AmountTotal)
 	require.NotNil(t, updatedActiveGo.Window5hAmount)
 	require.NotNil(t, updatedActiveGo.WindowWeekAmount)
-	require.Equal(t, int64(8000), *updatedActiveGo.Window5hAmount)
-	require.Equal(t, int64(12000), *updatedActiveGo.WindowWeekAmount)
+	require.Equal(t, int64(10000), *updatedActiveGo.Window5hAmount)
+	require.Equal(t, int64(18000), *updatedActiveGo.WindowWeekAmount)
 
 	var marker Option
 	require.ErrorIs(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error, gorm.ErrRecordNotFound)
@@ -257,7 +257,7 @@ func TestMigrateStandardSubscriptionPlanLimitsSelectsEnabledDuplicateTier(t *tes
 	common.UsingSQLite = true
 	common.QuotaPerUnit = 1000
 
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v5", Value: "applied"}).Error)
 	duplicateGoA := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 45000}
 	duplicateGoB := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 47000}
 	require.NoError(t, db.Create(duplicateGoA).Error)
@@ -282,17 +282,17 @@ func TestMigrateStandardSubscriptionPlanLimitsSelectsEnabledDuplicateTier(t *tes
 	require.Zero(t, gotA.Window5hAmount)
 	require.Zero(t, gotA.WindowWeekAmount)
 	require.Equal(t, int64(45000), gotA.TotalAmount)
-	require.Equal(t, int64(8000), gotB.Window5hAmount)
-	require.Equal(t, int64(12000), gotB.WindowWeekAmount)
-	require.Equal(t, int64(25000), gotB.TotalAmount)
+	require.Equal(t, int64(10000), gotB.Window5hAmount)
+	require.Equal(t, int64(18000), gotB.WindowWeekAmount)
+	require.Equal(t, int64(45000), gotB.TotalAmount)
 
 	var updatedSubscription UserSubscription
 	require.NoError(t, db.First(&updatedSubscription, activeGo.Id).Error)
-	require.Equal(t, int64(25000), updatedSubscription.AmountTotal)
+	require.Equal(t, int64(45000), updatedSubscription.AmountTotal)
 	require.NotNil(t, updatedSubscription.Window5hAmount)
 	require.NotNil(t, updatedSubscription.WindowWeekAmount)
-	require.Equal(t, int64(8000), *updatedSubscription.Window5hAmount)
-	require.Equal(t, int64(12000), *updatedSubscription.WindowWeekAmount)
+	require.Equal(t, int64(10000), *updatedSubscription.Window5hAmount)
+	require.Equal(t, int64(18000), *updatedSubscription.WindowWeekAmount)
 
 	var marker Option
 	require.NoError(t, db.Where(&Option{Key: subscriptionStandardLimitsMigrationKey}).First(&marker).Error)
