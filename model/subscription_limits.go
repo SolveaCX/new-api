@@ -26,7 +26,7 @@ type StandardSubscriptionPlanLimit struct {
 
 // Bump this marker whenever the published standard-plan contract changes so a
 // deployment that already applied an earlier contract gets the new values.
-const subscriptionStandardLimitsMigrationKey = "subscription_standard_limits_v4"
+const subscriptionStandardLimitsMigrationKey = "subscription_standard_limits_v5"
 
 var standardSubscriptionPlanLimits = []StandardSubscriptionPlanLimit{
 	{Title: "Go", PriceUSD: 10, Window5hUSD: 8, WindowWeekUSD: 12, MonthlyUSD: 25},

@@ -47,7 +47,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRestoresExistingRows(t *testing.T)
 	}
 	// Existing installations may still have the previous migration marker; the
 	// bumped key must allow the corrected contract to run once more.
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v2", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
 
 	require.NoError(t, migrateStandardSubscriptionPlanLimits())
 	var gotGo, gotPro, gotCustom SubscriptionPlan
@@ -131,7 +131,7 @@ func TestMigrateStandardSubscriptionPlanLimitsRecognizesStagingTestPrefix(t *tes
 
 	// A staging database may already have applied the previous contract marker
 	// before its test plans were created or renamed with the [TEST] prefix.
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v2", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
 	plan := &SubscriptionPlan{
 		Title:       "[TEST] Go",
 		PriceAmount: 10,
@@ -257,7 +257,7 @@ func TestMigrateStandardSubscriptionPlanLimitsSelectsEnabledDuplicateTier(t *tes
 	common.UsingSQLite = true
 	common.QuotaPerUnit = 1000
 
-	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v2", Value: "applied"}).Error)
+	require.NoError(t, db.Create(&Option{Key: "subscription_standard_limits_v4", Value: "applied"}).Error)
 	duplicateGoA := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 45000}
 	duplicateGoB := &SubscriptionPlan{Title: "[TEST] Go", PriceAmount: 10, Currency: "USD", TotalAmount: 47000}
 	require.NoError(t, db.Create(duplicateGoA).Error)
