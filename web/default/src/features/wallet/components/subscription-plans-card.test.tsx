@@ -384,13 +384,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       const proStart = html.indexOf('Pro')
       const maxStart = html.indexOf('Max')
 
-      expect(html).toContain(
-        '无需合同。充值余额、创建密钥、复制 base_url，即可测试第一次请求。'
-      )
-      expect(html).toContain('适合跑真实 API 工作负载。')
-      expect(html).toContain(
-        '适合生产测试、团队流程和持续模型流量的高性价比选择。'
-      )
+      expect(html).toContain('适合个人与轻量日常使用')
+      expect(html).toContain('适合日常开发与高频请求')
+      expect(html).toContain('适合团队与高强度任务')
       expect(goStart).toBeGreaterThanOrEqual(0)
       expect(proStart).toBeGreaterThan(goStart)
       expect(maxStart).toBeGreaterThan(proStart)
@@ -1327,13 +1323,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
   test('matches the website pricing descriptions and renders the enterprise card', () => {
     const html = renderWalletCard()
 
-    expect(html).toContain(
-      'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
-    )
-    expect(html).toContain('Best for trying real API workloads.')
-    expect(html).toContain(
-      'Best value for production testing, team workflows, and sustained model traffic.'
-    )
+    expect(html).toContain('For individuals and light everyday use')
+    expect(html).toContain('For daily development and frequent requests')
+    expect(html).toContain('For teams and high-intensity workloads')
     expect(html).toContain('data-subscription-enterprise-card')
     expect(html).toContain('data-subscription-enterprise-cta')
     expect(html).toContain('mailto:support@flatkey.ai')
