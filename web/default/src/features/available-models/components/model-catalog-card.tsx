@@ -298,12 +298,6 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
         <TooltipContent>{t('Copy to clipboard')}</TooltipContent>
       </Tooltip>
 
-      {model.description && (
-        <p className='text-muted-foreground line-clamp-2 text-sm leading-relaxed'>
-          {model.description}
-        </p>
-      )}
-
       {officiallyUnsupported && (
         <p className='text-destructive text-sm font-medium'>
           {t(
