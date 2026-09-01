@@ -133,7 +133,7 @@ describe('ModelAccessList', () => {
     expect(html).toContain('Unknown failure')
   })
 
-  test('renders the public model introduction when available', () => {
+  test('does not render the public model introduction', () => {
     const html = renderList(
       [
         {
@@ -148,7 +148,7 @@ describe('ModelAccessList', () => {
       false
     )
 
-    expect(html).toContain('Generate synchronized music from any video.')
+    expect(html).not.toContain('Generate synchronized music from any video.')
   })
 
   test('renders explicit compatible endpoint labels and deduplicates variants', () => {
