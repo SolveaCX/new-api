@@ -311,6 +311,103 @@ describe('Playground durable attachments', () => {
     get.mockRestore()
   })
 
+  test('hydrates generated audio media from its durable asset ID', async () => {
+    enableBrowserUpload()
+    const get = spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_generated_audio',
+          asset_type: 'Audio',
+          content_type: 'audio/wav',
+          size_bytes: 4,
+          preview_url: 'https://storage.example/generated.wav',
+          expires_at: 9999999999,
+        },
+      },
+    } as never)
+    const messages: Message[] = [
+      {
+        key: 'assistant-generated-audio',
+        from: 'assistant',
+        status: 'complete',
+        versions: [
+          {
+            id: 'v1',
+            content: 'Audio',
+            generatedMedia: [
+              {
+                type: 'audio',
+                assetId: 'ast_generated_audio',
+                mimeType: 'audio/wav',
+                url: 'https://storage.example/expired-generated.wav',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const hydrated = await hydratePlaygroundMessages(messages)
+
+    expect(hydrated[0]?.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'audio',
+        assetId: 'ast_generated_audio',
+        mimeType: 'audio/wav',
+        url: 'https://storage.example/generated.wav',
+      },
+    ])
+    expect(get).toHaveBeenCalledTimes(1)
+    get.mockRestore()
+  })
+
+  test('hydrates legacy message-level generated audio after a server restore', async () => {
+    enableBrowserUpload()
+    const get = spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_legacy_generated_audio',
+          asset_type: 'Audio',
+          content_type: 'audio/mpeg',
+          size_bytes: 4,
+          preview_url: 'https://storage.example/legacy-generated.mp3',
+          expires_at: 9999999999,
+        },
+      },
+    } as never)
+    const messages: Message[] = [
+      {
+        key: 'assistant-legacy-generated-audio',
+        from: 'assistant',
+        status: 'complete',
+        versions: [{ id: 'v1', content: 'Audio' }],
+        generatedMedia: [
+          {
+            type: 'audio',
+            assetId: 'ast_legacy_generated_audio',
+            mimeType: 'audio/mpeg',
+            url: 'https://storage.example/expired-legacy.mp3',
+          },
+        ],
+      },
+    ]
+
+    const hydrated = await hydratePlaygroundMessages(messages)
+
+    expect(hydrated[0]?.generatedMedia).toEqual([
+      {
+        type: 'audio',
+        assetId: 'ast_legacy_generated_audio',
+        mimeType: 'audio/mpeg',
+        url: 'https://storage.example/legacy-generated.mp3',
+      },
+    ])
+    expect(get).toHaveBeenCalledTimes(1)
+    get.mockRestore()
+  })
+
   test('keeps video metadata visible when preview hydration fails', async () => {
     enableBrowserUpload()
     const get = spyOn(api, 'get').mockRejectedValue(new Error('preview 404'))

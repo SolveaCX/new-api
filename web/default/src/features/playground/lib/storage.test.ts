@@ -197,6 +197,43 @@ describe('Playground user-scoped storage', () => {
     expect(persisted[0]?.versions[0]?.generatedMedia).toEqual([])
   })
 
+  test('persists generated audio by durable asset ID without its expiring URL', () => {
+    const messages: Message[] = [
+      {
+        key: 'durable-audio-message',
+        from: 'assistant',
+        status: 'complete',
+        versions: [
+          {
+            id: 'audio-version',
+            content: 'Audio',
+            generatedMedia: [
+              {
+                type: 'audio',
+                assetId: 'ast_generated_audio',
+                mimeType: 'audio/wav',
+                url: 'https://storage.example/signed-generated.wav',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    saveMessages(10, messages)
+
+    const persisted = JSON.parse(
+      localStorage.getItem(`${STORAGE_KEYS.MESSAGES}:v2:10`) ?? 'null'
+    ) as Message[]
+    expect(persisted[0]?.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'audio',
+        assetId: 'ast_generated_audio',
+        mimeType: 'audio/wav',
+      },
+    ])
+  })
+
   test('isolates messages and config by user', () => {
     saveMessages(10, [aliceMessage])
     saveMessages(20, [bobMessage])

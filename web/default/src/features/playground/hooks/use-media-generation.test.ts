@@ -19,12 +19,17 @@ import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as playgroundApi from '../api'
 import { MESSAGE_STATUS } from '../constants'
+import * as playgroundAttachments from '../lib/playground-attachments'
 import type { Message } from '../types'
 
 const sendMediaGenerationMock = spyOn(playgroundApi, 'sendMediaGeneration')
 const fetchPlaygroundVideoTaskMock = spyOn(
   playgroundApi,
   'fetchPlaygroundVideoTask'
+)
+const uploadPlaygroundAttachmentsMock = spyOn(
+  playgroundAttachments,
+  'uploadPlaygroundAttachments'
 )
 const { findResumableVideoMessage, useMediaGeneration, waitForVideoPoll } =
   await import('./use-media-generation')
@@ -34,6 +39,10 @@ const originalWindow = globalThis.window
 beforeEach(() => {
   sendMediaGenerationMock.mockReset()
   fetchPlaygroundVideoTaskMock.mockReset()
+  uploadPlaygroundAttachmentsMock.mockReset()
+  uploadPlaygroundAttachmentsMock.mockImplementation(
+    async (attachments) => attachments
+  )
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -49,6 +58,7 @@ beforeEach(() => {
 afterAll(() => {
   sendMediaGenerationMock.mockRestore()
   fetchPlaygroundVideoTaskMock.mockRestore()
+  uploadPlaygroundAttachmentsMock.mockRestore()
   if (originalWindow) {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -340,6 +350,94 @@ describe('useMediaGeneration video task lifecycle', () => {
 })
 
 describe('useMediaGeneration audio lifecycle', () => {
+  test('uploads generated audio and stores its durable asset reference', async () => {
+    const audio = new Blob(['RIFF'], { type: 'audio/wav' })
+    sendMediaGenerationMock.mockResolvedValue(audio)
+    uploadPlaygroundAttachmentsMock.mockResolvedValue([
+      {
+        kind: 'audio',
+        filename: 'generated-audio.wav',
+        mediaType: 'audio/wav',
+        assetId: 'ast_generated_audio',
+        url: 'https://storage.example/generated.wav',
+      },
+    ])
+    const originalCreateObjectURL = URL.createObjectURL
+    URL.createObjectURL = (() =>
+      'blob:generated-audio') as typeof URL.createObjectURL
+
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
+      await harness.hook.generateMedia(
+        'Persist this audio',
+        'tts-1',
+        'plg',
+        { voice: 'alloy', responseFormat: 'wav' },
+        'target-assistant'
+      )
+
+      expect(uploadPlaygroundAttachmentsMock).toHaveBeenCalledTimes(1)
+      expect(uploadPlaygroundAttachmentsMock.mock.calls[0]?.[0]).toEqual([
+        {
+          kind: 'audio',
+          filename: 'generated-audio.wav',
+          mediaType: 'audio/wav',
+          url: 'blob:generated-audio',
+        },
+      ])
+      expect(harness.messages()[1]).toMatchObject({
+        status: MESSAGE_STATUS.COMPLETE,
+        versions: [
+          {
+            generatedMedia: [
+              {
+                type: 'audio',
+                assetId: 'ast_generated_audio',
+                url: 'https://storage.example/generated.wav',
+                mimeType: 'audio/wav',
+              },
+            ],
+          },
+        ],
+      })
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL
+    }
+  })
+
+  test('releases the local audio preview when durable upload fails', async () => {
+    const audio = new Blob(['RIFF'], { type: 'audio/wav' })
+    sendMediaGenerationMock.mockResolvedValue(audio)
+    uploadPlaygroundAttachmentsMock.mockRejectedValue(
+      new Error('upload failed')
+    )
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const revoked: string[] = []
+    URL.createObjectURL = (() =>
+      'blob:failed-generated-audio') as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
+
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
+      await harness.hook.generateMedia(
+        'Release failed audio',
+        'tts-1',
+        'plg',
+        { voice: 'alloy' },
+        'target-assistant'
+      )
+
+      expect(harness.messages()[1]?.status).toBe(MESSAGE_STATUS.ERROR)
+      expect(revoked).toEqual(['blob:failed-generated-audio'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL
+      URL.revokeObjectURL = originalRevokeObjectURL
+    }
+  })
+
   test('turns the binary speech response into generated audio media', async () => {
     const audio = new Blob(['RIFF\x00\x00\x00\x00WAVE'], {
       type: 'audio/wav',

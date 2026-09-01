@@ -594,6 +594,42 @@ describe('Playground persistence payloads', () => {
     expect(JSON.stringify(payload)).not.toContain(blobUrl)
   })
 
+  test('persists generated audio by durable asset ID without its expiring URL', () => {
+    const previewURL = 'https://storage.example/signed-generated.wav'
+    const assistant: Message = {
+      ...completeAssistant,
+      versions: [
+        {
+          ...completeAssistant.versions[0],
+          generatedMedia: [
+            {
+              type: 'audio',
+              assetId: 'ast_generated_audio',
+              mimeType: 'audio/wav',
+              url: previewURL,
+            },
+          ],
+        },
+      ],
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      activeTurn(),
+      [userMessage, assistant],
+      false,
+      2500
+    )
+
+    expect(payload.assistant_message.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'audio',
+        assetId: 'ast_generated_audio',
+        mimeType: 'audio/wav',
+      },
+    ])
+    expect(JSON.stringify(payload)).not.toContain(previewURL)
+  })
+
   test('binds the terminal payload to the assistant created for that turn', () => {
     const laterAssistant: Message = {
       key: 'assistant-later',

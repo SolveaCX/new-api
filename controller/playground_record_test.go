@@ -185,6 +185,41 @@ func TestSavePlaygroundRecordPersistsDurableAttachmentReferenceWithoutSignedURL(
 	require.Equal(t, "ast_controller_attachment", references[0].AssetID)
 }
 
+func TestSavePlaygroundRecordPersistsGeneratedAudioAssetReferenceWithoutSignedURL(t *testing.T) {
+	setupPlaygroundControllerDB(t, 216)
+	now := time.Now().Unix()
+	require.NoError(t, model.DB.Create(&model.Asset{
+		PublicId: "ast_controller_generated_audio", UserId: 216, AssetType: model.AssetTypeAudio,
+		Status: model.AssetStatusActive, SourceStatus: model.AssetSourceStatusAvailable,
+		StorageBackend: "gcs", StorageBucket: "bucket", ObjectKey: "generated.wav", ObjectGeneration: 1,
+		ContentType: "audio/wav", SizeBytes: 4, SourceExpiresAt: now + 3600, CreatedAt: now, UpdatedAt: now,
+	}).Error)
+	body := `{
+		"record_id":"550e8400-e29b-41d4-a716-446655440000",
+		"conversation_id":"550e8400-e29b-41d4-a716-446655440001",
+		"user_message":{"key":"u","from":"user","versions":[{"id":"uv","content":"say hello"}]},
+		"request_messages":[{"role":"user","content":"say hello"}],
+		"assistant_message":{"key":"a","from":"assistant","versions":[{"id":"av","content":"Audio","generatedMedia":[{"type":"audio","assetId":"ast_controller_generated_audio","mimeType":"audio/wav","url":"https://signed.example/generated.wav"}]}],"status":"complete"},
+		"reasoning_content":"","input_text":"say hello","output_text":"Audio","model_name":"tts-1","group_name":"plg",
+		"parameters":{},"status":"complete","error_code":"","error_message":"","relay_request_id":"","prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"latency_ms":1,
+		"messages_snapshot":[{"key":"u","from":"user","versions":[{"id":"uv","content":"say hello"}]},{"key":"a","from":"assistant","versions":[{"id":"av","content":"Audio","generatedMedia":[{"type":"audio","assetId":"ast_controller_generated_audio","mimeType":"audio/wav","url":"https://signed.example/generated.wav"}]}],"status":"complete"}],
+		"client_completed_at":1000
+	}`
+	c, recorder := playgroundRecordTestContext(t, 216, http.MethodPost, body)
+
+	SavePlaygroundRecord(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var stored model.PlaygroundRecord
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).First(&stored).Error)
+	require.NotContains(t, string(stored.AssistantMessage), "https://signed.example/generated.wav")
+	require.NotContains(t, string(stored.MessagesSnapshot), "https://signed.example/generated.wav")
+	var references []model.PlaygroundRecordAsset
+	require.NoError(t, model.DB.Where("record_id = ?", playgroundRecordID).Find(&references).Error)
+	require.Len(t, references, 1)
+	require.Equal(t, "ast_controller_generated_audio", references[0].AssetID)
+}
+
 func TestSaveAndClearPlaygroundRecordPreservesDocumentAttachmentReferences(t *testing.T) {
 	setupPlaygroundControllerDB(t, 215)
 	now := time.Now().Unix()
