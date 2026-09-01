@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CLAUDE_CONFIG,
   DEEPSEEK_CONFIG,
   GEMINI_CONFIG,
   GLM_API_CONFIG,
+  GPT_CONFIG,
+  GPT_4_1_MINI_CONFIG,
   GPT_IMAGE_2_CONFIG,
   MINIMAX_H3_CONFIG,
   QWEN_CONFIG,
+  SEEDANCE_CONFIG,
   SEEDANCE_25_CONFIG,
   SONILO_VIDEO_TO_MUSIC_CONFIG,
   getModelLandingConfig,
@@ -15,6 +19,7 @@ import {
   getModelLandingPathnames,
   getPriorityModelLandingPathnames,
   getLocalizedModelLandingConfig,
+  getLocalizedModelLandingSeo,
   resolveModelLandingModels,
   modelLandingCopy,
 } from "./model-landing";
@@ -263,6 +268,16 @@ describe("model landing configuration", () => {
     expect(getModelLandingConfigForModel("seedance-2.0-pro")?.slug).toBe("seedance-api");
   });
 
+  test("keeps MiniMax-H3 on its documented video contract", () => {
+    expect(MINIMAX_H3_CONFIG.generator?.protocol).toBe("minimax-video");
+    expect(MINIMAX_H3_CONFIG.generator?.fields).toEqual([
+      { name: "resolution", label: "Resolution", type: "select", defaultValue: "768P", options: ["768P", "2K"] },
+      { name: "duration", label: "Duration", type: "number", defaultValue: 6, min: 4, max: 15 },
+      { name: "ratio", label: "Aspect ratio", type: "select", defaultValue: "16:9", options: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"] },
+      { name: "aigc_watermark", label: "AIGC watermark", type: "boolean", defaultValue: false },
+    ]);
+  });
+
   test("builds media landing configs from live pricing endpoint types", () => {
     const sonilo: PricingModel = {
       model_name: "sonilo-video-to-music",
@@ -502,9 +517,16 @@ describe("model landing configuration", () => {
       expect(source.landingContent?.hero?.title).toBe(sourceTitle);
     }
 
-    // Seedance is already independently audited and must not be replaced by
-    // one of the five priority editorial packs.
-    expect(getLocalizedModelLandingConfig(SEEDANCE_25_CONFIG, "pt")).toBe(SEEDANCE_25_CONFIG);
+    // Seedance keeps its own audited editorial block, but the resolver still
+    // returns a localized copy so consumers outside React cannot accidentally
+    // expose the English source fields.
+    const localizedSeedance = getLocalizedModelLandingConfig(SEEDANCE_25_CONFIG, "pt");
+    expect(localizedSeedance).not.toBe(SEEDANCE_25_CONFIG);
+    expect(localizedSeedance.landingContent?.comparison?.title).toContain("Seedance 2.5");
+    expect(localizedSeedance.landingContent?.comparison?.title).not.toBe(
+      SEEDANCE_25_CONFIG.landingContent?.comparison?.title,
+    );
+    expect(SEEDANCE_25_CONFIG.landingContent?.comparison?.title).toContain("documented video fields");
   });
 
   test("keeps refreshed model-detail UI labels translated in every locale", () => {
@@ -525,6 +547,68 @@ describe("model landing configuration", () => {
     for (const locale of LOCALES.filter((item) => item !== "en")) {
       for (const key of localizedKeys) {
         expect(modelLandingCopy(locale, key as never)).not.toBe(modelLandingCopy("en", key as never));
+      }
+    }
+  });
+
+  test("localizes static model metadata when a catalog model is unavailable", () => {
+    const staticConfigs = [
+      CLAUDE_CONFIG,
+      GPT_CONFIG,
+      GEMINI_CONFIG,
+      DEEPSEEK_CONFIG,
+      QWEN_CONFIG,
+      GLM_API_CONFIG,
+      GPT_4_1_MINI_CONFIG,
+      SEEDANCE_CONFIG,
+      SONILO_VIDEO_TO_MUSIC_CONFIG,
+    ];
+
+    for (const config of staticConfigs) {
+      for (const locale of LOCALES.filter((item) => item !== "en")) {
+        const seo = getLocalizedModelLandingSeo(config, locale);
+        expect(seo.title).toBeTruthy();
+        expect(seo.description).toBeTruthy();
+        expect(seo.title).not.toBe(config.seo.title);
+        expect(seo.description).not.toBe(config.seo.description);
+        expect(getLocalizedModelLandingConfig(config, locale).seo).toEqual(seo);
+      }
+    }
+  });
+
+  test("does not leak English compact labels into translated model shells", () => {
+    const labels = ["Prompt", "Performance", "Endpoint"] as const;
+    for (const locale of LOCALES.filter((item) => item !== "en")) {
+      for (const label of labels) {
+        expect(modelLandingCopy(locale, label as never)).not.toBe(label);
+      }
+    }
+  });
+
+  test("translates shared model-detail labels and related cards", () => {
+    const labels = [
+      "Usage",
+      "Editing",
+      "High-Speed Action",
+      "10% below list price",
+      "Seedance-2.5 API–frequently asked questions",
+      "OpenAI-compatible text model",
+      "Creative video generation",
+      "High-fidelity video generation",
+      "Motion control and references",
+      "Story and scene generation",
+      "Fast creative variants",
+      "Social-ready clips",
+      "Videos generated",
+      "Images generated",
+      "Input",
+      "Output",
+    ] as const;
+    for (const locale of LOCALES.filter((item) => item !== "en")) {
+      for (const label of labels) {
+        const value = modelLandingCopy(locale, label as never);
+        expect(value).toBeTruthy();
+        expect(value).not.toBe(modelLandingCopy("en", label as never));
       }
     }
   });

@@ -7194,3 +7194,554 @@ html:has(.model-prototype) {
 .model-prototype .output-preview .video-preview.image-preview .preview-media {
   object-fit: contain !important;
 }
+
+/* Model-detail copy must never be sacrificed to the fixed prototype canvas.
+ * The original handoff used one-line labels and two-line clamps for the
+ * English mock.  Localized headings, pricing notes, API details, and live
+ * catalog values are real content, so release those constraints globally and
+ * let the section/card height follow the rendered text.  Media frames keep
+ * their own overflow rules above; this block only targets copy/layout nodes. */
+.model-prototype :is(
+  .model-hero,
+  .model-hero > .model-container,
+  .model-hero-top,
+  .model-hero-row,
+  .model-hero-copy-block,
+  .model-hero-capabilities,
+  .model-hero-stats,
+  .performance,
+  .usage,
+  .capabilities,
+  .capabilities-comparison,
+  .model-pricing,
+  .why,
+  .prompt-library,
+  .api-section,
+  .related,
+  .faq,
+  .performance > .model-container,
+  .usage > .model-container,
+  .capabilities > .model-container,
+  .capabilities-comparison > .model-container,
+  .capabilities-comparison .comparison-block,
+  .model-pricing > .model-container,
+  .model-pricing .pricing-block,
+  .why > .model-container,
+  .prompt-library > .model-container,
+  .api-section > .model-container,
+  .related > .model-container,
+  .faq > .model-container,
+  .faq-layout
+) {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible !important;
+}
+
+.model-prototype :is(
+  .model-title-line,
+  .model-title-line h1,
+  .model-hero-copy,
+  .model-stat-label,
+  .model-stat-value,
+  .model-stat-reference,
+  .parameter-label,
+  .parameter-value,
+  .section-head,
+  .section-head .eyebrow,
+  .section-head .section-title,
+  .section-head .section-copy,
+  .capability-card h3,
+  .capability-card p,
+  .why-card h3,
+  .why-card p,
+  .pricing-note,
+  .pricing-kicker,
+  .pricing-feature-value,
+  .pricing-wallet-copy,
+  .pricing-facts-list dt,
+  .pricing-facts-list dd,
+  .pricing-example-row span,
+  .pricing-example-row strong,
+  .api-toggle span:first-child,
+  .api-detail,
+  .related-copy strong,
+  .related-copy span,
+  .faq-toggle > span:first-child,
+  .faq-answer,
+  .comparison th,
+  .comparison td,
+  .model-pricing th,
+  .model-pricing td
+) {
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: 0;
+  max-height: none !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  -webkit-line-clamp: unset !important;
+}
+
+/* The legacy parity layer also fixes these nodes as flex items.  Reset the
+ * basis explicitly: height:auto alone cannot grow an item whose basis is
+ * still 24/38/48px, so a localized line could remain clipped in a flex
+ * column even after overflow is released. */
+.model-prototype :is(
+  .section-head .eyebrow,
+  .section-head .section-title,
+  .section-head .section-copy,
+  .model-title-line h1,
+  .model-hero-copy,
+  .model-stat-label,
+  .model-stat-value,
+  .model-stat-reference,
+  .capability-card h3,
+  .capability-card p,
+  .why-card h3,
+  .why-card p,
+  .pricing-note,
+  .pricing-kicker,
+  .pricing-feature-value,
+  .pricing-wallet-copy,
+  .api-detail,
+  .faq-answer
+) {
+  flex: 0 0 auto !important;
+  display: block !important;
+}
+
+/* Section headings are flex children in the desktop parity rules.  Remove the
+ * old fixed flex-basis as well as height, otherwise a wrapped description can
+ * still be clipped by the flex item even with visible overflow. */
+.model-prototype :is(
+  .performance .section-head,
+  .usage .section-head,
+  .capabilities .section-head,
+  .why .section-head,
+  .capabilities-comparison .comparison-block > .section-head,
+  .model-pricing .pricing-block > .section-head,
+  .prompt-library-head,
+  .prompt-library-head > .section-head,
+  .api-section .section-head,
+  .related .section-head,
+  .faq-intro .section-head
+) {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+}
+
+.model-prototype :is(
+  .capability-grid,
+  .why-grid,
+  .prompt-grid,
+  .related-grid,
+  .api-layout,
+  .metrics,
+  .chart-stats
+) {
+  height: auto !important;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.model-prototype :is(.capability-card, .why-card, .prompt-card, .api-item, .faq-item) {
+  height: auto !important;
+  min-height: 0;
+}
+
+/* Cards should grow with localized copy; only the image/media frame remains a
+ * fixed-ratio visual surface. */
+.model-prototype :is(.capability-card, .why-card, .prompt-card) {
+  overflow: visible !important;
+}
+
+.model-prototype :is(.comparison, .model-pricing .pricing-card) {
+  height: auto !important;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.model-prototype .faq-list {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible !important;
+}
+
+.model-prototype :is(.comparison table, .comparison thead, .comparison tbody, .comparison tr, .model-pricing table, .model-pricing thead, .model-pricing tbody, .model-pricing tr) {
+  height: auto !important;
+  min-height: 0;
+}
+
+/* These values are intentionally readable at narrow widths too; a long model
+ * id or localized field label may wrap instead of disappearing behind an
+ * ellipsis. */
+.model-prototype :is(.model-breadcrumb, .model-breadcrumb > span:last-child, .model-id-line, .model-id-line a, .model-id-line button, .advanced-options .field-grid > div > div > span:first-child, .input-fields .upload-example-copy strong, .input-fields .upload-file-info strong, .pricing-example-row span) {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+/* Generic (non-prototype) model guides use Tailwind utility classes.  Apply
+ * the same no-truncation guarantee to their prose and values without
+ * changing intentional image-frame overflow. */
+.model-square-page :is(h1, h2, h3, h4, p, li, dt, dd, summary, span, strong) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.model-square-page :is(.truncate, [class*="line-clamp-"]) {
+  overflow: visible !important;
+  max-height: none !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  -webkit-line-clamp: unset !important;
+}
+
+/* Final overflow audit: these compact controls used their own legacy
+ * ellipsis rules and therefore were not covered by the section-level reset
+ * above.  Keep the control geometry, but let localized copy wrap inside it. */
+.model-prototype .advanced-options label > span:first-child,
+.model-prototype .advanced-options .field-grid > div > div > span:first-child {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  flex: 0 0 auto !important;
+}
+
+.model-prototype .advanced-options .field-grid > div > div > div {
+  height: auto !important;
+  min-height: 36px;
+  overflow: visible !important;
+}
+
+.model-prototype .input-fields .upload-copy,
+.model-prototype .input-fields .upload-add-copy {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .performance .metric-note {
+  height: auto !important;
+  min-height: 15px;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  line-height: 20px;
+}
+
+.model-prototype .output-preview .preview-label {
+  height: auto !important;
+  min-height: 0;
+  max-width: calc(100% - 24px);
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .prompt-actions,
+.model-prototype .prompt-actions > button,
+.model-prototype .prompt-actions > a,
+.model-prototype .prompt-actions .outline-button,
+.model-prototype .prompt-actions .dark-button {
+  height: auto !important;
+  min-height: 36px;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .prompt-actions > :is(button, a) {
+  box-sizing: border-box;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 18px;
+}
+
+/* Related cards intentionally clip their image layer to the rounded frame;
+ * the card and copy itself may grow when a translated title/description needs
+ * an extra line. */
+.model-prototype .related-grid {
+  grid-auto-rows: minmax(305px, auto);
+}
+
+.model-prototype .related-card {
+  height: auto !important;
+  min-height: 305px;
+  overflow: hidden;
+}
+
+.model-prototype .related-card .related-copy {
+  height: auto !important;
+  min-height: 110px;
+  overflow: visible !important;
+}
+
+.model-prototype .related-copy strong,
+.model-prototype .related-copy span {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .why .why-grid,
+.model-prototype .capabilities-comparison > .model-container,
+.model-prototype .capabilities-comparison .comparison-block,
+.model-prototype .capabilities-comparison .comparison,
+.model-prototype .capabilities-comparison .comparison table,
+.model-prototype .capabilities-comparison .comparison tbody,
+.model-prototype .capabilities-comparison .comparison tbody tr,
+.model-prototype .faq-item {
+  height: auto !important;
+  min-height: 0;
+  flex: 0 0 auto !important;
+}
+
+.model-prototype .capabilities-comparison .comparison tbody tr {
+  min-height: 39px;
+}
+
+.model-prototype .api-section .api-detail {
+  width: 100% !important;
+  max-width: 100%;
+}
+
+/* The section-wide reset above intentionally makes copy visible, but these
+ * two nodes are disclosure bodies: their closed state must still stay hidden.
+ * Re-assert the semantic state after the generic display:block rule. */
+.model-prototype .api-section .api-item:not(.open) .api-detail {
+  display: none !important;
+}
+
+.model-prototype .api-section .api-item.open .api-detail,
+.model-prototype .faq-item[open] .faq-answer {
+  display: block !important;
+}
+
+.model-prototype .faq-item:not([open]) .faq-answer {
+  display: none !important;
+}
+
+/* Upload zones had a 70px canvas and hidden overflow.  Keep that as the
+ * minimum visual rhythm, but allow translated labels/example copy to add a
+ * line without disappearing. */
+.model-prototype .input-fields .upload-zone:not(.has-uploads) {
+  height: auto !important;
+  min-height: 70px !important;
+  overflow: visible !important;
+}
+
+.model-prototype .input-fields .upload-example-copy,
+.model-prototype .input-fields .upload-example-copy span {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+/* Performance cards use a fixed two-row grid in the legacy handoff.  Release
+ * both the row basis and card height so a localized metric note can wrap and
+ * push the row naturally. */
+.model-prototype .performance .metrics {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: auto !important;
+}
+
+.model-prototype .performance .metric-card {
+  height: auto !important;
+  min-height: 128px !important;
+  overflow: visible !important;
+}
+
+.model-prototype .performance .metric-main,
+.model-prototype .performance .metric-copy,
+.model-prototype .performance .metric-label,
+.model-prototype .performance .metric-value {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .performance .metric-note {
+  align-items: flex-start !important;
+}
+
+/* Related artwork remains clipped to its rounded frame, while the copy is
+ * moved into normal flow so a wrapped localized title/description contributes
+ * to the card height instead of being hidden by an absolute 110px overlay. */
+.model-prototype .related-grid {
+  grid-template-rows: none !important;
+  grid-auto-rows: minmax(305px, auto) !important;
+}
+
+.model-prototype .related-card {
+  display: flex;
+  height: auto !important;
+  min-height: 305px !important;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.model-prototype .related-card .related-copy {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  height: auto !important;
+  min-height: 110px;
+  margin-top: auto;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+
+/* FAQ/API disclosure rows must grow with their body and keep the heading
+ * column flexible at narrow widths. */
+.model-prototype .faq-item {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+}
+
+.model-prototype .faq-toggle {
+  height: auto !important;
+  min-height: 55px;
+}
+
+.model-prototype .faq-toggle > span:first-child,
+.model-prototype .api-section .api-toggle span:first-child {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .api-section .api-item {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 0 0 auto !important;
+}
+
+/* Comparison rows become flex/grid rows at narrow breakpoints.  Clear the
+ * inherited 40/39px row heights as well as the table-section basis so wrapped
+ * column labels remain inside their row while horizontal scrolling is kept. */
+.model-prototype .comparison :is(thead, tbody, tr) {
+  height: auto !important;
+  min-height: 0;
+  flex: 0 0 auto !important;
+}
+
+.model-prototype .comparison thead tr {
+  min-height: 40px;
+}
+
+.model-prototype .comparison tbody tr {
+  min-height: 39px;
+}
+
+.model-prototype .comparison :is(th, td) {
+  height: auto !important;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.model-prototype .why .why-card {
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+  overflow: visible !important;
+}
+
+/* Header actions and capability pills are user-facing copy too.  A translated
+ * CTA or tag can be wider than the English prototype, so let the control grow
+ * or wrap instead of clipping it with the original fixed one-line canvas. */
+.model-prototype .model-hero-top,
+.model-prototype .model-hero-actions,
+.model-prototype .model-hero-tags {
+  height: auto !important;
+  min-height: 32px;
+  overflow: visible !important;
+  flex-wrap: wrap;
+}
+
+.model-prototype :is(.model-quick-start, .model-view-api) {
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: 32px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  line-height: 18px;
+  text-align: center;
+}
+
+.model-prototype .model-tag {
+  box-sizing: border-box;
+  width: auto !important;
+  max-width: 100%;
+  height: auto !important;
+  min-height: 36px;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+  line-height: 20px;
+  text-align: center;
+}
+
+.model-prototype .reference-images-field .truncate {
+  height: auto !important;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  text-overflow: clip !important;
+}

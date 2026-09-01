@@ -120,7 +120,7 @@ describe("ModelLandingPage", () => {
     const url = new URL(encodedHref!.replaceAll("&amp;", "&"));
     expect(url.pathname).toBe("/playground");
     expect(url.searchParams.get("model")).toBe("gpt-image-2");
-    expect(url.searchParams.get("prompt")).toBe(getImagePlaygroundExample("gpt-image-2")?.prompt);
+    expect(url.searchParams.get("prompt")).toBe(getImagePlaygroundExample("gpt-image-2", "zh")?.prompt);
     expect(url.searchParams.has("redirect")).toBe(false);
   });
 
@@ -187,6 +187,21 @@ describe("ModelLandingPage", () => {
     expect(requestPreview).toContain('"duration": 5');
     expect(requestPreview).toContain('"generate_audio": true');
     expect(requestPreview).not.toContain('"resolution": "1080p"');
+  });
+
+  test("renders MiniMax-H3 fields without the unsupported Seedance audio option", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="en" liveModels={[]} />
+    );
+    const requestPreview = html.replaceAll("&quot;", '"');
+
+    expect(requestPreview).toContain('"model": "MiniMax-H3"');
+    expect(requestPreview).toContain('"resolution": "768P"');
+    expect(requestPreview).toContain('"ratio": "16:9"');
+    expect(requestPreview).toContain('"duration": 6');
+    expect(requestPreview).toContain('"aigc_watermark": false');
+    expect(requestPreview).not.toContain('"generate_audio"');
+    expect(html).not.toContain("Generate audio");
   });
 
   test("renders the documented Seedance video mode selector without a fake request field", () => {
@@ -674,6 +689,33 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("0 / 30");
     expect(videoHtml).toContain("0 / 10");
     expect((videoHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
+  });
+
+  test("binds MiniMax-H3's six profession cards to the reviewed Seedance media", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="zh" liveModels={[]} />
+    );
+    const promptLibraryHtml = html.slice(html.indexOf('id="prompt-library"'));
+
+    expect((promptLibraryHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
+    expect(promptLibraryHtml).toContain("微短剧与漫剧创作者");
+    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.mp4");
+    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.jpg");
+    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/minimax-h3-seedance-music-visual-art.mp4");
+    expect(promptLibraryHtml).not.toContain("/assets/cli/product-reveal.mp4");
+  });
+
+  test("sends prompt-library make-one-like-this actions to the console overview", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
+    );
+
+    expect(hrefBeforeText(html, "做一个类似的")).toBe(
+      "https://console.flatkey.ai/dashboard/overview",
+    );
+    const promptLibraryHtml = html.slice(html.indexOf('id="prompt-library"'));
+    expect((promptLibraryHtml.match(/href="https:\/\/console\.flatkey\.ai\/dashboard\/overview"/g) ?? []).length).toBe(6);
+    expect(promptLibraryHtml).not.toContain('href="#workbench"');
   });
 
   test("keeps audio model pages free of the public playground", () => {

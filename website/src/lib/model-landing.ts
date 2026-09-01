@@ -29,6 +29,7 @@ export type ModelGeneratorProtocol =
   | "openai-image"
   | "gemini-image"
   | "seedance-video"
+  | "minimax-video"
   | "veo-video"
   | "grok-video"
   | "audio";
@@ -873,7 +874,10 @@ export const MINIMAX_H3_CONFIG: ModelConfig = {
     kind: "video",
     endpoint: "/v1/videos",
     storageKey: "flatkey:model-generator-draft:minimax-h3",
-    protocol: "seedance-video",
+    // MiniMax-H3 is served by the hailuo_v2 adapter. Keep its request
+    // contract distinct from Seedance so the preview never advertises the
+    // unsupported generate_audio field.
+    protocol: "minimax-video",
     referenceLimits: { image: 9, video: 3, audio: 3 },
     fields: [
       { name: "resolution", label: "Resolution", type: "select", defaultValue: "768P", options: ["768P", "2K"] },
@@ -2316,6 +2320,160 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
   };
 }
 
+type ModelLandingSeoKind = ModelGeneratorConfig["kind"] | "text";
+
+type ModelLandingSeoTemplate = {
+  title: string;
+  description: string;
+  kinds: Record<ModelLandingSeoKind, { title: string; task: string }>;
+};
+
+/**
+ * Localized metadata fallback for static family pages.
+ *
+ * Live catalog pages and curated priority pages already carry complete
+ * `seoByLocale` packs.  A handful of legacy/static configs do not, which used
+ * to make their localized routes fall back to an English browser title and
+ * description even though the visible model-detail shell was translated.
+ * Keep model and API names intact, but localize the surrounding search intent.
+ */
+const MODEL_LANDING_SEO_TEMPLATES: Record<Locale, ModelLandingSeoTemplate> = {
+  en: {
+    title: "{{model}} {{kind}} | Flatkey",
+    description: "Use {{model}} for {{task}} through Flatkey. Review live pricing, supported controls, and API routing, then manage usage and billing with one key.",
+    kinds: {
+      text: { title: "API pricing and developer access", task: "text, reasoning, and agent workflows" },
+      image: { title: "image API, pricing, and controls", task: "image generation and editing" },
+      video: { title: "video API, pricing, and controls", task: "video generation" },
+      audio: { title: "audio API, pricing, and controls", task: "audio generation" },
+    },
+  },
+  zh: {
+    title: "{{model}}{{kind}} | Flatkey",
+    description: "通过 Flatkey 使用 {{model}} 完成{{task}}。查看实时价格、支持的参数和 API 路由，并通过一个密钥统一管理用量与账单。",
+    kinds: {
+      text: { title: " API 价格与开发者接入", task: "文本、推理和智能体工作流" },
+      image: { title: "图片 API、价格与参数", task: "图片生成与编辑" },
+      video: { title: "视频 API、价格与参数", task: "视频生成" },
+      audio: { title: "音频 API、价格与参数", task: "音频生成" },
+    },
+  },
+  es: {
+    title: "{{model}}: {{kind}} | Flatkey",
+    description: "Usa {{model}} para {{task}} mediante Flatkey. Consulta precios actuales, controles compatibles y rutas de API, y gestiona el uso y la facturación con una sola clave.",
+    kinds: {
+      text: { title: "precios de API y acceso para desarrolladores", task: "texto, razonamiento y flujos con agentes" },
+      image: { title: "API de imágenes, precios y controles", task: "generación y edición de imágenes" },
+      video: { title: "API de vídeo, precios y controles", task: "generación de vídeo" },
+      audio: { title: "API de audio, precios y controles", task: "generación de audio" },
+    },
+  },
+  fr: {
+    title: "{{model}} : {{kind}} | Flatkey",
+    description: "Utilisez {{model}} pour {{task}} via Flatkey. Consultez les tarifs actuels, les réglages pris en charge et les routes API, puis gérez l’usage et la facturation avec une seule clé.",
+    kinds: {
+      text: { title: "tarifs API et accès développeur", task: "le texte, le raisonnement et les workflows d’agents" },
+      image: { title: "API d’images, tarifs et réglages", task: "la génération et la retouche d’images" },
+      video: { title: "API vidéo, tarifs et réglages", task: "la génération vidéo" },
+      audio: { title: "API audio, tarifs et réglages", task: "la génération audio" },
+    },
+  },
+  pt: {
+    title: "{{model}}: {{kind}} | Flatkey",
+    description: "Use {{model}} para {{task}} pela Flatkey. Consulte preços atuais, controles compatíveis e rotas de API e gerencie uso e faturamento com uma única chave.",
+    kinds: {
+      text: { title: "preços de API e acesso para desenvolvedores", task: "texto, raciocínio e fluxos com agentes" },
+      image: { title: "API de imagens, preços e controles", task: "geração e edição de imagens" },
+      video: { title: "API de vídeo, preços e controles", task: "geração de vídeo" },
+      audio: { title: "API de áudio, preços e controles", task: "geração de áudio" },
+    },
+  },
+  ru: {
+    title: "{{model}} — {{kind}} | Flatkey",
+    description: "Используйте {{model}} для {{task}} через Flatkey. Смотрите актуальные цены, поддерживаемые параметры и маршруты API и управляйте расходами по одному ключу.",
+    kinds: {
+      text: { title: "цены API и доступ для разработчиков", task: "работы с текстом, рассуждениями и агентами" },
+      image: { title: "API изображений, цены и параметры", task: "генерации и редактирования изображений" },
+      video: { title: "видео API, цены и параметры", task: "генерации видео" },
+      audio: { title: "аудио API, цены и параметры", task: "генерации аудио" },
+    },
+  },
+  ja: {
+    title: "{{model}}の{{kind}} | Flatkey",
+    description: "Flatkey 経由で {{model}} を{{task}}に利用できます。現在の料金、対応パラメータ、API ルートを確認し、1つのキーで利用量と請求を管理できます。",
+    kinds: {
+      text: { title: "API料金と開発者向けアクセス", task: "テキスト、推論、エージェントワークフロー" },
+      image: { title: "画像API・料金・設定", task: "画像生成と編集" },
+      video: { title: "動画API・料金・設定", task: "動画生成" },
+      audio: { title: "音声API・料金・設定", task: "音声生成" },
+    },
+  },
+  vi: {
+    title: "{{model}} — {{kind}} | Flatkey",
+    description: "Dùng {{model}} cho {{task}} qua Flatkey. Xem giá hiện tại, tham số được hỗ trợ và tuyến API, đồng thời quản lý mức dùng và thanh toán bằng một khóa.",
+    kinds: {
+      text: { title: "giá API và quyền truy cập cho nhà phát triển", task: "văn bản, suy luận và quy trình agent" },
+      image: { title: "API hình ảnh, giá và tùy chọn", task: "tạo và chỉnh sửa hình ảnh" },
+      video: { title: "API video, giá và tùy chọn", task: "tạo video" },
+      audio: { title: "API âm thanh, giá và tùy chọn", task: "tạo âm thanh" },
+    },
+  },
+  de: {
+    title: "{{model}} — {{kind}} | Flatkey",
+    description: "Nutzen Sie {{model}} für {{task}} über Flatkey. Prüfen Sie aktuelle Preise, unterstützte Einstellungen und API-Routen und verwalten Sie Nutzung und Abrechnung mit einem Schlüssel.",
+    kinds: {
+      text: { title: "API-Preise und Entwicklerzugang", task: "Text-, Reasoning- und Agenten-Workflows" },
+      image: { title: "Bild-API, Preise und Einstellungen", task: "Bilderzeugung und -bearbeitung" },
+      video: { title: "Video-API, Preise und Einstellungen", task: "Videogenerierung" },
+      audio: { title: "Audio-API, Preise und Einstellungen", task: "Audiogenerierung" },
+    },
+  },
+  id: {
+    title: "{{model}} — {{kind}} | Flatkey",
+    description: "Gunakan {{model}} untuk {{task}} melalui Flatkey. Lihat harga terbaru, pengaturan yang didukung, dan rute API, lalu kelola pemakaian dan tagihan dengan satu kunci.",
+    kinds: {
+      text: { title: "harga API dan akses developer", task: "teks, penalaran, dan workflow agent" },
+      image: { title: "API gambar, harga, dan pengaturan", task: "pembuatan dan pengeditan gambar" },
+      video: { title: "API video, harga, dan pengaturan", task: "pembuatan video" },
+      audio: { title: "API audio, harga, dan pengaturan", task: "pembuatan audio" },
+    },
+  },
+};
+
+function fillModelLandingSeoTemplate(value: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce(
+    (result, [name, replacement]) => result.replaceAll(`{{${name}}}`, replacement),
+    value,
+  );
+}
+
+export function getLocalizedModelLandingSeo(
+  config: ModelConfig,
+  locale: Locale,
+): ModelConfig["seo"] {
+  const explicit = config.seoByLocale?.[locale];
+  if (explicit) return explicit;
+  if (locale === "en") return config.seo;
+
+  const template = MODEL_LANDING_SEO_TEMPLATES[locale];
+  const kind = config.generator?.kind ?? "text";
+  const kindCopy = template.kinds[kind];
+  // Family display names such as "Gemini API" already contain the product
+  // type. Strip that suffix before composing the localized intent so titles
+  // do not read "Gemini API API" while preserving names such as "Claude Opus
+  // 4" and "GPT-5" verbatim.
+  const modelName = config.displayName.replace(/\s+API$/i, "");
+  const vars = {
+    model: modelName,
+    kind: kindCopy.title,
+    task: kindCopy.task,
+  };
+  return {
+    title: fillModelLandingSeoTemplate(template.title, vars),
+    description: limitSeoDescription(fillModelLandingSeoTemplate(template.description, vars)),
+  };
+}
+
 /**
  * Apply a complete, model-specific editorial pack for a non-English page.
  *
@@ -2330,30 +2488,42 @@ export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Loca
   if (locale === "en") return config;
   const localized = getPriorityModelCopy(config.modelId || config.slug, locale);
   if (!localized) {
-    // Hand-audited packs (notably Seedance 2.5) already carry their own
-    // localized content map. Only the generated catalog fallback should be
-    // rebuilt here; preserving object identity keeps curated packs immutable.
+    if (isSeedanceEditorialConfig(config)) {
+      return localizeModelConfigFacts({
+        ...localizeSeedanceEditorialConfig(config, locale),
+        seo: getLocalizedModelLandingSeo(config, locale),
+      }, locale);
+    }
+    // Rebuild generated catalog copy when it is present.  Static family pages
+    // still need their config-level positioning, use-case, FAQ, pricing-row,
+    // and Playground field labels localized even when their editorial block
+    // is intentionally kept as the curated source object.
     const isGeneratedGeneric = config.landingContent?.faq?.some(
       (item) => item.question === `What is ${config.displayName} used for?`,
     );
-    if (!isGeneratedGeneric) return config;
-    const localizedSeo = config.seoByLocale?.[locale];
-    return {
+    const localizedSeo = getLocalizedModelLandingSeo(config, locale);
+    const nextConfig = {
       ...config,
-      ...(localizedSeo ? { seo: localizedSeo } : {}),
-      landingContent: localizeGenericLandingContent(
-        config.landingContent!,
-        locale,
-        config.displayName,
-        config.generator?.kind,
-      ),
+      seo: localizedSeo,
+      ...(isGeneratedGeneric && config.landingContent
+        ? {
+            landingContent: localizeGenericLandingContent(
+              config.landingContent,
+              locale,
+              config.displayName,
+              config.generator?.kind,
+            ),
+          }
+        : {}),
     };
+    return localizeModelConfigFacts(nextConfig, locale);
   }
 
   const sourceContent = config.landingContent;
   const localizedContent = localized.landingContent;
-  return {
+  return localizeModelConfigFacts({
     ...config,
+    seo: localized.seo,
     landingContent: {
       ...sourceContent,
       ...localizedContent,
@@ -2363,7 +2533,7 @@ export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Loca
         ? { ...sourceContent?.hero, ...localizedContent.hero }
         : undefined,
     },
-  };
+  }, locale);
 }
 
 export function getModelLandingConfigs(): ModelConfig[] {
@@ -2745,7 +2915,72 @@ type GenericLocaleCopy = {
   faqDescription: string;
   faqQuestions: string[];
   faqAnswers: string[];
+  /** Full generated-page prose pack; populated from GENERIC_LOCALE_TEMPLATES. */
+  content?: GenericLocaleTemplates;
 };
+
+type GenericLandingKind = ModelGeneratorConfig["kind"] | "text";
+
+type GenericTemplateArgs = {
+  name: string;
+  provider: string;
+  endpoint: string;
+  task: string;
+  keywordPhrase: string;
+  pricing: string;
+  modalities: string;
+  context: string;
+  contextClause: string;
+  categoryLine: string;
+  useCase: string;
+};
+
+type GenericLocaleTemplates = {
+  keyword: Record<GenericLandingKind, string>;
+  heroDescription: string;
+  performanceDescription: string;
+  activityDescription: string;
+  pricingDescription: string;
+  pricingNote: string;
+  capabilitiesDescription: string;
+  comparisonDescription: string;
+  compareEyebrow: string;
+  baselineLabel: string;
+  promptTitle: string;
+  promptDescription: string;
+  promptAudioDescription: string;
+  whyEyebrow: string;
+  whyTitle: string;
+  whyDescription: string;
+  whyCards: Array<{ title: string; body: string }>;
+  apiDescription: string;
+  apiItems: Array<{ title: string; detail: string }>;
+  apiAudioItem: { title: string; detail: string };
+  apiMediaItem: { title: string; detail: string };
+  relatedDescription: string;
+  relatedEyebrow: string;
+  relatedTitle: string;
+  faqDescription: string;
+  faqQuestions: string[];
+  faqAnswers: string[];
+  notVerified: string;
+  contextNotListed: string;
+  modalitiesNotListed: string;
+  categoryMissing: string;
+  pricingNoNumeric: string;
+  comparisonLabels: { provider: string; modalities: string; context: string; endpoint: string; billing: string };
+  pricingLabels: { input: string; output: string; cache: string; second: string; image: string; audio: string; video: string; request: string; live: string };
+  pricingDetails: { input: string; output: string; cache: string; second: string; request: string };
+  pricingUnits: { tokens: string; second: string; request: string; image: string; audio: string; video: string };
+  capabilityTitles: Record<GenericLandingKind, string[]>;
+  capabilityBodies: Record<GenericLandingKind, string[]>;
+};
+
+const GENERIC_LANDING_KINDS: readonly GenericLandingKind[] = ["image", "video", "audio", "text"];
+
+function genericKindRecord<T>(value: T): Record<GenericLandingKind, T> {
+  return Object.fromEntries(GENERIC_LANDING_KINDS.map((kind) => [kind, value])) as Record<GenericLandingKind, T>;
+}
 
 const GENERIC_LOCALE_COPY: Record<Locale, GenericLocaleCopy> = {
   en: {
@@ -2810,6 +3045,689 @@ const GENERIC_LOCALE_COPY: Record<Locale, GenericLocaleCopy> = {
   },
 };
 
+/**
+ * Copy used by generated catalog pages.  Generic pages are built from live
+ * catalog facts, so translating only the section headings leaves most of the
+ * page in English.  These templates keep the facts as placeholders and
+ * translate every sentence around them.  The same semantic capability cards
+ * are intentionally shared across kinds; the localized keyword and endpoint
+ * placeholders keep them specific to the selected model without duplicating
+ * four almost-identical dictionaries per language.
+ */
+const GENERIC_LOCALE_TEMPLATES: Record<Locale, GenericLocaleTemplates> = {
+  en: {
+    keyword: { image: "image generation", video: "video generation", audio: "audio generation", text: "chat and coding" },
+    heroDescription: "{{provider}}'s {{name}} is for {{keywordPhrase}}. Flatkey routes it through {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Live Flatkey request telemetry for {{name}} appears here when enough production traffic is available.",
+    activityDescription: "Track request volume and successful inference activity for {{name}} over the latest reporting window.",
+    pricingDescription: "{{pricing}}. Rates below come from the live Flatkey catalog; they are not a promise about a provider's direct public price.",
+    pricingNote: "Billing follows the selected {{name}} route and account group. Recheck the live estimate before running production volume.",
+    capabilitiesDescription: "{{provider}}'s {{name}} route supports {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Compare the catalog facts for {{name}} with the previous-generation baseline before changing your integration.",
+    compareEyebrow: "Compare",
+    baselineLabel: "Previous generation",
+    promptTitle: "{{name}} {{keywordPhrase}} prompt examples",
+    promptDescription: "Start with a {{name}} prompt for {{useCase}}, then adjust the request fields shown in the playground.",
+    promptAudioDescription: "Review {{name}} API examples and billing dimensions, then use the documented endpoint for authenticated requests.",
+    whyEyebrow: "Why {{name}} API",
+    whyTitle: "Why use {{name}} through Flatkey?",
+    whyDescription: "Use one gateway for {{name}}, account controls, and the rest of your model catalog.",
+    whyCards: [
+      { title: "{{name}} in one API", body: "Keep the {{name}} model id and endpoint explicit while using the same Flatkey key as other workloads." },
+      { title: "Live catalog pricing", body: "See the current {{name}} billing dimensions before a request is sent, then confirm the final estimate in your account." },
+      { title: "A practical model handoff", body: "Test a {{name}} prompt in the public playground and carry the same settings into an authenticated integration." },
+      { title: "Usage and routing controls", body: "Centralize keys, quotas, and routing for {{name}} without changing your application's provider-facing workflow." },
+    ],
+    apiDescription: "Use the model id above with {{endpoint}}; keep the request fields and billing unit documented for your route.",
+    apiItems: [
+      { title: "Call {{endpoint}}", detail: "Send an authenticated request to {{endpoint}} with model set to {{name}}." },
+      { title: "Keep the model id stable", detail: "Use {{name}} in your SDK configuration so routing and usage reports map to the intended catalog entry." },
+      { title: "Check the live estimate", detail: "Review {{pricing}} and account limits before scaling {{name}} requests." },
+    ],
+    apiAudioItem: { title: "Integrate with the API", detail: "Use {{endpoint}} with a Flatkey API key in your server or agent." },
+    apiMediaItem: { title: "Move from test to production", detail: "Start in the playground, then reuse the request shape with a Flatkey API key in your server or agent." },
+    relatedDescription: "Explore other {{keywordPhrase}} routes in the Flatkey catalog.",
+    relatedEyebrow: "Related model APIs",
+    relatedTitle: "Related {{keywordPhrase}} models",
+    faqDescription: "Answers about {{name}} pricing, capabilities, endpoint access, and catalog limits.",
+    faqQuestions: ["What is {{name}} used for?", "How is {{name}} priced?", "Which API endpoint calls {{name}}?", "What context or input limits does {{name}} have?"],
+    faqAnswers: [
+      "{{name}} is listed by {{provider}} for {{keywordPhrase}}; the catalog lists these modalities: {{modalities}}.",
+      "{{name}} currently shows {{pricing}}. The applicable rate can vary by route, account group, and request settings.",
+      "Flatkey routes this model through {{endpoint}}. Set the model field to {{name}} and follow the fields supported by that endpoint.",
+      "{{name}} is listed with {{context}}. Other limits depend on the route and current account availability, so verify them before production use.",
+    ],
+    notVerified: "Not verified in this catalog snapshot",
+    contextNotListed: "Context window not listed in the catalog",
+    modalitiesNotListed: "Modalities not listed in the catalog",
+    categoryMissing: "The catalog does not list a category for this model.",
+    pricingNoNumeric: "The catalog did not expose a numeric rate in this snapshot",
+    comparisonLabels: { provider: "Provider", modalities: "Modalities", context: "Context", endpoint: "Endpoint", billing: "Billing" },
+    pricingLabels: { input: "Input tokens", output: "Output tokens", cache: "Cached input", second: "Generation seconds", image: "Generated image", audio: "Audio request", video: "Generated video", request: "API request", live: "Live catalog pricing" },
+    pricingDetails: { input: "Catalog input rate", output: "Catalog output rate", cache: "Catalog cache rate", second: "Rate follows generated seconds", request: "Catalog request rate" },
+    pricingUnits: { tokens: "1M tokens", second: "second", request: "request", image: "image", audio: "audio", video: "video" },
+    capabilityTitles: genericKindRecord(["{{name}} {{keywordPhrase}}", "{{name}} reference-led workflows", "{{name}} channel-ready variants", "{{name}} production handoff"]),
+    capabilityBodies: genericKindRecord([
+      "Turn a written brief into {{keywordPhrase}} outputs through {{endpoint}}.",
+      "Use an existing reference when the {{name}} route accepts reference media or context.",
+      "Adapt one concept into the variants your storefront, campaign, or content pipeline needs.",
+      "Move an approved result from prompt exploration into a repeatable Flatkey generation workflow.",
+    ]),
+  },
+  zh: {
+    keyword: { image: "图像生成", video: "视频生成", audio: "音频生成", text: "对话与编程" },
+    heroDescription: "{{name}} 可通过 Flatkey 使用，适用于{{keywordPhrase}}；Flatkey 通过 {{endpoint}} 路由此模型，供应商为 {{provider}}。{{pricing}}{{contextClause}}",
+    performanceDescription: "当生产流量达到足够规模后，这里会显示 {{name}} 的 Flatkey 实时请求遥测数据。",
+    activityDescription: "查看最近统计窗口内 {{name}} 的请求量和成功推理活动。",
+    pricingDescription: "{{pricing}}。以下费率来自 Flatkey 实时目录，并不代表供应商公开直接价格的承诺。",
+    pricingNote: "计费遵循所选 {{name}} 路由和账户组。运行生产流量前，请重新确认实时预估。",
+    capabilitiesDescription: "{{provider}} 的 {{name}} 路由支持 {{modalities}}。{{categoryLine}}",
+    comparisonDescription: "在调整集成前，将 {{name}} 的目录事实与上一代基线进行对比。",
+    compareEyebrow: "对比",
+    baselineLabel: "上一代",
+    promptTitle: "{{name}} {{keywordPhrase}}提示词示例",
+    promptDescription: "先使用一个面向{{useCase}}的 {{name}} 提示词，再调整 Playground 中显示的请求字段。",
+    promptAudioDescription: "查看 {{name}} 的 API 示例和计费维度，然后使用文档化端点发送经过身份验证的请求。",
+    whyEyebrow: "为什么使用 {{name}} API",
+    whyTitle: "为什么通过 Flatkey 使用 {{name}}？",
+    whyDescription: "通过一个网关管理 {{name}}、账户控制以及模型目录中的其他模型。",
+    whyCards: [
+      { title: "一个 API 使用 {{name}}", body: "明确保留 {{name}} 模型 ID 和端点，同时与其他工作负载共用 Flatkey 密钥。" },
+      { title: "实时目录价格", body: "发送请求前查看当前 {{name}} 计费维度，并在账户中确认最终预估。" },
+      { title: "实用的模型交接", body: "在公开 Playground 中测试 {{name}} 提示词，再将相同设置带入经过身份验证的集成。" },
+      { title: "用量与路由控制", body: "集中管理 {{name}} 的密钥、配额和路由，无需改变应用面向供应商的工作流。" },
+    ],
+    apiDescription: "使用上方模型 ID 调用 {{endpoint}}；为当前路由保留已记录的请求字段和计费单位。",
+    apiItems: [
+      { title: "调用 {{endpoint}}", detail: "向 {{endpoint}} 发送经过身份验证的请求，并将 model 设置为 {{name}}。" },
+      { title: "保持模型 ID 稳定", detail: "在 SDK 配置中使用 {{name}}，让路由和用量报告对应到预期的目录条目。" },
+      { title: "查看实时预估", detail: "扩展 {{name}} 请求前，查看 {{pricing}} 和账户限制。" },
+    ],
+    apiAudioItem: { title: "接入 API", detail: "在服务器或 agent 中使用 Flatkey API 密钥调用 {{endpoint}}。" },
+    apiMediaItem: { title: "从测试进入生产", detail: "先在 Playground 中开始，再在服务器或 agent 中使用 Flatkey API 密钥复用相同请求结构。" },
+    relatedDescription: "探索 Flatkey 目录中的其他{{keywordPhrase}}路由。",
+    relatedEyebrow: "相关模型 API",
+    relatedTitle: "相关{{keywordPhrase}}模型",
+    faqDescription: "关于 {{name}} 价格、能力、端点访问和目录限制的答案。",
+    faqQuestions: ["{{name}} 用于什么任务？", "{{name}} 如何计费？", "调用 {{name}} 使用哪个 API 端点？", "{{name}} 有哪些上下文或输入限制？"],
+    faqAnswers: [
+      "{{name}} 由 {{provider}} 列入{{keywordPhrase}}目录；目录列出的模态为：{{modalities}}。",
+      "{{name}} 当前显示 {{pricing}}。适用费率可能因路由、账户组和请求设置而变化。",
+      "Flatkey 通过 {{endpoint}} 路由此模型。将模型字段设为 {{name}}，并遵循该端点支持的字段。",
+      "{{name}} 标注为 {{context}}。其他限制取决于路由和当前账户可用性，生产使用前请确认。",
+    ],
+    notVerified: "此目录快照未验证",
+    contextNotListed: "目录未列出上下文窗口",
+    modalitiesNotListed: "目录未列出模态",
+    categoryMissing: "目录未列出此模型的分类。",
+    pricingNoNumeric: "此快照未提供数值费率",
+    comparisonLabels: { provider: "供应商", modalities: "模态", context: "上下文", endpoint: "端点", billing: "计费" },
+    pricingLabels: { input: "输入 token", output: "输出 token", cache: "缓存输入", second: "生成秒数", image: "生成图像", audio: "音频请求", video: "生成视频", request: "API 请求", live: "实时目录价格" },
+    pricingDetails: { input: "目录输入费率", output: "目录输出费率", cache: "目录缓存费率", second: "费率按生成秒数计算", request: "目录请求费率" },
+    pricingUnits: { tokens: "100 万 token", second: "秒", request: "请求", image: "图像", audio: "音频", video: "视频" },
+    capabilityTitles: genericKindRecord(["{{name}}{{keywordPhrase}}", "{{name}}参考工作流", "{{name}}渠道适配版本", "{{name}}生产交接"]),
+    capabilityBodies: genericKindRecord(["通过 {{endpoint}} 将文字简报转换为{{keywordPhrase}}结果。", "当 {{name}} 路由接受参考媒体或上下文时，可使用已有参考进行创作。", "将一个创意调整为店铺、营销活动或内容流水线所需的不同版本。", "将确认后的结果从提示词探索带入可重复的 Flatkey 生成工作流。"]),
+  },
+  es: {
+    keyword: { image: "generación de imágenes", video: "generación de vídeo", audio: "generación de audio", text: "chat y programación" },
+    heroDescription: "{{provider}} ofrece {{name}} para {{keywordPhrase}}. Flatkey lo enruta mediante {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Aquí aparecerá la telemetría de solicitudes de Flatkey para {{name}} cuando haya suficiente tráfico de producción.",
+    activityDescription: "Consulta el volumen de solicitudes y la actividad de inferencia correcta de {{name}} durante el último periodo informado.",
+    pricingDescription: "{{pricing}}. Las tarifas proceden del catálogo activo de Flatkey y no garantizan el precio público directo del proveedor.",
+    pricingNote: "La facturación sigue la ruta seleccionada de {{name}} y el grupo de la cuenta. Comprueba de nuevo la estimación antes de ejecutar volumen de producción.",
+    capabilitiesDescription: "La ruta de {{name}} de {{provider}} admite {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Compara los datos de catálogo de {{name}} con la referencia de la generación anterior antes de cambiar la integración.",
+    compareEyebrow: "Comparar",
+    baselineLabel: "Generación anterior",
+    promptTitle: "Ejemplos de prompts de {{name}} para {{keywordPhrase}}",
+    promptDescription: "Empieza con un prompt de {{name}} para {{useCase}} y ajusta los campos de solicitud que muestra el playground.",
+    promptAudioDescription: "Revisa los ejemplos de API y las dimensiones de facturación de {{name}} y usa el endpoint documentado para solicitudes autenticadas.",
+    whyEyebrow: "Por qué usar la API de {{name}}",
+    whyTitle: "¿Por qué usar {{name}} mediante Flatkey?",
+    whyDescription: "Usa una sola pasarela para {{name}}, los controles de la cuenta y el resto del catálogo de modelos.",
+    whyCards: [
+      { title: "{{name}} en una sola API", body: "Mantén explícitos el ID de modelo y el endpoint de {{name}} usando la misma clave Flatkey que en otras cargas." },
+      { title: "Precios del catálogo en vivo", body: "Consulta las dimensiones de facturación actuales de {{name}} antes de enviar la solicitud y confirma la estimación final en tu cuenta." },
+      { title: "Entrega práctica del modelo", body: "Prueba un prompt de {{name}} en el playground público y lleva la misma configuración a una integración autenticada." },
+      { title: "Controles de uso y enrutamiento", body: "Centraliza claves, cuotas y rutas para {{name}} sin cambiar el flujo de trabajo de tu aplicación frente al proveedor." },
+    ],
+    apiDescription: "Usa el ID de modelo anterior con {{endpoint}} y conserva documentados los campos de solicitud y la unidad de facturación de la ruta.",
+    apiItems: [
+      { title: "Llamar a {{endpoint}}", detail: "Envía una solicitud autenticada a {{endpoint}} con model establecido en {{name}}." },
+      { title: "Mantener estable el ID", detail: "Usa {{name}} en la configuración del SDK para que el enrutamiento y los informes correspondan a la entrada correcta." },
+      { title: "Comprobar la estimación", detail: "Revisa {{pricing}} y los límites de la cuenta antes de ampliar las solicitudes de {{name}}." },
+    ],
+    apiAudioItem: { title: "Integrar con la API", detail: "Usa {{endpoint}} con una clave API de Flatkey en tu servidor o agente." },
+    apiMediaItem: { title: "Pasar de prueba a producción", detail: "Empieza en el playground y reutiliza la forma de solicitud con una clave API de Flatkey en tu servidor o agente." },
+    relatedDescription: "Explora otras rutas de {{keywordPhrase}} en el catálogo de Flatkey.",
+    relatedEyebrow: "APIs de modelos relacionados",
+    relatedTitle: "Modelos relacionados de {{keywordPhrase}}",
+    faqDescription: "Respuestas sobre precios, capacidades, endpoints y límites del catálogo de {{name}}.",
+    faqQuestions: ["¿Para qué se usa {{name}}?", "¿Cómo se factura {{name}}?", "¿Qué endpoint de API llama a {{name}}?", "¿Qué límites de contexto o entrada tiene {{name}}?"],
+    faqAnswers: ["{{name}} aparece en el catálogo de {{provider}} para {{keywordPhrase}}; las modalidades son: {{modalities}}.", "{{name}} muestra actualmente {{pricing}}. La tarifa aplicable puede variar según la ruta, la cuenta y la configuración.", "Flatkey enruta este modelo mediante {{endpoint}}. Establece el campo model en {{name}} y usa los campos admitidos.", "{{name}} figura con {{context}}. Otros límites dependen de la ruta y de la disponibilidad de la cuenta; verifícalos antes de producción."],
+    notVerified: "No verificado en esta instantánea del catálogo",
+    contextNotListed: "El catálogo no indica la ventana de contexto",
+    modalitiesNotListed: "El catálogo no indica las modalidades",
+    categoryMissing: "El catálogo no indica una categoría para este modelo.",
+    pricingNoNumeric: "Esta instantánea no expone una tarifa numérica",
+    comparisonLabels: { provider: "Proveedor", modalities: "Modalidades", context: "Contexto", endpoint: "Endpoint", billing: "Facturación" },
+    pricingLabels: { input: "Tokens de entrada", output: "Tokens de salida", cache: "Entrada en caché", second: "Segundos de generación", image: "Imagen generada", audio: "Solicitud de audio", video: "Vídeo generado", request: "Solicitud API", live: "Precios del catálogo en vivo" },
+    pricingDetails: { input: "Tarifa de entrada del catálogo", output: "Tarifa de salida del catálogo", cache: "Tarifa de caché del catálogo", second: "La tarifa sigue los segundos generados", request: "Tarifa de solicitud del catálogo" },
+    pricingUnits: { tokens: "1M tokens", second: "segundo", request: "solicitud", image: "imagen", audio: "audio", video: "vídeo" },
+    capabilityTitles: genericKindRecord(["{{name}} para {{keywordPhrase}}", "Flujos de referencia de {{name}}", "Variantes listas para canales de {{name}}", "Entrega de producción de {{name}}"]),
+    capabilityBodies: genericKindRecord(["Convierte un briefing escrito en resultados de {{keywordPhrase}} mediante {{endpoint}}.", "Usa una referencia existente cuando la ruta de {{name}} acepte medios o contexto de referencia.", "Adapta una idea a las variantes que necesitan tu tienda, campaña o flujo de contenido.", "Lleva un resultado aprobado de la exploración del prompt a un flujo de generación Flatkey repetible."]),
+  },
+  fr: {
+    keyword: { image: "génération d’images", video: "génération vidéo", audio: "génération audio", text: "chat et programmation" },
+    heroDescription: "{{provider}} propose {{name}} pour {{keywordPhrase}}. Flatkey l’achemine via {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "La télémétrie des requêtes Flatkey pour {{name}} apparaîtra ici lorsque le trafic de production sera suffisant.",
+    activityDescription: "Suivez le volume de requêtes et l’activité d’inférence réussie de {{name}} sur la dernière période de reporting.",
+    pricingDescription: "{{pricing}}. Les tarifs ci-dessous proviennent du catalogue Flatkey en direct et ne constituent pas une promesse de prix public direct du fournisseur.",
+    pricingNote: "La facturation suit la route {{name}} sélectionnée et le groupe de compte. Revérifiez l’estimation avant tout volume de production.",
+    capabilitiesDescription: "La route {{name}} de {{provider}} prend en charge {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Comparez les faits du catalogue pour {{name}} à la référence de la génération précédente avant de modifier votre intégration.",
+    compareEyebrow: "Comparer",
+    baselineLabel: "Génération précédente",
+    promptTitle: "Exemples de prompts {{name}} pour {{keywordPhrase}}",
+    promptDescription: "Commencez par un prompt {{name}} pour {{useCase}}, puis ajustez les champs de requête affichés dans le playground.",
+    promptAudioDescription: "Consultez les exemples d’API et les dimensions de facturation de {{name}}, puis utilisez l’endpoint documenté pour les requêtes authentifiées.",
+    whyEyebrow: "Pourquoi l’API {{name}}",
+    whyTitle: "Pourquoi utiliser {{name}} via Flatkey ?",
+    whyDescription: "Utilisez une seule passerelle pour {{name}}, les contrôles du compte et le reste du catalogue de modèles.",
+    whyCards: [
+      { title: "{{name}} dans une seule API", body: "Gardez l’ID du modèle et l’endpoint {{name}} explicites avec la même clé Flatkey que pour les autres charges." },
+      { title: "Tarifs du catalogue en direct", body: "Consultez les dimensions de facturation actuelles de {{name}} avant l’envoi, puis confirmez l’estimation finale dans votre compte." },
+      { title: "Passage pratique au modèle", body: "Testez un prompt {{name}} dans le playground public et réutilisez les mêmes réglages dans une intégration authentifiée." },
+      { title: "Contrôles d’usage et de routage", body: "Centralisez clés, quotas et routage pour {{name}} sans modifier le flux de travail de votre application côté fournisseur." },
+    ],
+    apiDescription: "Utilisez l’ID du modèle avec {{endpoint}} et conservez les champs de requête et l’unité de facturation documentés pour cette route.",
+    apiItems: [
+      { title: "Appeler {{endpoint}}", detail: "Envoyez une requête authentifiée à {{endpoint}} avec model défini sur {{name}}." },
+      { title: "Garder l’ID stable", detail: "Utilisez {{name}} dans la configuration du SDK afin que le routage et les rapports ciblent la bonne entrée." },
+      { title: "Vérifier l’estimation", detail: "Examinez {{pricing}} et les limites du compte avant d’augmenter les requêtes {{name}}." },
+    ],
+    apiAudioItem: { title: "Intégrer l’API", detail: "Utilisez {{endpoint}} avec une clé API Flatkey dans votre serveur ou agent." },
+    apiMediaItem: { title: "Passer du test à la production", detail: "Commencez dans le playground, puis réutilisez la forme de requête avec une clé API Flatkey dans votre serveur ou agent." },
+    relatedDescription: "Découvrez d’autres routes de {{keywordPhrase}} dans le catalogue Flatkey.",
+    relatedEyebrow: "API de modèles associés",
+    relatedTitle: "Modèles associés de {{keywordPhrase}}",
+    faqDescription: "Réponses sur les tarifs, capacités, endpoints et limites du catalogue de {{name}}.",
+    faqQuestions: ["À quoi sert {{name}} ?", "Comment {{name}} est-il facturé ?", "Quel endpoint API appelle {{name}} ?", "Quelles limites de contexte ou d’entrée {{name}} présente-t-il ?"],
+    faqAnswers: ["{{name}} est répertorié par {{provider}} pour la {{keywordPhrase}} ; les modalités du catalogue sont : {{modalities}}.", "{{name}} affiche actuellement {{pricing}}. Le tarif applicable peut varier selon la route, le compte et les paramètres.", "Flatkey achemine ce modèle via {{endpoint}}. Définissez model sur {{name}} et utilisez les champs pris en charge.", "{{name}} est indiqué avec {{context}}. Les autres limites dépendent de la route et du compte ; vérifiez-les avant la production."],
+    notVerified: "Non vérifié dans cet instantané du catalogue",
+    contextNotListed: "La fenêtre de contexte n’est pas indiquée dans le catalogue",
+    modalitiesNotListed: "Les modalités ne sont pas indiquées dans le catalogue",
+    categoryMissing: "Le catalogue n’indique aucune catégorie pour ce modèle.",
+    pricingNoNumeric: "Aucun tarif numérique n’est fourni dans cet instantané",
+    comparisonLabels: { provider: "Fournisseur", modalities: "Modalités", context: "Contexte", endpoint: "Endpoint", billing: "Facturation" },
+    pricingLabels: { input: "Tokens d’entrée", output: "Tokens de sortie", cache: "Entrée en cache", second: "Secondes de génération", image: "Image générée", audio: "Requête audio", video: "Vidéo générée", request: "Requête API", live: "Tarifs du catalogue en direct" },
+    pricingDetails: { input: "Tarif d’entrée du catalogue", output: "Tarif de sortie du catalogue", cache: "Tarif de cache du catalogue", second: "Le tarif suit les secondes générées", request: "Tarif de requête du catalogue" },
+    pricingUnits: { tokens: "1 M de tokens", second: "seconde", request: "requête", image: "image", audio: "audio", video: "vidéo" },
+    capabilityTitles: genericKindRecord(["{{name}} pour {{keywordPhrase}}", "Workflows de référence {{name}}", "Variantes prêtes pour les canaux {{name}}", "Passage en production {{name}}"]),
+    capabilityBodies: genericKindRecord(["Transformez un brief écrit en résultats de {{keywordPhrase}} via {{endpoint}}.", "Utilisez une référence existante lorsque la route {{name}} accepte des médias ou un contexte de référence.", "Adaptez une idée aux variantes nécessaires à votre boutique, campagne ou chaîne de contenu.", "Faites passer un résultat approuvé de l’exploration du prompt à un workflow de génération Flatkey répétable."]),
+  },
+  pt: {
+    keyword: { image: "geração de imagens", video: "geração de vídeo", audio: "geração de áudio", text: "chat e programação" },
+    heroDescription: "{{provider}} oferece {{name}} para {{keywordPhrase}}. A Flatkey roteia o modelo por {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "A telemetria de solicitações da Flatkey para {{name}} aparecerá aqui quando houver tráfego de produção suficiente.",
+    activityDescription: "Acompanhe o volume de solicitações e a atividade de inferência bem-sucedida de {{name}} no período mais recente.",
+    pricingDescription: "{{pricing}}. As tarifas abaixo vêm do catálogo ao vivo da Flatkey e não prometem o preço público direto do provedor.",
+    pricingNote: "A cobrança segue a rota {{name}} selecionada e o grupo da conta. Confira a estimativa antes de executar volume de produção.",
+    capabilitiesDescription: "A rota {{name}} de {{provider}} aceita {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Compare os fatos do catálogo de {{name}} com a referência da geração anterior antes de alterar sua integração.",
+    compareEyebrow: "Comparar",
+    baselineLabel: "Geração anterior",
+    promptTitle: "Exemplos de prompts de {{name}} para {{keywordPhrase}}",
+    promptDescription: "Comece com um prompt de {{name}} para {{useCase}} e ajuste os campos de solicitação exibidos no playground.",
+    promptAudioDescription: "Revise os exemplos de API e as dimensões de cobrança de {{name}} e use o endpoint documentado para solicitações autenticadas.",
+    whyEyebrow: "Por que usar a API {{name}}",
+    whyTitle: "Por que usar {{name}} pela Flatkey?",
+    whyDescription: "Use um único gateway para {{name}}, controles da conta e o restante do catálogo de modelos.",
+    whyCards: [
+      { title: "{{name}} em uma API", body: "Mantenha o ID do modelo e o endpoint de {{name}} explícitos usando a mesma chave Flatkey das demais cargas." },
+      { title: "Preços do catálogo ao vivo", body: "Veja as dimensões de cobrança atuais de {{name}} antes do envio e confirme a estimativa final na conta." },
+      { title: "Transição prática de modelo", body: "Teste um prompt de {{name}} no playground público e leve as mesmas configurações para uma integração autenticada." },
+      { title: "Controles de uso e roteamento", body: "Centralize chaves, cotas e roteamento de {{name}} sem mudar o fluxo da aplicação voltado ao provedor." },
+    ],
+    apiDescription: "Use o ID do modelo acima com {{endpoint}} e mantenha documentados os campos da solicitação e a unidade de cobrança da rota.",
+    apiItems: [
+      { title: "Chamar {{endpoint}}", detail: "Envie uma solicitação autenticada para {{endpoint}} com model definido como {{name}}." },
+      { title: "Manter o ID estável", detail: "Use {{name}} na configuração do SDK para que o roteamento e os relatórios apontem para a entrada correta." },
+      { title: "Verificar a estimativa", detail: "Revise {{pricing}} e os limites da conta antes de ampliar as solicitações de {{name}}." },
+    ],
+    apiAudioItem: { title: "Integrar com a API", detail: "Use {{endpoint}} com uma chave de API Flatkey no servidor ou agente." },
+    apiMediaItem: { title: "Do teste à produção", detail: "Comece no playground e reutilize o formato da solicitação com uma chave de API Flatkey no servidor ou agente." },
+    relatedDescription: "Explore outras rotas de {{keywordPhrase}} no catálogo Flatkey.",
+    relatedEyebrow: "APIs de modelos relacionados",
+    relatedTitle: "Modelos relacionados de {{keywordPhrase}}",
+    faqDescription: "Respostas sobre preços, capacidades, endpoints e limites do catálogo de {{name}}.",
+    faqQuestions: ["Para que {{name}} é usado?", "Como {{name}} é cobrado?", "Qual endpoint da API chama {{name}}?", "Quais limites de contexto ou entrada {{name}} tem?"],
+    faqAnswers: ["{{name}} está listado por {{provider}} para {{keywordPhrase}}; as modalidades do catálogo são: {{modalities}}.", "{{name}} mostra atualmente {{pricing}}. A tarifa pode variar por rota, grupo da conta e configurações.", "A Flatkey roteia este modelo por {{endpoint}}. Defina model como {{name}} e use os campos compatíveis.", "{{name}} está listado com {{context}}. Outros limites dependem da rota e da conta; confirme antes da produção."],
+    notVerified: "Não verificado neste instantâneo do catálogo",
+    contextNotListed: "A janela de contexto não está listada no catálogo",
+    modalitiesNotListed: "As modalidades não estão listadas no catálogo",
+    categoryMissing: "O catálogo não lista uma categoria para este modelo.",
+    pricingNoNumeric: "Este instantâneo não expõe uma tarifa numérica",
+    comparisonLabels: { provider: "Provedor", modalities: "Modalidades", context: "Contexto", endpoint: "Endpoint", billing: "Cobrança" },
+    pricingLabels: { input: "Tokens de entrada", output: "Tokens de saída", cache: "Entrada em cache", second: "Segundos de geração", image: "Imagem gerada", audio: "Solicitação de áudio", video: "Vídeo gerado", request: "Solicitação de API", live: "Preços do catálogo ao vivo" },
+    pricingDetails: { input: "Tarifa de entrada do catálogo", output: "Tarifa de saída do catálogo", cache: "Tarifa de cache do catálogo", second: "A tarifa segue os segundos gerados", request: "Tarifa de solicitação do catálogo" },
+    pricingUnits: { tokens: "1M tokens", second: "segundo", request: "solicitação", image: "imagem", audio: "áudio", video: "vídeo" },
+    capabilityTitles: genericKindRecord(["{{name}} para {{keywordPhrase}}", "Fluxos com referência de {{name}}", "Variantes de canal de {{name}}", "Entrega de produção de {{name}}"]),
+    capabilityBodies: genericKindRecord(["Converta um briefing escrito em resultados de {{keywordPhrase}} por {{endpoint}}.", "Use uma referência existente quando a rota {{name}} aceitar mídia ou contexto de referência.", "Adapte uma ideia às variantes necessárias para sua loja, campanha ou fluxo de conteúdo.", "Leve um resultado aprovado da exploração do prompt para um fluxo de geração Flatkey repetível."]),
+  },
+  ru: {
+    keyword: { image: "генерация изображений", video: "генерация видео", audio: "генерация аудио", text: "чат и программирование" },
+    heroDescription: "{{provider}} предоставляет {{name}} для задач: {{keywordPhrase}}. Flatkey направляет модель через {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Здесь появится телеметрия запросов Flatkey для {{name}}, когда будет достаточно производственного трафика.",
+    activityDescription: "Отслеживайте объём запросов и успешную активность инференса {{name}} за последний отчётный период.",
+    pricingDescription: "{{pricing}}. Указанные ставки взяты из актуального каталога Flatkey и не являются обещанием прямой публичной цены провайдера.",
+    pricingNote: "Расчёт следует выбранному маршруту {{name}} и группе аккаунта. Перед производственной нагрузкой проверьте актуальную оценку.",
+    capabilitiesDescription: "Маршрут {{name}} от {{provider}} поддерживает {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Сравните факты каталога для {{name}} с базовой версией предыдущего поколения перед изменением интеграции.",
+    compareEyebrow: "Сравнение",
+    baselineLabel: "Предыдущее поколение",
+    promptTitle: "Примеры промптов {{name}} для задач: {{keywordPhrase}}",
+    promptDescription: "Начните с промпта {{name}} для задачи «{{useCase}}», затем измените поля запроса в playground.",
+    promptAudioDescription: "Изучите примеры API и измерения тарификации {{name}}, затем используйте документированный endpoint для авторизованных запросов.",
+    whyEyebrow: "Зачем нужен API {{name}}",
+    whyTitle: "Зачем использовать {{name}} через Flatkey?",
+    whyDescription: "Используйте один шлюз для {{name}}, управления аккаунтом и остальных моделей каталога.",
+    whyCards: [
+      { title: "{{name}} через единый API", body: "Сохраняйте явные ID модели и endpoint {{name}}, используя тот же ключ Flatkey для других нагрузок." },
+      { title: "Актуальные цены каталога", body: "Проверьте текущие измерения тарификации {{name}} до отправки запроса и подтвердите итоговую оценку в аккаунте." },
+      { title: "Практическая передача модели", body: "Проверьте промпт {{name}} в открытом playground и перенесите те же настройки в авторизованную интеграцию." },
+      { title: "Управление трафиком и маршрутами", body: "Централизуйте ключи, квоты и маршрутизацию {{name}}, не меняя рабочий процесс приложения для провайдера." },
+    ],
+    apiDescription: "Используйте указанный выше ID модели с {{endpoint}}; сохраняйте документированные поля запроса и единицу тарификации маршрута.",
+    apiItems: [
+      { title: "Вызвать {{endpoint}}", detail: "Отправьте авторизованный запрос на {{endpoint}}, указав model={{name}}." },
+      { title: "Стабильный ID модели", detail: "Укажите {{name}} в конфигурации SDK, чтобы маршрутизация и отчёты относились к нужной записи каталога." },
+      { title: "Проверить оценку", detail: "Проверьте {{pricing}} и лимиты аккаунта перед увеличением числа запросов {{name}}." },
+    ],
+    apiAudioItem: { title: "Интегрировать API", detail: "Используйте {{endpoint}} с ключом API Flatkey на сервере или в агенте." },
+    apiMediaItem: { title: "От теста к продакшену", detail: "Начните в playground, затем повторно используйте формат запроса с ключом API Flatkey на сервере или в агенте." },
+    relatedDescription: "Изучите другие маршруты {{keywordPhrase}} в каталоге Flatkey.",
+    relatedEyebrow: "API похожих моделей",
+    relatedTitle: "Похожие модели: {{keywordPhrase}}",
+    faqDescription: "Ответы о ценах, возможностях, endpoint и лимитах каталога {{name}}.",
+    faqQuestions: ["Для чего используется {{name}}?", "Как тарифицируется {{name}}?", "Какой API endpoint вызывает {{name}}?", "Какие ограничения контекста или входа есть у {{name}}?"],
+    faqAnswers: ["{{name}} указан провайдером {{provider}} для задач «{{keywordPhrase}}»; модальности каталога: {{modalities}}.", "Сейчас для {{name}} указано {{pricing}}. Ставка может зависеть от маршрута, группы аккаунта и параметров запроса.", "Flatkey направляет модель через {{endpoint}}. Установите поле model в {{name}} и используйте поддерживаемые поля.", "Для {{name}} указано {{context}}. Остальные ограничения зависят от маршрута и аккаунта; проверьте их перед продакшеном."],
+    notVerified: "Не подтверждено в этом снимке каталога",
+    contextNotListed: "Окно контекста не указано в каталоге",
+    modalitiesNotListed: "Модальности не указаны в каталоге",
+    categoryMissing: "Каталог не указывает категорию этой модели.",
+    pricingNoNumeric: "В этом снимке нет числовой ставки",
+    comparisonLabels: { provider: "Провайдер", modalities: "Модальности", context: "Контекст", endpoint: "Endpoint", billing: "Тарификация" },
+    pricingLabels: { input: "Входные токены", output: "Выходные токены", cache: "Кэшированный ввод", second: "Секунды генерации", image: "Сгенерированное изображение", audio: "Аудиозапрос", video: "Сгенерированное видео", request: "Запрос API", live: "Актуальные цены каталога" },
+    pricingDetails: { input: "Ставка входа по каталогу", output: "Ставка выхода по каталогу", cache: "Ставка кэша по каталогу", second: "Ставка зависит от секунд генерации", request: "Ставка запроса по каталогу" },
+    pricingUnits: { tokens: "1 млн токенов", second: "секунда", request: "запрос", image: "изображение", audio: "аудио", video: "видео" },
+    capabilityTitles: genericKindRecord(["{{name}} для задач {{keywordPhrase}}", "Работа с референсами в {{name}}", "Варианты {{name}} для каналов", "Передача {{name}} в продакшен"]),
+    capabilityBodies: genericKindRecord(["Преобразуйте письменный бриф в результат для задач «{{keywordPhrase}}» через {{endpoint}}.", "Используйте готовый референс, если маршрут {{name}} принимает медиа или контекст.", "Адаптируйте одну идею под варианты для магазина, кампании или контентного конвейера.", "Перенесите утверждённый результат из эксперимента с промптом в повторяемый workflow Flatkey."]),
+  },
+  ja: {
+    keyword: { image: "画像生成", video: "動画生成", audio: "音声生成", text: "チャットとコーディング" },
+    heroDescription: "{{provider}} の {{name}} は{{keywordPhrase}}に対応します。Flatkey は {{endpoint}} 経由でモデルをルーティングします。{{pricing}}{{contextClause}}",
+    performanceDescription: "十分な本番トラフィックが集まると、{{name}} の Flatkey リクエストテレメトリーをここに表示します。",
+    activityDescription: "最新の集計期間における {{name}} のリクエスト量と成功した推論アクティビティを確認できます。",
+    pricingDescription: "{{pricing}}。以下の料金は Flatkey のライブカタログに基づくもので、プロバイダーの公開直接価格を保証するものではありません。",
+    pricingNote: "課金は選択した {{name}} のルートとアカウントグループに従います。本番ボリュームの実行前にライブ見積もりを再確認してください。",
+    capabilitiesDescription: "{{provider}} の {{name}} ルートは {{modalities}} をサポートします。{{categoryLine}}",
+    comparisonDescription: "統合を変更する前に、{{name}} のカタログ情報を前世代の基準と比較します。",
+    compareEyebrow: "比較",
+    baselineLabel: "前世代",
+    promptTitle: "{{name}} {{keywordPhrase}}プロンプト例",
+    promptDescription: "{{useCase}}向けの {{name}} プロンプトから始め、playground に表示されるリクエスト項目を調整します。",
+    promptAudioDescription: "{{name}} の API 例と課金単位を確認し、ドキュメント化されたエンドポイントで認証済みリクエストを送信します。",
+    whyEyebrow: "{{name}} API を使う理由",
+    whyTitle: "Flatkey 経由で {{name}} を使う理由",
+    whyDescription: "{{name}}、アカウント制御、カタログ内の他モデルを 1 つのゲートウェイで管理できます。",
+    whyCards: [
+      { title: "1 つの API で {{name}}", body: "{{name}} のモデル ID とエンドポイントを明示し、他のワークロードと同じ Flatkey キーを利用できます。" },
+      { title: "ライブカタログ料金", body: "リクエスト送信前に {{name}} の課金単位を確認し、アカウントで最終見積もりを確認できます。" },
+      { title: "実用的なモデル引き継ぎ", body: "公開 playground で {{name}} のプロンプトを試し、同じ設定を認証済み統合へ引き継げます。" },
+      { title: "利用量とルーティングの制御", body: "プロバイダー向けアプリのワークフローを変えずに、{{name}} のキー、クォータ、ルーティングを一元管理できます。" },
+    ],
+    apiDescription: "上記のモデル ID と {{endpoint}} を使用し、ルートで定義されたリクエスト項目と課金単位を維持してください。",
+    apiItems: [
+      { title: "{{endpoint}} を呼び出す", detail: "{{endpoint}} に認証済みリクエストを送り、model に {{name}} を指定します。" },
+      { title: "モデル ID を固定する", detail: "SDK 設定で {{name}} を使い、ルーティングと利用レポートを対象のカタログ項目に対応させます。" },
+      { title: "ライブ見積もりを確認", detail: "{{name}} のリクエストを拡大する前に {{pricing}} とアカウント制限を確認します。" },
+    ],
+    apiAudioItem: { title: "API を統合する", detail: "サーバーまたはエージェントで Flatkey API キーを使って {{endpoint}} を呼び出します。" },
+    apiMediaItem: { title: "テストから本番へ", detail: "playground で開始し、サーバーまたはエージェントで Flatkey API キーと同じリクエスト形式を再利用します。" },
+    relatedDescription: "Flatkey カタログで{{keywordPhrase}}に対応する他のルートを確認します。",
+    relatedEyebrow: "関連モデル API",
+    relatedTitle: "関連する{{keywordPhrase}}モデル",
+    faqDescription: "{{name}} の料金、機能、エンドポイント、カタログ制限に関する回答です。",
+    faqQuestions: ["{{name}} は何に使えますか？", "{{name}} の料金体系は？", "どの API エンドポイントで {{name}} を呼び出せますか？", "{{name}} のコンテキストや入力制限は？"],
+    faqAnswers: ["{{name}} は {{provider}} が{{keywordPhrase}}向けに掲載しているモデルです。カタログのモダリティは {{modalities}} です。", "{{name}} は現在 {{pricing}} と表示されています。料金はルート、アカウント、リクエスト設定で変わる場合があります。", "Flatkey は {{endpoint}} 経由でモデルをルーティングします。model に {{name}} を指定し、対応する項目を使用してください。", "{{name}} は {{context}} と記載されています。その他の制限はルートとアカウントの状況によるため、本番前に確認してください。"],
+    notVerified: "このカタログスナップショットでは未確認",
+    contextNotListed: "カタログにコンテキストウィンドウの記載がありません",
+    modalitiesNotListed: "カタログにモダリティの記載がありません",
+    categoryMissing: "このモデルのカテゴリはカタログに記載されていません。",
+    pricingNoNumeric: "このスナップショットには数値料金がありません",
+    comparisonLabels: { provider: "プロバイダー", modalities: "モダリティ", context: "コンテキスト", endpoint: "エンドポイント", billing: "課金" },
+    pricingLabels: { input: "入力トークン", output: "出力トークン", cache: "キャッシュ入力", second: "生成秒数", image: "生成画像", audio: "音声リクエスト", video: "生成動画", request: "API リクエスト", live: "ライブカタログ料金" },
+    pricingDetails: { input: "カタログ入力料金", output: "カタログ出力料金", cache: "カタログキャッシュ料金", second: "生成秒数に応じた料金", request: "カタログリクエスト料金" },
+    pricingUnits: { tokens: "100万トークン", second: "秒", request: "リクエスト", image: "画像", audio: "音声", video: "動画" },
+    capabilityTitles: genericKindRecord(["{{name}}の{{keywordPhrase}}", "{{name}}の参照ワークフロー", "{{name}}のチャネル向けバリエーション", "{{name}}の本番引き継ぎ"]),
+    capabilityBodies: genericKindRecord(["{{endpoint}} を使って文章のブリーフを{{keywordPhrase}}の出力に変換します。", "{{name}} ルートが参照メディアやコンテキストを受け付ける場合は、既存の参照を使えます。", "1 つのコンセプトを、ストア、キャンペーン、コンテンツパイプラインに必要なバリエーションへ展開します。", "承認済みの結果をプロンプト探索から再現可能な Flatkey 生成ワークフローへ移行します。"]),
+  },
+  vi: {
+    keyword: { image: "tạo ảnh", video: "tạo video", audio: "tạo âm thanh", text: "trò chuyện và lập trình" },
+    heroDescription: "{{provider}} cung cấp {{name}} cho {{keywordPhrase}}. Flatkey định tuyến mô hình qua {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Dữ liệu đo lường yêu cầu Flatkey cho {{name}} sẽ hiển thị tại đây khi có đủ lưu lượng production.",
+    activityDescription: "Theo dõi số lượng yêu cầu và hoạt động suy luận thành công của {{name}} trong kỳ báo cáo gần nhất.",
+    pricingDescription: "{{pricing}}. Mức giá dưới đây lấy từ danh mục trực tiếp của Flatkey và không phải cam kết về giá công khai trực tiếp của nhà cung cấp.",
+    pricingNote: "Tính phí theo tuyến {{name}} đã chọn và nhóm tài khoản. Kiểm tra lại ước tính trực tiếp trước khi chạy lưu lượng production.",
+    capabilitiesDescription: "Tuyến {{name}} của {{provider}} hỗ trợ {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "So sánh dữ kiện danh mục của {{name}} với mốc thế hệ trước trước khi thay đổi tích hợp.",
+    compareEyebrow: "So sánh",
+    baselineLabel: "Thế hệ trước",
+    promptTitle: "Ví dụ prompt {{name}} cho {{keywordPhrase}}",
+    promptDescription: "Bắt đầu bằng prompt {{name}} cho {{useCase}}, sau đó điều chỉnh các trường yêu cầu trong playground.",
+    promptAudioDescription: "Xem ví dụ API và đơn vị tính phí của {{name}}, sau đó dùng endpoint được tài liệu hóa cho yêu cầu đã xác thực.",
+    whyEyebrow: "Vì sao dùng API {{name}}",
+    whyTitle: "Vì sao dùng {{name}} qua Flatkey?",
+    whyDescription: "Dùng một gateway cho {{name}}, kiểm soát tài khoản và các mô hình còn lại trong danh mục.",
+    whyCards: [
+      { title: "{{name}} trong một API", body: "Giữ rõ model ID và endpoint của {{name}} trong khi dùng cùng khóa Flatkey cho các workload khác." },
+      { title: "Giá danh mục trực tiếp", body: "Xem đơn vị tính phí hiện tại của {{name}} trước khi gửi yêu cầu, rồi xác nhận ước tính cuối trong tài khoản." },
+      { title: "Bàn giao mô hình thực tế", body: "Thử prompt {{name}} trong playground công khai và mang cùng thiết lập vào tích hợp đã xác thực." },
+      { title: "Kiểm soát sử dụng và định tuyến", body: "Tập trung khóa, hạn mức và định tuyến cho {{name}} mà không đổi quy trình ứng dụng hướng tới nhà cung cấp." },
+    ],
+    apiDescription: "Dùng model ID ở trên với {{endpoint}}; giữ các trường yêu cầu và đơn vị tính phí đã ghi nhận cho tuyến này.",
+    apiItems: [
+      { title: "Gọi {{endpoint}}", detail: "Gửi yêu cầu đã xác thực tới {{endpoint}} với model được đặt là {{name}}." },
+      { title: "Giữ model ID ổn định", detail: "Dùng {{name}} trong cấu hình SDK để định tuyến và báo cáo sử dụng trỏ đúng mục danh mục." },
+      { title: "Kiểm tra ước tính trực tiếp", detail: "Xem {{pricing}} và hạn mức tài khoản trước khi tăng yêu cầu {{name}}." },
+    ],
+    apiAudioItem: { title: "Tích hợp API", detail: "Dùng {{endpoint}} với khóa API Flatkey trong server hoặc agent." },
+    apiMediaItem: { title: "Từ thử nghiệm đến production", detail: "Bắt đầu trong playground, sau đó tái sử dụng dạng yêu cầu với khóa API Flatkey trong server hoặc agent." },
+    relatedDescription: "Khám phá các tuyến {{keywordPhrase}} khác trong danh mục Flatkey.",
+    relatedEyebrow: "API mô hình liên quan",
+    relatedTitle: "Mô hình {{keywordPhrase}} liên quan",
+    faqDescription: "Giải đáp về giá, năng lực, endpoint và giới hạn danh mục của {{name}}.",
+    faqQuestions: ["{{name}} dùng để làm gì?", "{{name}} được tính giá thế nào?", "Endpoint API nào gọi {{name}}?", "{{name}} có giới hạn ngữ cảnh hoặc đầu vào nào?"],
+    faqAnswers: ["{{name}} do {{provider}} liệt kê cho {{keywordPhrase}}; các phương thức trong danh mục là: {{modalities}}.", "{{name}} hiện hiển thị {{pricing}}. Mức áp dụng có thể thay đổi theo tuyến, nhóm tài khoản và thiết lập yêu cầu.", "Flatkey định tuyến mô hình qua {{endpoint}}. Đặt trường model là {{name}} và dùng các trường được hỗ trợ.", "{{name}} được liệt kê với {{context}}. Giới hạn khác phụ thuộc tuyến và tài khoản; hãy kiểm tra trước production."],
+    notVerified: "Chưa xác minh trong ảnh chụp danh mục này",
+    contextNotListed: "Danh mục không liệt kê cửa sổ ngữ cảnh",
+    modalitiesNotListed: "Danh mục không liệt kê phương thức",
+    categoryMissing: "Danh mục không liệt kê nhóm cho mô hình này.",
+    pricingNoNumeric: "Ảnh chụp này không có mức giá dạng số",
+    comparisonLabels: { provider: "Nhà cung cấp", modalities: "Phương thức", context: "Ngữ cảnh", endpoint: "Endpoint", billing: "Tính phí" },
+    pricingLabels: { input: "Token đầu vào", output: "Token đầu ra", cache: "Đầu vào bộ nhớ đệm", second: "Giây tạo", image: "Ảnh được tạo", audio: "Yêu cầu âm thanh", video: "Video được tạo", request: "Yêu cầu API", live: "Giá danh mục trực tiếp" },
+    pricingDetails: { input: "Mức đầu vào theo danh mục", output: "Mức đầu ra theo danh mục", cache: "Mức bộ nhớ đệm theo danh mục", second: "Mức giá theo số giây tạo", request: "Mức yêu cầu theo danh mục" },
+    pricingUnits: { tokens: "1M token", second: "giây", request: "yêu cầu", image: "ảnh", audio: "âm thanh", video: "video" },
+    capabilityTitles: genericKindRecord(["{{name}} cho {{keywordPhrase}}", "Quy trình tham chiếu của {{name}}", "Biến thể theo kênh của {{name}}", "Bàn giao production của {{name}}"]),
+    capabilityBodies: genericKindRecord(["Chuyển brief bằng văn bản thành đầu ra {{keywordPhrase}} qua {{endpoint}}.", "Dùng tài liệu tham chiếu có sẵn khi tuyến {{name}} nhận media hoặc ngữ cảnh tham chiếu.", "Điều chỉnh một ý tưởng thành các biến thể cần cho cửa hàng, chiến dịch hoặc pipeline nội dung.", "Đưa kết quả đã duyệt từ thử prompt vào quy trình tạo Flatkey có thể lặp lại."]),
+  },
+  de: {
+    keyword: { image: "Bilderzeugung", video: "Videoerzeugung", audio: "Audioerzeugung", text: "Chat und Programmierung" },
+    heroDescription: "{{provider}} stellt {{name}} für {{keywordPhrase}} bereit. Flatkey routet das Modell über {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Die Live-Telemetrie der Flatkey-Anfragen für {{name}} erscheint hier, sobald genügend Produktionsverkehr vorliegt.",
+    activityDescription: "Verfolge Anfragevolumen und erfolgreiche Inferenzaktivität für {{name}} im aktuellen Berichtszeitraum.",
+    pricingDescription: "{{pricing}}. Die folgenden Tarife stammen aus dem Live-Katalog von Flatkey und sind keine Zusage für den direkten öffentlichen Preis des Anbieters.",
+    pricingNote: "Die Abrechnung folgt der ausgewählten {{name}}-Route und Kontogruppe. Prüfe die Live-Schätzung vor Produktionsvolumen erneut.",
+    capabilitiesDescription: "Die {{name}}-Route von {{provider}} unterstützt {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Vergleiche die Katalogfakten für {{name}} mit der Referenz der vorherigen Generation, bevor du die Integration änderst.",
+    compareEyebrow: "Vergleichen",
+    baselineLabel: "Vorherige Generation",
+    promptTitle: "{{name}}-Promptbeispiele für {{keywordPhrase}}",
+    promptDescription: "Beginne mit einem {{name}}-Prompt für {{useCase}} und passe anschließend die im Playground angezeigten Anfragefelder an.",
+    promptAudioDescription: "Prüfe {{name}}-API-Beispiele und Abrechnungsdimensionen und nutze den dokumentierten Endpunkt für authentifizierte Anfragen.",
+    whyEyebrow: "Warum die {{name}}-API",
+    whyTitle: "Warum {{name}} über Flatkey nutzen?",
+    whyDescription: "Nutze ein Gateway für {{name}}, Kontrollen und den restlichen Modellkatalog.",
+    whyCards: [
+      { title: "{{name}} über eine API", body: "Halte Modell-ID und Endpunkt von {{name}} explizit und nutze denselben Flatkey-Schlüssel für andere Workloads." },
+      { title: "Live-Katalogpreise", body: "Sieh die aktuellen Abrechnungsdimensionen von {{name}} vor dem Senden und bestätige die Endschätzung im Konto." },
+      { title: "Praktische Modellübergabe", body: "Teste einen {{name}}-Prompt im öffentlichen Playground und übernimm dieselben Einstellungen in eine authentifizierte Integration." },
+      { title: "Nutzungs- und Routingkontrollen", body: "Zentralisiere Schlüssel, Kontingente und Routing für {{name}}, ohne den providerseitigen Anwendungsablauf zu ändern." },
+    ],
+    apiDescription: "Verwende die oben angegebene Modell-ID mit {{endpoint}} und dokumentiere Anfragefelder sowie Abrechnungseinheit der Route.",
+    apiItems: [
+      { title: "{{endpoint}} aufrufen", detail: "Sende eine authentifizierte Anfrage an {{endpoint}} mit model={{name}}." },
+      { title: "Modell-ID stabil halten", detail: "Verwende {{name}} in der SDK-Konfiguration, damit Routing und Nutzungsberichte dem richtigen Katalogeintrag entsprechen." },
+      { title: "Live-Schätzung prüfen", detail: "Prüfe {{pricing}} und Kontolimits, bevor du {{name}}-Anfragen skalierst." },
+    ],
+    apiAudioItem: { title: "API integrieren", detail: "Verwende {{endpoint}} mit einem Flatkey-API-Schlüssel auf deinem Server oder in einem Agenten." },
+    apiMediaItem: { title: "Vom Test zur Produktion", detail: "Starte im Playground und verwende die Anfrageform mit einem Flatkey-API-Schlüssel auf deinem Server oder in einem Agenten weiter." },
+    relatedDescription: "Entdecke weitere {{keywordPhrase}}-Routen im Flatkey-Katalog.",
+    relatedEyebrow: "Verwandte Modell-APIs",
+    relatedTitle: "Verwandte {{keywordPhrase}}-Modelle",
+    faqDescription: "Antworten zu Preisen, Funktionen, Endpunkten und Kataloglimits von {{name}}.",
+    faqQuestions: ["Wofür wird {{name}} verwendet?", "Wie wird {{name}} abgerechnet?", "Welcher API-Endpunkt ruft {{name}} auf?", "Welche Kontext- oder Eingabelimits hat {{name}}?"],
+    faqAnswers: ["{{name}} ist von {{provider}} für {{keywordPhrase}} im Katalog aufgeführt; die Modalitäten sind: {{modalities}}.", "{{name}} zeigt derzeit {{pricing}}. Der anwendbare Tarif kann je nach Route, Konto und Anfrageeinstellungen variieren.", "Flatkey routet das Modell über {{endpoint}}. Setze model auf {{name}} und nutze die unterstützten Felder.", "{{name}} ist mit {{context}} aufgeführt. Weitere Limits hängen von Route und Konto ab; prüfe sie vor dem Produktionseinsatz."],
+    notVerified: "In diesem Katalog-Snapshot nicht verifiziert",
+    contextNotListed: "Das Kontextfenster ist im Katalog nicht aufgeführt",
+    modalitiesNotListed: "Modalitäten sind im Katalog nicht aufgeführt",
+    categoryMissing: "Der Katalog nennt keine Kategorie für dieses Modell.",
+    pricingNoNumeric: "Dieser Snapshot enthält keinen numerischen Tarif",
+    comparisonLabels: { provider: "Anbieter", modalities: "Modalitäten", context: "Kontext", endpoint: "Endpunkt", billing: "Abrechnung" },
+    pricingLabels: { input: "Eingabetoken", output: "Ausgabetoken", cache: "Cache-Eingabe", second: "Erzeugungssekunden", image: "Erzeugtes Bild", audio: "Audioanfrage", video: "Erzeugtes Video", request: "API-Anfrage", live: "Live-Katalogpreise" },
+    pricingDetails: { input: "Katalogtarif für Eingaben", output: "Katalogtarif für Ausgaben", cache: "Katalogtarif für Cache", second: "Tarif nach erzeugten Sekunden", request: "Katalogtarif pro Anfrage" },
+    pricingUnits: { tokens: "1M Token", second: "Sekunde", request: "Anfrage", image: "Bild", audio: "Audio", video: "Video" },
+    capabilityTitles: genericKindRecord(["{{name}} für {{keywordPhrase}}", "Referenz-Workflows für {{name}}", "Kanalvarianten von {{name}}", "Produktionsübergabe von {{name}}"]),
+    capabilityBodies: genericKindRecord(["Wandle ein schriftliches Briefing über {{endpoint}} in Ergebnisse für {{keywordPhrase}} um.", "Nutze eine vorhandene Referenz, wenn die {{name}}-Route Referenzmedien oder Kontext akzeptiert.", "Passe ein Konzept an die Varianten für Shop, Kampagne oder Content-Pipeline an.", "Überführe ein freigegebenes Ergebnis aus der Prompt-Erkundung in einen wiederholbaren Flatkey-Workflow."]),
+  },
+  id: {
+    keyword: { image: "pembuatan gambar", video: "pembuatan video", audio: "pembuatan audio", text: "chat dan pemrograman" },
+    heroDescription: "{{provider}} menyediakan {{name}} untuk {{keywordPhrase}}. Flatkey merutekannya melalui {{endpoint}}. {{pricing}}{{contextClause}}",
+    performanceDescription: "Telemetri permintaan Flatkey untuk {{name}} akan tampil di sini jika trafik produksi sudah mencukupi.",
+    activityDescription: "Pantau volume permintaan dan aktivitas inferensi berhasil untuk {{name}} pada periode pelaporan terbaru.",
+    pricingDescription: "{{pricing}}. Tarif di bawah berasal dari katalog live Flatkey dan bukan jaminan harga publik langsung dari penyedia.",
+    pricingNote: "Penagihan mengikuti rute {{name}} dan grup akun yang dipilih. Periksa kembali estimasi live sebelum menjalankan volume produksi.",
+    capabilitiesDescription: "Rute {{name}} dari {{provider}} mendukung {{modalities}}. {{categoryLine}}",
+    comparisonDescription: "Bandingkan fakta katalog {{name}} dengan acuan generasi sebelumnya sebelum mengubah integrasi.",
+    compareEyebrow: "Bandingkan",
+    baselineLabel: "Generasi sebelumnya",
+    promptTitle: "Contoh prompt {{name}} untuk {{keywordPhrase}}",
+    promptDescription: "Mulai dengan prompt {{name}} untuk {{useCase}}, lalu sesuaikan kolom permintaan yang terlihat di playground.",
+    promptAudioDescription: "Tinjau contoh API dan dimensi penagihan {{name}}, lalu gunakan endpoint terdokumentasi untuk permintaan terautentikasi.",
+    whyEyebrow: "Mengapa API {{name}}",
+    whyTitle: "Mengapa menggunakan {{name}} melalui Flatkey?",
+    whyDescription: "Gunakan satu gateway untuk {{name}}, kontrol akun, dan seluruh katalog model lainnya.",
+    whyCards: [
+      { title: "{{name}} dalam satu API", body: "Pertahankan model ID dan endpoint {{name}} secara eksplisit dengan kunci Flatkey yang sama untuk workload lain." },
+      { title: "Harga katalog live", body: "Lihat dimensi penagihan {{name}} sebelum mengirim permintaan, lalu konfirmasi estimasi akhir di akun." },
+      { title: "Serah-terima model praktis", body: "Uji prompt {{name}} di playground publik dan bawa pengaturan yang sama ke integrasi terautentikasi." },
+      { title: "Kontrol penggunaan dan rute", body: "Pusatkan kunci, kuota, dan rute {{name}} tanpa mengubah alur kerja aplikasi terhadap penyedia." },
+    ],
+    apiDescription: "Gunakan model ID di atas dengan {{endpoint}}; pertahankan kolom permintaan dan unit penagihan yang terdokumentasi untuk rute ini.",
+    apiItems: [
+      { title: "Panggil {{endpoint}}", detail: "Kirim permintaan terautentikasi ke {{endpoint}} dengan model disetel ke {{name}}." },
+      { title: "Pertahankan model ID", detail: "Gunakan {{name}} dalam konfigurasi SDK agar rute dan laporan penggunaan menunjuk entri katalog yang benar." },
+      { title: "Periksa estimasi live", detail: "Tinjau {{pricing}} dan batas akun sebelum meningkatkan permintaan {{name}}." },
+    ],
+    apiAudioItem: { title: "Integrasikan API", detail: "Gunakan {{endpoint}} dengan kunci API Flatkey di server atau agent." },
+    apiMediaItem: { title: "Dari pengujian ke produksi", detail: "Mulai di playground, lalu gunakan kembali bentuk permintaan dengan kunci API Flatkey di server atau agent." },
+    relatedDescription: "Jelajahi rute {{keywordPhrase}} lain di katalog Flatkey.",
+    relatedEyebrow: "API model terkait",
+    relatedTitle: "Model {{keywordPhrase}} terkait",
+    faqDescription: "Jawaban tentang harga, kemampuan, endpoint, dan batas katalog {{name}}.",
+    faqQuestions: ["Untuk apa {{name}} digunakan?", "Bagaimana harga {{name}}?", "Endpoint API mana yang memanggil {{name}}?", "Apa batas konteks atau input {{name}}?"],
+    faqAnswers: ["{{name}} tercantum dari {{provider}} untuk {{keywordPhrase}}; modalitas di katalog adalah: {{modalities}}.", "{{name}} saat ini menampilkan {{pricing}}. Tarif dapat berbeda menurut rute, grup akun, dan pengaturan permintaan.", "Flatkey merutekan model ini melalui {{endpoint}}. Atur kolom model ke {{name}} dan gunakan kolom yang didukung.", "{{name}} tercantum dengan {{context}}. Batas lain bergantung pada rute dan akun; verifikasi sebelum produksi."],
+    notVerified: "Belum diverifikasi dalam snapshot katalog ini",
+    contextNotListed: "Katalog tidak mencantumkan jendela konteks",
+    modalitiesNotListed: "Katalog tidak mencantumkan modalitas",
+    categoryMissing: "Katalog tidak mencantumkan kategori untuk model ini.",
+    pricingNoNumeric: "Snapshot ini tidak menyediakan tarif numerik",
+    comparisonLabels: { provider: "Penyedia", modalities: "Modalitas", context: "Konteks", endpoint: "Endpoint", billing: "Penagihan" },
+    pricingLabels: { input: "Token input", output: "Token output", cache: "Input cache", second: "Detik generasi", image: "Gambar yang dihasilkan", audio: "Permintaan audio", video: "Video yang dihasilkan", request: "Permintaan API", live: "Harga katalog live" },
+    pricingDetails: { input: "Tarif input katalog", output: "Tarif output katalog", cache: "Tarif cache katalog", second: "Tarif mengikuti detik yang dihasilkan", request: "Tarif permintaan katalog" },
+    pricingUnits: { tokens: "1M token", second: "detik", request: "permintaan", image: "gambar", audio: "audio", video: "video" },
+    capabilityTitles: genericKindRecord(["{{name}} untuk {{keywordPhrase}}", "Alur kerja referensi {{name}}", "Varian siap kanal {{name}}", "Serah-terima produksi {{name}}"]),
+    capabilityBodies: genericKindRecord(["Ubah brief tertulis menjadi output {{keywordPhrase}} melalui {{endpoint}}.", "Gunakan referensi yang ada saat rute {{name}} menerima media atau konteks referensi.", "Adaptasikan satu konsep menjadi varian yang dibutuhkan toko, kampanye, atau pipeline konten.", "Pindahkan hasil yang disetujui dari eksplorasi prompt ke alur generasi Flatkey yang dapat diulang."]),
+  },
+};
+
+function interpolateGenericTemplate(template: string, args: GenericTemplateArgs): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_match, key: keyof GenericTemplateArgs) => args[key] ?? "");
+}
+
+function genericTemplateText(locale: Locale, template: string, args: GenericTemplateArgs): string {
+  return interpolateGenericTemplate(template, args);
+}
+
+function extractGenericEndpoint(source: ModelLandingContent): string {
+  const candidates = [
+    source.api?.items?.[0]?.title,
+    source.api?.items?.[0]?.detail,
+    source.api?.description,
+    source.hero?.description,
+  ].filter(Boolean).join(" ");
+  return candidates.match(/\/v1\/[A-Za-z0-9_./-]+/)?.[0].replace(/[.,;:]+$/, "") ?? "/v1/chat/completions";
+}
+
+function extractGenericProvider(source: ModelLandingContent): string {
+  if (source.hero?.provider?.trim()) return source.hero.provider.trim();
+  const heroDescription = source.hero?.description?.trim() ?? "";
+  return heroDescription.split(/\s+/)[0] || "Provider";
+}
+
+function extractGenericRawPricing(source: ModelLandingContent): string {
+  const pricingDescription = source.pricing?.description?.trim() ?? "";
+  // Do not split on the decimal point in values such as `$0.08/request`.
+  const firstSentence = pricingDescription.match(/^(.*?)(?:\.(?=\s+[A-Z])|[。！？]|$)/)?.[1]?.trim();
+  if (firstSentence) return firstSentence;
+  const heroDescription = source.hero?.description ?? "";
+  const afterRoute = heroDescription.split(/\s*Flatkey routes this model through\s+[^.]+\.\s*/i)[1];
+  return afterRoute?.split(/[.!?。！？]/, 1)[0]?.trim() ?? "request pricing";
+}
+
+function extractGenericRawModalities(source: ModelLandingContent): string {
+  return source.comparison?.rows.find((row) => row.label === "Modalities")?.current
+    ?? source.capabilitiesDescription?.match(/supports\s+(.+?)\./i)?.[1]
+    ?? "Not listed in the catalog";
+}
+
+function extractGenericRawContext(source: ModelLandingContent): string {
+  return source.comparison?.rows.find((row) => row.label === "Context")?.current
+    ?? "Context window not listed in the catalog";
+}
+
+function extractGenericCategories(source: ModelLandingContent): string | null {
+  const description = source.capabilitiesDescription ?? "";
+  return description.match(/Catalog categories:\s*(.+?)\.?$/i)?.[1]?.trim() ?? null;
+}
+
+function localizeGenericModalities(value: string, locale: Locale, templates: GenericLocaleTemplates): string {
+  if (/not listed|not verified/i.test(value)) return templates.modalitiesNotListed;
+  const labels: Record<string, Record<Locale, string>> = {
+    text: { en: "text", zh: "文本", es: "texto", fr: "texte", pt: "texto", ru: "текст", ja: "テキスト", vi: "văn bản", de: "Text", id: "teks" },
+    image: { en: "image", zh: "图像", es: "imagen", fr: "image", pt: "imagem", ru: "изображение", ja: "画像", vi: "ảnh", de: "Bild", id: "gambar" },
+    video: { en: "video", zh: "视频", es: "vídeo", fr: "vidéo", pt: "vídeo", ru: "видео", ja: "動画", vi: "video", de: "Video", id: "video" },
+    audio: { en: "audio", zh: "音频", es: "audio", fr: "audio", pt: "áudio", ru: "аудио", ja: "音声", vi: "âm thanh", de: "Audio", id: "audio" },
+  };
+  return value.split(/\s*·\s*/).map((part) => labels[part.trim().toLowerCase()]?.[locale] ?? part.trim()).join(" · ");
+}
+
+function localizeGenericContext(value: string, locale: Locale, templates: GenericLocaleTemplates): string {
+  const match = value.match(/([\d,]+(?:\.\d+)?)([MK])?\s*-?token/i);
+  if (match) {
+    const numeric = `${match[1]}${match[2] ?? ""}`;
+    switch (locale) {
+      case "zh": return `${numeric} token`;
+      case "pt": case "es": case "fr": return `${numeric} tokens`;
+      case "ru": return `${numeric} токенов`;
+      case "ja": return `${numeric}トークン`;
+      case "vi": return `${numeric} token`;
+      case "de": return `${numeric}-Token`;
+      case "id": return `${numeric} token`;
+      default: return `${numeric}-token`;
+    }
+  }
+  return templates.contextNotListed;
+}
+
+function localizeGenericCategories(value: string | null, locale: Locale, templates: GenericLocaleTemplates): string {
+  if (!value) return templates.categoryMissing;
+  const labels: Record<Locale, string> = {
+    en: "Catalog categories",
+    zh: "目录分类",
+    es: "Categorías del catálogo",
+    fr: "Catégories du catalogue",
+    pt: "Categorias do catálogo",
+    ru: "Категории каталога",
+    ja: "カタログカテゴリ",
+    vi: "Danh mục",
+    de: "Katalogkategorien",
+    id: "Kategori katalog",
+  };
+  const punctuation = ["zh", "ja"].includes(locale) ? "：" : ": ";
+  const ending = ["zh", "ja"].includes(locale) ? "。" : ".";
+  return `${labels[locale]}${punctuation}${value}${ending}`;
+}
+
+function localizeGenericPricingSummary(value: string, locale: Locale): string {
+  const normalized = value.replace(/[。.!?]+$/, "").trim();
+  let match = normalized.match(/^from\s+(\S+)\/(image|audio)\s+pricing$/i);
+  if (match) return (mediaPriceCopy(match[1], match[2].toLowerCase() as "image" | "audio")[locale] ?? mediaPriceCopy(match[1], match[2].toLowerCase() as "image" | "audio").en);
+  match = normalized.match(/^from\s+(\S+)\/second\s+pricing$/i);
+  if (match) return secondPriceCopy(match[1])[locale] ?? secondPriceCopy(match[1]).en;
+  match = normalized.match(/^from\s+(\S+)\/request\s+pricing$/i);
+  if (match) return requestPriceCopy(match[1])[locale] ?? requestPriceCopy(match[1]).en;
+  match = normalized.match(/^(\S+)\s+input\/(\S+)\s+output\s+per\s+1M\s+tokens$/i);
+  if (match) return tokenPriceCopy(normalized, `${match[1]} entrada/${match[2]} saída por 1M tokens`, match[1], match[2])[locale] ?? normalized;
+  match = normalized.match(/^(\S+)\s+input\s+per\s+1M\s+tokens$/i);
+  if (match) return tokenPriceCopy(normalized, `${match[1]} entrada por 1M tokens`, match[1])[locale] ?? normalized;
+  if (/^token pricing$/i.test(normalized)) return genericPriceCopy("token pricing", "preço por tokens")[locale] ?? normalized;
+  if (/^time-tiered token pricing$/i.test(normalized)) {
+    const copy: Record<Locale, string> = { en: "time-tiered token pricing", zh: "按时间档位计费的 token 价格", es: "precios de tokens por franjas horarias", fr: "tarification des tokens par tranche horaire", pt: "preço de tokens por faixa de horário", ru: "тарификация токенов по времени", ja: "時間帯別トークン料金", vi: "giá token theo khung thời gian", de: "zeitabhängige Token-Preise", id: "harga token berdasarkan waktu" };
+    return copy[locale];
+  }
+  if (/^request pricing$/i.test(normalized)) {
+    const copy: Record<Locale, string> = { en: "request pricing", zh: "按请求计价", es: "precios por solicitud", fr: "tarification à la requête", pt: "preço por solicitação", ru: "тарификация за запрос", ja: "リクエスト単位の料金", vi: "giá theo yêu cầu", de: "Abrechnung pro Anfrage", id: "harga per permintaan" };
+    return copy[locale];
+  }
+  if (/^per-second pricing$/i.test(normalized)) {
+    const copy: Record<Locale, string> = { en: "per-second pricing", zh: "按秒计价", es: "precios por segundo", fr: "tarification à la seconde", pt: "preço por segundo", ru: "тарификация за секунду", ja: "秒単位の料金", vi: "giá theo giây", de: "Abrechnung pro Sekunde", id: "harga per detik" };
+    return copy[locale];
+  }
+  if (/^per-request pricing$/i.test(normalized)) {
+    const copy: Record<Locale, string> = { en: "per-request pricing", zh: "按请求计价", es: "precios por solicitud", fr: "tarification à la requête", pt: "preço por solicitação", ru: "тарификация за запрос", ja: "リクエスト単位の料金", vi: "giá theo yêu cầu", de: "Abrechnung pro Anfrage", id: "harga per permintaan" };
+    return copy[locale];
+  }
+  return normalized;
+}
+
+function localizeGenericPriceValue(value: string, locale: Locale, templates: GenericLocaleTemplates): string {
+  if (/^see current estimate$/i.test(value.trim())) {
+    const copy: Record<Locale, string> = { en: "See current estimate", zh: "查看当前预估", es: "Ver estimación actual", fr: "Voir l’estimation actuelle", pt: "Ver estimativa atual", ru: "См. актуальную оценку", ja: "現在の見積もりを確認", vi: "Xem ước tính hiện tại", de: "Aktuelle Schätzung ansehen", id: "Lihat estimasi saat ini" };
+    return copy[locale];
+  }
+  const match = value.match(/^(.*?)(?:\s*\/\s*)(1M tokens|second|request|image|audio|video)$/i);
+  if (!match) return value;
+  const normalizedUnit = match[2].toLowerCase();
+  const unitKey: keyof GenericLocaleTemplates["pricingUnits"] = normalizedUnit === "1m tokens" ? "tokens" : normalizedUnit as keyof GenericLocaleTemplates["pricingUnits"];
+  return `${match[1]} / ${templates.pricingUnits[unitKey]}`;
+}
+
+function localizeGenericPricingLabel(label: string, kind: GenericLandingKind, templates: GenericLocaleTemplates): string {
+  if (/^input tokens$/i.test(label)) return templates.pricingLabels.input;
+  if (/^output tokens$/i.test(label)) return templates.pricingLabels.output;
+  if (/^cached input$/i.test(label)) return templates.pricingLabels.cache;
+  if (/^generation seconds$/i.test(label)) return templates.pricingLabels.second;
+  if (/^generated image$/i.test(label)) return templates.pricingLabels.image;
+  if (/^audio request$/i.test(label)) return templates.pricingLabels.audio;
+  if (/^generated video$/i.test(label)) return templates.pricingLabels.video;
+  if (/^api request$/i.test(label)) return templates.pricingLabels.request;
+  if (/^live catalog pricing$/i.test(label)) return templates.pricingLabels.live;
+  return label;
+}
+
+function localizeGenericPricingDetail(detail: string | undefined, templates: GenericLocaleTemplates): string | undefined {
+  if (!detail) return detail;
+  if (/^catalog input rate$/i.test(detail)) return templates.pricingDetails.input;
+  if (/^catalog output rate$/i.test(detail)) return templates.pricingDetails.output;
+  if (/^catalog cache rate$/i.test(detail)) return templates.pricingDetails.cache;
+  if (/^rate follows generated seconds$/i.test(detail)) return templates.pricingDetails.second;
+  if (/^catalog request rate$/i.test(detail)) return templates.pricingDetails.request;
+  if (/^the catalog did not expose a numeric rate/i.test(detail)) return templates.pricingNoNumeric;
+  return detail;
+}
+
 function localizeGenericLandingContent(
   source: ModelLandingContent,
   locale: Locale,
@@ -2817,37 +3735,108 @@ function localizeGenericLandingContent(
   forcedKind?: ModelGeneratorConfig["kind"],
 ): ModelLandingContent {
   const copy = GENERIC_LOCALE_COPY[locale] ?? GENERIC_LOCALE_COPY.en;
+  const templates = copy.content ?? GENERIC_LOCALE_TEMPLATES[locale] ?? GENERIC_LOCALE_TEMPLATES.en;
   // Prefer the resolved generator kind. Model names such as
   // `sonilo-video-to-music` contain the word "video" even though the route is
   // audio, so inferring from a title alone can localize the page incorrectly.
-  const kind = forcedKind ?? (source.hero?.title?.includes("image") || source.capabilitiesTitle?.includes("image")
+  const kind: GenericLandingKind = forcedKind ?? (source.hero?.title?.toLowerCase().includes("image") || source.capabilitiesTitle?.toLowerCase().includes("image")
     ? "image"
-    : source.hero?.title?.includes("video") || source.capabilitiesTitle?.includes("video")
+    : source.hero?.title?.toLowerCase().includes("video") || source.capabilitiesTitle?.toLowerCase().includes("video")
       ? "video"
-      : source.hero?.title?.includes("audio") || source.capabilitiesTitle?.includes("audio")
+      : source.hero?.title?.toLowerCase().includes("audio") || source.capabilitiesTitle?.toLowerCase().includes("audio")
         ? "audio"
         : "text");
-  const endpoint = source.api?.items?.[0]?.title ?? "/v1/chat/completions";
+  const endpoint = extractGenericEndpoint(source);
+  const provider = extractGenericProvider(source);
+  const rawPricing = extractGenericRawPricing(source);
+  const pricing = localizeGenericPricingSummary(rawPricing, locale);
+  const rawModalities = extractGenericRawModalities(source);
+  const modalities = localizeGenericModalities(rawModalities, locale, templates);
+  const rawContext = extractGenericRawContext(source);
+  const context = localizeGenericContext(rawContext, locale, templates);
+  const hasContext = !/not listed|not verified|no (está|está) (listed|indicado)|non indiqué|nicht aufgeführt|не указ|記載がありません|không liệt kê|tidak mencantumkan/i.test(rawContext);
+  const contextClauseByLocale: Record<Locale, string> = {
+    en: hasContext ? `; the listed context window is ${context}.` : ".",
+    zh: hasContext ? `，上下文窗口为${context}。` : "。",
+    es: hasContext ? `; la ventana de contexto indicada es ${context}.` : ".",
+    fr: hasContext ? ` ; la fenêtre de contexte indiquée est de ${context}.` : ".",
+    pt: hasContext ? `; a janela de contexto indicada é ${context}.` : ".",
+    ru: hasContext ? `; указано окно контекста: ${context}.` : ".",
+    ja: hasContext ? `。コンテキストは${context}です。` : "。",
+    vi: hasContext ? `; cửa sổ ngữ cảnh được ghi là ${context}.` : ".",
+    de: hasContext ? `; das angegebene Kontextfenster beträgt ${context}.` : ".",
+    id: hasContext ? `; jendela konteks yang tercantum adalah ${context}.` : ".",
+  };
+  const categoryLine = localizeGenericCategories(extractGenericCategories(source), locale, templates);
   const task = copy.task[kind];
-  const sourceFacts = source.hero?.description?.split(";").slice(1).join(";").trim() ?? "";
-  const heroDescription = locale === "zh"
-    ? `${name} 可通过 Flatkey 使用；${sourceFacts}`.trim()
-    : `${name} ${task} via Flatkey. ${sourceFacts}`.trim();
+  const keywordPhrase = templates.keyword[kind];
+  const args: GenericTemplateArgs = {
+    name,
+    provider,
+    endpoint,
+    task,
+    keywordPhrase,
+    pricing,
+    modalities,
+    context,
+    contextClause: contextClauseByLocale[locale],
+    categoryLine,
+    useCase: keywordPhrase,
+  };
+
+  const localizedCapabilities = templates.capabilityTitles[kind].map((title, index) => ({
+    title: genericTemplateText(locale, title, args),
+    body: genericTemplateText(locale, templates.capabilityBodies[kind][index] ?? "", args),
+  }));
+  const localizedPricingRows = source.pricing?.rows?.map((row) => ({
+    ...row,
+    label: localizeGenericPricingLabel(row.label, kind, templates),
+    value: localizeGenericPriceValue(row.value, locale, templates),
+    detail: localizeGenericPricingDetail(row.detail, templates),
+  }));
+  const sourceComparisonRows = source.comparison?.rows ?? [];
+  const currentByLabel = new Map(sourceComparisonRows.map((row) => [row.label.toLowerCase(), row.current]));
+  const comparisonRows = [
+    { label: templates.comparisonLabels.provider, baseline: templates.notVerified, current: currentByLabel.get("provider") ?? provider },
+    { label: templates.comparisonLabels.modalities, baseline: templates.notVerified, current: modalities },
+    { label: templates.comparisonLabels.context, baseline: templates.notVerified, current: context },
+    { label: templates.comparisonLabels.endpoint, baseline: templates.notVerified, current: currentByLabel.get("endpoint") ?? endpoint },
+    { label: templates.comparisonLabels.billing, baseline: templates.notVerified, current: pricing },
+  ];
+  const localizedWhyCards = templates.whyCards.map((card) => ({
+    title: genericTemplateText(locale, card.title, args),
+    body: genericTemplateText(locale, card.body, args),
+  }));
+  const localizedApiItems = [
+    ...templates.apiItems,
+    kind === "audio" ? templates.apiAudioItem : templates.apiMediaItem,
+  ].map((item) => ({
+    title: genericTemplateText(locale, item.title, args),
+    detail: genericTemplateText(locale, item.detail, args),
+  }));
   return {
     ...source,
-    hero: source.hero ? { ...source.hero, title: `${name} ${task}`, description: heroDescription } : source.hero,
-    performance: source.performance ? { ...source.performance, eyebrow: copy.performance, title: `${name} ${copy.performanceTitle}` } : source.performance,
-    activity: source.activity ? { ...source.activity, eyebrow: copy.activity, title: `${name} ${copy.activityTitle}` } : source.activity,
-    pricing: source.pricing ? { ...source.pricing, eyebrow: `${name} ${copy.pricing}`, title: `${name} ${copy.pricingTitle}` } : source.pricing,
+    hero: source.hero ? { ...source.hero, title: `${name} ${task}`, description: genericTemplateText(locale, templates.heroDescription, args), provider } : source.hero,
+    activity: source.activity ? { ...source.activity, eyebrow: copy.activity, title: `${name} ${copy.activityTitle}`, description: genericTemplateText(locale, templates.activityDescription, args) } : source.activity,
+    performance: source.performance ? { ...source.performance, eyebrow: copy.performance, title: `${name} ${copy.performanceTitle}`, description: genericTemplateText(locale, templates.performanceDescription, args) } : source.performance,
+    pricing: source.pricing ? { ...source.pricing, eyebrow: `${name} ${copy.pricing}`, title: `${name} ${copy.pricingTitle}`, description: genericTemplateText(locale, templates.pricingDescription, args), note: genericTemplateText(locale, templates.pricingNote, args), rows: localizedPricingRows } : source.pricing,
+    capabilities: localizedCapabilities,
     capabilitiesTitle: `${name} ${task}: ${copy.capabilitiesTitle}`,
-    comparison: source.comparison ? { ...source.comparison, title: `${name} ${copy.comparisonTitle}` } : source.comparison,
-    promptLibraryTitle: source.promptLibraryTitle ? `${name} ${task} prompt examples` : source.promptLibraryTitle,
-    why: source.why ? { ...source.why, eyebrow: `Why ${name} API`, title: `${copy.whyTitle.replace("this model", name).replace("ce modèle", name).replace("dieses Modell", name)}` } : source.why,
-    api: source.api ? { ...source.api, eyebrow: `${name} API`, title: `${name} ${copy.apiTitle}`, items: source.api.items.map((item, index) => index === 0 ? { ...item, title: endpoint } : item) } : source.api,
-    related: source.related ? { ...source.related, eyebrow: copy.relatedTitle, title: `${name} ${copy.relatedTitle}` } : source.related,
+    capabilitiesDescription: genericTemplateText(locale, templates.capabilitiesDescription, args),
+    comparison: source.comparison ? { ...source.comparison, eyebrow: templates.compareEyebrow, title: `${name} ${copy.comparisonTitle}`, description: genericTemplateText(locale, templates.comparisonDescription, args), baselineLabel: templates.baselineLabel, currentLabel: name, rows: comparisonRows } : source.comparison,
+    promptLibraryTitle: source.promptLibraryTitle ? genericTemplateText(locale, templates.promptTitle, args) : source.promptLibraryTitle,
+    promptLibraryDescription: source.promptLibraryDescription
+      ? genericTemplateText(locale, kind === "audio" ? templates.promptAudioDescription : templates.promptDescription, args)
+      : source.promptLibraryDescription,
+    why: source.why ? { ...source.why, eyebrow: genericTemplateText(locale, templates.whyEyebrow, args), title: genericTemplateText(locale, templates.whyTitle, args), description: genericTemplateText(locale, templates.whyDescription, args), cards: localizedWhyCards } : source.why,
+    api: source.api ? { ...source.api, eyebrow: `${name} API`, title: `${name} ${copy.apiTitle}`, description: genericTemplateText(locale, templates.apiDescription, args), items: localizedApiItems } : source.api,
+    related: source.related ? { ...source.related, eyebrow: templates.relatedEyebrow, title: genericTemplateText(locale, templates.relatedTitle, args), description: genericTemplateText(locale, templates.relatedDescription, args) } : source.related,
     faqTitle: source.faqTitle ? { beforeBreak: `${name} API`, afterBreak: copy.faqAfter } : source.faqTitle,
-    faqDescription: copy.faqDescription,
-    faq: source.faq?.map((item, index) => ({ question: copy.faqQuestions[index] ?? item.question, answer: copy.faqAnswers[index] ?? item.answer })),
+    faqDescription: genericTemplateText(locale, templates.faqDescription, args),
+    faq: source.faq?.map((item, index) => ({
+      question: genericTemplateText(locale, templates.faqQuestions[index] ?? item.question, args),
+      answer: genericTemplateText(locale, templates.faqAnswers[index] ?? item.answer, args),
+    })),
   };
 }
 
@@ -4322,6 +5311,304 @@ const translations: Record<Locale, Record<string, string>> = withIdFallback<Reco
 /* Prototype-only labels that are shared by the refreshed model detail shell.
  * Keep these locale-specific so a newly added visual surface does not silently
  * fall back to English on localized model pages. */
+/**
+ * Short interface labels that are used by the shared model-detail shell.
+ * Keep these separate from the long editorial maps so a missing translation
+ * cannot make a compact tab/field label fall back to English.
+ */
+const modelDetailLiteralCopy: Record<Locale, Record<string, string>> = {
+  en: { Prompt: "Prompt", Performance: "Performance", Endpoint: "Endpoint" },
+  zh: { Prompt: "提示词", Performance: "性能", Endpoint: "接口" },
+  es: { Prompt: "Instrucción", Performance: "Rendimiento", Endpoint: "Punto de conexión" },
+  fr: { Prompt: "Instruction", Performance: "Performances", Endpoint: "Point de terminaison" },
+  pt: { Prompt: "Instrução", Performance: "Desempenho", Endpoint: "Endpoint da API" },
+  ru: { Prompt: "Промпт", Performance: "Производительность", Endpoint: "Конечная точка" },
+  ja: { Prompt: "プロンプト", Performance: "パフォーマンス", Endpoint: "エンドポイント" },
+  vi: { Prompt: "Câu lệnh", Performance: "Hiệu suất", Endpoint: "Điểm cuối" },
+  de: { Prompt: "Eingabeaufforderung", Performance: "Leistung", Endpoint: "Endpunkt" },
+  id: { Prompt: "Instruksi", Performance: "Performa", Endpoint: "Titik akhir API" },
+};
+
+/*
+ * Last-mile translations for strings that are shared by the prototype shell
+ * and the editorial/priority packs.  These keys are deliberately resolved
+ * before those packs: a priority page can contain an English source phrase
+ * with the same key, but the rendered locale must still win.  Product and
+ * model names (API, Playground, Seedance, provider names, and technical mode
+ * names) stay unchanged by design.
+ */
+const modelDetailResidualCopy: Record<Locale, Record<string, string>> = {
+  en: {},
+  zh: {
+    Usage: "用量",
+    Editing: "编辑",
+    "High-Speed Action": "高速动作",
+    "10% below list price": "低于目录价 10%",
+    "Seedance-2.5 API–frequently asked questions": "Seedance-2.5 API 常见问题",
+    "OpenAI-compatible text model": "兼容 OpenAI 的文本模型",
+    "Creative video generation": "创意视频生成",
+    "High-fidelity video generation": "高保真视频生成",
+    "Motion control and references": "运动控制与参考素材",
+    "Story and scene generation": "故事与场景生成",
+    "Fast creative variants": "快速创意变体",
+    "Social-ready clips": "适合社交媒体的短片",
+    "Videos generated": "已生成视频",
+    "Images generated": "已生成图片",
+    Output: "输出",
+    Input: "输入",
+    Outputs: "输出数量",
+    Rankings: "排名",
+    Benchmarks: "基准测试",
+    Apps: "应用",
+    Throughput: "吞吐量",
+    Status: "状态",
+    Audio: "音频",
+    "Related pages": "相关页面",
+  },
+  es: {
+    Usage: "Uso",
+    Editing: "Edición",
+    "High-Speed Action": "Acción de alta velocidad",
+    "10% below list price": "10 % por debajo del precio de lista",
+    "Seedance-2.5 API–frequently asked questions": "Preguntas frecuentes de la API Seedance-2.5",
+    "OpenAI-compatible text model": "Modelo de texto compatible con OpenAI",
+    "Creative video generation": "Generación de vídeo creativa",
+    "High-fidelity video generation": "Generación de vídeo de alta fidelidad",
+    "Motion control and references": "Control de movimiento y referencias",
+    "Story and scene generation": "Generación de historias y escenas",
+    "Fast creative variants": "Variantes creativas rápidas",
+    "Social-ready clips": "Clips listos para redes sociales",
+    "Videos generated": "Vídeos generados",
+    "Images generated": "Imágenes generadas",
+    Output: "Salida",
+    Input: "Entrada",
+    Outputs: "Salidas",
+    Rankings: "Clasificaciones",
+    Benchmarks: "Evaluaciones",
+    Apps: "Aplicaciones",
+    Throughput: "Rendimiento",
+    Status: "Estado",
+    Audio: "Audio",
+    "Related pages": "Páginas relacionadas",
+  },
+  fr: {
+    Usage: "Utilisation",
+    Editing: "Édition",
+    "High-Speed Action": "Action à grande vitesse",
+    "10% below list price": "10 % sous le prix catalogue",
+    "Seedance-2.5 API–frequently asked questions": "Questions fréquentes sur l’API Seedance-2.5",
+    "OpenAI-compatible text model": "Modèle texte compatible avec OpenAI",
+    "Creative video generation": "Génération vidéo créative",
+    "High-fidelity video generation": "Génération vidéo haute fidélité",
+    "Motion control and references": "Contrôle du mouvement et références",
+    "Story and scene generation": "Génération d’histoires et de scènes",
+    "Fast creative variants": "Variantes créatives rapides",
+    "Social-ready clips": "Clips prêts pour les réseaux sociaux",
+    "Videos generated": "Vidéos générées",
+    "Images generated": "Images générées",
+    Output: "Sortie",
+    Input: "Entrée",
+    Outputs: "Sorties",
+    Rankings: "Classements",
+    Benchmarks: "Évaluations",
+    Apps: "Applications",
+    Throughput: "Débit",
+    Status: "Statut",
+    Audio: "Audio",
+    "Related pages": "Pages associées",
+  },
+  pt: {
+    Usage: "Uso",
+    Editing: "Edição",
+    "High-Speed Action": "Ação em alta velocidade",
+    "10% below list price": "10% abaixo do preço de lista",
+    "Seedance-2.5 API–frequently asked questions": "Perguntas frequentes da API Seedance-2.5",
+    "OpenAI-compatible text model": "Modelo de texto compatível com OpenAI",
+    "Creative video generation": "Geração de vídeo criativa",
+    "High-fidelity video generation": "Geração de vídeo de alta fidelidade",
+    "Motion control and references": "Controle de movimento e referências",
+    "Story and scene generation": "Geração de histórias e cenas",
+    "Fast creative variants": "Variantes criativas rápidas",
+    "Social-ready clips": "Clipes prontos para redes sociais",
+    "Videos generated": "Vídeos gerados",
+    "Images generated": "Imagens geradas",
+    Output: "Saída",
+    Input: "Entrada",
+    Outputs: "Saídas",
+    Rankings: "Classificações",
+    Benchmarks: "Benchmarks",
+    Apps: "Aplicativos",
+    Throughput: "Vazão",
+    Status: "Status",
+    Audio: "Áudio",
+    "Related pages": "Páginas relacionadas",
+  },
+  ru: {
+    Usage: "Использование",
+    Editing: "Редактирование",
+    "High-Speed Action": "Действия на высокой скорости",
+    "10% below list price": "На 10% ниже цены по прайсу",
+    "Seedance-2.5 API–frequently asked questions": "Частые вопросы об API Seedance-2.5",
+    "OpenAI-compatible text model": "Текстовая модель, совместимая с OpenAI",
+    "Creative video generation": "Генерация креативных видео",
+    "High-fidelity video generation": "Генерация видео высокой точности",
+    "Motion control and references": "Управление движением и референсы",
+    "Story and scene generation": "Генерация историй и сцен",
+    "Fast creative variants": "Быстрые творческие варианты",
+    "Social-ready clips": "Клипы для социальных сетей",
+    "Videos generated": "Сгенерированные видео",
+    "Images generated": "Сгенерированные изображения",
+    Output: "Вывод",
+    Input: "Ввод",
+    Outputs: "Выходы",
+    Rankings: "Рейтинги",
+    Benchmarks: "Бенчмарки",
+    Apps: "Приложения",
+    Throughput: "Пропускная способность",
+    Status: "Статус",
+    Audio: "Аудио",
+    "Related pages": "Связанные страницы",
+  },
+  ja: {
+    Usage: "利用状況",
+    Editing: "編集",
+    "High-Speed Action": "高速アクション",
+    "10% below list price": "定価より10%安い",
+    "Seedance-2.5 API–frequently asked questions": "Seedance-2.5 API よくある質問",
+    "OpenAI-compatible text model": "OpenAI 互換のテキストモデル",
+    "Creative video generation": "クリエイティブ動画生成",
+    "High-fidelity video generation": "高忠実度動画生成",
+    "Motion control and references": "モーション制御と参照素材",
+    "Story and scene generation": "ストーリーとシーンの生成",
+    "Fast creative variants": "高速なクリエイティブバリエーション",
+    "Social-ready clips": "ソーシャル向けクリップ",
+    "Videos generated": "生成動画",
+    "Images generated": "生成画像",
+    Output: "出力",
+    Input: "入力",
+    Outputs: "出力数",
+    Rankings: "ランキング",
+    Benchmarks: "ベンチマーク",
+    Apps: "アプリ",
+    Throughput: "スループット",
+    Status: "ステータス",
+    Audio: "音声",
+    "Related pages": "関連ページ",
+  },
+  vi: {
+    Usage: "Mức sử dụng",
+    Editing: "Chỉnh sửa",
+    "High-Speed Action": "Hành động tốc độ cao",
+    "10% below list price": "Thấp hơn 10% so với giá niêm yết",
+    "Seedance-2.5 API–frequently asked questions": "Câu hỏi thường gặp về API Seedance-2.5",
+    "OpenAI-compatible text model": "Mô hình văn bản tương thích OpenAI",
+    "Creative video generation": "Tạo video sáng tạo",
+    "High-fidelity video generation": "Tạo video độ trung thực cao",
+    "Motion control and references": "Điều khiển chuyển động và tham chiếu",
+    "Story and scene generation": "Tạo câu chuyện và bối cảnh",
+    "Fast creative variants": "Biến thể sáng tạo nhanh",
+    "Social-ready clips": "Clip sẵn sàng cho mạng xã hội",
+    "Videos generated": "Video đã tạo",
+    "Images generated": "Ảnh đã tạo",
+    Output: "Đầu ra",
+    Input: "Đầu vào",
+    Outputs: "Số đầu ra",
+    Rankings: "Xếp hạng",
+    Benchmarks: "Điểm chuẩn",
+    Apps: "Ứng dụng",
+    Throughput: "Thông lượng",
+    Status: "Trạng thái",
+    Audio: "Âm thanh",
+    "Related pages": "Trang liên quan",
+  },
+  de: {
+    Usage: "Nutzung",
+    Editing: "Bearbeitung",
+    "High-Speed Action": "Hochgeschwindigkeitsaktion",
+    "10% below list price": "10 % unter dem Listenpreis",
+    "Seedance-2.5 API–frequently asked questions": "Häufige Fragen zur Seedance-2.5-API",
+    "OpenAI-compatible text model": "OpenAI-kompatibles Textmodell",
+    "Creative video generation": "Kreative Videogenerierung",
+    "High-fidelity video generation": "Videogenerierung mit hoher Wiedergabetreue",
+    "Motion control and references": "Bewegungssteuerung und Referenzen",
+    "Story and scene generation": "Story- und Szenengenerierung",
+    "Fast creative variants": "Schnelle kreative Varianten",
+    "Social-ready clips": "Social-ready Clips",
+    "Videos generated": "Generierte Videos",
+    "Images generated": "Generierte Bilder",
+    Output: "Ausgabe",
+    Input: "Eingabe",
+    Outputs: "Ausgaben",
+    Rankings: "Ranglisten",
+    Benchmarks: "Benchmarks",
+    Apps: "Anwendungen",
+    Throughput: "Durchsatz",
+    Status: "Status",
+    Audio: "Audio",
+    "Related pages": "Verwandte Seiten",
+  },
+  id: {
+    Usage: "Penggunaan",
+    Editing: "Pengeditan",
+    "High-Speed Action": "Aksi berkecepatan tinggi",
+    "10% below list price": "10% di bawah harga daftar",
+    "Seedance-2.5 API–frequently asked questions": "Pertanyaan umum API Seedance-2.5",
+    "OpenAI-compatible text model": "Model teks yang kompatibel dengan OpenAI",
+    "Creative video generation": "Pembuatan video kreatif",
+    "High-fidelity video generation": "Pembuatan video dengan fidelitas tinggi",
+    "Motion control and references": "Kontrol gerakan dan referensi",
+    "Story and scene generation": "Pembuatan cerita dan adegan",
+    "Fast creative variants": "Variasi kreatif cepat",
+    "Social-ready clips": "Klip siap untuk media sosial",
+    "Videos generated": "Video yang dibuat",
+    "Images generated": "Gambar yang dibuat",
+    Output: "Keluaran",
+    Input: "Masukan",
+    Outputs: "Keluaran",
+    Rankings: "Peringkat",
+    Benchmarks: "Benchmark",
+    Apps: "Aplikasi",
+    Throughput: "Laju pemrosesan",
+    Status: "Status",
+    Audio: "Audio",
+    "Related pages": "Halaman terkait",
+    "↓ Go $10 · Pro $30 · Max $100 per month — usage worth up to 4.5× the price": "↓ Go $10 · Pro $30 · Max $100 per bulan — penggunaan hingga 4,5× harga",
+    "▶ Sign in to run": "▶ Masuk untuk menjalankan",
+    "Saved before signup": "Disimpan sebelum pendaftaran",
+    "Public demo": "Demo publik",
+    "Edit the prompt and settings here. We save the draft locally, then open Flatkey so you can run it after signup.": "Edit prompt dan pengaturan di sini. Draf disimpan secara lokal, lalu Flatkey dibuka agar Anda dapat menjalankannya setelah mendaftar.",
+    "(flatkey · official ≈ {{price}})": "(flatkey · resmi ≈ {{price}})",
+    "{{model}} · OpenAI-compatible · one key, all models": "{{model}} · kompatibel dengan OpenAI · satu kunci untuk semua model",
+    "* Illustrative pricing — see flatkey pricing page": "* Harga ilustratif — lihat halaman harga Flatkey",
+    "# Your existing OpenAI code:": "# Kode OpenAI Anda yang sudah ada:",
+    "covers every model": "mencakup semua model",
+    "Est. this run": "Perkiraan proses ini",
+    "One subscription": "Satu langganan",
+    "Google / GitHub one-click · no credit card to start": "Google / GitHub sekali klik · tanpa kartu kredit untuk memulai",
+    "migrate.py — change one line": "migrate.py — ubah satu baris",
+    "Text, image and video in one plan · overage billed as you go · cancel anytime": "Teks, gambar, dan video dalam satu paket · penggunaan berlebih ditagihkan sesuai pemakaian · batalkan kapan saja",
+    "Same {{official}} upstream, same quality — plans from $10/month include every frontier model, with monthly usage worth up to 4.5× the price. Change one line of base_url and your existing OpenAI SDK just works. Try it below, sign in when you are ready.": "Upstream {{official}} yang sama, kualitas yang sama — paket mulai $10/bulan mencakup semua model terdepan, dengan penggunaan bulanan hingga 4,5× harga. Ubah satu baris base_url dan SDK OpenAI Anda langsung berfungsi. Coba di bawah, lalu masuk saat siap.",
+    "See plans →": "Lihat paket →",
+    "Starter / individual": "Starter / individu",
+    "Team / high-volume": "Tim / volume tinggi",
+    "The same {{model}},": "{{model}} yang sama,",
+    "You pay": "Anda membayar",
+    "per month on the Go plan": "per bulan pada paket Go",
+    "You get": "Anda mendapatkan",
+    "of monthly model usage — 4.5× the price": "penggunaan model bulanan — 4,5× harga",
+    "from $10/month": "mulai $10/bulan",
+    "Pro — $30/mo, up to $90 usage": "Pro — $30/bln, penggunaan hingga $90",
+    "Most popular": "Paling populer",
+    "Go — $10/mo, up to $25 usage": "Go — $10/bln, penggunaan hingga $25",
+    "Max — $100/mo, up to $450 usage": "Max — $100/bln, penggunaan hingga $450",
+    "GPT-image-2 image": "Gambar GPT-image-2",
+    "MiniMax-H3 2K / sec": "MiniMax-H3 2K / detik",
+    "Input image after free tier": "Gambar input setelah paket gratis",
+    "same per-second rate": "tarif per detik yang sama",
+    "Matched live models": "Model live yang cocok",
+  },
+};
+
 const modelDetailCommonCopy: Partial<Record<Locale, Record<string, string>>> = {
   zh: {
     Endpoint: "Endpoint",
@@ -6429,6 +7716,162 @@ const modelDetailUiAdditions: Partial<Record<Locale, Record<string, string>>> = 
   },
 };
 
+// Shared labels used by every model-detail section.  Keep these in a
+// dedicated, complete locale table: generated catalog pages can expose these
+// labels even when a model has no editorial copy pack of its own.
+const modelDetailSharedCopy: Record<Locale, Record<string, string>> = {
+  en: {
+    Compare: "Compare",
+    "Pricing dimension": "Pricing dimension",
+    "Flatkey rate": "Flatkey rate",
+    "Billing note": "Billing note",
+    "Reference rate": "Reference rate",
+    "Shared balance": "Shared balance",
+    FAQ: "FAQ",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / sec",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1M catalog units",
+    "OpenAI table varies by modality/batch": "OpenAI table varies by modality/batch",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / sec 768P · $0.13 / sec 2K",
+    "Make one like this": "Make one like this",
+    "Copy Prompt": "Copy Prompt",
+  },
+  zh: {
+    Compare: "对比",
+    "Pricing dimension": "价格维度",
+    "Flatkey rate": "Flatkey 费率",
+    "Billing note": "计费说明",
+    "Reference rate": "参考费率",
+    "Shared balance": "共用余额",
+    FAQ: "常见问题",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / 秒",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 100 万目录单位",
+    "OpenAI table varies by modality/batch": "OpenAI 表格会因模态和批量而变化",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / 秒 768P · $0.13 / 秒 2K",
+    "Make one like this": "做一个类似的",
+    "Copy Prompt": "复制提示词",
+  },
+  es: {
+    Compare: "Comparar",
+    "Pricing dimension": "Dimensión de precio",
+    "Flatkey rate": "Tarifa de Flatkey",
+    "Billing note": "Nota de facturación",
+    "Reference rate": "Tarifa de referencia",
+    "Shared balance": "Saldo compartido",
+    FAQ: "Preguntas frecuentes",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / s",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1M unidades del catálogo",
+    "OpenAI table varies by modality/batch": "La tabla de OpenAI varía según la modalidad y el lote",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / s 768P · $0.13 / s 2K",
+    "Make one like this": "Crear uno similar",
+    "Copy Prompt": "Copiar prompt",
+  },
+  fr: {
+    Compare: "Comparer",
+    "Pricing dimension": "Dimension tarifaire",
+    "Flatkey rate": "Tarif Flatkey",
+    "Billing note": "Note de facturation",
+    "Reference rate": "Tarif de référence",
+    "Shared balance": "Solde partagé",
+    FAQ: "Questions fréquentes",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / s",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1M unités du catalogue",
+    "OpenAI table varies by modality/batch": "Le tableau OpenAI varie selon la modalité et le lot",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / s 768P · $0.13 / s 2K",
+    "Make one like this": "En créer un similaire",
+    "Copy Prompt": "Copier le prompt",
+  },
+  pt: {
+    Compare: "Comparar",
+    "Pricing dimension": "Dimensão de preço",
+    "Flatkey rate": "Tarifa Flatkey",
+    "Billing note": "Nota de cobrança",
+    "Reference rate": "Tarifa de referência",
+    "Shared balance": "Saldo compartilhado",
+    FAQ: "Perguntas frequentes",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / s",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1M unidades do catálogo",
+    "OpenAI table varies by modality/batch": "A tabela da OpenAI varia por modalidade e lote",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / s 768P · $0.13 / s 2K",
+    "Make one like this": "Criar um semelhante",
+    "Copy Prompt": "Copiar prompt",
+  },
+  ru: {
+    Compare: "Сравнить",
+    "Pricing dimension": "Ценовая единица",
+    "Flatkey rate": "Тариф Flatkey",
+    "Billing note": "Примечание по оплате",
+    "Reference rate": "Справочный тариф",
+    "Shared balance": "Общий баланс",
+    FAQ: "Частые вопросы",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / с",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1 млн единиц каталога",
+    "OpenAI table varies by modality/batch": "Таблица OpenAI зависит от модальности и пакета",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / с 768P · $0.13 / с 2K",
+    "Make one like this": "Создать похожий",
+    "Copy Prompt": "Скопировать промпт",
+  },
+  ja: {
+    Compare: "比較",
+    "Pricing dimension": "料金項目",
+    "Flatkey rate": "Flatkey 料金",
+    "Billing note": "課金に関する注記",
+    "Reference rate": "参考料金",
+    "Shared balance": "共通残高",
+    FAQ: "よくある質問",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / 秒",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 100 万カタログ単位",
+    "OpenAI table varies by modality/batch": "OpenAI の表はモダリティとバッチによって異なります",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / 秒 768P · $0.13 / 秒 2K",
+    "Make one like this": "似たものを作る",
+    "Copy Prompt": "プロンプトをコピー",
+  },
+  vi: {
+    Compare: "So sánh",
+    "Pricing dimension": "Đơn vị tính giá",
+    "Flatkey rate": "Mức giá Flatkey",
+    "Billing note": "Ghi chú tính phí",
+    "Reference rate": "Mức giá tham chiếu",
+    "Shared balance": "Số dư dùng chung",
+    FAQ: "Câu hỏi thường gặp",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / giây",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1M đơn vị trong danh mục",
+    "OpenAI table varies by modality/batch": "Bảng OpenAI thay đổi theo phương thức và batch",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / giây 768P · $0.13 / giây 2K",
+    "Make one like this": "Tạo bản tương tự",
+    "Copy Prompt": "Sao chép prompt",
+  },
+  de: {
+    Compare: "Vergleichen",
+    "Pricing dimension": "Preisdimension",
+    "Flatkey rate": "Flatkey-Tarif",
+    "Billing note": "Abrechnungshinweis",
+    "Reference rate": "Referenztarif",
+    "Shared balance": "Gemeinsames Guthaben",
+    FAQ: "Häufige Fragen",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / Sek.",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1 Mio. Katalogeinheiten",
+    "OpenAI table varies by modality/batch": "Die OpenAI-Tabelle variiert nach Modalität und Batch",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / Sek. 768P · $0.13 / Sek. 2K",
+    "Make one like this": "Ähnliches erstellen",
+    "Copy Prompt": "Prompt kopieren",
+  },
+  id: {
+    Compare: "Bandingkan",
+    "Pricing dimension": "Dimensi harga",
+    "Flatkey rate": "Tarif Flatkey",
+    "Billing note": "Catatan penagihan",
+    "Reference rate": "Tarif referensi",
+    "Shared balance": "Saldo bersama",
+    FAQ: "Pertanyaan umum",
+    "MiniMax-H3 768P / sec": "MiniMax-H3 768P / detik",
+    "$4.00–$24.00 / 1M catalog units": "$4.00–$24.00 / 1 juta unit katalog",
+    "OpenAI table varies by modality/batch": "Tabel OpenAI berbeda menurut modalitas dan batch",
+    "$0.08 / sec 768P · $0.13 / sec 2K": "$0.08 / detik 768P · $0.13 / detik 2K",
+    "Make one like this": "Buat yang serupa",
+    "Copy Prompt": "Salin prompt",
+  },
+};
+
 /**
  * Seedance 2.5 uses the same refreshed shell as every other model page, but
  * it also ships a richer set of editorial sections (comparison, prompt
@@ -7365,6 +8808,414 @@ const seedance25DirectTranslations: Partial<Record<Locale, Record<string, string
   },
 };
 
+/**
+ * Exact source strings used by the current Seedance 2.5 editorial block.
+ *
+ * The older audited table intentionally uses shorter, reusable keys (for
+ * example `Other video generation models`), while the curated config uses
+ * more descriptive headings.  Keeping the exact aliases here means the
+ * renderer can translate the config without changing the wording or
+ * structure of the approved content.  These are UI strings only; model IDs,
+ * URLs, prices, and protocol values remain technical literals.
+ */
+const seedance25ExactCopy: Record<Locale, Record<string, string>> = {
+  en: {
+    "See request formula": "See request formula",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Compare Seedance 2.5 with Seedance 2.0: documented video fields",
+    "Frame control": "Frame control",
+    "Editing workflow": "Editing workflow",
+    "Other Seedance and AI video generator APIs": "Other Seedance and AI video generator APIs",
+    "What is Seedance 2.5?": "What is Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "How much does Seedance 2.5 cost?",
+    "API, pricing, and release-date questions": "API, pricing, and release-date questions",
+  },
+  zh: {
+    "See request formula": "查看请求公式",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "对比 Seedance 2.5 与 Seedance 2.0：文档化视频字段",
+    "Frame control": "帧控制",
+    "Editing workflow": "编辑工作流",
+    "Other Seedance and AI video generator APIs": "其他 Seedance 与 AI 视频生成 API",
+    "What is Seedance 2.5?": "什么是 Seedance 2.5？",
+    "How much does Seedance 2.5 cost?": "Seedance 2.5 的价格是多少？",
+    "API, pricing, and release-date questions": "API、价格和发布日期常见问题",
+  },
+  es: {
+    "See request formula": "Ver fórmula de la solicitud",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Comparar Seedance 2.5 y Seedance 2.0: campos de vídeo documentados",
+    "Frame control": "Control de fotogramas",
+    "Editing workflow": "Flujo de edición",
+    "Other Seedance and AI video generator APIs": "Otras API de Seedance y generación de vídeo con IA",
+    "What is Seedance 2.5?": "¿Qué es Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "¿Cuánto cuesta Seedance 2.5?",
+    "API, pricing, and release-date questions": "Preguntas sobre la API, los precios y la fecha de lanzamiento",
+  },
+  fr: {
+    "See request formula": "Voir la formule de la requête",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Comparer Seedance 2.5 et Seedance 2.0 : champs vidéo documentés",
+    "Frame control": "Contrôle des images",
+    "Editing workflow": "Flux de montage",
+    "Other Seedance and AI video generator APIs": "Autres API Seedance et de génération vidéo IA",
+    "What is Seedance 2.5?": "Qu’est-ce que Seedance 2.5 ?",
+    "How much does Seedance 2.5 cost?": "Combien coûte Seedance 2.5 ?",
+    "API, pricing, and release-date questions": "Questions sur l’API, les tarifs et la date de sortie",
+  },
+  pt: {
+    "See request formula": "Ver fórmula da solicitação",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Compare o Seedance 2.5 com o Seedance 2.0: campos de vídeo documentados",
+    "Frame control": "Controle de quadros",
+    "Editing workflow": "Fluxo de edição",
+    "Other Seedance and AI video generator APIs": "Outras APIs do Seedance e de geração de vídeo com IA",
+    "What is Seedance 2.5?": "O que é o Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "Quanto custa o Seedance 2.5?",
+    "API, pricing, and release-date questions": "Perguntas sobre API, preços e data de lançamento",
+  },
+  ru: {
+    "See request formula": "См. формулу запроса",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Сравнение Seedance 2.5 и Seedance 2.0: документированные поля видео",
+    "Frame control": "Управление кадрами",
+    "Editing workflow": "Рабочий процесс редактирования",
+    "Other Seedance and AI video generator APIs": "Другие API Seedance и генерации видео с ИИ",
+    "What is Seedance 2.5?": "Что такое Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "Сколько стоит Seedance 2.5?",
+    "API, pricing, and release-date questions": "Вопросы об API, цене и дате выпуска",
+  },
+  ja: {
+    "See request formula": "リクエスト式を確認",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Seedance 2.5 と Seedance 2.0 の比較：文書化された動画フィールド",
+    "Frame control": "フレーム制御",
+    "Editing workflow": "編集ワークフロー",
+    "Other Seedance and AI video generator APIs": "その他のSeedance・AI動画生成API",
+    "What is Seedance 2.5?": "Seedance 2.5とは？",
+    "How much does Seedance 2.5 cost?": "Seedance 2.5の料金は？",
+    "API, pricing, and release-date questions": "API・料金・リリース日に関するよくある質問",
+  },
+  vi: {
+    "See request formula": "Xem công thức request",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "So sánh Seedance 2.5 với Seedance 2.0: các trường video được lập tài liệu",
+    "Frame control": "Điều khiển khung hình",
+    "Editing workflow": "Quy trình chỉnh sửa",
+    "Other Seedance and AI video generator APIs": "Các API Seedance và tạo video AI khác",
+    "What is Seedance 2.5?": "Seedance 2.5 là gì?",
+    "How much does Seedance 2.5 cost?": "Seedance 2.5 có giá bao nhiêu?",
+    "API, pricing, and release-date questions": "Câu hỏi về API, giá và ngày phát hành",
+  },
+  de: {
+    "See request formula": "Anfrageformel anzeigen",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Seedance 2.5 und Seedance 2.0 vergleichen: dokumentierte Videofelder",
+    "Frame control": "Frame-Steuerung",
+    "Editing workflow": "Bearbeitungs-Workflow",
+    "Other Seedance and AI video generator APIs": "Weitere Seedance- und KI-Videogenerierungs-APIs",
+    "What is Seedance 2.5?": "Was ist Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "Was kostet Seedance 2.5?",
+    "API, pricing, and release-date questions": "Fragen zu API, Preisen und Veröffentlichungsdatum",
+  },
+  id: {
+    "See request formula": "Lihat rumus permintaan",
+    "Compare Seedance 2.5 with Seedance 2.0: documented video fields": "Bandingkan Seedance 2.5 dengan Seedance 2.0: kolom video terdokumentasi",
+    "Frame control": "Kontrol frame",
+    "Editing workflow": "Alur kerja pengeditan",
+    "Other Seedance and AI video generator APIs": "API Seedance dan pembuatan video AI lainnya",
+    "What is Seedance 2.5?": "Apa itu Seedance 2.5?",
+    "How much does Seedance 2.5 cost?": "Berapa biaya Seedance 2.5?",
+    "API, pricing, and release-date questions": "Pertanyaan tentang API, harga, dan tanggal rilis",
+    Coverage: "Cakupan",
+    "Best for product videos, ad creative, and image-to-video production": "Cocok untuk video produk, materi iklan, dan produksi gambar-ke-video",
+    "UGC ad clips": "Klip iklan UGC",
+    "Social video variants": "Variasi video sosial",
+  },
+};
+
+/**
+ * User-facing facts that live on the model config rather than inside an
+ * editorial landing-content pack.  These values are consumed by the hero
+ * pricing cards, comparison fallbacks, related-model cards, and metadata
+ * helpers, so translating only the React labels still leaves English prose in
+ * a localized route.  Keep technical identifiers (model IDs, endpoints,
+ * option values, formulas, and prices) out of this table on purpose.
+ */
+const modelConfigFactCopy: Record<Locale, Record<string, string>> = {
+  en: {},
+  zh: {
+    "Best for long-context reasoning, coding agents, and production assistants": "适合长上下文推理、编程 Agent 和生产级助手",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "适合通用 AI 应用、Agent、搜索和高用量 API 场景",
+    "Best for product videos, ad creative, and image-to-video production": "适合产品视频、广告创意和图生视频制作",
+    "Best for product images, ad creatives, and ecommerce visual variants": "适合产品图片、广告创意和电商视觉变体",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "适合视频配乐、保留语音的编辑和音频制作",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "文本 · 图片 · 文件（上游视觉能力；Flatkey 字段可能不同）",
+    "Text · image (file tools are route-specific)": "文本 · 图片（文件工具取决于路由）",
+    "Text · file": "文本 · 文件",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "价格、兼容性、限制，以及提示词和生成文件的处理方式。",
+    "resolution- and input-second-dependent": "取决于分辨率和输入视频秒数",
+    "check current catalog allowance": "请查看当前目录额度",
+    "Varies by modality/batch": "因模态和批量而异",
+    "See request formula": "查看请求公式",
+    "50% off": "优惠 50%",
+    "up to 50% off": "最高优惠 50%",
+    "/ million output tokens": "/ 百万输出 token",
+    "/ second": "/ 秒",
+    "/ request": "/ 请求",
+    "/ image": "/ 图像",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses（请确认路由可用性）",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark 是 Flatkey 路由字段，是否可用取决于具体路由。",
+  },
+  es: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Ideal para razonamiento de contexto largo, agentes de código y asistentes de producción",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Ideal para aplicaciones de IA generales, agentes, búsquedas y cargas de API altas",
+    "Best for product videos, ad creative, and image-to-video production": "Ideal para vídeos de producto, creatividades publicitarias y producción de imagen a vídeo",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Ideal para imágenes de producto, creatividades publicitarias y variantes visuales de ecommerce",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Ideal para bandas sonoras de vídeo, ediciones que preservan el habla y producción de audio",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Texto · imagen · archivo (visión en el upstream; los campos de Flatkey pueden variar)",
+    "Text · image (file tools are route-specific)": "Texto · imagen (las herramientas de archivos dependen de la ruta)",
+    "Text · file": "Texto · archivo",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Precios, compatibilidad, límites y gestión de tus prompts y archivos generados.",
+    "resolution- and input-second-dependent": "depende de la resolución y los segundos de entrada",
+    "check current catalog allowance": "consulta el límite actual del catálogo",
+    "Varies by modality/batch": "Varía según la modalidad y el lote",
+    "See request formula": "Ver fórmula de la solicitud",
+    "50% off": "50 % de descuento",
+    "up to 50% off": "hasta un 50 % de descuento",
+    "/ million output tokens": "/ millón de tokens de salida",
+    "/ second": "/ segundo",
+    "/ request": "/ solicitud",
+    "/ image": "/ imagen",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (verifica la disponibilidad de la ruta)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark es un campo de la ruta Flatkey; su disponibilidad depende de la ruta.",
+  },
+  fr: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Idéal pour le raisonnement avec long contexte, les agents de code et les assistants de production",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Idéal pour les applications IA générales, les agents, la recherche et les charges API élevées",
+    "Best for product videos, ad creative, and image-to-video production": "Idéal pour les vidéos produit, les créations publicitaires et la production image-vidéo",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Idéal pour les images produit, les créations publicitaires et les variantes visuelles e-commerce",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Idéal pour les bandes-son vidéo, les montages qui préservent la parole et la production audio",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Texte · image · fichier (vision côté amont ; les champs Flatkey peuvent varier)",
+    "Text · image (file tools are route-specific)": "Texte · image (les outils de fichiers dépendent de la route)",
+    "Text · file": "Texte · fichier",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Tarifs, compatibilité, limites et traitement de vos prompts et fichiers générés.",
+    "resolution- and input-second-dependent": "dépend de la résolution et des secondes d’entrée",
+    "check current catalog allowance": "vérifiez la limite actuelle du catalogue",
+    "Varies by modality/batch": "Varie selon la modalité et le lot",
+    "See request formula": "Voir la formule de la requête",
+    "50% off": "50 % de réduction",
+    "up to 50% off": "jusqu’à 50 % de réduction",
+    "/ million output tokens": "/ million de tokens de sortie",
+    "/ second": "/ seconde",
+    "/ request": "/ requête",
+    "/ image": "/ image",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (vérifiez la disponibilité de la route)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark est un champ de route Flatkey ; sa disponibilité dépend de la route.",
+  },
+  pt: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Ideal para raciocínio com contexto longo, agentes de código e assistentes de produção",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Ideal para aplicativos de IA gerais, agentes, pesquisa e cargas de API intensas",
+    "Best for product videos, ad creative, and image-to-video production": "Ideal para vídeos de produto, criativos de anúncios e produção de imagem para vídeo",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Ideal para imagens de produto, criativos de anúncios e variações visuais de e-commerce",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Ideal para trilhas de vídeo, edições que preservam a fala e produção de áudio",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Texto · imagem · arquivo (visão no upstream; os campos Flatkey podem variar)",
+    "Text · image (file tools are route-specific)": "Texto · imagem (as ferramentas de arquivo dependem da rota)",
+    "Text · file": "Texto · arquivo",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Preços, compatibilidade, limites e tratamento dos seus prompts e arquivos gerados.",
+    "resolution- and input-second-dependent": "depende da resolução e dos segundos de entrada",
+    "check current catalog allowance": "consulte o limite atual do catálogo",
+    "Varies by modality/batch": "Varia conforme a modalidade e o lote",
+    "See request formula": "Ver fórmula da solicitação",
+    "50% off": "50% de desconto",
+    "up to 50% off": "até 50% de desconto",
+    "/ million output tokens": "/ milhão de tokens de saída",
+    "/ second": "/ segundo",
+    "/ request": "/ solicitação",
+    "/ image": "/ imagem",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (confirme a disponibilidade da rota)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark é um campo da rota Flatkey; a disponibilidade depende da rota.",
+  },
+  ru: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Подходит для рассуждений с длинным контекстом, агентов для кода и продакшен-ассистентов",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Подходит для универсальных ИИ-приложений, агентов, поиска и больших API-нагрузок",
+    "Best for product videos, ad creative, and image-to-video production": "Подходит для продуктовых видео, рекламных креативов и создания видео из изображений",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Подходит для изображений продуктов, рекламных креативов и визуальных вариантов для e-commerce",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Подходит для саундтреков к видео, монтажа с сохранением речи и аудиопроизводства",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Текст · изображение · файл (зрение upstream; поля Flatkey могут отличаться)",
+    "Text · image (file tools are route-specific)": "Текст · изображение (инструменты файлов зависят от маршрута)",
+    "Text · file": "Текст · файл",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Цены, совместимость, ограничения и обработка промптов и созданных файлов.",
+    "resolution- and input-second-dependent": "зависит от разрешения и секунд входного видео",
+    "check current catalog allowance": "проверьте текущий лимит каталога",
+    "Varies by modality/batch": "Зависит от модальности и пакета",
+    "See request formula": "См. формулу запроса",
+    "50% off": "скидка 50%",
+    "up to 50% off": "скидка до 50%",
+    "/ million output tokens": "/ миллион выходных токенов",
+    "/ second": "/ секунду",
+    "/ request": "/ запрос",
+    "/ image": "/ изображение",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (проверьте доступность маршрута)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark — поле маршрута Flatkey; доступность зависит от маршрута.",
+  },
+  ja: {
+    "Best for long-context reasoning, coding agents, and production assistants": "長いコンテキストの推論、コーディングエージェント、本番アシスタントに適しています",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "一般的なAIアプリ、エージェント、検索、大量のAPIワークロードに適しています",
+    "Best for product videos, ad creative, and image-to-video production": "商品動画、広告クリエイティブ、画像から動画への制作に適しています",
+    "Best for product images, ad creatives, and ecommerce visual variants": "商品画像、広告クリエイティブ、EC向けのビジュアル展開に適しています",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "動画のサウンドトラック、音声を保つ編集、音声制作に適しています",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "テキスト・画像・ファイル（上流の画像理解；Flatkey の項目は異なる場合があります）",
+    "Text · image (file tools are route-specific)": "テキスト・画像（ファイルツールはルートによって異なります）",
+    "Text · file": "テキスト・ファイル",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "料金、互換性、制限、プロンプトと生成ファイルの扱いについて説明します。",
+    "resolution- and input-second-dependent": "解像度と入力動画の秒数に依存",
+    "check current catalog allowance": "現在のカタログ上限を確認",
+    "Varies by modality/batch": "モダリティとバッチにより異なります",
+    "See request formula": "リクエスト式を確認",
+    "50% off": "50%割引",
+    "up to 50% off": "最大50%割引",
+    "/ million output tokens": "/ 100万出力トークン",
+    "/ second": "/ 秒",
+    "/ request": "/ リクエスト",
+    "/ image": "/ 画像",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses（ルートの利用可否を確認）",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark は Flatkey ルートの項目です。利用可否はルートによって異なります。",
+  },
+  vi: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Phù hợp với suy luận ngữ cảnh dài, agent lập trình và trợ lý production",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Phù hợp với ứng dụng AI tổng quát, agent, tìm kiếm và workload API lớn",
+    "Best for product videos, ad creative, and image-to-video production": "Phù hợp với video sản phẩm, nội dung quảng cáo và sản xuất ảnh thành video",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Phù hợp với ảnh sản phẩm, nội dung quảng cáo và biến thể hình ảnh thương mại điện tử",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Phù hợp với nhạc nền video, chỉnh sửa giữ lời thoại và sản xuất âm thanh",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Văn bản · hình ảnh · tệp (khả năng nhìn ở upstream; trường Flatkey có thể khác)",
+    "Text · image (file tools are route-specific)": "Văn bản · hình ảnh (công cụ tệp tùy theo tuyến)",
+    "Text · file": "Văn bản · tệp",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Giá, khả năng tương thích, giới hạn và cách xử lý prompt cùng tệp đã tạo.",
+    "resolution- and input-second-dependent": "phụ thuộc vào độ phân giải và số giây video đầu vào",
+    "check current catalog allowance": "kiểm tra hạn mức catalog hiện tại",
+    "Varies by modality/batch": "Thay đổi theo modality và batch",
+    "See request formula": "Xem công thức request",
+    "50% off": "giảm 50%",
+    "up to 50% off": "giảm tối đa 50%",
+    "/ million output tokens": "/ một triệu token đầu ra",
+    "/ second": "/ giây",
+    "/ request": "/ yêu cầu",
+    "/ image": "/ ảnh",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (xác minh route khả dụng)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark là trường route của Flatkey; khả dụng tùy route.",
+  },
+  de: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Geeignet für Schlussfolgern mit langem Kontext, Coding-Agenten und Produktionsassistenten",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Geeignet für allgemeine KI-Apps, Agenten, Suche und API-Workloads mit hohem Volumen",
+    "Best for product videos, ad creative, and image-to-video production": "Geeignet für Produktvideos, Werbemotive und Bild-zu-Video-Produktion",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Geeignet für Produktbilder, Werbemotive und visuelle E-Commerce-Varianten",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Geeignet für Video-Soundtracks, sprachbewahrende Bearbeitung und Audioproduktion",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Text · Bild · Datei (Vision beim Upstream; Flatkey-Felder können abweichen)",
+    "Text · image (file tools are route-specific)": "Text · Bild (Dateiwerkzeuge sind routenabhängig)",
+    "Text · file": "Text · Datei",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Preise, Kompatibilität, Limits und der Umgang mit Prompts und erzeugten Dateien.",
+    "resolution- and input-second-dependent": "abhängig von Auflösung und Sekunden des Eingangsvideos",
+    "check current catalog allowance": "aktuelles Kataloglimit prüfen",
+    "Varies by modality/batch": "Variiert nach Modalität und Batch",
+    "See request formula": "Anfrageformel anzeigen",
+    "50% off": "50 % Rabatt",
+    "up to 50% off": "bis zu 50 % Rabatt",
+    "/ million output tokens": "/ Million Ausgabe-Tokens",
+    "/ second": "/ Sekunde",
+    "/ request": "/ Anfrage",
+    "/ image": "/ Bild",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (Routenverfügbarkeit prüfen)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark ist ein Flatkey-Routenfeld; die Verfügbarkeit hängt von der Route ab.",
+  },
+  id: {
+    "Best for long-context reasoning, coding agents, and production assistants": "Cocok untuk penalaran konteks panjang, coding agent, dan asisten produksi",
+    "Best for general AI apps, agents, search, and high-volume API workloads": "Cocok untuk aplikasi AI umum, agent, pencarian, dan workload API bervolume tinggi",
+    "Best for product videos, ad creative, and image-to-video production": "Cocok untuk video produk, materi iklan, dan produksi gambar-ke-video",
+    "Best for product images, ad creatives, and ecommerce visual variants": "Cocok untuk gambar produk, materi iklan, dan variasi visual e-commerce",
+    "Best for video soundtracks, speech-preserving edits, and audio production": "Cocok untuk soundtrack video, pengeditan yang mempertahankan ucapan, dan produksi audio",
+    "Text · image · file (upstream vision; Flatkey fields vary)": "Teks · gambar · file (vision di upstream; bidang Flatkey dapat berbeda)",
+    "Text · image (file tools are route-specific)": "Teks · gambar (alat file bergantung pada rute)",
+    "Text · file": "Teks · file",
+    "Pricing, compatibility, limits, and how your prompts and generated files are handled.": "Harga, kompatibilitas, batasan, serta cara prompt dan file yang dibuat ditangani.",
+    "resolution- and input-second-dependent": "bergantung pada resolusi dan detik video input",
+    "check current catalog allowance": "periksa batas katalog saat ini",
+    "Varies by modality/batch": "Bervariasi menurut modality dan batch",
+    "See request formula": "Lihat rumus permintaan",
+    "50% off": "diskon 50%",
+    "up to 50% off": "diskon hingga 50%",
+    "/ million output tokens": "/ satu juta token output",
+    "/ second": "/ detik",
+    "/ request": "/ permintaan",
+    "/ image": "/ gambar",
+    "POST /v1/responses (verify route availability)": "POST /v1/responses (verifikasi ketersediaan rute)",
+    "aigc_watermark is a Flatkey route field; availability is route-specific.": "aigc_watermark adalah bidang rute Flatkey; ketersediaannya bergantung pada rute.",
+    "Coding agents": "Coding agent",
+    "Support automation": "Otomatisasi dukungan",
+    "Long document analysis": "Analisis dokumen panjang",
+    "AI app backends": "Backend aplikasi AI",
+    "Agent workflows": "Workflow agent",
+    "Batch content generation": "Pembuatan konten batch",
+    "Product mockups": "Mockup produk",
+    "Ad creatives": "Materi iklan",
+    "Ecommerce images": "Gambar e-commerce",
+    "UGC ad clips": "Klip iklan UGC",
+    "Product motion": "Gerak produk",
+    "Social video variants": "Variasi video sosial",
+    "Audio generation": "Pembuatan audio",
+    "Speech preservation": "Pelestarian ucapan",
+    "Audio variants": "Variasi audio",
+    "Live flatkey pricing": "Harga Flatkey langsung",
+    "Live model data from pricing API": "Data model langsung dari API harga",
+    "Cache reads": "Pembacaan cache",
+    "Opus 4 output": "Output Opus 4",
+    "Sonnet 4 output": "Output Sonnet 4",
+    "Haiku output": "Output Haiku",
+    "GPT-5 output": "Output GPT-5",
+    "GPT-5 mini output": "Output GPT-5 mini",
+    "GPT-5 input": "Input GPT-5",
+    "Gemini 2.5 Pro output": "Output Gemini 2.5 Pro",
+    "Gemini 2.5 Flash output": "Output Gemini 2.5 Flash",
+    "Gemini 2.5 Pro input": "Input Gemini 2.5 Pro",
+    "MiniMax-H3 catalog base / sec": "Basis katalog MiniMax-H3 / detik",
+    "Reference video input": "Input video referensi",
+    "Input image": "Gambar input",
+    "Seedance video / sec": "Video Seedance / detik",
+    "Image-to-video / sec": "Gambar-ke-video / detik",
+    "1080p / sec": "1080p / detik",
+    "Square output": "Output persegi",
+    "Fast product mockups": "Mockup produk cepat",
+  },
+};
+
+function localizeModelConfigFact(locale: Locale, value: string | undefined): string | undefined {
+  if (value === undefined) return value;
+  return modelConfigFactCopy[locale]?.[value] ?? modelLandingCopy(locale, value as ModelLandingKey);
+}
+
+/** Localize config-level prose for every model family, including static pages. */
+function localizeModelConfigFacts(config: ModelConfig, locale: Locale): ModelConfig {
+  const localize = (value: string | undefined) => localizeModelConfigFact(locale, value);
+  const generator = config.generator
+    ? {
+        ...config.generator,
+        fields: config.generator.fields.map((field) => ({
+          ...field,
+          label: localize(field.label) ?? field.label,
+          help: localize(field.help),
+        })),
+      }
+    : undefined;
+  return {
+    ...config,
+    generator,
+    priceUnit: (localize(config.priceUnit) ?? config.priceUnit) as ModelLandingKey,
+    positioning: (localize(config.positioning) ?? config.positioning) as ModelLandingKey,
+    useCases: config.useCases.map((item) => (localize(item) ?? item) as ModelLandingKey),
+    rows: config.rows.map((row) => ({
+      ...row,
+      label: localize(row.label) ?? row.label,
+      official: localize(row.official),
+      value: localize(row.value),
+    })),
+    faq: config.faq.map((item) => ({
+      question: (localize(item.question) ?? item.question) as ModelLandingKey,
+      answer: (localize(item.answer) ?? item.answer) as ModelLandingKey,
+    })),
+  };
+}
+
 // Keep the hero's API jump action translated on every localized model route.
 const modelViewApiCopy: Record<Locale, string> = {
   en: "View API",
@@ -7384,7 +9235,197 @@ function seedanceSourceCopy(locale: Locale, key: string): string | undefined {
   if (direct) return direct;
   const alias = seedance25SourceAliases[key];
   if (!alias) return undefined;
-  return seedanceFactCopy[locale]?.[alias] ?? seedanceFactCopy.en?.[alias];
+  // Resolve the requested locale here and leave the English fallback to the
+  // final resolver.  Falling back to `en` at this seam used to short-circuit
+  // the other locale maps that follow it (notably the priority and shared
+  // model-detail tables), so a translated string could be replaced by the
+  // English Seedance fact before its proper translation was considered.
+  return seedanceFactCopy[locale]?.[alias];
+}
+
+function localizeSeedanceText(locale: Locale, value: string): string {
+  return modelLandingCopy(locale, value as ModelLandingKey);
+}
+
+function isSeedanceEditorialConfig(config: ModelConfig): boolean {
+  const ids = [config.slug, config.modelId, ...config.modelIds].map(normalizeModelId);
+  return ids.some((id) => id === "seedance-2-5" || id === "seedance-2-0" || id === "seedance");
+}
+
+/**
+ * Translate the curated Seedance config at the data boundary as well as at
+ * render time.  The shared React shell calls `t()` for normal fields, but a
+ * config is also consumed by metadata, tests, and handoff helpers.  Returning
+ * a localized copy here prevents those consumers from accidentally exposing
+ * the English editorial block.  Technical literals (IDs, URLs, formulas,
+ * asset paths, and protocol values) are deliberately copied unchanged.
+ */
+function localizeSeedanceEditorialConfig(config: ModelConfig, locale: Locale): ModelConfig {
+  const localize = (value: string | undefined) => value === undefined ? value : localizeSeedanceText(locale, value);
+  const generator = config.generator
+    ? {
+        ...config.generator,
+        fields: config.generator.fields.map((field) => ({
+          ...field,
+          label: localizeSeedanceText(locale, field.label),
+          help: localize(field.help),
+        })),
+      }
+    : undefined;
+  const source = config.landingContent;
+  const landingContent = source
+    ? {
+        ...source,
+        hero: source.hero
+          ? {
+              ...source.hero,
+              title: localize(source.hero.title),
+              description: localize(source.hero.description),
+              breadcrumb: source.hero.breadcrumb?.map((item) => localizeSeedanceText(locale, item)),
+              actionLabel: localize(source.hero.actionLabel),
+              referencePrice: localize(source.hero.referencePrice),
+            }
+          : undefined,
+        performance: source.performance
+          ? {
+              ...source.performance,
+              eyebrow: localize(source.performance.eyebrow),
+              title: localizeSeedanceText(locale, source.performance.title),
+              description: localizeSeedanceText(locale, source.performance.description),
+              metrics: source.performance.metrics?.map((metric) => ({
+                ...metric,
+                label: localizeSeedanceText(locale, metric.label),
+                note: localizeSeedanceText(locale, metric.note),
+              })),
+            }
+          : undefined,
+        activity: source.activity
+          ? {
+              ...source.activity,
+              eyebrow: localize(source.activity.eyebrow),
+              title: localizeSeedanceText(locale, source.activity.title),
+              description: localizeSeedanceText(locale, source.activity.description),
+              stats: source.activity.stats?.map((stat) => ({
+                ...stat,
+                label: localizeSeedanceText(locale, stat.label),
+                unit: localize(stat.unit),
+              })),
+            }
+          : undefined,
+        pricing: source.pricing
+          ? {
+              ...source.pricing,
+              eyebrow: localize(source.pricing.eyebrow),
+              title: localizeSeedanceText(locale, source.pricing.title),
+              description: localizeSeedanceText(locale, source.pricing.description),
+              note: localize(source.pricing.note),
+              rows: source.pricing.rows?.map((row) => ({
+                ...row,
+                label: localizeSeedanceText(locale, row.label),
+                detail: localize(row.detail),
+              })),
+            }
+          : undefined,
+        capabilities: source.capabilities?.map((item) => ({
+          ...item,
+          title: localizeSeedanceText(locale, item.title),
+          body: localizeSeedanceText(locale, item.body),
+        })),
+        capabilitiesEyebrow: localize(source.capabilitiesEyebrow),
+        capabilitiesTitle: localize(source.capabilitiesTitle),
+        capabilitiesDescription: localize(source.capabilitiesDescription),
+        comparison: source.comparison
+          ? {
+              ...source.comparison,
+              eyebrow: localizeSeedanceText(locale, source.comparison.eyebrow),
+              title: localizeSeedanceText(locale, source.comparison.title),
+              description: localizeSeedanceText(locale, source.comparison.description),
+              baselineLabel: localizeSeedanceText(locale, source.comparison.baselineLabel),
+              currentLabel: localizeSeedanceText(locale, source.comparison.currentLabel),
+              rows: source.comparison.rows.map((row) => ({
+                ...row,
+                label: localizeSeedanceText(locale, row.label),
+                baseline: localizeSeedanceText(locale, row.baseline),
+                current: localizeSeedanceText(locale, row.current),
+              })),
+            }
+          : undefined,
+        // Prompt cards are replaced by the reviewed, locale-aware template
+        // set in the shared prompt-library builder. Keep their approved
+        // source text/assets intact here so the data binding cannot drift.
+        promptLibraryTitle: localize(source.promptLibraryTitle),
+        promptLibraryDescription: localize(source.promptLibraryDescription),
+        why: source.why
+          ? {
+              ...source.why,
+              eyebrow: localizeSeedanceText(locale, source.why.eyebrow),
+              title: localizeSeedanceText(locale, source.why.title),
+              description: localizeSeedanceText(locale, source.why.description),
+              cards: source.why.cards.map((card) => ({
+                ...card,
+                title: localizeSeedanceText(locale, card.title),
+                body: localizeSeedanceText(locale, card.body),
+              })),
+            }
+          : undefined,
+        api: source.api
+          ? {
+              ...source.api,
+              eyebrow: localize(source.api.eyebrow),
+              title: localizeSeedanceText(locale, source.api.title),
+              description: localizeSeedanceText(locale, source.api.description),
+              items: source.api.items.map((item) => ({
+                ...item,
+                title: localizeSeedanceText(locale, item.title),
+                detail: localizeSeedanceText(locale, item.detail),
+              })),
+            }
+          : undefined,
+        related: source.related
+          ? {
+              ...source.related,
+              eyebrow: localize(source.related.eyebrow),
+              title: localizeSeedanceText(locale, source.related.title),
+              description: localize(source.related.description),
+              cards: source.related.cards.map((card) => ({
+                ...card,
+                name: localizeSeedanceText(locale, card.name),
+                description: localizeSeedanceText(locale, card.description),
+              })),
+            }
+          : undefined,
+        faq: source.faq?.map((item) => ({
+          question: localizeSeedanceText(locale, item.question),
+          answer: localizeSeedanceText(locale, item.answer),
+        })),
+        faqTitle: source.faqTitle
+          ? {
+              beforeBreak: localizeSeedanceText(locale, source.faqTitle.beforeBreak),
+              afterBreak: localizeSeedanceText(locale, source.faqTitle.afterBreak),
+            }
+          : undefined,
+        faqDescription: localize(source.faqDescription),
+      }
+    : undefined;
+
+  return {
+    ...config,
+    ...(config.seoByLocale?.[locale] ? { seo: config.seoByLocale[locale] } : {}),
+    generator,
+    rows: config.rows.map((row) => ({
+      ...row,
+      label: localizeSeedanceText(locale, row.label),
+      official: row.official ? localizeSeedanceText(locale, row.official) : row.official,
+    })),
+    priceUnit: localizeSeedanceText(locale, config.priceUnit) as ModelLandingKey,
+    positioning: localizeSeedanceText(locale, config.positioning) as ModelLandingKey,
+    useCases: config.useCases.map((item) => localizeSeedanceText(locale, item) as ModelLandingKey),
+    faq: config.faq.map((item) => ({
+      question: localizeSeedanceText(locale, item.question) as ModelLandingKey,
+      answer: localizeSeedanceText(locale, item.answer) as ModelLandingKey,
+    })),
+    landingContent,
+  };
 }
 
 export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Record<string, string> = {}) {
@@ -7398,7 +9439,32 @@ export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Rec
   // natural H1 order to "API, pricing, and model details").  Non-English
   // locales still use the coherent priority map below.
   const priorityTranslations = locale === "en" ? {} : getPrioritySourceTranslations(locale);
-  let value = (key === "View API" ? modelViewApiCopy[locale] : undefined) ?? seedanceFactCopy[locale]?.[key] ?? seedanceFactCopy.en?.[key] ?? seedanceSourceCopy(locale, key) ?? seedanceModelCopy[locale]?.[key] ?? modelDetailUiAdditions[locale]?.[key] ?? modelDetailUiCopy[locale]?.[key] ?? modelDetailPrototypeCopy[locale]?.[key] ?? modelDetailCommonCopy[locale]?.[key] ?? supplementalModelLandingCopy[locale]?.[key] ?? modelComparisonCopy[locale]?.[key] ?? priorityTranslations[key] ?? translations[locale][key] ?? translations.en[key] ?? key;
+  const localizedMaps: Array<Record<string, string> | undefined> = [
+    key === "View API" ? { [key]: modelViewApiCopy[locale] } : undefined,
+    modelDetailResidualCopy[locale],
+    modelDetailLiteralCopy[locale],
+    seedance25ExactCopy[locale],
+    seedanceFactCopy[locale],
+    seedanceSourceCopy(locale, key) ? { [key]: seedanceSourceCopy(locale, key)! } : undefined,
+    seedanceModelCopy[locale],
+    modelDetailUiAdditions[locale],
+    modelDetailSharedCopy[locale],
+    modelConfigFactCopy[locale],
+    modelDetailUiCopy[locale],
+    modelDetailPrototypeCopy[locale],
+    modelDetailCommonCopy[locale],
+    supplementalModelLandingCopy[locale],
+    modelComparisonCopy[locale],
+    priorityTranslations,
+    translations[locale],
+  ];
+  // English is deliberately the last resort.  In particular, do not place
+  // `seedanceFactCopy.en` before the locale-specific maps: many shared keys
+  // are present in both tables and the old order made English win silently.
+  let value = localizedMaps.reduce<string | undefined>(
+    (resolved, map) => resolved ?? map?.[key],
+    undefined,
+  ) ?? seedanceFactCopy.en?.[key] ?? translations.en[key] ?? key;
   for (const [name, replacement] of Object.entries(vars)) {
     value = value.replaceAll(`{{${name}}}`, replacement);
   }

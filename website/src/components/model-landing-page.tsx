@@ -50,9 +50,14 @@ import {
   getImagePlaygroundExample,
   getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
+  localizeImagePromptText,
   type ImagePlaygroundExample,
 } from "@/lib/image-prompt-templates";
-import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
+import {
+  getVideoPlaygroundPrompt,
+  getVideoPromptTemplates,
+  localizeVideoPromptText,
+} from "@/lib/video-prompt-templates";
 import {
   modelLandingCopy,
   getModelVideoModeLabel,
@@ -61,6 +66,7 @@ import {
   getModelLandingConfigs,
   normalizeModelId,
   type ModelConfig,
+  type ModelGeneratorConfig,
   type ModelGeneratorField,
   type ModelGeneratorProtocol,
   type ModelLandingKey,
@@ -144,6 +150,73 @@ type FlatkeyPriceTableRow = {
   officialPercent: number;
 };
 
+type StarterCopy = Record<Locale, (modelName: string) => string>;
+
+// The editor prompt is user-facing copy. Keep it separate from
+// `config.examplePrompt`, which remains the canonical English request used in
+// code/request previews, and provide a complete starter for every locale.
+const MODEL_STARTER_COPY: Record<"text" | "image" | "audio", StarterCopy> = {
+  text: {
+    en: (name) => `You are a senior backend engineer. In 3 sentences, explain why developers should use ${name} through an LLM gateway instead of calling each official API directly.`,
+    zh: (name) => `请让 ${name} 用三句话说明：与其分别调用各家官方 API，开发者为什么应该通过 LLM 网关使用该模型。`,
+    es: (name) => `Pide a ${name} que explique en tres frases por qué los desarrolladores deberían usarlo mediante una pasarela LLM en vez de llamar directamente a cada API oficial.`,
+    fr: (name) => `Demandez à ${name} d’expliquer en trois phrases pourquoi les développeurs devraient passer par une passerelle LLM plutôt que d’appeler chaque API officielle directement.`,
+    pt: (name) => `Peça ao ${name} que explique em três frases por que desenvolvedores devem usá-lo por um gateway de LLM em vez de chamar cada API oficial diretamente.`,
+    ru: (name) => `Попросите ${name} в трёх предложениях объяснить, почему разработчикам стоит использовать модель через шлюз LLM, а не напрямую вызывать каждый официальный API.`,
+    ja: (name) => `${name}に、各公式APIを個別に呼び出すのではなくLLMゲートウェイを使うべき理由を3文で説明させる。`,
+    vi: (name) => `Yêu cầu ${name} giải thích trong 3 câu vì sao nhà phát triển nên dùng mô hình qua cổng LLM thay vì gọi trực tiếp từng API chính thức.`,
+    de: (name) => `Bitte ${name} in drei Sätzen erklären lassen, warum Entwickler das Modell über ein LLM-Gateway statt über direkte Aufrufe jeder offiziellen API nutzen sollten.`,
+    id: (name) => `Minta ${name} menjelaskan dalam 3 kalimat mengapa pengembang sebaiknya menggunakan model melalui gateway LLM, bukan memanggil setiap API resmi secara langsung.`,
+  },
+  image: {
+    en: (name) => `Create a high-quality product image with ${name}: clean composition, precise lighting, strong subject focus, and realistic detail.`,
+    zh: (name) => `使用 ${name} 制作高质量产品图：构图干净、光线精准、主体突出、细节真实。`,
+    es: (name) => `Crea con ${name} una imagen de producto de alta calidad: composición limpia, iluminación precisa, sujeto destacado y detalle realista.`,
+    fr: (name) => `Créez avec ${name} une image produit de haute qualité : composition nette, lumière précise, sujet mis en valeur et détails réalistes.`,
+    pt: (name) => `Crie com ${name} uma imagem de produto de alta qualidade: composição limpa, iluminação precisa, foco forte no produto e detalhes realistas.`,
+    ru: (name) => `Создайте с помощью ${name} качественное изображение продукта: чистая композиция, точный свет, акцент на объекте и реалистичные детали.`,
+    ja: (name) => `${name}で高品質な商品画像を作成：整理された構図、正確な照明、被写体への強いフォーカス、リアルなディテール。`,
+    vi: (name) => `Tạo ảnh sản phẩm chất lượng cao bằng ${name}: bố cục sạch, ánh sáng chính xác, tập trung rõ vào chủ thể và chi tiết chân thực.`,
+    de: (name) => `Erstelle mit ${name} ein hochwertiges Produktbild: klare Komposition, präzises Licht, starker Motivfokus und realistische Details.`,
+    id: (name) => `Buat gambar produk berkualitas tinggi dengan ${name}: komposisi bersih, pencahayaan presisi, fokus kuat pada subjek, dan detail realistis.`,
+  },
+  audio: {
+    en: (name) => `Create a polished music bed with ${name} for a short product video: keep the video timing, preserve important speech, use a warm electronic style, and deliver a clean loopable ending.`,
+    zh: (name) => `使用 ${name} 为短产品视频制作精致的音乐铺底：保持视频节奏，保留重要语音，采用温暖电子风格，并以干净、可循环的结尾收束。`,
+    es: (name) => `Crea con ${name} una base musical pulida para un vídeo corto de producto: conserva el ritmo del vídeo y la voz importante, usa un estilo electrónico cálido y termina con un cierre limpio y repetible.`,
+    fr: (name) => `Créez avec ${name} un habillage musical soigné pour une courte vidéo produit : respectez le rythme, préservez les paroles importantes, adoptez un style électronique chaleureux et terminez par une boucle nette.`,
+    pt: (name) => `Crie com ${name} uma base musical refinada para um vídeo curto de produto: mantenha o ritmo, preserve a fala importante, use um estilo eletrônico acolhedor e entregue um final limpo e repetível.`,
+    ru: (name) => `Создайте с помощью ${name} выверенную музыкальную подложку для короткого видео продукта: сохраните темп, важную речь и тёплый электронный стиль, завершив чистым зацикливаемым финалом.`,
+    ja: (name) => `${name}で短い商品動画用の洗練された音楽ベッドを作成：映像のタイミングと重要な話し声を保ち、温かいエレクトロニックスタイルで、きれいにループできる終わりにする。`,
+    vi: (name) => `Tạo nền nhạc hoàn chỉnh bằng ${name} cho video sản phẩm ngắn: giữ nhịp video, bảo toàn lời thoại quan trọng, dùng phong cách điện tử ấm áp và kết thúc sạch để lặp.`,
+    de: (name) => `Erstelle mit ${name} ein ausgearbeitetes Musikbett für ein kurzes Produktvideo: Timing und wichtige Sprache erhalten, einen warmen elektronischen Stil nutzen und sauber loopbar enden.`,
+    id: (name) => `Buat musik latar yang rapi dengan ${name} untuk video produk singkat: pertahankan timing video dan ucapan penting, gunakan gaya elektronik hangat, lalu akhiri dengan penutup bersih yang dapat diulang.`,
+  },
+};
+
+function getModelStarterPrompt(
+  config: ModelConfig,
+  locale: Locale,
+  imageExample?: ImagePlaygroundExample,
+): string {
+  const kind = config.generator?.kind;
+  if (kind === "image" && imageExample) return imageExample.prompt;
+  if (kind === "video") return getVideoPlaygroundPrompt(config.modelId, locale, config.displayName);
+  if (kind === "image" || kind === "audio") return MODEL_STARTER_COPY[kind][locale](config.displayName);
+  return MODEL_STARTER_COPY.text[locale](config.displayName);
+}
+
+function localizeConfiguredPrompt(
+  prompt: string,
+  kind: ModelGeneratorConfig["kind"] | undefined,
+  locale: Locale,
+): string {
+  if (locale === "en") return prompt;
+  if (kind === "image") return localizeImagePromptText(prompt, locale);
+  if (kind === "video") return localizeVideoPromptText(prompt, locale);
+  return prompt;
+}
+
 const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[]> = {
   image: [
     { poster: "/assets/prompts/awesome-images/gpt-image-2-showcase-complex.png" },
@@ -171,9 +244,10 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
     [inputConfig, locale],
   );
   const imagePlaygroundExample = config.generator?.kind === "image"
-    ? getImagePlaygroundExample(config.modelId)
+    ? getImagePlaygroundExample(config.modelId, locale)
     : undefined;
-  const [prompt, setPrompt] = useState(() => imagePlaygroundExample?.prompt ?? config.examplePrompt);
+  const initialPrompt = getModelStarterPrompt(config, locale, imagePlaygroundExample);
+  const [prompt, setPrompt] = useState(() => initialPrompt);
   const [fieldValues, setFieldValues] = useState<Record<string, string | number | boolean>>(() =>
     buildInitialGeneratorValues(config)
   );
@@ -487,7 +561,7 @@ function FlatkeyModelDetailPage(props: {
                   <>
                     {tokenPriceRows.map((row) => (
                       <div className="model-stat-card" key={row.label}>
-                        <div className="model-stat-label">{row.label}</div>
+                        <div className="model-stat-label">{props.t(row.label)}</div>
                         <div className="model-stat-value">{row.flatkey}</div>
                         <div className="model-stat-reference">{props.t("Reference price")}: {row.official}</div>
                       </div>
@@ -504,24 +578,24 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">{heroProvider}</div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{isSeedanceCatalogFormula ? (priceRows.rows[0]?.label ?? props.t("Catalog formula")) : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t(priceRows.rows[0]?.label ?? "Catalog formula") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
                           ? (priceRows.rows[0]?.flatkey ?? localizedHeroFlatkeyPrice)
                           : isImageCatalogFallback
-                            ? "$4.00–$24.00 / 1M catalog units"
+                            ? props.t("$4.00–$24.00 / 1M catalog units")
                             : localizedHeroFlatkeyPrice}
                       </div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{isSeedanceCatalogFormula ? (priceRows.rows[1]?.label ?? props.t("Catalog formula")) : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t(priceRows.rows[1]?.label ?? "Catalog formula") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
                           ? (priceRows.rows[1]?.flatkey ?? localizedHeroReferencePrice)
                           : isImageCatalogFallback
-                            ? "OpenAI table varies by modality/batch"
+                            ? props.t("OpenAI table varies by modality/batch")
                             : isMiniMaxCatalogFallback
-                              ? "$0.08 / sec 768P · $0.13 / sec 2K"
+                              ? props.t("$0.08 / sec 768P · $0.13 / sec 2K")
                               : localizedHeroReferencePrice}
                       </div>
                     </div>
@@ -566,6 +640,8 @@ function FlatkeyModelDetailPage(props: {
                   <OutputPreview
                     modelName={props.config.displayName}
                     modelId={props.config.modelId}
+                    locale={props.locale}
+                    fallbackVideo={props.config.landingContent?.promptLibrary?.find((item) => Boolean(item.video))}
                     prompt={props.prompt}
                     kind={generator.kind}
                     protocol={generator.protocol}
@@ -687,8 +763,8 @@ function FlatkeyModelDetailPage(props: {
         {hasPromptLibrary ? (
           <PromptLibrarySection
             config={props.config}
+            locale={props.locale}
             examples={examples}
-            onPromptChange={props.onPromptChange}
             t={props.t}
           />
         ) : null}
@@ -736,7 +812,7 @@ function FlatkeyModelDetailPage(props: {
                   ) : null}
                   <div className="related-copy">
                     <strong>{related.name}</strong>
-                    <span>{related.description}</span>
+                    <span>{props.t(related.description)}</span>
                   </div>
                 </Link>
               ))}
@@ -895,6 +971,8 @@ function MediaModelLanding(props: {
                 <OutputPreview
                   modelName={props.config.displayName}
                   modelId={props.config.modelId}
+                  locale={props.locale}
+                  fallbackVideo={props.config.landingContent?.promptLibrary?.find((item) => Boolean(item.video))}
                   prompt={props.prompt}
                   kind={generator.kind}
                   protocol={generator.protocol}
@@ -1478,7 +1556,7 @@ function MediaPromptEditor(props: {
             <button
               key={item}
               type="button"
-              onClick={() => props.onPromptChange(buildQuickPrompt(item, props.generator.kind))}
+              onClick={() => props.onPromptChange(buildQuickPrompt(props.t(item), props.generator.kind, props.locale))}
               className="rounded-xl border border-[#e4deed] bg-[#fcfbff] px-3.5 py-2 text-[13px] font-bold text-[#4f4d56] shadow-[0_10px_20px_-18px_rgba(76,29,149,.45)] transition hover:border-[#7c3aed]/45 hover:bg-white hover:text-[#4c1d95]"
             >
               {props.t(item)}
@@ -1977,6 +2055,8 @@ function parsePrice(value: string) {
 function OutputPreview(props: {
   modelName: string;
   modelId: string;
+  locale: Locale;
+  fallbackVideo?: MediaExample;
   prompt: string;
   kind: "image" | "video" | "audio";
   protocol?: ModelGeneratorProtocol;
@@ -1987,10 +2067,13 @@ function OutputPreview(props: {
 }) {
   const endpoint = props.endpoint;
   const protocol = props.protocol ?? (props.kind === "image" ? "openai-image" : props.kind === "video" ? "seedance-video" : "audio");
+  // Models without a reviewed profession batch keep their own configured
+  // sample. Prefer it over the global media sample so one model never shows
+  // another model's asset in the Playground preview.
   const videoExample = props.kind === "video"
-    ? getVideoPromptTemplates(props.modelId)[0] ?? MEDIA_EXAMPLES.video[0]
+    ? getVideoPromptTemplates(props.modelId, props.locale)[0] ?? props.fallbackVideo ?? MEDIA_EXAMPLES.video[0]
     : undefined;
-  const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId) : undefined;
+  const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId, props.locale) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
   const rows = props.kind === "video"
     ? [
@@ -2048,7 +2131,10 @@ function OutputPreview(props: {
           <video
             className="preview-media"
             src={videoExample.video}
-            poster={isProfessionVideo(videoExample.video) ? undefined : videoExample.poster}
+            // Reviewed profession clips provide a same-source first frame;
+            // use it immediately so the preview never flashes a blank panel
+            // while the remote video is buffering.
+            poster={videoExample.poster || undefined}
             autoPlay
             muted
             loop
@@ -2909,14 +2995,14 @@ function PromptLibraryVideo(props: {
 
 function PromptLibrarySection(props: {
   config: ModelConfig;
+  locale: Locale;
   examples: readonly MediaExample[];
-  onPromptChange: (prompt: string) => void;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
   const [failedPosters, setFailedPosters] = useState<Record<string, boolean>>({});
   const kind = props.config.generator?.kind;
   if (kind !== "image" && kind !== "video") return null;
-  const items = buildPromptLibraryItems(props.config, props.examples, props.t);
+  const items = buildPromptLibraryItems(props.config, props.examples, props.t, props.locale);
   const isPrototypeContent = Boolean(props.config.landingContent?.promptLibrary);
 
   return (
@@ -2990,16 +3076,12 @@ function PromptLibrarySection(props: {
                   >
                     {props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      props.onPromptChange(item.prompt);
-                      window.requestAnimationFrame(() => document.getElementById("workbench")?.scrollIntoView({ behavior: "smooth" }));
-                    }}
+                  <a
+                    href={consoleUrl("/dashboard/overview")}
                     className="dark-button"
                   >
-                    {props.t(isPrototypeContent ? "Make one like this" : "Open in Playground")}
-                  </button>
+                    {props.t("Make one like this")}
+                  </a>
                 </div>
               </div>
             </article>
@@ -3014,10 +3096,12 @@ function PromptLibrarySection(props: {
 function buildPromptLibraryItems(
   config: ModelConfig,
   examples: readonly MediaExample[],
-  t: (key: string, vars?: Record<string, string>) => string
+  t: (key: string, vars?: Record<string, string>) => string,
+  locale: Locale,
 ): PromptLibraryItem[] {
+  let hasReviewedVideoTemplates = false;
   if (config.generator?.kind === "image") {
-    const templates = getImagePromptTemplates(config.modelId);
+    const templates = getImagePromptTemplates(config.modelId, locale);
     const posters = getImagePromptTemplateFallbackPosters(config.modelId);
     if (templates.length > 0) {
       return templates.slice(0, 6).map((template, index) => ({
@@ -3031,22 +3115,25 @@ function buildPromptLibraryItems(
   }
 
   if (config.generator?.kind === "video") {
-    const templates = getVideoPromptTemplates(config.modelId);
+    const templates = getVideoPromptTemplates(config.modelId, locale);
+    hasReviewedVideoTemplates = templates.length > 0;
     if (templates.length > 0) {
       return templates.slice(0, 6).map((template) => ({
-        key: template.id,
+        // The profession is the semantic identity of a card. The legacy
+        // template id is retained inside the template for serialized prompts,
+        // but must not be used as the media join key.
+        key: template.professionId,
         label: t(template.label),
         prompt: template.prompt,
         alt: t(template.label),
-        // Keep the reviewed workflow poster visible while the generated
-        // profession clip loads. If the CDN video is unavailable, this exact
-        // product/food/hospitality/etc. reference remains in the card instead
-        // of falling through to an unrelated generic image.
+        // Keep the generated profession clip as the canonical card asset. If
+        // it fails, the component-level fallback is still resolved by the
+        // same profession-bound template rather than by card index.
         example: {
-          // Keep the generated CDN clip as the primary asset. Do not attach an
-          // older local poster to a profession clip; this preserves the same
-          // source binding in both the card and the Playground preview.
-          poster: isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster),
+          // Keep the generated CDN clip and its same-source poster together.
+          // Older reviewed sets may not have a poster; they remain video-only
+          // rather than inheriting an unrelated local industry image.
+          poster: template.poster || (isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster)),
           video: template.video,
         },
       }));
@@ -3060,7 +3147,7 @@ function buildPromptLibraryItems(
   const fallbackItems = labels.flatMap((label) => [0, 1].map((copyIndex) => ({
     key: `${label}-${copyIndex}`,
     label: t(label),
-    prompt: `${t(label)} — ${config.examplePrompt}`,
+    prompt: `${t(label)} — ${getModelStarterPrompt(config, locale)}`,
     example: examples[(copyIndex + labels.indexOf(label)) % Math.max(1, examples.length)] ?? { poster: "/assets/prompts/awesome-images/ai-agent-poster.png" },
   })));
 
@@ -3068,10 +3155,17 @@ function buildPromptLibraryItems(
     const configuredItems = configured.slice(0, 6).map((item) => ({
       key: item.key,
       label: t(item.label),
-      prompt: item.prompt,
+      prompt: localizeConfiguredPrompt(item.prompt, config.generator?.kind, locale),
       alt: t(item.alt),
       example: { poster: item.poster, video: item.video },
     }));
+    // For a model without a reviewed six-profession batch, its configured
+    // examples are authoritative. Do not append generic fallback cards that
+    // could make a legacy product/UGC/storyboard clip look like a profession
+    // mapping or change the model's existing content.
+    if (config.generator?.kind === "video" && !hasReviewedVideoTemplates) {
+      return configuredItems.slice(0, 6);
+    }
     const configuredKeys = new Set(configuredItems.map((item) => item.key));
     const supplementalItems = fallbackItems.filter((item) => !configuredKeys.has(item.key));
     return [...configuredItems, ...supplementalItems].slice(0, 6);
@@ -3187,7 +3281,7 @@ function ModelActivitySection(props: {
                 key={`${stat.label}-${index}`}
                 label={props.t(stat.label)}
                 value={stat.value}
-                valueNode={stat.unit ? <><span>{stat.value}</span><span className="chart-stat-unit">{stat.unit}</span></> : undefined}
+                valueNode={stat.unit ? <><span>{stat.value}</span><span className="chart-stat-unit">{props.t(stat.unit)}</span></> : undefined}
                 note=""
               />
             )) : (
@@ -3285,7 +3379,7 @@ function SeedancePricingSection(props: {
               <tbody>
                 {displayRows.map((row, index) => (
                   <tr key={`${row.label}-${row.flatkey}`}>
-                    <td>{row.label}</td>
+                    <td>{props.t(row.label)}</td>
                     <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
                     <td>{index === 2 ? props.t("Total input-video seconds") : props.t("Output duration")}</td>
                   </tr>
@@ -3446,7 +3540,7 @@ function ModelPricingSection(props: {
                 <tbody>
                   {props.liveRows.map((row) => (
                     <tr key={row.label}>
-                      <td>{row.label}</td>
+                      <td>{props.t(row.label)}</td>
                       <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
                       <td>{row.official}</td>
                     </tr>
@@ -3510,7 +3604,20 @@ function ModelApiSection(props: {
     ? configuredCustom
     : undefined;
   const endpoint = props.config.generator?.endpoint ?? "/v1/chat/completions";
-  const request = buildPublicApiRequest(props.config);
+  // Keep the request shape and technical identifiers canonical, while using
+  // the same locale-aware starter prompt shown in the playground. This avoids
+  // an English prompt leaking into otherwise localized API examples.
+  const apiPrompt =
+    props.locale === "en"
+      ? props.config.examplePrompt
+      : getModelStarterPrompt(
+          props.config,
+          props.locale,
+          props.config.generator?.kind === "image"
+            ? getImagePlaygroundExample(props.config.modelId, props.locale)
+            : undefined,
+        );
+  const request = buildPublicApiRequest(props.config, apiPrompt);
   const requestText = JSON.stringify(request, null, 2);
   const [activeTab, setActiveTab] = useState<"curl" | "node" | "python">("curl");
   const [openItem, setOpenItem] = useState(0);
@@ -3627,27 +3734,37 @@ function renderApiSample(source: string, tab: ApiCodeTab): ReactNode {
   ));
 }
 
-function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
+function buildPublicApiRequest(config: ModelConfig, prompt = config.examplePrompt): Record<string, unknown> {
   if (config.generator?.kind === "video") {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
     if (config.generator.protocol === "grok-video") {
       return compactRequest({
         model: config.modelId,
-        prompt: config.examplePrompt,
+        prompt,
         duration: defaults.duration ?? 5,
       });
     }
     if (config.generator.protocol === "veo-video") {
       return compactRequest({
         model: config.modelId,
-        prompt: config.examplePrompt,
+        prompt,
         duration: Number(defaults.duration ?? 8),
         size: defaults.size ?? "1280x720",
       });
     }
+    if (config.generator.protocol === "minimax-video") {
+      return {
+        model: config.modelId,
+        content: [{ type: "text", text: prompt }],
+        resolution: defaults.resolution ?? "768P",
+        duration: defaults.duration ?? 6,
+        ratio: defaults.ratio ?? "16:9",
+        aigc_watermark: defaults.aigc_watermark ?? false,
+      };
+    }
     return {
       model: config.modelId,
-      content: [{ type: "text", text: config.examplePrompt }],
+      content: [{ type: "text", text: prompt }],
       ratio: defaults.ratio ?? "adaptive",
       resolution: defaults.resolution ?? "720p",
       duration: defaults.duration ?? 5,
@@ -3663,7 +3780,7 @@ function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
       });
       return {
         model: config.modelId,
-        contents: [{ role: "user", parts: [{ text: config.examplePrompt }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           responseModalities: ["TEXT", "IMAGE"],
           imageConfig,
@@ -3672,7 +3789,7 @@ function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
     }
     return {
       model: config.modelId,
-      prompt: config.examplePrompt,
+      prompt,
       ...defaults,
     };
   }
@@ -3680,13 +3797,13 @@ function buildPublicApiRequest(config: ModelConfig): Record<string, unknown> {
     const defaults = Object.fromEntries(config.generator.fields.map((field) => [field.name, field.defaultValue]));
     return {
       model: config.modelId,
-      input: config.examplePrompt,
+      input: prompt,
       ...defaults,
     };
   }
   return {
     model: config.modelId,
-    messages: [{ role: "user", content: config.examplePrompt }],
+    messages: [{ role: "user", content: prompt }],
   };
 }
 
@@ -4567,12 +4684,62 @@ function coerceGeneratorValue(field: ModelGeneratorField, raw: string) {
   return Math.min(field.max ?? value, Math.max(field.min ?? value, value));
 }
 
-function buildQuickPrompt(label: string, kind: "image" | "video" | "audio") {
-  if (kind === "video") {
-    return `${label}: a concise commercial video shot with clear subject motion, realistic lighting, stable camera, and production-ready framing.`;
-  }
-  if (kind === "audio") {
-    return `${label}: a clean studio-quality audio generation brief with precise tone, pacing, ambience, and delivery notes.`;
-  }
-  return `${label}: a high-quality product visual with clean composition, precise lighting, strong subject focus, and realistic detail.`;
+type QuickPromptKind = "image" | "video" | "audio";
+
+const QUICK_PROMPT_COPY: Record<Locale, Record<QuickPromptKind, string>> = {
+  en: {
+    image: "{{label}}: a high-quality product visual with clean composition, precise lighting, strong subject focus, and realistic detail.",
+    video: "{{label}}: a concise commercial video shot with clear subject motion, realistic lighting, stable camera, and production-ready framing.",
+    audio: "{{label}}: a clean studio-quality audio generation brief with precise tone, pacing, ambience, and delivery notes.",
+  },
+  zh: {
+    image: "{{label}}：高质量产品视觉，构图干净、光线精准、主体突出、细节真实。",
+    video: "{{label}}：简洁的商业视频镜头，主体运动清晰、光线真实、镜头稳定，画面可直接用于制作。",
+    audio: "{{label}}：清晰的录音棚级音频生成简报，明确音色、节奏、环境氛围和交付要求。",
+  },
+  es: {
+    image: "{{label}}: una imagen de producto de alta calidad, con composición limpia, iluminación precisa, sujeto destacado y detalle realista.",
+    video: "{{label}}: un plano comercial conciso con movimiento claro del sujeto, iluminación realista, cámara estable y encuadre listo para producción.",
+    audio: "{{label}}: un briefing de generación de audio con calidad de estudio, tono, ritmo, ambiente y notas de entrega precisos.",
+  },
+  fr: {
+    image: "{{label}} : un visuel produit de haute qualité, à la composition nette, lumière précise, sujet bien mis en avant et détails réalistes.",
+    video: "{{label}} : un plan publicitaire concis avec un mouvement clair du sujet, une lumière réaliste, une caméra stable et un cadrage prêt pour la production.",
+    audio: "{{label}} : un brief de génération audio de qualité studio, avec des indications précises sur le timbre, le rythme, l’ambiance et la livraison.",
+  },
+  pt: {
+    image: "{{label}}: um visual de produto de alta qualidade, com composição limpa, iluminação precisa, foco no produto e detalhes realistas.",
+    video: "{{label}}: um plano comercial conciso, com movimento claro do assunto, iluminação realista, câmera estável e enquadramento pronto para produção.",
+    audio: "{{label}}: um briefing de geração de áudio com qualidade de estúdio, tom, ritmo, ambiente e instruções de entrega precisos.",
+  },
+  ru: {
+    image: "{{label}}: качественный визуал продукта с чистой композицией, точным светом, акцентом на объекте и реалистичными деталями.",
+    video: "{{label}}: короткий рекламный кадр с понятным движением объекта, реалистичным светом, стабильной камерой и готовой к производству композицией.",
+    audio: "{{label}}: чёткое техническое задание на студийную генерацию аудио с указанием тембра, темпа, атмосферы и требований к выдаче.",
+  },
+  ja: {
+    image: "{{label}}：クリーンな構図、正確な照明、被写体を際立たせるフォーカス、リアルなディテールを備えた高品質な商品ビジュアル。",
+    video: "{{label}}：被写体の動きを明確にし、自然な照明、安定したカメラ、制作に使えるフレーミングでまとめた簡潔な広告ショット。",
+    audio: "{{label}}：音色、テンポ、環境音、納品条件を明確にした、スタジオ品質の音声生成ブリーフ。",
+  },
+  vi: {
+    image: "{{label}}: hình ảnh sản phẩm chất lượng cao với bố cục gọn, ánh sáng chính xác, chủ thể nổi bật và chi tiết chân thực.",
+    video: "{{label}}: một cảnh quảng cáo ngắn với chuyển động chủ thể rõ ràng, ánh sáng thực tế, camera ổn định và khung hình sẵn sàng sản xuất.",
+    audio: "{{label}}: bản mô tả tạo âm thanh chất lượng phòng thu, nêu rõ âm sắc, nhịp điệu, không gian và yêu cầu bàn giao.",
+  },
+  de: {
+    image: "{{label}}: ein hochwertiges Produktmotiv mit klarer Komposition, präzisem Licht, starkem Motivfokus und realistischen Details.",
+    video: "{{label}}: ein kurzer Werbeshot mit klarer Motivbewegung, realistischem Licht, stabiler Kamera und produktionsfertigem Bildausschnitt.",
+    audio: "{{label}}: ein Studio-Audio-Briefing mit präzisen Angaben zu Klangfarbe, Tempo, Atmosphäre und Auslieferung.",
+  },
+  id: {
+    image: "{{label}}: visual produk berkualitas tinggi dengan komposisi bersih, pencahayaan presisi, fokus subjek yang kuat, dan detail realistis.",
+    video: "{{label}}: cuplikan komersial singkat dengan gerak subjek yang jelas, pencahayaan realistis, kamera stabil, dan framing siap produksi.",
+    audio: "{{label}}: brief pembuatan audio berkualitas studio dengan nada, tempo, suasana, dan catatan pengiriman yang jelas.",
+  },
+};
+
+function buildQuickPrompt(label: string, kind: QuickPromptKind, locale: Locale) {
+  const template = QUICK_PROMPT_COPY[locale]?.[kind] ?? QUICK_PROMPT_COPY.en[kind];
+  return template.replace("{{label}}", label);
 }

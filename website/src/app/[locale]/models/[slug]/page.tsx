@@ -6,6 +6,7 @@ import {
   getModelLandingConfigForPricingModel,
   getModelLandingConfigs,
   getLocalizedModelLandingConfig,
+  getLocalizedModelLandingSeo,
   buildModelLandingMetadata,
   limitSeoDescription,
   resolveModelLandingModels,
@@ -60,7 +61,7 @@ export async function generateMetadata(props: Props) {
       });
       return buildMetadata(dynamic);
     }
-    const localizedSeo = config.seoByLocale?.[params.locale] ?? config.seo;
+    const localizedSeo = getLocalizedModelLandingSeo(config, params.locale);
     return buildMetadata({
       title: localizedSeo.title,
       description: limitSeoDescription(localizedSeo.description),

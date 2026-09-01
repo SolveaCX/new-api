@@ -527,7 +527,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "图像尺寸",
     peakUtc: "高峰（UTC）",
     offPeakUtc: "非高峰（UTC）",
-    endpoint: "Endpoint",
+    endpoint: "端点",
     modelId: "模型 ID",
     modalities: "模态",
     context: "上下文",
@@ -674,7 +674,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Dimensiones de imagen",
     peakUtc: "Punta (UTC)",
     offPeakUtc: "Fuera de punta (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Endpoint de API",
     modelId: "ID del modelo",
     modalities: "Modalidades",
     context: "Contexto",
@@ -821,7 +821,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Dimensions de l'image",
     peakUtc: "Pointe (UTC)",
     offPeakUtc: "Hors pointe (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Point de terminaison API",
     modelId: "ID du modèle",
     modalities: "Modalités",
     context: "Contexte",
@@ -968,7 +968,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Dimensões da imagem",
     peakUtc: "Pico (UTC)",
     offPeakUtc: "Fora de pico (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Endpoint da API",
     modelId: "ID do modelo",
     modalities: "Modalidades",
     context: "Contexto",
@@ -1115,7 +1115,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Размеры изображения",
     peakUtc: "Пик (UTC)",
     offPeakUtc: "Вне пика (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Конечная точка API",
     modelId: "ID модели",
     modalities: "Модальности",
     context: "Контекст",
@@ -1409,7 +1409,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Kích thước ảnh",
     peakUtc: "Cao điểm (UTC)",
     offPeakUtc: "Ngoài cao điểm (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Endpoint API",
     modelId: "ID mô hình",
     modalities: "Modality",
     context: "Ngữ cảnh",
@@ -1556,7 +1556,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Bildabmessungen",
     peakUtc: "Spitzenzeit (UTC)",
     offPeakUtc: "Nebenzeit (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "API-Endpunkt",
     modelId: "Modell-ID",
     modalities: "Modalitäten",
     context: "Kontext",
@@ -1703,7 +1703,7 @@ const PACKS: Record<Locale, LanguagePack> = {
     imageDimensions: "Dimensi gambar",
     peakUtc: "Puncak (UTC)",
     offPeakUtc: "Di luar puncak (UTC)",
-    endpoint: "Endpoint",
+    endpoint: "Endpoint API",
     modelId: "ID model",
     modalities: "Modalitas",
     context: "Konteks",
@@ -2040,7 +2040,14 @@ const LITERAL_LABELS: Partial<Record<Locale, Record<string, string>>> = {
 };
 
 const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
-  en: {},
+  en: {
+    "Responses endpoint": "Responses endpoint",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.",
+    "Related models": "Related models",
+    "Edits endpoint": "Edits endpoint",
+    "768P base; 2K via hosted regeneration": "768P base; 2K via hosted regeneration",
+    "MiniMax upstream": "MiniMax upstream",
+  },
   zh: {
     "image after free tier": "免费额度后的图片",
     "Catalog base": "目录基础值",
@@ -2062,6 +2069,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "此处未知",
     "Live estimate": "实时估算",
     "Check catalog": "请查看目录",
+    "Responses endpoint": "Responses endpoint",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "在现有客户端中使用准确的模型 ID 和文档化 endpoint；切换前请确认 Responses 路由。",
+    "Related models": "相关模型",
+    "Edits endpoint": "编辑 endpoint",
+    "768P base; 2K via hosted regeneration": "768P 基础值；2K 可通过托管重新生成",
+    "MiniMax upstream": "MiniMax 上游",
   },
   es: {
     "image after free tier": "imagen tras el nivel gratuito",
@@ -2084,6 +2097,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Desconocido aquí",
     "Live estimate": "Estimación en tiempo real",
     "Check catalog": "Consultar el catálogo",
+    "Responses endpoint": "Endpoint de Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Usa el ID exacto del modelo y el endpoint documentado en tu cliente actual; confirma la ruta de Responses antes de cambiar.",
+    "Related models": "Modelos relacionados",
+    "Edits endpoint": "Endpoint de ediciones",
+    "768P base; 2K via hosted regeneration": "Base 768P; 2K mediante regeneración alojada",
+    "MiniMax upstream": "Upstream de MiniMax",
   },
   fr: {
     "image after free tier": "image après le quota gratuit",
@@ -2106,6 +2125,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Inconnu ici",
     "Live estimate": "Estimation en temps réel",
     "Check catalog": "Consulter le catalogue",
+    "Responses endpoint": "Endpoint Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Utilisez l'ID exact du modèle et l'endpoint documenté dans votre client ; vérifiez la route Responses avant de changer.",
+    "Related models": "Modèles associés",
+    "Edits endpoint": "Endpoint d'édition",
+    "768P base; 2K via hosted regeneration": "Base 768P ; 2K via régénération hébergée",
+    "MiniMax upstream": "Upstream MiniMax",
   },
   pt: {
     "image after free tier": "imagem após a franquia gratuita",
@@ -2128,6 +2153,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Desconhecido aqui",
     "Live estimate": "Estimativa em tempo real",
     "Check catalog": "Consultar o catálogo",
+    "Responses endpoint": "Endpoint de Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Use o ID exato do modelo e o endpoint documentado no seu cliente; confirme a rota Responses antes de trocar.",
+    "Related models": "Modelos relacionados",
+    "Edits endpoint": "Endpoint de edições",
+    "768P base; 2K via hosted regeneration": "Base 768P; 2K por regeneração hospedada",
+    "MiniMax upstream": "Upstream da MiniMax",
   },
   ru: {
     "image after free tier": "изображение после бесплатной квоты",
@@ -2150,6 +2181,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Неизвестно здесь",
     "Live estimate": "Текущая оценка",
     "Check catalog": "Проверьте каталог",
+    "Responses endpoint": "Endpoint Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Используйте точный ID модели и документированный endpoint в существующем клиенте; перед переключением проверьте маршрут Responses.",
+    "Related models": "Связанные модели",
+    "Edits endpoint": "Endpoint редактирования",
+    "768P base; 2K via hosted regeneration": "База 768P; 2K через размещённую регенерацию",
+    "MiniMax upstream": "Upstream MiniMax",
   },
   ja: {
     "image after free tier": "無料枠後の画像",
@@ -2172,6 +2209,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "ここでは不明",
     "Live estimate": "リアルタイム見積もり",
     "Check catalog": "カタログを確認",
+    "Responses endpoint": "Responses エンドポイント",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "既存のクライアントでは正確なモデル ID と文書化されたエンドポイントを使い、切り替える前に Responses ルートを確認してください。",
+    "Related models": "関連モデル",
+    "Edits endpoint": "編集エンドポイント",
+    "768P base; 2K via hosted regeneration": "768P 基準、2K はホスト型再生成",
+    "MiniMax upstream": "MiniMax upstream",
   },
   vi: {
     "image after free tier": "hình ảnh sau hạn mức miễn phí",
@@ -2194,6 +2237,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Chưa rõ tại đây",
     "Live estimate": "Ước tính trực tiếp",
     "Check catalog": "Xem catalog",
+    "Responses endpoint": "Endpoint Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Dùng đúng ID model và endpoint được ghi nhận trong client hiện có; xác minh route Responses trước khi chuyển đổi.",
+    "Related models": "Model liên quan",
+    "Edits endpoint": "Endpoint chỉnh sửa",
+    "768P base; 2K via hosted regeneration": "Cơ sở 768P; 2K qua tái tạo được host",
+    "MiniMax upstream": "Upstream MiniMax",
   },
   de: {
     "image after free tier": "Bild nach dem kostenlosen Kontingent",
@@ -2216,6 +2265,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Hier unbekannt",
     "Live estimate": "Live-Schätzung",
     "Check catalog": "Katalog prüfen",
+    "Responses endpoint": "Responses-Endpoint",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Verwende die exakte Modell-ID und den dokumentierten Endpoint in deinem bestehenden Client; prüfe den Responses-Route vor dem Wechsel.",
+    "Related models": "Verwandte Modelle",
+    "Edits endpoint": "Bearbeitungs-Endpoint",
+    "768P base; 2K via hosted regeneration": "768P-Basis; 2K über gehostete Neugenerierung",
+    "MiniMax upstream": "MiniMax-Upstream",
   },
   id: {
     "image after free tier": "gambar setelah kuota gratis",
@@ -2238,6 +2293,12 @@ const EXTRA_LITERAL_LABELS: Record<Locale, Record<string, string>> = {
     "Unknown here": "Tidak diketahui di sini",
     "Live estimate": "Estimasi langsung",
     "Check catalog": "Periksa katalog",
+    "Responses endpoint": "Endpoint Responses",
+    "Use the exact model ID and documented endpoint in your existing client; verify the Responses route before switching.": "Gunakan ID model yang tepat dan endpoint terdokumentasi pada klien yang ada; verifikasi rute Responses sebelum beralih.",
+    "Related models": "Model terkait",
+    "Edits endpoint": "Endpoint pengeditan",
+    "768P base; 2K via hosted regeneration": "Basis 768P; 2K melalui regenerasi hosted",
+    "MiniMax upstream": "Upstream MiniMax",
   },
 };
 
@@ -3075,12 +3136,38 @@ function localizedRateLabel(label: string, pack: LanguagePack, locale: Locale): 
     "Catalog base": literal(locale, "Catalog base"),
     "Reference video": literal(locale, "Reference video"),
     "Input image": literal(locale, "Input image"),
+    "Official 768P": ({
+      en: "Official 768P",
+      zh: "官方 768P",
+      es: "768P oficial",
+      fr: "768P officiel",
+      pt: "768P oficial",
+      ru: "Официальные 768P",
+      ja: "公式 768P",
+      vi: "768P chính thức",
+      de: "Offizielle 768P",
+      id: "768P resmi",
+    } as Record<Locale, string>)[locale],
+    "Official 2K": ({
+      en: "Official 2K",
+      zh: "官方 2K",
+      es: "2K oficial",
+      fr: "2K officiel",
+      pt: "2K oficial",
+      ru: "Официальные 2K",
+      ja: "公式 2K",
+      vi: "2K chính thức",
+      de: "Offizielle 2K",
+      id: "2K resmi",
+    } as Record<Locale, string>)[locale],
   };
   return labelMap[label] ?? label;
 }
 
 function ratesText(facts: Facts, pack: LanguagePack, locale: Locale): string {
-  return facts.rates.map((rate) => `${localizedRateLabel(rate.label, pack, locale)} ${rate.value}`).join(", ");
+  return facts.rates
+    .map((rate) => `${localizedRateLabel(rate.label, pack, locale)} ${localizedRateValue(rate.value, locale)}`)
+    .join(", ");
 }
 
 /**
@@ -3089,6 +3176,8 @@ function ratesText(facts: Facts, pack: LanguagePack, locale: Locale): string {
  * the labels and unit phrase should still read naturally in each locale.
  */
 function localizedRateDetail(detail: string, pack: LanguagePack, locale: Locale): string {
+  const translatedDetail = PRIORITY_RATE_DETAIL_COPY[detail]?.[locale];
+  if (translatedDetail) return translatedDetail;
   if (
     detail === "input / cache read / output per 1M tokens" ||
     detail === "cache-miss input / cache-hit input / output per 1M tokens"
@@ -3128,7 +3217,7 @@ function rateValuesText(
 ): string {
   if (!rates?.length) return "";
   return rates
-    .map((rate) => `${localizedRateLabel(rate.label, pack, locale)} ${rate.value}`)
+    .map((rate) => `${localizedRateLabel(rate.label, pack, locale)} ${localizedRateValue(rate.value, locale)}`)
     .join(", ");
 }
 
@@ -3170,16 +3259,16 @@ function localizedPricingSourceNote(facts: Facts, pack: LanguagePack, locale: Lo
       }
     case "minimax-h3":
       switch (locale) {
-        case "zh": return `Flatkey 目录基础值为 ${catalog}；国际 MiniMax API 参考为 ${direct}。最终结算请以请求的实时目录估算为准。`;
-        case "es": return `La base del catálogo de Flatkey es ${catalog}; la referencia de la API internacional de MiniMax es ${direct}. La liquidación final usa la estimación de la solicitud.`;
-        case "fr": return `La base du catalogue Flatkey est ${catalog} ; la référence de l'API internationale MiniMax est ${direct}. Le règlement final suit l'estimation de la requête.`;
-        case "pt": return `A base do catálogo da Flatkey é ${catalog}; a referência da API internacional da MiniMax é ${direct}. A cobrança final segue a estimativa da solicitação.`;
-        case "ru": return `Базовое значение каталога Flatkey — ${catalog}; справочные ставки международного API MiniMax — ${direct}. Итоговая сумма берётся из оценки запроса.`;
-        case "ja": return `Flatkey カタログの基準値は ${catalog}、MiniMax 国際 API の参考値は ${direct} です。最終精算はリクエストの見積もりに従います。`;
-        case "vi": return `Mức cơ bản trong catalog Flatkey là ${catalog}; tham chiếu API quốc tế MiniMax là ${direct}. Quyết toán cuối cùng dựa trên ước tính của request.`;
-        case "de": return `Die Flatkey-Katalogbasis beträgt ${catalog}; die Referenz der internationalen MiniMax-API lautet ${direct}. Für die Abrechnung gilt die Anfrage-Schätzung.`;
-        case "id": return `Nilai dasar katalog Flatkey adalah ${catalog}; referensi API internasional MiniMax adalah ${direct}. Penyelesaian akhir mengikuti estimasi permintaan.`;
-        default: return `Flatkey's catalog base is ${catalog}; international MiniMax API references are ${direct}. Use the live request estimate for final settlement.`;
+        case "zh": return `Flatkey 目录基础费率为每秒 ${localizedRateValue("$0.08", locale)}；国际 MiniMax API 参考值为 768P 每秒 ${localizedRateValue("$0.08", locale)}、2K 每秒 ${localizedRateValue("$0.13", locale)}。参考视频按所选输出费率计费，前 5 张输入图片免费，之后每张 ${localizedRateValue("$0.04", locale)}。最终结算请以请求的实时目录估算为准。`;
+        case "es": return `La tarifa base del catálogo de Flatkey es de ${localizedRateValue("$0.08", locale)} por segundo; la referencia de la API internacional de MiniMax es de ${localizedRateValue("$0.08", locale)} por segundo en 768P y ${localizedRateValue("$0.13", locale)} en 2K. El vídeo de referencia usa la tarifa de salida seleccionada; las cinco primeras imágenes de entrada son gratuitas y después cuestan ${localizedRateValue("$0.04", locale)} cada una. La liquidación final usa la estimación de la solicitud.`;
+        case "fr": return `Le tarif de base du catalogue Flatkey est de ${localizedRateValue("$0.08", locale)} par seconde ; la référence de l'API internationale MiniMax est de ${localizedRateValue("$0.08", locale)} par seconde en 768P et ${localizedRateValue("$0.13", locale)} en 2K. La vidéo de référence suit le tarif de sortie sélectionné ; les cinq premières images d'entrée sont gratuites, puis chaque image coûte ${localizedRateValue("$0.04", locale)}. Le règlement final suit l'estimation de la requête.`;
+        case "pt": return `A tarifa base do catálogo da Flatkey é de ${localizedRateValue("$0.08", locale)} por segundo; a referência da API internacional da MiniMax é de ${localizedRateValue("$0.08", locale)} por segundo em 768P e ${localizedRateValue("$0.13", locale)} em 2K. O vídeo de referência usa a taxa de saída selecionada; as cinco primeiras imagens de entrada são gratuitas e depois custam ${localizedRateValue("$0.04", locale)} cada. A cobrança final segue a estimativa da solicitação.`;
+        case "ru": return `Базовый тариф каталога Flatkey — ${localizedRateValue("$0.08", locale)} за секунду; международный API MiniMax указывает ${localizedRateValue("$0.08", locale)} за секунду для 768P и ${localizedRateValue("$0.13", locale)} для 2K. Референсное видео оплачивается по выбранному тарифу вывода; первые пять входных изображений бесплатны, затем каждое стоит ${localizedRateValue("$0.04", locale)}. Итоговая сумма берётся из оценки запроса.`;
+        case "ja": return `Flatkey カタログの基準料金は 1 秒あたり ${localizedRateValue("$0.08", locale)} です。MiniMax 国際 API の参考値は 768P が 1 秒あたり ${localizedRateValue("$0.08", locale)}、2K が ${localizedRateValue("$0.13", locale)}。参照動画は選択した出力料金で計算し、入力画像は最初の 5 枚が無料、その後は 1 枚 ${localizedRateValue("$0.04", locale)} です。最終精算はリクエストの見積もりに従います。`;
+        case "vi": return `Mức cơ bản trong catalog Flatkey là ${localizedRateValue("$0.08", locale)} mỗi giây; tham chiếu API quốc tế MiniMax là ${localizedRateValue("$0.08", locale)} mỗi giây ở 768P và ${localizedRateValue("$0.13", locale)} ở 2K. Video tham chiếu dùng mức giá đầu ra đã chọn; năm ảnh đầu vào đầu tiên được miễn phí, sau đó là ${localizedRateValue("$0.04", locale)} mỗi ảnh. Quyết toán cuối cùng dựa trên ước tính của request.`;
+        case "de": return `Der Basistarif des Flatkey-Katalogs beträgt ${localizedRateValue("$0.08", locale)} pro Sekunde; die internationale MiniMax-API nennt ${localizedRateValue("$0.08", locale)} pro Sekunde für 768P und ${localizedRateValue("$0.13", locale)} für 2K. Das Referenzvideo wird nach dem gewählten Ausgabetarif berechnet; die ersten fünf Eingabebilder sind kostenlos, danach kostet jedes ${localizedRateValue("$0.04", locale)}. Für die Abrechnung gilt die Anfrage-Schätzung.`;
+        case "id": return `Tarif dasar katalog Flatkey adalah ${localizedRateValue("$0.08", locale)} per detik; referensi API internasional MiniMax adalah ${localizedRateValue("$0.08", locale)} per detik untuk 768P dan ${localizedRateValue("$0.13", locale)} untuk 2K. Video referensi memakai tarif output yang dipilih; lima gambar input pertama gratis, lalu setiap gambar dikenai ${localizedRateValue("$0.04", locale)}. Penyelesaian akhir mengikuti estimasi permintaan.`;
+        default: return `Flatkey's catalog base rate is ${localizedRateValue("$0.08", locale)} per second; the international MiniMax API reference is ${localizedRateValue("$0.08", locale)} per second for 768P and ${localizedRateValue("$0.13", locale)} for 2K. Reference video uses the selected output rate; the first five input images are free, then each costs ${localizedRateValue("$0.04", locale)}. Use the live request estimate for final settlement.`;
       }
     default:
       switch (locale) {
@@ -3203,8 +3292,10 @@ function localizedPricingDescription(
   locale: Locale,
   lead: string,
 ): string {
-  const normalizedLead = lead.trim().replace(/[.!?]+$/, "");
-  return `${normalizedLead}. ${localizedPricingSourceNote(facts, pack, locale)}`;
+  const normalizedLead = lead.trim().replace(/[.!?。！？]+$/, "");
+  const sentenceEnd = locale === "zh" || locale === "ja" ? "。" : ".";
+  const gap = locale === "zh" || locale === "ja" ? "" : " ";
+  return `${normalizedLead}${sentenceEnd}${gap}${localizedPricingSourceNote(facts, pack, locale)}`;
 }
 
 function localizedRoutePair(locale: Locale, endpoint: string, secondEndpoint: string): string {
@@ -3288,13 +3379,13 @@ function localizedModalities(locale: Locale, facts: Facts): string {
       en: "native vision upstream; file fields on the Flatkey route",
       zh: "上游原生视觉；Flatkey 路由的文件字段",
       es: "visión nativa en el proveedor; campos de archivo en la ruta Flatkey",
-      fr: "vision native en amont ; champs de fichier sur la route Flatkey",
-      pt: "visão nativa no upstream; campos de arquivo na rota Flatkey",
-      ru: "нативное vision у провайдера; файловые поля в маршруте Flatkey",
-      ja: "上流のネイティブ vision、Flatkey 経路のファイル項目",
-      vi: "vision native ở upstream; trường file trên route Flatkey",
-      de: "native Vision beim Anbieter; Dateifelder auf der Flatkey-Route",
-      id: "vision native di upstream; bidang file pada rute Flatkey",
+      fr: "vision native chez le fournisseur ; champs de fichier sur la voie Flatkey",
+      pt: "visão nativa no fornecedor; campos de arquivo na rota Flatkey",
+      ru: "нативное зрение у провайдера; файловые поля в маршруте Flatkey",
+      ja: "上流のネイティブ画像理解、Flatkey 経路のファイル項目",
+      vi: "khả năng nhìn ảnh ở nhà cung cấp; trường tệp trên tuyến Flatkey",
+      de: "native Bildverarbeitung beim Anbieter; Dateifelder auf der Flatkey-Route",
+      id: "kemampuan visi native di sisi penyedia; bidang file pada rute Flatkey",
     };
     return values[locale] ?? values.en;
   }
@@ -3305,11 +3396,11 @@ function localizedModalities(locale: Locale, facts: Facts): string {
       es: "campos de texto/archivo en la ruta Flatkey; visión nativa no verificada",
       fr: "champs texte/fichier sur la route Flatkey ; vision native non vérifiée",
       pt: "campos de texto/arquivo na rota Flatkey; visão nativa não verificada",
-      ru: "текстовые/файловые поля в маршруте Flatkey; нативное vision не подтверждено",
-      ja: "Flatkey 経路のテキスト/ファイル項目、ネイティブ vision は未確認",
-      vi: "trường văn bản/file trên route Flatkey; vision native chưa xác minh",
+      ru: "текстовые/файловые поля в маршруте Flatkey; нативное зрение не подтверждено",
+      ja: "Flatkey 経路のテキスト/ファイル項目、ネイティブ画像理解は未確認",
+      vi: "trường văn bản/tệp trên tuyến Flatkey; khả năng nhìn ảnh chưa xác minh",
       de: "Text-/Dateifelder auf der Flatkey-Route; native Vision nicht verifiziert",
-      id: "bidang teks/file pada rute Flatkey; vision native belum diverifikasi",
+      id: "bidang teks/file pada rute Flatkey; kemampuan visi native belum diverifikasi",
     };
     return values[locale] ?? values.en;
   }
@@ -3323,13 +3414,13 @@ function localizedModalitiesTable(locale: Locale, facts: Facts): string {
       en: "Native vision upstream; Flatkey file fields",
       zh: "上游原生视觉；Flatkey 文件字段",
       es: "Visión nativa del proveedor; campos de archivo Flatkey",
-      fr: "Vision native en amont ; champs de fichier Flatkey",
-      pt: "Visão nativa no upstream; campos de arquivo Flatkey",
-      ru: "Нативное vision у провайдера; файловые поля Flatkey",
-      ja: "上流のネイティブ vision、Flatkey ファイル項目",
-      vi: "Vision native upstream; trường file Flatkey",
-      de: "Native Vision beim Anbieter; Flatkey-Dateifelder",
-      id: "Vision native di upstream; bidang file Flatkey",
+      fr: "Vision native chez le fournisseur ; champs de fichier Flatkey",
+      pt: "Visão nativa no fornecedor; campos de arquivo Flatkey",
+      ru: "Нативное зрение у провайдера; файловые поля Flatkey",
+      ja: "上流のネイティブ画像理解、Flatkey ファイル項目",
+      vi: "Khả năng nhìn ảnh ở nhà cung cấp; trường tệp Flatkey",
+      de: "Native Bildverarbeitung beim Anbieter; Flatkey-Dateifelder",
+      id: "Kemampuan visi native di sisi penyedia; bidang file Flatkey",
     };
     return values[locale] ?? values.en;
   }
@@ -3340,11 +3431,11 @@ function localizedModalitiesTable(locale: Locale, facts: Facts): string {
       es: "Campos de texto/archivo Flatkey; visión nativa no verificada",
       fr: "Champs texte/fichier Flatkey ; vision native non vérifiée",
       pt: "Campos de texto/arquivo Flatkey; visão nativa não verificada",
-      ru: "Текстовые/файловые поля Flatkey; нативное vision не подтверждено",
-      ja: "Flatkey のテキスト/ファイル項目、ネイティブ vision は未確認",
-      vi: "Trường văn bản/file Flatkey; vision native chưa xác minh",
+      ru: "Текстовые/файловые поля Flatkey; нативное зрение не подтверждено",
+      ja: "Flatkey のテキスト/ファイル項目、ネイティブ画像理解は未確認",
+      vi: "Trường văn bản/tệp Flatkey; khả năng nhìn ảnh chưa xác minh",
       de: "Flatkey-Text-/Dateifelder; native Vision nicht verifiziert",
-      id: "Bidang teks/file Flatkey; vision native belum diverifikasi",
+      id: "Bidang teks/file Flatkey; kemampuan visi native belum diverifikasi",
     };
     return values[locale] ?? values.en;
   }
@@ -3457,7 +3548,7 @@ const MINIMAX_UPSTREAM_FLATKEY_ROW: Record<Locale, { label: string; baseline: st
     current: "Flatkey routet und berechnet den Zugriff auf die gehostete API",
   },
   id: {
-    label: "Upstream vs Flatkey",
+    label: "Upstream dibandingkan dengan Flatkey",
     baseline: "Penggunaan open source/lokal mengikuti dokumentasi upstream MiniMax",
     current: "Flatkey merutekan dan menagih akses API hosted",
   },
@@ -3515,8 +3606,117 @@ const MINIMAX_OFF: Record<Locale, string> = {
   id: "Nonaktif",
 };
 
+/**
+ * Values in the MiniMax reference rows are editorial status values rather
+ * than numeric rates.  They are still visible to readers, so translate them
+ * explicitly instead of letting the English catalog literal leak into a
+ * localized pricing table or source note.
+ */
+const PRIORITY_RATE_VALUE_COPY: Record<string, Partial<Record<Locale, string>>> = {
+  "Live estimate": {
+    en: "Live estimate",
+    zh: "实时估算",
+    es: "Estimación en tiempo real",
+    fr: "Estimation en temps réel",
+    pt: "Estimativa em tempo real",
+    ru: "Текущая оценка",
+    ja: "リアルタイム見積もり",
+    vi: "Ước tính trực tiếp",
+    de: "Live-Schätzung",
+    id: "Estimasi langsung",
+  },
+  "Check catalog": {
+    en: "Check catalog",
+    zh: "请查看目录",
+    es: "Consultar el catálogo",
+    fr: "Consulter le catalogue",
+    pt: "Consultar o catálogo",
+    ru: "Проверьте каталог",
+    ja: "カタログを確認",
+    vi: "Xem catalog",
+    de: "Katalog prüfen",
+    id: "Periksa katalog",
+  },
+  "Selected output rate": {
+    en: "Selected output rate",
+    zh: "所选输出费率",
+    es: "Tarifa de salida seleccionada",
+    fr: "Tarif de sortie sélectionné",
+    pt: "Taxa de saída selecionada",
+    ru: "Выбранный тариф вывода",
+    ja: "選択した出力料金",
+    vi: "Mức giá đầu ra đã chọn",
+    de: "Gewählter Ausgabetarif",
+    id: "Tarif output yang dipilih",
+  },
+};
+
+/** Translate compound detail strings while preserving units and numeric facts. */
+const PRIORITY_RATE_DETAIL_COPY: Record<string, Partial<Record<Locale, string>>> = {
+  "per second; international API reference": {
+    en: "per second; international API reference",
+    zh: "每秒；国际 API 参考值",
+    es: "por segundo; referencia de la API internacional",
+    fr: "par seconde ; référence de l'API internationale",
+    pt: "por segundo; referência da API internacional",
+    ru: "за секунду; справочная ставка международного API",
+    ja: "秒あたり；国際 API の参考値",
+    vi: "mỗi giây; mức tham chiếu API quốc tế",
+    de: "pro Sekunde; Referenz der internationalen API",
+    id: "per detik; referensi API internasional",
+  },
+  "per input-video second at the selected resolution": {
+    en: "per input-video second at the selected resolution",
+    zh: "按所选分辨率计每个输入视频秒数",
+    es: "por segundo de vídeo de entrada con la resolución seleccionada",
+    fr: "par seconde de vidéo d'entrée à la résolution sélectionnée",
+    pt: "por segundo de vídeo de entrada na resolução selecionada",
+    ru: "за секунду входного видео при выбранном разрешении",
+    ja: "選択した解像度での入力動画 1 秒あたり",
+    vi: "mỗi giây video đầu vào ở độ phân giải đã chọn",
+    de: "pro Sekunde Eingabevideo bei der gewählten Auflösung",
+    id: "per detik video input pada resolusi yang dipilih",
+  },
+  "per image after the first five": {
+    en: "per image after the first five",
+    zh: "前 5 张之后每张图片",
+    es: "por imagen después de las cinco primeras",
+    fr: "par image après les cinq premières",
+    pt: "por imagem após as cinco primeiras",
+    ru: "за изображение после первых пяти",
+    ja: "最初の 5 枚以降の画像 1 枚あたり",
+    vi: "mỗi ảnh sau năm ảnh đầu tiên",
+    de: "pro Bild nach den ersten fünf",
+    id: "per gambar setelah lima gambar pertama",
+  },
+  "per 1M tokens; Moonshot reference": {
+    en: "per 1M tokens; Moonshot reference",
+    zh: "每 100 万 token；Moonshot 参考值",
+    es: "por 1M de tokens; referencia de Moonshot",
+    fr: "par 1M de tokens ; référence Moonshot",
+    pt: "por 1M de tokens; referência da Moonshot",
+    ru: "за 1 млн токенов; справка Moonshot",
+    ja: "100 万トークンあたり；Moonshot 参考値",
+    vi: "mỗi 1M token; mức tham chiếu Moonshot",
+    de: "pro 1M Token; Moonshot-Referenz",
+    id: "per 1M token; referensi Moonshot",
+  },
+  "per 1M tokens; catalog-specific": {
+    en: "per 1M tokens; catalog-specific",
+    zh: "每 100 万 token；目录专属",
+    es: "por 1M de tokens; específico del catálogo",
+    fr: "par 1M de tokens ; spécifique au catalogue",
+    pt: "por 1M de tokens; específico do catálogo",
+    ru: "за 1 млн токенов; значение каталога",
+    ja: "100 万トークンあたり；カタログ固有",
+    vi: "mỗi 1M token; riêng theo catalog",
+    de: "pro 1M Token; katalogspezifisch",
+    id: "per 1M token; khusus katalog",
+  },
+};
+
 function localizedRateValue(value: string, locale: Locale): string {
-  return literal(locale, value);
+  return PRIORITY_RATE_VALUE_COPY[value]?.[locale] ?? literal(locale, value);
 }
 
 function localizedUnknownHere(locale: Locale, pack: LanguagePack): string {
@@ -4267,18 +4467,53 @@ function localizedComparisonTitle(locale: Locale, facts: Facts): string {
   return titles[locale] ?? titles.en;
 }
 
+const ROUTE_CONNECTORS: Record<Locale, string> = {
+  en: "or",
+  zh: "或",
+  es: "o",
+  fr: "ou",
+  pt: "ou",
+  ru: "или",
+  ja: "または",
+  vi: "hoặc",
+  de: "oder",
+  id: "atau",
+};
+
 function localizedKimiStatement(facts: Facts, locale: Locale): string {
-  const routes = `${facts.endpoint} ${locale === "pt" ? "ou" : "or"} ${facts.secondEndpoint ?? "/v1/messages"}`;
-  if (locale === "en") return `Kimi K3 is Moonshot AI's open-weight, multimodal model with a 1,048,576-token context and native vision upstream. Flatkey exposes hosted compatible routes (${routes}) and its own file fields; upstream and Flatkey capabilities are separate.`;
-  if (locale === "pt") return `O Kimi K3 é um modelo multimodal de pesos abertos da Moonshot AI, com contexto de 1.048.576 tokens e visão nativa no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}) e seus próprios campos de arquivo; as capacidades do upstream e da Flatkey são separadas.`;
-  return `${facts.name} is a Moonshot AI model with a ${facts.context ?? "1,048,576-token"} context. Flatkey exposes hosted compatible routes (${routes}); upstream modalities and Flatkey route fields should be checked separately.`;
+  const context = facts.context ?? "1,048,576 tokens";
+  const routes = `${facts.endpoint} ${ROUTE_CONNECTORS[locale]} ${facts.secondEndpoint ?? "/v1/messages"}`;
+  const statements: Record<Locale, string> = {
+    en: `Kimi K3 is Moonshot AI's open-weight, multimodal model with a 1,048,576-token context and native vision upstream. Flatkey exposes hosted compatible routes (${routes}) and its own file fields; upstream and Flatkey capabilities are separate.`,
+    zh: `Kimi K3 是 Moonshot AI 的开放权重多模态模型，上下文长度为 ${context}，上游支持原生视觉。Flatkey 提供托管的兼容路由（${routes}）和自己的文件字段；上游能力与 Flatkey 路由字段彼此独立。`,
+    es: `Kimi K3 es un modelo multimodal de pesos abiertos de Moonshot AI, con un contexto de ${context} y visión nativa en el upstream. Flatkey expone rutas compatibles alojadas (${routes}) y sus propios campos de archivo; las capacidades del upstream y los campos de la ruta Flatkey son independientes.`,
+    fr: `Kimi K3 est un modèle multimodal à poids ouverts de Moonshot AI, avec un contexte de ${context} et une vision native côté upstream. Flatkey expose des routes compatibles hébergées (${routes}) et ses propres champs de fichier ; les capacités de l’upstream et les champs de la route Flatkey sont distincts.`,
+    pt: `O Kimi K3 é um modelo multimodal de pesos abertos da Moonshot AI, com contexto de 1.048.576 tokens e visão nativa no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}) e seus próprios campos de arquivo; as capacidades do upstream e da Flatkey são separadas.`,
+    ru: `Kimi K3 — мультимодальная модель Moonshot AI с открытыми весами, контекстом ${context} и нативным зрением в upstream. Flatkey предоставляет размещённые совместимые маршруты (${routes}) и собственные поля файлов; возможности upstream и поля маршрута Flatkey следует рассматривать отдельно.`,
+    ja: `Kimi K3 は Moonshot AI のオープンウェイト・マルチモーダルモデルで、${context} のコンテキストと upstream のネイティブ画像理解に対応します。Flatkey はホスト型の互換ルート（${routes}）と独自のファイル項目を提供します。upstream の能力と Flatkey ルートの項目は別々です。`,
+    vi: `Kimi K3 là mô hình đa phương thức có trọng số mở của Moonshot AI, với ngữ cảnh ${context} và khả năng vision native ở upstream. Flatkey cung cấp các route tương thích được host (${routes}) cùng các trường file riêng; năng lực upstream và trường route Flatkey là hai phần riêng biệt.`,
+    de: `Kimi K3 ist ein multimodales Modell mit offenen Gewichten von Moonshot AI, mit einem ${context}-Kontext und nativer Vision im Upstream. Flatkey stellt gehostete kompatible Routen (${routes}) und eigene Dateifelder bereit; Upstream-Funktionen und Flatkey-Routenfelder sind getrennt.`,
+    id: `Kimi K3 adalah model multimodal berbobot terbuka dari Moonshot AI dengan konteks ${context} dan vision native di upstream. Flatkey menyediakan rute kompatibel ter-host (${routes}) serta bidang file sendiri; kemampuan upstream dan bidang rute Flatkey harus dipisahkan.`,
+  };
+  return statements[locale] ?? statements.en;
 }
 
 function localizedDeepseekStatement(facts: Facts, locale: Locale): string {
-  const routes = `${facts.endpoint} ${locale === "pt" ? "ou" : "or"} ${facts.secondEndpoint ?? "/v1/messages"}`;
-  if (locale === "en") return `DeepSeek V4 Pro is documented with a 1M-token context and open-source upstream release information. Flatkey exposes hosted compatible routes (${routes}); the text/file fields shown here describe the Flatkey route, not an unverified native vision contract.`;
-  if (locale === "pt") return `O DeepSeek V4 Pro é documentado com contexto de 1 milhão de tokens e informações de lançamento open source no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}); os campos de texto/arquivo desta página descrevem a rota Flatkey, não um contrato nativo de visão não verificado.`;
-  return `${facts.name} is documented with a ${facts.context ?? "1M-token"} context and separate upstream release information. Flatkey exposes hosted compatible routes (${routes}); verify native modalities independently.`;
+  const context = facts.context ?? "1M tokens";
+  const routes = `${facts.endpoint} ${ROUTE_CONNECTORS[locale]} ${facts.secondEndpoint ?? "/v1/messages"}`;
+  const statements: Record<Locale, string> = {
+    en: `DeepSeek V4 Pro is documented with a 1M-token context and open-source upstream release information. Flatkey exposes hosted compatible routes (${routes}); the text/file fields shown here describe the Flatkey route, not an unverified native vision contract.`,
+    zh: `DeepSeek V4 Pro 的文档记录了 ${context} 上下文以及上游开源发布信息。Flatkey 提供托管兼容路由（${routes}）；此处显示的文本/文件字段描述的是 Flatkey 路由，不代表未经核实的原生视觉协议。`,
+    es: `DeepSeek V4 Pro está documentado con un contexto de ${context} e información de lanzamiento open source del upstream. Flatkey expone rutas compatibles alojadas (${routes}); los campos de texto/archivo mostrados aquí describen la ruta Flatkey, no un contrato de visión nativa no verificado.`,
+    fr: `DeepSeek V4 Pro est documenté avec un contexte de ${context} et des informations de publication open source côté upstream. Flatkey expose des routes compatibles hébergées (${routes}) ; les champs texte/fichier affichés ici décrivent la route Flatkey, pas un contrat de vision native non vérifié.`,
+    pt: `O DeepSeek V4 Pro é documentado com contexto de 1 milhão de tokens e informações de lançamento open source no upstream. A Flatkey expõe rotas compatíveis hospedadas (${routes}); os campos de texto/arquivo desta página descrevem a rota Flatkey, não um contrato nativo de visão não verificado.`,
+    ru: `Документация DeepSeek V4 Pro указывает контекст ${context} и сведения об open-source выпуске upstream. Flatkey предоставляет размещённые совместимые маршруты (${routes}); показанные здесь поля текста/файлов описывают маршрут Flatkey, а не неподтверждённый контракт нативного зрения.`,
+    ja: `DeepSeek V4 Pro は ${context} のコンテキストと upstream のオープンソース公開情報として記録されています。Flatkey はホスト型の互換ルート（${routes}）を提供します。ここに示すテキスト/ファイル項目は Flatkey ルートの説明であり、未確認のネイティブ画像理解の契約を示すものではありません。`,
+    vi: `Tài liệu DeepSeek V4 Pro ghi nhận ngữ cảnh ${context} và thông tin phát hành open source ở upstream. Flatkey cung cấp các route tương thích được host (${routes}); các trường văn bản/file hiển thị ở đây mô tả route Flatkey, không khẳng định hợp đồng vision native chưa xác minh.`,
+    de: `DeepSeek V4 Pro ist mit einem ${context}-Kontext und Informationen zur Open-Source-Veröffentlichung im Upstream dokumentiert. Flatkey stellt gehostete kompatible Routen (${routes}) bereit; die hier gezeigten Text-/Dateifelder beschreiben die Flatkey-Route und keinen unbestätigten Vertrag für native Vision.`,
+    id: `DeepSeek V4 Pro didokumentasikan dengan konteks ${context} dan informasi rilis open source dari upstream. Flatkey menyediakan rute kompatibel ter-host (${routes}); bidang teks/file di sini menjelaskan rute Flatkey, bukan kontrak vision native yang belum diverifikasi.`,
+  };
+  return statements[locale] ?? statements.en;
 }
 
 function localizedTextInputBody(facts: Facts, locale: Locale, pack: LanguagePack): string {
@@ -4324,56 +4559,153 @@ function localizedMiniMaxLocalAnswer(locale: Locale, pack: LanguagePack): string
 }
 
 function localizedPriorityPerformanceDescription(facts: Facts, locale: Locale): string {
-  if (locale === "en") return `Live Flatkey request telemetry for ${facts.name} appears when enough traffic is available; no benchmark or quality score is inferred.`;
-  if (locale === "pt") return `A telemetria de solicitações da Flatkey para ${facts.name} aparece quando há tráfego suficiente; nenhum benchmark ou nota de qualidade é inferido.`;
-  return `${facts.name} telemetry appears when enough live Flatkey traffic is available; no benchmark is inferred.`;
+  const descriptions: Record<Locale, string> = {
+    en: `Live Flatkey request telemetry for ${facts.name} appears when enough traffic is available; no benchmark or quality score is inferred.`,
+    zh: `当 Flatkey 实时请求流量足够时，这里会显示 ${facts.name} 的请求遥测；不据此推断基准测试或质量评分。`,
+    es: `La telemetría de solicitudes de Flatkey para ${facts.name} aparece cuando hay tráfico suficiente; no se infieren benchmarks ni puntuaciones de calidad.`,
+    fr: `La télémétrie des requêtes Flatkey pour ${facts.name} apparaît lorsque le trafic est suffisant ; aucun benchmark ni score de qualité n’est déduit.`,
+    pt: `A telemetria de solicitações da Flatkey para ${facts.name} aparece quando há tráfego suficiente; nenhum benchmark ou nota de qualidade é inferido.`,
+    ru: `Телеметрия запросов Flatkey для ${facts.name} появляется при достаточном трафике; бенчмарк или оценка качества из неё не выводятся.`,
+    ja: `Flatkey の ${facts.name} に関するリクエストテレメトリは、十分なトラフィックがある場合に表示されます。ベンチマークや品質スコアを推測するものではありません。`,
+    vi: `Telemetry request của Flatkey cho ${facts.name} sẽ xuất hiện khi có đủ lưu lượng; không suy ra benchmark hay điểm chất lượng từ dữ liệu này.`,
+    de: `Die Live-Anfrage-Telemetrie von Flatkey für ${facts.name} wird bei ausreichendem Traffic angezeigt; daraus wird kein Benchmark oder Qualitätswert abgeleitet.`,
+    id: `Telemetri permintaan Flatkey untuk ${facts.name} muncul ketika lalu lintas mencukupi; benchmark atau skor kualitas tidak disimpulkan dari data ini.`,
+  };
+  return descriptions[locale] ?? descriptions.en;
 }
 
 function localizedPriorityActivityDescription(facts: Facts, locale: Locale): string {
-  if (locale === "en") return `This section reflects live Flatkey requests for ${facts.name} and stays unreported until enough traffic is collected.`;
-  if (locale === "pt") return `Esta seção reflete solicitações reais da Flatkey para ${facts.name} e permanece sem dados até que haja tráfego suficiente.`;
-  return `This section reflects live Flatkey requests for ${facts.name} and remains unreported until enough traffic is collected.`;
+  const descriptions: Record<Locale, string> = {
+    en: `This section reflects live Flatkey requests for ${facts.name} and stays unreported until enough traffic is collected.`,
+    zh: `此区块反映 Flatkey 对 ${facts.name} 的实时请求；收集到足够流量前不会报告数据。`,
+    es: `Esta sección refleja las solicitudes reales de Flatkey para ${facts.name} y no muestra datos hasta reunir tráfico suficiente.`,
+    fr: `Cette section reflète les requêtes réelles Flatkey pour ${facts.name} et reste sans données tant qu’un trafic suffisant n’est pas réuni.`,
+    pt: `Esta seção reflete solicitações reais da Flatkey para ${facts.name} e permanece sem dados até que haja tráfego suficiente.`,
+    ru: `Этот раздел отражает реальные запросы Flatkey к ${facts.name}; данные не публикуются, пока не накопится достаточный трафик.`,
+    ja: `このセクションは ${facts.name} への Flatkey の実際のリクエストを反映します。十分なトラフィックが集まるまでデータは報告されません。`,
+    vi: `Phần này phản ánh các request thực tế của Flatkey cho ${facts.name} và không hiển thị dữ liệu cho đến khi thu thập đủ lưu lượng.`,
+    de: `Dieser Abschnitt zeigt echte Flatkey-Anfragen für ${facts.name}; Daten werden erst veröffentlicht, wenn genügend Traffic gesammelt wurde.`,
+    id: `Bagian ini mencerminkan permintaan langsung Flatkey untuk ${facts.name} dan tidak melaporkan data sampai lalu lintas mencukupi.`,
+  };
+  return descriptions[locale] ?? descriptions.en;
 }
 
 function localizedRelatedDescription(facts: Facts, locale: Locale): string {
-  if (locale === "en") {
-    if (facts.slug === "gpt-image-2") return "Explore adjacent image-generation routes when a different edit workflow, output control, or price dimension fits your project.";
-    if (facts.slug === "minimax-h3") return "Explore adjacent video-generation routes when you need different duration, ratio, audio, or reference controls.";
-    if (facts.slug === "kimi-k3") return "Compare adjacent long-context API models when your coding or research workflow needs a different context or client surface.";
-    if (facts.slug === "deepseek-v4-pro") return "Compare adjacent DeepSeek API routes when you need a different context, modality, or billing profile.";
-    return "Compare adjacent GPT API routes when your long-context workflow needs a different context, modality, or price profile.";
-  }
-  if (locale === "pt") {
-    if (facts.slug === "gpt-image-2") return "Explore rotas de geração de imagens relacionadas quando outro fluxo de edição, controle de saída ou dimensão de preço atender melhor ao projeto.";
-    if (facts.slug === "minimax-h3") return "Explore rotas de geração de vídeo relacionadas quando precisar de outra duração, proporção, áudio ou controle de referências.";
-    if (facts.slug === "kimi-k3") return "Compare modelos de API de contexto longo quando seu fluxo de programação ou pesquisa exigir outro contexto ou cliente.";
-    if (facts.slug === "deepseek-v4-pro") return "Compare rotas de API DeepSeek relacionadas quando precisar de outro contexto, modalidade ou perfil de cobrança.";
-    return "Compare rotas de API GPT relacionadas quando seu fluxo de contexto longo exigir outro contexto, modalidade ou perfil de preço.";
-  }
-  return localizedPriorityActivityDescription(facts, locale);
+  const descriptions: Record<Locale, Record<PriorityModelSlug, string>> = {
+    en: {
+      "gpt-5-6-sol": "Compare adjacent GPT API routes when your long-context workflow needs a different context, modality, or price profile.",
+      "gpt-image-2": "Explore adjacent image-generation routes when a different edit workflow, output control, or price dimension fits your project.",
+      "kimi-k3": "Compare adjacent long-context API models when your coding or research workflow needs a different context or client surface.",
+      "deepseek-v4-pro": "Compare adjacent DeepSeek API routes when you need a different context, modality, or billing profile.",
+      "minimax-h3": "Explore adjacent video-generation routes when you need different duration, ratio, audio, or reference controls.",
+    },
+    zh: {
+      "gpt-5-6-sol": "当长上下文工作流需要不同的上下文、模态或价格方案时，可比较相邻的 GPT API 路线。",
+      "gpt-image-2": "如果项目需要不同的编辑流程、输出控制或价格维度，可探索相邻的图像生成路线。",
+      "kimi-k3": "当编程或研究工作流需要不同的上下文或客户端界面时，可比较相邻的长上下文 API 模型。",
+      "deepseek-v4-pro": "当需要不同的上下文、模态或计费方式时，可比较相邻的 DeepSeek API 路线。",
+      "minimax-h3": "如果需要不同的时长、比例、音频或参考素材控制，可探索相邻的视频生成路线。",
+    },
+    es: {
+      "gpt-5-6-sol": "Compara rutas de API de GPT relacionadas cuando tu flujo de contexto largo necesite otro contexto, modalidad o perfil de precios.",
+      "gpt-image-2": "Explora rutas de generación de imágenes relacionadas cuando tu proyecto necesite otro flujo de edición, control de salida o dimensión de precio.",
+      "kimi-k3": "Compara modelos de API de contexto largo relacionados cuando tu flujo de programación o investigación necesite otro contexto o cliente.",
+      "deepseek-v4-pro": "Compara rutas de API de DeepSeek relacionadas cuando necesites otro contexto, modalidad o perfil de facturación.",
+      "minimax-h3": "Explora rutas de generación de vídeo relacionadas cuando necesites otros controles de duración, proporción, audio o referencias.",
+    },
+    fr: {
+      "gpt-5-6-sol": "Comparez les routes API GPT associées si votre flux à long contexte nécessite un autre contexte, une autre modalité ou un autre tarif.",
+      "gpt-image-2": "Explorez les routes de génération d’images associées si votre projet nécessite un autre flux d’édition, contrôle de sortie ou mode de tarification.",
+      "kimi-k3": "Comparez les modèles API à long contexte associés si votre flux de code ou de recherche nécessite un autre contexte ou une autre interface client.",
+      "deepseek-v4-pro": "Comparez les routes API DeepSeek associées si vous avez besoin d’un autre contexte, d’une autre modalité ou d’un autre profil de facturation.",
+      "minimax-h3": "Explorez les routes de génération vidéo associées si vous avez besoin d’autres contrôles de durée, de ratio, d’audio ou de références.",
+    },
+    pt: {
+      "gpt-5-6-sol": "Compare rotas de API GPT relacionadas quando seu fluxo de contexto longo exigir outro contexto, modalidade ou perfil de preço.",
+      "gpt-image-2": "Explore rotas de geração de imagens relacionadas quando outro fluxo de edição, controle de saída ou dimensão de preço atender melhor ao projeto.",
+      "kimi-k3": "Compare modelos de API de contexto longo quando seu fluxo de programação ou pesquisa exigir outro contexto ou cliente.",
+      "deepseek-v4-pro": "Compare rotas de API DeepSeek relacionadas quando precisar de outro contexto, modalidade ou perfil de cobrança.",
+      "minimax-h3": "Explore rotas de geração de vídeo relacionadas quando precisar de outra duração, proporção, áudio ou controle de referências.",
+    },
+    ru: {
+      "gpt-5-6-sol": "Сравните соседние маршруты GPT API, если рабочему процессу с длинным контекстом нужны другие контекст, модальность или тарифный профиль.",
+      "gpt-image-2": "Изучите соседние маршруты генерации изображений, если проекту нужен другой процесс редактирования, контроль вывода или ценовая модель.",
+      "kimi-k3": "Сравните соседние API-модели с длинным контекстом, если для программирования или исследований нужны другой контекст или клиентский интерфейс.",
+      "deepseek-v4-pro": "Сравните соседние маршруты DeepSeek API, если нужны другие контекст, модальность или профиль тарификации.",
+      "minimax-h3": "Изучите соседние маршруты генерации видео, если нужны другие настройки длительности, соотношения, аудио или референсов.",
+    },
+    ja: {
+      "gpt-5-6-sol": "長いコンテキストのワークフローで別のコンテキスト、モダリティ、料金体系が必要なら、関連する GPT API ルートを比較できます。",
+      "gpt-image-2": "プロジェクトに別の編集ワークフロー、出力制御、料金単位が必要なら、関連する画像生成ルートを確認できます。",
+      "kimi-k3": "コーディングや調査のワークフローで別のコンテキストやクライアント画面が必要なら、関連する長文コンテキスト API モデルを比較できます。",
+      "deepseek-v4-pro": "別のコンテキスト、モダリティ、課金プロファイルが必要なら、関連する DeepSeek API ルートを比較できます。",
+      "minimax-h3": "別の長さ、比率、音声、参照素材の制御が必要なら、関連する動画生成ルートを確認できます。",
+    },
+    vi: {
+      "gpt-5-6-sol": "So sánh các route GPT API liên quan khi quy trình ngữ cảnh dài cần ngữ cảnh, phương thức hoặc mức giá khác.",
+      "gpt-image-2": "Khám phá các route tạo ảnh liên quan khi dự án cần quy trình chỉnh sửa, điều khiển đầu ra hoặc cách tính giá khác.",
+      "kimi-k3": "So sánh các model API ngữ cảnh dài liên quan khi quy trình coding hoặc nghiên cứu cần ngữ cảnh hay giao diện client khác.",
+      "deepseek-v4-pro": "So sánh các route DeepSeek API liên quan khi cần ngữ cảnh, phương thức hoặc hồ sơ tính phí khác.",
+      "minimax-h3": "Khám phá các route tạo video liên quan khi cần điều khiển khác về thời lượng, tỷ lệ, âm thanh hoặc tài liệu tham chiếu.",
+    },
+    de: {
+      "gpt-5-6-sol": "Vergleiche verwandte GPT-API-Routen, wenn dein Workflow mit langem Kontext einen anderen Kontext, eine andere Modalität oder ein anderes Preisprofil benötigt.",
+      "gpt-image-2": "Entdecke verwandte Bildgenerierungsrouten, wenn dein Projekt einen anderen Bearbeitungs-Workflow, eine andere Ausgabesteuerung oder Preisdimension benötigt.",
+      "kimi-k3": "Vergleiche verwandte API-Modelle mit langem Kontext, wenn dein Coding- oder Recherche-Workflow einen anderen Kontext oder eine andere Client-Oberfläche benötigt.",
+      "deepseek-v4-pro": "Vergleiche verwandte DeepSeek-API-Routen, wenn du einen anderen Kontext, eine andere Modalität oder ein anderes Abrechnungsprofil brauchst.",
+      "minimax-h3": "Entdecke verwandte Video-Generierungsrouten, wenn du andere Steuerungen für Dauer, Seitenverhältnis, Audio oder Referenzen brauchst.",
+    },
+    id: {
+      "gpt-5-6-sol": "Bandingkan rute GPT API terkait saat alur kerja konteks panjang memerlukan konteks, modalitas, atau profil harga yang berbeda.",
+      "gpt-image-2": "Jelajahi rute pembuatan gambar terkait saat proyek memerlukan alur pengeditan, kontrol output, atau dimensi harga yang berbeda.",
+      "kimi-k3": "Bandingkan model API konteks panjang terkait saat alur kerja coding atau riset memerlukan konteks atau antarmuka klien yang berbeda.",
+      "deepseek-v4-pro": "Bandingkan rute DeepSeek API terkait saat Anda memerlukan konteks, modalitas, atau profil penagihan yang berbeda.",
+      "minimax-h3": "Jelajahi rute pembuatan video terkait saat Anda memerlukan kontrol durasi, rasio, audio, atau referensi yang berbeda.",
+    },
+  };
+  return descriptions[locale]?.[facts.slug] ?? descriptions.en[facts.slug];
 }
 
-function localizedGptHowUseAnswer(facts: Facts, pack: LanguagePack, locale: Locale): string {
-  if (locale === "en") {
-    return `Create a Flatkey API key, send a request to ${facts.endpoint}, and set model to ${facts.id}. OpenAI also documents /v1/responses; verify that route is enabled for your Flatkey account.`;
-  }
-  if (locale === "pt") {
-    return `Crie uma API key da Flatkey, envie uma solicitação para ${facts.endpoint} e defina model como ${facts.id}. A OpenAI também documenta /v1/responses; confirme se essa rota está habilitada na sua conta Flatkey.`;
-  }
-  return `${pack.api} ${facts.id}: ${pack.apiEndpointDetail(facts.endpoint)}; set model=${facts.id}. OpenAI also documents /v1/responses; verify that route is enabled for your Flatkey account.`;
+function localizedGptHowUseAnswer(facts: Facts, _pack: LanguagePack, locale: Locale): string {
+  const answers: Record<Locale, string> = {
+    en: `Create a Flatkey API key, send a request to ${facts.endpoint}, and set model to ${facts.id}. OpenAI also documents /v1/responses; verify that route is enabled for your Flatkey account.`,
+    zh: `创建 Flatkey API Key，向 ${facts.endpoint} 发送请求，并将 model 设为 ${facts.id}。OpenAI 也记录了 /v1/responses；请确认该路由已在你的 Flatkey 账户中启用。`,
+    es: `Crea una clave API de Flatkey, envía una solicitud a ${facts.endpoint} y establece model en ${facts.id}. OpenAI también documenta /v1/responses; confirma que esa ruta esté habilitada para tu cuenta de Flatkey.`,
+    fr: `Créez une clé API Flatkey, envoyez une requête à ${facts.endpoint} et définissez model sur ${facts.id}. OpenAI documente aussi /v1/responses ; vérifiez que cette route est activée pour votre compte Flatkey.`,
+    pt: `Crie uma API key da Flatkey, envie uma solicitação para ${facts.endpoint} e defina model como ${facts.id}. A OpenAI também documenta /v1/responses; confirme se essa rota está habilitada na sua conta Flatkey.`,
+    ru: `Создайте API-ключ Flatkey, отправьте запрос на ${facts.endpoint} и задайте model=${facts.id}. OpenAI также документирует /v1/responses; проверьте, что этот маршрут включён для вашей учётной записи Flatkey.`,
+    ja: `Flatkey の API キーを作成し、${facts.endpoint} にリクエストを送って model に ${facts.id} を指定します。OpenAI は /v1/responses も文書化しています。Flatkey アカウントでそのルートが有効か確認してください。`,
+    vi: `Tạo API key Flatkey, gửi request tới ${facts.endpoint} và đặt model là ${facts.id}. OpenAI cũng ghi nhận /v1/responses; hãy xác minh route đó đã được bật cho tài khoản Flatkey của bạn.`,
+    de: `Erstelle einen Flatkey-API-Key, sende eine Anfrage an ${facts.endpoint} und setze model auf ${facts.id}. OpenAI dokumentiert außerdem /v1/responses; prüfe, ob diese Route für dein Flatkey-Konto aktiviert ist.`,
+    id: `Buat API key Flatkey, kirim permintaan ke ${facts.endpoint}, dan tetapkan model ke ${facts.id}. OpenAI juga mendokumentasikan /v1/responses; verifikasi bahwa rute tersebut diaktifkan untuk akun Flatkey Anda.`,
+  };
+  return answers[locale] ?? answers.en;
 }
 
-function localizedGptModelIdAnswer(facts: Facts, pack: LanguagePack, locale: Locale): string {
-  if (locale === "en") return `The verified model ID is ${facts.id}; the catalog route is ${facts.endpoint}. OpenAI documents /v1/responses separately.`;
-  if (locale === "pt") return `O ID de modelo verificado é ${facts.id}; a rota do catálogo é ${facts.endpoint}. A OpenAI documenta /v1/responses separadamente.`;
-  return `${pack.modelId}: ${facts.id}; ${pack.endpoint}: ${facts.endpoint}. OpenAI documents /v1/responses separately.`;
+function localizedGptModelIdAnswer(facts: Facts, _pack: LanguagePack, locale: Locale): string {
+  const answers: Record<Locale, string> = {
+    en: `The verified model ID is ${facts.id}; the catalog route is ${facts.endpoint}. OpenAI documents /v1/responses separately.`,
+    zh: `已核实的模型 ID 为 ${facts.id}；目录路由为 ${facts.endpoint}。OpenAI 另行记录了 /v1/responses。`,
+    es: `El ID de modelo verificado es ${facts.id}; la ruta del catálogo es ${facts.endpoint}. OpenAI documenta /v1/responses por separado.`,
+    fr: `L’ID de modèle vérifié est ${facts.id} ; la route du catalogue est ${facts.endpoint}. OpenAI documente /v1/responses séparément.`,
+    pt: `O ID de modelo verificado é ${facts.id}; a rota do catálogo é ${facts.endpoint}. A OpenAI documenta /v1/responses separadamente.`,
+    ru: `Проверенный ID модели — ${facts.id}; маршрут каталога — ${facts.endpoint}. OpenAI отдельно документирует /v1/responses.`,
+    ja: `確認済みのモデル ID は ${facts.id}、カタログのルートは ${facts.endpoint} です。OpenAI は /v1/responses を別途文書化しています。`,
+    vi: `ID model đã xác minh là ${facts.id}; route trong catalog là ${facts.endpoint}. OpenAI ghi nhận /v1/responses riêng biệt.`,
+    de: `Die verifizierte Modell-ID lautet ${facts.id}; die Katalogroute ist ${facts.endpoint}. OpenAI dokumentiert /v1/responses separat.`,
+    id: `ID model yang terverifikasi adalah ${facts.id}; rute katalog adalah ${facts.endpoint}. OpenAI mendokumentasikan /v1/responses secara terpisah.`,
+  };
+  return answers[locale] ?? answers.en;
 }
 
 /** Feature-led copy for the remaining priority text models. Technical
  * context, modalities, and route details stay in the API/comparison sections. */
 function localizedTextCapabilityCards(facts: Facts, locale: Locale): MediaCapabilityCard[] {
   const context = facts.context ?? "1,048,576 tokens";
-  const routes = facts.secondEndpoint ? `${facts.endpoint} and ${facts.secondEndpoint}` : facts.endpoint;
+  const modalities = localizedModalities(locale, facts);
+  const routes = facts.secondEndpoint
+    ? localizedRoutePair(locale, facts.endpoint, facts.secondEndpoint)
+    : facts.endpoint;
   const copy: Record<Locale, MediaCapabilityCard[]> = {
     en: [
       { title: "Long-context work", body: `${facts.name} is suited to document, code, and research workflows within its documented ${context} context.` },
@@ -4383,55 +4715,55 @@ function localizedTextCapabilityCards(facts: Facts, locale: Locale): MediaCapabi
     ],
     zh: [
       { title: "长上下文工作", body: `${facts.name} 适合在已记录的 ${context} 上下文范围内处理文档、代码和研究任务。` },
-      { title: "多模态理解", body: `利用模型已记录的 ${facts.modalities}，让回答建立在工作流提供的材料之上。` },
+      { title: "多模态理解", body: `利用模型已记录的 ${modalities}，让回答建立在工作流提供的材料之上。` },
       { title: "结构化智能体工作流", body: "将推理、结构化输出、工具调用和流式响应接入正在构建的智能体或应用流程。" },
       { title: "适合生产集成", body: `从实验进入生产时，保持模型 ID 与兼容路由（${routes}）稳定。` },
     ],
     es: [
       { title: "Trabajo con contexto largo", body: `${facts.name} sirve para documentos, código e investigación dentro de su contexto documentado de ${context}.` },
-      { title: "Comprensión multimodal", body: `Usa las ${facts.modalities} documentadas para fundamentar las respuestas en el material de tu flujo.` },
+      { title: "Comprensión multimodal", body: `Usa las ${modalities} documentadas para fundamentar las respuestas en el material de tu flujo.` },
       { title: "Flujos de agentes estructurados", body: "Conecta razonamiento, salida estructurada, herramientas y streaming con tu aplicación o agente." },
       { title: "Integración lista para producción", body: `Mantén estables el ID del modelo y las rutas compatibles (${routes}) al pasar de pruebas a producción.` },
     ],
     fr: [
       { title: "Travail à long contexte", body: `${facts.name} convient aux documents, au code et à la recherche dans son contexte documenté de ${context}.` },
-      { title: "Compréhension multimodale", body: `Utilisez les ${facts.modalities} documentées pour ancrer les réponses dans les éléments fournis.` },
+      { title: "Compréhension multimodale", body: `Utilisez les ${modalities} documentées pour ancrer les réponses dans les éléments fournis.` },
       { title: "Flux d’agents structurés", body: "Reliez raisonnement, sortie structurée, outils et streaming à l’agent ou à l’application créée." },
       { title: "Intégration prête pour la production", body: `Conservez l’ID du modèle et les routes compatibles (${routes}) en passant du test à la production.` },
     ],
     pt: [
       { title: "Trabalho com contexto longo", body: `${facts.name} atende a documentos, código e pesquisa dentro do contexto documentado de ${context}.` },
-      { title: "Compreensão multimodal", body: `Use as ${facts.modalities} documentadas para fundamentar as respostas no material fornecido.` },
+      { title: "Compreensão multimodal", body: `Use as ${modalities} documentadas para fundamentar as respostas no material fornecido.` },
       { title: "Fluxos estruturados de agentes", body: "Conecte raciocínio, saída estruturada, ferramentas e streaming ao agente ou aplicativo criado." },
       { title: "Integração pronta para produção", body: `Mantenha o ID do modelo e as rotas compatíveis (${routes}) estáveis ao passar dos testes para a produção.` },
     ],
     ru: [
       { title: "Работа с длинным контекстом", body: `${facts.name} подходит для документов, кода и исследований в пределах задокументированного контекста ${context}.` },
-      { title: "Мультимодальное понимание", body: `Используйте задокументированные ${facts.modalities}, чтобы связать ответы с материалами рабочего процесса.` },
+      { title: "Мультимодальное понимание", body: `Используйте задокументированные ${modalities}, чтобы связать ответы с материалами рабочего процесса.` },
       { title: "Структурированные агентские процессы", body: "Подключайте рассуждения, структурированный вывод, инструменты и потоковую выдачу к своему приложению." },
       { title: "Интеграция для продакшена", body: `Сохраняйте ID модели и совместимые маршруты (${routes}) при переходе от тестов к продакшену.` },
     ],
     ja: [
       { title: "長いコンテキストの作業", body: `${facts.name} は、記録された ${context} のコンテキストで文書・コード・調査を扱えます。` },
-      { title: "マルチモーダル理解", body: `記録された ${facts.modalities} を使い、ワークフローが提供する資料に基づいて回答します。` },
+      { title: "マルチモーダル理解", body: `記録された ${modalities} を使い、ワークフローが提供する資料に基づいて回答します。` },
       { title: "構造化エージェントワークフロー", body: "推論、構造化出力、ツール、ストリーミングを構築中のエージェントやアプリに接続します。" },
       { title: "本番向け統合", body: `検証から本番へ移るときも、モデル ID と互換ルート（${routes}）を維持します。` },
     ],
     vi: [
       { title: "Tác vụ ngữ cảnh dài", body: `${facts.name} phù hợp với tài liệu, mã và nghiên cứu trong ngữ cảnh ${context} đã được ghi nhận.` },
-      { title: "Hiểu đa phương thức", body: `Dùng ${facts.modalities} được ghi nhận để neo câu trả lời vào tài liệu mà quy trình cung cấp.` },
+      { title: "Hiểu đa phương thức", body: `Dùng ${modalities} được ghi nhận để neo câu trả lời vào tài liệu mà quy trình cung cấp.` },
       { title: "Quy trình agent có cấu trúc", body: "Kết nối suy luận, đầu ra có cấu trúc, công cụ và streaming với agent hoặc ứng dụng bạn xây dựng." },
       { title: "Tích hợp sẵn sàng sản xuất", body: `Giữ ID mô hình và các route tương thích (${routes}) ổn định khi chuyển từ thử nghiệm sang sản xuất.` },
     ],
     de: [
       { title: "Arbeit mit langem Kontext", body: `${facts.name} eignet sich für Dokumente, Code und Recherche innerhalb des dokumentierten ${context}-Kontexts.` },
-      { title: "Multimodales Verständnis", body: `Nutze die dokumentierten ${facts.modalities}, um Antworten an den bereitgestellten Materialien auszurichten.` },
+      { title: "Multimodales Verständnis", body: `Nutze die dokumentierten ${modalities}, um Antworten an den bereitgestellten Materialien auszurichten.` },
       { title: "Strukturierte Agenten-Workflows", body: "Verbinde Reasoning, strukturierte Ausgaben, Tools und Streaming mit deinem Agenten oder deiner Anwendung." },
       { title: "Produktionsreife Integration", body: `Halte Modell-ID und kompatible Routen (${routes}) beim Übergang von Tests in die Produktion stabil.` },
     ],
     id: [
       { title: "Pekerjaan dengan konteks panjang", body: `${facts.name} cocok untuk dokumen, kode, dan riset dalam konteks ${context} yang terdokumentasi.` },
-      { title: "Pemahaman multimodal", body: `Gunakan ${facts.modalities} yang terdokumentasi agar jawaban berpijak pada materi alur kerja.` },
+      { title: "Pemahaman multimodal", body: `Gunakan ${modalities} yang terdokumentasi agar jawaban berpijak pada materi alur kerja.` },
       { title: "Alur kerja agen terstruktur", body: "Hubungkan penalaran, output terstruktur, alat, dan streaming ke agen atau aplikasi yang dibuat." },
       { title: "Integrasi siap produksi", body: `Pertahankan ID model dan rute kompatibel (${routes}) saat berpindah dari eksperimen ke produksi.` },
     ],

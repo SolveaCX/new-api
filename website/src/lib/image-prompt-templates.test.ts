@@ -4,8 +4,10 @@ import {
   getImagePromptTemplate,
   getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
+  localizeImagePromptText,
   IMAGE_PROMPT_TEMPLATES,
 } from "./image-prompt-templates";
+import { LOCALES } from "./locales";
 
 describe("image prompt templates", () => {
   test("covers the main image-production scenarios", () => {
@@ -122,5 +124,30 @@ describe("image prompt templates", () => {
     expect(getImagePlaygroundExample("gemini-3.1-flash-image-preview")?.poster).toContain("high-end-skincare-product-poster");
     expect(getImagePlaygroundExample("gemini_2_5_flash_image_preview")?.poster).toContain("three-day-travel-guide-card");
     expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
+  });
+
+  test("localizes every card and Playground starter for all supported locales", () => {
+    const englishCards = getImagePromptTemplates("gpt-image-2", "en");
+    const englishStarter = getImagePlaygroundExample("gpt-image-2", "en");
+    expect(englishStarter).toBeDefined();
+
+    for (const locale of LOCALES) {
+      const cards = getImagePromptTemplates("gpt-image-2", locale);
+      const starter = getImagePlaygroundExample("gpt-image-2", locale);
+      expect(cards).toHaveLength(IMAGE_PROMPT_TEMPLATES.length);
+      expect(starter).toBeDefined();
+      expect(cards.every((card) => card.label.length > 0 && card.prompt.length > 80)).toBe(true);
+      expect(starter?.prompt.length).toBeGreaterThan(80);
+      if (locale !== "en") {
+        expect(cards[0].prompt).not.toBe(englishCards[0].prompt);
+        expect(starter?.prompt).not.toBe(englishStarter?.prompt);
+      }
+    }
+  });
+
+  test("localizes the generic image starter when a catalog page has no curated example", () => {
+    const source = "Create a high-quality product image with catalog-model: clean composition, precise lighting, strong subject focus, and realistic detail.";
+    expect(localizeImagePromptText(source, "zh")).toContain("制作高级产品图");
+    expect(localizeImagePromptText(source, "en")).toBe(source);
   });
 });
