@@ -39,7 +39,8 @@ function createDefaultBrowser(): PlaygroundExportBrowser {
   return {
     createObjectURL: (blob) => globalThis.URL.createObjectURL(blob),
     revokeObjectURL: (url) => globalThis.URL.revokeObjectURL(url),
-    setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+    setTimeout: (callback, delayMs) =>
+      globalThis.setTimeout(callback, delayMs) as unknown as number,
   }
 }
 
