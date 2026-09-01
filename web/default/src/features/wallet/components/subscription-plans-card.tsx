@@ -1142,7 +1142,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         open={enterpriseContactOpen}
         onOpenChange={setEnterpriseContactOpen}
       >
-        <DialogContent className='border-border w-[min(700px,calc(100vw-2rem))] max-w-2xl overflow-hidden bg-white p-0 shadow-[0_24px_80px_-32px_rgba(76,29,149,0.45)]'>
+        <DialogContent className='border-border max-h-[calc(100vh-2rem)] w-[min(700px,calc(100vw-2rem))] max-w-2xl overflow-hidden bg-white p-0 shadow-[0_24px_80px_-32px_rgba(76,29,149,0.45)]'>
           <DialogHeader className='border-border/70 border-b bg-[#faf9ff] px-5 py-4 pr-12'>
             <DialogTitle className='text-lg'>{t('Talk to sales')}</DialogTitle>
             <DialogDescription className='text-muted-foreground text-sm'>
@@ -1151,11 +1151,11 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className='h-[min(700px,calc(100vh-6rem))] min-h-0 overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
+          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overscroll-contain overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
             <iframe
               title={t('Talk to sales')}
               src={ENTERPRISE_CONTACT_FORM_URL}
-              className='h-[930px] w-full max-w-none origin-top-left border-0'
+              className='h-[780px] w-full max-w-none origin-top-left border-0'
               style={{ zoom: 0.78 }}
               scrolling='yes'
               loading='lazy'
