@@ -355,8 +355,12 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const html = renderWalletCardWithPlans(campaignPlans)
 
     expect(html).toContain('<h4 class="text-xl font-semibold">Starter</h4>')
-    expect(html.match(/data-subscription-discount-label="80% off"/g)?.length).toBe(1)
-    expect(html.match(/data-subscription-discount-label="70% off"/g)?.length).toBe(2)
+    expect(
+      html.match(/data-subscription-discount-label="80% off"/g)?.length
+    ).toBe(1)
+    expect(
+      html.match(/data-subscription-discount-label="70% off"/g)?.length
+    ).toBe(2)
     expect(html.match(/data-subscription-limited-offer/g)?.length).toBe(1)
     expect(html).toContain('Limited')
     expect(html).toContain('relative overflow-hidden rounded-lg')
@@ -373,9 +377,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       const proStart = html.indexOf('Pro')
       const maxStart = html.indexOf('Max')
 
-      expect(html).toContain('适合个人与轻量日常使用')
-      expect(html).toContain('适合日常开发与高频请求')
-      expect(html).toContain('适合团队与高强度任务')
+      expect(html).toContain(
+        '无需合同。充值余额、创建密钥、复制 base_url，即可测试第一次请求。'
+      )
+      expect(html).toContain('适合跑真实 API 工作负载。')
+      expect(html).toContain(
+        '适合生产测试、团队流程和持续模型流量的高性价比选择。'
+      )
       expect(html).toContain('限时特惠')
       expect(goStart).toBeGreaterThanOrEqual(0)
       expect(proStart).toBeGreaterThan(goStart)
@@ -1196,6 +1204,25 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Image + video: 10 credits')
   })
 
+  test('matches the website pricing descriptions and renders the enterprise card', () => {
+    const html = renderWalletCard()
+
+    expect(html).toContain(
+      'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
+    )
+    expect(html).toContain('Best for trying real API workloads.')
+    expect(html).toContain(
+      'Best value for production testing, team workflows, and sustained model traffic.'
+    )
+    expect(html).toContain('data-subscription-enterprise-card')
+    expect(html).toContain('data-subscription-enterprise-cta')
+    expect(html).toContain('mailto:support@flatkey.ai')
+    expect(html).toContain('Talk to sales')
+    expect(html).toContain('Custom monthly usage')
+    expect(html).toContain('Team procurement support')
+    expect(html).toContain('Custom routing discounts')
+  })
+
   test('does not derive the reference price from mutable quota units', () => {
     const valuePlan = {
       ...plans[0],
@@ -1556,7 +1583,9 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain(formatBrl(40))
-    expect(html).toContain(`data-subscription-reference-price="${formatBrl(50)}"`)
+    expect(html).toContain(
+      `data-subscription-reference-price="${formatBrl(50)}"`
+    )
     expect(html).not.toContain('80% off')
     expect(html).toContain('line-through')
     expect(html).not.toContain(`Save ${formatBrl(10)}`)
