@@ -88,11 +88,11 @@ func TestNormalizeBlockRunPaymentErrors(t *testing.T) {
 		require.True(t, state.StreamTruncated)
 	})
 
-	t.Run("allowlisted upstream validation survives settlement normalization", func(t *testing.T) {
+	t.Run("upstream business error survives settlement normalization", func(t *testing.T) {
 		ctx, _ := newBlockRunPaymentTestContext()
 		ctx.Set(string(constant.ContextKeyChannelType), constant.ChannelTypeBlockRun)
 		relaycommon.MarkBlockRunPaymentAttempt(ctx, dto.BlockRunPaymentChainBase, 205, "request=req-5")
-		const message = "messages.1.content.0: Invalid `signature` in `thinking` block"
+		const message = "This model does not support assistant message prefill. End the conversation with a user message, or provide the tools array required to preserve tool_use/tool_result history during compatibility fallback."
 		originalErr := types.WithClaudeError(types.ClaudeError{
 			Message: message,
 			Type:    "invalid_request_error",

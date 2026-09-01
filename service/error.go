@@ -76,6 +76,11 @@ func looksLikeInternalLeak(msg string) bool {
 }
 
 func allowlistedBusinessErrorMessage(newApiErr *types.NewAPIError) (string, bool) {
+	message, ok := upstreamErrorMessage(newApiErr)
+	return message, ok && safeBusinessErrorPattern.MatchString(message)
+}
+
+func upstreamErrorMessage(newApiErr *types.NewAPIError) (string, bool) {
 	if newApiErr == nil {
 		return "", false
 	}
@@ -94,7 +99,7 @@ func allowlistedBusinessErrorMessage(newApiErr *types.NewAPIError) (string, bool
 	default:
 		return "", false
 	}
-	return message, safeBusinessErrorPattern.MatchString(message)
+	return message, true
 }
 
 // preserveAllowlistedBusinessError keeps the approved message while removing
@@ -136,6 +141,24 @@ func ScrubWhitelabelError(ctx context.Context, newApiErr *types.NewAPIError, cha
 	if _, ok := whitelabelSyncChannels[channelType]; !ok {
 		return
 	}
+	// BlockRun business and upstream errors are client-actionable and must keep
+	// their original message. Payment errors always use the generic response.
+	// Normalize typed envelopes so sibling fields cannot expose payment material
+	// or unrelated implementation details while preserving the upstream text.
+	if channelType == constant.ChannelTypeBlockRun {
+		isPaymentError := newApiErr.GetErrorCode() == types.ErrorCodeBlockRunPaymentRejected ||
+			newApiErr.GetErrorCode() == types.ErrorCodeBlockRunSettlementUnknown ||
+			newApiErr.StatusCode == http.StatusPaymentRequired
+		if isPaymentError {
+			logger.LogError(ctx, fmt.Sprintf("whitelabel error scrub (channel_type=%d): %s", channelType, common.LocalLogPreview(newApiErr.SanitizationSurface())))
+			newApiErr.OverrideMessage(whitelabelGenericErrorMessage)
+			return
+		}
+		if message, ok := upstreamErrorMessage(newApiErr); ok && message != "" {
+			preserveAllowlistedBusinessError(newApiErr, message)
+		}
+		return
+	}
 	allowlistedMessage, allowlisted := allowlistedBusinessErrorMessage(newApiErr)
 	// Inspect the full upstream-controlled surface (message + Type/Param/Code/
 	// Metadata), not just the message: a leak confined to a sibling field would
@@ -164,17 +187,16 @@ func ScrubWhitelabelError(ctx context.Context, newApiErr *types.NewAPIError, cha
 	newApiErr.OverrideMessage(whitelabelGenericErrorMessage)
 }
 
-// ScrubWhitelabelErrorWithOriginal restores an allowlisted upstream business
-// error after BlockRun payment safety normalization has replaced its message.
+// ScrubWhitelabelErrorWithOriginal restores an upstream business error after
+// BlockRun payment safety normalization has replaced its message.
 // The normalized error object is retained so settlement-unknown still remains
 // non-retryable and non-penalizing; only its client-facing envelope is updated.
 func ScrubWhitelabelErrorWithOriginal(ctx context.Context, newApiErr, originalErr *types.NewAPIError, channelType int) {
 	if newApiErr != nil && originalErr != nil &&
 		channelType == constant.ChannelTypeBlockRun &&
 		newApiErr.GetErrorCode() == types.ErrorCodeBlockRunSettlementUnknown {
-		message, allowlisted := allowlistedBusinessErrorMessage(originalErr)
-		surface := originalErr.SanitizationSurface()
-		if allowlisted && surface != "" && !containsWhitelabelLeak(channelType, surface) {
+		message, ok := upstreamErrorMessage(originalErr)
+		if ok && message != "" {
 			preserveAllowlistedBusinessError(newApiErr, message)
 			return
 		}
