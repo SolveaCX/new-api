@@ -919,56 +919,66 @@ export function Wallet(props: WalletProps) {
               </Alert>
             ) : null}
 
-            {showSubscriptionPlans ? (
-              <RecallClaimProvider
-                offers={recallOffers}
-                loading={recallOffersLoading}
-                view={
-                  recallClaimStatus === 'active'
-                    ? recallClaimView || undefined
-                    : undefined
-                }
-              >
-                <SubscriptionPlansCard
-                  topupInfo={topupInfo}
-                  userQuota={user?.quota}
-                  onPurchaseSuccess={fetchUser}
-                  onOpenStripeCheckout={openStripeCheckout}
-                />
-              </RecallClaimProvider>
-            ) : null}
-
-            <TitledCard
-              className='border-border/80 shadow-sm'
-              title={t('Top-ups')}
-              description={t(
-                'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
-              )}
-              icon={<Wallet2 className='h-4 w-4' />}
-              iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-              action={
-                <Button
-                  className='bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
-                  onClick={() => setTopupDialogOpen(true)}
-                >
-                  {t('Top up')}
-                </Button>
+            <div
+              className={
+                showSubscriptionPlans
+                  ? 'grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)]'
+                  : 'grid items-start gap-3'
               }
-              contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
             >
-              <div
-                id='wallet-billing-history'
-                className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
+              {showSubscriptionPlans ? (
+                <div className='min-w-0'>
+                  <RecallClaimProvider
+                    offers={recallOffers}
+                    loading={recallOffersLoading}
+                    view={
+                      recallClaimStatus === 'active'
+                        ? recallClaimView || undefined
+                        : undefined
+                    }
+                  >
+                    <SubscriptionPlansCard
+                      topupInfo={topupInfo}
+                      userQuota={user?.quota}
+                      onPurchaseSuccess={fetchUser}
+                      onOpenStripeCheckout={openStripeCheckout}
+                    />
+                  </RecallClaimProvider>
+                </div>
+              ) : null}
+
+              <TitledCard
+                className='border-border/80 shadow-sm lg:sticky lg:top-1'
+                title={t('Top-ups')}
+                description={t(
+                  'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
+                )}
+                icon={<Wallet2 className='h-4 w-4' />}
+                iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+                action={
+                  <Button
+                    className='bg-primary text-primary-foreground hover:bg-primary/90'
+                    onClick={() => setTopupDialogOpen(true)}
+                  >
+                    {t('Top up')}
+                  </Button>
+                }
+                contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
               >
-                <BillingHistoryPanel
-                  scrollAreaClassName='max-h-none pr-0 sm:pr-0'
-                  showInlineHeader
-                  onAvailabilityChange={handleRechargeHistoryAvailability}
-                  onResumeStripeCheckout={handleResumeStripeCheckout}
-                  onRefundSuccess={fetchUser}
-                />
-              </div>
-            </TitledCard>
+                <div
+                  id='wallet-billing-history'
+                  className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
+                >
+                  <BillingHistoryPanel
+                    scrollAreaClassName='max-h-none pr-0 sm:pr-0'
+                    showInlineHeader
+                    onAvailabilityChange={handleRechargeHistoryAvailability}
+                    onResumeStripeCheckout={handleResumeStripeCheckout}
+                    onRefundSuccess={fetchUser}
+                  />
+                </div>
+              </TitledCard>
+            </div>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

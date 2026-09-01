@@ -1333,6 +1333,8 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('Custom monthly usage')
     expect(html).toContain('Team procurement support')
     expect(html).toContain('Custom routing discounts')
+    expect(html).toContain('from-[#f7f3ff]')
+    expect(html).not.toContain('bg-[#0b0b0d]')
   })
 
   test('shows the campaign badge before a backend checkout quote loads', () => {
