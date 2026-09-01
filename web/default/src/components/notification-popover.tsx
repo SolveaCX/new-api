@@ -265,7 +265,7 @@ function AnnouncementsContent({
             : ''
 
           const content = (
-            <div className='py-3'>
+            <div className='rounded-md py-3 transition-colors hover:bg-muted/40'>
               <div className='flex items-start gap-3'>
                 <div className='flex min-w-0 flex-1 flex-col gap-2'>
                   <div className='text-sm'>
