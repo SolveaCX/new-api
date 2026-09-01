@@ -41,6 +41,7 @@ const {
   clearCurrentPlaygroundRecord,
   createPlaygroundAttachmentUploadSession,
   downloadPlaygroundRecords,
+  fetchVideoContent,
   getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
@@ -139,6 +140,7 @@ describe('Playground model API', () => {
 
 describe('Playground media API', () => {
   beforeEach(() => {
+    get.mockClear()
     post.mockClear()
   })
 
@@ -157,6 +159,26 @@ describe('Playground media API', () => {
       '/pg/audio/speech',
       { model: 'tts-1', input: 'hello' },
       expect.objectContaining({ responseType: 'blob', skipErrorHandler: true })
+    )
+  })
+
+  test('requests generated video content with the caller cancellation signal', async () => {
+    const video = new Blob(['ftyp'], { type: 'video/mp4' })
+    const signal = new AbortController().signal
+    get.mockResolvedValueOnce({ data: video })
+
+    await expect(fetchVideoContent('task_video_123', signal)).resolves.toBe(
+      video
+    )
+
+    expect(get).toHaveBeenCalledWith(
+      '/v1/videos/task_video_123/content',
+      expect.objectContaining({
+        responseType: 'blob',
+        disableDuplicate: true,
+        skipErrorHandler: true,
+        signal,
+      })
     )
   })
 })

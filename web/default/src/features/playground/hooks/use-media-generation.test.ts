@@ -242,7 +242,8 @@ describe('useMediaGeneration video task lifecycle', () => {
     const originalCreateObjectURL = URL.createObjectURL
     const originalRevokeObjectURL = URL.revokeObjectURL
     const revoked: string[] = []
-    URL.createObjectURL = (() => 'blob:generated-video') as typeof URL.createObjectURL
+    URL.createObjectURL = (() =>
+      'blob:generated-video') as typeof URL.createObjectURL
     URL.revokeObjectURL = ((url: string) => {
       revoked.push(url)
     }) as typeof URL.revokeObjectURL
@@ -320,7 +321,8 @@ describe('useMediaGeneration video task lifecycle', () => {
     const originalCreateObjectURL = URL.createObjectURL
     const originalRevokeObjectURL = URL.revokeObjectURL
     const revoked: string[] = []
-    URL.createObjectURL = (() => 'blob:failed-generated-video') as typeof URL.createObjectURL
+    URL.createObjectURL = (() =>
+      'blob:failed-generated-video') as typeof URL.createObjectURL
     URL.revokeObjectURL = ((url: string) => {
       revoked.push(url)
     }) as typeof URL.revokeObjectURL

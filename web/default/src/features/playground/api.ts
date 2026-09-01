@@ -287,13 +287,17 @@ export async function fetchVideoStatus(id: string): Promise<VideoTask> {
  * caller can URL.createObjectURL(...) it into a <video> element (the endpoint
  * needs the auth header, so the bare URL can't be used as a <video src>).
  */
-export async function fetchVideoContent(id: string): Promise<Blob> {
+export async function fetchVideoContent(
+  id: string,
+  signal?: AbortSignal
+): Promise<Blob> {
   const res = await api.get(
     `${API_ENDPOINTS.VIDEOS}/${encodeURIComponent(id)}/content`,
     {
       responseType: 'blob',
       disableDuplicate: true,
       skipErrorHandler: true,
+      signal,
     }
   )
   return res.data as Blob

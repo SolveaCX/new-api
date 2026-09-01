@@ -630,6 +630,42 @@ describe('Playground persistence payloads', () => {
     expect(JSON.stringify(payload)).not.toContain(previewURL)
   })
 
+  test('persists generated video by durable asset ID without its expiring URL', () => {
+    const previewURL = 'https://storage.example/signed-generated.mp4'
+    const assistant: Message = {
+      ...completeAssistant,
+      versions: [
+        {
+          ...completeAssistant.versions[0],
+          generatedMedia: [
+            {
+              type: 'video',
+              assetId: 'ast_generated_video',
+              mimeType: 'video/mp4',
+              url: previewURL,
+            },
+          ],
+        },
+      ],
+    }
+
+    const payload = buildPlaygroundRecordPayload(
+      activeTurn(),
+      [userMessage, assistant],
+      false,
+      2500
+    )
+
+    expect(payload.assistant_message.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'video',
+        assetId: 'ast_generated_video',
+        mimeType: 'video/mp4',
+      },
+    ])
+    expect(JSON.stringify(payload)).not.toContain(previewURL)
+  })
+
   test('binds the terminal payload to the assistant created for that turn', () => {
     const laterAssistant: Message = {
       key: 'assistant-later',
