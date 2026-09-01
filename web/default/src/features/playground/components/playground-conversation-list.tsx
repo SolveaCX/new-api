@@ -98,6 +98,8 @@ function PlaygroundConversationListContent(
     null
   )
   const isExportingRef = useRef(false)
+  const loadingConversationRef = useRef<string | null>(null)
+  const renameSubmittingRef = useRef(false)
   const conversationsQuery = useQuery({
     queryKey: conversationsQueryKey,
     queryFn: listPlaygroundConversations,
@@ -125,6 +127,9 @@ function PlaygroundConversationListContent(
           ? error.message
           : t('Failed to rename conversation')
       ),
+    onSettled: () => {
+      renameSubmittingRef.current = false
+    },
   })
   const deleteMutation = useMutation({
     mutationFn: deletePlaygroundConversations,
@@ -195,9 +200,15 @@ function PlaygroundConversationListContent(
   }
 
   const submitRename = () => {
-    if (actionsDisabled) return
+    if (
+      actionsDisabled ||
+      renameMutation.isPending ||
+      renameSubmittingRef.current
+    )
+      return
     const name = editingName.trim()
     if (!editingId || !name) return
+    renameSubmittingRef.current = true
     renameMutation.mutate({ conversationId: editingId, name })
   }
 
@@ -235,13 +246,16 @@ function PlaygroundConversationListContent(
   ) => {
     if (
       actionsDisabled ||
+      loadingConversationRef.current !== null ||
       conversation.conversation_id === props.currentConversationId
     )
       return
+    loadingConversationRef.current = conversation.conversation_id
     setLoadingConversationId(conversation.conversation_id)
     try {
       await props.onSelect(conversation)
     } finally {
+      loadingConversationRef.current = null
       setLoadingConversationId(null)
     }
   }
