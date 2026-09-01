@@ -71,7 +71,11 @@ export interface OpsPayerRow {
   display_name: string
   email: string
   paid_usd: number
+  topup_usd: number
+  subscription_usd: number
   orders: number
+  topup_orders: number
+  subscription_orders: number
   refunded_usd: number
   refunded_cnt: number
   first_paid_at: number
@@ -87,6 +91,7 @@ export interface OpsPayerRow {
   last_ip: string
   ip_country: string
   pay_country: string
+  subscription_source: string
   balance_usd: number
   consumed_usd: number
   requests: number
@@ -107,6 +112,9 @@ export interface OpsPaymentRow {
 export interface OpsReportData {
   generated_at: number
   days: number
+  dau_scope: string
+  include_disabled: boolean
+  paid_only: boolean
   daily: OpsDailyRow[]
   weekly_funnel: OpsFunnelRow[]
   campaign_funnel: OpsCampaignRow[]
@@ -134,6 +142,7 @@ export interface OpsRegisteredUserRow {
   last_ip: string
   ip_country: string
   pay_country: string
+  subscription_source: string
   balance_usd: number
   consumed_usd: number
   requests: number

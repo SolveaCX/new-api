@@ -267,6 +267,25 @@ const STRIPE_STATUS_LABELS: Record<string, string> = {
   setup: 'Card Binding',
 }
 
+const SUBSCRIPTION_SOURCE_LABELS: Record<string, string> = {
+  cash: 'Cash',
+  wallet: 'Wallet',
+  gift: 'Gift',
+}
+
+function SubscriptionSourceBadge({ source }: { source?: string }) {
+  const { t } = useTranslation()
+  const normalized = source || '-'
+  if (!normalized || normalized === '-') {
+    return <span className='text-muted-foreground'>-</span>
+  }
+  return (
+    <Badge variant={normalized === 'gift' ? 'destructive' : 'secondary'}>
+      {t(SUBSCRIPTION_SOURCE_LABELS[normalized] ?? normalized)}
+    </Badge>
+  )
+}
+
 function FunnelCells({ row }: { row: OpsFunnelRow }) {
   const n = row.registrations
   const cell = (v: number) => (
@@ -714,6 +733,7 @@ function RegisteredUsersTable({ rows }: { rows: OpsRegisteredUserRow[] }) {
             <TableHead>{t('Campaign')}</TableHead>
             <TableHead>{t('Landing Pages')}</TableHead>
             <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
+            <TableHead>{t('Plan Source')}</TableHead>
             <TableHead className='text-right'>{t('Balance')}</TableHead>
             <TableHead className='text-right'>{t('Usage')}</TableHead>
             <TableHead>{t('Last Active')}</TableHead>
@@ -776,7 +796,23 @@ function RegisteredUsersTable({ rows }: { rows: OpsRegisteredUserRow[] }) {
                 {row.landing || '-'}
               </TableCell>
               <TableCell className='text-right whitespace-nowrap'>
-                {row.paid_usd > 0 ? usd(row.paid_usd) : '-'}
+                {row.paid_usd > 0 ? (
+                  <div>
+                    <div>{usd(row.paid_usd)}</div>
+                    <div className='text-muted-foreground text-xs'>
+                      {row.topup_usd > 0 ? `${t('Top-up')} ${usd(row.topup_usd)}` : ''}
+                      {row.topup_usd > 0 && row.subscription_usd > 0 ? ' · ' : ''}
+                      {row.subscription_usd > 0
+                        ? `${t('Subscription')} ${usd(row.subscription_usd)}`
+                        : ''}
+                    </div>
+                  </div>
+                ) : (
+                  '-'
+                )}
+              </TableCell>
+              <TableCell>
+                <SubscriptionSourceBadge source={row.subscription_source} />
               </TableCell>
               <TableCell className='text-right whitespace-nowrap'>
                 {usd(row.balance_usd)}
@@ -810,6 +846,9 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
             <TableHead>{t('User')}</TableHead>
             <TableHead>{t('Last Paid At')}</TableHead>
             <TableHead className='text-right'>{t('Paid Amount')}</TableHead>
+            <TableHead className='text-right'>{t('Top-up')}</TableHead>
+            <TableHead className='text-right'>{t('Subscription')}</TableHead>
+            <TableHead>{t('Plan Source')}</TableHead>
             <TableHead>{t('Campaign')}</TableHead>
             <TableHead>{t('Region')}</TableHead>
             <TableHead className='text-right'>
@@ -863,6 +902,33 @@ function PayersTable({ rows }: { rows: OpsPayerRow[] }) {
                       </Badge>
                     ))}
                   </div>
+                </TableCell>
+                <TableCell className='text-right whitespace-nowrap'>
+                  {row.topup_orders > 0 ? (
+                    <div>
+                      {usd(row.topup_usd)}{' '}
+                      <span className='text-muted-foreground text-xs'>
+                        ×{row.topup_orders}
+                      </span>
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell className='text-right whitespace-nowrap'>
+                  {row.subscription_orders > 0 ? (
+                    <div>
+                      {usd(row.subscription_usd)}{' '}
+                      <span className='text-muted-foreground text-xs'>
+                        ×{row.subscription_orders}
+                      </span>
+                    </div>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+                <TableCell>
+                  <SubscriptionSourceBadge source={row.subscription_source} />
                 </TableCell>
                 <TableCell>
                   <div className='whitespace-nowrap'>{row.campaign || '-'}</div>
@@ -947,6 +1013,7 @@ export function OpsReport() {
   const [days, setDays] = useState(30)
   const [dauScope, setDauScope] = useState<OpsDauScope>('plg')
   const [tab, setTab] = useState<TabValue>(initialTab)
+  const [paidOnly, setPaidOnly] = useState(false)
   // Default denominator excludes disabled (banned / honeypot) accounts so the
   // funnel reflects valid signups; toggle to include them for troubleshooting.
   const [includeDisabled, setIncludeDisabled] = useState(false)
@@ -957,8 +1024,8 @@ export function OpsReport() {
   }
 
   const reportQuery = useQuery({
-    queryKey: opsReportQueryKeys.report(days, dauScope, includeDisabled),
-    queryFn: () => getOpsReport(days, dauScope, includeDisabled),
+    queryKey: opsReportQueryKeys.report(days, dauScope, includeDisabled, paidOnly),
+    queryFn: () => getOpsReport(days, dauScope, includeDisabled, paidOnly),
   })
   const report = reportQuery.data?.data
 
@@ -1008,6 +1075,14 @@ export function OpsReport() {
             {t('Include disabled users')}
           </span>
         </label>
+        <label className='ml-2 flex cursor-pointer items-center gap-2'>
+          <Switch
+            checked={paidOnly}
+            onCheckedChange={setPaidOnly}
+            aria-label={t('Paid only')}
+          />
+          <span className='text-muted-foreground text-sm'>{t('Paid only')}</span>
+        </label>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         {reportQuery.isLoading || !report ? (
@@ -1020,6 +1095,9 @@ export function OpsReport() {
             <p className='text-muted-foreground text-sm'>
               {t(
                 'PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).'
+              )}{' '}
+              {t(
+                'Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.'
               )}{' '}
               {t('Generated at')}: {formatTimestamp(report.generated_at)}
             </p>

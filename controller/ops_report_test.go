@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -150,5 +151,72 @@ func TestOpsSubscriptionOrdersAsTopUps(t *testing.T) {
 		if c.PaymentProvider == model.PaymentProviderStripeAuto {
 			t.Errorf("row %d must not be stripe_auto", i)
 		}
+	}
+}
+
+func TestOpsRegisteredUsersPaidOnlyFiltersNonPayers(t *testing.T) {
+	aggs := map[int]*opsUserAgg{
+		1: {
+			user: &model.OpsPlgUser{Id: 1, CreatedAt: 1, Username: "payer"},
+			paidOrders: []*model.OpsTopUp{
+				{UserId: 1, Money: 10, Status: "success", CreateTime: 10, PaymentCurrency: "USD"},
+			},
+		},
+		2: {
+			user: &model.OpsPlgUser{Id: 2, CreatedAt: 2, Username: "free"},
+		},
+	}
+	rows := opsRegisteredUsers(aggs, map[int]int64{}, map[int]model.OpsUserSubscriptionSource{}, true)
+	if len(rows) != 1 || rows[0].UserId != 1 {
+		t.Fatalf("paid-only rows = %+v, want just payer", rows)
+	}
+}
+
+func TestOpsRegisteredUsersSplitPaidAmounts(t *testing.T) {
+	aggs := map[int]*opsUserAgg{
+		1: {
+			user: &model.OpsPlgUser{Id: 1, CreatedAt: 1, Username: "payer"},
+			paidOrders: []*model.OpsTopUp{
+				{UserId: 1, Money: 10, Status: "success", CreateTime: 10, PaymentCurrency: "USD"},
+				{UserId: 1, Money: 20, Status: "success", CreateTime: 20, PaymentCurrency: "BRL", Source: "subscription", BonusTier: 20},
+			},
+		},
+	}
+	rows := opsRegisteredUsers(aggs, map[int]int64{}, map[int]model.OpsUserSubscriptionSource{}, false)
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.PaidUSD != 30 || row.TopUpUSD != 10 || row.SubscriptionUSD != 20 {
+		t.Fatalf("split amounts = %+v, want paid=30 topup=10 subscription=20", row)
+	}
+}
+
+func TestOpsSubscriptionOriginLabel(t *testing.T) {
+	cases := map[string]string{
+		opsSubscriptionOriginLabel("admin", ""):                           "gift",
+		opsSubscriptionOriginLabel("balance", ""):                         "wallet",
+		opsSubscriptionOriginLabel("", model.SubscriptionPaymentModeBalanceOnePeriod): "wallet",
+		opsSubscriptionOriginLabel("stripe", model.SubscriptionPaymentModeStripeRecurring): "cash",
+	}
+	for got, want := range cases {
+		if got != want {
+			t.Fatalf("origin label = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestOpsVisibleQuotaUSDPrefersSubscriptionRemaining(t *testing.T) {
+	a := &opsUserAgg{user: &model.OpsPlgUser{Id: 11, Quota: 8000}}
+	subscriptionRemaining := map[int]int64{11: 2500}
+	if got := opsVisibleQuotaUSD(a, subscriptionRemaining); got != 2500.0/common.QuotaPerUnit {
+		t.Fatalf("subscription balance = %v, want subscription remaining", got)
+	}
+}
+
+func TestOpsVisibleQuotaUSDFallsBackToWalletQuota(t *testing.T) {
+	a := &opsUserAgg{user: &model.OpsPlgUser{Id: 12, Quota: 8000}}
+	if got := opsVisibleQuotaUSD(a, map[int]int64{}); got != 8000.0/common.QuotaPerUnit {
+		t.Fatalf("wallet balance = %v, want wallet quota", got)
 	}
 }

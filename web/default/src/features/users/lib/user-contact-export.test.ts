@@ -87,6 +87,19 @@ describe('user contact export', () => {
     )
   })
 
+  test('exports inviter email when present', () => {
+    const csv = buildUserContactsCsv([
+      makeUser({
+        id: 10,
+        inviter_id: 99,
+        inviter_email: 'inviter@example.com',
+      }),
+    ])
+
+    assert.match(csv, /inviter@example\.com/)
+    assert.doesNotMatch(csv, /,99,/)
+  })
+
   test('neutralizes spreadsheet formulas in exported contact fields', () => {
     const csv = buildUserContactsCsv([
       makeUser({

@@ -51,19 +51,19 @@ const (
 )
 
 type opsFunnelRow struct {
-	Key           string  `json:"key"`
-	Registrations int     `json:"registrations"`
+	Key           string `json:"key"`
+	Registrations int    `json:"registrations"`
 	// Activated mirrors the activate_success GA event: the user performed a
 	// real activation action (created a manual/CLI key, used an API key, or
 	// used the playground), bucketed by registration day like the rest of the
 	// funnel.
-	Activated   int     `json:"activated"`
-	RealBrowse  int     `json:"real_browse"`
-	ManualKeys  int     `json:"manual_keys"`
-	KeyUsers    int     `json:"key_users"`
-	PayIntent   int     `json:"pay_intent"`
-	Paid        int     `json:"paid"`
-	PaidUSD     float64 `json:"paid_usd"`
+	Activated  int     `json:"activated"`
+	RealBrowse int     `json:"real_browse"`
+	ManualKeys int     `json:"manual_keys"`
+	KeyUsers   int     `json:"key_users"`
+	PayIntent  int     `json:"pay_intent"`
+	Paid       int     `json:"paid"`
+	PaidUSD    float64 `json:"paid_usd"`
 	// CostUSD is the quota burned through the cohort's auto-provisioned keys
 	// (created < opsAutoTokenWindow after signup), i.e. signup-credit spend by
 	// users who never manually created a key — dominated by farm registrations.
@@ -109,32 +109,37 @@ type opsDauRow struct {
 }
 
 type opsPayerRow struct {
-	UserId       int      `json:"user_id"`
-	Username     string   `json:"username"`
-	DisplayName  string   `json:"display_name"`
-	Email        string   `json:"email"`
-	PaidUSD      float64  `json:"paid_usd"`
-	Orders       int      `json:"orders"`
-	RefundedUSD  float64  `json:"refunded_usd"`
-	RefundedCnt  int      `json:"refunded_cnt"`
-	FirstPaidAt  int64    `json:"first_paid_at"`
-	LastPaidAt   int64    `json:"last_paid_at"`
-	RegisteredAt int64    `json:"registered_at"`
-	Campaign     string   `json:"campaign"`
-	Keyword      string   `json:"keyword"`
-	Lng          string   `json:"lng"`
-	BrowserLang  string   `json:"browser_lang"`
-	Landing      string   `json:"landing"`
-	SignupMethod string   `json:"signup_method"`
-	Currencies   []string `json:"currencies"`
-	LastIP       string   `json:"last_ip"`
-	IPCountry    string   `json:"ip_country"`
-	PayCountry   string   `json:"pay_country"`
-	BalanceUSD   float64  `json:"balance_usd"`
-	ConsumedUSD  float64  `json:"consumed_usd"`
-	Requests     int      `json:"requests"`
-	LastActiveAt int64    `json:"last_active_at"`
-	TopModels    []string `json:"top_models"`
+	UserId             int      `json:"user_id"`
+	Username           string   `json:"username"`
+	DisplayName        string   `json:"display_name"`
+	Email              string   `json:"email"`
+	PaidUSD            float64  `json:"paid_usd"`
+	TopUpUSD           float64  `json:"topup_usd"`
+	SubscriptionUSD    float64  `json:"subscription_usd"`
+	Orders             int      `json:"orders"`
+	TopUpOrders        int      `json:"topup_orders"`
+	SubscriptionOrders int      `json:"subscription_orders"`
+	RefundedUSD        float64  `json:"refunded_usd"`
+	RefundedCnt        int      `json:"refunded_cnt"`
+	FirstPaidAt        int64    `json:"first_paid_at"`
+	LastPaidAt         int64    `json:"last_paid_at"`
+	RegisteredAt       int64    `json:"registered_at"`
+	Campaign           string   `json:"campaign"`
+	Keyword            string   `json:"keyword"`
+	Lng                string   `json:"lng"`
+	BrowserLang        string   `json:"browser_lang"`
+	Landing            string   `json:"landing"`
+	SignupMethod       string   `json:"signup_method"`
+	Currencies         []string `json:"currencies"`
+	LastIP             string   `json:"last_ip"`
+	IPCountry          string   `json:"ip_country"`
+	PayCountry         string   `json:"pay_country"`
+	SubscriptionSource string   `json:"subscription_source"`
+	BalanceUSD         float64  `json:"balance_usd"`
+	ConsumedUSD        float64  `json:"consumed_usd"`
+	Requests           int      `json:"requests"`
+	LastActiveAt       int64    `json:"last_active_at"`
+	TopModels          []string `json:"top_models"`
 }
 
 type opsPaymentRow struct {
@@ -148,43 +153,47 @@ type opsPaymentRow struct {
 }
 
 type opsReportData struct {
-	GeneratedAt     int64  `json:"generated_at"`
-	Days            int    `json:"days"`
-	DauScope        string `json:"dau_scope"`
-	IncludeDisabled bool   `json:"include_disabled"`
+	GeneratedAt     int64            `json:"generated_at"`
+	Days            int              `json:"days"`
+	DauScope        string           `json:"dau_scope"`
+	IncludeDisabled bool             `json:"include_disabled"`
+	PaidOnly        bool             `json:"paid_only"`
 	Daily           []opsDailyRow    `json:"daily"`
-	WeeklyFunnel   []opsFunnelRow   `json:"weekly_funnel"`
-	CampaignFunnel []opsCampaignRow `json:"campaign_funnel"`
-	KeywordFunnel  []opsKeywordRow  `json:"keyword_funnel"`
-	PaymentWeekly  []opsPaymentRow  `json:"payment_weekly"`
-	Dau            []opsDauRow      `json:"dau"`
-	TotalPaidUsers int              `json:"total_paid_users"`
-	TotalPaidUSD   float64          `json:"total_paid_usd"`
-	TopPayers      []opsPayerRow    `json:"top_payers"`
+	WeeklyFunnel    []opsFunnelRow   `json:"weekly_funnel"`
+	CampaignFunnel  []opsCampaignRow `json:"campaign_funnel"`
+	KeywordFunnel   []opsKeywordRow  `json:"keyword_funnel"`
+	PaymentWeekly   []opsPaymentRow  `json:"payment_weekly"`
+	Dau             []opsDauRow      `json:"dau"`
+	TotalPaidUsers  int              `json:"total_paid_users"`
+	TotalPaidUSD    float64          `json:"total_paid_usd"`
+	TopPayers       []opsPayerRow    `json:"top_payers"`
 	// Most recent registrations in the report window, newest first (capped).
 	RegisteredUsers []opsRegisteredUserRow `json:"registered_users"`
 }
 
 type opsRegisteredUserRow struct {
-	UserId       int     `json:"user_id"`
-	Username     string  `json:"username"`
-	DisplayName  string  `json:"display_name"`
-	Email        string  `json:"email"`
-	SignupMethod string  `json:"signup_method"`
-	RegisteredAt int64   `json:"registered_at"`
-	Campaign     string  `json:"campaign"`
-	Keyword      string  `json:"keyword"`
-	Lng          string  `json:"lng"`
-	BrowserLang  string  `json:"browser_lang"`
-	Landing      string  `json:"landing"`
-	LastIP       string  `json:"last_ip"`
-	IPCountry    string  `json:"ip_country"`
-	PayCountry   string  `json:"pay_country"`
-	BalanceUSD   float64 `json:"balance_usd"`
-	ConsumedUSD  float64 `json:"consumed_usd"`
-	Requests     int     `json:"requests"`
-	PaidUSD      float64 `json:"paid_usd"`
-	LastActiveAt int64   `json:"last_active_at"`
+	UserId             int     `json:"user_id"`
+	Username           string  `json:"username"`
+	DisplayName        string  `json:"display_name"`
+	Email              string  `json:"email"`
+	SignupMethod       string  `json:"signup_method"`
+	RegisteredAt       int64   `json:"registered_at"`
+	Campaign           string  `json:"campaign"`
+	Keyword            string  `json:"keyword"`
+	Lng                string  `json:"lng"`
+	BrowserLang        string  `json:"browser_lang"`
+	Landing            string  `json:"landing"`
+	LastIP             string  `json:"last_ip"`
+	IPCountry          string  `json:"ip_country"`
+	PayCountry         string  `json:"pay_country"`
+	SubscriptionSource string  `json:"subscription_source"`
+	BalanceUSD         float64 `json:"balance_usd"`
+	ConsumedUSD        float64 `json:"consumed_usd"`
+	Requests           int     `json:"requests"`
+	PaidUSD            float64 `json:"paid_usd"`
+	TopUpUSD           float64 `json:"topup_usd"`
+	SubscriptionUSD    float64 `json:"subscription_usd"`
+	LastActiveAt       int64   `json:"last_active_at"`
 }
 
 var (
@@ -222,18 +231,20 @@ func GetOpsReport(c *gin.Context) {
 		dauScope = "plg"
 	}
 	includeDisabled := c.Query("include_disabled") == "1" || c.Query("include_disabled") == "true"
+	paidOnly := c.Query("paid_only") == "1" || c.Query("paid_only") == "true"
 
 	opsReportMutex.Lock()
 	defer opsReportMutex.Unlock()
 	if opsReportCache != nil && opsReportCache.Days == days &&
 		opsReportCache.DauScope == dauScope &&
 		opsReportCache.IncludeDisabled == includeDisabled &&
+		opsReportCache.PaidOnly == paidOnly &&
 		time.Since(opsReportAggsAt) < opsReportCacheTTL {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": opsReportCache})
 		return
 	}
 
-	report, aggsAt, err := buildOpsReport(days, dauScope, includeDisabled)
+	report, aggsAt, err := buildOpsReport(days, dauScope, includeDisabled, paidOnly)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -397,7 +408,7 @@ func getOpsAggs(includeDisabled bool) (map[int]*opsUserAgg, time.Time, error) {
 	return aggs, opsAggsCacheAt, nil
 }
 
-func buildOpsReport(days int, dauScope string, includeDisabled bool) (*opsReportData, time.Time, error) {
+func buildOpsReport(days int, dauScope string, includeDisabled bool, paidOnly bool) (*opsReportData, time.Time, error) {
 	aggs, aggsAt, err := getOpsAggs(includeDisabled)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -408,6 +419,14 @@ func buildOpsReport(days int, dauScope string, includeDisabled bool) (*opsReport
 	for id := range aggs {
 		ids = append(ids, id)
 	}
+	subscriptionRemaining, err := model.GetOpsUserSubscriptionRemaining(ids)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	subscriptionSources, err := model.GetOpsUserSubscriptionSources(ids)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 
 	now := time.Now().Unix()
 	// Real Pacific-midnight boundaries for the window (DST-aware), so daily
@@ -415,7 +434,7 @@ func buildOpsReport(days int, dauScope string, includeDisabled bool) (*opsReport
 	dayStarts := opsPacificDayStarts(days)
 	startTs := dayStarts[0]
 
-	report := &opsReportData{GeneratedAt: now, Days: days, DauScope: dauScope, IncludeDisabled: includeDisabled}
+	report := &opsReportData{GeneratedAt: now, Days: days, DauScope: dauScope, IncludeDisabled: includeDisabled, PaidOnly: paidOnly}
 	if dauScope == "all" {
 		allDaily, err := model.GetOpsAllKeyDailyUsage(dayStarts)
 		if err != nil {
@@ -452,9 +471,13 @@ func buildOpsReport(days int, dauScope string, includeDisabled bool) (*opsReport
 	report.CampaignFunnel = opsEnrichCampaigns(campaignRows, aggs, startTs, days)
 	report.KeywordFunnel = opsRollupKeywords(aggs, 50)
 	report.PaymentWeekly = opsRollupPayment(aggs)
-	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs)
-	report.RegisteredUsers = opsRegisteredUsers(aggs)
+	report.TopPayers, report.TotalPaidUsers, report.TotalPaidUSD = opsTopPayers(aggs, subscriptionRemaining, subscriptionSources)
+	report.RegisteredUsers = opsRegisteredUsers(aggs, subscriptionRemaining, subscriptionSources, paidOnly)
 	return report, aggsAt, nil
+}
+
+func opsHasPaidActivity(a *opsUserAgg) bool {
+	return len(a.paidOrders) > 0 || len(a.refundedOrders) > 0
 }
 
 // opsAttachAdsSpend joins per-day ads totals onto the daily funnel rows by
@@ -496,30 +519,82 @@ func opsAttachAdsSpend(rows []opsFunnelRow, ads []*model.AdsSpendDaily) []opsDai
 // opsRegisteredUsers lists the newest registrations in the report window with
 // the identity/context columns ops uses to explain conversion anomalies
 // (signup method, attribution, browser language, last IP + country).
-func opsRegisteredUsers(aggs map[int]*opsUserAgg) []opsRegisteredUserRow {
+func opsVisibleQuotaUSD(a *opsUserAgg, subscriptionRemaining map[int]int64) float64 {
+	if remaining, ok := subscriptionRemaining[a.user.Id]; ok {
+		return float64(remaining) / common.QuotaPerUnit
+	}
+	return float64(a.user.Quota) / common.QuotaPerUnit
+}
+
+func opsTopUpSource(t *model.OpsTopUp) string {
+	if strings.TrimSpace(t.Source) == "subscription" {
+		return "subscription"
+	}
+	return "topup"
+}
+
+func opsSubscriptionOriginLabel(source string, paymentMode string) string {
+	source = strings.ToLower(strings.TrimSpace(source))
+	paymentMode = strings.ToLower(strings.TrimSpace(paymentMode))
+	switch {
+	case source == "admin":
+		return "gift"
+	case source == "balance" || source == model.PaymentMethodBalance || paymentMode == model.SubscriptionPaymentModeBalanceOnePeriod:
+		return "wallet"
+	case source == "" && paymentMode == "":
+		return "-"
+	default:
+		return "cash"
+	}
+}
+
+func opsRegisteredUsers(aggs map[int]*opsUserAgg, subscriptionRemaining map[int]int64, subscriptionSources map[int]model.OpsUserSubscriptionSource, paidOnly bool) []opsRegisteredUserRow {
 	rows := make([]opsRegisteredUserRow, 0, len(aggs))
 	for _, a := range aggs {
+		if paidOnly && !opsHasPaidActivity(a) {
+			continue
+		}
+		topupUSD := 0.0
+		subscriptionUSD := 0.0
+		for _, t := range a.paidOrders {
+			usd, ok := opsTopUpUSD(t)
+			if !ok {
+				continue
+			}
+			if opsTopUpSource(t) == "subscription" {
+				subscriptionUSD += usd
+			} else {
+				topupUSD += usd
+			}
+		}
 		lastActive := a.user.LastLoginAt
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
+		subscriptionSource := "-"
+		if s, ok := subscriptionSources[a.user.Id]; ok {
+			subscriptionSource = opsSubscriptionOriginLabel(s.Source, s.PaymentMode)
+		}
 		rows = append(rows, opsRegisteredUserRow{
-			UserId:       a.user.Id,
-			Username:     a.user.Username,
-			DisplayName:  a.user.DisplayName,
-			Email:        a.user.Email,
-			SignupMethod: a.user.OauthKind,
-			RegisteredAt: a.user.CreatedAt,
-			Campaign:     a.campaign,
-			Keyword:      a.keyword,
-			Lng:          a.lng,
-			BrowserLang:  a.user.BrowserLang,
-			Landing:      a.landing,
-			BalanceUSD:   float64(a.user.Quota) / common.QuotaPerUnit,
-			ConsumedUSD:  float64(a.user.UsedQuota) / common.QuotaPerUnit,
-			Requests:     a.user.RequestCount,
-			PaidUSD:      a.paidUSD(),
-			LastActiveAt: lastActive,
+			UserId:             a.user.Id,
+			Username:           a.user.Username,
+			DisplayName:        a.user.DisplayName,
+			Email:              a.user.Email,
+			SignupMethod:       a.user.OauthKind,
+			RegisteredAt:       a.user.CreatedAt,
+			Campaign:           a.campaign,
+			Keyword:            a.keyword,
+			Lng:                a.lng,
+			BrowserLang:        a.user.BrowserLang,
+			Landing:            a.landing,
+			BalanceUSD:         opsVisibleQuotaUSD(a, subscriptionRemaining),
+			ConsumedUSD:        float64(a.user.UsedQuota) / common.QuotaPerUnit,
+			Requests:           a.user.RequestCount,
+			PaidUSD:            a.paidUSD(),
+			TopUpUSD:           topupUSD,
+			SubscriptionUSD:    subscriptionUSD,
+			LastActiveAt:       lastActive,
+			SubscriptionSource: subscriptionSource,
 			// Real user location: website login IP (personal device) + Stripe
 			// card country. NOT the /v1 request IP (production server) nor the
 			// topup-log IP (Stripe webhook server).
@@ -626,6 +701,7 @@ func opsSubscriptionOrdersAsTopUps(orders []*model.OpsSubscriptionOrder) []*mode
 			PaymentCurrency: o.PaymentCurrency,
 			BonusTier:       int(math.Round(usd)),
 			PaymentProvider: o.PaymentProvider,
+			Source:          "subscription",
 		})
 	}
 	return converted
@@ -984,7 +1060,7 @@ func opsRollupDauDays(daysData []*model.OpsDauDay, dayStarts []int64) []opsDauRo
 	return rows
 }
 
-func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
+func opsTopPayers(aggs map[int]*opsUserAgg, subscriptionRemaining map[int]int64, subscriptionSources map[int]model.OpsUserSubscriptionSource) ([]opsPayerRow, int, float64) {
 	var payers []opsPayerRow
 	total := 0.0
 	for _, a := range aggs {
@@ -997,6 +1073,23 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		for _, t := range a.refundedOrders {
 			if usd, ok := opsTopUpUSD(t); ok {
 				refunded += usd
+			}
+		}
+		topupUSD := 0.0
+		subscriptionUSD := 0.0
+		topupOrders := 0
+		subscriptionOrders := 0
+		for _, t := range a.paidOrders {
+			usd, ok := opsTopUpUSD(t)
+			if !ok {
+				continue
+			}
+			if t.Source == "subscription" {
+				subscriptionUSD += usd
+				subscriptionOrders++
+			} else {
+				topupUSD += usd
+				topupOrders++
 			}
 		}
 		currencySet := map[string]bool{}
@@ -1015,6 +1108,10 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 		if a.logStats != nil && a.logStats.LastRequestAt > lastActive {
 			lastActive = a.logStats.LastRequestAt
 		}
+		subscriptionSource := "-"
+		if s, ok := subscriptionSources[a.user.Id]; ok {
+			subscriptionSource = opsSubscriptionOriginLabel(s.Source, s.PaymentMode)
+		}
 		// Refunded-only payers (e.g. fraud cleanup) keep their charge times.
 		// Orders arrive sorted by create_time asc (GetOpsTopUps), so first/last
 		// are the slice ends.
@@ -1027,28 +1124,33 @@ func opsTopPayers(aggs map[int]*opsUserAgg) ([]opsPayerRow, int, float64) {
 			lastPaidAt = a.refundedOrders[len(a.refundedOrders)-1].CreateTime
 		}
 		payers = append(payers, opsPayerRow{
-			UserId:       a.user.Id,
-			Username:     a.user.Username,
-			DisplayName:  a.user.DisplayName,
-			Email:        a.user.Email,
-			PaidUSD:      paid,
-			Orders:       len(a.paidOrders),
-			RefundedUSD:  refunded,
-			RefundedCnt:  len(a.refundedOrders),
-			FirstPaidAt:  firstPaidAt,
-			LastPaidAt:   lastPaidAt,
-			RegisteredAt: a.user.CreatedAt,
-			Campaign:     a.campaign,
-			Keyword:      a.keyword,
-			Lng:          a.lng,
-			BrowserLang:  a.user.BrowserLang,
-			Landing:      a.landing,
-			SignupMethod: a.user.OauthKind,
-			Currencies:   currencies,
-			BalanceUSD:   float64(a.user.Quota) / common.QuotaPerUnit,
-			ConsumedUSD:  float64(a.user.UsedQuota) / common.QuotaPerUnit,
-			Requests:     a.user.RequestCount,
-			LastActiveAt: lastActive,
+			UserId:             a.user.Id,
+			Username:           a.user.Username,
+			DisplayName:        a.user.DisplayName,
+			Email:              a.user.Email,
+			PaidUSD:            paid,
+			TopUpUSD:           topupUSD,
+			SubscriptionUSD:    subscriptionUSD,
+			Orders:             len(a.paidOrders),
+			TopUpOrders:        topupOrders,
+			SubscriptionOrders: subscriptionOrders,
+			RefundedUSD:        refunded,
+			RefundedCnt:        len(a.refundedOrders),
+			FirstPaidAt:        firstPaidAt,
+			LastPaidAt:         lastPaidAt,
+			RegisteredAt:       a.user.CreatedAt,
+			Campaign:           a.campaign,
+			Keyword:            a.keyword,
+			Lng:                a.lng,
+			BrowserLang:        a.user.BrowserLang,
+			Landing:            a.landing,
+			SignupMethod:       a.user.OauthKind,
+			Currencies:         currencies,
+			BalanceUSD:         opsVisibleQuotaUSD(a, subscriptionRemaining),
+			ConsumedUSD:        float64(a.user.UsedQuota) / common.QuotaPerUnit,
+			Requests:           a.user.RequestCount,
+			LastActiveAt:       lastActive,
+			SubscriptionSource: subscriptionSource,
 			// Real user location: website login IP + Stripe card country. NOT the
 			// /v1 request IP (production server) nor the topup-log IP (Stripe
 			// webhook server) — both misrepresented paid users as US.

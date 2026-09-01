@@ -49,6 +49,7 @@ export const userSchema = z.object({
   aff_quota: z.number().optional(),
   aff_history_quota: z.number().optional(),
   inviter_id: z.number().optional(),
+  inviter_email: z.string().optional(),
   ads_attribution: z.string().optional(),
   linux_do_id: z.string().optional(),
   setting: z.string().optional(),

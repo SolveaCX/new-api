@@ -52,6 +52,17 @@ type OpsPlgUser struct {
 	PayCountry     string `json:"pay_country"`
 }
 
+type OpsUserSubscriptionRemaining struct {
+	UserId         int   `json:"user_id"`
+	RemainingQuota int64 `json:"remaining_quota"`
+}
+
+type OpsUserSubscriptionSource struct {
+	UserId      int    `json:"user_id"`
+	Source      string `json:"source"`
+	PaymentMode string `json:"payment_mode"`
+}
+
 type OpsUserLogStats struct {
 	UserId            int   `json:"user_id"`
 	FirstPlaygroundAt int64 `json:"first_playground_at"`
@@ -96,6 +107,9 @@ type OpsTopUp struct {
 	// stripe_auto rows (threshold auto-charges; their failed rows are mere cooldown
 	// markers) so intent stats can exclude the latter.
 	PaymentProvider string `json:"payment_provider"`
+	// Source distinguishes wallet top-ups from subscription orders so ops can
+	// trace "paid amount" back to the payment flow that created it.
+	Source string `json:"source"`
 }
 
 // GetOpsPlgUsers returns every plg-group user (the self-serve population).
@@ -118,6 +132,136 @@ func GetOpsPlgUsers(includeDisabled bool) ([]*OpsPlgUser, error) {
 	}
 	err := query.Find(&users).Error
 	return users, err
+}
+
+// GetOpsUserSubscriptionRemaining returns the active subscription entitlement
+// balance for the given users. It prefers the authoritative contract current
+// entitlement when present, and falls back to legacy direct subscriptions for
+// older rows without a contract.
+func GetOpsUserSubscriptionRemaining(userIds []int) (map[int]int64, error) {
+	if len(userIds) == 0 {
+		return map[int]int64{}, nil
+	}
+	now := common.GetTimestamp()
+	result := make(map[int]int64, len(userIds))
+
+	var contractRows []OpsUserSubscriptionRemaining
+	contractSQL := `
+		SELECT c.user_id AS user_id,
+		       CASE
+		         WHEN e.amount_total > e.amount_used THEN e.amount_total - e.amount_used
+		         ELSE 0
+		       END AS remaining_quota
+		FROM user_subscription_contracts c
+		INNER JOIN user_subscriptions e
+		        ON e.id = c.current_entitlement_id
+		       AND e.user_id = c.user_id
+		       AND e.contract_id = c.id
+		       AND e.current_slot = 1
+		       AND e.status = ?
+		       AND e.access_end_time > ?
+		WHERE c.user_id IN ?
+		  AND c.status IN (?, ?, ?)`
+	if err := DB.Raw(contractSQL,
+		SubscriptionEntitlementStatusActive,
+		now,
+		userIds,
+		SubscriptionContractStatusActive,
+		SubscriptionContractStatusGrace,
+		SubscriptionContractStatusNeedsAttention,
+	).Scan(&contractRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range contractRows {
+		result[row.UserId] = row.RemainingQuota
+	}
+
+	var legacyRows []OpsUserSubscriptionRemaining
+	legacySQL := `
+		SELECT s.user_id AS user_id,
+		       CASE
+		         WHEN s.amount_total > s.amount_used THEN s.amount_total - s.amount_used
+		         ELSE 0
+		       END AS remaining_quota
+		FROM user_subscriptions s
+		LEFT JOIN user_subscription_contracts c ON c.id = s.contract_id
+		WHERE s.user_id IN ?
+		  AND s.status = ?
+		  AND s.end_time > ?
+		  AND (s.contract_id = 0 OR c.id IS NULL)
+		ORDER BY s.end_time ASC, s.id ASC`
+	if err := DB.Raw(legacySQL, userIds, SubscriptionEntitlementStatusActive, now).Scan(&legacyRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range legacyRows {
+		if _, ok := result[row.UserId]; !ok {
+			result[row.UserId] = row.RemainingQuota
+		}
+	}
+
+	return result, nil
+}
+
+// GetOpsUserSubscriptionSources returns the active subscription source for each
+// user. Contract-backed current entitlements win over legacy direct rows.
+func GetOpsUserSubscriptionSources(userIds []int) (map[int]OpsUserSubscriptionSource, error) {
+	if len(userIds) == 0 {
+		return map[int]OpsUserSubscriptionSource{}, nil
+	}
+	now := common.GetTimestamp()
+	result := make(map[int]OpsUserSubscriptionSource, len(userIds))
+
+	var contractRows []OpsUserSubscriptionSource
+	contractSQL := `
+		SELECT c.user_id AS user_id,
+		       COALESCE(NULLIF(TRIM(e.source), ''), '') AS source,
+		       COALESCE(NULLIF(TRIM(e.payment_mode), ''), '') AS payment_mode
+		FROM user_subscription_contracts c
+		INNER JOIN user_subscriptions e
+		        ON e.id = c.current_entitlement_id
+		       AND e.user_id = c.user_id
+		       AND e.contract_id = c.id
+		       AND e.current_slot = 1
+		       AND e.status = ?
+		       AND e.access_end_time > ?
+		WHERE c.user_id IN ?
+		  AND c.status IN (?, ?, ?)`
+	if err := DB.Raw(contractSQL,
+		SubscriptionEntitlementStatusActive,
+		now,
+		userIds,
+		SubscriptionContractStatusActive,
+		SubscriptionContractStatusGrace,
+		SubscriptionContractStatusNeedsAttention,
+	).Scan(&contractRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range contractRows {
+		result[row.UserId] = row
+	}
+
+	var legacyRows []OpsUserSubscriptionSource
+	legacySQL := `
+		SELECT s.user_id AS user_id,
+		       COALESCE(NULLIF(TRIM(s.source), ''), '') AS source,
+		       COALESCE(NULLIF(TRIM(s.payment_mode), ''), '') AS payment_mode
+		FROM user_subscriptions s
+		LEFT JOIN user_subscription_contracts c ON c.id = s.contract_id
+		WHERE s.user_id IN ?
+		  AND s.status = ?
+		  AND s.end_time > ?
+		  AND (s.contract_id = 0 OR c.id IS NULL)
+		ORDER BY s.end_time ASC, s.id ASC`
+	if err := DB.Raw(legacySQL, userIds, SubscriptionEntitlementStatusActive, now).Scan(&legacyRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range legacyRows {
+		if _, ok := result[row.UserId]; !ok {
+			result[row.UserId] = row
+		}
+	}
+
+	return result, nil
 }
 
 // logsForceIndexHint keeps the optimizer on the user_id index; with large IN
