@@ -196,6 +196,16 @@ func runBytePlusRealPersonVerificationStatusJobs(ctx context.Context, now, stale
 		upstream, err := binding.Provider.GetVisualValidateResult(callCtx, bytedToken)
 		cancel()
 		if err != nil {
+			if terminalStatus := seedanceProxyVerificationTerminalStatus(err); terminalStatus != "" {
+				changed, transitionErr := finishSeedanceProxyVerificationTerminal(profile.Id, session.Id, terminalStatus, now)
+				if transitionErr != nil && !errors.Is(transitionErr, model.ErrAPIIdempotencyCASLost) {
+					warnBytePlusRealPersonJobRow("verification_status")
+					firstErr = firstNonNil(firstErr, transitionErr)
+				} else if changed {
+					processed++
+				}
+				continue
+			}
 			warnBytePlusRealPersonJobRow("verification_status")
 			firstErr = firstNonNil(firstErr, retryBytePlusVerificationStatus(session, now))
 			continue

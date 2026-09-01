@@ -271,6 +271,20 @@ func SyncBytePlusRealPersonVerification(ctx context.Context, userID int, profile
 	}
 	result, err := binding.Provider.GetVisualValidateResult(ctx, bytedToken)
 	if err != nil {
+		if terminalStatus := seedanceProxyVerificationTerminalStatus(err); terminalStatus != "" {
+			changed, transitionErr := finishSeedanceProxyVerificationTerminal(profile.Id, claimed.Id, terminalStatus, bytePlusAssetNow())
+			if transitionErr != nil {
+				return realPersonError(types.ErrorCodeRealPersonStorageError, http.StatusInternalServerError)
+			}
+			if changed {
+				reloaded, reloadErr := model.GetBytePlusRealPersonProfileByIDForUser(userID, profile.Id)
+				if reloadErr != nil {
+					return realPersonError(types.ErrorCodeRealPersonStorageError, http.StatusInternalServerError)
+				}
+				*profile = *reloaded
+			}
+			return nil
+		}
 		_, _ = model.RetryBytePlusVisualValidationSession(claimed.Id, claimed.LeaseUpdatedTime, bytePlusAssetNow()+bytePlusAssetDeleteRetryDelaySecs, bytePlusAssetNow())
 		return nil
 	}
@@ -753,7 +767,11 @@ func responseFromBytePlusRealPerson(profile *model.BytePlusRealPersonProfile, ve
 
 func finishUnknownOrDefinitiveVerificationFailure(record *model.APIIdempotencyRecord, profile *model.BytePlusRealPersonProfile, session *model.BytePlusVisualValidationSession, err error) (*dto.BytePlusRealPersonResponse, *types.NewAPIError) {
 	if isRealPersonDefinitiveResponse(err) {
-		_, _ = model.FailBytePlusRealPersonSession(profile.Id, session.Id, "verification_upstream_error", bytePlusAssetNow())
+		if terminalStatus := seedanceProxyVerificationTerminalStatus(err); terminalStatus == "expired" {
+			_, _ = model.ExpireBytePlusRealPersonSession(profile.Id, session.Id, bytePlusAssetNow())
+		} else {
+			_, _ = model.FailBytePlusRealPersonSession(profile.Id, session.Id, "verification_upstream_error", bytePlusAssetNow())
+		}
 		payload, marshalErr := marshalAPIIdempotencyResponsePayload(storedRealPersonErrorPayload{ErrorCode: string(types.ErrorCodeVerificationUpstreamError)})
 		if marshalErr != nil {
 			payload = `{"error_code":"verification_upstream_error"}`
@@ -763,6 +781,13 @@ func finishUnknownOrDefinitiveVerificationFailure(record *model.APIIdempotencyRe
 	}
 	_ = model.MarkBytePlusRealPersonVerificationOutcomeUnknownForIdempotency(record.Id, record.LeaseUpdatedTime, profile.Id, session.Id, "verification_outcome_unknown", bytePlusAssetNow())
 	return nil, realPersonError(types.ErrorCodeIdempotencyOutcomeUnknown, http.StatusBadGateway)
+}
+
+func finishSeedanceProxyVerificationTerminal(profileID, sessionID int64, status string, now int64) (bool, error) {
+	if strings.EqualFold(strings.TrimSpace(status), "expired") {
+		return model.ExpireBytePlusRealPersonSession(profileID, sessionID, now)
+	}
+	return model.FailBytePlusRealPersonSession(profileID, sessionID, "verification_failed", now)
 }
 
 func apiErrorFromStoredRealPersonPayload(payload string, status int) *types.NewAPIError {

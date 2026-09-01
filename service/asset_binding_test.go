@@ -356,6 +356,84 @@ func TestSeedanceProxyAssetBindingReusesActiveBindingAcrossSeedanceModelsOnSameK
 	require.Equal(t, "upstream-seedance-shared", bindings[0].UpstreamAssetId)
 }
 
+func TestSeedanceProxyMaterializeSetRematerializesStaleActiveBinding(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_seedance_stale_active_binding")
+	channel := &model.Channel{
+		Id:            156,
+		Type:          constant.ChannelTypeBytePlus,
+		Key:           "seedance-key",
+		Status:        common.ChannelStatusEnabled,
+		OtherSettings: `{"asset_materialization":{"provider":"seedance_proxy","gateway_base_url":"https://asset-gateway.example.invalid/v1","group_id":"grp_shared_aigc"}}`,
+	}
+	options := AssetMaterializeOptions{Model: "seedance-2.0", APIKey: "seedance-key"}
+	bindingScope, err := assetBindingScopeForChannel(channel, options)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		BindingScope:    bindingScope,
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "grp_shared_aigc",
+		UpstreamAssetId: "upstream-stale",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+
+	materializer := &recordingAssetMaterializer{
+		createStatus:  model.AssetStatusActive,
+		createGroupID: "grp_shared_aigc",
+		createAssetID: "upstream-recreated",
+		getErr:        &AssetMaterializeFailure{Class: AssetMaterializeErrorDefinitive, HTTPStatus: http.StatusNotFound},
+	}
+	descriptor := assetMaterializationProviderDescriptors[assetMaterializationProviderSeedanceProxy]
+	assetMaterializationProviderDescriptors[assetMaterializationProviderSeedanceProxy] = assetMaterializationProviderDescriptor{
+		MaterializerFactory: func(assetMaterializationChannelConfig) AssetMaterializer { return materializer },
+		BindingScope:        descriptor.BindingScope,
+		ValidateConfig:      descriptor.ValidateConfig,
+		CredentialScoped:    descriptor.CredentialScoped,
+	}
+	t.Cleanup(func() {
+		assetMaterializationProviderDescriptors[assetMaterializationProviderSeedanceProxy] = descriptor
+	})
+
+	set := AssetReferenceSet{
+		references: []assetReference{{PublicID: asset.PublicId, ExpectedAssetType: "Image"}},
+		assets: map[string]assetReferenceAsset{
+			asset.PublicId: {
+				ID:              asset.Id,
+				PublicID:        asset.PublicId,
+				AssetType:       "Image",
+				Status:          model.AssetStatusActive,
+				SourceStatus:    model.AssetSourceStatusAvailable,
+				StorageBackend:  defaultAssetStorageBackend,
+				StorageBucket:   asset.StorageBucket,
+				ObjectKey:       asset.ObjectKey,
+				SourceExpiresAt: asset.SourceExpiresAt,
+				Bindings: []assetReferenceBinding{{
+					ChannelID:       channel.Id,
+					BindingScope:    bindingScope,
+					Status:          model.AssetStatusActive,
+					UpstreamAssetID: "upstream-stale",
+				}},
+			},
+		},
+	}
+
+	rewriteMap, err := MaterializeAssetBindingsForChannel(context.Background(), asset.UserId, set, channel, options)
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://upstream-recreated", rewriteMap["asset://"+asset.PublicId])
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Len(t, store.signed, 1)
+	var binding model.AssetBinding
+	require.NoError(t, model.DB.First(&binding, "asset_id = ? AND channel_id = ? AND binding_scope = ?", asset.Id, channel.Id, bindingScope).Error)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.Equal(t, "upstream-recreated", binding.UpstreamAssetId)
+}
+
 func TestAssetBindingBoundedPollingReturnsSanitizedInitializingError(t *testing.T) {
 	newAssetServiceTestDB(t)
 	installAssetServiceTestDeps(t)
