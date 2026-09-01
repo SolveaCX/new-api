@@ -50,3 +50,22 @@ func TestTranslateUsernameOrPasswordErrorAcrossFullLocales(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenQuotaInsufficientMessageRendersShortfallAcrossFullLocales(t *testing.T) {
+	require.NoError(t, Init())
+
+	data := map[string]any{
+		"Remain":    "$0.042240",
+		"Required":  "$1.496880",
+		"Shortfall": "$1.454640",
+	}
+	for _, lang := range []string{LangEn, LangZhCN, LangZhTW, LangPt} {
+		t.Run(lang, func(t *testing.T) {
+			message := Translate(lang, "quota.token_insufficient", data)
+			require.Contains(t, message, data["Remain"])
+			require.Contains(t, message, data["Required"])
+			require.Contains(t, message, data["Shortfall"])
+			require.NotContains(t, message, "{{.")
+		})
+	}
+}

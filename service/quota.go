@@ -139,7 +139,11 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	if !token.UnlimitedQuota && token.RemainQuota < quota {
-		return fmt.Errorf("%s", common.TranslateMessage(ctx, "quota.token_insufficient", map[string]any{"Remain": logger.FormatQuota(token.RemainQuota), "Required": logger.FormatQuota(quota)}))
+		return fmt.Errorf("%s", common.TranslateMessage(ctx, "quota.token_insufficient", map[string]any{
+			"Remain":    logger.FormatQuota(token.RemainQuota),
+			"Required":  logger.FormatQuota(quota),
+			"Shortfall": logger.FormatQuota(quota - token.RemainQuota),
+		}))
 	}
 
 	err = PostConsumeQuota(relayInfo, quota, 0, false)
@@ -385,10 +389,39 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 var ErrInsufficientTokenQuota = errors.New("insufficient token quota")
 
 // insufficientTokenQuotaError carries the localized user-facing message while
-// still matching ErrInsufficientTokenQuota via errors.Is.
-type insufficientTokenQuotaError struct{ msg string }
+// still matching ErrInsufficientTokenQuota via errors.Is. The raw quota values
+// are retained so the task API can expose an actionable, structured error
+// payload without parsing a localized message.
+type insufficientTokenQuotaError struct {
+	msg       string
+	remaining int
+	required  int
+}
 
 func (e *insufficientTokenQuotaError) Error() string { return e.msg }
+
+// taskErrorData is consumed by TaskErrorFromAPIError when a pre-consume error
+// has machine-readable details. The canonical numeric values are USD quota
+// units; the *_display companions use the same formatter as the message so
+// CNY/custom/token display modes remain consistent for human-facing clients.
+func (e *insufficientTokenQuotaError) taskErrorData() any {
+	shortfall := e.required - e.remaining
+	if shortfall < 0 {
+		shortfall = 0
+	}
+	return map[string]any{
+		"scope":             "api_token",
+		"remaining":         float64(e.remaining) / common.QuotaPerUnit,
+		"required":          float64(e.required) / common.QuotaPerUnit,
+		"shortfall":         float64(shortfall) / common.QuotaPerUnit,
+		"currency":          "USD",
+		"remaining_display": logger.FormatQuota(e.remaining),
+		"required_display":  logger.FormatQuota(e.required),
+		"shortfall_display": logger.FormatQuota(shortfall),
+		"retryable":         false,
+		"upstream_called":   false,
+	}
+}
 
 func (e *insufficientTokenQuotaError) Is(target error) bool {
 	return target == ErrInsufficientTokenQuota
@@ -406,7 +439,15 @@ func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {
 		return err
 	}
 	if !relayInfo.TokenUnlimited && token.RemainQuota < quota {
-		return &insufficientTokenQuotaError{msg: i18n.Translate(relayInfo.UserSetting.Language, "quota.token_insufficient", map[string]any{"Remain": logger.FormatQuota(token.RemainQuota), "Required": logger.FormatQuota(quota)})}
+		return &insufficientTokenQuotaError{
+			msg: i18n.Translate(relayInfo.UserSetting.Language, "quota.token_insufficient", map[string]any{
+				"Remain":    logger.FormatQuota(token.RemainQuota),
+				"Required":  logger.FormatQuota(quota),
+				"Shortfall": logger.FormatQuota(quota - token.RemainQuota),
+			}),
+			remaining: token.RemainQuota,
+			required:  quota,
+		}
 	}
 	err = model.DecreaseTokenQuota(relayInfo.TokenId, relayInfo.TokenKey, quota)
 	if err != nil {

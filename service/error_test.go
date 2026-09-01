@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -124,6 +125,63 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
+}
+
+func TestTaskErrorFromAPIErrorMarksPreConsumeQuotaAsLocalError(t *testing.T) {
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("API Token 额度不足：当前余额 ＄0.042240，本次请求预计需要 ＄1.496880，还差 ＄1.454640。请为该 Token 增加额度或更换额度充足的 Token。"),
+		types.ErrorCodePreConsumeTokenQuotaFailed,
+		http.StatusForbidden,
+		types.ErrOptionWithSkipRetry(),
+	)
+
+	taskErr := TaskErrorFromAPIError(apiErr)
+	require.NotNil(t, taskErr)
+	require.Equal(t, string(types.ErrorCodePreConsumeTokenQuotaFailed), taskErr.Code)
+	require.Equal(t, http.StatusForbidden, taskErr.StatusCode)
+	require.Equal(t, apiErr.Error(), taskErr.Message)
+	require.True(t, taskErr.LocalError, "a pre-consume quota failure happens before the upstream request and must not be treated as a channel error")
+}
+
+func TestTaskErrorFromAPIErrorIncludesTokenQuotaDetails(t *testing.T) {
+	rawErr := &insufficientTokenQuotaError{
+		msg:       "API Token quota is insufficient",
+		remaining: 42,
+		required:  100,
+	}
+	apiErr := types.NewErrorWithStatusCode(
+		rawErr,
+		types.ErrorCodePreConsumeTokenQuotaFailed,
+		http.StatusForbidden,
+	)
+
+	taskErr := TaskErrorFromAPIError(apiErr)
+	require.NotNil(t, taskErr)
+	details, ok := taskErr.Data.(map[string]any)
+	require.True(t, ok, "token quota failures should expose structured details for a client-side balance card")
+	require.Equal(t, "api_token", details["scope"])
+	require.Equal(t, "USD", details["currency"])
+	require.Equal(t, false, details["retryable"])
+	require.Equal(t, false, details["upstream_called"])
+	require.InDelta(t, float64(42)/common.QuotaPerUnit, details["remaining"], 1e-12)
+	require.InDelta(t, float64(100)/common.QuotaPerUnit, details["required"], 1e-12)
+	require.InDelta(t, float64(58)/common.QuotaPerUnit, details["shortfall"], 1e-12)
+	require.Equal(t, logger.FormatQuota(42), details["remaining_display"])
+	require.Equal(t, logger.FormatQuota(100), details["required_display"])
+	require.Equal(t, logger.FormatQuota(58), details["shortfall_display"])
+}
+
+func TestTaskErrorFromAPIErrorDoesNotAddQuotaDetailsToOtherErrors(t *testing.T) {
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("database unavailable"),
+		types.ErrorCodeUpdateDataError,
+		http.StatusInternalServerError,
+	)
+
+	taskErr := TaskErrorFromAPIError(apiErr)
+	require.NotNil(t, taskErr)
+	require.Nil(t, taskErr.Data)
+	require.True(t, taskErr.LocalError)
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
