@@ -106,7 +106,7 @@ export function useNotifications() {
     isLoading: noticeLoading,
     refetch: refetchNotice,
   } = useQuery({
-    queryKey: ['notice'],
+    queryKey: ['notice', i18n.language],
     queryFn: getNotice,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
