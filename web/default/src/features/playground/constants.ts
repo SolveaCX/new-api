@@ -49,7 +49,7 @@ export const API_ENDPOINTS = {
   PLAYGROUND_ATTACHMENT_PREVIEW: '/api/playground/attachments',
 } as const
 
-export const PLAYGROUND_RECORDS_EXPORT = '/api/playground/records/export'
+export const PLAYGROUND_RECORDS_EXPORT = API_ENDPOINTS.PLAYGROUND_RECORDS_EXPORT
 
 // Poll the video task status roughly every 6s while it generates (veo-fast is
 // ~40s, standard is longer).
