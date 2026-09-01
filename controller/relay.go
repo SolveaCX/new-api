@@ -931,6 +931,13 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 	if taskErr == nil {
 		return false
 	}
+	// Local failures (validation, billing, pricing, etc.) are independent of
+	// the selected channel.  This check must happen before the status-code
+	// branches below: a local 5xx must not be mistaken for a retryable upstream
+	// failure.
+	if taskErr.LocalError {
+		return false
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
@@ -958,9 +965,6 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 	}
 	if taskErr.StatusCode == 408 {
 		// azure处理超时不重试
-		return false
-	}
-	if taskErr.LocalError {
 		return false
 	}
 	if taskErr.StatusCode/100 == 2 {

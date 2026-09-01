@@ -411,14 +411,27 @@ func TaskErrorWrapper(err error, code string, statusCode int) *dto.TaskError {
 }
 
 // TaskErrorFromAPIError 将 PreConsumeBilling 返回的 NewAPIError 转换为 TaskError。
+//
+// PreConsumeBilling runs before an upstream request is sent.  Its errors are
+// therefore request-local (for example, an API token having insufficient
+// quota), not evidence that the selected channel is unhealthy.  Preserve that
+// classification when crossing the relay/task error boundary so the
+// controller does not mark the channel failed or retry the request.
 func TaskErrorFromAPIError(apiErr *types.NewAPIError) *dto.TaskError {
 	if apiErr == nil {
 		return nil
 	}
+	var data any
+	var dataProvider interface{ taskErrorData() any }
+	if errors.As(apiErr, &dataProvider) {
+		data = dataProvider.taskErrorData()
+	}
 	return &dto.TaskError{
 		Code:       string(apiErr.GetErrorCode()),
-		Message:    apiErr.Err.Error(),
+		Message:    apiErr.Error(),
+		Data:       data,
 		StatusCode: apiErr.StatusCode,
+		LocalError: true,
 		Error:      apiErr.Err,
 	}
 }

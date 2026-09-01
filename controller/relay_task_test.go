@@ -3,9 +3,11 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -14,14 +16,75 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestShouldRetryTaskRelayDoesNotRetryLocalErrorsRegardlessOfStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, status := range []int{http.StatusInternalServerError, http.StatusTooManyRequests, http.StatusBadRequest} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			taskErr := service.TaskErrorWrapperLocal(
+				errors.New("local billing failure"),
+				string(types.ErrorCodePreConsumeTokenQuotaFailed),
+				status,
+			)
+
+			require.False(t, shouldRetryTaskRelay(c, 131, taskErr, 1), "local errors must never be sent through channel retry")
+		})
+	}
+}
+
+func TestRelayTaskReturnsTokenQuotaErrorWithoutChannelRetry(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	oldRetryTimes := common.RetryTimes
+	common.RetryTimes = 1
+	defer func() { common.RetryTimes = oldRetryTimes }()
+
+	adaptor := &relayTaskOutcomeAdaptor{}
+	restoreAdaptor := registerTaskAdaptorForTest(constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeBytePlus)), adaptor)
+	defer restoreAdaptor()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 0)
+	seedControllerTaskChannelWithPriority(t, 131, "sk-provider-a", 100, 1)
+	seedControllerTaskChannelWithPriority(t, 132, "sk-provider-b", 90, 1)
+	model.InitChannelCache()
+
+	c, recorder := newControllerRelayTaskContext(`{"model":"seedance-2.0","content":[{"type":"text","text":"cinematic"}]}`)
+	seedRelayTaskContext(c)
+	// Keep this integration assertion independent of the shared fixture's
+	// default language while still exercising the localized quota message.
+	common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only", Language: "zh-CN"})
+
+	RelayTask(c)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	var response struct {
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, string(types.ErrorCodePreConsumeTokenQuotaFailed), response.Code)
+	require.NotEmpty(t, response.Message)
+	require.NotContains(t, response.Message, "get_channel_failed")
+	require.Empty(t, adaptor.channelsSeen, "a token quota failure happens before the upstream request")
+	require.Equal(t, "api_token", response.Data["scope"])
+	require.Equal(t, false, response.Data["retryable"])
+	require.Equal(t, false, response.Data["upstream_called"])
+}
 
 func TestRelayTaskStopsRetryWhenSubmitOutcomeMayBeUnknown(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
