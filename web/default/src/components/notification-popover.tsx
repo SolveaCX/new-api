@@ -93,14 +93,26 @@ function ExpandableMarkdown({ content }: { content: string }) {
   }, [content])
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!canExpand || (event.target as HTMLElement).closest('a')) return
+    const target = event.target as HTMLElement
+    if (
+      !canExpand ||
+      target.closest('a') ||
+      target.closest('[data-slot="dialog-content"]')
+    )
+      return
     event.preventDefault()
     event.stopPropagation()
     setOpen(true)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!canExpand || (event.target as HTMLElement).closest('a')) return
+    const target = event.target as HTMLElement
+    if (
+      !canExpand ||
+      target.closest('a') ||
+      target.closest('[data-slot="dialog-content"]')
+    )
+      return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     setOpen(true)
