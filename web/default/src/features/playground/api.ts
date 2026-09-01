@@ -139,7 +139,8 @@ function isSafePlaygroundRecordExportFilename(filename: string): boolean {
   if (!filename || filename !== filename.trim()) return false
   if (filename === '.' || filename === '..') return false
   if (/[\u0000-\u001f\u007f\\/:*?"<>|]/.test(filename)) return false
-  return filename.split(/[\\/]/).pop() === filename
+  if (filename.split(/[\\/]/).pop() !== filename) return false
+  return filename.toLowerCase().endsWith('.xlsx')
 }
 
 function buildPlaygroundRecordExportFallbackFilename(

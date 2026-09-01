@@ -303,6 +303,36 @@ describe('Playground record export API', () => {
     }
   })
 
+  test.each([
+    ['csv', 'attachment; filename="report.csv"'],
+    ['no extension', 'attachment; filename="playground-records"'],
+    [
+      'encoded path',
+      "attachment; filename*=UTF-8''..%2Fplayground-records.xlsx",
+    ],
+  ])(
+    'falls back to the timestamped filename when the Content-Disposition header is a non-xlsx %s',
+    async (_name, contentDisposition) => {
+      const blob = new Blob(['xlsx-bytes'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      get.mockResolvedValueOnce({
+        data: blob,
+        headers: { 'content-disposition': contentDisposition },
+      })
+
+      setSystemTime(new Date('2026-08-31T01:02:03Z'))
+      try {
+        await expect(downloadPlaygroundRecords()).resolves.toEqual({
+          blob,
+          filename: 'playground-records-20260831-010203.xlsx',
+        })
+      } finally {
+        setSystemTime()
+      }
+    }
+  )
+
   test('rejects successful responses that are not blobs', async () => {
     get.mockResolvedValueOnce({
       data: { success: true },
