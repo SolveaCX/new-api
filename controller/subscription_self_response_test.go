@@ -1064,14 +1064,22 @@ func TestGetSubscriptionSelfReturnsCurrentEntitlementAndShortWindowLimits(t *tes
 	require.Equal(t, float64(1550), monthly["remaining"])
 	require.Equal(t, float64(now+3600), monthly["reset_at"])
 	require.Equal(t, false, monthly["unlimited"])
-	require.NotContains(t, data, "window_5h")
-	require.NotContains(t, data, "window_7d")
 	media := data["media_credits"].(map[string]any)
 	require.Equal(t, float64(25), media["used"])
 	require.Equal(t, float64(20), media["total"])
 	require.Equal(t, float64(0), media["remaining"])
 	require.Equal(t, float64(now+3600), media["reset_at"])
 	require.Equal(t, false, media["unlimited"])
+	window5h := data["window_5h"].(map[string]any)
+	require.Equal(t, float64(0), window5h["used"])
+	require.Equal(t, float64(125), window5h["total"])
+	require.Equal(t, float64(125), window5h["remaining"])
+	require.Equal(t, false, window5h["unlimited"])
+	window7d := data["window_7d"].(map[string]any)
+	require.Equal(t, float64(0), window7d["used"])
+	require.Equal(t, float64(900), window7d["total"])
+	require.Equal(t, float64(900), window7d["remaining"])
+	require.Equal(t, false, window7d["unlimited"])
 
 	current := data["current_subscription"].(map[string]any)
 	require.NotContains(t, current, "usage_limits")
@@ -1116,7 +1124,7 @@ func TestGetSubscriptionSelfReturnsZeroQuotaReadModelWithoutSubscription(t *test
 	require.Nil(t, data["current_subscription"])
 }
 
-func TestGetSubscriptionSelfOmitsShortWindowUsageCounters(t *testing.T) {
+func TestGetSubscriptionSelfIncludesShortWindowUsageCounters(t *testing.T) {
 	setupSubscriptionControllerTestDB(t)
 	insertSubscriptionControllerUser(t, 917)
 	mr, err := miniredis.Run()
@@ -1188,8 +1196,16 @@ func TestGetSubscriptionSelfOmitsShortWindowUsageCounters(t *testing.T) {
 	data := envelope["data"].(map[string]any)
 	require.Contains(t, data, "monthly_bucket")
 	require.Contains(t, data, "media_credits")
-	require.NotContains(t, data, "window_5h")
-	require.NotContains(t, data, "window_7d")
+	window5hData := data["window_5h"].(map[string]any)
+	require.Equal(t, float64(75), window5hData["used"])
+	require.Equal(t, float64(500), window5hData["total"])
+	require.Equal(t, float64(425), window5hData["remaining"])
+	require.Equal(t, false, window5hData["unlimited"])
+	window7dData := data["window_7d"].(map[string]any)
+	require.Equal(t, float64(250), window7dData["used"])
+	require.Equal(t, float64(1000), window7dData["total"])
+	require.Equal(t, float64(750), window7dData["remaining"])
+	require.Equal(t, false, window7dData["unlimited"])
 }
 
 func TestGetSubscriptionPlansAnnotatesTierRankAndRelation(t *testing.T) {

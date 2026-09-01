@@ -257,7 +257,7 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(normalized.contract?.grace_period_end).toBe(2100)
   })
 
-  test('normalizes monthly usage and drops legacy media usage without synthesizing short-window buckets', () => {
+  test('normalizes monthly and short-window usage while dropping legacy media usage', () => {
     const normalized = normalizeSelfSubscriptionData({
       ...createBackendSelfData(false, false),
       monthly_bucket: {
@@ -274,8 +274,36 @@ describe('normalizeSelfSubscriptionData', () => {
         reset_at: 0,
         unlimited: true,
       },
+      window_5h: {
+        used: 75,
+        total: 500,
+        remaining: 425,
+        reset_at: 1234,
+        unlimited: false,
+      },
+      window_7d: {
+        used: 250,
+        total: 1000,
+        remaining: 750,
+        reset_at: 5678,
+        unlimited: false,
+      },
     } as SelfSubscriptionDataResponse & {
       media_credits: {
+        used: number
+        total: number
+        remaining: number
+        reset_at: number
+        unlimited: boolean
+      }
+      window_5h: {
+        used: number
+        total: number
+        remaining: number
+        reset_at: number
+        unlimited: boolean
+      }
+      window_7d: {
         used: number
         total: number
         remaining: number
@@ -285,8 +313,36 @@ describe('normalizeSelfSubscriptionData', () => {
     })
 
     expect(normalized.monthly_bucket?.unlimited).toBe(true)
-    expect('window_5h' in normalized).toBe(false)
-    expect('window_7d' in normalized).toBe(false)
+    const normalizedWithWindows = normalized as typeof normalized & {
+      window_5h: {
+        used: number
+        total: number
+        remaining: number
+        reset_at: number
+        unlimited: boolean
+      }
+      window_7d: {
+        used: number
+        total: number
+        remaining: number
+        reset_at: number
+        unlimited: boolean
+      }
+    }
+    expect(normalizedWithWindows.window_5h).toEqual({
+      used: 75,
+      total: 500,
+      remaining: 425,
+      reset_at: 1234,
+      unlimited: false,
+    })
+    expect(normalizedWithWindows.window_7d).toEqual({
+      used: 250,
+      total: 1000,
+      remaining: 750,
+      reset_at: 5678,
+      unlimited: false,
+    })
     expect('media_credits' in normalized).toBe(false)
   })
 

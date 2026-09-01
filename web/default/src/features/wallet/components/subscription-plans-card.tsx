@@ -108,12 +108,6 @@ const PLAN_DISPLAY_ORDER: Record<string, number> = {
   max: 2,
 }
 
-const PLAN_REFERENCE_PRICES_USD: Record<PlanTier, number> = {
-  go: 45,
-  pro: 90,
-  max: 300,
-}
-
 type PlanTier = keyof typeof PLAN_DISPLAY_ORDER
 
 function getPlanTier(title: string): PlanTier | null {
@@ -293,7 +287,12 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-/** Keep the website's Go / Pro / Max reference prices stable in the console. */
+/**
+ * Convert a plan's persisted quota value into its USD model-value reference.
+ * The backend stores `total_amount` in quota units, so the configured
+ * quota-per-dollar ratio is the only reliable conversion. Keep the result in
+ * USD even when checkout or the wallet display uses a localized currency.
+ */
 function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
   const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
     ([currency]) => currency.trim().toUpperCase() === 'USD'
@@ -311,22 +310,23 @@ function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
 }
 
 function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
+  // Only the published Go/Pro/Max tiers have a customer-facing model-value
+  // contract. Custom plans must continue to use the quote's own currency and
+  // original total when a discount preview is available.
+  if (!getPlanTier(plan.title)) return null
+
   const totalAmount = Number(plan.total_amount)
   if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
 
-  const tier = getPlanTier(plan.title)
-  let referenceAmountUSD = tier ? PLAN_REFERENCE_PRICES_USD[tier] : undefined
-  if (referenceAmountUSD === undefined) {
-    const { config } = getCurrencyDisplay()
-    const quotaPerUnit = config.quotaPerUnit
-    if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
-    referenceAmountUSD = totalAmount / quotaPerUnit
-  }
+  const { config } = getCurrencyDisplay()
+  const quotaPerUnit = config.quotaPerUnit
+  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
+
+  const referenceAmountUSD = totalAmount / quotaPerUnit
   const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
-  // A quota value below the payable plan price is not an “old price”.  This
-  // guard keeps custom/free plans and legacy fixtures from rendering a
-  // misleading crossed-out amount while still allowing plans whose included
-  // model value exceeds their price (for example, $45 → $10).
+  // A quota value below the payable plan price is not an “old price”. This
+  // guard avoids a misleading crossed-out amount for custom/free plans while
+  // allowing standard plans whose included model value exceeds their price.
   if (
     currentAmountUSD !== null &&
     (currentAmountUSD <= 0 || referenceAmountUSD <= currentAmountUSD)
@@ -917,9 +917,11 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   ? formatPlanPrice(discountPreview.total, currency)
                   : formatPlanPrice(configuredDisplayPrice.amount, currency)
                 const referencePrice = getPlanReferencePrice(plan)
-                const originalPrice = discountPreview
-                  ? formatPlanPrice(discountPreview.originalTotal, currency)
-                  : referencePrice
+                const originalPrice =
+                  referencePrice ||
+                  (discountPreview
+                    ? formatPlanPrice(discountPreview.originalTotal, currency)
+                    : null)
                 // The campaign badge must be visible before a checkout quote is
                 // loaded. The configured plan/reference price pair is the
                 // source of truth for the static campaign presentation; a

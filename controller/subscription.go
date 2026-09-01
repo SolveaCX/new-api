@@ -129,6 +129,8 @@ type SubscriptionSelfResponse struct {
 	Quota                  SubscriptionQuotaDTO                       `json:"quota"`
 	MonthlyBucket          SubscriptionUsageWindowDTO                 `json:"monthly_bucket"`
 	MediaCredits           SubscriptionUsageWindowDTO                 `json:"media_credits"`
+	Window5h               *SubscriptionUsageWindowDTO                `json:"window_5h,omitempty"`
+	Window7d               *SubscriptionUsageWindowDTO                `json:"window_7d,omitempty"`
 	RemainingDays          int64                                      `json:"remaining_days"`
 	RenewalSource          string                                     `json:"renewal_source"`
 	RenewalStatus          string                                     `json:"renewal_status"`
@@ -542,6 +544,23 @@ func buildSubscriptionSelfResponse(
 			currentEntitlement.NextResetTime,
 			false,
 		)
+		if windowInfo, err := model.GetSubscriptionWindowInfoBySubId(currentEntitlement.Id); err == nil && windowInfo != nil {
+			usage := service.GetSubscriptionWindowUsage(windowInfo)
+			window5h := subscriptionUsageWindowDTO(
+				usage.Window5hUsed,
+				windowInfo.Window5hAmount,
+				usage.Window5hResetAt,
+				windowInfo.Window5hAmount == 0,
+			)
+			window7d := subscriptionUsageWindowDTO(
+				usage.WindowWeekUsed,
+				windowInfo.WindowWeekAmount,
+				usage.WindowWeekResetAt,
+				windowInfo.WindowWeekAmount == 0,
+			)
+			response.Window5h = &window5h
+			response.Window7d = &window7d
+		}
 	}
 	if pendingChange != nil && pendingChange.Id > 0 {
 		response.PendingChange = subscriptionSelfPendingChangeDTO(pendingChange)

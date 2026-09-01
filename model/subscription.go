@@ -45,7 +45,10 @@ var (
 )
 
 const (
-	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
+	// v2 prevents a rollout from reusing Redis plan snapshots written by a
+	// revision that did not yet know the current quota contract. The namespace
+	// bump also keeps startup migrations independent from Redis initialization.
+	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v2"
 	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
 )
 
