@@ -844,7 +844,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         )}
         icon={<Crown className='h-4 w-4' />}
         iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-        contentClassName='space-y-4 sm:space-y-5'
+        headerClassName='sm:p-4 sm:!pb-4'
+        contentClassName='space-y-3 p-3 sm:space-y-4 sm:p-4'
       >
         {hasActivePlan && currentPlan ? (
           <CurrentPlanCard
@@ -857,7 +858,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         ) : null}
 
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-4'>
+          <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-3'>
             {orderedPlans.map((item) => {
               const plan = item.plan
               const discountPreview = getPlanCardDiscountPreview(
@@ -928,7 +929,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       : 'hover:border-primary/50 hover:shadow-lg'
                   )}
                 >
-                  <CardContent className='flex h-full flex-col p-5'>
+                  <CardContent className='flex h-full flex-col p-4'>
                     <div className='flex items-start justify-between gap-3'>
                       <div className='min-w-0'>
                         <h4 className='text-xl font-semibold'>
@@ -961,7 +962,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       </div>
                     </div>
 
-                    <div className='mt-6 flex flex-wrap items-end gap-2'>
+                    <div className='mt-3 flex flex-wrap items-end gap-2'>
                       {originalPrice ? (
                         <span
                           data-subscription-reference-price={originalPrice}
@@ -970,7 +971,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           {originalPrice}
                         </span>
                       ) : null}
-                      <span className='text-5xl font-semibold tracking-tight tabular-nums'>
+                      <span className='text-4xl font-semibold tracking-tight tabular-nums'>
                         {displayPrice}
                       </span>
                       <span className='text-muted-foreground mb-1 text-sm'>
@@ -983,16 +984,16 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       </div>
                     ) : null}
 
-                    <PlanLimitSummary plan={plan} className='mt-4' />
+                    <PlanLimitSummary plan={plan} className='mt-3 px-3 py-2' />
 
                     <div className='grow' />
 
-                    <Separator className='my-4' />
+                    <Separator className='my-3' />
                     <Button
                       className={cn(
-                        'min-h-11 w-full',
+                        'min-h-10 w-full',
                         isMostPopular &&
-                          'bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black dark:hover:bg-[#ddd6fe]'
+                          'bg-primary text-primary-foreground hover:bg-primary/90'
                       )}
                       variant={action === 'switch' ? 'outline' : 'default'}
                       disabled={isCurrentRecurring}
@@ -1030,19 +1031,19 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
         <article
           data-subscription-enterprise-card
-          className='overflow-hidden rounded-2xl border border-slate-700 bg-[#0b0b0d] text-white shadow-[0_20px_70px_-40px_rgba(15,23,42,0.8)]'
+          className='border-primary/20 text-foreground dark:border-primary/30 overflow-hidden rounded-2xl border bg-gradient-to-br from-[#f7f3ff] via-white to-[#f4f0ff] shadow-[0_20px_70px_-40px_rgba(109,92,255,0.35)] dark:from-[#24183f] dark:via-[#171226] dark:to-[#2b1747]'
         >
-          <div className='grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]'>
-            <div className='p-6 sm:p-8'>
-              <p className='text-xs font-semibold tracking-[0.18em] text-violet-300 uppercase'>
+          <div className='grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]'>
+            <div className='p-4 sm:p-5'>
+              <p className='text-primary text-xs font-semibold tracking-[0.18em] uppercase dark:text-violet-200'>
                 {t('Enterprise teams')}
               </p>
-              <h3 className='mt-3 max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl'>
+              <h3 className='mt-2 max-w-2xl text-xl font-semibold tracking-tight sm:text-2xl'>
                 {t(
                   'Contact sales for higher monthly usage and greater discounts.'
                 )}
               </h3>
-              <div className='mt-6 grid gap-x-6 gap-y-3 text-sm text-slate-300 sm:grid-cols-2'>
+              <div className='text-muted-foreground mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 dark:text-slate-300'>
                 {[
                   'Custom monthly usage',
                   'Team procurement support',
@@ -1051,7 +1052,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ].map((feature) => (
                   <p key={feature} className='flex items-start gap-2 leading-6'>
                     <CheckCircle2
-                      className='mt-1 size-4 shrink-0 text-violet-300'
+                      className='text-primary mt-1 size-4 shrink-0 dark:text-violet-200'
                       aria-hidden='true'
                     />
                     <span>{t(feature)}</span>
@@ -1061,23 +1062,23 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               <a
                 data-subscription-enterprise-cta
                 href='mailto:support@flatkey.ai'
-                className='mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-slate-950 transition-colors hover:bg-violet-100'
+                className='bg-primary text-primary-foreground hover:bg-primary/90 mt-5 inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-semibold transition-colors'
               >
                 <Mail className='mr-2 size-4' aria-hidden='true' />
                 {t('Talk to sales')}
                 <ArrowRight className='ml-2 size-4' aria-hidden='true' />
               </a>
             </div>
-            <div className='flex flex-col justify-center border-t border-slate-700/80 p-6 sm:p-8 lg:border-t-0 lg:border-l'>
-              <p className='text-4xl font-semibold tracking-tight text-white sm:text-5xl'>
+            <div className='border-primary/15 flex flex-col justify-center border-t p-4 sm:p-5 lg:border-t-0 lg:border-l'>
+              <p className='text-foreground text-3xl font-semibold tracking-tight sm:text-4xl dark:text-white'>
                 {t('Enterprise')}
               </p>
-              <p className='mt-3 text-sm leading-6 text-slate-400'>
+              <p className='text-muted-foreground mt-2 text-sm leading-5 dark:text-slate-300'>
                 {t(
                   'Contact sales for higher monthly usage and greater discounts.'
                 )}
               </p>
-              <div className='mt-6 flex flex-wrap gap-2'>
+              <div className='mt-4 flex flex-wrap gap-2'>
                 {[
                   'Custom monthly usage',
                   'Team procurement support',
@@ -1085,7 +1086,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ].map((feature) => (
                   <span
                     key={feature}
-                    className='rounded-full border border-slate-600 bg-white/5 px-3 py-1.5 text-xs text-slate-300'
+                    className='border-primary/20 bg-primary/5 text-primary rounded-full border px-3 py-1.5 text-xs dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-100'
                   >
                     {t(feature)}
                   </span>
