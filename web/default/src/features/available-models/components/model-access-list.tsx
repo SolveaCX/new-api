@@ -250,11 +250,6 @@ export function ModelAccessList({
                   <ItemDescription>
                     {model.vendor?.name ?? t('Unknown')}
                   </ItemDescription>
-                  {model.description && (
-                    <p className='text-muted-foreground text-xs leading-relaxed'>
-                      {model.description}
-                    </p>
-                  )}
                   {officiallyUnsupported && (
                     <p className='text-destructive text-xs font-medium'>
                       {t(
