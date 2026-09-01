@@ -495,6 +495,8 @@ export interface SelfSubscriptionData {
   current_period?: SubscriptionCurrentPeriod
   quota?: SubscriptionQuota
   monthly_bucket?: SubscriptionUsageWindow
+  window_5h?: SubscriptionUsageWindow
+  window_7d?: SubscriptionUsageWindow
   remaining_days?: number
   renewal_source?: SubscriptionRenewalSource
   renewal_status?: SubscriptionRenewalStatus

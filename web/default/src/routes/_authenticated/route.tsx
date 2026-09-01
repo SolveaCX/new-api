@@ -22,6 +22,7 @@ import { suspendAmplitudeForRecallClaim } from '@/lib/analytics/amplitude'
 import { getSelf } from '@/lib/api'
 import { AuthenticatedLayout } from '@/components/layout'
 import { protectRecallClaimRedirectForAuth } from '@/features/auth/lib/storage'
+import { MOCK_WALLET_USER } from '@/features/wallet/mock-data'
 
 // 内存中的验证标记，避免同一会话中重复验证
 let sessionVerified = false
@@ -30,6 +31,22 @@ export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
     suspendAmplitudeForRecallClaim(location.href)
     const { auth } = useAuthStore.getState()
+
+    // Local visual preview only. This branch is removed from production builds
+    // by the DEV guard and never relaxes authentication on deployed builds.
+    const isWalletMockPreview =
+      import.meta.env.DEV &&
+      location.pathname === '/wallet' &&
+      ['1', 'true'].includes(
+        new URL(location.href, window.location.origin).searchParams.get(
+          'mock'
+        ) ?? ''
+      )
+    if (isWalletMockPreview) {
+      auth.setUser({ ...MOCK_WALLET_USER, role: 1 })
+      sessionVerified = true
+      return
+    }
 
     // 如果本地没有用户信息，直接跳转登录页
     if (!auth.user) {

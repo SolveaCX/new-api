@@ -70,6 +70,7 @@ import {
   normalizeRecallClaim,
   removeRecallClaimFromSearch,
 } from './lib/recall-claim'
+import { MOCK_PLANS, MOCK_WALLET_USER } from './mock-data'
 import type {
   UserWalletData,
   PresetAmount,
@@ -90,6 +91,8 @@ interface WalletProps {
   initialCheckoutSearch?: WalletCheckoutSearch
   initialRecallClaim?: string
   cardJustBound?: boolean
+  /** Enables the local-only /wallet?mock=1 visual preview. */
+  mockPreview?: boolean
 }
 
 type PaddleCheckoutNotice = {
@@ -141,6 +144,7 @@ function waitForPaddleStatusPollInterval(): Promise<void> {
 
 export function Wallet(props: WalletProps) {
   const { t, i18n } = useTranslation()
+  const mockPreview = props.mockPreview === true
   const showSubscriptionPlans = isPlgUser(
     useAuthStore((state) => state.auth.user?.group)
   )
@@ -153,8 +157,10 @@ export function Wallet(props: WalletProps) {
     useState<RecallClaimView | null>(null)
   const [recallOffers, setRecallOffers] = useState<RecallOfferView[]>([])
   const [recallOffersLoading, setRecallOffersLoading] = useState(false)
-  const [user, setUser] = useState<UserWalletData | null>(null)
-  const [userLoading, setUserLoading] = useState(true)
+  const [user, setUser] = useState<UserWalletData | null>(
+    mockPreview ? MOCK_WALLET_USER : null
+  )
+  const [userLoading, setUserLoading] = useState(!mockPreview)
   const [topupAmount, setTopupAmount] = useState(0)
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   // settlement currency for Stripe checkout; local currencies unlock local
@@ -191,7 +197,11 @@ export function Wallet(props: WalletProps) {
   const stripeTopUpInFlightRef = useRef(false)
   const [cardBoundDialogOpen, setCardBoundDialogOpen] = useState(false)
 
-  const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+  const {
+    topupInfo,
+    presetAmounts,
+    loading: topupLoading,
+  } = useTopupInfo(mockPreview)
   const resolvedLanguage = i18n.resolvedLanguage ?? i18n.language
 
   const effectiveCheckoutCurrency = resolveEffectiveStripeCheckoutCurrency({
@@ -231,6 +241,11 @@ export function Wallet(props: WalletProps) {
 
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
+    if (mockPreview) {
+      setUser(MOCK_WALLET_USER)
+      setUserLoading(false)
+      return
+    }
     try {
       setUserLoading(true)
       const response = await getSelf()
@@ -243,14 +258,15 @@ export function Wallet(props: WalletProps) {
     } finally {
       setUserLoading(false)
     }
-  }, [])
+  }, [mockPreview])
 
   const fetchRecallOffers = useCallback(async () => {
+    if (mockPreview) return
     await refreshWalletRecallOffers({
       setLoading: setRecallOffersLoading,
       setOffers: setRecallOffers,
     })
-  }, [])
+  }, [mockPreview])
 
   const pollPaddleTopUpStatus = useCallback(
     async (params: PaddleStatusPollParams) => {
@@ -919,56 +935,65 @@ export function Wallet(props: WalletProps) {
               </Alert>
             ) : null}
 
-            {showSubscriptionPlans ? (
-              <RecallClaimProvider
-                offers={recallOffers}
-                loading={recallOffersLoading}
-                view={
-                  recallClaimStatus === 'active'
-                    ? recallClaimView || undefined
-                    : undefined
+            <div className='flex flex-col gap-4'>
+              <TitledCard
+                className='border-border/80 shadow-sm'
+                title={t('Top-ups')}
+                description={t(
+                  'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
+                )}
+                icon={<Wallet2 className='h-4 w-4' />}
+                iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+                action={
+                  <Button
+                    className='bg-[#0b0b0d] text-white hover:bg-[#26262a] dark:bg-[#0b0b0d] dark:hover:bg-[#26262a]'
+                    onClick={() => setTopupDialogOpen(true)}
+                  >
+                    {t('Top up')}
+                  </Button>
                 }
+                contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
               >
-                <SubscriptionPlansCard
-                  topupInfo={topupInfo}
-                  userQuota={user?.quota}
-                  onPurchaseSuccess={fetchUser}
-                  onOpenStripeCheckout={openStripeCheckout}
-                />
-              </RecallClaimProvider>
-            ) : null}
-
-            <TitledCard
-              className='border-border/80 shadow-sm'
-              title={t('Top-ups')}
-              description={t(
-                'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
-              )}
-              icon={<Wallet2 className='h-4 w-4' />}
-              iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-              action={
-                <Button
-                  className='bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
-                  onClick={() => setTopupDialogOpen(true)}
+                <div
+                  id='wallet-billing-history'
+                  className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
                 >
-                  {t('Top up')}
-                </Button>
-              }
-              contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
-            >
-              <div
-                id='wallet-billing-history'
-                className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
-              >
-                <BillingHistoryPanel
-                  scrollAreaClassName='max-h-none pr-0 sm:pr-0'
-                  showInlineHeader
-                  onAvailabilityChange={handleRechargeHistoryAvailability}
-                  onResumeStripeCheckout={handleResumeStripeCheckout}
-                  onRefundSuccess={fetchUser}
-                />
-              </div>
-            </TitledCard>
+                  {!mockPreview ? (
+                    <BillingHistoryPanel
+                      scrollAreaClassName='max-h-none pr-0 sm:pr-0'
+                      showInlineHeader
+                      onAvailabilityChange={handleRechargeHistoryAvailability}
+                      onResumeStripeCheckout={handleResumeStripeCheckout}
+                      onRefundSuccess={fetchUser}
+                    />
+                  ) : null}
+                </div>
+              </TitledCard>
+
+              {showSubscriptionPlans ? (
+                <div className='min-w-0'>
+                  <RecallClaimProvider
+                    offers={recallOffers}
+                    loading={recallOffersLoading}
+                    view={
+                      recallClaimStatus === 'active'
+                        ? recallClaimView || undefined
+                        : undefined
+                    }
+                  >
+                    <SubscriptionPlansCard
+                      topupInfo={topupInfo}
+                      userQuota={user?.quota}
+                      onPurchaseSuccess={fetchUser}
+                      onOpenStripeCheckout={openStripeCheckout}
+                      initialPlans={mockPreview ? MOCK_PLANS : undefined}
+                      initialLoading={mockPreview ? false : undefined}
+                      mockPreview={mockPreview}
+                    />
+                  </RecallClaimProvider>
+                </div>
+              ) : null}
+            </div>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

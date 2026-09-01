@@ -26,6 +26,13 @@ import {
 import { normalizeWalletCheckoutSearch } from '@/features/wallet/lib'
 
 const walletSearchSchema = z.object({
+  mock: z
+    .union([z.boolean(), z.string(), z.number()])
+    .optional()
+    .transform(
+      (value) =>
+        value === true || value === 'true' || value === '1' || value === 1
+    ),
   show_history: z
     .union([z.boolean(), z.string()])
     .optional()
@@ -62,6 +69,7 @@ function RouteComponent() {
       cardJustBound={search.card_bound}
       initialCheckoutSearch={normalizeWalletCheckoutSearch(search)}
       initialRecallClaim={search.recall_claim}
+      mockPreview={import.meta.env.DEV && search.mock === true}
     />
   )
 }
