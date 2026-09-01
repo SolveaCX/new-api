@@ -73,6 +73,10 @@ function getRemainingDays(selfData: WalletSelfSubscriptionData): number {
   return Math.max(0, Math.ceil((end * 1000 - Date.now()) / 86400000))
 }
 
+function hasUsageWindowLimit(window: { total?: number } | undefined): boolean {
+  return Number(window?.total ?? 0) > 0
+}
+
 function getRenewalAction(
   selfData: WalletSelfSubscriptionData
 ): RenewalAction | null {
@@ -261,6 +265,29 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
             </div>
           </div>
         </div>
+
+        {hasUsageWindowLimit(props.selfData.window_5h) ||
+        hasUsageWindowLimit(props.selfData.window_7d) ? (
+          <div
+            className='grid grid-cols-2 gap-3'
+            data-wallet-short-window-meters
+          >
+            {hasUsageWindowLimit(props.selfData.window_5h) ? (
+              <UsageWindowMeter
+                label={t('5-Hour Window')}
+                window={props.selfData.window_5h}
+                secondary
+              />
+            ) : null}
+            {hasUsageWindowLimit(props.selfData.window_7d) ? (
+              <UsageWindowMeter
+                label={t('7 Days')}
+                window={props.selfData.window_7d}
+                secondary
+              />
+            ) : null}
+          </div>
+        ) : null}
 
         <a
           href='/usage-logs'
