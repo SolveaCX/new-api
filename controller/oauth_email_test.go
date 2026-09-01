@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -133,6 +134,40 @@ func TestFindOrCreateGoogleUserCreatesNewAccountForUnknownEmail(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ?", got.Id).First(&claim).Error)
 	require.Equal(t, "new-user@gmail.com", claim.NormalizedEmail)
 	require.Equal(t, "google-sub-new-user", claim.GoogleID)
+}
+
+func TestFindOrCreateGoogleUserBypassesRegistrationDomainBlock(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	originalRegisterEnabled := common.RegisterEnabled
+	t.Cleanup(func() { common.RegisterEnabled = originalRegisterEnabled })
+	common.RegisterEnabled = true
+
+	block := model.RegistrationDomainBlock{
+		Domain:        "blocked.example",
+		WindowHours:   24,
+		Threshold:     10,
+		ObservedCount: 10,
+		BlockedAt:     time.Now().Unix(),
+	}
+	require.NoError(t, db.Create(&block).Error)
+	require.NoError(t, db.Create(&model.RegistrationDomainState{
+		Domain:        "blocked.example",
+		ActiveBlockID: block.Id,
+	}).Error)
+
+	got, isNew, err := findOrCreateOAuthUser(
+		newOAuthTestContext(),
+		&oauth.GoogleProvider{},
+		&oauth.OAuthUser{ProviderUserID: "google-sub-blocked", Email: "new@blocked.example", EmailVerified: true},
+		&oauthTestSession{values: map[interface{}]interface{}{}},
+	)
+
+	require.NoError(t, err)
+	require.True(t, isNew)
+	require.NotNil(t, got)
+	require.Equal(t, "new@blocked.example", got.Email)
+	require.Equal(t, "blocked.example", got.EmailDomain)
+	require.Equal(t, "google-sub-blocked", got.GoogleId)
 }
 
 func TestClaimGoogleOAuthUserWithTxReportsWinnerAndRollsBackLoser(t *testing.T) {

@@ -702,9 +702,19 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, false, &OAuthRegistrationCountryBlockedError{}
 	}
 	oauthUser.Email = strings.TrimSpace(oauthUser.Email)
-	emailDecision, err := evaluateRegistrationEmail(oauthUser.Email)
-	if err != nil {
-		return nil, false, err
+	emailDecision := service.RegistrationEmailDecision{}
+	if isGoogleOAuthProvider(provider) {
+		domain, err := common.NormalizeEmailDomain(oauthUser.Email)
+		if err != nil {
+			return nil, false, err
+		}
+		emailDecision.Domain = domain
+	} else {
+		var err error
+		emailDecision, err = evaluateRegistrationEmail(oauthUser.Email)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	// Set up new user
