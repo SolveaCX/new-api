@@ -466,6 +466,8 @@ func TestRequestedEndpointTypeNormalizesPlaygroundAliases(t *testing.T) {
 		{"playground image generations", "/pg/images/generations", constant.EndpointTypeImageGeneration},
 		{"playground video submit", "/pg/videos", constant.EndpointTypeOpenAIVideo},
 		{"playground video fetch", "/pg/videos/task_example", constant.EndpointTypeOpenAIVideo},
+		{"playground video to music submit", "/pg/video-to-music", constant.EndpointTypeVideoToMusic},
+		{"playground video to music fetch", "/pg/video-to-music/task_example", constant.EndpointTypeVideoToMusic},
 	}
 
 	for _, tc := range cases {

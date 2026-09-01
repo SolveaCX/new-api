@@ -1,6 +1,10 @@
 import type { FileUIPart } from 'ai'
 import { describe, expect, spyOn, test } from 'bun:test'
-import { MAX_FILE_BYTES, normalizePlaygroundAttachments } from './attachments'
+import {
+  MAX_FILE_BYTES,
+  normalizePlaygroundAttachments,
+  readPlaygroundVideoDuration,
+} from './attachments'
 
 function textDataUrl(text: string): string {
   return `data:text/plain;base64,${Buffer.from(text, 'utf8').toString('base64')}`
@@ -15,6 +19,54 @@ function file(filename: string, mediaType: string, url: string): FileUIPart {
 }
 
 describe('normalizePlaygroundAttachments', () => {
+  test('reads finite video metadata duration and cleans up the element', async () => {
+    const originalDocument = globalThis.document
+    const listeners = new Map<string, () => void>()
+    let removedSource = false
+    const fakeVideo = {
+      duration: 12,
+      preload: '',
+      src: '',
+      addEventListener: (name: string, listener: () => void) => {
+        listeners.set(name, listener)
+      },
+      removeEventListener: (name: string) => {
+        listeners.delete(name)
+      },
+      removeAttribute: (name: string) => {
+        if (name === 'src') removedSource = true
+      },
+      load: () => undefined,
+    }
+
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        createElement: (tag: string) => {
+          expect(tag).toBe('video')
+          return fakeVideo
+        },
+      },
+    })
+
+    try {
+      const resultPromise = readPlaygroundVideoDuration(
+        'data:video/mp4;base64,AA=='
+      )
+      listeners.get('loadedmetadata')?.()
+      const result = await resultPromise
+      expect(result).toBe(12)
+      expect(fakeVideo.preload).toBe('metadata')
+      expect(removedSource).toBe(true)
+      expect(listeners.size).toBe(0)
+    } finally {
+      Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: originalDocument,
+      })
+    }
+  })
+
   test('normalizes image data URLs and supported text files', async () => {
     const result = await normalizePlaygroundAttachments([
       file('photo.png', 'image/png', 'data:image/png;base64,AA=='),

@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import {
   fetchPlaygroundVideoTask,
   fetchVideoContent,
+  fetchPlaygroundVideoToMusicTask,
   sendMediaGeneration,
 } from '../api'
 import { MESSAGE_ROLES, MESSAGE_STATUS } from '../constants'
@@ -29,6 +30,7 @@ import {
   buildMediaGenerationRequest,
   extractGeneratedImages,
   parseVideoTaskResponse,
+  parseVideoToMusicTaskResponse,
   updateAssistantMessageWithError,
   updateCurrentVersionContent,
   updateCurrentVersionMedia,
@@ -49,11 +51,15 @@ type PollTimeoutScheduler = (callback: () => void, delay: number) => number
 type PollTimeoutCanceller = (timer: number) => void
 
 function clearVideoTaskId(message: Message): Message {
-  if (!Object.prototype.hasOwnProperty.call(message, 'videoTaskId')) {
+  if (
+    !Object.prototype.hasOwnProperty.call(message, 'videoTaskId') &&
+    !Object.prototype.hasOwnProperty.call(message, 'mediaTaskType')
+  ) {
     return message
   }
   const updated = { ...message }
   delete updated.videoTaskId
+  delete updated.mediaTaskType
   return updated
 }
 
@@ -201,7 +207,8 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
       messageKey: string,
       content: string,
       progress?: number,
-      videoTaskId?: string
+      videoTaskId?: string,
+      mediaTaskType: Message['mediaTaskType'] = 'video'
     ) => {
       onMessageUpdate((messages) =>
         messages.map((message) =>
@@ -213,6 +220,7 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
                 ),
                 status: MESSAGE_STATUS.STREAMING,
                 ...(videoTaskId ? { videoTaskId } : {}),
+                ...(videoTaskId ? { mediaTaskType } : {}),
               }
             : message
         )
@@ -365,6 +373,65 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
     [completeMedia, releaseMediaObjectURL, updateProgress]
   )
 
+  const pollVideoToMusicTask = useCallback(
+    async (
+      taskId: string,
+      messageKey: string,
+      controller: AbortController,
+      initialTask?: ReturnType<typeof parseVideoToMusicTaskResponse>
+    ) => {
+      let task = initialTask
+
+      for (let attempt = 0; attempt < VIDEO_POLL_LIMIT; attempt += 1) {
+        if (!task) {
+          const taskResponse = await fetchPlaygroundVideoToMusicTask(
+            taskId,
+            controller.signal
+          )
+          task = parseVideoToMusicTaskResponse(taskResponse)
+          if (!task) {
+            await waitForVideoPoll(controller.signal)
+            if (controller.signal.aborted) return
+            continue
+          }
+        }
+
+        if (task.status === 'failed') {
+          throw new Error(
+            task.error ||
+              i18next.t('Audio generation failed') ||
+              'Audio generation failed'
+          )
+        }
+        if (task.status === 'completed') {
+          if (!task.audio?.length) {
+            throw new Error(
+              i18next.t('No audio was generated') || 'No audio was generated'
+            )
+          }
+          completeMedia(messageKey, i18next.t('Audio'), task.audio)
+          return
+        }
+
+        updateProgress(
+          messageKey,
+          i18next.t('Generating audio...'),
+          task.progress,
+          taskId,
+          'video-to-music'
+        )
+        await waitForVideoPoll(controller.signal)
+        if (controller.signal.aborted) return
+        task = undefined
+      }
+
+      throw new Error(
+        i18next.t('Audio generation timed out') || 'Audio generation timed out'
+      )
+    },
+    [completeMedia, updateProgress]
+  )
+
   const runVideoPolling = useCallback(
     async (
       taskId: string,
@@ -387,6 +454,30 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
       }
     },
     [failMedia, pollVideoTask]
+  )
+
+  const runVideoToMusicPolling = useCallback(
+    async (
+      taskId: string,
+      messageKey: string,
+      controller: AbortController,
+      initialTask?: ReturnType<typeof parseVideoToMusicTaskResponse>
+    ) => {
+      try {
+        await pollVideoToMusicTask(taskId, messageKey, controller, initialTask)
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          failMedia(messageKey, errorMessage(error))
+        }
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null
+          activeMessageKeyRef.current = null
+          setIsGeneratingMedia(false)
+        }
+      }
+    },
+    [failMedia, pollVideoToMusicTask]
   )
 
   const generateMedia = useCallback(
@@ -423,6 +514,23 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
       try {
         const response = await sendMediaGeneration(request, controller.signal)
         if (controller.signal.aborted) return
+
+        if (request.kind === 'video-to-music') {
+          const submitted = parseVideoToMusicTaskResponse(response)
+          if (!submitted) {
+            throw new Error(
+              i18next.t('Audio task could not be created') ||
+                'Audio task could not be created'
+            )
+          }
+          await pollVideoToMusicTask(
+            submitted.taskId,
+            assistantMessageKey,
+            controller,
+            submitted
+          )
+          return
+        }
 
         if (request.kind === 'image') {
           if (request.endpoint === '/pg/chat/completions') {
@@ -533,7 +641,13 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
         }
       }
     },
-    [completeMedia, failMedia, pollVideoTask, releaseMediaObjectURL]
+    [
+      completeMedia,
+      failMedia,
+      pollVideoTask,
+      pollVideoToMusicTask,
+      releaseMediaObjectURL,
+    ]
   )
 
   useEffect(() => {
@@ -552,12 +666,20 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
         setIsGeneratingMedia(true)
       }
     })
-    void runVideoPolling(
-      pendingMessage.videoTaskId,
-      pendingMessage.key,
-      controller
-    )
-  }, [messages, runVideoPolling])
+    if (pendingMessage.mediaTaskType === 'video-to-music') {
+      void runVideoToMusicPolling(
+        pendingMessage.videoTaskId,
+        pendingMessage.key,
+        controller
+      )
+    } else {
+      void runVideoPolling(
+        pendingMessage.videoTaskId,
+        pendingMessage.key,
+        controller
+      )
+    }
+  }, [messages, runVideoPolling, runVideoToMusicPolling])
 
   useEffect(() => {
     const liveObjectURLs = collectLiveObjectURLs(messages)

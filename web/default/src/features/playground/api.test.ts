@@ -45,6 +45,7 @@ const {
   getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
+  fetchPlaygroundVideoToMusicTask,
   sendMediaGeneration,
   savePlaygroundRecord,
 } = await import('./api')
@@ -179,6 +180,45 @@ describe('Playground media API', () => {
         skipErrorHandler: true,
         signal,
       })
+    )
+  })
+
+  test('sends Sonilo multipart data without forcing a JSON content type', async () => {
+    const formData = new FormData()
+    formData.set('model', 'sonilo-video-to-music')
+    post.mockResolvedValueOnce({ data: { task_id: 'task_1' } })
+
+    await expect(
+      sendMediaGeneration({
+        kind: 'video-to-music',
+        endpoint: '/pg/video-to-music',
+        payload: formData,
+      })
+    ).resolves.toEqual({ task_id: 'task_1' })
+
+    const options = post.mock.calls[0]?.[2] as Record<string, unknown>
+    expect(post).toHaveBeenCalledWith(
+      '/pg/video-to-music',
+      formData,
+      expect.objectContaining({ skipErrorHandler: true })
+    )
+    expect(options.responseType).toBeUndefined()
+    const headers = options.headers as Record<string, unknown> | undefined
+    expect(headers?.['Content-Type']).not.toBe('application/json')
+  })
+
+  test('fetches Sonilo task status through the dedicated Playground route', async () => {
+    get.mockResolvedValueOnce({
+      data: { task_id: 'task_1', status: 'processing' },
+    })
+
+    await expect(fetchPlaygroundVideoToMusicTask('task_1')).resolves.toEqual({
+      task_id: 'task_1',
+      status: 'processing',
+    })
+    expect(get).toHaveBeenCalledWith(
+      '/pg/video-to-music/task_1',
+      expect.objectContaining({ skipErrorHandler: true })
     )
   })
 })

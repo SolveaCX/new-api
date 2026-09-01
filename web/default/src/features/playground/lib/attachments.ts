@@ -26,6 +26,89 @@ const AUDIO_MEDIA_TYPES = new Set([
 ])
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav'])
 
+/**
+ * Read a local video's duration without loading its media data into the
+ * document. The helper deliberately treats metadata failures as an unknown
+ * duration so callers can fall back to an explicit manual value.
+ */
+export function readPlaygroundVideoDuration(
+  url: string
+): Promise<number | undefined> {
+  const normalizedURL = url.trim()
+  if (
+    !normalizedURL ||
+    typeof document === 'undefined' ||
+    typeof document.createElement !== 'function'
+  ) {
+    return Promise.resolve(undefined)
+  }
+
+  return new Promise((resolve) => {
+    let video: HTMLVideoElement
+    try {
+      video = document.createElement('video')
+    } catch {
+      // A restricted WebView may expose `document` without allowing media
+      // element creation; treat that the same as unreadable metadata.
+      resolve(undefined)
+      return
+    }
+    let settled = false
+    const timeoutRef: { id?: ReturnType<typeof setTimeout> } = {}
+
+    const cleanup = () => {
+      video.removeEventListener?.('loadedmetadata', onLoadedMetadata)
+      video.removeEventListener?.('error', onError)
+      video.onloadedmetadata = null
+      video.onerror = null
+      if (timeoutRef.id !== undefined) clearTimeout(timeoutRef.id)
+      try {
+        video.removeAttribute?.('src')
+        // Reset the media element so a browser can release any metadata
+        // resources. This is intentionally best-effort for test doubles.
+        video.load?.()
+      } catch {
+        // Cleanup must never turn an unknown duration into a submit error.
+      }
+    }
+
+    const finish = (duration?: number) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(duration)
+    }
+
+    const onLoadedMetadata = () => {
+      const duration = Number(video.duration)
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 3600) {
+        finish()
+        return
+      }
+      finish(Math.round(duration * 10) / 10)
+    }
+
+    const onError = () => finish()
+
+    video.preload = 'metadata'
+    video.addEventListener?.('loadedmetadata', onLoadedMetadata)
+    video.addEventListener?.('error', onError)
+    // Property handlers keep this helper compatible with lightweight browser
+    // shims and older WebViews that do not implement EventTarget fully.
+    video.onloadedmetadata = onLoadedMetadata
+    video.onerror = onError
+    // Metadata can fail to arrive for a cross-origin signed URL. Bound the
+    // wait so submission remains usable with the manual duration control.
+    timeoutRef.id = setTimeout(() => finish(), 5000)
+    try {
+      video.src = normalizedURL
+      video.load?.()
+    } catch {
+      finish()
+    }
+  })
+}
+
 /** Normalize equivalent browser/object-store MIME aliases at the UI boundary. */
 export function normalizePlaygroundMediaType(value: string): string {
   const mediaType = value.split(';', 1)[0].trim().toLowerCase()
@@ -192,11 +275,13 @@ export async function normalizePlaygroundAttachments(
       if (!VIDEO_MEDIA_TYPES.has(parsedMediaType)) {
         throw new Error('Attachment data is invalid')
       }
+      const durationSeconds = await readPlaygroundVideoDuration(file.url)
       attachments.push({
         kind: 'video',
         filename,
         mediaType: parsedMediaType,
         url: file.url,
+        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
       })
       continue
     }

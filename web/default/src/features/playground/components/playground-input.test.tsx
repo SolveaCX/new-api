@@ -52,6 +52,13 @@ spyOn(suggestionModule, 'Suggestion').mockImplementation(((
   return React.createElement('button', { type: 'button' }, props.suggestion)
 }) as never)
 
+// The latest shared Suggestions primitive renders a Base UI ScrollArea. This
+// unit test exercises PlaygroundInput's prop wiring, so keep the scroll
+// container out of the server-rendered fixture and render only its children.
+spyOn(suggestionModule, 'Suggestions').mockImplementation(((
+  props: { children?: React.ReactNode }
+) => React.createElement('div', null, props.children)) as never)
+
 spyOn(modelGroupSelectorModule, 'ModelGroupSelector').mockImplementation(((
   props: ModelGroupSelectorProps
 ) => {
@@ -118,7 +125,7 @@ function renderPlaygroundMarkup({
 }: {
   initialText?: string
   modelLocked?: boolean
-  mediaProfile?: Pick<MediaGenerationProfile, 'kind'>
+  mediaProfile?: Pick<MediaGenerationProfile, 'kind' | 'inputKind'>
   models?: Array<{ label: string; value: string }>
 } = {}) {
   return renderToStaticMarkup(
@@ -310,5 +317,26 @@ describe('PlaygroundInput attachments', () => {
     expect(imageMarkup).toContain('Upload files')
     expect(imageMarkup).not.toContain('Take screenshot')
     expect(imageMarkup).not.toContain('Take photo')
+  })
+
+  test('keeps the attachment button enabled for the Sonilo video input profile', () => {
+    const markup = renderPlaygroundMarkup({
+      mediaProfile: {
+        kind: 'audio',
+        inputKind: 'video',
+      },
+      models: [
+        { label: 'Sonilo Video to Music', value: 'sonilo-video-to-music' },
+      ],
+    })
+
+    expect(markup).toContain('accept="video/mp4,.mp4"')
+    const attachButton = markup.match(
+      /<button[^>]*>.*?lucide-paperclip.*?<\/button>/s
+    )?.[0]
+    expect(attachButton).toBeDefined()
+    // The shared button class contains `disabled:*` variants even when the
+    // native disabled attribute is absent, so inspect the actual attribute.
+    expect(attachButton).not.toMatch(/\sdisabled(?:=|>)/)
   })
 })

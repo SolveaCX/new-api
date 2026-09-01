@@ -75,6 +75,11 @@ describe('isPlaygroundChatModelName', () => {
     }
   })
 
+  test('keeps Sonilo video-to-music selectable but out of first-run chat', () => {
+    expect(isSupportedPlaygroundModelName('sonilo-video-to-music')).toBe(true)
+    expect(isPlaygroundChatModelName('sonilo-video-to-music')).toBe(false)
+  })
+
   test('hides image, video, audio, embedding, and task models', () => {
     for (const model of [
       'gpt-image-1',

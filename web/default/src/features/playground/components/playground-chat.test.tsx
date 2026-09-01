@@ -159,6 +159,67 @@ describe('PlaygroundChat', () => {
     expect(html).toContain('download="generated-audio-1.mp3"')
   })
 
+  test('renders a Sonilo proxy audio URL after task completion', () => {
+    const audioSrc = '/v1/video-to-music/task_1/content?variant=0'
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'assistant-sonilo-audio',
+              from: 'assistant',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Audio result',
+                  generatedMedia: [
+                    { type: 'audio', url: audioSrc, mimeType: 'audio/mpeg' },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain(`<audio aria-label="Audio"`)
+    expect(html).toContain(`src="${audioSrc}"`)
+    expect(html).toContain('download="generated-audio-1.mp3"')
+  })
+
+  test('uses an m4a download extension for audio/mp4 results', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <PlaygroundChat
+          messages={[
+            {
+              key: 'assistant-m4a',
+              from: 'assistant',
+              status: 'complete',
+              versions: [
+                {
+                  id: 'version-1',
+                  content: 'Audio result',
+                  generatedMedia: [
+                    {
+                      type: 'audio',
+                      url: '/v1/video-to-music/task_2/content?variant=0',
+                      mimeType: 'audio/mp4',
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />
+      </I18nextProvider>
+    )
+
+    expect(html).toContain('download="generated-audio-1.m4a"')
+  })
+
   test('does not render or download unsafe generated media URLs', () => {
     const safeSrc = 'https://cdn.example/safe.png'
     const unsafeSrc = 'javascript:alert(1)'

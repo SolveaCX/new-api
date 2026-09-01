@@ -648,6 +648,9 @@ func isOpenAIVideoFetchPath(path string) bool {
 }
 
 func isVideoToMusicFetchPath(path string) bool {
+	if strings.HasPrefix(path, "/pg/") {
+		path = "/v1/" + strings.TrimPrefix(path, "/pg/")
+	}
 	return strings.HasPrefix(path, "/v1/video-to-music/")
 }
 

@@ -12,12 +12,14 @@ func TestSetRelayRouterRegistersPlaygroundMediaRoutes(t *testing.T) {
 	SetRelayRouter(engine)
 
 	want := map[string]bool{
-		"POST /pg/chat/completions":   false,
-		"POST /pg/audio/speech":       false,
-		"POST /pg/images/generations": false,
-		"POST /pg/images/edits":       false,
-		"POST /pg/videos":             false,
-		"GET /pg/videos/:task_id":     false,
+		"POST /pg/chat/completions":       false,
+		"POST /pg/audio/speech":           false,
+		"POST /pg/images/generations":     false,
+		"POST /pg/images/edits":           false,
+		"POST /pg/videos":                 false,
+		"GET /pg/videos/:task_id":         false,
+		"POST /pg/video-to-music":         false,
+		"GET /pg/video-to-music/:task_id": false,
 	}
 	for _, route := range engine.Routes() {
 		key := route.Method + " " + route.Path
