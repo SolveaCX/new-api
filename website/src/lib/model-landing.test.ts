@@ -11,6 +11,7 @@ import {
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
   getModelLandingPathnames,
+  modelLandingCopy,
   resolveModelLandingModels,
 } from "./model-landing";
 import type { PricingModel } from "./pricing";
@@ -140,5 +141,13 @@ describe("model landing configuration", () => {
     expect(config.officialName).toBe("Moonshot AI");
     expect(config.generator).toBeUndefined();
     expect(config.seo.title).toContain("kimi-k2.5");
+  });
+
+  test("keeps model landing plan-value copy aligned with the subscription contract", () => {
+    expect(modelLandingCopy("en", "Go — $10/mo, up to $45 usage")).toBe("Go — $10/mo, up to $45 usage");
+    expect(modelLandingCopy("en", "Pro — $30/mo, up to $90 usage")).toBe("Pro — $30/mo, up to $90 usage");
+    expect(modelLandingCopy("en", "Max — $100/mo, up to $300 usage")).toBe("Max — $100/mo, up to $300 usage");
+    expect(modelLandingCopy("zh", "Go — $10/mo, up to $45 usage")).toContain("$45");
+    expect(modelLandingCopy("zh", "Max — $100/mo, up to $300 usage")).toContain("$300");
   });
 });
