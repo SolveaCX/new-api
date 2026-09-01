@@ -19,6 +19,12 @@ export type HomeTrendPoint = {
   avg_ttft_ms: number;
 };
 
+export type HomeModelHealth = {
+  model: string;
+  trend: HomeTrendPoint[];
+  summary?: HomePerfSummary;
+};
+
 type PerfSeriesPoint = {
   ts: number;
   success_rate: number;

@@ -395,7 +395,7 @@ export const MODEL_PUBLIC_COPY: Record<Locale, ModelPublicCopy> = withIdFallback
 // A model's effective input price (after both discount layers) as a number,
 // for cross-model comparison rows and JSON-LD.
 function discountedInputUsd(model: PricingModel, data: PricingData): number {
-  return discountedPriceUsd(getOfficialPriceUsd(model, "input") * getBestGroupRatio(model, data.groupRatio));
+  return discountedPriceUsd(getOfficialPriceUsd(model, "input") * getBestGroupRatio(model, data.groupRatio, data.groupModelRatio));
 }
 
 export type ModelPeer = {
@@ -408,7 +408,7 @@ export function buildModelPublicView(model: PricingModel, data: PricingData) {
   const vendor = model.vendor_name ?? getVendorName(model, data.vendors);
   const officialInput = getOfficialPriceUsd(model, "input");
   const officialOutput = getOfficialPriceUsd(model, "output");
-  const ratio = getBestGroupRatio(model, data.groupRatio);
+  const ratio = getBestGroupRatio(model, data.groupRatio, data.groupModelRatio);
   const discountedInput = discountedPriceUsd(officialInput * ratio);
   const discountedOutput = discountedPriceUsd(officialOutput * ratio);
   // Savings vs the official list price, the page's core comparison hook.
