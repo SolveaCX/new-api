@@ -155,7 +155,15 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
             <section aria-label={t('Preview')} className='space-y-2'>
               <p className='text-sm font-medium'>{t('Preview')}</p>
               <div className='rounded-lg border bg-muted/30 p-4'>
-                <Markdown>{noticeContent}</Markdown>
+                <Markdown
+                  className={
+                    '[&_h1]:mt-0 [&_h1]:mb-4 [&_h2]:mt-4 [&_h2]:mb-3 [&_h3]:mt-3 [&_h3]:mb-2 ' +
+                    '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
+                    '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
+                  }
+                >
+                  {noticeContent}
+                </Markdown>
               </div>
             </section>
           ) : null}
