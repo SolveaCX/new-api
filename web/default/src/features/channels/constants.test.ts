@@ -104,3 +104,18 @@ test('GitHub Copilot channel is selectable with its official endpoint', () => {
     'Copilot authorization is available after saving the channel'
   )
 })
+
+test('TokenSpace channel is selectable with Seedance-compatible defaults', () => {
+  expect(CHANNEL_TYPES[114]).toBe('TokenSpace')
+  expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 114)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(114)).toBe(false)
+  expect(CREATE_MODEL_FETCHABLE_TYPES.has(114)).toBe(false)
+  expect(getDefaultBaseUrl(114)).toBe('https://api.tokenspace.net.cn')
+  expect(getChannelTypeIcon(114)).toBe('Doubao')
+  expect(getKeyPromptForType(114)).toBe('API key from the provider')
+
+  const config = getChannelTypeConfig(114)
+
+  expect(config.icon).toBe('doubao')
+  expect(config.defaultBaseUrl).toBe('https://api.tokenspace.net.cn')
+})

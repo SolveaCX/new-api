@@ -240,6 +240,15 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
         'Save the channel first, then connect a Grok subscription account via OAuth.',
     },
   },
+  114: {
+    id: 114,
+    name: CHANNEL_TYPES[114],
+    icon: 'doubao',
+    defaultBaseUrl: 'https://api.tokenspace.net.cn',
+    hints: {
+      key: 'API key from the provider',
+    },
+  },
 }
 
 /**

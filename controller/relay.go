@@ -708,10 +708,20 @@ func lockBytePlusAssetPinnedChannel(c *gin.Context, info *relaycommon.RelayInfo,
 	}
 
 	channel, err := model.GetChannelById(pinnedChannelID, true)
-	if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled || channel.Type != constant.ChannelTypeBytePlus {
+	if err != nil || !isBytePlusAssetPinnedChannelUsable(channel) {
 		return nil, bytePlusAssetTaskError(types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 	}
 	return channel, nil
+}
+
+func isBytePlusAssetPinnedChannelUsable(channel *model.Channel) bool {
+	if channel == nil || channel.Status != common.ChannelStatusEnabled {
+		return false
+	}
+	if channel.Type == constant.ChannelTypeBytePlus {
+		return true
+	}
+	return service.TokenSpaceRealPersonChannelIsUsable(channel)
 }
 
 func validateBytePlusAssetPinnedLock(info *relaycommon.RelayInfo, pinnedChannelID int) *dto.TaskError {
@@ -722,11 +732,11 @@ func validateBytePlusAssetPinnedLock(info *relaycommon.RelayInfo, pinnedChannelI
 	if !ok || lockedChannel == nil || lockedChannel.Id != pinnedChannelID {
 		return bytePlusAssetTaskError(types.ErrorCodeAssetChannelConflict, http.StatusConflict)
 	}
-	if lockedChannel.Type != constant.ChannelTypeBytePlus || lockedChannel.Status != common.ChannelStatusEnabled {
+	if !isBytePlusAssetPinnedChannelUsable(lockedChannel) {
 		return bytePlusAssetTaskError(types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 	}
 	currentChannel, err := model.GetChannelById(pinnedChannelID, true)
-	if err != nil || currentChannel == nil || currentChannel.Type != constant.ChannelTypeBytePlus || currentChannel.Status != common.ChannelStatusEnabled {
+	if err != nil || !isBytePlusAssetPinnedChannelUsable(currentChannel) {
 		return bytePlusAssetTaskError(types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 	}
 	info.LockedChannel = currentChannel

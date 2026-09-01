@@ -756,6 +756,21 @@ func TestGrokAssetTaskWorkerPollingKeyPolicyDoesNotPersistOAuth(t *testing.T) {
 	require.Empty(t, key)
 }
 
+func TestTokenSpaceAssetTaskWorkerPollingKeyPersistsSelectedKey(t *testing.T) {
+	key := taskPollingKey(&model.Channel{
+		Id:   114,
+		Type: constant.ChannelTypeTokenSpace,
+		Key:  "tokenspace-selected-key",
+	}, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeTokenSpace,
+			ApiKey:      "tokenspace-selected-key",
+		},
+	})
+
+	require.Equal(t, "tokenspace-selected-key", key)
+}
+
 func TestTechMobiAssetTaskWorkerRequeuesProcessingBindingThenSubmitsWhenActive(t *testing.T) {
 	restoreDB := useControllerAssetTaskDBForTest(t)
 	defer restoreDB()

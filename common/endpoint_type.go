@@ -64,6 +64,8 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 	case constant.ChannelTypeModelAPISeedance:
 		fallthrough
 	case constant.ChannelTypeMiniMaxH3:
+		fallthrough
+	case constant.ChannelTypeTokenSpace:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
 	case constant.ChannelTypeSonilo:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeVideoToMusic}

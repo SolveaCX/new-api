@@ -40,3 +40,9 @@ func TestGrokSubscriptionAPITypeMapping(t *testing.T) {
 		t.Fatalf("GrokSubscription API type = %d, want %d", apiType, constant.APITypeGrokSubscription)
 	}
 }
+
+func TestTokenSpaceRemainsAsyncOnlyAndHasNoSyncAPIType(t *testing.T) {
+	if _, ok := ChannelType2APIType(constant.ChannelTypeTokenSpace); ok {
+		t.Fatal("TokenSpace must not be registered as a synchronous API type")
+	}
+}

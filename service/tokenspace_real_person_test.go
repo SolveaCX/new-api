@@ -98,6 +98,32 @@ func TestTokenSpaceRealPersonCreateDoesNotRequireBytePlusCallback(t *testing.T) 
 	require.NotEmpty(t, session.H5LinkCiphertext)
 }
 
+func TestIndependentTokenSpaceChannelCreatesRealPersonWithoutExplicitMaterialConfig(t *testing.T) {
+	newBytePlusRealPersonServiceTestDB(t)
+	installBytePlusRealPersonServiceTestDeps(t, &fakeBytePlusRealPersonClient{})
+	t.Setenv(bytePlusRealPersonCallbackBaseURLEnv, "")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/material", r.URL.Path)
+		require.Equal(t, "CreateVisualValidateSession", r.URL.Query().Get("Action"))
+		require.Equal(t, "Bearer independent-token-key", r.Header.Get("Authorization"))
+		_, _ = io.WriteString(w, `{"ResponseMetadata":{"RequestId":"request-independent-create"},"Result":{"BytedToken":"byted-independent","H5Link":"https://verify.tokenspace.example/session"}}`)
+	}))
+	defer server.Close()
+	installTokenSpaceMaterialHTTPClientFactory(t, server.Client())
+	insertBytePlusRealPersonChannel(t, 43, "default", common.ChannelStatusEnabled, "independent-token-key")
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 43).Updates(map[string]any{
+		"type":     constant.ChannelTypeTokenSpace,
+		"base_url": server.URL,
+	}).Error)
+
+	response, apiErr := CreateBytePlusRealPerson(context.Background(), 7, "default", "default", 43, "independent-tokenspace-create", dto.BytePlusRealPersonCreateRequest{Name: "Alice"})
+
+	require.Nil(t, apiErr)
+	require.Equal(t, "https://verify.tokenspace.example/session", response.VerificationURL)
+	require.Equal(t, int64(2300), response.VerificationExpiresAt)
+}
+
 func TestTokenSpaceRealPersonCreateDefinitiveErrorIsSafeFailedReplay(t *testing.T) {
 	newBytePlusRealPersonServiceTestDB(t)
 	installBytePlusRealPersonServiceTestDeps(t, &fakeBytePlusRealPersonClient{})

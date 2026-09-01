@@ -333,7 +333,8 @@ func TaskChannelTypePersistsPollingKey(channelType int) bool {
 	case constant.ChannelTypeGemini,
 		constant.ChannelTypeVertexAi,
 		constant.ChannelTypeTechMobiVideo,
-		constant.ChannelTypeModelAPISeedance:
+		constant.ChannelTypeModelAPISeedance,
+		constant.ChannelTypeTokenSpace:
 		return true
 	case constant.ChannelTypeGrokSubscription:
 		return false

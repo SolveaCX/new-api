@@ -49,6 +49,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'DeepSeek',
   'Discord',
   'DoubaoVideo',
+  'TokenSpace',
   'FastGPT',
   'Flatkey CLI',
   'Gemini',

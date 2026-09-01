@@ -73,7 +73,8 @@ const (
 	ChannelTypeModelAPISeedance = 111 // ModelAPI Seedance 2.5 async video API; whitelabel
 	ChannelTypeCopilot          = 112 // GitHub Copilot Chat Completions API
 	ChannelTypeGrokSubscription = 113 // Grok Subscription: OAuth/PKCE 订阅账号，CLI 网关文本 + api.x.ai 媒体
-	ChannelTypeDummy            = 114 // this one is only for count, do not add any channel after this
+	ChannelTypeTokenSpace       = 114 // TokenSpace Seedance-compatible async video + real-person API
+	ChannelTypeDummy            = 115 // this one is only for count, do not add any channel after this
 )
 
 var ChannelBaseURLs = []string{
@@ -156,6 +157,7 @@ var ChannelBaseURLs = []string{
 	"https://api.modelapi.co",                 // 111 ModelAPISeedance
 	"https://api.githubcopilot.com",           // 112 Copilot
 	"",                                        // 113 GrokSubscription (host fixed in adaptor; no custom base URL)
+	"https://api.tokenspace.net.cn",           // 114 TokenSpace
 }
 
 var ChannelTypeNames = map[int]string{
@@ -228,6 +230,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeModelAPISeedance: "ModelAPISeedance",
 	ChannelTypeCopilot:          "Copilot",
 	ChannelTypeGrokSubscription: "GrokSubscription",
+	ChannelTypeTokenSpace:       "TokenSpace",
 }
 
 func GetChannelTypeName(channelType int) string {

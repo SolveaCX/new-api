@@ -27,6 +27,10 @@ const editChannelModalSource = readFileSync(
   join(currentDir, 'EditChannelModal.jsx'),
   'utf8',
 );
+const channelConstantsSource = readFileSync(
+  join(currentDir, '../../../../constants/channel.constants.js'),
+  'utf8',
+);
 const renderHelperSource = readFileSync(
   join(currentDir, '../../../../helpers/render.jsx'),
   'utf8',
@@ -45,9 +49,27 @@ describe('ModelAPISeedance classic channel metadata', () => {
     );
   });
 
+  test('registers TokenSpace channel type', () => {
+    expect(channelConstantsSource).toMatch(
+      /value:\s*114[\s\S]*label:\s*'TokenSpace'/,
+    );
+  });
+
+  test('renders the TokenSpace icon in the channel icon helper', () => {
+    expect(renderHelperSource).toMatch(
+      /case 114:[\s\S]*?return <Doubao\.Color size=\{iconSize\} \/>;/,
+    );
+  });
+
   test('clears proxy in type 111 submit payloads', () => {
     expect(editChannelModalSource).toContain(
       "proxy: localInputs.type === 111 ? '' : localInputs.proxy || '',",
+    );
+  });
+
+  test('uses the provider API-key prompt for TokenSpace channels', () => {
+    expect(editChannelModalSource).toMatch(
+      /case 114:[\s\S]*?return 'API key from the provider';/,
     );
   });
 

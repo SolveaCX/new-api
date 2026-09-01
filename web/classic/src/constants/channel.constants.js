@@ -221,6 +221,11 @@ export const CHANNEL_OPTIONS = [
     color: 'blue',
     label: 'ModelAPISeedance',
   },
+  {
+    value: 114,
+    color: 'blue',
+    label: 'TokenSpace',
+  },
 ];
 
 // Channel types that support upstream model list fetching in UI.

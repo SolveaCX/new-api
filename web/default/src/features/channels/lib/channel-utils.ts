@@ -117,6 +117,7 @@ export function getChannelTypeIcon(type: number): string {
     100: 'OpenAI', // BlockRun (multi-provider gateway, generic icon)
     112: 'Github', // GitHub Copilot
     113: 'XAI', // Grok Subscription (xAI brand; same LobeIcons export as channel 48)
+    114: 'Doubao', // TokenSpace (Seedance-compatible video + real-person API)
 
     // AI Proxy services
     10: 'OpenAI', // AI Proxy
