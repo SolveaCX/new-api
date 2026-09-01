@@ -157,7 +157,10 @@ func GetStatus(c *gin.Context) {
 		data["api_info"] = console_setting.GetApiInfo()
 	}
 	if cs.AnnouncementsEnabled {
-		data["announcements"] = console_setting.GetAnnouncements()
+		data["announcements"] = service.LocalizeAnnouncements(
+			console_setting.GetAnnouncements(),
+			i18n.GetLangFromContext(c),
+		)
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()

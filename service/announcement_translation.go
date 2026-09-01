@@ -61,12 +61,65 @@ func LocalizeNotice(raw, language string) string {
 	if err := common.Unmarshal([]byte(raw), &notice); err != nil || strings.TrimSpace(notice.Content) == "" {
 		return raw
 	}
-	for _, candidate := range []string{language, strings.Split(language, "-")[0], "en", "zh"} {
+	if isChineseLanguage(language) {
+		return notice.Content
+	}
+	for _, candidate := range []string{language, strings.Split(language, "-")[0], "en"} {
 		if translation, ok := notice.Translations[candidate]; ok && strings.TrimSpace(translation.Content) != "" {
 			return translation.Content
 		}
 	}
 	return notice.Content
+}
+
+func isChineseLanguage(language string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(language)), "zh")
+}
+
+func LocalizeAnnouncements(announcements []map[string]interface{}, language string) []map[string]interface{} {
+	localized := make([]map[string]interface{}, 0, len(announcements))
+	for _, announcement := range announcements {
+		item := make(map[string]interface{}, len(announcement))
+		for key, value := range announcement {
+			item[key] = value
+		}
+
+		if isChineseLanguage(language) {
+			localized = append(localized, item)
+			continue
+		}
+
+		translations, ok := announcement["translations"].(map[string]interface{})
+		if !ok {
+			localized = append(localized, item)
+			continue
+		}
+		translation, ok := localizedAnnouncementTranslation(translations, language)
+		if !ok {
+			localized = append(localized, item)
+			continue
+		}
+		if content, ok := translation["content"].(string); ok && strings.TrimSpace(content) != "" {
+			item["content"] = content
+		}
+		if extra, ok := translation["extra"].(string); ok {
+			item["extra"] = extra
+		}
+		localized = append(localized, item)
+	}
+	return localized
+}
+
+func localizedAnnouncementTranslation(translations map[string]interface{}, language string) (map[string]interface{}, bool) {
+	for _, candidate := range []string{language, strings.Split(language, "-")[0], "en"} {
+		translation, ok := translations[candidate].(map[string]interface{})
+		if ok {
+			if content, hasContent := translation["content"].(string); hasContent && strings.TrimSpace(content) != "" {
+				return translation, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func TranslateAnnouncement(ctx context.Context, content, extra string) (map[string]AnnouncementTranslation, error) {

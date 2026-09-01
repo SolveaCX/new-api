@@ -27,3 +27,40 @@ func TestParseAnnouncementTranslationResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalizeNoticeUsesChineseSourceForChineseLanguage(t *testing.T) {
+	raw := `{"content":"中文公告","translations":{"en":{"content":"English notice"}}}`
+
+	if got := LocalizeNotice(raw, "zh-CN"); got != "中文公告" {
+		t.Fatalf("LocalizeNotice() = %q, want Chinese source", got)
+	}
+	if got := LocalizeNotice(raw, "en-US"); got != "English notice" {
+		t.Fatalf("LocalizeNotice() = %q, want English translation", got)
+	}
+}
+
+func TestLocalizeAnnouncementsUsesChineseSourceForChineseLanguage(t *testing.T) {
+	announcements := []map[string]interface{}{{
+		"content": "中文公告",
+		"extra":   "中文说明",
+		"translations": map[string]interface{}{
+			"en": map[string]interface{}{
+				"content": "English notice",
+				"extra":   "English details",
+			},
+		},
+	}}
+
+	zh := LocalizeAnnouncements(announcements, "zh-CN")
+	if got := zh[0]["content"]; got != "中文公告" {
+		t.Fatalf("Chinese announcement content = %v, want Chinese source", got)
+	}
+
+	en := LocalizeAnnouncements(announcements, "en-US")
+	if got := en[0]["content"]; got != "English notice" {
+		t.Fatalf("English announcement content = %v, want English translation", got)
+	}
+	if got := en[0]["extra"]; got != "English details" {
+		t.Fatalf("English announcement extra = %v, want English translation", got)
+	}
+}
