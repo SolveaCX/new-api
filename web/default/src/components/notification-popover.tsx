@@ -39,6 +39,12 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 
@@ -68,8 +74,9 @@ const announcementMarkdownClassName =
 
 function ExpandableMarkdown({ content }: { content: string }) {
   const contentRef = useRef<HTMLDivElement>(null)
-  const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const [canExpand, setCanExpand] = useState(false)
+  const { t } = useTranslation()
 
   useEffect(() => {
     const element = contentRef.current
@@ -89,14 +96,14 @@ function ExpandableMarkdown({ content }: { content: string }) {
     if (!canExpand || (event.target as HTMLElement).closest('a')) return
     event.preventDefault()
     event.stopPropagation()
-    setExpanded((value) => !value)
+    setOpen(true)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!canExpand || (event.target as HTMLElement).closest('a')) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
-    setExpanded((value) => !value)
+    setOpen(true)
   }
 
   return (
@@ -104,11 +111,11 @@ function ExpandableMarkdown({ content }: { content: string }) {
       ref={contentRef}
       role={canExpand ? 'button' : undefined}
       tabIndex={canExpand ? 0 : undefined}
-      aria-expanded={canExpand ? expanded : undefined}
+      aria-haspopup={canExpand ? 'dialog' : undefined}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={
-        canExpand && !expanded
+        canExpand
           ? "relative max-h-[4.5rem] cursor-pointer overflow-hidden after:absolute after:right-0 after:bottom-0 after:bg-popover after:px-1 after:font-medium after:content-['...']"
           : undefined
       }
@@ -116,6 +123,16 @@ function ExpandableMarkdown({ content }: { content: string }) {
       <Markdown className={announcementMarkdownClassName}>
         {content}
       </Markdown>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className='max-h-[min(80vh,40rem)] overflow-y-auto sm:max-w-2xl'>
+          <DialogHeader>
+            <DialogTitle>{t('System Announcements')}</DialogTitle>
+          </DialogHeader>
+          <Markdown className={announcementMarkdownClassName}>
+            {content}
+          </Markdown>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
