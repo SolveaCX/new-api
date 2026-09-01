@@ -231,11 +231,19 @@ export async function sendMediaGeneration(
   request: MediaGenerationRequest,
   signal?: AbortSignal
 ): Promise<unknown> {
-  const res = await api.post(request.endpoint, request.payload, {
+  const requestConfig: Record<string, unknown> = {
     signal,
     skipErrorHandler: true,
-    ...(request.kind === 'audio' ? { responseType: 'blob' } : {}),
-  } as Record<string, unknown>)
+  }
+  if (request.kind === 'audio') {
+    // Synchronous text-to-speech is the only media request that returns raw
+    // binary data. Sonilo returns a JSON task envelope, despite producing
+    // audio later.
+    requestConfig.responseType = 'blob'
+  }
+  // Do not set Content-Type here: Axios/browser must generate the multipart
+  // boundary for the Sonilo FormData payload.
+  const res = await api.post(request.endpoint, request.payload, requestConfig)
   return res.data
 }
 
@@ -247,6 +255,21 @@ export async function fetchPlaygroundVideoTask(
     signal,
     skipErrorHandler: true,
   } as Record<string, unknown>)
+  return res.data
+}
+
+export async function fetchPlaygroundVideoToMusicTask(
+  taskId: string,
+  signal?: AbortSignal
+): Promise<unknown> {
+  const res = await api.get(
+    `/pg/video-to-music/${encodeURIComponent(taskId)}`,
+    {
+      signal,
+      disableDuplicate: true,
+      skipErrorHandler: true,
+    } as Record<string, unknown>
+  )
   return res.data
 }
 

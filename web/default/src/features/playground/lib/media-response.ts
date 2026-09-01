@@ -26,6 +26,14 @@ interface VideoTaskState {
   error?: string
 }
 
+export interface VideoToMusicTaskState {
+  taskId: string
+  status: 'queued' | 'in_progress' | 'completed' | 'failed'
+  progress?: number
+  audio?: GeneratedMedia[]
+  error?: string
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined
@@ -163,6 +171,30 @@ function taskError(item: Record<string, unknown>): string | undefined {
   return undefined
 }
 
+function sanitizeSoniloAudioURL(value: unknown): string | undefined {
+  const safeURL = sanitizeGeneratedMediaUrl(value)
+  if (!safeURL || !/^https?:\/\//i.test(safeURL)) return safeURL
+  try {
+    const parsed = new URL(safeURL)
+    if (parsed.protocol !== 'https:') return undefined
+    const hostname = parsed.hostname.toLowerCase()
+    if (hostname === 'sonilo.com' || hostname.endsWith('.sonilo.com')) {
+      return undefined
+    }
+  } catch {
+    return undefined
+  }
+  return safeURL
+}
+
+function sanitizeSoniloTaskError(value: string): string {
+  const sanitized = value
+    .replace(/https?:\/\/[^\s]+/gi, '')
+    .replace(/\b(?:[a-z0-9-]+\.)*sonilo\.com[^\s]*/gi, 'upstream provider')
+    .trim()
+  return sanitized || 'Audio generation failed'
+}
+
 export function parseVideoTaskResponse(
   response: unknown
 ): VideoTaskState | undefined {
@@ -187,5 +219,57 @@ export function parseVideoTaskResponse(
   if (safeUrl) result.url = safeUrl
   const error = taskError(item)
   if (error) result.error = error
+  return result
+}
+
+/** Parse the Sonilo video-to-music task contract without exposing provider URLs. */
+export function parseVideoToMusicTaskResponse(
+  response: unknown
+): VideoToMusicTaskState | undefined {
+  const root = asRecord(response)
+  if (!root) return undefined
+  const wrapped = asRecord(root.data)
+  const item = wrapped ?? root
+  const rawTaskId = item.task_id ?? item.id
+  if (typeof rawTaskId !== 'string' || !rawTaskId.trim()) return undefined
+  const status = normalizeVideoStatus(item.status)
+  if (!status) return undefined
+
+  const result: VideoToMusicTaskState = {
+    taskId: rawTaskId,
+    status,
+  }
+  const progress = normalizeProgress(item.progress)
+  if (progress !== undefined) result.progress = progress
+
+  if (Array.isArray(item.audio)) {
+    const audio = item.audio.flatMap((entry): GeneratedMedia[] => {
+      const audioItem = asRecord(entry)
+      if (!audioItem) return []
+      const safeURL = sanitizeSoniloAudioURL(
+        audioItem.url ?? audioItem.audio_url ?? audioItem.file_url
+      )
+      if (!safeURL) return []
+      const contentType =
+        typeof audioItem.content_type === 'string'
+          ? audioItem.content_type.trim()
+          : typeof audioItem.mime_type === 'string'
+            ? audioItem.mime_type.trim()
+            : ''
+      return [
+        {
+          type: 'audio',
+          url: safeURL,
+          ...(contentType ? { mimeType: contentType } : {}),
+        },
+      ]
+    })
+    // Preserve an explicitly empty list so the lifecycle can distinguish a
+    // completed task with no output from a response that omitted `audio`.
+    if (audio.length > 0 || item.audio.length === 0) result.audio = audio
+  }
+
+  const error = taskError(item)
+  if (error) result.error = sanitizeSoniloTaskError(error)
   return result
 }

@@ -47,6 +47,8 @@ export interface PlaygroundAttachment {
   assetId?: string
   url?: string
   dataUrl?: string
+  /** Browser-read duration metadata for local video inputs, in seconds. */
+  durationSeconds?: number
   text?: string
 }
 
@@ -84,6 +86,8 @@ export interface Message {
   // Unified media generation persists the public task id so an in-flight
   // video can resume polling after navigation or a page reload.
   videoTaskId?: string
+  /** Identifies which task endpoint should resume polling after a reload. */
+  mediaTaskType?: 'video' | 'video-to-music'
   /** @deprecated Media is stored on MessageVersion; kept for old saved sessions. */
   generatedMedia?: GeneratedMedia[]
 }

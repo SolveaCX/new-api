@@ -28,6 +28,10 @@ const fetchPlaygroundVideoTaskMock = spyOn(
   'fetchPlaygroundVideoTask'
 )
 const fetchVideoContentMock = spyOn(playgroundApi, 'fetchVideoContent')
+const fetchPlaygroundVideoToMusicTaskMock = spyOn(
+  playgroundApi,
+  'fetchPlaygroundVideoToMusicTask'
+)
 const uploadPlaygroundAttachmentsMock = spyOn(
   playgroundAttachments,
   'uploadPlaygroundAttachments'
@@ -41,6 +45,7 @@ beforeEach(() => {
   sendMediaGenerationMock.mockReset()
   fetchPlaygroundVideoTaskMock.mockReset()
   fetchVideoContentMock.mockReset()
+  fetchPlaygroundVideoToMusicTaskMock.mockReset()
   uploadPlaygroundAttachmentsMock.mockReset()
   uploadPlaygroundAttachmentsMock.mockImplementation(
     async (attachments) => attachments
@@ -61,6 +66,7 @@ afterAll(() => {
   sendMediaGenerationMock.mockRestore()
   fetchPlaygroundVideoTaskMock.mockRestore()
   fetchVideoContentMock.mockRestore()
+  fetchPlaygroundVideoToMusicTaskMock.mockRestore()
   uploadPlaygroundAttachmentsMock.mockRestore()
   if (originalWindow) {
     Object.defineProperty(globalThis, 'window', {
@@ -385,6 +391,7 @@ describe('useMediaGeneration video task lifecycle', () => {
       ...messages[1],
       status: MESSAGE_STATUS.STREAMING,
       videoTaskId: 'video-task-stopped',
+      mediaTaskType: 'video-to-music',
     }
     const harness = renderMediaGenerationHook(messages)
 
@@ -402,6 +409,7 @@ describe('useMediaGeneration video task lifecycle', () => {
     const stopped = harness.messages()[1]
     expect(stopped.status).toBe(MESSAGE_STATUS.COMPLETE)
     expect('videoTaskId' in stopped).toBe(false)
+    expect('mediaTaskType' in stopped).toBe(false)
   })
 
   test('does not replace an active media generation with a second request', async () => {
@@ -434,6 +442,105 @@ describe('useMediaGeneration video task lifecycle', () => {
     harness.hook.stopMediaGeneration()
     resolveSubmission?.({ id: 'video-task-stopped', status: 'queued' })
     await firstGeneration
+  })
+
+  test('polls Sonilo video-to-music tasks and stores playable audio media', async () => {
+    sendMediaGenerationMock.mockResolvedValue({
+      task_id: 'task_1',
+      status: 'processing',
+    })
+    fetchPlaygroundVideoToMusicTaskMock.mockResolvedValue({
+      task_id: 'task_1',
+      status: 'succeeded',
+      audio: [
+        {
+          url: '/v1/video-to-music/task_1/content?variant=0',
+          content_type: 'audio/mpeg',
+        },
+      ],
+    })
+    const harness = renderMediaGenerationHook(createMediaMessages())
+
+    await harness.hook.generateMedia(
+      'Make a soundtrack',
+      'sonilo-video-to-music',
+      'plg',
+      { duration: 12 },
+      'target-assistant',
+      [
+        {
+          kind: 'video',
+          filename: 'reference.mp4',
+          mediaType: 'video/mp4',
+          url: 'data:video/mp4;base64,AA==',
+          durationSeconds: 12,
+        },
+      ]
+    )
+
+    expect(fetchPlaygroundVideoToMusicTaskMock).toHaveBeenCalledWith(
+      'task_1',
+      expect.any(AbortSignal)
+    )
+    expect(fetchPlaygroundVideoTaskMock).not.toHaveBeenCalled()
+    expect(harness.updates[0]?.[1]).toMatchObject({
+      status: MESSAGE_STATUS.STREAMING,
+      videoTaskId: 'task_1',
+      mediaTaskType: 'video-to-music',
+    })
+    expect(harness.messages()[1]).toMatchObject({
+      status: MESSAGE_STATUS.COMPLETE,
+      versions: [
+        {
+          generatedMedia: [
+            {
+              type: 'audio',
+              url: '/v1/video-to-music/task_1/content?variant=0',
+              mimeType: 'audio/mpeg',
+            },
+          ],
+        },
+      ],
+    })
+    expect('videoTaskId' in harness.messages()[1]).toBe(false)
+    expect('mediaTaskType' in harness.messages()[1]).toBe(false)
+  })
+
+  test('fails a completed Sonilo task that has no usable audio', async () => {
+    sendMediaGenerationMock.mockResolvedValue({
+      task_id: 'task_empty',
+      status: 'processing',
+    })
+    fetchPlaygroundVideoToMusicTaskMock.mockResolvedValue({
+      task_id: 'task_empty',
+      status: 'completed',
+      audio: [{ url: 'javascript:alert(1)' }],
+    })
+    const harness = renderMediaGenerationHook(createMediaMessages())
+
+    await harness.hook.generateMedia(
+      'No output',
+      'sonilo-video-to-music',
+      'plg',
+      { duration: 10 },
+      'target-assistant',
+      [
+        {
+          kind: 'video',
+          filename: 'reference.mp4',
+          mediaType: 'video/mp4',
+          url: 'data:video/mp4;base64,AA==',
+          durationSeconds: 10,
+        },
+      ]
+    )
+
+    expect(harness.messages()[1].status).toBe(MESSAGE_STATUS.ERROR)
+    expect(harness.messages()[1].versions[0]?.content).toContain(
+      'No audio was generated'
+    )
+    expect('videoTaskId' in harness.messages()[1]).toBe(false)
+    expect('mediaTaskType' in harness.messages()[1]).toBe(false)
   })
 })
 

@@ -96,3 +96,18 @@ func PlaygroundVideoFetch(c *gin.Context) {
 		RelayTaskFetch(c)
 	})
 }
+
+// PlaygroundVideoToMusicSubmit exposes the Sonilo video-to-music task contract
+// through the authenticated Playground surface. The task relay owns channel
+// selection, billing, persistence, and provider whitelabeling.
+func PlaygroundVideoToMusicSubmit(c *gin.Context) {
+	runPlaygroundRelay(c, types.RelayFormatTask, func() {
+		RelayTask(c)
+	})
+}
+
+func PlaygroundVideoToMusicFetch(c *gin.Context) {
+	runPlaygroundRelay(c, types.RelayFormatTask, func() {
+		RelayTaskFetch(c)
+	})
+}

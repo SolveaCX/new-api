@@ -763,7 +763,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		// the path (like /suno/ above), since the request body carries no OpenAI "model"
 		// field. The resolved model is registered as an ability on the ElevenLabs channel.
 		modelRequest.Model = elModel
-	} else if strings.HasPrefix(c.Request.URL.Path, "/v1/video-to-music") {
+	} else if strings.HasPrefix(requestPath, "/v1/video-to-music") {
 		relayMode := relayconstant.RelayModeVideoSubmit
 		if c.Request.Method == http.MethodPost {
 			req, err := getModelFromRequest(c)

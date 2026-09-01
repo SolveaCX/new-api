@@ -20,6 +20,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   extractGeneratedImages,
   parseVideoTaskResponse,
+  parseVideoToMusicTaskResponse,
   sanitizeGeneratedMediaUrl,
 } from './media-response'
 
@@ -169,5 +170,121 @@ describe('parseVideoTaskResponse', () => {
       taskId: 'task_789',
       status: 'completed',
     })
+  })
+})
+
+describe('parseVideoToMusicTaskResponse', () => {
+  test('parses a processing Sonilo task', () => {
+    expect(
+      parseVideoToMusicTaskResponse({
+        task_id: 'task_1',
+        status: 'processing',
+      })
+    ).toEqual({
+      taskId: 'task_1',
+      status: 'in_progress',
+    })
+  })
+
+  test('parses succeeded audio from a direct or wrapped response', () => {
+    expect(
+      parseVideoToMusicTaskResponse({
+        data: {
+          task_id: 'task_1',
+          status: 'succeeded',
+          audio: [
+            {
+              url: '/v1/video-to-music/task_1/content?variant=0',
+              content_type: 'audio/mpeg',
+            },
+          ],
+        },
+      })
+    ).toEqual({
+      taskId: 'task_1',
+      status: 'completed',
+      audio: [
+        {
+          type: 'audio',
+          url: '/v1/video-to-music/task_1/content?variant=0',
+          mimeType: 'audio/mpeg',
+        },
+      ],
+    })
+  })
+
+  test('normalizes failed task details', () => {
+    expect(
+      parseVideoToMusicTaskResponse({
+        task_id: 'task_1',
+        status: 'failed',
+        error: { message: 'task failed' },
+      })
+    ).toEqual({
+      taskId: 'task_1',
+      status: 'failed',
+      error: 'task failed',
+    })
+  })
+
+  test('redacts provider URLs from failed task details', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'failed',
+      error: {
+        message: 'https://api.sonilo.com/internal?token=secret failed',
+      },
+    })
+    expect(parsed?.error).not.toContain('api.sonilo.com')
+    expect(parsed?.error).not.toContain('token=secret')
+  })
+
+  test('redacts bare provider hosts and their paths from failed task details', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'failed',
+      error: { message: 'api.sonilo.com/internal?token=secret failed' },
+    })
+    expect(parsed?.error).not.toContain('sonilo.com')
+    expect(parsed?.error).not.toContain('token=secret')
+  })
+
+  test('does not expose a successful state when every audio URL is unsafe', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'succeeded',
+      audio: [{ url: 'javascript:alert(1)', content_type: 'audio/mpeg' }],
+    })
+    expect(parsed?.status).toBe('completed')
+    expect(parsed?.audio).toBeUndefined()
+  })
+
+  test('does not expose a Sonilo provider URL to the Playground message', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'succeeded',
+      audio: [{ url: 'https://api.sonilo.com/v1/audio/task_1.mp3' }],
+    })
+    expect(parsed?.status).toBe('completed')
+    expect(parsed?.audio).toBeUndefined()
+  })
+
+  test('requires HTTPS for external Sonilo audio URLs', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'succeeded',
+      audio: [{ url: 'http://cdn.example/audio.mp3' }],
+    })
+    expect(parsed?.audio).toBeUndefined()
+  })
+
+  test('keeps completed tasks without audio out of the success media path', () => {
+    const parsed = parseVideoToMusicTaskResponse({
+      task_id: 'task_1',
+      status: 'completed',
+      audio: [],
+    })
+    expect(parsed?.status).toBe('completed')
+    expect(parsed?.audio).toEqual([])
   })
 })

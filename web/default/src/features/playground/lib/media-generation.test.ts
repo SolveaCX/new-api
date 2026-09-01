@@ -47,9 +47,15 @@ describe('Playground media model profiles', () => {
     expect(resolvePlaygroundModelKind('eleven_multilingual_v2')).toBe(
       'unsupported'
     )
-    expect(resolvePlaygroundModelKind('sonilo-video-to-music')).toBe(
-      'unsupported'
-    )
+    expect(resolvePlaygroundModelKind('sonilo-video-to-music')).toBe('audio')
+    expect(
+      resolveMediaGenerationProfile('sonilo-video-to-music')
+    ).toMatchObject({
+      kind: 'audio',
+      family: 'sonilo-video-to-music',
+      inputKind: 'video',
+      requiresAttachment: true,
+    })
     for (const model of ['qwen-tts', 'fish-speech-1', 'seed-tts-custom']) {
       expect(resolvePlaygroundModelKind(model)).toBe('unsupported')
     }
@@ -201,6 +207,39 @@ describe('Playground media model profiles', () => {
     ]) {
       expect(supportsPlaygroundAudioInput(model)).toBe(false)
     }
+  })
+
+  test('requires exactly one video for Sonilo video-to-music', () => {
+    const video = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      assetId: 'ast_video',
+      url: 'https://storage.example/reference.mp4',
+      durationSeconds: 12,
+    })
+    const image = {
+      kind: 'image' as const,
+      filename: 'reference.png',
+      mediaType: 'image/png',
+      url: 'data:image/png;base64,AA==',
+    }
+
+    expect(
+      validateMediaGenerationAttachments('sonilo-video-to-music', [])
+    ).toBe('Upload one video to use this model')
+    expect(
+      validateMediaGenerationAttachments('sonilo-video-to-music', [image])
+    ).toBe('Upload one video to use this model')
+    expect(
+      validateMediaGenerationAttachments('sonilo-video-to-music', [
+        video,
+        video,
+      ])
+    ).toBe('Upload one video to use this model')
+    expect(
+      validateMediaGenerationAttachments('sonilo-video-to-music', [video])
+    ).toBeUndefined()
   })
 
   test('rejects audio input before dispatching to a text-only chat model', () => {
@@ -528,6 +567,111 @@ describe('Playground media model profiles', () => {
 })
 
 describe('Playground media request building', () => {
+  test('builds a Sonilo video-to-music multipart request', () => {
+    const video = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      assetId: 'ast_video',
+      url: 'https://storage.example/reference.mp4',
+      durationSeconds: 12,
+    })
+
+    const request = buildMediaGenerationRequest(
+      'Make an upbeat soundtrack',
+      'sonilo-video-to-music',
+      'plg',
+      {
+        duration: 30,
+        outputFormat: 'wav',
+        preserveSpeech: true,
+        ducking: true,
+      },
+      [video]
+    )
+
+    expect(request?.kind).toBe('video-to-music')
+    expect(request?.endpoint).toBe('/pg/video-to-music')
+    expect(request?.payload).toBeInstanceOf(FormData)
+    const form = request?.payload as FormData
+    expect(Object.fromEntries(form.entries())).toEqual({
+      model: 'sonilo-video-to-music',
+      group: 'plg',
+      video_url: 'https://storage.example/reference.mp4',
+      prompt: 'Make an upbeat soundtrack',
+      duration_seconds: '12',
+      output_format: 'wav',
+      mode: 'async',
+      preserve_speech: 'true',
+      ducking: 'true',
+      variants_num: '1',
+    })
+  })
+
+  test('falls back to the configured Sonilo duration when metadata is absent', () => {
+    const video = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      url: 'https://storage.example/reference.mp4',
+    })
+
+    const request = buildMediaGenerationRequest(
+      '',
+      'sonilo-video-to-music',
+      'plg',
+      { duration: 8 },
+      [video]
+    )
+
+    expect(request?.payload).toBeInstanceOf(FormData)
+    expect((request?.payload as FormData).get('duration_seconds')).toBe('8')
+    expect((request?.payload as FormData).has('prompt')).toBe(false)
+  })
+
+  test('rejects an explicitly invalid Sonilo duration', () => {
+    const video = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      url: 'https://storage.example/reference.mp4',
+    })
+
+    for (const duration of [0, 3600.1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        buildMediaGenerationRequest(
+          'prompt',
+          'sonilo-video-to-music',
+          'plg',
+          { duration },
+          [video]
+        )
+      ).toBeUndefined()
+    }
+  })
+
+  test('canonicalizes the Sonilo model and group fields', () => {
+    const video = markTrustedAttachmentURL({
+      kind: 'video',
+      filename: 'reference.mp4',
+      mediaType: 'video/mp4',
+      url: 'https://storage.example/reference.mp4',
+    })
+
+    const request = buildMediaGenerationRequest(
+      'prompt',
+      ' SONILO-VIDEO-TO-MUSIC ',
+      ' plg ',
+      { duration: 10 },
+      [video]
+    )
+
+    expect((request?.payload as FormData).get('model')).toBe(
+      'sonilo-video-to-music'
+    )
+    expect((request?.payload as FormData).get('group')).toBe('plg')
+  })
+
   test('allows image references for video models but rejects unsupported media', () => {
     const image = {
       kind: 'image' as const,

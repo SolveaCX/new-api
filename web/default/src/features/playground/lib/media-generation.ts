@@ -36,6 +36,7 @@ export type MediaGenerationFamily =
   | 'veo-3.1'
   | 'seedance-2.0'
   | 'seedance-2.5'
+  | 'sonilo-video-to-music'
   | 'tts'
 
 export type MediaParameterKey =
@@ -53,6 +54,8 @@ export type MediaParameterKey =
   | 'speed'
   | 'generateAudio'
   | 'seed'
+  | 'preserveSpeech'
+  | 'ducking'
 
 export type MediaParameterValue = string | number | boolean
 
@@ -99,28 +102,48 @@ export type MediaParameterField =
 export interface MediaGenerationProfile {
   kind: 'image' | 'video' | 'audio'
   family: MediaGenerationFamily
+  inputKind?: 'image' | 'video'
+  requiresAttachment?: boolean
   fields: MediaParameterField[]
   defaults: MediaGenerationSettings
   noteKey?: string
 }
 
-export interface MediaGenerationRequest {
-  kind: 'image' | 'video' | 'audio'
-  endpoint:
-    | '/pg/chat/completions'
-    | '/pg/images/generations'
-    | '/pg/images/edits'
-    | '/pg/audio/speech'
-    | '/pg/videos'
-  payload: Record<string, unknown>
-}
+export type MediaGenerationRequest =
+  | {
+      kind: 'image'
+      endpoint:
+        | '/pg/chat/completions'
+        | '/pg/images/generations'
+        | '/pg/images/edits'
+      payload: Record<string, unknown>
+    }
+  | {
+      kind: 'audio'
+      endpoint: '/pg/audio/speech'
+      payload: Record<string, unknown>
+    }
+  | {
+      kind: 'video'
+      endpoint: '/pg/videos'
+      payload: Record<string, unknown>
+    }
+  | {
+      kind: 'video-to-music'
+      endpoint: '/pg/video-to-music'
+      payload: FormData
+    }
 
 export function validateMediaGenerationAttachments(
   model: unknown,
   attachments: PlaygroundAttachment[]
 ): string | undefined {
-  if (attachments.length === 0) return undefined
   const profile = resolveMediaGenerationProfile(model)
+  if (attachments.length === 0) {
+    return profile?.requiresAttachment
+      ? 'Upload one video to use this model'
+      : undefined
+  }
   // Ordinary chat models already accept multimodal attachments through the
   // chat-completions path. Video is different: a chat model may accept the
   // request while still being unable to inspect video frames. Reject it
@@ -147,6 +170,11 @@ export function validateMediaGenerationAttachments(
         : undefined
     }
     return 'This image model does not support attachments in Playground'
+  }
+  if (profile.family === 'sonilo-video-to-music') {
+    return attachments.length === 1 && attachments[0]?.kind === 'video'
+      ? undefined
+      : 'Upload one video to use this model'
   }
   if (profile.kind === 'audio') {
     return 'Text-to-speech models do not support attachments in Playground'
@@ -577,6 +605,41 @@ const ttsOutputFields: MediaParameterField[] = [
   },
 ]
 
+const soniloVideoToMusicProfile: MediaGenerationProfile = {
+  kind: 'audio',
+  family: 'sonilo-video-to-music',
+  inputKind: 'video',
+  requiresAttachment: true,
+  defaults: {
+    duration: 10,
+    outputFormat: 'mp3',
+    preserveSpeech: false,
+    ducking: false,
+  },
+  fields: [
+    {
+      key: 'duration',
+      labelKey: 'Video duration',
+      control: 'number',
+      min: 1,
+      max: 3600,
+      step: 0.1,
+      unitKey: 'seconds',
+    },
+    selectField('outputFormat', 'Output format', ['mp3', 'm4a', 'wav']),
+    {
+      key: 'preserveSpeech',
+      labelKey: 'Preserve speech',
+      control: 'switch',
+    },
+    {
+      key: 'ducking',
+      labelKey: 'Ducking',
+      control: 'switch',
+    },
+  ],
+}
+
 const ttsProfile: MediaGenerationProfile = {
   kind: 'audio',
   family: 'tts',
@@ -611,7 +674,7 @@ const unsupportedPatterns = [
 ]
 
 const unsupportedAudioModelPattern =
-  /(?:^|[-_/])(?:eleven(?:labs)?|sonilo)(?:$|[-_/])|^eleven[_-]/i
+  /(?:^|[-_/])(?:eleven(?:labs)?)(?:$|[-_/])|^eleven[_-]/i
 
 const supportedTTSModelPattern =
   /(?:^|\/)(?:gemini-[^/]*-tts[^/]*|gpt-4o-mini-tts[^/]*|tts-1(?:-[^/]*)?|speech-(?:2\.5-(?:hd|turbo)-preview|(?:01|02)-(?:hd|turbo)))(?:$|\/)/i
@@ -655,6 +718,10 @@ export function resolveMediaGenerationProfile(
 ): MediaGenerationProfile | undefined {
   const normalized = normalizeModelName(model)
   if (!normalized) return undefined
+
+  if (normalized === 'sonilo-video-to-music') {
+    return cloneProfile(soniloVideoToMusicProfile)
+  }
 
   if (/(^|\/)gpt-image-2(?:$|[-_/])/.test(normalized)) {
     return cloneProfile(gptImageProfile)
@@ -925,6 +992,60 @@ function buildVideoPayload(
   }
 }
 
+function buildSoniloVideoToMusicFormData(
+  prompt: string,
+  model: string,
+  group: string,
+  settings: MediaGenerationSettings,
+  profile: MediaGenerationProfile,
+  attachments: PlaygroundAttachment[]
+): FormData | undefined {
+  const video =
+    attachments.length === 1 && attachments[0]?.kind === 'video'
+      ? attachments[0]
+      : undefined
+  const videoURL = video ? getPlayableAttachmentURL(video) : undefined
+  if (!video || !videoURL) return undefined
+
+  const normalizedSettings = normalizeMediaGenerationSettings(profile, settings)
+  const metadataDuration = video.durationSeconds
+  const configuredDuration = settings.duration
+  const duration =
+    metadataDuration === undefined
+      ? configuredDuration === undefined
+        ? Number(normalizedSettings.duration)
+        : Number(configuredDuration)
+      : Number(metadataDuration)
+  if (!Number.isFinite(duration) || duration < 1 || duration > 3600) {
+    return undefined
+  }
+
+  const outputFormat = ['mp3', 'm4a', 'wav'].includes(
+    String(normalizedSettings.outputFormat)
+  )
+    ? String(normalizedSettings.outputFormat)
+    : 'mp3'
+  const formData = new FormData()
+  // The backend deliberately accepts only this exact model name. The model
+  // selector normally supplies it verbatim, but canonicalizing here keeps a
+  // handoff with surrounding whitespace/case from becoming an upstream 400.
+  formData.set('model', normalizeModelName(model))
+  formData.set('group', group.trim())
+  formData.set('video_url', videoURL)
+  const trimmedPrompt = prompt.trim()
+  if (trimmedPrompt) formData.set('prompt', trimmedPrompt)
+  formData.set('duration_seconds', String(Math.round(duration * 10) / 10))
+  formData.set('output_format', outputFormat)
+  formData.set('mode', 'async')
+  formData.set(
+    'preserve_speech',
+    String(normalizedSettings.preserveSpeech === true)
+  )
+  formData.set('ducking', String(normalizedSettings.ducking === true))
+  formData.set('variants_num', '1')
+  return formData
+}
+
 export function buildMediaGenerationRequest(
   prompt: string,
   model: string,
@@ -938,6 +1059,23 @@ export function buildMediaGenerationRequest(
   // The Playground state normalizes settings when the user edits them. Keep
   // request construction serialization-only so the submitted values always
   // match the values visible in the parameter panel.
+
+  if (profile.family === 'sonilo-video-to-music') {
+    const payload = buildSoniloVideoToMusicFormData(
+      prompt,
+      model,
+      group,
+      settings,
+      profile,
+      attachments
+    )
+    if (!payload) return undefined
+    return {
+      kind: 'video-to-music',
+      endpoint: '/pg/video-to-music',
+      payload,
+    }
+  }
 
   if (profile.family === 'tts') {
     const voice = String(settings.voice ?? profile.defaults.voice ?? 'alloy')

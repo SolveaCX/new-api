@@ -110,6 +110,12 @@ func TestGenerationTasksFetchPathDetection(t *testing.T) {
 	if !isOpenAIVideoFetchPath("/pg/videos/task_abc") {
 		t.Fatal("Playground video fetch path should be detected")
 	}
+	if !isVideoToMusicFetchPath("/v1/video-to-music/task_abc") {
+		t.Fatal("video-to-music fetch path should be detected")
+	}
+	if !isVideoToMusicFetchPath("/pg/video-to-music/task_abc") {
+		t.Fatal("Playground video-to-music fetch path should be detected")
+	}
 }
 
 func TestGenerationTaskRespBodyMatchesDocs(t *testing.T) {

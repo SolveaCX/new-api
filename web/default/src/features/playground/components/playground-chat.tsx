@@ -118,6 +118,10 @@ function generatedAudioExtension(media: GeneratedMedia): string {
       return 'opus'
     case 'audio/aac':
       return 'aac'
+    case 'audio/mp4':
+    case 'audio/m4a':
+    case 'audio/x-m4a':
+      return 'm4a'
     case 'audio/flac':
       return 'flac'
     case 'audio/pcm':
