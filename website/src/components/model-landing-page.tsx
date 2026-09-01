@@ -75,6 +75,7 @@ import {
   type ModelVideoMode,
   type ModelVideoModeOption,
 } from "@/lib/model-landing";
+import { navigateToHref } from "@/lib/link-navigation";
 import { consoleUrl } from "@/lib/origins";
 import {
   formatModelPrice,
@@ -504,12 +505,9 @@ function FlatkeyModelDetailPage(props: {
                 </a>
                 <a
                   href={dashboardHref}
-                  className="model-quick-start"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    const target = document.getElementById(generator ? "workbench" : "performance");
-                    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
+                  onClick={navigateToHref}
+                  className="flatkey-hero-cta inline-flex h-10 items-center gap-2 px-4 text-sm font-medium shadow-[0_16px_34px_-18px_rgba(124,58,237,0.85)]"
+                  style={{ borderRadius: "0.5rem" }}
                 >
                   {props.t(heroContent?.actionLabel ?? "Get API Key")}
                 </a>

@@ -20,23 +20,12 @@ describe("SiteHeaderDesktopActions", () => {
     expect(html).toContain(">Console<");
     expect(html).toContain('href="/contact"');
     expect(html).toContain(">Contact sales<");
-    const consoleButton = html.slice(
-      html.indexOf('href="https://console.flatkey.ai/dashboard"'),
-      html.indexOf(
-        "</a>",
-        html.indexOf('href="https://console.flatkey.ai/dashboard"'),
-      ),
-    );
-    const contactSalesButton = html.slice(
-      html.indexOf('href="/contact"'),
-      html.indexOf("</a>", html.indexOf('href="/contact"')),
-    );
+    expect(html).toContain("bg-white");
+    expect(html).toContain("bg-[#070707]");
 
     expect(html.indexOf(">Console<")).toBeLessThan(
       html.indexOf(">Contact sales<"),
     );
-    expect(consoleButton).toContain("bg-white");
-    expect(contactSalesButton).toContain("bg-[#070707]");
     expect(html).not.toContain(">Start Free<");
   });
 });

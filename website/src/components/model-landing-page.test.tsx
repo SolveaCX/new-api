@@ -140,6 +140,7 @@ describe("ModelLandingPage", () => {
     );
 
     expect(hrefBeforeText(html, "View API")).toBe("#api");
+    expect(html).toContain('href="https://console.flatkey.ai/dashboard"');
   });
 
   test("renders Flatkey homepage-style sections for video model landings", () => {
