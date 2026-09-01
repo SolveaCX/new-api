@@ -72,6 +72,10 @@ const announcementMarkdownClassName =
   '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
   '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
 
+const collapsedAnnouncementMarkdownClassName =
+  '[&_h1]:my-0 [&_h2]:my-0 [&_h3]:my-0 [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0 ' +
+  '[&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0'
+
 function ExpandableMarkdown({ content }: { content: string }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -128,11 +132,11 @@ function ExpandableMarkdown({ content }: { content: string }) {
       onKeyDown={handleKeyDown}
       className={
         canExpand
-          ? "relative max-h-[4.5rem] cursor-pointer overflow-hidden after:absolute after:right-0 after:bottom-0 after:bg-popover after:px-1 after:font-medium after:content-['...']"
+          ? "relative max-h-[4.5rem] cursor-pointer overflow-hidden after:absolute after:right-0 after:bottom-0 after:h-6 after:bg-popover after:pl-2 after:font-medium after:leading-6 after:content-['...']"
           : undefined
       }
     >
-      <Markdown className={announcementMarkdownClassName}>
+      <Markdown className={collapsedAnnouncementMarkdownClassName}>
         {content}
       </Markdown>
       <Dialog open={open} onOpenChange={setOpen}>
