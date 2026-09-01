@@ -104,8 +104,11 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
-	//TODO implement me
-	return nil, errors.New("not implemented")
+	// Vertex's Gemini publisher endpoint uses the same audio request contract as
+	// the Gemini adapter. Reuse that conversion so TTS models routed through a
+	// Vertex channel do not fall through to the unimplemented default.
+	geminiAdaptor := gemini.Adaptor{}
+	return geminiAdaptor.ConvertAudioRequest(c, info, request)
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
@@ -330,6 +333,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	claudeAdaptor := claude.Adaptor{}
+	if info.RelayMode == constant.RelayModeAudioSpeech &&
+		(strings.Contains(strings.ToLower(info.UpstreamModelName), "tts") ||
+			strings.Contains(strings.ToLower(info.OriginModelName), "tts")) {
+		return gemini.GeminiTTSHandler(c, info, resp)
+	}
 	if info.IsStream {
 		switch a.RequestMode {
 		case RequestModeClaude:
