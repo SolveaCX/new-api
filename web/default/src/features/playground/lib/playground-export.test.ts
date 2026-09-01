@@ -63,11 +63,16 @@ describe('triggerPlaygroundExport', () => {
       },
     })
 
-    triggerPlaygroundExport(blob, 'playground-records.xlsx', {
-      createObjectURL,
-      revokeObjectURL,
-      setTimeout,
-    }, anchor)
+    triggerPlaygroundExport(
+      blob,
+      'playground-records.xlsx',
+      {
+        createObjectURL,
+        revokeObjectURL,
+        setTimeout,
+      },
+      anchor
+    )
 
     expect(createObjectURL).toHaveBeenCalledWith(blob)
     expect(appendChild).toHaveBeenCalledWith(anchor as never)

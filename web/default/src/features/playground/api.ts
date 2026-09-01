@@ -138,7 +138,15 @@ function decodePlaygroundRecordExportFilename(value: string): string | null {
 function isSafePlaygroundRecordExportFilename(filename: string): boolean {
   if (!filename || filename !== filename.trim()) return false
   if (filename === '.' || filename === '..') return false
-  if (/[\u0000-\u001f\u007f\\/:*?"<>|]/.test(filename)) return false
+  if (
+    [...filename].some((character) => {
+      const code = character.charCodeAt(0)
+      return code <= 0x1f || code === 0x7f
+    })
+  ) {
+    return false
+  }
+  if (/[\\/:*?"<>|]/.test(filename)) return false
   if (filename.split(/[\\/]/).pop() !== filename) return false
   return filename.toLowerCase().endsWith('.xlsx')
 }
@@ -147,11 +155,13 @@ function buildPlaygroundRecordExportFallbackFilename(
   date = new Date()
 ): string {
   const pad = (value: number) => String(value).padStart(2, '0')
-  return [
-    'playground-records',
-    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`,
-    `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`,
-  ].join('-') + '.xlsx'
+  return (
+    [
+      'playground-records',
+      `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`,
+      `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`,
+    ].join('-') + '.xlsx'
+  )
 }
 
 function resolvePlaygroundRecordExportFilename(headers: unknown): string {
@@ -306,9 +316,11 @@ export async function downloadPlaygroundRecords(): Promise<PlaygroundRecordExpor
       filename: resolvePlaygroundRecordExportFilename(res.headers),
     }
   } catch (error) {
-    const response = (error as {
-      response?: { status?: unknown; data?: unknown }
-    })?.response
+    const response = (
+      error as {
+        response?: { status?: unknown; data?: unknown }
+      }
+    )?.response
 
     if (response?.data instanceof Blob) {
       throw new PlaygroundRecordExportError(

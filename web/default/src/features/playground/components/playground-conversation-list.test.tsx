@@ -31,8 +31,8 @@ import {
 } from 'bun:test'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import type { PlaygroundConversationSummary } from '../types'
 import * as playgroundExportModule from '../lib/playground-export'
+import type { PlaygroundConversationSummary } from '../types'
 
 const originalGlobalPropertyDescriptors = new Map<
   PropertyKey,
