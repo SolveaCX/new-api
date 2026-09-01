@@ -216,15 +216,11 @@ function getPlanDiscountLabel(title: string, t: Translate): string | null {
 function getPlanAudience(title: string, t: Translate): string {
   switch (getPlanTier(title)) {
     case 'go':
-      return t(
-        'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
-      )
+      return t('For individuals and light everyday use')
     case 'pro':
-      return t('Best for trying real API workloads.')
+      return t('For daily development and frequent requests')
     case 'max':
-      return t(
-        'Best value for production testing, team workflows, and sustained model traffic.'
-      )
+      return t('For teams and high-intensity workloads')
     default:
       return ''
   }
