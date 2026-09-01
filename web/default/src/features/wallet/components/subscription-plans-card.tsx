@@ -21,6 +21,7 @@ import { ArrowRight, CheckCircle2, Crown, Mail, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
+import { getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -49,6 +50,10 @@ import type {
   StripeCheckoutPresentation,
 } from '../hooks/use-payment'
 import {
+  formatRecallExpiryDate,
+  selectBestRecallOffer,
+} from '../lib/recall-claim'
+import {
   type LifecyclePlanRecord,
   type WalletSelfSubscriptionData,
   applyRenewalLifecycleResultToSelfData,
@@ -63,8 +68,9 @@ import {
   resolveSubscriptionPlanDisplayPrice,
   resolveSubscriptionPlanGridCurrency,
 } from '../lib/subscription-plan-prices'
-import type { TopupInfo } from '../types'
+import type { RecallOfferView, TopupInfo } from '../types'
 import { CurrentPlanCard } from './current-plan-card'
+import { PlanLimitSummary } from './plan-limit-summary'
 import { PlanPurchaseDialog } from './plan-purchase-dialog'
 
 interface SubscriptionPlansCardProps {
@@ -197,22 +203,6 @@ function getPlanCardDiscountPreview(
 type Translate = (key: string, options?: Record<string, unknown>) => string
 type SelfSubscriptionRefreshResult = 'applied' | 'superseded' | 'failed'
 
-function getPlanDisplayName(title: string, t: Translate): string {
-  return getPlanTier(title) === 'go' ? t('Starter') : title
-}
-
-function getPlanDiscountLabel(title: string, t: Translate): string | null {
-  switch (getPlanTier(title)) {
-    case 'go':
-      return t('80% off')
-    case 'pro':
-    case 'max':
-      return t('70% off')
-    default:
-      return null
-  }
-}
-
 function getPlanAudience(title: string, t: Translate): string {
   switch (getPlanTier(title)) {
     case 'go':
@@ -287,20 +277,52 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-// These campaign reference prices are intentionally fixed in the wallet UI.
-// They must not be derived from plan.total_amount, quotaPerUnit, or a checkout
-// quote: those values are mutable billing data and previously caused the
-// crossed-out prices to drift (for example, $40/$30/$400).
-const STANDARD_PLAN_REFERENCE_PRICES_USD: Record<PlanTier, number> = {
-  go: 45,
-  pro: 90,
-  max: 300,
+/**
+ * Convert the plan's raw quota value into a monetary reference price.
+ *
+ * `total_amount` is stored in quota units, not major currency units.  Keep
+ * the conversion here (rather than changing the plan or payment fields) so
+ * the value is presentation-only and remains correct when an administrator
+ * changes the configured quota-per-dollar ratio. The reference is the plan's
+ * model value in USD, so it must stay in USD even when the payable price is
+ * localized or the admin chooses CNY/custom/token quota display elsewhere.
+ */
+function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
+  const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
+    ([currency]) => currency.trim().toUpperCase() === 'USD'
+  )?.[1]
+  const configuredAmount = Number(configuredUSDPrice)
+  if (Number.isFinite(configuredAmount) && configuredAmount >= 0) {
+    return configuredAmount
+  }
+
+  const canonicalCurrency = plan.currency?.trim().toUpperCase() || 'USD'
+  if (canonicalCurrency !== 'USD') return null
+
+  const priceAmount = Number(plan.price_amount)
+  return Number.isFinite(priceAmount) && priceAmount >= 0 ? priceAmount : null
 }
 
 function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
-  const tier = getPlanTier(plan.title)
-  if (!tier) return null
-  const referenceAmountUSD = STANDARD_PLAN_REFERENCE_PRICES_USD[tier]
+  const totalAmount = Number(plan.total_amount)
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
+
+  const { config } = getCurrencyDisplay()
+  const quotaPerUnit = config.quotaPerUnit
+  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
+
+  const referenceAmountUSD = totalAmount / quotaPerUnit
+  const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
+  // A quota value below the payable plan price is not an “old price”.  This
+  // guard keeps custom/free plans and legacy fixtures from rendering a
+  // misleading crossed-out amount while still allowing plans whose included
+  // model value exceeds their price (for example, $45 → $10).
+  if (
+    currentAmountUSD !== null &&
+    (currentAmountUSD <= 0 || referenceAmountUSD <= currentAmountUSD)
+  ) {
+    return null
+  }
 
   const formatted = formatPlanPrice(referenceAmountUSD, 'USD')
   return formatted === '-' ? null : formatted
@@ -473,24 +495,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
   useEffect(() => {
     let cancelled = false
-    const clearPlanPreviewQuotes = () => {
-      void Promise.resolve().then(() => {
-        if (!cancelled) {
-          setPlanPreviewQuotes({})
-        }
-      })
-    }
     if (
       loading ||
       orderedPlans.length === 0 ||
       !isPaymentChoiceAvailable(paymentAvailability, 'stripe_recurring')
     ) {
-      clearPlanPreviewQuotes()
-      return () => {
-        cancelled = true
-      }
+      setPlanPreviewQuotes({})
+      return
     }
-    clearPlanPreviewQuotes()
+    setPlanPreviewQuotes({})
     const loadPlanPreviewQuotes = async () => {
       const entries = await Promise.all(
         orderedPlans.map(async (item) => {
@@ -831,7 +844,8 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         )}
         icon={<Crown className='h-4 w-4' />}
         iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-        contentClassName='space-y-4 sm:space-y-5'
+        headerClassName='sm:p-4 sm:!pb-4'
+        contentClassName='space-y-3 p-3 sm:space-y-4 sm:p-4'
       >
         {hasActivePlan && currentPlan ? (
           <CurrentPlanCard
@@ -844,12 +858,33 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         ) : null}
 
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-4'>
+          <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-3'>
             {orderedPlans.map((item) => {
               const plan = item.plan
               const discountPreview = getPlanCardDiscountPreview(
                 planPreviewQuotes[plan.id]
               )
+              const recallOffer = selectBestRecallOffer(
+                [
+                  ...recallClaim.offers,
+                  ...(recallClaim.view
+                    ? [{ ...recallClaim.view, issued_at: 0 } as RecallOfferView]
+                    : []),
+                ],
+                {
+                  purchaseKind: 'subscription',
+                  productId: plan.stripe_price_id || plan.id,
+                  amountMajor: Number(plan.price_amount || 0),
+                  currency: plan.currency || 'USD',
+                }
+              )
+              const recallExpiryDate =
+                discountPreview?.discountKind === 'recall' && recallOffer
+                  ? formatRecallExpiryDate(
+                      recallOffer.expires_at,
+                      i18n.resolvedLanguage || i18n.language || 'en-US'
+                    )
+                  : ''
               const configuredDisplayPrice =
                 resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
               const currency =
@@ -858,14 +893,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ? formatPlanPrice(discountPreview.total, currency)
                 : formatPlanPrice(configuredDisplayPrice.amount, currency)
               const referencePrice = getPlanReferencePrice(plan)
-              // The crossed-out campaign price is a fixed USD reference price,
-              // even when a live quote changes the payable amount or currency.
-              // Unknown/custom plans retain their quote-provided original total.
-              const originalPrice =
-                referencePrice ||
-                (discountPreview
-                  ? formatPlanPrice(discountPreview.originalTotal, currency)
-                  : null)
+              const originalPrice = discountPreview
+                ? formatPlanPrice(discountPreview.originalTotal, currency)
+                : referencePrice
               // The campaign badge must be visible before a checkout quote is
               // loaded. The configured plan/reference price pair is the
               // source of truth for the static campaign presentation; a
@@ -873,9 +903,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               const hasCampaignDiscount = Boolean(
                 originalPrice && originalPrice !== displayPrice
               )
-              const displayName = getPlanDisplayName(plan.title, t)
-              const discountLabel = getPlanDiscountLabel(plan.title, t)
-              const isLimitedOffer = getPlanTier(plan.title) === 'go'
               const isMostPopular =
                 getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
               const audience =
@@ -896,25 +923,17 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 <Card
                   key={plan.id}
                   className={cn(
-                    'border-border/80 relative overflow-hidden rounded-lg border shadow-sm transition-[box-shadow,border-color]',
+                    'border-border/80 relative rounded-lg border shadow-sm transition-[box-shadow,border-color]',
                     isMostPopular
                       ? '!border-primary/70 !border-2 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] ring-2 ring-[#8b5cf6]/60 hover:shadow-lg dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
                       : 'hover:border-primary/50 hover:shadow-lg'
                   )}
                 >
-                  <CardContent className='flex h-full flex-col p-5'>
-                    {isLimitedOffer ? (
-                      <span
-                        data-subscription-limited-offer
-                        className='pointer-events-none absolute top-4 -right-13 z-10 w-44 rotate-45 border border-rose-200 bg-rose-50 px-2 py-1 text-center text-[10px] leading-tight font-bold tracking-wide break-words text-rose-700 shadow-sm dark:border-rose-800/70 dark:bg-rose-950/60 dark:text-rose-300'
-                      >
-                        {t('Limited offer')}
-                      </span>
-                    ) : null}
+                  <CardContent className='flex h-full flex-col p-4'>
                     <div className='flex items-start justify-between gap-3'>
                       <div className='min-w-0'>
                         <h4 className='text-xl font-semibold'>
-                          {displayName || t('Subscription Plans')}
+                          {plan.title || t('Subscription Plans')}
                         </h4>
                         {audience ? (
                           <p className='text-muted-foreground mt-0.5 text-xs'>
@@ -922,21 +941,16 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           </p>
                         ) : null}
                       </div>
-                      <div
-                        className={cn(
-                          'flex shrink-0 flex-col items-end gap-1',
-                          isLimitedOffer && 'pt-10'
-                        )}
-                      >
-                        {hasCampaignDiscount && discountLabel ? (
+                      <div className='flex shrink-0 flex-col items-end gap-1'>
+                        {hasCampaignDiscount ? (
                           <span
                             data-discount-kind={
                               discountPreview?.discountKind || 'campaign'
                             }
-                            data-subscription-discount-label={discountLabel}
+                            data-subscription-discount-label='80% off'
                             className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                           >
-                            {discountLabel}
+                            {t('80% off')}
                           </span>
                         ) : null}
                         {isMostPopular ? (
@@ -948,7 +962,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                       </div>
                     </div>
 
-                    <div className='mt-6 flex flex-wrap items-end gap-2'>
+                    <div className='mt-3 flex flex-wrap items-end gap-2'>
                       {originalPrice ? (
                         <span
                           data-subscription-reference-price={originalPrice}
@@ -957,22 +971,29 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           {originalPrice}
                         </span>
                       ) : null}
-                      <span className='text-5xl font-semibold tracking-tight tabular-nums'>
+                      <span className='text-4xl font-semibold tracking-tight tabular-nums'>
                         {displayPrice}
                       </span>
                       <span className='text-muted-foreground mb-1 text-sm'>
                         {t('per month')}
                       </span>
                     </div>
+                    {recallExpiryDate ? (
+                      <div className='text-muted-foreground mt-1 text-xs font-medium'>
+                        {t('Expires {{date}}', { date: recallExpiryDate })}
+                      </div>
+                    ) : null}
+
+                    <PlanLimitSummary plan={plan} className='mt-3 px-3 py-2' />
 
                     <div className='grow' />
 
-                    <Separator className='my-4' />
+                    <Separator className='my-3' />
                     <Button
                       className={cn(
-                        'min-h-11 w-full',
+                        'min-h-10 w-full',
                         isMostPopular &&
-                          'bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black dark:hover:bg-[#ddd6fe]'
+                          'bg-primary text-primary-foreground hover:bg-primary/90'
                       )}
                       variant={action === 'switch' ? 'outline' : 'default'}
                       disabled={isCurrentRecurring}
@@ -1010,19 +1031,19 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
         <article
           data-subscription-enterprise-card
-          className='overflow-hidden rounded-2xl border border-slate-700 bg-[#0b0b0d] text-white shadow-[0_20px_70px_-40px_rgba(15,23,42,0.8)]'
+          className='border-primary/20 text-foreground dark:border-primary/30 overflow-hidden rounded-2xl border bg-gradient-to-br from-[#f7f3ff] via-white to-[#f4f0ff] shadow-[0_20px_70px_-40px_rgba(109,92,255,0.35)] dark:from-[#24183f] dark:via-[#171226] dark:to-[#2b1747]'
         >
-          <div className='grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]'>
-            <div className='p-6 sm:p-8'>
-              <p className='text-xs font-semibold tracking-[0.18em] text-violet-300 uppercase'>
+          <div className='grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]'>
+            <div className='p-4 sm:p-5'>
+              <p className='text-primary text-xs font-semibold tracking-[0.18em] uppercase dark:text-violet-200'>
                 {t('Enterprise teams')}
               </p>
-              <h3 className='mt-3 max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl'>
+              <h3 className='mt-2 max-w-2xl text-xl font-semibold tracking-tight sm:text-2xl'>
                 {t(
                   'Contact sales for higher monthly usage and greater discounts.'
                 )}
               </h3>
-              <div className='mt-6 grid gap-x-6 gap-y-3 text-sm text-slate-300 sm:grid-cols-2'>
+              <div className='text-muted-foreground mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 dark:text-slate-300'>
                 {[
                   'Custom monthly usage',
                   'Team procurement support',
@@ -1031,7 +1052,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ].map((feature) => (
                   <p key={feature} className='flex items-start gap-2 leading-6'>
                     <CheckCircle2
-                      className='mt-1 size-4 shrink-0 text-violet-300'
+                      className='text-primary mt-1 size-4 shrink-0 dark:text-violet-200'
                       aria-hidden='true'
                     />
                     <span>{t(feature)}</span>
@@ -1041,23 +1062,23 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               <a
                 data-subscription-enterprise-cta
                 href='mailto:support@flatkey.ai'
-                className='mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-slate-950 transition-colors hover:bg-violet-100'
+                className='bg-primary text-primary-foreground hover:bg-primary/90 mt-5 inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-semibold transition-colors'
               >
                 <Mail className='mr-2 size-4' aria-hidden='true' />
                 {t('Talk to sales')}
                 <ArrowRight className='ml-2 size-4' aria-hidden='true' />
               </a>
             </div>
-            <div className='flex flex-col justify-center border-t border-slate-700/80 p-6 sm:p-8 lg:border-t-0 lg:border-l'>
-              <p className='text-4xl font-semibold tracking-tight text-white sm:text-5xl'>
+            <div className='border-primary/15 flex flex-col justify-center border-t p-4 sm:p-5 lg:border-t-0 lg:border-l'>
+              <p className='text-foreground text-3xl font-semibold tracking-tight sm:text-4xl dark:text-white'>
                 {t('Enterprise')}
               </p>
-              <p className='mt-3 text-sm leading-6 text-slate-400'>
+              <p className='text-muted-foreground mt-2 text-sm leading-5 dark:text-slate-300'>
                 {t(
                   'Contact sales for higher monthly usage and greater discounts.'
                 )}
               </p>
-              <div className='mt-6 flex flex-wrap gap-2'>
+              <div className='mt-4 flex flex-wrap gap-2'>
                 {[
                   'Custom monthly usage',
                   'Team procurement support',
@@ -1065,7 +1086,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 ].map((feature) => (
                   <span
                     key={feature}
-                    className='rounded-full border border-slate-600 bg-white/5 px-3 py-1.5 text-xs text-slate-300'
+                    className='border-primary/20 bg-primary/5 text-primary rounded-full border px-3 py-1.5 text-xs dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-100'
                   >
                     {t(feature)}
                   </span>

@@ -240,7 +240,7 @@ export function RechargeFormCard(props: RechargeFormCardProps) {
       ) : null}
 
       <Button
-        className='w-full bg-[#070707] text-white hover:bg-[#4c1d95] dark:bg-white dark:text-black'
+        className='bg-primary text-primary-foreground hover:bg-primary/90 w-full'
         disabled={!selected || !!props.paymentLoadingAmount}
         onClick={() => selected && props.onStripeTopUp(selected.preset)}
       >
