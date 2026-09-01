@@ -60,6 +60,11 @@ interface NotificationPopoverProps {
   className?: string
 }
 
+const announcementMarkdownClassName =
+  '[&_h1]:mt-0 [&_h1]:mb-4 [&_h2]:mt-4 [&_h2]:mb-3 [&_h3]:mt-3 [&_h3]:mb-2 ' +
+  '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
+  '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
+
 /**
  * Get relative time string from a date
  */
@@ -180,12 +185,16 @@ function AnnouncementsContent({
               <div className='flex items-start gap-3'>
                 <div className='flex min-w-0 flex-1 flex-col gap-2'>
                   <div className='text-sm'>
-                    <Markdown>{item.content || ''}</Markdown>
+                    <Markdown className={announcementMarkdownClassName}>
+                      {item.content || ''}
+                    </Markdown>
                   </div>
 
                   {item.extra ? (
                     <div className='text-muted-foreground text-xs'>
-                      <Markdown>{item.extra}</Markdown>
+                      <Markdown className={announcementMarkdownClassName}>
+                        {item.extra}
+                      </Markdown>
                     </div>
                   ) : null}
 
