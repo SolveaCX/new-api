@@ -96,7 +96,7 @@ export function HomeModelLogo(props: HomeModelLogoProps) {
     <span
       aria-label={spec.label}
       title={spec.label}
-      className={cn("inline-grid shrink-0 place-items-center overflow-hidden border shadow-[0_10px_24px_-18px_rgba(16,16,20,0.45)]", props.className)}
+      className={cn("inline-grid shrink-0 place-items-center overflow-hidden border shadow-sm", props.className)}
       style={{
         width: surfaceSize,
         height: surfaceSize,

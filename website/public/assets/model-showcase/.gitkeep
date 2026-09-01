@@ -1,0 +1,11 @@
+Showcase clips for the model page's "What <model> produces" section.
+
+Each scene needs two files named after its `id` in SHOWCASE_SCENES
+(src/components/model-landing-page.tsx):
+
+  <id>.mp4   16:9, H.264 + AAC, ~6s. Keep the generated audio -- Seedance
+             produces its own, and stripping it misrepresents the model.
+  <id>.png   Poster frame, same aspect.
+
+These must be real model output. The section renders nothing while the list is
+empty, which is the correct state until genuine generations exist.
