@@ -25,6 +25,13 @@ import { getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
@@ -86,16 +93,25 @@ interface SubscriptionPlansCardProps {
   initialSelfData?: WalletSelfSubscriptionData
   initialLoading?: boolean
   initialPlanPreviewQuotes?: Record<number, SubscriptionPaymentQuote>
+  mockPreview?: boolean
 }
 
 const EXTERNAL_RETURN_POLL_KEY = 'new-api:subscription-change-return-pending'
 const RENEWAL_FAILURE_TOAST_SHOWN = 'renewal failure toast shown'
 const RENEWAL_MUTATION_ALREADY_IN_FLIGHT = 'renewal mutation already in flight'
+const ENTERPRISE_CONTACT_FORM_URL =
+  'https://tally.so/embed/1A6gM4?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1&originPage=%2Fcontact'
 
 const PLAN_DISPLAY_ORDER: Record<string, number> = {
   go: 0,
   pro: 1,
   max: 2,
+}
+
+const PLAN_REFERENCE_PRICES_USD: Record<PlanTier, number> = {
+  go: 45,
+  pro: 90,
+  max: 300,
 }
 
 type PlanTier = keyof typeof PLAN_DISPLAY_ORDER
@@ -277,16 +293,7 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-/**
- * Convert the plan's raw quota value into a monetary reference price.
- *
- * `total_amount` is stored in quota units, not major currency units.  Keep
- * the conversion here (rather than changing the plan or payment fields) so
- * the value is presentation-only and remains correct when an administrator
- * changes the configured quota-per-dollar ratio. The reference is the plan's
- * model value in USD, so it must stay in USD even when the payable price is
- * localized or the admin chooses CNY/custom/token quota display elsewhere.
- */
+/** Keep the website's Go / Pro / Max reference prices stable in the console. */
 function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
   const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
     ([currency]) => currency.trim().toUpperCase() === 'USD'
@@ -307,11 +314,14 @@ function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
   const totalAmount = Number(plan.total_amount)
   if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
 
-  const { config } = getCurrencyDisplay()
-  const quotaPerUnit = config.quotaPerUnit
-  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
-
-  const referenceAmountUSD = totalAmount / quotaPerUnit
+  const tier = getPlanTier(plan.title)
+  let referenceAmountUSD = tier ? PLAN_REFERENCE_PRICES_USD[tier] : undefined
+  if (referenceAmountUSD === undefined) {
+    const { config } = getCurrencyDisplay()
+    const quotaPerUnit = config.quotaPerUnit
+    if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
+    referenceAmountUSD = totalAmount / quotaPerUnit
+  }
   const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
   // A quota value below the payable plan price is not an “old price”.  This
   // guard keeps custom/free plans and legacy fixtures from rendering a
@@ -348,6 +358,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     requestId: string
   } | null>(null)
   const [purchasing, setPurchasing] = useState(false)
+  const [enterpriseContactOpen, setEnterpriseContactOpen] = useState(false)
   const [purchaseProjection, setPurchaseProjection] =
     useState<FlexiblePurchaseResponse | null>(null)
   const [quoteError, setQuoteError] = useState(false)
@@ -496,6 +507,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   useEffect(() => {
     let cancelled = false
     if (
+      props.mockPreview ||
       loading ||
       orderedPlans.length === 0 ||
       !isPaymentChoiceAvailable(paymentAvailability, 'stripe_recurring')
@@ -543,7 +555,13 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     return () => {
       cancelled = true
     }
-  }, [loading, orderedPlans, paymentAvailability, recallClaim.claim])
+  }, [
+    loading,
+    orderedPlans,
+    paymentAvailability,
+    props.mockPreview,
+    recallClaim.claim,
+  ])
 
   useEffect(() => {
     onAvailabilityChange?.(isAvailable)
@@ -836,198 +854,221 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
   return (
     <>
-      <TitledCard
-        className='border-border/80 shadow-sm'
-        title={t('Subscription Plans')}
-        description={t(
-          'One key, 100+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.'
-        )}
-        icon={<Crown className='h-4 w-4' />}
-        iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-        headerClassName='sm:p-4 sm:!pb-4'
-        contentClassName='space-y-3 p-3 sm:space-y-4 sm:p-4'
-      >
-        {hasActivePlan && currentPlan ? (
-          <CurrentPlanCard
-            plan={currentPlan}
-            selfData={selfData}
-            renewalMutationPending={renewalMutationPending}
-            onCancelRenewal={handleCancelRenewal}
-            onResumeRenewal={handleResumeRenewal}
-          />
-        ) : null}
+      <div className='flex flex-col gap-4'>
+        <TitledCard
+          className='border-border/80 shadow-sm'
+          title={t('Subscription Plans')}
+          description={t(
+            'One key, 100+ frontier models: GPT, Claude, Gemini, DeepSeek, GLM for text, plus Seedance 2.5 and more for image & video generation.'
+          )}
+          icon={<Crown className='h-4 w-4' />}
+          iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+          headerClassName='sm:p-4 sm:!pb-4'
+          contentClassName='space-y-3 p-3 sm:space-y-4 sm:p-4'
+        >
+          {hasActivePlan && currentPlan ? (
+            <CurrentPlanCard
+              plan={currentPlan}
+              selfData={selfData}
+              renewalMutationPending={renewalMutationPending}
+              onCancelRenewal={handleCancelRenewal}
+              onResumeRenewal={handleResumeRenewal}
+            />
+          ) : null}
 
-        {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-3'>
-            {orderedPlans.map((item) => {
-              const plan = item.plan
-              const discountPreview = getPlanCardDiscountPreview(
-                planPreviewQuotes[plan.id]
-              )
-              const recallOffer = selectBestRecallOffer(
-                [
-                  ...recallClaim.offers,
-                  ...(recallClaim.view
-                    ? [{ ...recallClaim.view, issued_at: 0 } as RecallOfferView]
-                    : []),
-                ],
-                {
-                  purchaseKind: 'subscription',
-                  productId: plan.stripe_price_id || plan.id,
-                  amountMajor: Number(plan.price_amount || 0),
-                  currency: plan.currency || 'USD',
-                }
-              )
-              const recallExpiryDate =
-                discountPreview?.discountKind === 'recall' && recallOffer
-                  ? formatRecallExpiryDate(
-                      recallOffer.expires_at,
-                      i18n.resolvedLanguage || i18n.language || 'en-US'
-                    )
-                  : ''
-              const configuredDisplayPrice =
-                resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
-              const currency =
-                discountPreview?.currency || configuredDisplayPrice.currency
-              const displayPrice = discountPreview
-                ? formatPlanPrice(discountPreview.total, currency)
-                : formatPlanPrice(configuredDisplayPrice.amount, currency)
-              const referencePrice = getPlanReferencePrice(plan)
-              const originalPrice = discountPreview
-                ? formatPlanPrice(discountPreview.originalTotal, currency)
-                : referencePrice
-              // The campaign badge must be visible before a checkout quote is
-              // loaded. The configured plan/reference price pair is the
-              // source of truth for the static campaign presentation; a
-              // backend quote can still replace the payable total below.
-              const hasCampaignDiscount = Boolean(
-                originalPrice && originalPrice !== displayPrice
-              )
-              const isMostPopular =
-                getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
-              const audience =
-                getPlanAudience(plan.title, t) || plan.subtitle || ''
-              const action = getFlexiblePlanAction({
-                planId: plan.id,
-                currentPlanId,
-                relation: item.relation,
-              })
-              // A live Stripe recurring subscription renews itself — showing
-              // "Repurchase now" on the buyer's own plan reads like the plan is
-              // inactive. Label it as the current subscription instead.
-              // One-time purchases (Alipay/Pix/balance) keep the repurchase CTA.
-              const isCurrentRecurring =
-                action === 'repurchase' &&
-                selfData.contract?.payment_mode === 'stripe_recurring'
-              return (
-                <Card
-                  key={plan.id}
-                  className={cn(
-                    'border-border/80 relative rounded-lg border shadow-sm transition-[box-shadow,border-color]',
-                    isMostPopular
-                      ? '!border-primary/70 !border-2 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] ring-2 ring-[#8b5cf6]/60 hover:shadow-lg dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
-                      : 'hover:border-primary/50 hover:shadow-lg'
-                  )}
-                >
-                  <CardContent className='flex h-full flex-col p-4'>
-                    <div className='flex items-start justify-between gap-3'>
-                      <div className='min-w-0'>
-                        <h4 className='text-xl font-semibold'>
-                          {plan.title || t('Subscription Plans')}
-                        </h4>
-                        {audience ? (
-                          <p className='text-muted-foreground mt-0.5 text-xs'>
-                            {audience}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className='flex shrink-0 flex-col items-end gap-1'>
-                        {hasCampaignDiscount ? (
-                          <span
-                            data-discount-kind={
-                              discountPreview?.discountKind || 'campaign'
-                            }
-                            data-subscription-discount-label='80% off'
-                            className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
-                          >
-                            {t('80% off')}
-                          </span>
-                        ) : null}
-                        {isMostPopular ? (
-                          <span className='border-primary/20 inline-flex items-center gap-1 rounded-full border bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
-                            <Sparkles className='h-3 w-3' />
-                            {t('Most Popular')}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className='mt-3 flex flex-wrap items-end gap-2'>
-                      {originalPrice ? (
-                        <span
-                          data-subscription-reference-price={originalPrice}
-                          className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
-                        >
-                          {originalPrice}
-                        </span>
-                      ) : null}
-                      <span className='text-4xl font-semibold tracking-tight tabular-nums'>
-                        {displayPrice}
-                      </span>
-                      <span className='text-muted-foreground mb-1 text-sm'>
-                        {t('per month')}
-                      </span>
-                    </div>
-                    {recallExpiryDate ? (
-                      <div className='text-muted-foreground mt-1 text-xs font-medium'>
-                        {t('Expires {{date}}', { date: recallExpiryDate })}
+          {plans.length > 0 ? (
+            <div className='grid grid-cols-1 gap-3 md:grid-cols-3 xl:gap-3'>
+              {orderedPlans.map((item) => {
+                const plan = item.plan
+                const discountPreview = getPlanCardDiscountPreview(
+                  planPreviewQuotes[plan.id]
+                )
+                const recallOffer = selectBestRecallOffer(
+                  [
+                    ...recallClaim.offers,
+                    ...(recallClaim.view
+                      ? [
+                          {
+                            ...recallClaim.view,
+                            issued_at: 0,
+                          } as RecallOfferView,
+                        ]
+                      : []),
+                  ],
+                  {
+                    purchaseKind: 'subscription',
+                    productId: plan.stripe_price_id || plan.id,
+                    amountMajor: Number(plan.price_amount || 0),
+                    currency: plan.currency || 'USD',
+                  }
+                )
+                const recallExpiryDate =
+                  discountPreview?.discountKind === 'recall' && recallOffer
+                    ? formatRecallExpiryDate(
+                        recallOffer.expires_at,
+                        i18n.resolvedLanguage || i18n.language || 'en-US'
+                      )
+                    : ''
+                const configuredDisplayPrice =
+                  resolveSubscriptionPlanDisplayPrice(plan, planGridCurrency)
+                const currency =
+                  discountPreview?.currency || configuredDisplayPrice.currency
+                const displayPrice = discountPreview
+                  ? formatPlanPrice(discountPreview.total, currency)
+                  : formatPlanPrice(configuredDisplayPrice.amount, currency)
+                const referencePrice = getPlanReferencePrice(plan)
+                const originalPrice = discountPreview
+                  ? formatPlanPrice(discountPreview.originalTotal, currency)
+                  : referencePrice
+                // The campaign badge must be visible before a checkout quote is
+                // loaded. The configured plan/reference price pair is the
+                // source of truth for the static campaign presentation; a
+                // backend quote can still replace the payable total below.
+                const hasCampaignDiscount = Boolean(
+                  originalPrice && originalPrice !== displayPrice
+                )
+                const isMostPopular =
+                  getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
+                const audience =
+                  getPlanAudience(plan.title, t) || plan.subtitle || ''
+                const action = getFlexiblePlanAction({
+                  planId: plan.id,
+                  currentPlanId,
+                  relation: item.relation,
+                })
+                // A live Stripe recurring subscription renews itself — showing
+                // "Repurchase now" on the buyer's own plan reads like the plan is
+                // inactive. Label it as the current subscription instead.
+                // One-time purchases (Alipay/Pix/balance) keep the repurchase CTA.
+                const isCurrentRecurring =
+                  action === 'repurchase' &&
+                  selfData.contract?.payment_mode === 'stripe_recurring'
+                return (
+                  <Card
+                    key={plan.id}
+                    className={cn(
+                      'border-border/80 relative rounded-lg border shadow-sm transition-[box-shadow,border-color]',
+                      isMostPopular
+                        ? '!border-primary/70 !border-2 shadow-[0_0_0_6px_rgba(139,92,246,0.1)] ring-2 ring-[#8b5cf6]/60 hover:shadow-lg dark:shadow-[0_0_0_6px_rgba(139,92,246,0.18)]'
+                        : 'hover:border-primary/50 hover:shadow-lg'
+                    )}
+                  >
+                    {getPlanTier(plan.title) === 'go' ? (
+                      <div
+                        data-subscription-limited-ribbon
+                        className='pointer-events-none absolute top-3 -right-7 z-10 w-24 rotate-45 border-y border-rose-200 bg-rose-50 py-1 text-center text-[10px] font-semibold tracking-wide text-rose-600 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
+                      >
+                        {t('Limited')}
                       </div>
                     ) : null}
+                    <CardContent className='flex h-full flex-col p-4'>
+                      <div className='flex min-h-[3.75rem] items-start justify-between gap-3'>
+                        <div className='min-w-0'>
+                          <h4 className='text-xl font-semibold'>
+                            {plan.title || t('Subscription Plans')}
+                          </h4>
+                          {audience ? (
+                            <p className='text-muted-foreground mt-0.5 text-xs'>
+                              {audience}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div
+                          className={cn(
+                            'flex shrink-0 flex-col items-end gap-1',
+                            getPlanTier(plan.title) === 'go' && 'pt-6'
+                          )}
+                        >
+                          {hasCampaignDiscount ? (
+                            <span
+                              data-discount-kind={
+                                discountPreview?.discountKind || 'campaign'
+                              }
+                              data-subscription-discount-label='80% off'
+                              className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
+                            >
+                              {t('80% off')}
+                            </span>
+                          ) : null}
+                          {isMostPopular ? (
+                            <span className='border-primary/20 inline-flex items-center gap-1 rounded-full border bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
+                              <Sparkles className='h-3 w-3' />
+                              {t('Most Popular')}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
 
-                    <PlanLimitSummary plan={plan} className='mt-3 px-3 py-2' />
+                      <div className='mt-3 flex min-h-[3.25rem] flex-wrap items-end gap-2'>
+                        {originalPrice ? (
+                          <span
+                            data-subscription-reference-price={originalPrice}
+                            className='text-muted-foreground mb-2 text-sm tabular-nums line-through'
+                          >
+                            {originalPrice}
+                          </span>
+                        ) : null}
+                        <span className='text-4xl font-semibold tracking-tight tabular-nums'>
+                          {displayPrice}
+                        </span>
+                        <span className='text-muted-foreground mb-1 text-sm'>
+                          {t('per month')}
+                        </span>
+                      </div>
+                      {recallExpiryDate ? (
+                        <div className='text-muted-foreground mt-1 text-xs font-medium'>
+                          {t('Expires {{date}}', { date: recallExpiryDate })}
+                        </div>
+                      ) : null}
 
-                    <div className='grow' />
+                      <PlanLimitSummary
+                        plan={plan}
+                        className='mt-3 min-h-[4.25rem] px-3 py-2'
+                      />
 
-                    <Separator className='my-3' />
-                    <Button
-                      className={cn(
-                        'min-h-10 w-full',
-                        isMostPopular &&
-                          'bg-primary text-primary-foreground hover:bg-primary/90'
-                      )}
-                      variant={action === 'switch' ? 'outline' : 'default'}
-                      disabled={isCurrentRecurring}
-                      onClick={() => {
-                        const target = {
-                          plan: item,
-                          requestId: createStableSubscriptionRequestId(),
-                        }
-                        setPurchaseProjection(null)
-                        latestQuoteRequestRef.current = null
-                        setQuoteError(false)
-                        setQuoteLoading(false)
-                        setPurchaseTarget(target)
-                        void requestQuoteForTarget(
-                          target,
-                          'stripe_recurring',
-                          1
-                        )
-                      }}
-                    >
-                      {isCurrentRecurring
-                        ? t('Current subscription')
-                        : getActionLabel(action, t)}
-                    </Button>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        ) : (
-          <p className='text-muted-foreground py-4 text-center text-sm'>
-            {t('No plans available')}
-          </p>
-        )}
+                      <div className='grow' />
+
+                      <Separator className='my-3' />
+                      <Button
+                        className={cn(
+                          'min-h-10 w-full',
+                          isMostPopular &&
+                            'bg-primary text-primary-foreground hover:bg-primary/90'
+                        )}
+                        variant={action === 'switch' ? 'outline' : 'default'}
+                        disabled={isCurrentRecurring}
+                        onClick={() => {
+                          const target = {
+                            plan: item,
+                            requestId: createStableSubscriptionRequestId(),
+                          }
+                          setPurchaseProjection(null)
+                          latestQuoteRequestRef.current = null
+                          setQuoteError(false)
+                          setQuoteLoading(false)
+                          setPurchaseTarget(target)
+                          void requestQuoteForTarget(
+                            target,
+                            'stripe_recurring',
+                            1
+                          )
+                        }}
+                      >
+                        {isCurrentRecurring
+                          ? t('Current subscription')
+                          : getActionLabel(action, t)}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          ) : (
+            <p className='text-muted-foreground py-4 text-center text-sm'>
+              {t('No plans available')}
+            </p>
+          )}
+        </TitledCard>
 
         <article
           data-subscription-enterprise-card
@@ -1059,15 +1100,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   </p>
                 ))}
               </div>
-              <a
+              <Button
                 data-subscription-enterprise-cta
-                href='mailto:support@flatkey.ai'
                 className='bg-primary text-primary-foreground hover:bg-primary/90 mt-5 inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-semibold transition-colors'
+                onClick={() => setEnterpriseContactOpen(true)}
               >
                 <Mail className='mr-2 size-4' aria-hidden='true' />
                 {t('Talk to sales')}
                 <ArrowRight className='ml-2 size-4' aria-hidden='true' />
-              </a>
+              </Button>
             </div>
             <div className='border-primary/15 flex flex-col justify-center border-t p-4 sm:p-5 lg:border-t-0 lg:border-l'>
               <p className='text-foreground text-3xl font-semibold tracking-tight sm:text-4xl dark:text-white'>
@@ -1095,7 +1136,33 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
             </div>
           </div>
         </article>
-      </TitledCard>
+      </div>
+
+      <Dialog
+        open={enterpriseContactOpen}
+        onOpenChange={setEnterpriseContactOpen}
+      >
+        <DialogContent className='border-border w-[min(700px,calc(100vw-2rem))] max-w-2xl overflow-hidden bg-white p-0 shadow-[0_24px_80px_-32px_rgba(76,29,149,0.45)]'>
+          <DialogHeader className='border-border/70 border-b bg-[#faf9ff] px-5 py-4 pr-12'>
+            <DialogTitle className='text-lg'>{t('Talk to sales')}</DialogTitle>
+            <DialogDescription className='text-muted-foreground text-sm'>
+              {t(
+                'Contact sales for higher monthly usage and greater discounts.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='h-[min(700px,calc(100vh-6rem))] min-h-0 overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
+            <iframe
+              title={t('Talk to sales')}
+              src={ENTERPRISE_CONTACT_FORM_URL}
+              className='h-[930px] w-full max-w-none origin-top-left border-0'
+              style={{ zoom: 0.78 }}
+              scrolling='yes'
+              loading='lazy'
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PlanPurchaseDialog
         key={purchaseTarget?.requestId || 'closed'}

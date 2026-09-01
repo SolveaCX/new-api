@@ -27,6 +27,7 @@ import {
   parseStripeCurrencyPrices,
   shouldRequireConfiguredTopupPackages,
 } from '../lib'
+import { MOCK_PRESET_AMOUNTS, MOCK_TOPUP_INFO } from '../mock-data'
 import type {
   TopupInfo,
   PresetAmount,
@@ -199,10 +200,14 @@ export function parseNumberMap(data: unknown): Record<number, number> {
   )
 }
 
-export function useTopupInfo() {
-  const [topupInfo, setTopupInfo] = useState<TopupInfo | null>(null)
-  const [presetAmounts, setPresetAmounts] = useState<PresetAmount[]>([])
-  const [loading, setLoading] = useState(true)
+export function useTopupInfo(mock = false) {
+  const [topupInfo, setTopupInfo] = useState<TopupInfo | null>(
+    mock ? MOCK_TOPUP_INFO : null
+  )
+  const [presetAmounts, setPresetAmounts] = useState<PresetAmount[]>(
+    mock ? MOCK_PRESET_AMOUNTS : []
+  )
+  const [loading, setLoading] = useState(!mock)
 
   const fetchTopupInfo = async () => {
     try {
@@ -273,8 +278,9 @@ export function useTopupInfo() {
   }
 
   useEffect(() => {
+    if (mock) return
     fetchTopupInfo()
-  }, [])
+  }, [mock])
 
   return {
     topupInfo,

@@ -413,7 +413,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.match(/Most Popular/g)?.length).toBe(1)
   })
 
-  test('renders migrated monthly quota values as strike-through prices for staging plans', () => {
+  test('keeps website reference prices fixed for staging-prefixed plans', () => {
     const stagingPlans = [
       {
         ...plan(21, '[TEST] Go', 10),
@@ -445,11 +445,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     ]
     const html = renderWalletCardWithPlans(stagingPlans)
 
-    expect(html).toContain('data-subscription-reference-price="$25"')
+    expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).toContain('data-subscription-reference-price="$450"')
-    expect(html).not.toContain('data-subscription-reference-price="$45"')
-    expect(html).not.toContain('data-subscription-reference-price="$300"')
+    expect(html).toContain('data-subscription-reference-price="$300"')
+    expect(html).not.toContain('data-subscription-reference-price="$25"')
+    expect(html).not.toContain('data-subscription-reference-price="$450"')
     expect(html).toContain('data-plan-limit-summary="true"')
     expect(html).toContain('data-plan-limit-label="all-models"')
     expect(html).toContain('Short-term caps: $8 / 5h · $12 / 7d')
@@ -1293,7 +1293,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
   })
 
   test('does not present a lower quota value as an old price', () => {
-    const html = renderWalletCard()
+    const customPlan = {
+      ...plans[0],
+      plan: { ...plans[0].plan, title: 'Custom plan' },
+    }
+    const html = renderWalletCardWithPlans([customPlan])
 
     expect(html).not.toContain('data-subscription-reference-price=')
     expect(html).not.toContain('Monthly model quota:')
@@ -1328,7 +1332,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('For teams and high-intensity workloads')
     expect(html).toContain('data-subscription-enterprise-card')
     expect(html).toContain('data-subscription-enterprise-cta')
-    expect(html).toContain('mailto:support@flatkey.ai')
     expect(html).toContain('Talk to sales')
     expect(html).toContain('Custom monthly usage')
     expect(html).toContain('Team procurement support')
@@ -1625,7 +1628,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(goSlice).toContain('$10')
     expect(goSlice).not.toContain('20% OFF')
-    expect(goSlice).not.toContain('line-through')
+    expect(goSlice).toContain('data-subscription-reference-price="$45"')
     expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('$8')
     expect(proSlice).not.toContain('20% OFF')
@@ -1658,7 +1661,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     const goSlice = html.slice(goStart, proStart)
 
     expect(goSlice).toContain('$10')
-    expect(goSlice).not.toContain('line-through')
+    expect(goSlice).toContain('data-subscription-reference-price="$45"')
     expect(goSlice).not.toContain('data-subscription-discount-original-price=')
     expect(goSlice).not.toContain('50% OFF')
     expect(goSlice).not.toContain('$5')
