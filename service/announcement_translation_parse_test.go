@@ -13,6 +13,8 @@ func TestParseAnnouncementTranslationResponse(t *testing.T) {
 		{name: "encoded JSON", input: `"{\"en\":{\"content\":\"Hello\"}}"`},
 		{name: "encoded JSON in fence", input: "```json\n\"{\\\"en\\\":{\\\"content\\\":\\\"Hello\\\"}}\"\n```"},
 		{name: "wrapped translations", input: `{"translations":{"en":{"content":"Hello"}}}`},
+		{name: "string values", input: `{"en":"Hello"}`},
+		{name: "wrapped string values", input: `{"translations":{"en":"Hello"}}`},
 		{name: "surrounding text", input: "Here is the translation:\n{\"en\":{\"content\":\"Hello\"}}\nDone."},
 	}
 

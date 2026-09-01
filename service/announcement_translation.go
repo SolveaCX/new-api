@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
@@ -126,24 +127,30 @@ func TranslateAnnouncement(ctx context.Context, content, extra string) (map[stri
 		return nil, fmt.Errorf("translation response is too large")
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		logger.LogWarn(ctx, fmt.Sprintf("announcement translation provider response status=%d content_type=%q body_bytes=%d", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw)))
 		return nil, fmt.Errorf("translation provider returned status %d", resp.StatusCode)
 	}
 
 	var envelope announcementTranslationResponse
 	if err := common.Unmarshal(raw, &envelope); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("announcement translation parse failed provider_status=%d content_type=%q body_bytes=%d parser_stage=%q", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw), "provider_envelope_decode"))
 		return nil, err
 	}
 	if envelope.Error != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("announcement translation provider returned an error status=%d content_type=%q body_bytes=%d parser_stage=%q", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw), "provider_error"))
 		return nil, fmt.Errorf("translation provider returned an error")
 	}
 	if len(envelope.Choices) == 0 {
+		logger.LogWarn(ctx, fmt.Sprintf("announcement translation provider returned no choices status=%d content_type=%q body_bytes=%d parser_stage=%q", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw), "missing_choices"))
 		return nil, fmt.Errorf("translation provider returned no choices")
 	}
 
 	translations, err := parseAnnouncementTranslationResponse(envelope.Choices[0].Message.Content)
 	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("announcement translation parse failed provider_status=%d content_type=%q body_bytes=%d choices=%d message_content_bytes=%d parser_stage=%q", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw), len(envelope.Choices), len(envelope.Choices[0].Message.Content), err.Error()))
 		return nil, fmt.Errorf("translation provider returned invalid JSON")
 	}
+	logger.LogInfo(ctx, fmt.Sprintf("announcement translation parsed provider_status=%d content_type=%q body_bytes=%d choices=%d message_content_bytes=%d locales=%d", resp.StatusCode, resp.Header.Get("Content-Type"), len(raw), len(envelope.Choices), len(envelope.Choices[0].Message.Content), len(translations)))
 	for _, locale := range announcementTranslationLocales {
 		translation, ok := translations[locale]
 		if !ok || strings.TrimSpace(translation.Content) == "" {
@@ -173,7 +180,7 @@ func parseAnnouncementTranslationResponse(raw string) (map[string]AnnouncementTr
 			return translations, nil
 		}
 	}
-	return nil, fmt.Errorf("invalid announcement translation JSON")
+	return nil, fmt.Errorf("parser_stage=unrecognized_translation_shape")
 }
 
 func decodeAnnouncementTranslations(raw string, depth int) (map[string]AnnouncementTranslation, bool) {
@@ -193,8 +200,20 @@ func decodeAnnouncementTranslations(raw string, depth int) (map[string]Announcem
 	}
 
 	var translations map[string]AnnouncementTranslation
-	if err := common.Unmarshal([]byte(raw), &translations); err == nil && len(translations) > 0 {
+	if err := common.Unmarshal([]byte(raw), &translations); err == nil && hasAnnouncementTranslationContent(translations) {
 		return translations, true
+	}
+
+	var wrappedText struct {
+		Translations map[string]string `json:"translations"`
+	}
+	if err := common.Unmarshal([]byte(raw), &wrappedText); err == nil && len(wrappedText.Translations) > 0 {
+		return announcementTranslationsFromText(wrappedText.Translations), true
+	}
+
+	var textTranslations map[string]string
+	if err := common.Unmarshal([]byte(raw), &textTranslations); err == nil && len(textTranslations) > 0 {
+		return announcementTranslationsFromText(textTranslations), true
 	}
 
 	var encoded string
@@ -202,6 +221,23 @@ func decodeAnnouncementTranslations(raw string, depth int) (map[string]Announcem
 		return decodeAnnouncementTranslations(encoded, depth+1)
 	}
 	return nil, false
+}
+
+func announcementTranslationsFromText(translations map[string]string) map[string]AnnouncementTranslation {
+	result := make(map[string]AnnouncementTranslation, len(translations))
+	for locale, content := range translations {
+		result[locale] = AnnouncementTranslation{Content: content}
+	}
+	return result
+}
+
+func hasAnnouncementTranslationContent(translations map[string]AnnouncementTranslation) bool {
+	for _, translation := range translations {
+		if strings.TrimSpace(translation.Content) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func trimAnnouncementTranslationFence(raw string) string {
