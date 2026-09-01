@@ -25,7 +25,10 @@ export type MessageStatus = 'loading' | 'streaming' | 'complete' | 'error'
 
 export interface GeneratedMedia {
   type: 'image' | 'video' | 'audio'
-  url: string
+  /** Short-lived preview URL; restored media resolves it again from assetId. */
+  url?: string
+  /** Stable server-side asset identity for generated media. */
+  assetId?: string
   mimeType?: string
 }
 

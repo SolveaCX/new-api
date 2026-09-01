@@ -20,7 +20,7 @@ import {
   getPlaygroundAttachmentPreview,
   type PlaygroundAttachmentPreview,
 } from '../api'
-import type { Message, PlaygroundAttachment } from '../types'
+import type { GeneratedMedia, Message, PlaygroundAttachment } from '../types'
 import {
   MAX_ATTACHMENTS,
   MAX_FILE_BYTES,
@@ -166,6 +166,97 @@ function assertPreviewMatchesAttachment(
   }
 }
 
+function assertPreviewMatchesGeneratedMedia(
+  media: GeneratedMedia,
+  preview: PlaygroundAttachmentPreview,
+  expectedAssetId?: string
+): void {
+  const previewAssetId = preview.asset_id?.trim()
+  const previewURL = preview.preview_url?.trim()
+  if (!previewAssetId || !previewURL) {
+    throw new Error('Invalid Playground generated media preview response')
+  }
+  if (expectedAssetId?.trim() && previewAssetId !== expectedAssetId.trim()) {
+    throw new Error('Playground generated media preview mismatch')
+  }
+  let expected: 'Image' | 'Video' | 'Audio'
+  switch (media.type) {
+    case 'image':
+      expected = 'Image'
+      break
+    case 'video':
+      expected = 'Video'
+      break
+    case 'audio':
+      expected = 'Audio'
+      break
+    default:
+      throw new Error('Unsupported Playground generated media type')
+  }
+  if (
+    preview.asset_type &&
+    preview.asset_type.toLowerCase() !== expected.toLowerCase()
+  ) {
+    throw new Error('Playground generated media type mismatch')
+  }
+}
+
+function hydratedGeneratedMedia(
+  media: GeneratedMedia,
+  preview: PlaygroundAttachmentPreview
+): GeneratedMedia {
+  return {
+    ...media,
+    assetId: preview.asset_id.trim(),
+    url: preview.preview_url.trim(),
+    ...(preview.content_type
+      ? { mimeType: preview.content_type }
+      : media.mimeType
+        ? { mimeType: media.mimeType }
+        : {}),
+  }
+}
+
+async function hydrateGeneratedMediaList(
+  media: GeneratedMedia[] | undefined,
+  previewFor: (assetId: string) => Promise<PlaygroundAttachmentPreview>
+): Promise<{ media: GeneratedMedia[] | undefined; changed: boolean }> {
+  if (!media?.length) return { media, changed: false }
+
+  let changed = false
+  const hydrated = await Promise.all(
+    media.map(async (item) => {
+      if (!item.assetId?.trim()) return item
+      try {
+        const assetId = item.assetId.trim()
+        const preview = await previewFor(assetId)
+        assertPreviewMatchesGeneratedMedia(item, preview, assetId)
+        const next = hydratedGeneratedMedia(item, preview)
+        if (
+          next.assetId !== item.assetId ||
+          next.url !== item.url ||
+          next.mimeType !== item.mimeType
+        ) {
+          changed = true
+        }
+        return next
+      } catch {
+        // Keep the durable ID, but never revive a stale signed or process-local
+        // URL after a failed preview lookup.
+        if (item.url) {
+          changed = true
+          const next = { ...item }
+          delete next.url
+          return next
+        }
+        return item
+      }
+    })
+  )
+
+  return { media: hydrated, changed }
+}
+
 async function putPlaygroundAttachment(
   uploadURL: string,
   headers: Record<string, string> | undefined,
@@ -196,8 +287,9 @@ async function putPlaygroundAttachment(
 }
 
 /**
- * Upload local image/video attachments and replace transient data URLs with
- * durable asset IDs plus a short-lived signed preview URL.
+ * Upload local media attachments and replace transient URLs with durable asset
+ * IDs plus a short-lived signed preview URL. Generated audio reuses this same
+ * path so its output can be restored after a reload.
  */
 export async function uploadPlaygroundAttachments(
   attachments: PlaygroundAttachment[],
@@ -342,54 +434,93 @@ export async function hydratePlaygroundMessages(
   const hydratedMessages = await Promise.all(
     messages.map(async (message) => {
       let messageChanged = false
+      let legacyGeneratedMedia = message.generatedMedia
       const versions = await Promise.all(
         message.versions.map(async (version) => {
-          if (!version.attachments?.length) return version
+          if (!version.attachments?.length && !version.generatedMedia?.length) {
+            return version
+          }
           let versionChanged = false
-          const attachments = await Promise.all(
-            version.attachments.map(async (attachment) => {
-              if (!isMediaAttachment(attachment) || !attachment.assetId) {
-                return attachment
-              }
-              try {
-                const assetId = attachment.assetId.trim()
-                const preview = await previewFor(assetId)
-                assertPreviewMatchesAttachment(attachment, preview, assetId)
-                const next =
-                  attachment.kind === 'audio'
-                    ? await hydrateAudioAttachment(attachment, preview)
-                    : markTrustedAttachmentURL(
-                        hydratedAttachment(attachment, preview)
-                      )
-                if (
-                  next.url !== attachment.url ||
-                  next.mediaType !== attachment.mediaType ||
-                  next.dataUrl !== attachment.dataUrl
-                ) {
-                  versionChanged = true
-                }
-                return next
-              } catch {
-                // Keep only the durable ID. In particular, do not retain a
-                // base64 URL that would be rejected on the next persistence.
-                if (attachment.url) {
-                  versionChanged = true
-                  const next = { ...attachment }
-                  delete next.url
-                  return next
-                }
-                return attachment
-              }
-            })
+          const attachments = version.attachments?.length
+            ? await Promise.all(
+                version.attachments.map(async (attachment) => {
+                  if (!isMediaAttachment(attachment) || !attachment.assetId) {
+                    return attachment
+                  }
+                  try {
+                    const assetId = attachment.assetId.trim()
+                    const preview = await previewFor(assetId)
+                    assertPreviewMatchesAttachment(attachment, preview, assetId)
+                    const next =
+                      attachment.kind === 'audio'
+                        ? await hydrateAudioAttachment(attachment, preview)
+                        : markTrustedAttachmentURL(
+                            hydratedAttachment(attachment, preview)
+                          )
+                    if (
+                      next.url !== attachment.url ||
+                      next.mediaType !== attachment.mediaType ||
+                      next.dataUrl !== attachment.dataUrl
+                    ) {
+                      versionChanged = true
+                    }
+                    return next
+                  } catch {
+                    // Keep only the durable ID. In particular, do not retain a
+                    // base64 URL that would be rejected on the next persistence.
+                    if (attachment.url) {
+                      versionChanged = true
+                      const next = { ...attachment }
+                      delete next.url
+                      return next
+                    }
+                    return attachment
+                  }
+                })
+              )
+            : version.attachments
+          const generatedResult = await hydrateGeneratedMediaList(
+            version.generatedMedia,
+            previewFor
           )
+          if (generatedResult.changed) versionChanged = true
           if (!versionChanged) return version
           messageChanged = true
           changed = true
-          return { ...version, attachments }
+          return {
+            ...version,
+            ...(attachments ? { attachments } : {}),
+            ...(generatedResult.media
+              ? { generatedMedia: generatedResult.media }
+              : {}),
+          }
         })
       )
+      // Some older server snapshots stored generated media directly on the
+      // message. Hydrate that fallback too when the current version has no
+      // authoritative media, so those records survive a reload as well.
+      if (
+        legacyGeneratedMedia &&
+        message.versions[0]?.generatedMedia === undefined
+      ) {
+        const legacyResult = await hydrateGeneratedMediaList(
+          legacyGeneratedMedia,
+          previewFor
+        )
+        if (legacyResult.changed) {
+          legacyGeneratedMedia = legacyResult.media
+          messageChanged = true
+          changed = true
+        }
+      }
       if (!messageChanged) return message
-      return { ...message, versions }
+      return {
+        ...message,
+        versions,
+        ...(legacyGeneratedMedia !== message.generatedMedia
+          ? { generatedMedia: legacyGeneratedMedia }
+          : {}),
+      }
     })
   )
 

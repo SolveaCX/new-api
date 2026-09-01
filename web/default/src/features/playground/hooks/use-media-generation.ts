@@ -30,6 +30,7 @@ import {
   updateCurrentVersionMedia,
   type MediaGenerationSettings,
 } from '../lib'
+import { uploadPlaygroundAttachments } from '../lib/playground-attachments'
 import type { GeneratedMedia, Message, PlaygroundAttachment } from '../types'
 
 interface UseMediaGenerationOptions {
@@ -84,11 +85,11 @@ function collectLiveObjectURLs(messages: Message[]): Set<string> {
   messages.forEach((message) => {
     if (message.videoUrl?.startsWith('blob:')) urls.add(message.videoUrl)
     message.generatedMedia?.forEach((media) => {
-      if (media.url.startsWith('blob:')) urls.add(media.url)
+      if (media.url?.startsWith('blob:')) urls.add(media.url)
     })
     message.versions.forEach((version) => {
       version.generatedMedia?.forEach((media) => {
-        if (media.url.startsWith('blob:')) urls.add(media.url)
+        if (media.url?.startsWith('blob:')) urls.add(media.url)
       })
     })
   })
@@ -407,9 +408,49 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
           }
           const url = URL.createObjectURL(audio)
           generatedObjectURLsRef.current.add(url)
-          completeMedia(assistantMessageKey, i18next.t('Audio'), [
-            { type: 'audio', url, mimeType: audio.type || 'audio/wav' },
-          ])
+          try {
+            const mediaType = audio.type || 'audio/wav'
+            const extension =
+              mediaType.split('/', 2)[1]?.split(';', 1)[0] || 'wav'
+            const [uploadedAudio] = await uploadPlaygroundAttachments(
+              [
+                {
+                  kind: 'audio',
+                  filename: `generated-audio.${extension}`,
+                  mediaType,
+                  url,
+                },
+              ],
+              controller.signal
+            )
+            if (controller.signal.aborted) {
+              releaseMediaObjectURL(url)
+              return
+            }
+            if (!uploadedAudio) {
+              throw new Error(
+                i18next.t('Unable to upload Playground attachment') ||
+                  'Unable to upload Playground attachment'
+              )
+            }
+            const assetId = uploadedAudio.assetId?.trim()
+            const durableURL =
+              assetId && uploadedAudio.url ? uploadedAudio.url : url
+            if (durableURL !== url) releaseMediaObjectURL(url)
+            completeMedia(assistantMessageKey, i18next.t('Audio'), [
+              {
+                type: 'audio',
+                url: durableURL,
+                ...(assetId ? { assetId } : {}),
+                mimeType: uploadedAudio.mediaType || mediaType,
+              },
+            ])
+          } catch (error) {
+            // A failed upload never reaches the message state, so release the
+            // local preview here instead of retaining it until unmount.
+            releaseMediaObjectURL(url)
+            throw error
+          }
           return
         }
 
@@ -435,7 +476,7 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
         }
       }
     },
-    [completeMedia, failMedia, pollVideoTask]
+    [completeMedia, failMedia, pollVideoTask, releaseMediaObjectURL]
   )
 
   useEffect(() => {

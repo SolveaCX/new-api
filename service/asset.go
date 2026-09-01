@@ -895,7 +895,7 @@ func normalizeAssetContentType(assetType string, contentType string) (string, st
 		// object metadata so valid WAV attachments are not rejected.
 		case "audio/wav", "audio/wave", "audio/x-wav":
 			return "audio/wav", ".wav"
-		case "audio/ogg":
+		case "audio/ogg", "application/ogg":
 			return "audio/ogg", ".ogg"
 		case "audio/mp4":
 			return "audio/mp4", ".m4a"

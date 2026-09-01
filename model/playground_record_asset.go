@@ -41,6 +41,8 @@ func normalizePlaygroundAssetType(value string) string {
 		return AssetTypeImage
 	case "video":
 		return AssetTypeVideo
+	case "audio":
+		return AssetTypeAudio
 	case "document", "pdf", "file":
 		return AssetTypeDocument
 	default:
@@ -51,6 +53,7 @@ func normalizePlaygroundAssetType(value string) string {
 const (
 	AssetTypeImage    = "Image"
 	AssetTypeVideo    = "Video"
+	AssetTypeAudio    = "Audio"
 	AssetTypeDocument = "Document"
 )
 

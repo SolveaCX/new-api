@@ -271,6 +271,13 @@ func TestNormalizeAssetContentTypeAcceptsGoWaveSnifferAlias(t *testing.T) {
 	require.Equal(t, ".wav", extension)
 }
 
+func TestNormalizeAssetContentTypeAcceptsGoOggSnifferAlias(t *testing.T) {
+	contentType, extension := normalizeAssetContentType("Audio", "application/ogg")
+
+	require.Equal(t, "audio/ogg", contentType)
+	require.Equal(t, ".ogg", extension)
+}
+
 func TestCreateAssetUploadSessionUsesTypeLimitInsteadOfMultipartCap(t *testing.T) {
 	newAssetServiceTestDB(t)
 	installAssetServiceTestDeps(t)

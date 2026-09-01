@@ -425,9 +425,24 @@ type playgroundAssetJSONContext struct {
 	assetID   string
 }
 
+func playgroundAssetTypeFromValue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image":
+		return model.AssetTypeImage
+	case "video":
+		return model.AssetTypeVideo
+	case "audio":
+		return model.AssetTypeAudio
+	case "document", "pdf", "file":
+		return model.AssetTypeDocument
+	default:
+		return ""
+	}
+}
+
 // extractPlaygroundAssetReferences accepts both camelCase (browser message
 // shape) and snake_case (API shape), while deriving an expected asset type from
-// attachment kind or image/video content parts.
+// attachment kind, generated-media type, or multimodal content parts.
 func extractPlaygroundAssetReferences(request *savePlaygroundRecordRequest) ([]model.PlaygroundAssetReference, error) {
 	if request == nil {
 		return nil, nil
@@ -461,13 +476,14 @@ func walkPlaygroundAssetReferences(value any, context playgroundAssetJSONContext
 	case map[string]any:
 		local := context
 		if kind, ok := stringValueForKey(typed, "kind"); ok {
-			switch strings.ToLower(strings.TrimSpace(kind)) {
-			case "image":
-				local.assetType = "Image"
-			case "video":
-				local.assetType = "Video"
-			case "document", "pdf", "file":
-				local.assetType = "Document"
+			if assetType := playgroundAssetTypeFromValue(kind); assetType != "" {
+				local.assetType = assetType
+			}
+		}
+		// Generated media uses `type` while input attachments use `kind`.
+		if mediaType, ok := stringValueForKey(typed, "type"); ok {
+			if assetType := playgroundAssetTypeFromValue(mediaType); assetType != "" {
+				local.assetType = assetType
 			}
 		}
 		if assetID, ok := playgroundAssetIDFromMap(typed); ok {
@@ -481,11 +497,13 @@ func walkPlaygroundAssetReferences(value any, context playgroundAssetJSONContext
 			childContext := local
 			switch strings.ToLower(strings.TrimSpace(key)) {
 			case "image_url":
-				childContext.assetType = "Image"
+				childContext.assetType = model.AssetTypeImage
 			case "video_url":
-				childContext.assetType = "Video"
+				childContext.assetType = model.AssetTypeVideo
+			case "audio_url", "input_audio":
+				childContext.assetType = model.AssetTypeAudio
 			case "file", "input_file":
-				childContext.assetType = "Document"
+				childContext.assetType = model.AssetTypeDocument
 			}
 			if keyLower := strings.ToLower(strings.TrimSpace(key)); keyLower == "url" || keyLower == "file_url" {
 				if rawURL, ok := child.(string); ok && strings.HasPrefix(strings.TrimSpace(rawURL), "asset://") {
@@ -609,13 +627,13 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 	case map[string]any:
 		local := context
 		if kind, ok := stringValueForKey(typed, "kind"); ok {
-			switch strings.ToLower(strings.TrimSpace(kind)) {
-			case "image":
-				local.assetType = "Image"
-			case "video":
-				local.assetType = "Video"
-			case "document", "pdf", "file":
-				local.assetType = "Document"
+			if assetType := playgroundAssetTypeFromValue(kind); assetType != "" {
+				local.assetType = assetType
+			}
+		}
+		if mediaType, ok := stringValueForKey(typed, "type"); ok {
+			if assetType := playgroundAssetTypeFromValue(mediaType); assetType != "" {
+				local.assetType = assetType
 			}
 		}
 		if assetID, ok := playgroundAssetIDFromMap(typed); ok && assetID != "" {
@@ -625,7 +643,7 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 			keyLower := strings.ToLower(strings.TrimSpace(key))
 			if keyLower == "url" || keyLower == "file_url" {
 				if rawURL, ok := child.(string); ok {
-					if local.assetID != "" && (local.assetType == "Image" || local.assetType == "Video" || local.assetType == "Document") {
+					if local.assetID != "" && local.assetType != "" {
 						delete(typed, key)
 						continue
 					}
@@ -637,11 +655,13 @@ func sanitizePlaygroundValue(value any, urls map[string]string, context playgrou
 			}
 			childContext := local
 			if keyLower == "image_url" {
-				childContext.assetType = "Image"
+				childContext.assetType = model.AssetTypeImage
 			} else if keyLower == "video_url" {
-				childContext.assetType = "Video"
+				childContext.assetType = model.AssetTypeVideo
+			} else if keyLower == "audio_url" || keyLower == "input_audio" {
+				childContext.assetType = model.AssetTypeAudio
 			} else if keyLower == "file" || keyLower == "input_file" {
-				childContext.assetType = "Document"
+				childContext.assetType = model.AssetTypeDocument
 			}
 			sanitizePlaygroundValue(child, urls, childContext)
 		}

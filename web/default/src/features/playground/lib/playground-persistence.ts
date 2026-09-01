@@ -84,9 +84,18 @@ function sanitizeGeneratedMedia(media: GeneratedMedia[]): GeneratedMedia[] {
   return media
     .filter(
       (item) =>
-        !isEmbeddedBase64DataUrl(item.url) && !isEphemeralObjectUrl(item.url)
+        !!item.assetId?.trim() ||
+        (!isEmbeddedBase64DataUrl(item.url) && !isEphemeralObjectUrl(item.url))
     )
-    .map((item) => ({ ...item }))
+    .map((item) => {
+      const sanitized = { ...item }
+      if (sanitized.assetId?.trim()) {
+        // Signed preview URLs are transport-only. The restore path resolves a
+        // fresh URL from the durable asset identity before rendering.
+        delete sanitized.url
+      }
+      return sanitized
+    })
 }
 
 function sanitizeMessage(message: Message): Message {
@@ -138,6 +147,16 @@ function collectPlaygroundAssetURLs(
           )
         }
       })
+      version.generatedMedia?.forEach((media) => {
+        if (media.assetId?.trim() && media.url?.trim()) {
+          assetURLs.set(media.url.trim(), `asset://${media.assetId.trim()}`)
+        }
+      })
+    })
+    message.generatedMedia?.forEach((media) => {
+      if (media.assetId?.trim() && media.url?.trim()) {
+        assetURLs.set(media.url.trim(), `asset://${media.assetId.trim()}`)
+      }
     })
   })
 }

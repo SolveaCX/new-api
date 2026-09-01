@@ -17,7 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { STORAGE_KEYS } from '../constants'
-import type { Message, ParameterEnabled, PlaygroundConfig } from '../types'
+import type {
+  GeneratedMedia,
+  Message,
+  ParameterEnabled,
+  PlaygroundConfig,
+} from '../types'
 import { sanitizeMessagesOnLoad } from './message-utils'
 
 function isEmbeddedBase64DataUrl(value: unknown): boolean {
@@ -40,6 +45,28 @@ function isValidUserId(userId: number): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function sanitizeGeneratedMediaForLocalStorage(media: GeneratedMedia[]): {
+  media: GeneratedMedia[]
+  changed: boolean
+} {
+  let changed = false
+  const sanitized = media.flatMap((item) => {
+    if (item.assetId?.trim()) {
+      if (!item.url) return [item]
+      const next = { ...item }
+      delete next.url
+      changed = true
+      return [next]
+    }
+    if (isTransientObjectUrl(item.url)) {
+      changed = true
+      return []
+    }
+    return [item]
+  })
+  return { media: sanitized, changed }
 }
 
 /**
@@ -75,16 +102,15 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
         messageChanged = true
         return sanitized
       })
-      const generatedMedia = version.generatedMedia?.filter((media) => {
-        const transient = isTransientObjectUrl(media.url)
-        if (transient) messageChanged = true
-        return !transient
-      })
+      const generatedResult = version.generatedMedia
+        ? sanitizeGeneratedMediaForLocalStorage(version.generatedMedia)
+        : undefined
+      if (generatedResult?.changed) messageChanged = true
       if (!messageChanged) return version
       return {
         ...version,
         ...(attachments ? { attachments } : {}),
-        ...(generatedMedia ? { generatedMedia } : {}),
+        ...(generatedResult ? { generatedMedia: generatedResult.media } : {}),
       }
     })
 
@@ -95,12 +121,12 @@ function sanitizeMessagesForLocalStorage(messages: Message[]): Message[] {
       delete sanitizedMessage.videoUrl
     }
     if (sanitizedMessage.generatedMedia) {
-      const generatedMedia = sanitizedMessage.generatedMedia.filter(
-        (media) => !isTransientObjectUrl(media.url)
+      const generatedResult = sanitizeGeneratedMediaForLocalStorage(
+        sanitizedMessage.generatedMedia
       )
-      if (generatedMedia.length !== sanitizedMessage.generatedMedia.length) {
+      if (generatedResult.changed) {
         if (sanitizedMessage === message) sanitizedMessage = { ...message }
-        sanitizedMessage.generatedMedia = generatedMedia
+        sanitizedMessage.generatedMedia = generatedResult.media
       }
     }
     return sanitizedMessage

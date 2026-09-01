@@ -26,7 +26,7 @@ func playgroundAssetForTest(userID int, publicID, assetType string) Asset {
 		StorageBucket:    "playground-test",
 		ObjectKey:        "objects/" + publicID,
 		ObjectGeneration: 1,
-		ContentType:      map[string]string{AssetTypeImage: "image/png", AssetTypeVideo: "video/mp4", AssetTypeDocument: "application/pdf"}[assetType],
+		ContentType:      map[string]string{AssetTypeImage: "image/png", AssetTypeVideo: "video/mp4", AssetTypeAudio: "audio/wav", AssetTypeDocument: "application/pdf"}[assetType],
 		SizeBytes:        1,
 		SourceExpiresAt:  now + 3600,
 		CreatedAt:        now,
@@ -79,6 +79,17 @@ func TestNormalizePlaygroundAssetReferencesAcceptsDocumentAndPdfTypes(t *testing
 	require.Len(t, refs, 2)
 	require.Equal(t, "Document", refs[0].AssetType)
 	require.Equal(t, "Document", refs[1].AssetType)
+}
+
+func TestNormalizePlaygroundAssetReferencesAcceptsAudioTypes(t *testing.T) {
+	refs, err := normalizePlaygroundAssetReferences([]PlaygroundAssetReference{
+		{AssetID: "ast_playground_audio", AssetType: "audio"},
+		{AssetID: "ast_playground_audio_caps", AssetType: "Audio"},
+	})
+	require.NoError(t, err)
+	require.Len(t, refs, 2)
+	require.Equal(t, "Audio", refs[0].AssetType)
+	require.Equal(t, "Audio", refs[1].AssetType)
 }
 
 func TestPlaygroundRecordAssetReferencesAreIdempotentAndClearKeepsSharedAssets(t *testing.T) {
