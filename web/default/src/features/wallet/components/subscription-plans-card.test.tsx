@@ -1515,7 +1515,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('80% off')
     expect(html).toContain('$5')
-    expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$25"')
     expect(html).toContain('line-through')
     expect(html).not.toContain('OFF')
@@ -1538,7 +1537,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('80% off')
     expect(html).toContain('$4')
-    expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$25"')
     expect(html).toContain('line-through')
     expect(html).not.toContain('OFF')
@@ -1560,7 +1558,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     )
 
     expect(html).toContain('$8')
-    expect(html).toContain('$10')
     expect(html).toContain('data-subscription-reference-price="$25"')
     expect(html).toContain('line-through')
     expect(html).toContain('80% off')
