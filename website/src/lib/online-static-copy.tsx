@@ -303,19 +303,19 @@ const en: OnlineCopy = {
     paymentMethods: paymentMethodCopy.en.methods,
     plans: {
       Go: {
-        audience: "For individuals & light daily use",
+        audience: "For individuals and light everyday use",
         cta: "Subscribe",
         text: "Up to $45 model usage / mo",
         window: "Short-term caps: $8 / 5h · $12 / 7d",
       },
       Pro: {
-        audience: "For daily development & high-frequency requests",
+        audience: "For daily development and frequent requests",
         cta: "Subscribe",
         text: "Up to $90 model usage / mo",
         window: "Short-term caps: $18 / 5h · $45 / 7d",
       },
       Max: {
-        audience: "For teams & heavy workloads",
+        audience: "For teams and high-intensity workloads",
         cta: "Subscribe",
         text: "Up to $300 model usage / mo",
         window: "Short-term caps: $78 / 5h · $220 / 7d",
