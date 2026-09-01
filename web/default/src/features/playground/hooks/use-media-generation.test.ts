@@ -27,6 +27,7 @@ const fetchPlaygroundVideoTaskMock = spyOn(
   playgroundApi,
   'fetchPlaygroundVideoTask'
 )
+const fetchVideoContentMock = spyOn(playgroundApi, 'fetchVideoContent')
 const uploadPlaygroundAttachmentsMock = spyOn(
   playgroundAttachments,
   'uploadPlaygroundAttachments'
@@ -39,6 +40,7 @@ const originalWindow = globalThis.window
 beforeEach(() => {
   sendMediaGenerationMock.mockReset()
   fetchPlaygroundVideoTaskMock.mockReset()
+  fetchVideoContentMock.mockReset()
   uploadPlaygroundAttachmentsMock.mockReset()
   uploadPlaygroundAttachmentsMock.mockImplementation(
     async (attachments) => attachments
@@ -58,6 +60,7 @@ beforeEach(() => {
 afterAll(() => {
   sendMediaGenerationMock.mockRestore()
   fetchPlaygroundVideoTaskMock.mockRestore()
+  fetchVideoContentMock.mockRestore()
   uploadPlaygroundAttachmentsMock.mockRestore()
   if (originalWindow) {
     Object.defineProperty(globalThis, 'window', {
@@ -214,7 +217,8 @@ describe('useMediaGeneration video task lifecycle', () => {
     expect(findResumableVideoMessage(messages)?.key).toBe('newer-task')
   })
 
-  test('persists the task id on the exact assistant message and clears it on completion', async () => {
+  test('downloads completed video and stores its durable asset reference', async () => {
+    const video = new Blob(['ftyp'], { type: 'video/mp4' })
     sendMediaGenerationMock.mockResolvedValue({
       id: 'video-task-123',
       status: 'queued',
@@ -225,37 +229,121 @@ describe('useMediaGeneration video task lifecycle', () => {
       status: 'completed',
       url: 'https://cdn.example.com/video.mp4',
     })
-    const harness = renderMediaGenerationHook(createMediaMessages())
+    fetchVideoContentMock.mockResolvedValue(video)
+    uploadPlaygroundAttachmentsMock.mockResolvedValue([
+      {
+        kind: 'video',
+        filename: 'generated-video.mp4',
+        mediaType: 'video/mp4',
+        assetId: 'ast_generated_video',
+        url: 'https://storage.example/generated.mp4',
+      },
+    ])
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const revoked: string[] = []
+    URL.createObjectURL = (() =>
+      'blob:generated-video') as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
 
-    await harness.hook.generateMedia(
-      'A ship at sea',
-      'seedance-2.0',
-      'default',
-      seedanceSettings,
-      'target-assistant'
-    )
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
 
-    const submitted = harness.updates[0]
-    expect(submitted?.[0]?.versions[0]?.content).toBe('Previous result')
-    expect(submitted?.[1]).toMatchObject({
-      key: 'target-assistant',
-      status: MESSAGE_STATUS.STREAMING,
-      videoTaskId: 'video-task-123',
-    })
+      await harness.hook.generateMedia(
+        'A ship at sea',
+        'seedance-2.0',
+        'default',
+        seedanceSettings,
+        'target-assistant'
+      )
 
-    const completed = harness.messages()[1]
-    expect(completed).toMatchObject({
-      key: 'target-assistant',
-      status: MESSAGE_STATUS.COMPLETE,
-      versions: [
+      const submitted = harness.updates[0]
+      expect(submitted?.[0]?.versions[0]?.content).toBe('Previous result')
+      expect(submitted?.[1]).toMatchObject({
+        key: 'target-assistant',
+        status: MESSAGE_STATUS.STREAMING,
+        videoTaskId: 'video-task-123',
+      })
+      expect(fetchVideoContentMock).toHaveBeenCalledTimes(1)
+      expect(fetchVideoContentMock.mock.calls[0]?.[0]).toBe('video-task-123')
+      expect(uploadPlaygroundAttachmentsMock).toHaveBeenCalledTimes(1)
+      expect(uploadPlaygroundAttachmentsMock.mock.calls[0]?.[0]).toEqual([
         {
-          generatedMedia: [
-            { type: 'video', url: 'https://cdn.example.com/video.mp4' },
-          ],
+          kind: 'video',
+          filename: 'generated-video.mp4',
+          mediaType: 'video/mp4',
+          url: 'blob:generated-video',
         },
-      ],
+      ])
+
+      const completed = harness.messages()[1]
+      expect(completed).toMatchObject({
+        key: 'target-assistant',
+        status: MESSAGE_STATUS.COMPLETE,
+        versions: [
+          {
+            generatedMedia: [
+              {
+                type: 'video',
+                assetId: 'ast_generated_video',
+                url: 'https://storage.example/generated.mp4',
+                mimeType: 'video/mp4',
+              },
+            ],
+          },
+        ],
+      })
+      expect('videoTaskId' in completed).toBe(false)
+      expect(revoked).toEqual(['blob:generated-video'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL
+      URL.revokeObjectURL = originalRevokeObjectURL
+    }
+  })
+
+  test('releases the local video preview when durable upload fails', async () => {
+    sendMediaGenerationMock.mockResolvedValue({
+      id: 'video-task-upload-failed',
+      status: 'queued',
     })
-    expect('videoTaskId' in completed).toBe(false)
+    fetchPlaygroundVideoTaskMock.mockResolvedValue({
+      id: 'video-task-upload-failed',
+      status: 'completed',
+    })
+    fetchVideoContentMock.mockResolvedValue(
+      new Blob(['ftyp'], { type: 'video/mp4' })
+    )
+    uploadPlaygroundAttachmentsMock.mockRejectedValue(
+      new Error('video upload failed')
+    )
+    const originalCreateObjectURL = URL.createObjectURL
+    const originalRevokeObjectURL = URL.revokeObjectURL
+    const revoked: string[] = []
+    URL.createObjectURL = (() =>
+      'blob:failed-generated-video') as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url)
+    }) as typeof URL.revokeObjectURL
+
+    try {
+      const harness = renderMediaGenerationHook(createMediaMessages())
+      await harness.hook.generateMedia(
+        'Release this video preview',
+        'seedance-2.0',
+        'default',
+        seedanceSettings,
+        'target-assistant'
+      )
+
+      expect(harness.messages()[1]?.status).toBe(MESSAGE_STATUS.ERROR)
+      expect(harness.messages()[1]?.versions[0]?.generatedMedia).toBeUndefined()
+      expect(revoked).toEqual(['blob:failed-generated-video'])
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL
+      URL.revokeObjectURL = originalRevokeObjectURL
+    }
   })
 
   test('clears the persisted task id when the video task fails', async () => {

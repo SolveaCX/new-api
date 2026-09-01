@@ -234,6 +234,43 @@ describe('Playground user-scoped storage', () => {
     ])
   })
 
+  test('persists generated video by durable asset ID without its expiring URL', () => {
+    const messages: Message[] = [
+      {
+        key: 'durable-video-message',
+        from: 'assistant',
+        status: 'complete',
+        versions: [
+          {
+            id: 'video-version',
+            content: 'Generated video',
+            generatedMedia: [
+              {
+                type: 'video',
+                assetId: 'ast_generated_video',
+                mimeType: 'video/mp4',
+                url: 'https://storage.example/signed-generated.mp4',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    saveMessages(10, messages)
+
+    const persisted = JSON.parse(
+      localStorage.getItem(`${STORAGE_KEYS.MESSAGES}:v2:10`) ?? 'null'
+    ) as Message[]
+    expect(persisted[0]?.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'video',
+        assetId: 'ast_generated_video',
+        mimeType: 'video/mp4',
+      },
+    ])
+  })
+
   test('isolates messages and config by user', () => {
     saveMessages(10, [aliceMessage])
     saveMessages(20, [bobMessage])

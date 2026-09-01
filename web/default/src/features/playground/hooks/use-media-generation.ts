@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useEffect, useRef, useState } from 'react'
 import i18next from 'i18next'
 import { toast } from 'sonner'
-import { fetchPlaygroundVideoTask, sendMediaGeneration } from '../api'
+import {
+  fetchPlaygroundVideoTask,
+  fetchVideoContent,
+  sendMediaGeneration,
+} from '../api'
 import { MESSAGE_ROLES, MESSAGE_STATUS } from '../constants'
 import {
   buildMediaGenerationRequest,
@@ -284,11 +288,64 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
           throw new Error(task.error || i18next.t('Video generation failed'))
         }
         if (task.status === 'completed') {
-          const url =
-            task.url || `/v1/videos/${encodeURIComponent(taskId)}/content`
-          completeMedia(messageKey, i18next.t('Generated video'), [
-            { type: 'video', url },
-          ])
+          const video = await fetchVideoContent(taskId, controller.signal)
+          if (
+            typeof Blob === 'undefined' ||
+            !(video instanceof Blob) ||
+            video.size <= 0
+          ) {
+            throw new Error(i18next.t('Video generation failed'))
+          }
+          if (
+            typeof URL === 'undefined' ||
+            typeof URL.createObjectURL !== 'function'
+          ) {
+            throw new Error(i18next.t('Video generation failed'))
+          }
+
+          const url = URL.createObjectURL(video)
+          generatedObjectURLsRef.current.add(url)
+          try {
+            const mediaType = video.type || 'video/mp4'
+            const [uploadedVideo] = await uploadPlaygroundAttachments(
+              [
+                {
+                  kind: 'video',
+                  filename: 'generated-video.mp4',
+                  mediaType,
+                  url,
+                },
+              ],
+              controller.signal
+            )
+            if (controller.signal.aborted) {
+              releaseMediaObjectURL(url)
+              return
+            }
+            if (!uploadedVideo) {
+              throw new Error(
+                i18next.t('Unable to upload Playground attachment') ||
+                  'Unable to upload Playground attachment'
+              )
+            }
+            const assetId = uploadedVideo.assetId?.trim()
+            const durableURL =
+              assetId && uploadedVideo.url ? uploadedVideo.url : url
+            if (durableURL !== url) releaseMediaObjectURL(url)
+            completeMedia(messageKey, i18next.t('Generated video'), [
+              {
+                type: 'video',
+                url: durableURL,
+                ...(assetId ? { assetId } : {}),
+                mimeType: uploadedVideo.mediaType || mediaType,
+              },
+            ])
+          } catch (error) {
+            // A failed upload must not leave a process-local URL attached to
+            // the message; only the durable asset can be restored later.
+            releaseMediaObjectURL(url)
+            throw error
+          }
           return
         }
 
@@ -305,7 +362,7 @@ export function useMediaGeneration(props: UseMediaGenerationOptions) {
 
       throw new Error(i18next.t('Video generation timed out'))
     },
-    [completeMedia, updateProgress]
+    [completeMedia, releaseMediaObjectURL, updateProgress]
   )
 
   const runVideoPolling = useCallback(

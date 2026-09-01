@@ -362,6 +362,57 @@ describe('Playground durable attachments', () => {
     get.mockRestore()
   })
 
+  test('hydrates generated video media from its durable asset ID', async () => {
+    enableBrowserUpload()
+    const get = spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          asset_id: 'ast_generated_video',
+          asset_type: 'Video',
+          content_type: 'video/mp4',
+          size_bytes: 1024,
+          preview_url: 'https://storage.example/generated.mp4',
+          expires_at: 9999999999,
+        },
+      },
+    } as never)
+    const messages: Message[] = [
+      {
+        key: 'assistant-generated-video',
+        from: 'assistant',
+        status: 'complete',
+        versions: [
+          {
+            id: 'v1',
+            content: 'Generated video',
+            generatedMedia: [
+              {
+                type: 'video',
+                assetId: 'ast_generated_video',
+                mimeType: 'video/mp4',
+                url: 'https://storage.example/expired-generated.mp4',
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const hydrated = await hydratePlaygroundMessages(messages)
+
+    expect(hydrated[0]?.versions[0]?.generatedMedia).toEqual([
+      {
+        type: 'video',
+        assetId: 'ast_generated_video',
+        mimeType: 'video/mp4',
+        url: 'https://storage.example/generated.mp4',
+      },
+    ])
+    expect(get).toHaveBeenCalledTimes(1)
+    get.mockRestore()
+  })
+
   test('hydrates legacy message-level generated audio after a server restore', async () => {
     enableBrowserUpload()
     const get = spyOn(api, 'get').mockResolvedValue({
