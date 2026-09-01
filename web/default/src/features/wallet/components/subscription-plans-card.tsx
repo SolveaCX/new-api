@@ -960,7 +960,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         data-subscription-limited-ribbon
                         className='pointer-events-none absolute top-3 -right-7 z-10 w-24 rotate-45 border-y border-rose-200 bg-rose-50 py-1 text-center text-[10px] font-semibold tracking-wide text-rose-600 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                       >
-                        {t('Limited')}
+                        {t('Limited time')}
                       </div>
                     ) : null}
                     <CardContent className='flex h-full flex-col p-4'>
