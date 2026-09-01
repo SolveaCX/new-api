@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { API_ENDPOINTS } from './constants'
+import { API_ENDPOINTS, PLAYGROUND_RECORDS_EXPORT } from './constants'
 import type { MediaGenerationRequest } from './lib/media-generation'
 import type { PlaygroundConversationSnapshot } from './lib/playground-persistence'
 import type {
@@ -54,6 +54,21 @@ interface PlaygroundApiResponse<T = unknown> {
   message?: string
 }
 
+export interface PlaygroundRecordExportResult {
+  blob: Blob
+  filename: string
+}
+
+export class PlaygroundRecordExportError extends Error {
+  status?: number
+
+  constructor(message: string, status?: number, cause?: unknown) {
+    super(message, { cause })
+    this.name = 'PlaygroundRecordExportError'
+    this.status = status
+  }
+}
+
 function assertPlaygroundApiSuccess(
   response: PlaygroundApiResponse,
   fallbackMessage: string
@@ -61,6 +76,141 @@ function assertPlaygroundApiSuccess(
   if (!response.success) {
     throw new Error(response.message || fallbackMessage)
   }
+}
+
+function getPlaygroundHeaderValue(
+  headers: unknown,
+  name: string
+): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined
+
+  const normalizedName = name.toLowerCase()
+  const headerBag = headers as {
+    get?: (key: string) => unknown
+    [key: string]: unknown
+  }
+
+  if (typeof headerBag.get === 'function') {
+    const value = headerBag.get(name)
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) {
+      const joined = value.filter((item) => typeof item === 'string').join(', ')
+      return joined || undefined
+    }
+    if (value != null) return String(value)
+  }
+
+  for (const [key, value] of Object.entries(headerBag)) {
+    if (key.toLowerCase() !== normalizedName) continue
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) {
+      const joined = value.filter((item) => typeof item === 'string').join(', ')
+      return joined || undefined
+    }
+    if (value != null) return String(value)
+  }
+
+  return undefined
+}
+
+function decodePlaygroundRecordExportFilename(value: string): string | null {
+  const candidates = [
+    /filename\*\s*=\s*(?:UTF-8''|)([^;]+)/i,
+    /filename\s*=\s*([^;]+)/i,
+  ]
+
+  for (const pattern of candidates) {
+    const match = pattern.exec(value)
+    if (!match?.[1]) continue
+    const raw = match[1].trim().replace(/^"|"$/g, '')
+    if (!raw) continue
+
+    try {
+      return decodeURIComponent(raw)
+    } catch {
+      return raw
+    }
+  }
+
+  return null
+}
+
+function isSafePlaygroundRecordExportFilename(filename: string): boolean {
+  if (!filename || filename !== filename.trim()) return false
+  if (filename === '.' || filename === '..') return false
+  if (
+    [...filename].some((character) => {
+      const code = character.charCodeAt(0)
+      return code <= 0x1f || code === 0x7f
+    })
+  ) {
+    return false
+  }
+  if (/[\\/:*?"<>|]/.test(filename)) return false
+  if (filename.split(/[\\/]/).pop() !== filename) return false
+  return filename.toLowerCase().endsWith('.xlsx')
+}
+
+function buildPlaygroundRecordExportFallbackFilename(
+  date = new Date()
+): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return (
+    [
+      'playground-records',
+      `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`,
+      `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`,
+    ].join('-') + '.xlsx'
+  )
+}
+
+function resolvePlaygroundRecordExportFilename(headers: unknown): string {
+  const fallback = buildPlaygroundRecordExportFallbackFilename()
+  const contentDisposition = getPlaygroundHeaderValue(
+    headers,
+    'content-disposition'
+  )
+  if (!contentDisposition) return fallback
+
+  const filename = decodePlaygroundRecordExportFilename(contentDisposition)
+  if (!filename || !isSafePlaygroundRecordExportFilename(filename)) {
+    return fallback
+  }
+
+  return filename
+}
+
+async function readPlaygroundRecordExportBlobMessage(
+  blob: Blob
+): Promise<string> {
+  const text = (await blob.text()).trim()
+  if (!text) return 'Playground records export failed'
+
+  try {
+    const payload = JSON.parse(text) as unknown
+    if (payload && typeof payload === 'object') {
+      const body = payload as {
+        message?: unknown
+        error?: unknown
+      }
+      if (typeof body.message === 'string' && body.message.trim()) {
+        return body.message
+      }
+      if (typeof body.error === 'string' && body.error.trim()) {
+        return body.error
+      }
+      if (body.error && typeof body.error === 'object') {
+        const nestedMessage = (body.error as { message?: unknown }).message
+        if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+          return nestedMessage
+        }
+      }
+    }
+  } catch {
+    return text
+  }
+
+  return text
 }
 
 /**
@@ -147,6 +297,42 @@ export async function fetchVideoContent(id: string): Promise<Blob> {
     }
   )
   return res.data as Blob
+}
+
+export async function downloadPlaygroundRecords(): Promise<PlaygroundRecordExportResult> {
+  try {
+    const res = await api.get(PLAYGROUND_RECORDS_EXPORT, {
+      params: { format: 'xlsx' },
+      responseType: 'blob',
+      disableDuplicate: true,
+      skipErrorHandler: true,
+    } as Record<string, unknown>)
+
+    if (!(res.data instanceof Blob)) {
+      throw new Error('Playground records export returned non-Blob response')
+    }
+
+    return {
+      blob: res.data,
+      filename: resolvePlaygroundRecordExportFilename(res.headers),
+    }
+  } catch (error) {
+    const response = (
+      error as {
+        response?: { status?: unknown; data?: unknown }
+      }
+    )?.response
+
+    if (response?.data instanceof Blob) {
+      throw new PlaygroundRecordExportError(
+        await readPlaygroundRecordExportBlobMessage(response.data),
+        typeof response.status === 'number' ? response.status : undefined,
+        error
+      )
+    }
+
+    throw error
+  }
 }
 
 /**

@@ -14,7 +14,7 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   QueryClient,
   QueryClientProvider,
@@ -26,6 +26,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   ListChecks,
   Pencil,
   SquarePen,
@@ -35,6 +36,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useIsAdmin } from '@/hooks/use-admin'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,10 +52,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
+  downloadPlaygroundRecords,
   deletePlaygroundConversations,
   listPlaygroundConversations,
+  PlaygroundRecordExportError,
   renamePlaygroundConversation,
 } from '../api'
+import { triggerPlaygroundExport } from '../lib/playground-export'
 import type { PlaygroundConversationSummary } from '../types'
 
 interface PlaygroundConversationListProps {
@@ -78,18 +83,23 @@ function PlaygroundConversationListContent(
   props: PlaygroundConversationListProps
 ) {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(getDefaultCollapsedState)
   const [isBatchMode, setIsBatchMode] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [loadingConversationId, setLoadingConversationId] = useState<
     string | null
   >(null)
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(
     null
   )
+  const isExportingRef = useRef(false)
+  const loadingConversationRef = useRef<string | null>(null)
+  const renameSubmittingRef = useRef(false)
   const conversationsQuery = useQuery({
     queryKey: conversationsQueryKey,
     queryFn: listPlaygroundConversations,
@@ -117,6 +127,9 @@ function PlaygroundConversationListContent(
           ? error.message
           : t('Failed to rename conversation')
       ),
+    onSettled: () => {
+      renameSubmittingRef.current = false
+    },
   })
   const deleteMutation = useMutation({
     mutationFn: deletePlaygroundConversations,
@@ -145,6 +158,8 @@ function PlaygroundConversationListContent(
     }
     return [draft, ...loaded]
   }, [conversationsQuery.data, props.draftConversation])
+  const actionsDisabled =
+    props.disabled || loadingConversationId !== null || isExporting
   const allSelected = useMemo(
     () =>
       conversations.length > 0 &&
@@ -153,6 +168,7 @@ function PlaygroundConversationListContent(
   )
 
   const toggleSelected = (conversationId: string) => {
+    if (actionsDisabled) return
     setSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(conversationId)) next.delete(conversationId)
@@ -162,44 +178,84 @@ function PlaygroundConversationListContent(
   }
 
   const requestDelete = (ids: string[]) => {
-    if (ids.length > 0) setPendingDeleteIds(ids)
+    if (!actionsDisabled && ids.length > 0) setPendingDeleteIds(ids)
   }
 
   const confirmDelete = () => {
-    if (!pendingDeleteIds) return
+    if (actionsDisabled || !pendingDeleteIds) return
     deleteMutation.mutate(pendingDeleteIds)
     setPendingDeleteIds(null)
   }
 
   const deleteSelected = () => {
+    if (actionsDisabled) return
     const ids = [...selectedIds]
     if (ids.length > 0) requestDelete(ids)
   }
 
   const startRename = (conversation: PlaygroundConversationSummary) => {
+    if (actionsDisabled) return
     setEditingId(conversation.conversation_id)
     setEditingName(conversation.name)
   }
 
   const submitRename = () => {
+    if (
+      actionsDisabled ||
+      renameMutation.isPending ||
+      renameSubmittingRef.current
+    )
+      return
     const name = editingName.trim()
     if (!editingId || !name) return
+    renameSubmittingRef.current = true
     renameMutation.mutate({ conversationId: editingId, name })
+  }
+
+  const handleExport = async () => {
+    if (!isAdmin || isExportingRef.current) return
+    isExportingRef.current = true
+    setIsExporting(true)
+    try {
+      const { blob, filename } = await downloadPlaygroundRecords()
+      triggerPlaygroundExport(blob, filename)
+      toast.success(t('Playground records export started'))
+    } catch (error) {
+      if (
+        error instanceof PlaygroundRecordExportError &&
+        error.status === 403
+      ) {
+        toast.error(
+          t('You do not have permission to export Playground records')
+        )
+      } else {
+        toast.error(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : t('Failed to export Playground records')
+        )
+      }
+    } finally {
+      isExportingRef.current = false
+      setIsExporting(false)
+    }
   }
 
   const selectConversation = async (
     conversation: PlaygroundConversationSummary
   ) => {
     if (
-      props.disabled ||
-      loadingConversationId !== null ||
+      actionsDisabled ||
+      loadingConversationRef.current !== null ||
       conversation.conversation_id === props.currentConversationId
     )
       return
+    loadingConversationRef.current = conversation.conversation_id
     setLoadingConversationId(conversation.conversation_id)
     try {
       await props.onSelect(conversation)
     } finally {
+      loadingConversationRef.current = null
       setLoadingConversationId(null)
     }
   }
@@ -217,6 +273,7 @@ function PlaygroundConversationListContent(
           size='icon'
           className='text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-sidebar-border bg-sidebar pointer-events-auto absolute top-3 left-full z-20 ml-3 size-8 rounded-full border shadow-sm'
           onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+          disabled={actionsDisabled}
           aria-expanded={!isCollapsed}
           aria-label={
             isCollapsed
@@ -245,11 +302,38 @@ function PlaygroundConversationListContent(
             className='flex flex-col gap-0.5 px-2 pt-3'
             aria-label={t('Conversations')}
           >
+            {isAdmin && (
+              <Button
+                type='button'
+                variant='ghost'
+                className='h-9 w-full justify-start rounded-md px-2.5 text-sm'
+                onClick={() => void handleExport()}
+                disabled={actionsDisabled}
+                aria-busy={isExporting}
+                title={
+                  isExporting
+                    ? t('Exporting Playground records...')
+                    : t('Batch export')
+                }
+              >
+                {isExporting ? (
+                  <span
+                    className='border-primary size-4 animate-spin rounded-full border-2 border-t-transparent'
+                    aria-hidden='true'
+                  />
+                ) : (
+                  <Download data-icon='inline-start' aria-hidden='true' />
+                )}
+                {isExporting
+                  ? t('Exporting Playground records...')
+                  : t('Batch export')}
+              </Button>
+            )}
             <Button
               variant='ghost'
               className='h-9 w-full justify-start rounded-md px-2.5 text-sm'
               onClick={props.onNew}
-              disabled={props.disabled || loadingConversationId !== null}
+              disabled={actionsDisabled}
             >
               <SquarePen data-icon='inline-start' aria-hidden='true' />
               {t('New')}
@@ -261,9 +345,7 @@ function PlaygroundConversationListContent(
                 setIsBatchMode((mode) => !mode)
                 setSelectedIds(new Set())
               }}
-              disabled={
-                conversations.length === 0 || loadingConversationId !== null
-              }
+              disabled={conversations.length === 0 || actionsDisabled}
               aria-pressed={isBatchMode}
             >
               <ListChecks data-icon='inline-start' aria-hidden='true' />
@@ -292,6 +374,7 @@ function PlaygroundConversationListContent(
                     )
                   }
                   variant='ghost'
+                  disabled={actionsDisabled}
                 >
                   {allSelected ? t('Deselect all') : t('Select all')}
                 </Button>
@@ -301,7 +384,11 @@ function PlaygroundConversationListContent(
               <div className='flex items-center gap-2 px-2'>
                 <Button
                   className='h-7 flex-1 text-xs'
-                  disabled={selectedIds.size === 0 || deleteMutation.isPending}
+                  disabled={
+                    selectedIds.size === 0 ||
+                    deleteMutation.isPending ||
+                    actionsDisabled
+                  }
                   onClick={deleteSelected}
                   variant='destructive'
                 >
@@ -346,6 +433,7 @@ function PlaygroundConversationListContent(
                           onCheckedChange={() =>
                             toggleSelected(conversation.conversation_id)
                           }
+                          disabled={actionsDisabled}
                           aria-label={t('Select conversation')}
                         />
                       )}
@@ -355,6 +443,7 @@ function PlaygroundConversationListContent(
                             autoFocus
                             value={editingName}
                             maxLength={120}
+                            disabled={actionsDisabled}
                             onChange={(event) =>
                               setEditingName(event.target.value)
                             }
@@ -368,7 +457,9 @@ function PlaygroundConversationListContent(
                             size='icon-xs'
                             variant='ghost'
                             onClick={submitRename}
-                            disabled={renameMutation.isPending}
+                            disabled={
+                              actionsDisabled || renameMutation.isPending
+                            }
                             aria-label={t('Save')}
                           >
                             <Check aria-hidden='true' />
@@ -377,6 +468,7 @@ function PlaygroundConversationListContent(
                             size='icon-xs'
                             variant='ghost'
                             onClick={() => setEditingId(null)}
+                            disabled={actionsDisabled}
                             aria-label={t('Cancel')}
                           >
                             <X aria-hidden='true' />
@@ -391,9 +483,7 @@ function PlaygroundConversationListContent(
                               ? toggleSelected(conversation.conversation_id)
                               : void selectConversation(conversation)
                           }
-                          disabled={
-                            props.disabled || loadingConversationId !== null
-                          }
+                          disabled={actionsDisabled}
                         >
                           {conversation.name}
                         </button>
@@ -404,6 +494,7 @@ function PlaygroundConversationListContent(
                             size='icon-xs'
                             variant='ghost'
                             onClick={() => startRename(conversation)}
+                            disabled={actionsDisabled}
                             aria-label={t('Rename')}
                           >
                             <Pencil aria-hidden='true' />
@@ -415,6 +506,7 @@ function PlaygroundConversationListContent(
                             onClick={() =>
                               requestDelete([conversation.conversation_id])
                             }
+                            disabled={actionsDisabled}
                             aria-label={t('Delete')}
                           >
                             <Trash2 aria-hidden='true' />
@@ -451,7 +543,7 @@ function PlaygroundConversationListContent(
             <AlertDialogAction
               variant='destructive'
               onClick={confirmDelete}
-              disabled={deleteMutation.isPending}
+              disabled={actionsDisabled || deleteMutation.isPending}
             >
               <Trash2 data-icon='inline-start' aria-hidden='true' />
               {t('Delete')}

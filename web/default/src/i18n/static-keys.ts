@@ -729,6 +729,13 @@ export const STATIC_I18N_KEYS = [
   'Unable to process attachment',
   'Unsupported attachment type',
 
+  // Playground record export rail labels
+  'Batch export',
+  'Exporting Playground records...',
+  'Playground records export started',
+  'Failed to export Playground records',
+  'You do not have permission to export Playground records',
+
   // Recall campaign audience help
   'registered_only',
   'registration_time_range',

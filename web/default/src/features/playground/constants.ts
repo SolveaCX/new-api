@@ -41,12 +41,15 @@ export const API_ENDPOINTS = {
   // poll, GET `${VIDEOS}/{id}/content` for the raw MP4 blob.
   VIDEOS: '/v1/videos',
   PLAYGROUND_RECORDS: '/api/playground/records',
+  PLAYGROUND_RECORDS_EXPORT: '/api/playground/records/export',
   PLAYGROUND_RECORDS_CURRENT: '/api/playground/records/current',
   PLAYGROUND_RECORDS_CLEAR: '/api/playground/records/clear',
   PLAYGROUND_CONVERSATIONS: '/api/playground/records',
   PLAYGROUND_ATTACHMENT_UPLOADS: '/api/playground/attachments/uploads',
   PLAYGROUND_ATTACHMENT_PREVIEW: '/api/playground/attachments',
 } as const
+
+export const PLAYGROUND_RECORDS_EXPORT = API_ENDPOINTS.PLAYGROUND_RECORDS_EXPORT
 
 // Poll the video task status roughly every 6s while it generates (veo-fast is
 // ~40s, standard is longer).

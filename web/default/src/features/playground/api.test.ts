@@ -16,8 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  setSystemTime,
+  spyOn,
+  test,
+} from 'bun:test'
 import { api } from '@/lib/api'
+import { PLAYGROUND_RECORDS_EXPORT } from './constants'
 import type { PlaygroundRecordPayload } from './types'
 
 const get = spyOn(api, 'get').mockResolvedValue({
@@ -31,6 +40,7 @@ const {
   completePlaygroundAttachmentUpload,
   clearCurrentPlaygroundRecord,
   createPlaygroundAttachmentUploadSession,
+  downloadPlaygroundRecords,
   getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
@@ -234,6 +244,127 @@ describe('Playground attachment API', () => {
     )
     expect(get.mock.calls[0]?.[0]).toBe(
       '/api/playground/attachments/ast_1/preview'
+    )
+  })
+})
+
+describe('Playground record export API', () => {
+  beforeEach(() => {
+    get.mockClear()
+  })
+
+  test('requests the xlsx export with duplicate suppression and error bypass', async () => {
+    const blob = new Blob(['xlsx-bytes'], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    get.mockResolvedValueOnce({
+      data: blob,
+      headers: {
+        'content-disposition':
+          'attachment; filename="playground-records-20260831-010203.xlsx"',
+      },
+    })
+
+    await expect(downloadPlaygroundRecords()).resolves.toEqual({
+      blob,
+      filename: 'playground-records-20260831-010203.xlsx',
+    })
+    expect(get).toHaveBeenCalledWith(PLAYGROUND_RECORDS_EXPORT, {
+      params: { format: 'xlsx' },
+      responseType: 'blob',
+      disableDuplicate: true,
+      skipErrorHandler: true,
+    })
+  })
+
+  test.each([
+    ['missing', undefined],
+    [
+      'unsafe',
+      'attachment; filename="../../playground-records-20260831-010203.xlsx"',
+    ],
+  ])(
+    'falls back to a timestamped filename when the Content-Disposition header is %s',
+    async (_name, contentDisposition) => {
+      const blob = new Blob(['xlsx-bytes'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      get.mockResolvedValueOnce({
+        data: blob,
+        headers: contentDisposition
+          ? { 'content-disposition': contentDisposition }
+          : {},
+      })
+
+      setSystemTime(new Date('2026-08-31T01:02:03Z'))
+      try {
+        await expect(downloadPlaygroundRecords()).resolves.toEqual({
+          blob,
+          filename: 'playground-records-20260831-010203.xlsx',
+        })
+      } finally {
+        setSystemTime()
+      }
+    }
+  )
+
+  test('parses a blob error response and preserves the HTTP status', async () => {
+    get.mockRejectedValueOnce({
+      response: {
+        status: 403,
+        data: new Blob([JSON.stringify({ message: 'Forbidden export' })], {
+          type: 'application/json',
+        }),
+      },
+    })
+
+    try {
+      await downloadPlaygroundRecords()
+      throw new Error('Expected export to fail')
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe('Forbidden export')
+      expect((error as { status?: number }).status).toBe(403)
+    }
+  })
+
+  test.each([
+    ['csv', 'attachment; filename="report.csv"'],
+    ['no extension', 'attachment; filename="playground-records"'],
+    [
+      'encoded path',
+      "attachment; filename*=UTF-8''..%2Fplayground-records.xlsx",
+    ],
+  ])(
+    'falls back to the timestamped filename when the Content-Disposition header is a non-xlsx %s',
+    async (_name, contentDisposition) => {
+      const blob = new Blob(['xlsx-bytes'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      get.mockResolvedValueOnce({
+        data: blob,
+        headers: { 'content-disposition': contentDisposition },
+      })
+
+      setSystemTime(new Date('2026-08-31T01:02:03Z'))
+      try {
+        await expect(downloadPlaygroundRecords()).resolves.toEqual({
+          blob,
+          filename: 'playground-records-20260831-010203.xlsx',
+        })
+      } finally {
+        setSystemTime()
+      }
+    }
+  )
+
+  test('rejects successful responses that are not blobs', async () => {
+    get.mockResolvedValueOnce({
+      data: { success: true },
+    })
+
+    await expect(downloadPlaygroundRecords()).rejects.toThrow(
+      'Playground records export returned non-Blob response'
     )
   })
 })
