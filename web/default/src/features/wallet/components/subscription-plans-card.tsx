@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Crown, Sparkles } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Crown, Mail, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
@@ -206,11 +206,15 @@ type SelfSubscriptionRefreshResult = 'applied' | 'superseded' | 'failed'
 function getPlanAudience(title: string, t: Translate): string {
   switch (getPlanTier(title)) {
     case 'go':
-      return t('For individuals and light everyday use')
+      return t(
+        'No contract required. Add balance, create a key, copy the base_url, and test your first request.'
+      )
     case 'pro':
-      return t('For daily development and frequent requests')
+      return t('Best for trying real API workloads.')
     case 'max':
-      return t('For teams and high-intensity workloads')
+      return t(
+        'Best value for production testing, team workflows, and sustained model traffic.'
+      )
     default:
       return ''
   }
@@ -1027,6 +1031,73 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
             {t('No plans available')}
           </p>
         )}
+
+        <article
+          data-subscription-enterprise-card
+          className='overflow-hidden rounded-2xl border border-slate-700 bg-[#0b0b0d] text-white shadow-[0_20px_70px_-40px_rgba(15,23,42,0.8)]'
+        >
+          <div className='grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]'>
+            <div className='p-6 sm:p-8'>
+              <p className='text-xs font-semibold tracking-[0.18em] text-violet-300 uppercase'>
+                {t('Enterprise teams')}
+              </p>
+              <h3 className='mt-3 max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl'>
+                {t(
+                  'Contact sales for higher monthly usage and greater discounts.'
+                )}
+              </h3>
+              <div className='mt-6 grid gap-x-6 gap-y-3 text-sm text-slate-300 sm:grid-cols-2'>
+                {[
+                  'Custom monthly usage',
+                  'Team procurement support',
+                  'Custom routing discounts',
+                  'One unified invoice for all providers',
+                ].map((feature) => (
+                  <p key={feature} className='flex items-start gap-2 leading-6'>
+                    <CheckCircle2
+                      className='mt-1 size-4 shrink-0 text-violet-300'
+                      aria-hidden='true'
+                    />
+                    <span>{t(feature)}</span>
+                  </p>
+                ))}
+              </div>
+              <a
+                data-subscription-enterprise-cta
+                href='mailto:support@flatkey.ai'
+                className='mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-slate-950 transition-colors hover:bg-violet-100'
+              >
+                <Mail className='mr-2 size-4' aria-hidden='true' />
+                {t('Talk to sales')}
+                <ArrowRight className='ml-2 size-4' aria-hidden='true' />
+              </a>
+            </div>
+            <div className='flex flex-col justify-center border-t border-slate-700/80 p-6 sm:p-8 lg:border-t-0 lg:border-l'>
+              <p className='text-4xl font-semibold tracking-tight text-white sm:text-5xl'>
+                {t('Enterprise')}
+              </p>
+              <p className='mt-3 text-sm leading-6 text-slate-400'>
+                {t(
+                  'Contact sales for higher monthly usage and greater discounts.'
+                )}
+              </p>
+              <div className='mt-6 flex flex-wrap gap-2'>
+                {[
+                  'Custom monthly usage',
+                  'Team procurement support',
+                  'Custom routing discounts',
+                ].map((feature) => (
+                  <span
+                    key={feature}
+                    className='rounded-full border border-slate-600 bg-white/5 px-3 py-1.5 text-xs text-slate-300'
+                  >
+                    {t(feature)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </article>
       </TitledCard>
 
       <PlanPurchaseDialog
