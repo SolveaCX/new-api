@@ -188,6 +188,20 @@ jobs:
             --to-revisions="${{ steps.deploy.outputs.new_revision }}=100" \
             --quiet
 
+      - name: Checkout website sources for IndexNow notification
+        uses: actions/checkout@v4
+
+      - name: Set up Bun for IndexNow notification
+        uses: oven-sh/setup-bun@v2
+
+      - name: Notify Bing via IndexNow
+        continue-on-error: true
+        working-directory: website
+        env:
+          SITE_ORIGIN: ${{ env.SITE_ORIGIN }}
+        run: |
+          bun run indexnow:submit -- --sitemap "${SITE_ORIGIN}/sitemap.xml"
+
       - name: Summary
         run: |
           echo "### Website deployed" >> "$GITHUB_STEP_SUMMARY"
