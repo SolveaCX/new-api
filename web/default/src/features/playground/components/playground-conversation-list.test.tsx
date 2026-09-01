@@ -32,6 +32,7 @@ import {
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 import type { PlaygroundConversationSummary } from '../types'
+import * as playgroundExportModule from '../lib/playground-export'
 
 const originalGlobalPropertyDescriptors = new Map<
   PropertyKey,
@@ -356,9 +357,9 @@ mock.module('../api', () => ({
   renamePlaygroundConversation,
 }))
 
-mock.module('../lib/playground-export', () => ({
-  triggerPlaygroundExport,
-}))
+spyOn(playgroundExportModule, 'triggerPlaygroundExport').mockImplementation(
+  triggerPlaygroundExport
+)
 
 mock.module('sonner', () => ({
   toast: {
@@ -428,6 +429,7 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
+  mock.restore()
   restoreTestGlobals()
 })
 
