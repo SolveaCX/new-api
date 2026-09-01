@@ -41,6 +41,7 @@ import {
   rememberConsoleSessionHint,
 } from "@/lib/console-session-hint";
 import { cn } from "@/lib/utils";
+import { navigateToHref } from "@/lib/link-navigation";
 
 const legacyNavLabelByLocale: Record<
   Locale,
@@ -339,6 +340,7 @@ export function SiteHeaderDesktopActions(props: SiteHeaderDesktopActionsProps) {
       <a
         className={desktopSecondaryActionClass}
         href={props.accountHref}
+        onClick={navigateToHref}
         aria-label={props.accountLabel}
       >
         <span>{props.accountLabel}</span>
@@ -356,6 +358,7 @@ export function SiteHeaderDesktopActions(props: SiteHeaderDesktopActionsProps) {
         <a
           className={desktopPrimaryActionClass}
           href={props.signUpHref}
+          onClick={navigateToHref}
           style={{ color: "#fff" }}
         >
           {props.startFreeLabel}
@@ -1027,6 +1030,7 @@ export function SiteHeader(props: Props) {
               : "inline-flex items-center justify-center bg-[#070707] text-white shadow-[0_6px_18px_-12px_rgba(11,11,15,.8)]",
           )}
           href={primaryActionHref}
+          onClick={navigateToHref}
           style={consoleSessionActive ? undefined : { color: "#fff" }}
         >
           {primaryActionLabel}
@@ -1071,6 +1075,7 @@ export function SiteHeader(props: Props) {
           <a
             className={mobileSecondaryActionClass}
             href={accountHref}
+            onClick={navigateToHref}
             aria-label={accountLabel}
           >
             <span>{accountLabel}</span>
