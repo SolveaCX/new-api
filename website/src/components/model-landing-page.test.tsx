@@ -272,7 +272,12 @@ describe("ModelLandingPage", () => {
     expect(pricingSection).toContain("$20");
     expect(pricingSection).toContain("$50");
     expect(pricingSection).toContain('href="https://console.flatkey.ai/wallet"');
-    expect(html).toContain('class="model-stat-label">Request price</div>');
+    const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('</div></div></div></section>', html.indexOf('class="model-hero-stats"')));
+    expect(heroStats).toContain('class="model-stat-label">Flatkey price</div>');
+    expect(heroStats).toContain('class="model-stat-value">from $0.140 / second</div>');
+    expect(heroStats).toContain('class="model-stat-label">Reference price</div>');
+    expect(heroStats).toContain('class="model-stat-value">Varies by resolution and video input</div>');
+    expect(heroStats).not.toContain('class="model-stat-label">Request price</div>');
     expect(pricingSection).not.toContain("480p");
     expect(pricingSection).not.toContain("720p");
     // A single Product Offer would imply that $0.14 is the price for every

@@ -185,6 +185,24 @@ const VIDEO_PROFESSION_POSTER_SETS: Record<string, ProfessionMediaSet> = {
   ),
 };
 
+const VIDEO_LOCAL_FALLBACK_BASE = "/assets/model-fallback-audit/video-posters";
+
+function normalizeVideoModelId(modelId: string): string {
+  return modelId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function resolveVideoProfessionModelId(modelId: string): string | undefined {
+  const normalized = normalizeVideoModelId(modelId);
+  if (VIDEO_PROFESSION_SETS[normalized]) return normalized;
+  return Object.keys(VIDEO_PROFESSION_SETS).find(
+    (candidate) => normalized.startsWith(`${candidate}-`) || candidate.startsWith(`${normalized}-`),
+  );
+}
+
 const PRODUCT_VIDEO = "/assets/model-examples/product-macro.mp4";
 const FOOD_VIDEO = "/assets/model-examples/food-motion.mp4";
 const VEHICLE_VIDEO = "/assets/model-examples/seedance-f1-wet-track.mp4";
@@ -199,7 +217,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "micro-drama-comic",
     label: "Micro-drama and comic creators",
     prompt:
-      "Hand-drawn manga scene: a lone courier pauses on a rain-dark station platform, folds a letter, then looks toward a departing train. Use inked silhouettes, wet reflections, one slow lateral pan, and hold on the final look.",
+      "Anime student in a quiet library traces a winding black route across an aged parchment map on a wooden table. The camera eases closer as warm specks of light appear between the bookshelves, then holds on the student's hand and the illuminated map.",
     ratio: "9:16",
     duration: 6,
     poster: PRODUCT_ASSET,
@@ -211,7 +229,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "advertising-ecommerce",
     label: "Advertising and ecommerce teams",
     prompt:
-      "Vertical product TVC for a matte travel kettle: the lid clicks open, steam curls from the spout, and the kettle settles on a clean counter as a soft push-in ends on the handle and brushed metal.",
+      "A cream-and-brushed-metal travel kettle assembles from flat circular parts on a neutral studio surface. The lid, body rings, spout, and handle lock into place in sequence; steam rises as the camera settles on the finished kettle.",
     ratio: "9:16",
     duration: 6,
     poster: FOOD_ASSET,
@@ -223,7 +241,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "film-concept-production",
     label: "Film concept and production teams",
     prompt:
-      "Sci-fi set-extension previs: a practical corridor grows from a blank stage into a modular command deck. Track through the doorway while light panels power on, then end on a wide locked layout.",
+      "A white armored sci-fi rover rolls through a dusty landscape toward a monumental dark structure. Start close on the massive treaded wheel, track beside the moving vehicle as dust lifts, then widen to reveal the rover's destination.",
     ratio: "16:9",
     duration: 10,
     poster: HOTEL_ASSET,
@@ -235,7 +253,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "game-art-animation",
     label: "Game art and animation teams",
     prompt:
-      "Open-world game trailer shot: a small explorer crests a luminous ridge, distant structures wake across the valley, and the camera cranes behind into a broad playable vista. Finish on a readable silhouette.",
+      "A cloaked traveler stands on a rust-colored canyon ridge at sunset. Move from a side view to behind the figure, revealing a vast settlement and a long curved structure across the canyon, then hold the traveler as a clear foreground silhouette.",
     ratio: "16:9",
     duration: 6,
     poster: VEHICLE_ASSET,
@@ -247,7 +265,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "creator-explainer",
     label: "Creator and explainer channels",
     prompt:
-      "Space-science explainer: a floating planet model rotates above a dark worktable while orbital lines appear as light trails. Start overhead, push toward the model, and end on a clean diagram-like frame with empty caption space.",
+      "A realistic hand touches a glowing lavender planet model on a black reflective tabletop. Concentric rings spread from the fingertip and small moons begin orbiting the sphere while the camera holds a close three-quarter view of the reflection.",
     ratio: "16:9",
     duration: 10,
     poster: UI_ASSET,
@@ -259,7 +277,7 @@ export const VIDEO_PROMPT_TEMPLATES: readonly VideoPromptTemplate[] = [
     professionId: "music-visual-art",
     label: "Music producers and visual artists",
     prompt:
-      "Stage-projection visual: a lone performer silhouette crosses a black stage as geometric light planes ripple across the backdrop in time with an implied beat. Make one smooth orbit and return to a loopable symmetrical frame.",
+      "A lone performer silhouette stands on a low black stage while luminous ribbons sweep across the backdrop. Teal waves arrive first, followed by amber bands that curl into layered arcs, ending in a centered wide composition around the figure.",
     ratio: "16:9",
     duration: 10,
     poster: LANDSCAPE_ASSET,
@@ -280,143 +298,143 @@ type EnglishVideoPromptSet = Readonly<Partial<Record<VideoProfessionId, string>>
 const VIDEO_MODEL_ENGLISH_PROMPTS: Readonly<Record<string, EnglishVideoPromptSet>> = {
   "seedance-2-5": {
     "micro-drama-comic":
-      "Hand-drawn manga scene: a lone courier pauses on a rain-dark station platform, folds a letter, then looks toward a departing train. Use inked silhouettes, wet reflections, one slow lateral pan, and hold on the final look.",
+      "An anime student traces a winding black route across an aged parchment map at a wooden table inside a quiet library. The camera eases closer as warm specks of light appear between the bookshelves, then holds on the student's hand and the illuminated map.",
     "advertising-ecommerce":
-      "Vertical product TVC for a matte travel kettle: the lid clicks open, steam curls from the spout, and the kettle settles on a clean counter as a soft push-in ends on the handle and brushed metal.",
+      "A cream-and-brushed-metal travel kettle assembles from flat circular parts on a neutral studio surface. The lid, body rings, spout, and handle lock into place in sequence; steam rises as the camera settles on the finished kettle.",
     "film-concept-production":
-      "Sci-fi set-extension previs: a practical corridor grows from a blank stage into a modular command deck. Track through the doorway while light panels power on, then end on a wide locked layout.",
+      "A white armored sci-fi rover rolls through a dusty landscape toward a monumental dark structure. Start close on its massive treaded wheel, track beside the moving vehicle as dust lifts, then widen to reveal the rover's destination.",
     "game-art-animation":
-      "Open-world game trailer shot: a small explorer crests a luminous ridge, distant structures wake across the valley, and the camera cranes behind into a broad playable vista. Finish on a readable silhouette.",
+      "A cloaked traveler stands on a rust-colored canyon ridge at sunset. Move from a side view to behind the figure, revealing a vast settlement and a long curved structure across the canyon, then hold the traveler as a clear foreground silhouette.",
     "creator-explainer":
-      "Space-science explainer: a floating planet model rotates above a dark worktable while orbital lines appear as light trails. Start overhead, push toward the model, and end on a clean diagram-like frame with empty caption space.",
+      "A realistic hand touches a glowing lavender planet model on a black reflective tabletop. Concentric rings spread from the fingertip and small moons begin orbiting the sphere while the camera holds a close three-quarter view of the reflection.",
     "music-visual-art":
-      "Stage-projection visual: a lone performer silhouette crosses a black stage as geometric light planes ripple across the backdrop in time with an implied beat. Make one smooth orbit and return to a loopable symmetrical frame.",
+      "A lone performer silhouette stands on a low black stage while luminous ribbons sweep across the backdrop. Teal waves arrive first, followed by amber light ribbons that curl into layered arcs, ending in a centered wide composition around the figure.",
   },
   "seedance-2-0": {
     "micro-drama-comic":
-      "Ink-and-color manga beat: a courier opens a folded note in a quiet alley, wind lifts the paper, and the character turns toward a distant light. Use restrained parallax, a slow pan, and a held final pose.",
+      "An anime woman in a yellow raincoat waits on a rain-soaked railway platform beside a red umbrella. She opens and reads a white letter; the camera pushes from the platform view into her worried close-up and holds on her reaction.",
     "advertising-ecommerce":
-      "Vertical bottle TVC: a clear reusable bottle rolls once across a sunlit tabletop, catches a clean rim highlight, then stops upright as the camera settles into a centered hero shot.",
+      "A coral-orange insulated bottle stands upright on a dark teal wet studio floor surrounded by scattered ice cubes. Condensation beads catch a moving beam of light while the locked camera keeps the bottle centered and the background falls to black.",
     "film-concept-production":
-      "Observatory previs at dawn: an empty dome doorway frames a telescope against a warming horizon. Begin wide, track slowly inward, pan to the instrument, and hold the warm-to-cool light transition.",
+      "A man enters an old circular observatory at dawn and approaches a vintage telescope beneath the dome. Begin behind him in a wide view, track inward as a warm shaft crosses the instrument, then hold on the telescope against the cool interior.",
     "game-art-animation":
-      "Game cinematic in a rain-slick hangar: a pilot crosses the foreground while a grounded shuttle powers up behind, practical lights flicker on, and a low tracking move ends in a three-quarter keyframe.",
+      "An orange-suited astronaut walks through a dark hangar toward a massive grounded machine. The camera follows from behind as work lights flicker on and the machine powers up with blue-white light, ending on the figure beneath its scale.",
     "creator-explainer":
-      "History explainer: layered archival maps unfold across a desk and resolve into a chronological route. Slide from the first map to the final marker and leave clean lower-third space for narration.",
+      "A researcher at a wooden table unrolls an old map, traces a route with one finger, and examines a marked point with a small brass instrument. Alternate between the hands, parchment details, and a measured medium view of the archival workspace.",
     "music-visual-art":
-      "Studio-session music visual: hands shape a glowing waveform on a dark console while colored bars pulse in a restrained rhythm. Use a slow push-in, then return to the opening composition for a seamless loop.",
+      "A male musician performs on an electronic keyboard and sampler in a blue-and-purple studio. Cut between his focused medium profile and close views of both hands playing keys and controls while colored practical lights remain steady behind him.",
   },
   "seedance-2-0-pro": {
     "micro-drama-comic":
-      "Polished manga micro-drama: a small silhouette runs through a paper city, stops beneath a torn sign, and looks up as the panels realign. Keep layered depth, controlled parallax, and a decisive final hold.",
+      "An anime courier in an orange coat and backpack runs through a rain-lit city after a floating white envelope. The camera tracks the chase past blue and red reflections until the courier reaches out and catches the envelope, followed by a brief sketch-like echo.",
     "advertising-ecommerce":
-      "2D motion-comic lamp ad: a folded desk lamp unfolds joint by joint, casts a warm pool on a blank desk, and snaps into a clean product hero. Use graphic shadows and one measured push-in.",
+      "An anime woman seated on a rooftop at night opens a small rectangular parcel. A golden star-like trail spills from the box and sweeps across the roof while she watches, ending on the glowing package against the dark skyline.",
     "film-concept-production":
-      "Storyboard animatic: three framed panels slide into a continuous camera move through a doorway, across a character mark, and toward a bright exit. Preserve panel timing and end on the final board.",
+      "A young caped figure stands on a moonlit rooftop and lowers a glowing lantern-like orb near the vents. The camera widens as clouds separate around a bright shape in the sky, keeping the small figure and luminous object in the same frame.",
     "game-art-animation":
-      "Character-pipeline showcase: a neutral game character rotates from silhouette blockout to textured costume while the camera remains fixed. Finish on the fully lit turntable pose.",
+      "A silver-haired inventor in a violet workshop summons a glowing orange cube above one hand. The cube unfolds into a small hovering robot, circles once, and settles at the inventor's shoulder while the camera holds a clear waist-up view.",
     "creator-explainer":
-      "Comic history timeline: illustrated figures and dated scene cards advance left to right across a parchment strip. Use a gentle rostrum pan, one highlighted transition, and a clean end frame for narration.",
+      "An animated desert explorer removes a round bronze disk from a pouch, wipes sand from its face, and raises it for inspection. Blue glyphs spread across the artifact and cast cool light over the explorer's eyes in the final close-up.",
     "music-visual-art":
-      "Motion-comic music video: ink figures and colored shapes pulse around a central emblem, snap through two graphic transitions, and return to the opening layout on the beat.",
+      "An anime man on a city rooftop activates a red-orange glowing baton and swings it in a broad arc. The camera follows the movement as a long curved light trail cuts across the night skyline, then holds on the completed luminous curve.",
   },
   "seedance-2-0-fast": {
     "micro-drama-comic":
-      "Live-action micro-drama: a courier reaches a rain-streaked doorway, hesitates, then steps into a shaft of warm light. Let the handheld opening settle into a stable close shot and hold the reaction.",
+      "Inside a convenience store at dusk, an employee turns from the counter and hands a brown paper bag to a young male customer near the entrance. Use a natural eye-level two-shot and hold as the customer receives the bag.",
     "advertising-ecommerce":
-      "Vertical UGC lunchbox spot: an adult creator opens a compact lunchbox, snaps the divider into place, and lifts it toward window light. Keep natural handheld sway and finish on a clean product frame.",
+      "A transparent compartment lunchbox sits open on a clean tabletop as colorful fruit is packed into separate sections. The clear lid lowers and clicks shut, then the finished lunchbox lifts from the surface in a centered product view.",
     "film-concept-production":
-      "Stunt previs: a performer clears a low barrier as the camera tracks beside the landing, dust settles, and the blocking resolves on a wide safety frame.",
+      "A male stunt performer runs across an open warehouse, vaults a low padded obstacle, and lands on a mat. Track him in a wide side view so the approach, hand contact, airborne body, and controlled landing remain readable.",
     "game-art-animation":
-      "Combat trailer: an armored fighter pivots through one energy strike in a dark arena, sparks follow the impact, and a low arc camera ends on the recovered stance.",
+      "A female sci-fi runner in a black-and-red suit sprints through a neon corridor. She brakes into a low lean as a red energy barrier flashes across her path; the camera tracks beside her and ends on the stopped pose.",
     "creator-explainer":
-      "Creator-desk explainer: a presenter arranges three objects beside a notebook, points to the center item, and the camera shifts from a medium shot to a clear overhead layout for captions.",
+      "A man in glasses and a white shirt demonstrates a cylindrical mechanical device at a worktable. He steadies the body, twists the central section with a small tool, and presents the adjusted mechanism in a clear close view.",
     "music-visual-art":
-      "Beat-making visual: fingers trigger pads on a compact sampler while colored meters rise and fall. Use locked tabletop framing, one rhythmic push-in, and loop back to the first beat.",
+      "A male musician performs in a sunlit studio, moving between an electronic keyboard, drum pad, and sampler. Cut from a medium view to his hands triggering keys and pads while the equipment meters respond to each beat.",
   },
   "seedance-2-0-mini": {
     "micro-drama-comic":
-      "Minimal manga beat: a paper character crosses two inked panels, pauses at a doorway, and turns as a small light appears. Use simple parallax, a crisp silhouette, and a held ending.",
+      "An animated girl at a cluttered workbench folds an orange origami bird. The paper bird opens its wings, lifts from her hands, circles above the desk, and flies past her face while she follows it with her eyes.",
     "advertising-ecommerce":
-      "Paper-organizer product clip: folded compartments open one after another on a desk, stationery slides into place, and the organizer closes into a tidy hero composition.",
+      "A mint paper organizer cube unfolds into several compartments on a pale desk. Pens and paperclips slide neatly into the open sections, then the panels fold back into a compact cube for the final centered product view.",
     "film-concept-production":
-      "Animatic blocking study: stick-figure marks move from the left frame to a doorway, reverse direction once, and settle into a three-panel blocking diagram. Use a rostrum camera and clear timing.",
+      "A miniature construction worker in a yellow hard hat carries gray wall panels across a model site. The worker sets the upright pieces in place and adds a final roof or bridge panel, completing the small structure in a fixed wide view.",
     "game-art-animation":
-      "Compact game loop: a stylized avatar runs around a glowing platform, completes one jump, and lands exactly where the loop began. Keep a fixed camera and readable contact shadow.",
+      "A low-poly gray creature with a star on its forehead stands on a coral platform. Wing-like ears sprout from its head, the creature hops and floats briefly above the base, then lands back in the same centered pose.",
     "creator-explainer":
-      "Paper-science explainer: layered paper cutouts show a simple orbit as a small sphere travels around a center mark. Use a top-down camera, one complete cycle, and open caption space.",
+      "A blue paper planet and an orange paper sun sit on a clean tabletop. An orange strip curls into an orbital ring, and the blue sphere rolls around the sun for one complete paper-craft orbit under a fixed overhead camera.",
     "music-visual-art":
-      "Paper visualizer: colored paper strips rise and fold with an implied beat, form a geometric wave, then return flat for a clean loop. Keep overhead light and fixed framing.",
+      "A dark blue circular base assembles from coral geometric pieces on a pale surface. The pieces rise around the rim and curl inward one by one until they form a compact spiral maze in a locked top-down view.",
   },
   "minimax-h3": {
     "micro-drama-comic":
-      "Vertical rainy-station micro-drama: a person in a mustard coat holds a white envelope beside a stairwell, lowers their gaze, then looks up as cool window light flickers. Push slowly from the envelope to the eyes and hold the reaction.",
+      "A person in a yellow raincoat waits beside a bench at a rainy station, notices a torn letter, and picks it up to read. Move from the wet platform to a close view of the paper and hold on the reader's concerned expression.",
     "advertising-ecommerce":
-      "Vertical product close-up: a teal reusable bottle covered in water droplets stands on pale stone. Make a controlled half-orbit catch the rim highlight, then settle on the cap and bottle silhouette.",
+      "A teal reusable bottle covered in water droplets stands on bright marble beside a canvas tote. A hand lifts the bottle, moves it toward the bag, then sets it back down while daylight catches the wet surface.",
     "film-concept-production":
-      "Wide sunrise previs: an empty doorway opens onto a bright horizon, warm daylight spills across the floor, and a steady camera glides toward the threshold before holding on the light boundary.",
+      "A man walks from a dark interior into an empty glass-domed observatory at dawn. Follow him toward the telescope as cool sky light fills the dome, then settle behind the figure and instrument facing the bright horizon.",
     "game-art-animation":
-      "Neon industrial game shot: a small figure crosses a wet warehouse floor beneath glowing signs, reflections tracking through puddles as a low lateral camera move ends on the lit environment.",
+      "A cyberpunk fighter crouches on a wet neon plaza, bursts into a sprint, and slides to a stop. A blue circular energy shield opens in front of the fighter as the low camera tracks the movement and holds on the glowing barrier.",
     "creator-explainer":
-      "Desktop explainer: a blue map holds wooden island pieces and a tiny silver model. Slide an overhead camera along the route, push into the model, then return to the full map.",
+      "Miniature island and map pieces assemble on a blue tabletop around a white lighthouse. The land sections lock together, the lighthouse rises upright, and its lamp turns on while the overhead view reveals the completed coastal model.",
     "music-visual-art":
-      "Music visual on a black reflective floor: a silver chrome ring sculpture catches a moving cool highlight as the camera circles once and returns to a symmetric loopable frame.",
+      "A chrome ring-and-ribbon sculpture rotates above a reflective black floor under blue and red light. The metal loops bend and morph into a new interlocking shape while the camera holds a symmetrical gallery-style composition.",
   },
   "grok-imagine-video": {
     "micro-drama-comic":
-      "Live-action micro-drama: a lone courier pauses in a quiet interior, studies a folded letter, then turns toward a stairwell as daylight shifts. Use a restrained handheld move and close on the decision.",
+      "A young man in a mustard jacket stands in an empty stairwell holding a white envelope. He opens it, studies the contents, and looks upward toward the landing as the camera moves from a medium view into his reaction.",
     "advertising-ecommerce":
-      "Travel-mug TVC: a brushed metal mug rotates on a wet stone counter, a lid clicks shut, and a warm rim light travels across the cup before a slow push-in ends on the handle.",
+      "A white travel mug with a blue lid stands in a dark studio close-up. The hinged lid flips open and a thin column of steam rises from the cup while the locked camera holds the product against the black background.",
     "film-concept-production":
-      "Location-scout previs: a camera walks from a street entrance into an empty interior, revealing the key sightline and practical lights. Keep one smooth forward move and end on the chosen frame.",
+      "A man enters an empty industrial room beside the sea and walks toward a large window. The camera follows from behind as the ocean and warm sunset fill the opening, ending on his silhouette against the view.",
     "game-art-animation":
-      "Character turntable for a game concept: a stylized hero rotates from profile to three-quarter view while a rim light reveals costume layers. Keep the camera fixed and finish on a clean silhouette.",
+      "A man stands still in a neutral gray studio while a compact quadcopter drone circles behind and beside him. Keep the camera locked at waist height so the drone's orbit, distance, and the subject's profile remain easy to read.",
     "creator-explainer":
-      "Studio explainer: a presenter places three reference objects on a neutral desk, points to their relationship, and the camera shifts from a medium shot to a clear overhead layout for captions.",
+      "A presenter speaks at a home desk into a black microphone. Cut to a close view of one hand connecting a small audio cable and adapter, then return to the seated presenter continuing the explanation.",
     "music-visual-art":
-      "Light-installation visual: narrow beams sweep a dark room around a central performer silhouette, converge on one bright point, and fade back to the opening geometry for a loop.",
+      "A man in a dark gallery pushes and rotates a glowing turquoise rectangular panel. Orange and purple panels light up around him as he changes its angle, ending with the three colored surfaces arranged across the room.",
   },
   "grok-imagine-video-1-5": {
     "micro-drama-comic":
-      "2D cel micro-drama in a rooftop library above a rainy city: an apprentice opens a book, a glowing paper bird unfolds, circles once, and settles on the windowsill as dawn arrives. Use a rostrum pan and a soft chime.",
+      "A 2D animated woman in a library opens a teal book and watches a glowing origami bird emerge from the pages. The bird circles the room and flies toward the window as the sky outside turns pink at sunset.",
     "advertising-ecommerce":
-      "2D motion-comic folding-lamp ad: the lamp unfolds joint by joint, throws a warm pool across a desk, and snaps into a clean product hero. Use graphic shadows and a measured push-in.",
+      "A 2D animated woman sits at a desk and unfolds a white articulated lamp. Its jointed arms extend into a wide glowing panel above her notebook, bathing the work surface in even light as she looks up.",
     "film-concept-production":
-      "Comic previs: three illustrated panels slide into one continuous move through a doorway, across a character mark, and toward a bright exit. Preserve panel order and end on the final board.",
+      "An illustrated traveler stands on a bridge at sunset reading a green map. Red vehicles pass behind while a hot-air balloon drifts overhead; the camera eases closer to the map and returns to the layered city view.",
     "game-art-animation":
-      "Comic game-skill shot: a stylized fighter plants one foot, releases a single graphic energy arc, and returns to stance. Use a side-on camera, readable silhouette, and held impact frame.",
+      "A masked blue ninja runs across a neon rooftop and snaps open a large white paper umbrella as a shield. Track the sprint from the side and hold as the umbrella fills the frame against the glowing city.",
     "creator-explainer":
-      "Comic timeline explainer: illustrated figures and scene cards advance left to right across a parchment strip. Use a gentle rostrum pan, one highlighted transition, and clean narration space.",
+      "A flat illustrated presenter rearranges three cards showing a sprout, a bush, and a mature tree. The presenter points from the first stage to the final tree while the camera holds the simple infographic layout.",
     "music-visual-art":
-      "2D comic music video: ink figures pulse around a central emblem through two graphic transitions, then return exactly to the opening layout on the beat for a seamless loop.",
+      "A flat graphic musician in a blue suit plays an electronic keyboard on a pale yellow background. Red ribbon-like waveforms grow behind the performer with each phrase, ending in a wide band across the frame.",
   },
   "veo-3-1-generate-preview": {
     "micro-drama-comic":
-      "Live-action short drama: a character enters a quiet room, notices a small object on a table, and turns toward the window as the mood changes. Use a slow dolly and hold the final reaction.",
+      "A traveler waits on a rainy night platform, opens a wet brown package, and reveals an ornate antique key resting on parchment. Move from the hands and wrapping into a close view of the metal key under station light.",
     "advertising-ecommerce":
-      "Serum-bottle TVC: a clear frosted bottle stands on pale stone as droplets catch a soft key light. Make a slow half-orbit and controlled push-in, finishing on the cap and label-free hero.",
+      "An amber serum bottle stands on a pale studio surface as a clear sheet of water splashes from the side and wraps around the glass. Droplets slide down the bottle while the camera holds a centered product close-up.",
     "film-concept-production":
-      "CG reveal previs: a dark object emerges from a blank stage as panels separate and the camera cranes around the new silhouette. End on a wide layout frame.",
+      "A dark oval module rests on a white turntable and mechanically unfolds its arms and rotors into a compact black quadcopter. The camera makes a restrained product orbit and stops on the fully deployed drone.",
     "game-art-animation":
-      "Creature VFX game shot: a compact creature steps from shadow, exhales a restrained particle burst, and turns toward camera. Use a low arc move and a grounded contact shadow.",
+      "A glowing blue droplet strikes a black reflective surface and spreads into a translucent water creature shaped like a small lizard. A cyan ripple expands beneath it as the creature raises its head in close view.",
     "creator-explainer":
-      "Archive-revival explainer: a faded historical photograph gains gentle depth as faces turn and fabric moves in a light breeze. Use a slow push-in and leave lower-third space.",
+      "A lab-coated conservator in an old library places an antique brass astronomical instrument on a table. The conservator adjusts its nested rings by hand while the camera moves between the mechanism and the focused face.",
     "music-visual-art":
-      "Stage-VFX visual: a performer silhouette stands in a dark venue while volumetric beams and particles pulse once, then settle back to the opening stage geometry.",
+      "A stage performer stands in silhouette as white particle jets spiral outward and form a huge rose-like ribbon halo behind the body. Hold the wide frontal composition as the luminous petals complete their arc.",
   },
   "veo-3-1-fast-generate-preview": {
     "micro-drama-comic":
-      "2D cel micro-drama at a hillside lantern festival: an illustrator repairs a tiny paper theater after wind lifts one panel, and the theater glows as nearby silhouettes lean in. Use a rostrum pan with a paper flap and bell.",
+      "At an illustrated lantern festival, audience silhouettes watch a woman puppeteer operate a small paper theater. Lanterns glow overhead while loose paper fragments sweep across the stage, and the camera holds the layered crowd and puppet show together.",
     "advertising-ecommerce":
-      "2D motion-comic modular running-shoe ad: the shoe assembles from clean graphic modules, lands on a track, and kicks up one bright spray. Use a side-tracking move and finish on a three-quarter hero.",
+      "A pop-art running shoe assembles from bold colored panels against a graphic background. The completed shoe strikes the ground, throws a bright splash, and shoots forward with a white motion trail into the final side profile.",
     "film-concept-production":
-      "Anime previs: a stylized hero crosses a simple set, pauses at a marked doorway, and the camera reframes to show the next beat. Keep clean blocking, one controlled pan, and a final board hold.",
+      "An anime woman in an orange suit runs along a wet deserted train platform, then stops beneath a signal lamp and looks down the tracks. Follow the run laterally and settle behind her on the empty rail corridor.",
     "game-art-animation":
-      "Anime boss reveal: a large silhouette rises behind a bright arena line, one deliberate arm movement triggers a floor pulse, and the camera settles on the confrontation frame.",
+      "A small 2D hero faces a giant stone golem whose chest holds a glowing cyan core. Turquoise energy spreads around the golem as the hero braces in the foreground and the wide camera holds their scale difference.",
     "creator-explainer":
-      "Anime physics explainer: a weighted object drops through a stylized setup, rebounds once, and traces a clear arc. Use a fixed side view, add simple labels in post, and end on the path.",
+      "In an illustrated science demonstration, a boy pushes a blue ball down a wooden ramp. Direction arrows appear beside the moving ball while the fixed side view keeps the ramp, hands, and final stopping point visible.",
     "music-visual-art":
-      "Anime beat visual: colored shapes and a character silhouette hit three clean poses on the beat, then return to the opening pose for a loop. Keep a fixed camera and crisp graphic timing.",
+      "A retro digital performer in a white jacket raises one hand on a cyan grid stage. An orange waveform grows behind the figure from left to right while the locked frontal camera holds the performer against the expanding graphic.",
   },
 };
 
@@ -1088,21 +1106,28 @@ export const VIDEO_MODEL_IDS = Object.freeze(Object.keys(VIDEO_MODEL_POSTER_SETS
 export const VIDEO_PROFESSION_MODEL_IDS = Object.freeze(Object.keys(VIDEO_PROFESSION_SETS));
 
 export function getVideoPromptTemplateFallbackPosters(modelId: string): readonly string[] {
-  const slug = modelId
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const slug = normalizeVideoModelId(modelId);
   const posters = VIDEO_PROFESSION_POSTER_SETS[slug];
   if (!posters) return [];
   return VIDEO_PROFESSION_IDS.map((professionId) => posters[professionId]);
 }
 
+/**
+ * Return a packaged first frame for every reviewed profession clip. The file
+ * name includes both the profession and model so a failed CDN request cannot
+ * silently show a neighbouring profession or another model's sample.
+ */
+export function getVideoPromptTemplateLocalFallbackPosters(modelId: string): readonly string[] {
+  const resolvedModelId = resolveVideoProfessionModelId(modelId);
+  if (!resolvedModelId) return [];
+  return VIDEO_PROFESSION_IDS.map(
+    (professionId) => `${VIDEO_LOCAL_FALLBACK_BASE}/${professionId}/${resolvedModelId}.jpg`,
+  );
+}
+
 /** Return six profession templates with one stable media binding per card. */
 export function getVideoPromptTemplates(modelId: string, locale: Locale = "en"): readonly VideoPromptTemplate[] {
-  const slug = modelId
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const slug = normalizeVideoModelId(modelId);
   // Only a reviewed profession batch can back the six profession cards.  Do
   // not fall back to the legacy model clip tuple: those clips were authored
   // for the old generic/industry examples and have no profession metadata.

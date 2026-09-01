@@ -213,6 +213,31 @@ const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
   ],
 };
 
+const IMAGE_PROMPT_LOCAL_FALLBACK_LANES = [
+  "game-ui-equipment",
+  "sports-broadcast",
+  "brand-tvc-ecommerce",
+  "cinematic-storyboard",
+  "comedy-physical",
+  "historical-revival",
+] as const;
+
+function normalizeImageModelId(modelId: string): string {
+  return modelId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function resolveImagePosterModelId(modelId: string): string | undefined {
+  const normalized = normalizeImageModelId(modelId);
+  if (IMAGE_MODEL_POSTER_SETS[normalized]) return normalized;
+  return Object.keys(IMAGE_MODEL_POSTER_SETS).find(
+    (candidate) => normalized.startsWith(`${candidate}-`) || candidate.startsWith(`${normalized}-`),
+  );
+}
+
 /**
  * The temporary picker selection for the nine canonical image model pages.
  * The order was supplied by the product review flow, so it intentionally
@@ -357,6 +382,147 @@ export const IMAGE_PROMPT_TEMPLATES: readonly ImagePromptTemplate[] = [
     tags: ["historical", "restoration", "humanities", "documentary"],
   },
 ];
+
+type ImagePromptSceneId =
+  | "product-hero"
+  | "social-ad"
+  | "catalog-variant"
+  | "editorial-portrait"
+  | "product-ui"
+  | "food-editorial";
+
+type ImagePromptSet = Record<ImagePromptSceneId, string>;
+
+const IMAGE_PROMPT_BASE_BY_ID: ImagePromptSet = {
+  "product-hero": IMAGE_PROMPT_TEMPLATES[0].prompt,
+  "social-ad": IMAGE_PROMPT_TEMPLATES[1].prompt,
+  "catalog-variant": IMAGE_PROMPT_TEMPLATES[2].prompt,
+  "editorial-portrait": IMAGE_PROMPT_TEMPLATES[3].prompt,
+  "product-ui": IMAGE_PROMPT_TEMPLATES[4].prompt,
+  "food-editorial": IMAGE_PROMPT_TEMPLATES[5].prompt,
+};
+
+/**
+ * Fact-based prompts for each reviewed model poster. The six keys intentionally
+ * match the six poster lanes above; keeping this as one model-keyed registry
+ * prevents a model page from pairing a real output with a generic prompt from
+ * another model. Prompt bodies stay English on every locale page.
+ */
+const IMAGE_MODEL_ENGLISH_PROMPTS: Record<string, ImagePromptSet> = {
+  "gpt-image-2": IMAGE_PROMPT_BASE_BY_ID,
+  "gemini-2-5-flash-image": {
+    "product-hero":
+      "A 16:9 fantasy game loadout screen in mossy forest ruins. A hooded green archer stands centered with a bow; a circular equipment wheel sits around the character and alternate equipment silhouettes occupy the right panel. Keep the green-and-gold HUD, pose, ruins, and prop geometry fixed for an exact equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "A live basketball broadcast frame catches a blue-uniform player airborne for a dunk in a packed arena. Show the hoop, backboard, court lights, crowd depth, and an abstract blue-and-gold lower-third without readable text. Keep the camera angle, ball position, jersey colors, and contact-free action consistent; no real teams, athletes, logos, or watermark.",
+    "catalog-variant":
+      "A gray-and-black running shoe hangs at a three-quarter angle above a wet track. Its orange sole glows against a dark background while orange light trails echo the tread and the surface holds a restrained reflection. Preserve the shoe shape, lace pattern, sole, lighting, and empty copy space. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "A lone astronaut stands inside a glass biodome on a red desert planet, seen from behind among glowing bioluminescent plants. A hazy red landscape and distant mountains show through the curved glass. Hold the character silhouette, plant positions, cool interior light, and wide screen direction for storyboard continuity. No readable text, logos, or watermark.",
+    "product-ui":
+      "In a bright modern kitchen, a surprised man in a light green overshirt holds an orange while paper sheets and cups burst through the air around him. Freeze the harmless cause-and-effect gag with believable trajectories, warm daylight, and clear spacing between the objects. Keep the pose and prop positions stable for a physical-comedy frame; no injury, logos, readable words, or watermark.",
+    "food-editorial":
+      "A restored black-and-white market street shows period vendors beside baskets of fruit and folded fabric, with stone buildings and mountains behind them. Preserve the era-appropriate clothing, stalls, architecture, film grain, and stable documentary composition while repairing scratches and contrast. Do not add modern objects, readable signs, logos, identifiable public figures, or watermark.",
+  },
+  "gemini-3-pro-image": {
+    "product-hero":
+      "A 16:9 underwater game loadout screen on a sea floor. An armored diver stands on a circular pedestal holding a glowing cyan sword, with submerged ruins behind and a weapon-swap panel on the right. Lock the diver silhouette, sword, aquatic lighting, pedestal, and interface hierarchy for an exact equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "A televised basketball frame shows a red-uniform player taking a jump shot while a white-uniform defender contests it in an indoor arena. Include the hoop, overhead lights, crowd blur, and abstract red-and-gray lower-third panels without readable text. Keep the broadcast angle, ball arc, uniforms, and player spacing coherent; no real teams, athletes, logos, or watermark.",
+    "catalog-variant":
+      "A clear glass dropper bottle filled with pale gold serum stands on a white stone block in a warm cream room. Soft sunlight and large leaf shadows fall across the wall and the liquid, glass, metal collar, and surface catch subtle reflections. Preserve the bottle proportions and generous blank space; no readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "At a rain-wet historic train platform, a young traveler in a dark cap and coat holds a brown suitcase while a steam train waits under a long canopy. Warm lamps recede into the blue night and reflect on the platform. Hold the traveler profile, suitcase, train direction, and wide composition for a continuous storyboard. No readable signs, logos, or watermark.",
+    "product-ui":
+      "On a small theater stage, a startled magician in black pulls a long rainbow cloth from a tall black trunk wrapped in more cloth. The audience is dim behind him, with red curtains and colored spotlights. Freeze the harmless reveal at the moment the fabric stretches between hand and trunk; preserve object weight, pose, and stage spacing. No readable words, logos, injury, or watermark.",
+    "food-editorial":
+      "A sepia archival photograph shows four workers weaving cloth on wooden looms inside a rustic workshop, with yarn baskets and bright hillside scenery through the windows. Restore the paper texture, faces without sharpening them into modern portraits, loom construction, period clothing, and gentle film wear. No modern objects, readable signage, logos, captions, or watermark.",
+  },
+  "gemini-3-1-flash-image": {
+    "product-hero":
+      "A 16:9 futuristic game loadout frame shows a helmeted rider beside a black-and-orange motorcycle in a rainy industrial hangar. Blue-and-orange interface controls and a circular part-selection panel sit around the vehicle. Keep the rider, motorcycle geometry, wet floor reflections, lighting direction, and selected-part position fixed for a clean equipment swap. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "A poolside sports broadcast catches a swimmer in a blue cap during freestyle, with one arm entering the water and a sharp splash across the lane. Use a low pool-deck camera, blue water, lane markings, and abstract blue lower-third graphics without readable text. Keep swimmer direction, splash shape, and framing consistent; no real athletes, teams, logos, or watermark.",
+    "catalog-variant":
+      "A metallic wireless-earbud charging case floats open above a glossy black surface while the two matching earbuds hover above their slots. Purple and cyan rim lights define the rounded metal, black interior, reflections, and empty dark background. Preserve the case, earbuds, hinge, highlights, and three-quarter camera angle. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "A cloaked figure crouches on a rain-slick elevated walkway beneath massive futuristic bridges. Cyan fog, magenta tower lights, railings, and wet reflections lead toward the distant city. Hold the figure's silhouette, facing direction, cloak edge, camera height, and neon light placement as a cinematic storyboard keyframe. No readable signs, logos, or watermark.",
+    "product-ui":
+      "In a wet green park, a man in a coral-red raincoat and yellow boots struggles with an inverted rainbow umbrella in a gust of wind. His arms brace against the bent canopy while rain streaks through the trees and puddles reflect the bright colors. Keep the umbrella shape, body pose, wind direction, and safe footing clear; no injury, readable text, logos, or watermark.",
+    "food-editorial":
+      "A softly faded historical dock scene shows several workers repairing a large wooden boat at a riverside boatyard. Timber ribs, scaffolding, hand tools, smaller boats, and weathered work clothes fill the wide documentary frame. Restore the wood grain, riverbank structures, faces, and natural color aging without modern objects, readable signs, logos, captions, or watermark.",
+  },
+  "gemini-3-1-flash-lite-image": {
+    "product-hero":
+      "A 16:9 whimsical game UI shows a small white robot standing in a floating-island garden while holding a green plant blaster or seed tool. A circular equipment wheel surrounds the selected tool, with tiny garden plots, paths, clouds, and floating terrain behind. Lock the robot pose, tool shape, wheel position, and bright pastel lighting for an equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "An aerial broadcast-style road-race frame follows a cyclist and a motorcycle on a winding coastal road above blue water and steep cliffs. Leave an abstract lower-third area free of readable text and keep the road curve, vehicle spacing, sea horizon, and sun direction consistent. No real teams, athletes, logos, or watermark.",
+    "catalog-variant":
+      "A tall matte black bottle stands on a sunlit mountain rock with a hazy valley and layered peaks behind it. Use a warm sunrise rim on the right and soft atmospheric depth while preserving the plain cap, bottle silhouette, rock texture, and empty sky for later copy. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "At sunset on a sea cliff, a lone helmeted traveler stands in silhouette holding a helmet while a red warning flag fills the near right foreground. The ocean, distant headland, lighthouse, and orange-to-blue sky form a wide establishing frame. Keep the traveler orientation, flag motion direction, horizon, and light transition stable for storyboard use. No readable signs, logos, or watermark.",
+    "product-ui":
+      "In a mint laundry room, a surprised man in a coral sweatshirt leans back as a turquoise laundry basket throws a colorful cloud of striped socks into the air. Washing machines, folded towels, and clean daylight establish the setting. Preserve the basket tilt, sock trajectories, body pose, and safe spacing for a physical-comedy frame; no injury, readable text, logos, or watermark.",
+    "food-editorial":
+      "A lightly colorized vintage schoolyard photograph shows children in period sweaters and skirts playing jump rope in front of a brick building. Restore the worn border, faded colors, rope arc, clothing details, and original wide framing without introducing modern objects. No readable signs, logos, captions, or watermark.",
+  },
+  "grok-imagine-image": {
+    "product-hero":
+      "A 16:9 cyberpunk game equipment screen shows a masked figure crouched on a neon rooftop above a dense night city. A black-and-lime HUD frames the character, with weapon and tool slots on the right including a glowing pickaxe. Hold the crouch, rooftop line, neon rim light, and selected slot fixed for an equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "A sunset beach-volleyball broadcast frame captures a player spiking over the net as sand sprays from the jump. Show the opposing court, hazy beach crowd, warm sky, and a simple teal-and-white lower-third made from abstract blocks. Keep the net, player position, ball path, and camera angle coherent; no real athletes, teams, logos, or watermark.",
+    "catalog-variant":
+      "A vintage black camera with a large textured lens rests on a black pedestal against a deep green-black background. Warm highlights describe the metal dials, leather grip, lens rings, and small empty space to the left. Preserve the camera body, lens perspective, pedestal edge, and controlled studio lighting. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "In a warmly lit theater dressing room, a curly-haired actor in a cream shirt and dark vest looks into a large aged mirror beside costumes and glowing round bulbs. The reflected face and three-quarter profile form a character continuity frame. Keep the mirror geometry, wardrobe, eye line, and amber lighting consistent. No readable signage, logos, or watermark.",
+    "product-ui":
+      "On a beach at sunset, a man in a light shirt pulls a yellow-striped picnic cloth as a sandwich and two white plates lift into the air above a wooden table. Freeze the harmless physical gag with visible cloth tension, believable object paths, warm sea light, and clear spacing. No injury, readable words, logos, or watermark.",
+    "food-editorial":
+      "A warm faded archival photograph shows a family having a picnic in a grassy field: one adult pours from a thermos, another spreads food, and a child sits beside a bicycle. Preserve the period clothing, enamel cups, bicycle, hills, film grain, and soft light-leak edge. No modern branding, readable text, logos, or watermark.",
+  },
+  "grok-imagine-image-pro": {
+    "product-hero":
+      "A 16:9 desert game equipment screen shows a large rusted mech in a sunlit hangar. A physical hammer stands beside it while a holographic drill-arm replacement and blueprint equipment panel occupy the workbench and right side. Lock the mech silhouette, replacement part positions, warm dust light, and panel hierarchy for a clear equipment swap. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "A motorsport broadcast frame shows a silver open-wheel race car sweeping around a coastal circuit, with pale mountains and ocean beyond. Leave a clean blank scoreboard area at the left and use realistic track reflections and speed perspective. Keep the car proportions, camera height, road curve, and horizon stable; no real teams, drivers, logos, or watermark.",
+    "catalog-variant":
+      "A clear rectangular perfume bottle with a black cap stands on rippled black satin. A warm amber key light outlines the glass edges and liquid while the background falls into deep shadow. Preserve the square bottle, cap, satin folds, reflections, and generous dark copy space. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "Under a canvas camp in a desert ruin, an explorer studies a large hand-drawn map with a brass compass while carved stone structures sit beyond the table. Use an over-shoulder composition with tools, crates, sand, and hard afternoon light. Hold the explorer's hands, map orientation, ruins, and camera angle for a storyboard keyframe. No readable labels, logos, or watermark.",
+    "product-ui":
+      "In a warm apartment, a startled man in a blue shirt tries to balance a tall stack of taped cardboard boxes while more boxes sit open around him. Freeze the harmless tipping moment with clear weight, contact points, soft window light, and a stable wide camera. No injury, readable shipping text, logos, or watermark.",
+    "food-editorial":
+      "A monochrome archival railway photograph shows travelers in long coats and hats waiting with suitcases on a rain-dark platform as a steam train approaches. Preserve the canopy, wet pavement, smoke, period clothing, film scratches, and deep perspective while restoring contrast. No readable station signs, logos, modern objects, or watermark.",
+  },
+  "grok-imagine-image-quality": {
+    "product-hero":
+      "A 16:9 fantasy game UI shows a cloaked wizard standing on a glowing circular platform before a large crystal equipment wheel. Faceted blue crystals ring the interface around a bright pink crystal at the center, with violet mist and stone architecture behind. Lock the wizard silhouette, wheel geometry, selected crystal, and lighting for an equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "An indoor ice-hockey broadcast frame catches an orange-uniform skater driving toward the goal while a goalie guards the blue crease. Show the rink boards, arena haze, ice reflections, and a blank blue panel without readable text. Keep puck direction, player spacing, camera angle, and goal geometry coherent; no real teams, athletes, logos, or watermark.",
+    "catalog-variant":
+      "A black game controller floats above a dark angular pedestal in a blue-and-violet studio. Soft rim lights define its grips, directional pad, sticks, and buttons while the background remains free for copy. Preserve the controller geometry, centered perspective, highlights, and pedestal edges. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "Inside a glass mountain cable-car station, an older man in a dark coat reaches toward a woman as they meet on an icy platform. Snowy peaks, cables, and gondolas fill the background through the windows. Hold both figures' eye lines, walking direction, cold daylight, and wide spatial blocking for a cinematic storyboard. No readable signs, logos, or watermark.",
+    "product-ui":
+      "In a bright tiled bathroom, a wet shaggy dog bounds forward as a mint towel, soap bubbles, and water droplets fly around it; a surprised groomer in an apron reacts behind. Freeze the safe splash moment with believable arcs, clean separation of dog and person, and soft daylight. No injury, readable text, logos, or watermark.",
+    "food-editorial":
+      "A sepia archival scene shows a camel caravan resting beside a small oasis, with travelers in wrapped period clothing, baskets, palms, and rocky desert hills. Restore the old paper grain, camel tack, clothing folds, water edge, and stable documentary framing. Do not add modern objects, readable signs, logos, captions, or watermark.",
+  },
+  "nano-banana-pro-preview": {
+    "product-hero":
+      "A 16:9 post-apocalyptic game equipment screen shows a rugged survivor with a backpack and rifle inside an overgrown greenhouse. A gear board displays a rifle, axe, and item slots with one orange slot highlighted. Lock the survivor silhouette, weapon geometry, greenhouse light, and board hierarchy for a precise equipment-switch frame. No readable words, logos, invented stats, or watermark.",
+    "social-ad":
+      "An indoor volleyball broadcast frame shows a blue-uniform attacker rising for a spike against two yellow blockers. Include the net, court lights, crowd blur, a simple top-left scoreboard block, and a lower stats bar without relying on readable claims. Keep the ball path, player spacing, and camera angle coherent; no real teams, athletes, logos, or watermark.",
+    "catalog-variant":
+      "A black-and-silver espresso machine pours a thin stream of coffee into a cream cup on a pale kitchen counter. Warm window light, a small plant, the portafilter, steam wand, and clean backsplash form a calm product frame. Preserve the machine proportions, cup position, coffee stream, and empty counter space. No readable branding, extra products, hands, or watermark.",
+    "editorial-portrait":
+      "Inside a wooden ship at night, a carved sailor puppet grips the wheel beside a round porthole showing moonlit waves. Rope coils, timber walls, a lantern, and the blue sea create a tactile character scene. Keep the puppet's face, hands, wheel, porthole, and warm-to-cool lighting fixed for storyboard continuity. No readable text, logos, or watermark.",
+    "product-ui":
+      "On a warmly lit film set, a bespectacled cameraman in suspenders stumbles beside a vintage camera and tripod while a cream backdrop tangles around his legs. Freeze the harmless physical gag with visible fabric tension, stable tripod contact, and clear studio lighting. No injury, readable words, logos, or watermark.",
+    "food-editorial":
+      "A monochrome archival dressing-room photograph shows period performers changing clothes beside trunks, ropes, fabric, and a large window opening onto countryside. Restore the film grain, era-appropriate garments, wooden stage equipment, and natural light without adding modern objects. No readable labels, logos, captions, or watermark.",
+  },
+};
 
 /**
  * Prompt-card labels remain localized for the surrounding card UI.  Prompt
@@ -659,21 +825,35 @@ const IMAGE_PLAYGROUND_PROMPT_FRAME: Record<Locale, (modelName: string, subject:
   id: (modelName, subject) => `Buat gambar produk premium dengan ${modelName}: ${subject}. Pertahankan kemasan, proporsi, dan material; gunakan cahaya terkontrol, bayangan kontak yang bersih, serta margin aman untuk teks katalog. Tanpa teks terbaca, merek rekaan, produk tambahan, orang, tangan, atau watermark.`,
 };
 
+function getImagePromptSet(modelId?: string): ImagePromptSet | undefined {
+  if (!modelId) return undefined;
+  const resolvedModelId = resolveImagePosterModelId(modelId);
+  return resolvedModelId ? IMAGE_MODEL_ENGLISH_PROMPTS[resolvedModelId] : undefined;
+}
+
 /**
  * Return a fresh array so callers can safely annotate examples for a specific
  * model without mutating the shared catalog.  `modelId` is accepted as part of
  * the public API to leave room for model-family ordering while keeping today's
  * scenario set consistent across every image model.
  */
-export function getImagePromptTemplates(_modelId?: string, locale: Locale = "en"): ImagePromptTemplate[] {
+export function getImagePromptTemplates(modelId?: string, locale: Locale = "en"): ImagePromptTemplate[] {
   const copy = IMAGE_PROMPT_LOCALE_COPY[locale];
-  return IMAGE_PROMPT_TEMPLATES.map((template) => ({
+  // Resolve the model's poster set here, next to its prompt objects, so every
+  // caller receives a complete scene-to-media binding. The landing page also
+  // resolves this registry for its fallback handling, but callers should not
+  // have to remember a second index-based join to avoid showing the gpt-image-2
+  // poster on another model's card.
+  const posters = modelId ? getImagePromptTemplateFallbackPosters(modelId) : undefined;
+  const promptSet = getImagePromptSet(modelId);
+  return IMAGE_PROMPT_TEMPLATES.map((template, index) => ({
     ...template,
     label: copy?.labels[template.id] ?? template.label,
     // Keep prompt bodies canonical English on every locale page.  `copy`
     // still supplies translated labels, but translated legacy prompt bodies
     // are intentionally ignored for reviewed cards.
-    prompt: template.prompt,
+    prompt: promptSet?.[template.id as ImagePromptSceneId] ?? template.prompt,
+    poster: posters?.[index] ?? template.poster,
     tags: [...template.tags],
   }));
 }
@@ -685,12 +865,9 @@ export function getImagePromptTemplates(_modelId?: string, locale: Locale = "en"
  * stable (for example, a physical-comedy brief always gets a physical-comedy image).
  */
 export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
-  const normalizedModelId = modelId
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const curated = IMAGE_MODEL_POSTER_SETS[normalizedModelId];
+  const normalizedModelId = normalizeImageModelId(modelId);
+  const resolvedModelId = resolveImagePosterModelId(normalizedModelId);
+  const curated = resolvedModelId ? IMAGE_MODEL_POSTER_SETS[resolvedModelId] : undefined;
   if (curated && curated.length >= IMAGE_PROMPT_TEMPLATES.length) {
     return curated.slice(0, IMAGE_PROMPT_TEMPLATES.length);
   }
@@ -716,6 +893,20 @@ export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
     }
     return variants[start] ?? template.poster;
   });
+}
+
+/**
+ * Return packaged fallbacks for the same model and workflow lane as each
+ * reviewed CDN poster. These files are derived from the corresponding CDN
+ * output and are only used after the remote object fails; they must never
+ * replace the primary CDN URL in the initial render.
+ */
+export function getImagePromptTemplateLocalFallbackPosters(modelId = ""): string[] {
+  const resolvedModelId = resolveImagePosterModelId(modelId);
+  if (!resolvedModelId) return [];
+  return IMAGE_PROMPT_LOCAL_FALLBACK_LANES.map(
+    (lane) => `/assets/model-fallback-audit/images/${lane}/${resolvedModelId}.webp`,
+  );
 }
 
 /**

@@ -36,12 +36,106 @@ describe("video profession prompt templates", () => {
       expect(template.video).toMatch(/\.mp4$/);
     }
 
-    expect(VIDEO_PROMPT_TEMPLATES[0].prompt).toMatch(/manga|courier|station/i);
+    expect(VIDEO_PROMPT_TEMPLATES[0].prompt).toMatch(/anime student|parchment map|library/i);
     expect(VIDEO_PROMPT_TEMPLATES[1].prompt).toMatch(/travel kettle|steam/i);
-    expect(VIDEO_PROMPT_TEMPLATES[2].prompt).toMatch(/sci-fi|command deck/i);
-    expect(VIDEO_PROMPT_TEMPLATES[3].prompt).toMatch(/open-world|luminous ridge/i);
+    expect(VIDEO_PROMPT_TEMPLATES[2].prompt).toMatch(/armored rover|treaded wheel|dust/i);
+    expect(VIDEO_PROMPT_TEMPLATES[3].prompt).toMatch(/cloaked traveler|canyon ridge/i);
     expect(VIDEO_PROMPT_TEMPLATES[4].prompt).toMatch(/space-science|planet model/i);
     expect(VIDEO_PROMPT_TEMPLATES[5].prompt).toMatch(/stage-projection|performer silhouette/i);
+  });
+
+  test("describes the visible subject and action in every reviewed video clip", () => {
+    const visibleContentSignatures: Record<string, RegExp[]> = {
+      "seedance-2.5": [
+        /student.*parchment map.*library/i,
+        /kettle.*assembles.*steam/i,
+        /armored.*rover.*treaded wheel.*dust/i,
+        /cloaked traveler.*canyon.*sunset/i,
+        /hand.*lavender planet.*moons/i,
+        /silhouette.*teal.*amber.*light ribbons/i,
+      ],
+      "seedance-2.0": [
+        /yellow raincoat.*railway platform.*letter/i,
+        /coral.*bottle.*ice cubes/i,
+        /observatory.*telescope.*dawn/i,
+        /orange-suited.*hangar.*machine/i,
+        /researcher.*old map.*brass/i,
+        /musician.*keyboard.*blue.*purple/i,
+      ],
+      "seedance-2.0-pro": [
+        /courier.*floating.*envelope.*rain/i,
+        /rooftop.*parcel.*golden.*trail/i,
+        /caped.*rooftop.*glowing.*lantern/i,
+        /inventor.*orange cube.*robot/i,
+        /desert explorer.*bronze.*disk.*blue/i,
+        /rooftop.*glowing.*baton.*light trail/i,
+      ],
+      "seedance-2.0-fast": [
+        /convenience store.*paper bag.*customer/i,
+        /transparent.*lunchbox.*fruit.*lid/i,
+        /stunt performer.*vaults.*warehouse/i,
+        /runner.*neon corridor.*energy barrier/i,
+        /glasses.*cylindrical.*device/i,
+        /musician.*keyboard.*drum pad.*sampler/i,
+      ],
+      "seedance-2.0-mini": [
+        /girl.*origami bird.*flies/i,
+        /mint.*organizer.*pens.*paperclips/i,
+        /miniature construction worker.*wall panels.*roof/i,
+        /low-poly.*creature.*wing.*floats/i,
+        /paper planet.*orange.*sun.*orbit/i,
+        /circular base.*spiral maze/i,
+      ],
+      "minimax-h3": [
+        /yellow raincoat.*station.*torn letter/i,
+        /teal.*bottle.*canvas tote/i,
+        /observatory.*telescope.*dawn/i,
+        /fighter.*neon.*energy shield/i,
+        /island.*lighthouse.*assembl/i,
+        /chrome.*ring.*morph/i,
+      ],
+      "grok-imagine-video": [
+        /mustard jacket.*stairwell.*envelope/i,
+        /white travel mug.*blue lid.*steam/i,
+        /industrial.*room.*ocean.*window/i,
+        /man.*quadcopter.*circles/i,
+        /presenter.*microphone.*audio cable/i,
+        /gallery.*turquoise.*panel.*orange.*purple/i,
+      ],
+      "grok-imagine-video-1.5": [
+        /woman.*library.*origami bird.*window/i,
+        /woman.*lamp.*glowing panel.*notebook/i,
+        /traveler.*bridge.*green map.*balloon/i,
+        /ninja.*rooftop.*paper umbrella/i,
+        /cards.*sprout.*tree/i,
+        /musician.*keyboard.*red.*waveform/i,
+      ],
+      "veo-3.1-generate-preview": [
+        /traveler.*platform.*package.*antique key/i,
+        /amber serum.*water.*wraps/i,
+        /oval module.*unfolds.*quadcopter/i,
+        /blue droplet.*water creature.*ripple/i,
+        /conservator.*library.*astronomical instrument/i,
+        /performer.*particle.*rose.*halo/i,
+      ],
+      "veo-3.1-fast-generate-preview": [
+        /lantern festival.*puppet.*audience/i,
+        /running shoe.*assembles.*splash/i,
+        /woman.*orange suit.*train platform/i,
+        /hero.*stone golem.*cyan core/i,
+        /boy.*blue ball.*wooden ramp/i,
+        /performer.*cyan grid.*orange waveform/i,
+      ],
+    };
+
+    for (const [modelId, signatures] of Object.entries(visibleContentSignatures)) {
+      const cards = getVideoPromptTemplates(modelId, "en");
+      expect(cards).toHaveLength(signatures.length);
+      cards.forEach((card, index) => {
+        const visibleTokens = signatures[index].source.split(".*");
+        visibleTokens.forEach((token) => expect(card.prompt).toMatch(new RegExp(token, "i")));
+      });
+    }
   });
 
   test("binds every dedicated model clip to the matching profession ID", () => {
