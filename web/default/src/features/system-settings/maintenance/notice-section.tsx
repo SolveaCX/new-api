@@ -25,11 +25,13 @@ import { toast } from 'sonner'
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Markdown } from '@/components/ui/markdown'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { SettingsForm } from '../components/settings-form-layout'
@@ -78,6 +80,7 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
       Notice: initialNotice.content,
     },
   })
+  const noticeContent = form.watch('Notice')?.trim()
 
   useEffect(() => {
     form.reset({ Notice: parseNotice(defaultValue ?? '').content })
@@ -141,10 +144,21 @@ export function NoticeSection({ defaultValue }: NoticeSectionProps) {
                     {...field}
                   />
                 </FormControl>
+                <FormDescription>
+                  {t('Announcement displayed to users (supports Markdown & HTML)')}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
+          {noticeContent ? (
+            <section aria-label={t('Preview')} className='space-y-2'>
+              <p className='text-sm font-medium'>{t('Preview')}</p>
+              <div className='rounded-lg border bg-muted/30 p-4'>
+                <Markdown>{noticeContent}</Markdown>
+              </div>
+            </section>
+          ) : null}
         </SettingsForm>
       </Form>
     </SettingsSection>
