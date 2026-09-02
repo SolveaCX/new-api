@@ -18,7 +18,8 @@ import (
 func GetAllModelsMeta(c *gin.Context) {
 
 	pageInfo := common.GetPageQuery(c)
-	modelsMeta, err := model.GetAllModels(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	hasTags := c.Query("has_tags") == "true"
+	modelsMeta, err := model.GetAllModels(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), hasTags)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -26,7 +27,11 @@ func GetAllModelsMeta(c *gin.Context) {
 	// 批量填充附加字段，提升列表接口性能
 	enrichModels(modelsMeta)
 	var total int64
-	model.DB.Model(&model.Model{}).Count(&total)
+	totalQuery := model.DB.Model(&model.Model{})
+	if hasTags {
+		totalQuery = totalQuery.Where("tags IS NOT NULL AND tags <> ?", "")
+	}
+	totalQuery.Count(&total)
 
 	// 统计供应商计数（全部数据，不受分页影响）
 	vendorCounts, _ := model.GetVendorModelCounts()
@@ -49,7 +54,7 @@ func SearchModelsMeta(c *gin.Context) {
 	vendor := c.Query("vendor")
 	pageInfo := common.GetPageQuery(c)
 
-	modelsMeta, total, err := model.SearchModels(keyword, vendor, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	modelsMeta, total, err := model.SearchModels(keyword, vendor, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), c.Query("has_tags") == "true")
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -33,6 +33,7 @@ const modelsSearchSchema = z.object({
   vendor: z.array(z.string()).optional().catch([]),
   status: z.array(z.string()).optional().catch([]),
   sync: z.array(z.string()).optional().catch([]),
+  has_tags: z.array(z.string()).optional().catch([]),
   dPage: z.number().optional().catch(1),
   dPageSize: z.number().optional().catch(10),
   dFilter: z.string().optional().catch(''),

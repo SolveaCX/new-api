@@ -23,18 +23,19 @@ type BoundChannel struct {
 }
 
 type Model struct {
-	Id           int            `json:"id"`
-	ModelName    string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
-	Description  string         `json:"description,omitempty" gorm:"type:text"`
-	Icon         string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
-	Tags         string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
-	VendorID     int            `json:"vendor_id,omitempty" gorm:"index"`
-	Endpoints    string         `json:"endpoints,omitempty" gorm:"type:text"`
-	Status       int            `json:"status" gorm:"default:1"`
-	SyncOfficial int            `json:"sync_official" gorm:"default:1"`
-	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
-	UpdatedTime  int64          `json:"updated_time" gorm:"bigint"`
-	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
+	Id            int            `json:"id"`
+	ModelName     string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
+	Description   string         `json:"description,omitempty" gorm:"type:text"`
+	Icon          string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
+	Tags          string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
+	DisplayWeight int            `json:"display_weight" gorm:"not null;default:0;index"`
+	VendorID      int            `json:"vendor_id,omitempty" gorm:"index"`
+	Endpoints     string         `json:"endpoints,omitempty" gorm:"type:text"`
+	Status        int            `json:"status" gorm:"default:1"`
+	SyncOfficial  int            `json:"sync_official" gorm:"default:1"`
+	CreatedTime   int64          `json:"created_time" gorm:"bigint"`
+	UpdatedTime   int64          `json:"updated_time" gorm:"bigint"`
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
 
 	BoundChannels []BoundChannel `json:"bound_channels,omitempty" gorm:"-"`
 	EnableGroups  []string       `json:"enable_groups,omitempty" gorm:"-"`
@@ -102,7 +103,7 @@ func (mi *Model) Update() error {
 	mi.UpdatedTime = common.GetTimestamp()
 	// 使用 Select 强制更新所有字段，包括零值
 	return DB.Model(&Model{}).Where("id = ?", mi.Id).
-		Select("model_name", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").
+		Select("model_name", "description", "icon", "tags", "display_weight", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").
 		Updates(mi).Error
 }
 
@@ -128,9 +129,13 @@ func GetVendorModelCounts() (map[int64]int64, error) {
 	return m, nil
 }
 
-func GetAllModels(offset int, limit int) ([]*Model, error) {
+func GetAllModels(offset int, limit int, hasTags bool) ([]*Model, error) {
 	var models []*Model
-	err := DB.Order("id DESC").Offset(offset).Limit(limit).Find(&models).Error
+	db := DB
+	if hasTags {
+		db = db.Where("tags IS NOT NULL AND tags <> ?", "")
+	}
+	err := db.Order("id DESC").Offset(offset).Limit(limit).Find(&models).Error
 	return models, err
 }
 
@@ -251,7 +256,7 @@ func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (m
 	return result, nil
 }
 
-func SearchModels(keyword string, vendor string, offset int, limit int) ([]*Model, int64, error) {
+func SearchModels(keyword string, vendor string, offset int, limit int, hasTags bool) ([]*Model, int64, error) {
 	var models []*Model
 	db := DB.Model(&Model{})
 	if keyword != "" {
@@ -264,6 +269,9 @@ func SearchModels(keyword string, vendor string, offset int, limit int) ([]*Mode
 		} else {
 			db = db.Joins("JOIN vendors ON vendors.id = models.vendor_id").Where("vendors.name LIKE ?", "%"+vendor+"%")
 		}
+	}
+	if hasTags {
+		db = db.Where("models.tags IS NOT NULL AND models.tags <> ?", "")
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {

@@ -77,6 +77,7 @@ export function ModelsTable() {
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'vendor_id', searchKey: 'vendor', type: 'array' },
       { columnId: 'sync_official', searchKey: 'sync', type: 'array' },
+      { columnId: 'has_tags', searchKey: 'has_tags', type: 'array' },
     ],
   })
 
@@ -88,6 +89,7 @@ export function ModelsTable() {
   const syncFilter =
     (columnFilters.find((f) => f.id === 'sync_official')?.value as string[]) ||
     []
+  const hasTags = ((columnFilters.find((f) => f.id === 'has_tags')?.value as string[]) || []).includes('true')
 
   // Fetch vendors for filter
   const { data: vendorsData } = useQuery({
@@ -131,6 +133,7 @@ export function ModelsTable() {
         syncFilter.length > 0 && !syncFilter.includes('all')
           ? syncFilter[0]
           : undefined,
+      has_tags: hasTags,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
@@ -147,6 +150,7 @@ export function ModelsTable() {
             syncFilter.length > 0 && !syncFilter.includes('all')
               ? syncFilter[0]
               : undefined,
+          has_tags: hasTags,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -160,6 +164,7 @@ export function ModelsTable() {
             syncFilter.length > 0 && !syncFilter.includes('all')
               ? syncFilter[0]
               : undefined,
+          has_tags: hasTags,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -250,6 +255,12 @@ export function ModelsTable() {
             columnId: 'sync_official',
             title: t('Official Sync'),
             options: [...getSyncStatusOptions(t)],
+            singleSelect: true,
+          },
+          {
+            columnId: 'has_tags',
+            title: t('Tags'),
+            options: [{ label: t('All Tags'), value: 'all' }, { label: t('Tags'), value: 'true' }],
             singleSelect: true,
           },
         ],

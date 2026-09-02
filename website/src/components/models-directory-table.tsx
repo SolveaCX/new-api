@@ -288,13 +288,23 @@ function ModelTagBadges(props: { tags?: string[] }) {
       {props.tags.map((tag) => (
         <span
           key={tag}
-          className="inline-flex max-w-full items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap text-violet-700 shadow-sm dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-200"
+          className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm ${tagColorClass(tag)}`}
         >
           {tag}
         </span>
       ))}
     </span>
   );
+}
+
+function tagColorClass(tag: string): string {
+  switch (tag.trim().toLowerCase()) {
+    case "free": return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-300/10 dark:text-emerald-200";
+    case "limited discount": return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-200";
+    case "hot": return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-300/20 dark:bg-rose-300/10 dark:text-rose-200";
+    case "new release": return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-300/20 dark:bg-sky-300/10 dark:text-sky-200";
+    default: return "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-200";
+  }
 }
 
 /**

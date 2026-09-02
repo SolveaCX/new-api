@@ -103,6 +103,7 @@ export function ModelsDirectory(props: Props) {
           name: row.name,
           vendor: row.vendor,
           tags: row.tags,
+          displayWeight: row.displayWeight,
           inputUsd: row.inputFilterUsd,
           outputUsd: row.outputFilterUsd,
           // Official rate drives the discount sort; both sides come from the
@@ -322,6 +323,7 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
     name: row.name,
     vendor: row.vendor,
     tags: row.tags,
+    displayWeight: row.displayWeight,
     series: row.series,
     official: row.official,
     discounted: row.discounted,

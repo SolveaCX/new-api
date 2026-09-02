@@ -91,6 +91,7 @@ const extendedModelFormSchema = z.object({
   description: z.string(),
   icon: z.string(),
   tags: z.array(z.string()),
+  display_weight: z.number().int().min(0),
   vendor_id: z.number().optional(),
   endpoints: z.string(),
   name_rule: z.number(),
@@ -214,6 +215,7 @@ export function ModelMutateDrawer({
       description: '',
       icon: '',
       tags: [],
+      display_weight: 0,
       vendor_id: undefined,
       endpoints: '',
       name_rule: 0,
@@ -273,6 +275,7 @@ export function ModelMutateDrawer({
         description: model.description || '',
         icon: model.icon || '',
         tags: parseModelTags(model.tags),
+        display_weight: model.display_weight || 0,
         vendor_id: model.vendor_id,
         endpoints: model.endpoints || '',
         name_rule: model.name_rule || 0,
@@ -377,6 +380,7 @@ export function ModelMutateDrawer({
         description: '',
         icon: '',
         tags: [],
+        display_weight: 0,
         vendor_id: undefined,
         endpoints: '',
         name_rule: 0,
@@ -683,6 +687,13 @@ export function ModelMutateDrawer({
                   </FormItem>
                 )}
               />
+              <FormField control={form.control} name='display_weight' render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Weight')}</FormLabel>
+                  <FormControl><Input type='number' min={0} step={1} value={field.value} onChange={(event) => field.onChange(Number(event.target.value) || 0)} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
               <FormField
                 control={form.control}

@@ -45,6 +45,7 @@ export type PricingModel = {
   audio_completion_ratio?: number | null;
   enable_groups?: string[];
   tags?: string;
+  display_weight?: number;
   supported_endpoint_types?: string[];
   group_ratio?: Record<string, number>;
   group_model_ratio?: Record<string, number>;
