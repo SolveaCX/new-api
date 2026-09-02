@@ -183,7 +183,7 @@ export function ModelsDirectory(props: Props) {
           {sidebar}
         </aside>
 
-        <section ref={resultsSectionRef} className="min-w-0 scroll-mt-24 space-y-4">
+        <section ref={resultsSectionRef} className="min-w-0 scroll-mt-24 space-y-4 xl:p-4">
           <div className="rounded-2xl border border-[#E7E4EC] bg-white p-4 shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-26px_rgba(24,14,38,0.2)] dark:border-white/10 dark:bg-white/[0.03]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative min-w-0 flex-1">
