@@ -354,6 +354,8 @@ const VIDEO_SELECTED_MODEL = "seedance-2.5";
 const VIDEO_RESULT_ASSET = {
   poster: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.png",
   video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
+  fallbackPoster: "/assets/model-examples/seedance-f1-wet-track.png",
+  fallbackVideo: "/assets/model-examples/seedance-f1-wet-track.mp4",
 } as const;
 
 type MediaCopy = {
@@ -1155,6 +1157,8 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                         className="intelligence-result-media"
                         poster={VIDEO_RESULT_ASSET.poster}
                         src={VIDEO_RESULT_ASSET.video}
+                        fallbackPoster={VIDEO_RESULT_ASSET.fallbackPoster}
+                        fallbackSrc={VIDEO_RESULT_ASSET.fallbackVideo}
                         ariaLabel={media.videoAlt}
                       />
                       <div className="media-metrics">
