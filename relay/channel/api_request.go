@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
 	rootconstant "github.com/QuantumNous/new-api/constant"
@@ -19,10 +18,8 @@ import (
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -489,91 +486,6 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	return targetConn, nil
 }
 
-func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.CancelFunc {
-	pingerCtx, stopPinger := context.WithCancel(context.Background())
-
-	gopool.Go(func() {
-		defer func() {
-			// 增加panic恢复处理
-			if r := recover(); r != nil {
-				logger.LogDebug(c, "SSE ping goroutine panic recovered: %v", r)
-			}
-			logger.LogDebug(c, "SSE ping goroutine stopped")
-		}()
-
-		if pingInterval <= 0 {
-			pingInterval = helper.DefaultPingInterval
-		}
-
-		ticker := time.NewTicker(pingInterval)
-		// 确保在任何情况下都清理ticker
-		defer func() {
-			ticker.Stop()
-			logger.LogDebug(c, "SSE ping ticker stopped")
-		}()
-
-		var pingMutex sync.Mutex
-		logger.LogDebug(c, "SSE ping goroutine started")
-
-		// 增加超时控制，防止goroutine长时间运行
-		maxPingDuration := 120 * time.Minute // 最大ping持续时间
-		pingTimeout := time.NewTimer(maxPingDuration)
-		defer pingTimeout.Stop()
-
-		for {
-			select {
-			// 发送 ping 数据
-			case <-ticker.C:
-				if err := sendPingData(c, &pingMutex); err != nil {
-					logger.LogDebug(c, "SSE ping error, stopping goroutine: %s", err.Error())
-					return
-				}
-			// 收到退出信号
-			case <-pingerCtx.Done():
-				return
-			// request 结束
-			case <-c.Request.Context().Done():
-				return
-			// 超时保护，防止goroutine无限运行
-			case <-pingTimeout.C:
-				logger.LogDebug(c, "SSE ping goroutine timeout, stopping")
-				return
-			}
-		}
-	})
-
-	return stopPinger
-}
-
-func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
-	// 增加超时控制，防止锁死等待
-	done := make(chan error, 1)
-	go func() {
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		err := helper.PingData(c)
-		if err != nil {
-			logger.LogError(c, "SSE ping error: "+err.Error())
-			done <- err
-			return
-		}
-
-		logger.LogDebug(c, "SSE ping data sent")
-		done <- nil
-	}()
-
-	// 设置发送ping数据的超时时间
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(10 * time.Second):
-		return errors.New("SSE ping data send timeout")
-	case <-c.Request.Context().Done():
-		return errors.New("request context cancelled during ping")
-	}
-}
-
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequestWithClient(c, req, info, nil)
 }
@@ -595,24 +507,6 @@ func doRequestWithClient(c *gin.Context, req *http.Request, info *common.RelayIn
 	}
 	client = clientForRelayRequest(client, req, info)
 
-	var stopPinger context.CancelFunc
-	if info.IsStream {
-		helper.SetEventStreamHeaders(c)
-		// 处理流式请求的 ping 保活
-		generalSettings := operation_setting.GetGeneralSetting()
-		if generalSettings.PingIntervalEnabled && !info.DisablePing {
-			pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
-			stopPinger = startPingKeepAlive(c, pingInterval)
-			// 使用defer确保在任何情况下都能停止ping goroutine
-			defer func() {
-				if stopPinger != nil {
-					stopPinger()
-					logger.LogDebug(c, "SSE ping goroutine stopped by defer")
-				}
-			}()
-		}
-	}
-
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
@@ -620,6 +514,16 @@ func doRequestWithClient(c *gin.Context, req *http.Request, info *common.RelayIn
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+
+	// Do not touch the downstream writer until the upstream status is known.
+	// In particular, an SSE keep-alive or header write before client.Do returns
+	// commits HTTP 200 and hides upstream 4xx errors. Stream handlers set the
+	// same headers and own post-status ping lifecycle when they begin consuming
+	// a successful response; this fallback preserves them for custom handlers
+	// without committing errors.
+	if info.IsStream && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		helper.SetEventStreamHeaders(c)
 	}
 
 	upID := resp.Header.Get("X-Request-Id")

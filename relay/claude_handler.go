@@ -112,6 +112,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+	if thinkingErr := validateResolvedClaudeThinking(info, request); thinkingErr != nil {
+		return thinkingErr
+	}
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
@@ -268,4 +271,57 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+// validateResolvedClaudeThinking protects model-specific Claude semantics after
+// model mapping has been applied. Validating only the client-supplied model
+// name would miss aliases that resolve to the same upstream model, while
+// validating before routing would incorrectly turn a capability rule into a
+// global parser rule.
+func validateResolvedClaudeThinking(info *relaycommon.RelayInfo, request *dto.ClaudeRequest) *types.NewAPIError {
+	if info == nil || request == nil || request.Thinking == nil {
+		return nil
+	}
+
+	model := ""
+	if info.ChannelMeta != nil {
+		model = normalizeResolvedClaudeModelName(info.UpstreamModelName)
+	}
+	if model == "" {
+		model = normalizeResolvedClaudeModelName(request.Model)
+	}
+	if model == "" {
+		model = normalizeResolvedClaudeModelName(info.OriginModelName)
+	}
+	if model != "claude-fable-5" {
+		return nil
+	}
+
+	thinkingType := strings.ToLower(strings.TrimSpace(request.Thinking.Type))
+	if thinkingType != "enabled" && thinkingType != "disabled" {
+		return nil
+	}
+
+	message := fmt.Sprintf("\"thinking.type.%s\" is not supported for this model", thinkingType)
+	if thinkingType == "enabled" {
+		message += ". Use \"thinking.type.adaptive\" and \"output_config.effort\" to control thinking behavior."
+	} else {
+		message += ". Thinking defaults to adaptive mode when not specified; use \"thinking.type.enabled\" with \"budget_tokens\" for extended thinking."
+	}
+
+	return types.WithClaudeError(types.ClaudeError{
+		Type:    "invalid_request_error",
+		Message: message,
+	}, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+}
+
+func normalizeResolvedClaudeModelName(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if slash := strings.LastIndex(model, "/"); slash >= 0 {
+		model = model[slash+1:]
+	}
+	if colon := strings.IndexByte(model, ':'); colon >= 0 {
+		model = model[:colon]
+	}
+	return strings.TrimSuffix(model, "-thinking")
 }
