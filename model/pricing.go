@@ -42,6 +42,7 @@ type Pricing struct {
 	AvailabilityDetectedAt int64                       `json:"availability_detected_at,omitempty"`
 	AvailabilityCheckedAt  int64                       `json:"availability_checked_at,omitempty"`
 	DirectoryMetadata      *ModelDirectoryMetadataView `json:"directory_metadata,omitempty" gorm:"-"`
+	WebsiteFeaturedConfig  *WebsiteFeaturedModelConfig `json:"featured_config,omitempty" gorm:"-"`
 }
 
 type PricingVendor struct {

@@ -30,6 +30,33 @@ func TestNormalizeWebsiteFeaturedModelNamesRejectsDuplicatesAndEmptyNames(t *tes
 	require.Error(t, err)
 }
 
+func TestNormalizeWebsiteFeaturedModelItemsTrimsPresentationAndValidatesImages(t *testing.T) {
+	items, err := normalizeWebsiteFeaturedModelItems(websiteFeaturedModelRequest{
+		Items: []websiteFeaturedModelRequestItem{{
+			ModelName:               " gpt-5.5 ",
+			DisplayName:             " Launch ",
+			Description:             " Copy ",
+			Tags:                    " Coding, Agents ",
+			BackgroundImageURL:      " https://cdn.example/banner.png ",
+			FallbackBackgroundImage: " /assets/fallback.png ",
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, model.WebsiteFeaturedModelInput{
+		ModelName:               "gpt-5.5",
+		DisplayName:             "Launch",
+		Description:             "Copy",
+		Tags:                    "Coding, Agents",
+		BackgroundImageURL:      "https://cdn.example/banner.png",
+		FallbackBackgroundImage: "/assets/fallback.png",
+	}, items[0])
+
+	_, err = normalizeWebsiteFeaturedModelItems(websiteFeaturedModelRequest{
+		Items: []websiteFeaturedModelRequestItem{{ModelName: "gpt-5.5", BackgroundImageURL: "javascript:alert(1)"}},
+	})
+	require.Error(t, err)
+}
+
 func pricingModelNames(rows []model.Pricing) []string {
 	names := make([]string, 0, len(rows))
 	for _, row := range rows {

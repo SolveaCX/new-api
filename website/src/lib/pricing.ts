@@ -59,6 +59,14 @@ export type PricingModel = {
   availability_detected_at?: number;
   availability_checked_at?: number;
   directory_metadata?: ModelDirectoryMetadata;
+  featured_config?: {
+    display_name?: string;
+    description?: string;
+    tags?: string;
+    background_image_url?: string;
+    background_image?: string;
+    fallback_background_image?: string;
+  };
 };
 
 export type DisplayPricingUnit = "per_second" | "request" | "token" | "tiered_expr";

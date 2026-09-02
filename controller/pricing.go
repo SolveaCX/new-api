@@ -294,6 +294,7 @@ func buildWebsitePricingPayloadDefault() gin.H {
 	usableGroup := service.GetUserUsableGroups("")
 	filteredPricing := filterHiddenPricingModels(filterPricingByUsableGroups(pricing, usableGroup))
 	filteredPricing = applyWebsiteFeaturedOrder(filteredPricing, getWebsiteFeaturedModelNames())
+	filteredPricing = attachWebsiteFeaturedConfig(filteredPricing)
 	filteredPricing = attachModelDirectoryMetadata(filteredPricing)
 	groupRatio := map[string]float64{}
 	for group, ratio := range ratio_setting.GetGroupRatioCopy() {
@@ -444,6 +445,7 @@ func buildWebsitePublicGroupPricingPayload(
 	usableGroup := map[string]string{group: description}
 	visiblePricing := filterHiddenPricingModels(filterPricingByUsableGroups(pricing, usableGroup))
 	visiblePricing = applyWebsiteFeaturedOrder(visiblePricing, getWebsiteFeaturedModelNames())
+	visiblePricing = attachWebsiteFeaturedConfig(visiblePricing)
 	visiblePricing = attachModelDirectoryMetadata(visiblePricing)
 
 	return gin.H{

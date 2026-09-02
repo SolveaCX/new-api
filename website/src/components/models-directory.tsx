@@ -127,7 +127,7 @@ export function ModelsDirectory(props: Props) {
     () => buildFilterGroups(props.locale, finalPriced.map((row) => row.directoryMetadata)),
     [props.locale, finalPriced]
   );
-  const featured = useMemo(() => buildFeaturedSlides(props.models.map((model) => model.model_name)), [props.models]);
+  const featured = useMemo(() => buildFeaturedSlides(props.models), [props.models]);
   const canReset = hasActiveFilters(filters) || sort !== "rank";
 
   // Filter state is mirrored into the URL so reloads and shared links restore

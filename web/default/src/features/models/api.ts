@@ -36,6 +36,7 @@ import type {
   DeploymentSettingsResponse,
   ListDeploymentsResponse,
   WebsiteFeaturedModelsResponse,
+  WebsiteFeaturedModel,
 } from './types'
 
 // ============================================================================
@@ -120,13 +121,31 @@ export async function getWebsiteFeaturedModels(): Promise<WebsiteFeaturedModelsR
 }
 
 /**
- * Replace the complete public website featured model order.
+ * Replace the complete public website featured model order and banner config.
  */
 export async function updateWebsiteFeaturedModels(
-  modelNames: string[]
-): Promise<{ success: boolean; message?: string; data?: { model_names: string[] } }> {
+  items: string[] | WebsiteFeaturedModel[]
+): Promise<{
+  success: boolean
+  message?: string
+  data?: { model_names: string[] }
+}> {
+  const payload =
+    items.length > 0 && typeof items[0] !== 'string'
+      ? {
+          items: (items as WebsiteFeaturedModel[]).map((item) => ({
+            model_name: item.model_name,
+            display_name: item.display_name ?? '',
+            description: item.description ?? '',
+            tags: item.tags ?? '',
+            background_image_url: item.background_image_url ?? '',
+            background_image: item.background_image ?? '',
+            fallback_background_image: item.fallback_background_image ?? '',
+          })),
+        }
+      : { model_names: items as string[] }
   const res = await api.put('/api/models/website-featured', {
-    model_names: modelNames,
+    ...payload,
   })
   return res.data
 }

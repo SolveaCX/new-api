@@ -168,6 +168,12 @@ export interface WebsiteFeaturedModel {
   model_name: string
   sort_order: number
   vendor_name?: string
+  tags?: string
+  display_name?: string
+  description?: string
+  background_image_url?: string
+  background_image?: string
+  fallback_background_image?: string
   available: boolean
 }
 
@@ -178,6 +184,7 @@ export interface WebsiteFeaturedCandidate {
   model_name: string
   vendor_name?: string
   icon?: string
+  tags?: string
   available: boolean
 }
 
