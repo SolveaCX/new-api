@@ -331,6 +331,11 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
   // they need instead of pushing the model table below the fold.
   return [
     {
+      key: "series",
+      label: copy.groupSeries,
+      options: seriesForModels(metadataRows).map((value) => ({ value, label: value })),
+    },
+    {
       key: "modalities",
       label: copy.groupModalities,
       options: MODALITIES.map((value) => ({ value, label: MODALITY_LABELS[locale][value] })),
@@ -367,11 +372,6 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
       options: providersForModels(metadataRows).map((value) => ({ value, label: value })),
     },
     {
-      key: "series",
-      label: copy.groupSeries,
-      options: seriesForModels(metadataRows).map((value) => ({ value, label: value })),
-    },
-    {
       key: "categories",
       label: copy.groupCategories,
       options: categoriesForModels(metadataRows).map((value) => ({ value, label: categoryLabel(locale, value) })),
@@ -380,14 +380,6 @@ function buildFilterGroups(locale: Locale, metadataRows: Array<HomePricedModel["
       key: "age",
       label: copy.groupAge,
       options: AGE_BANDS.map((value) => ({ value, label: AGE_BAND_LABELS[locale][value] })),
-    },
-    {
-      key: "distillable",
-      label: copy.groupDistillable,
-      options: [
-        { value: true, label: copy.yes },
-        { value: false, label: copy.no },
-      ],
     },
   ];
 }
