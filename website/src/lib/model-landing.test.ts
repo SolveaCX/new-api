@@ -15,6 +15,7 @@ import {
   getModelLandingConfig,
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
+  getModelLandingConfigs,
   buildModelLandingMetadata,
   getModelLandingPathnames,
   getPriorityModelLandingPathnames,
@@ -626,6 +627,23 @@ describe("model landing configuration", () => {
         expect(localizedText).not.toContain("core capabilities");
         expect(localizedText).not.toContain("What is ");
         expect(localizedText).not.toContain("The model is listed");
+      }
+    }
+  });
+
+  test("localizes every configured model detail shell in every non-English locale", () => {
+    for (const config of getModelLandingConfigs()) {
+      for (const locale of LOCALES.filter((item) => item !== "en")) {
+        const localized = getLocalizedModelLandingConfig(config, locale);
+        if (config.landingContent?.hero?.title) {
+          expect(localized.landingContent?.hero?.title).not.toBe(config.landingContent.hero.title);
+        }
+        if (config.landingContent?.capabilitiesTitle) {
+          expect(localized.landingContent?.capabilitiesTitle).not.toBe(config.landingContent.capabilitiesTitle);
+        }
+        if (config.landingContent?.faq?.[0]?.question) {
+          expect(localized.landingContent?.faq?.[0]?.question).not.toBe(config.landingContent.faq[0].question);
+        }
       }
     }
   });

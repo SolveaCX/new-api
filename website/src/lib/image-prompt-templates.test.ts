@@ -225,7 +225,7 @@ describe("image prompt templates", () => {
     expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
   });
 
-  test("keeps prompt bodies in English on every locale page", () => {
+  test("localizes prompt bodies on every locale page", () => {
     const modelIds = [
       "gpt-image-2",
       "gemini-2.5-flash-image",
@@ -249,15 +249,20 @@ describe("image prompt templates", () => {
         expect(starter).toBeDefined();
         expect(cards.every((card) => card.label.length > 0 && card.prompt.length > 80)).toBe(true);
         expect(starter?.prompt.length).toBeGreaterThan(80);
-        expect(cards.map((card) => card.prompt)).toEqual(englishCards.map((card) => card.prompt));
-        expect(starter?.prompt).toBe(englishStarter?.prompt);
+        if (locale === "en") {
+          expect(cards.map((card) => card.prompt)).toEqual(englishCards.map((card) => card.prompt));
+          expect(starter?.prompt).toBe(englishStarter?.prompt);
+        } else {
+          expect(cards.map((card) => card.prompt)).not.toEqual(englishCards.map((card) => card.prompt));
+          expect(starter?.prompt).not.toBe(englishStarter?.prompt);
+        }
       }
     }
   });
 
   test("localizes the generic image starter when a catalog page has no curated example", () => {
     const source = "Create a high-quality product image with catalog-model: clean composition, precise lighting, strong subject focus, and realistic detail.";
-    expect(localizeImagePromptText(source, "zh")).toBe(source);
+    expect(localizeImagePromptText(source, "zh")).toBe("使用 catalog-model 制作高质量产品图片：构图简洁、光线精准、主体突出，并保留真实细节。");
     expect(localizeImagePromptText(source, "en")).toBe(source);
   });
 });

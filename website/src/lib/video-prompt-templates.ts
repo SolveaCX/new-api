@@ -1142,10 +1142,12 @@ export function getVideoPromptTemplates(modelId: string, locale: Locale = "en"):
     const professionId = template.professionId;
     const video = videos[professionId];
     const label = localizedCopy.labels[professionId] ?? legacyCopy?.labels[template.id] ?? template.label;
-    // Prompt bodies are canonical English and are keyed to the reviewed
-    // model clip.  Localized maps remain available for legacy serialization,
-    // but must never replace the copy displayed on a model page.
-    const prompt = modelPrompts?.[professionId] ?? template.prompt;
+    // English keeps the model-specific reviewed scene brief.  Translated
+    // routes use the complete locale prompt so the visible card and its
+    // Playground starter never fall back to an English paragraph.
+    const prompt = locale === "en"
+      ? (modelPrompts?.[professionId] ?? template.prompt)
+      : (localizedCopy.prompts[professionId] ?? template.prompt);
     if (!video || !label || !prompt) return null;
     return {
       ...template,
@@ -1162,15 +1164,19 @@ export function getVideoPromptTemplates(modelId: string, locale: Locale = "en"):
 }
 
 /** Localize a shared video brief when a configured page stores its source text. */
-export function localizeVideoPromptText(prompt: string, _locale: Locale): string {
-  // Reviewed prompts are already canonical English.  Return them unchanged
-  // so a non-English route cannot substitute a translated or generic brief.
+export function localizeVideoPromptText(prompt: string, locale: Locale): string {
   for (const promptSet of Object.values(VIDEO_MODEL_ENGLISH_PROMPTS)) {
-    if (Object.values(promptSet).some((candidate) => candidate === prompt)) return prompt;
+    const entry = Object.entries(promptSet).find(([, candidate]) => candidate === prompt);
+    if (entry) {
+      return VIDEO_PROFESSION_LOCALE_COPY[locale]?.prompts[entry[0] as VideoProfessionId]
+        ?? prompt;
+    }
   }
 
   const baseTemplate = VIDEO_PROMPT_TEMPLATES.find((template) => prompt.startsWith(template.prompt));
-  if (baseTemplate) return baseTemplate.prompt;
+  if (baseTemplate) {
+    return VIDEO_PROFESSION_LOCALE_COPY[locale]?.prompts[baseTemplate.professionId] ?? baseTemplate.prompt;
+  }
 
   // Legacy configured cards may contain one of the old localized briefs. Map
   // those serialized values back to the canonical English base prompt.
@@ -1178,24 +1184,41 @@ export function localizeVideoPromptText(prompt: string, _locale: Locale): string
     const entry = Object.entries(copy.prompts).find(([, value]) => value && prompt.startsWith(value));
     if (entry) {
       const template = VIDEO_PROMPT_TEMPLATES.find((candidate) => candidate.id === entry[0]);
-      if (template) return template.prompt;
+      if (template) {
+        return VIDEO_PROFESSION_LOCALE_COPY[locale]?.prompts[template.professionId] ?? template.prompt;
+      }
     }
   }
 
   const generic = prompt.match(/^Create a short product video with (.+?): *clear subject motion, realistic lighting, stable camera, and production-ready framing\.?$/i);
-  return generic
-    ? `Create a short video with ${generic[1].trim()}: clear subject motion, realistic lighting, stable camera, and production-ready framing.`
-    : prompt;
+  if (!generic) return prompt;
+  const model = generic[1].trim();
+  const starterCopy: Record<Locale, string> = {
+    en: `Create a short video with ${model}: clear subject motion, realistic lighting, stable camera, and production-ready framing.`,
+    zh: `使用 ${model} 制作短视频：主体运动清晰、光线真实、镜头稳定，画面构图达到可制作标准。`,
+    es: `Crea un vídeo corto con ${model}: movimiento claro del sujeto, iluminación realista, cámara estable y encuadre listo para producción.`,
+    fr: `Créez une courte vidéo avec ${model} : mouvement clair du sujet, lumière réaliste, caméra stable et cadrage prêt pour la production.`,
+    pt: `Crie um vídeo curto com ${model}: movimento claro do assunto, iluminação realista, câmera estável e enquadramento pronto para produção.`,
+    ru: `Создайте короткое видео с помощью ${model}: ясное движение объекта, реалистичный свет, стабильная камера и готовая к производству композиция.`,
+    ja: `${model}で短い動画を作成：被写体の動きを明確にし、自然な照明と安定したカメラ、制作向けの構図にする。`,
+    vi: `Tạo video ngắn bằng ${model}: chuyển động chủ thể rõ ràng, ánh sáng chân thực, máy quay ổn định và khung hình sẵn sàng sản xuất.`,
+    de: `Erstelle mit ${model} ein kurzes Video: klare Subjektbewegung, realistisches Licht, stabile Kamera und produktionsfertiger Bildausschnitt.`,
+    id: `Buat video singkat dengan ${model}: gerakan subjek jelas, pencahayaan realistis, kamera stabil, dan framing siap produksi.`,
+  };
+  return starterCopy[locale];
 }
 
 /**
  * Locale-aware starter for video Playground forms. The model id remains a
  * technical literal; the surrounding instruction follows the selected locale.
  */
-export function getVideoPlaygroundPrompt(modelId: string, _locale: Locale = "en", displayName = modelId): string {
+export function getVideoPlaygroundPrompt(modelId: string, locale: Locale = "en", displayName = modelId): string {
   // Keep the Playground input synchronized with the first reviewed gallery
-  // card.  This is intentionally English on every locale route.
-  const reviewedStarter = getVideoPromptTemplates(modelId, "en")[0]?.prompt;
+  // card in the selected locale.
+  const reviewedStarter = getVideoPromptTemplates(modelId, locale)[0]?.prompt;
   if (reviewedStarter) return reviewedStarter;
-  return `Create a short video with ${displayName}: clear subject motion, realistic lighting, stable camera, and production-ready framing.`;
+  return localizeVideoPromptText(
+    `Create a short product video with ${displayName}: clear subject motion, realistic lighting, stable camera, and production-ready framing.`,
+    locale,
+  );
 }

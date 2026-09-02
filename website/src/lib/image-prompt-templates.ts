@@ -406,7 +406,7 @@ const IMAGE_PROMPT_BASE_BY_ID: ImagePromptSet = {
  * Fact-based prompts for each reviewed model poster. The six keys intentionally
  * match the six poster lanes above; keeping this as one model-keyed registry
  * prevents a model page from pairing a real output with a generic prompt from
- * another model. Prompt bodies stay English on every locale page.
+ * another model. Translated routes use the locale-specific prompt bodies.
  */
 const IMAGE_MODEL_ENGLISH_PROMPTS: Record<string, ImagePromptSet> = {
   "gpt-image-2": IMAGE_PROMPT_BASE_BY_ID,
@@ -525,9 +525,8 @@ const IMAGE_MODEL_ENGLISH_PROMPTS: Record<string, ImagePromptSet> = {
 };
 
 /**
- * Prompt-card labels remain localized for the surrounding card UI.  Prompt
- * bodies are deliberately not localized: the reviewed prompts are canonical
- * English requests and every locale page should expose the same copy.
+ * Prompt-card labels and bodies are localized for translated model-detail
+ * routes. English retains the reviewed model-specific scene briefs.
  */
 const IMAGE_PROMPT_LOCALE_COPY: Partial<Record<Locale, LocalizedImagePromptCopy>> = {
   zh: {
@@ -849,10 +848,11 @@ export function getImagePromptTemplates(modelId?: string, locale: Locale = "en")
   return IMAGE_PROMPT_TEMPLATES.map((template, index) => ({
     ...template,
     label: copy?.labels[template.id] ?? template.label,
-    // Keep prompt bodies canonical English on every locale page.  `copy`
-    // still supplies translated labels, but translated legacy prompt bodies
-    // are intentionally ignored for reviewed cards.
-    prompt: promptSet?.[template.id as ImagePromptSceneId] ?? template.prompt,
+    // English keeps model-specific reviewed scene briefs. Translated routes
+    // use the complete locale prompt so visible prompt cards stay in-language.
+    prompt: locale === "en"
+      ? (promptSet?.[template.id as ImagePromptSceneId] ?? template.prompt)
+      : (copy?.prompts?.[template.id as ImagePromptSceneId] ?? template.prompt),
     poster: posters?.[index] ?? template.poster,
     tags: [...template.tags],
   }));
@@ -926,10 +926,12 @@ export function getImagePlaygroundExample(modelId = "", locale: Locale = "en"): 
   );
   if (resolvedId && IMAGE_PLAYGROUND_EXAMPLES[resolvedId]) {
     const example = IMAGE_PLAYGROUND_EXAMPLES[resolvedId];
-    // Playground prompt bodies follow the same English-only contract as the
-    // prompt-library cards.  Keep the locale argument for API compatibility;
-    // it still allows callers to request localized labels elsewhere.
-    return { ...example };
+    // Playground prompt bodies follow the same locale contract as the
+    // prompt-library cards.
+    const localizedPrompt = locale === "en"
+      ? example.prompt
+      : IMAGE_PROMPT_LOCALE_COPY[locale]?.prompts["product-hero"] ?? localizeImagePromptText(example.prompt, locale);
+    return { ...example, prompt: localizedPrompt };
   }
 
   return undefined;
@@ -944,23 +946,43 @@ export function getImagePromptTemplate(templateId: string, locale: Locale = "en"
  * six-card image workflow. Unknown strings are returned untouched because
  * they may be user-authored prompts or provider-specific technical examples.
  */
-export function localizeImagePromptText(prompt: string, _locale: Locale): string {
+export function localizeImagePromptText(prompt: string, locale: Locale): string {
+  for (const promptSet of Object.values(IMAGE_MODEL_ENGLISH_PROMPTS)) {
+    const entry = Object.entries(promptSet).find(([, value]) => value === prompt);
+    if (entry) {
+      return getImagePromptTemplate(entry[0], locale)?.prompt ?? prompt;
+    }
+  }
+
   const template = IMAGE_PROMPT_TEMPLATES.find((candidate) => candidate.prompt === prompt);
-  if (template) return getImagePromptTemplate(template.id, "en")?.prompt ?? prompt;
+  if (template) return getImagePromptTemplate(template.id, locale)?.prompt ?? prompt;
 
   // Legacy serialized cards can still contain one of the former localized
-  // prompt bodies. Resolve those values to the canonical English scene.
+  // prompt bodies. Resolve those values to the selected locale.
   for (const copy of Object.values(IMAGE_PROMPT_LOCALE_COPY)) {
     const entry = Object.entries(copy.prompts).find(([, value]) => value && prompt.startsWith(value));
     if (entry) {
       const canonical = IMAGE_PROMPT_TEMPLATES.find((candidate) => candidate.id === entry[0]);
-      if (canonical) return canonical.prompt;
+      if (canonical) return getImagePromptTemplate(canonical.id, locale)?.prompt ?? canonical.prompt;
     }
   }
 
   const generic = prompt.match(/^Create a (?:high-quality|premium) product image with (.+?): *(.*)\.?$/i);
-  // Generic configured prompts are authored in English; do not replace them
-  // with a locale-specific variant on translated model routes.
-  if (generic) return prompt;
+  if (generic) {
+    const model = generic[1].trim();
+    const starterCopy: Record<Locale, string> = {
+      en: `Create a high-quality product image with ${model}: clean composition, precise lighting, strong subject focus, and realistic detail.`,
+      zh: `使用 ${model} 制作高质量产品图片：构图简洁、光线精准、主体突出，并保留真实细节。`,
+      es: `Crea una imagen de producto de alta calidad con ${model}: composición limpia, iluminación precisa, sujeto destacado y detalle realista.`,
+      fr: `Créez une image produit de haute qualité avec ${model} : composition nette, éclairage précis, sujet bien défini et détails réalistes.`,
+      pt: `Crie uma imagem de produto de alta qualidade com ${model}: composição limpa, iluminação precisa, foco forte no produto e detalhes realistas.`,
+      ru: `Создайте качественное изображение продукта с помощью ${model}: чистая композиция, точный свет, акцент на объекте и реалистичные детали.`,
+      ja: `${model}で高品質な商品画像を作成：すっきりした構図、正確な照明、明確な主役、リアルなディテールにする。`,
+      vi: `Tạo hình ảnh sản phẩm chất lượng cao bằng ${model}: bố cục gọn, ánh sáng chính xác, chủ thể nổi bật và chi tiết chân thực.`,
+      de: `Erstelle mit ${model} ein hochwertiges Produktbild: klare Komposition, präzise Beleuchtung, starker Fokus auf das Motiv und realistische Details.`,
+      id: `Buat gambar produk berkualitas tinggi dengan ${model}: komposisi bersih, pencahayaan presisi, fokus subjek kuat, dan detail realistis.`,
+    };
+    return starterCopy[locale];
+  }
   return prompt;
 }

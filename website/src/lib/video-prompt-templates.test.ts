@@ -186,7 +186,7 @@ describe("video profession prompt templates", () => {
     expect(getVideoPromptTemplates("unknown-video-model")).toEqual([]);
   });
 
-  test("keeps prompt bodies in English on every locale page and syncs the starter", () => {
+  test("localizes prompt bodies and the starter on every locale page", () => {
     for (const modelId of VIDEO_PROFESSION_MODEL_IDS) {
       const englishCards = getVideoPromptTemplates(modelId, "en");
       const englishStarter = getVideoPlaygroundPrompt(modelId, "en", modelId);
@@ -198,15 +198,20 @@ describe("video profession prompt templates", () => {
         expect(cards.every((card) => card.label.length > 0 && card.prompt.length > 100)).toBe(true);
         expect(cards.map((card) => card.professionId)).toEqual([...VIDEO_PROFESSION_IDS]);
         expect(starter.length).toBeGreaterThan(20);
-        expect(cards.map((card) => card.prompt)).toEqual(englishCards.map((card) => card.prompt));
-        expect(starter).toBe(englishStarter);
+        if (locale === "en") {
+          expect(cards.map((card) => card.prompt)).toEqual(englishCards.map((card) => card.prompt));
+          expect(starter).toBe(englishStarter);
+        } else {
+          expect(cards.map((card) => card.prompt)).not.toEqual(englishCards.map((card) => card.prompt));
+          expect(starter).not.toBe(englishStarter);
+        }
       }
     }
   });
 
-  test("keeps a generic configured video starter in English", () => {
+  test("localizes a generic configured video starter", () => {
     const source = "Create a short product video with catalog-model: clear subject motion, realistic lighting, stable camera, and production-ready framing.";
-    expect(localizeVideoPromptText(source, "zh")).toBe("Create a short video with catalog-model: clear subject motion, realistic lighting, stable camera, and production-ready framing.");
+    expect(localizeVideoPromptText(source, "zh")).toBe("使用 catalog-model 制作短视频：主体运动清晰、光线真实、镜头稳定，画面构图达到可制作标准。");
     expect(localizeVideoPromptText(source, "en")).toBe("Create a short video with catalog-model: clear subject motion, realistic lighting, stable camera, and production-ready framing.");
   });
 });
