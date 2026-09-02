@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"regexp"
 	"strings"
 
@@ -41,15 +40,6 @@ func SeedLegacyModelTags() error {
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var marker Option
-		err := tx.Where(commonKeyCol+" = ?", modelTagDefaultsSeedKey).First(&marker).Error
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-
 		var models []Model
 		if err := tx.Where("tags IS NULL OR tags = ?", "").Find(&models).Error; err != nil {
 			return err
