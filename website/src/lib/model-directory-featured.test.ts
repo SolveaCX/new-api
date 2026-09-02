@@ -7,7 +7,7 @@ describe("model directory featured carousel", () => {
 
     expect(first).toMatchObject({
       modelName: "claude-fable-5.1",
-      displayName: "Fable 5.1",
+      displayName: "Claude Fable 5.1",
       image: "/assets/models-featured/claude-fable-5.1.png",
       tags: {
         en: ["Coding", "Agents", "Computer Use"],

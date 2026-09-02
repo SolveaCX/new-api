@@ -26,7 +26,7 @@ export type FeaturedSlide = {
 export const FEATURED_SLIDES: FeaturedSlide[] = [
   {
     modelName: "claude-fable-5.1",
-    displayName: "Fable 5.1",
+    displayName: "Claude Fable 5.1",
     vendor: "Anthropic",
     image: "/assets/models-featured/claude-fable-5.1.png",
     tags: {
