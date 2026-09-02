@@ -265,6 +265,10 @@ export function filterPricingModels(models: PricingModel[], search: PricingSearc
 
 export function sortPricingModelsBySeries(models: PricingModel[]): PricingModel[] {
   return [...models].sort((a, b) => {
+    const aHasTags = parseTags(a.tags).length > 0;
+    const bHasTags = parseTags(b.tags).length > 0;
+    if (aHasTags !== bHasTags) return aHasTags ? -1 : 1;
+
     const aPromotion = modelPromotionPriority(a.model_name);
     const bPromotion = modelPromotionPriority(b.model_name);
     if (aPromotion !== bPromotion) return aPromotion - bPromotion;

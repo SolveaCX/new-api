@@ -41,6 +41,12 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.outputFilterUsd).toBeCloseTo(1.44);
   });
 
+  test("carries console-configured tags into directory rows", () => {
+    const [row] = buildRowsForModels([{ ...PLG_MODEL, tags: "Coding, Agents" }], VENDORS, PLG_GROUP_RATIO);
+
+    expect(row.tags).toEqual(["Coding", "Agents"]);
+  });
+
   test("falls back to the official price when no group ratio resolves", () => {
     const [row] = buildRowsForModels([{ ...PLG_MODEL, enable_groups: [] }], VENDORS, {});
 
