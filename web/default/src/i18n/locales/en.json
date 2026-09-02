@@ -4698,6 +4698,7 @@
     "Top up ${{amount}} → get ${{total}}": "Top up ${{amount}} → get ${{total}}",
     "Top up $1000 get $500": "Top up $1000 get $500",
     "Top up $200 get $100": "Top up $200 get $100",
+    "Top up balance": "Top up balance",
     "Top up balance and view billing history.": "Top up balance and view billing history.",
     "Top Users": "Top Users",
     "Top vendors": "Top vendors",

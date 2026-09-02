@@ -4698,6 +4698,7 @@
     "Top up ${{amount}} → get ${{total}}": "充 ${{amount}} → 到账 ${{total}}",
     "Top up $1000 get $500": "充 $1000 送 $500",
     "Top up $200 get $100": "充 $200 送 $100",
+    "Top up balance": "充值余额",
     "Top up balance and view billing history.": "充值余额并查看账单历史。",
     "Top Users": "热门用户",
     "Top vendors": "热门厂商",

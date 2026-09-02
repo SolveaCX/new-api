@@ -2487,6 +2487,31 @@ export function getLocalizedModelLandingSeo(
  */
 export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Locale): ModelConfig {
   if (locale === "en") return config;
+
+  // Live catalog URLs are materialized from a family config and receive a
+  // generated editorial block in `modelLandingConfigForModel`.  Seedance is
+  // also a curated family, so it used to enter the Seedance-specific branch
+  // below first; that branch only knows the hand-authored Seedance keys and
+  // therefore left generated titles, capability copy, and FAQs in English.
+  // Detect generated content before family-specific handling so every model
+  // (including seedance-2.0/seedance-2.5 aliases) uses the complete generic
+  // locale template when its page is backed by live catalog data.
+  const isGeneratedGeneric = config.landingContent?.faq?.some(
+    (item) => item.question === `What is ${config.displayName} used for?`,
+  );
+  if (isGeneratedGeneric && config.landingContent) {
+    return localizeModelConfigFacts({
+      ...config,
+      seo: getLocalizedModelLandingSeo(config, locale),
+      landingContent: localizeGenericLandingContent(
+        config.landingContent,
+        locale,
+        config.displayName,
+        config.generator?.kind,
+      ),
+    }, locale);
+  }
+
   const localized = getPriorityModelCopy(config.modelId || config.slug, locale);
   if (!localized) {
     if (isSeedanceEditorialConfig(config)) {
@@ -2499,9 +2524,6 @@ export function getLocalizedModelLandingConfig(config: ModelConfig, locale: Loca
     // still need their config-level positioning, use-case, FAQ, pricing-row,
     // and Playground field labels localized even when their editorial block
     // is intentionally kept as the curated source object.
-    const isGeneratedGeneric = config.landingContent?.faq?.some(
-      (item) => item.question === `What is ${config.displayName} used for?`,
-    );
     const localizedSeo = getLocalizedModelLandingSeo(config, locale);
     const nextConfig = {
       ...config,
