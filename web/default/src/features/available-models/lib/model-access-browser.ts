@@ -24,7 +24,6 @@ import {
   getScopeModels,
   getUnavailableAccountModels,
   getUnavailableScopeModels,
-  isCallableModel,
   resolveCreateScope,
 } from './model-access'
 import { sortModelsByPromotion } from './model-promotions'
@@ -94,12 +93,25 @@ export function resolveModelAccessScope(
   return resolveCreateScope(access) ?? access.groups[0]?.id ?? null
 }
 
+function isAvailableCatalogModel(model: ModelAccessModel): boolean {
+  return (
+    model.availability_status === 'available' ||
+    model.availability_status === 'unknown'
+  )
+}
+
 export function getModelAccessScopeModels(
   access: UserModelAccess,
   scopeId?: string | null
 ): ModelAccessModel[] {
-  if (isFixedModelAccessView(access)) return getAccountModels(access)
-  return getScopeModels(access, scopeId)
+  const models = isFixedModelAccessView(access)
+    ? getAccountModels(access)
+    : getScopeModels(access, scopeId)
+
+  // The available-models catalog should only advertise models that can be
+  // selected right now. Legacy `unknown` records predate probing and remain
+  // visible for compatibility; explicit probe failures are hidden.
+  return models.filter(isAvailableCatalogModel)
 }
 
 export function getModelAccessUnavailableScopeModels(
@@ -116,7 +128,7 @@ export function getModelAccessScopeModelCounts(
   access: UserModelAccess
 ): Map<string, number> {
   const callableModelIds = new Set(
-    access.models.filter(isCallableModel).map((model) => model.id)
+    access.models.filter(isAvailableCatalogModel).map((model) => model.id)
   )
 
   return new Map(
@@ -266,7 +278,10 @@ function matchesVendor(
 export function normalizeModelAvailabilityStatus(
   status: ModelAccessModel['availability_status']
 ): ModelAvailabilityStatus {
-  return status === 'unknown' ? 'unknown_failure' : status
+  // Older API responses used `unknown` for models with no probe state. A
+  // missing probe is not evidence of an outage, so keep those models callable
+  // in the user-facing catalog. Actual probe failures retain their status.
+  return status === 'unknown' ? 'available' : status
 }
 
 export function filterModelAccessModels(
