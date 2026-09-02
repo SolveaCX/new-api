@@ -349,6 +349,9 @@ func modelHasVisibleBilling(modelName string, acceptUnpriced bool) bool {
 	if _, ok := ratio_setting.GetModelPrice(modelName, false); ok {
 		return true
 	}
+	if billing_setting.IsVideoModelConfigured(billing_setting.GetVideoPriceRules(), modelName) {
+		return true
+	}
 	_, ok, _ := ratio_setting.GetModelRatio(modelName)
 	return ok
 }
