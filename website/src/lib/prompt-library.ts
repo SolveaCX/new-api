@@ -1,6 +1,7 @@
 import { type Locale, withIdFallback } from "./locales";
 import { getImagePromptTemplates } from "./image-prompt-templates";
 import { getVideoPromptTemplateLocalFallbackPoster, getVideoPromptTemplates, VIDEO_PROFESSION_MODEL_IDS } from "./video-prompt-templates";
+import { SITE_ORIGIN } from "./origins";
 
 export type PromptArtifact =
   | {
@@ -1228,7 +1229,6 @@ const MODEL_DETAIL_IMAGE_IDS = [
   "nano-banana-pro-preview",
 ] as const;
 
-const MODEL_DETAIL_SOURCE_BASE = "https://flatkey.ai/models";
 const MODEL_DETAIL_CATALOG_DATE = "2026-09-02";
 
 function modelDetailSource(modelId: string): PromptSource {
@@ -1236,7 +1236,7 @@ function modelDetailSource(modelId: string): PromptSource {
     capturedAt: MODEL_DETAIL_CATALOG_DATE,
     label: "Flatkey model detail",
     platform: "Flatkey generated",
-    url: `${MODEL_DETAIL_SOURCE_BASE}/${modelId}`,
+    url: `${SITE_ORIGIN}/models/${modelId}`,
   };
 }
 
