@@ -27,6 +27,18 @@ import { LOCALES } from "./locales";
 import type { PricingModel } from "./pricing";
 
 describe("model landing configuration", () => {
+  test("keeps refreshed detail-shell labels translated for every locale", () => {
+    for (const locale of LOCALES) {
+      const getStarted = modelLandingCopy(locale, "Get started");
+      const cachePrice = modelLandingCopy(locale, "Cache /M");
+      expect(typeof getStarted).toBe("string");
+      expect(typeof cachePrice).toBe("string");
+      if (locale !== "en") {
+        expect(getStarted).not.toBe("Get started");
+      }
+    }
+  });
+
   test("builds live metadata for every catalog task type", () => {
     const cases: Array<[string, string[], string[]]> = [
       ["gpt-test", ["openai"], ["chat/completions"]],

@@ -124,12 +124,12 @@ describe("ModelLandingPage", () => {
     expect(url.searchParams.has("redirect")).toBe(false);
   });
 
-  test("routes the top Get API Key action to the console overview", () => {
+  test("routes the top Get started action to the console overview", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(hrefBeforeText(html, "Get API Key")).toBe(
+    expect(hrefBeforeText(html, "Get started")).toBe(
       "https://console.flatkey.ai/dashboard",
     );
   });
@@ -295,7 +295,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('href="/zh/models"');
     expect(html).toContain("返回模型列表");
     expect(html).toContain("在 Playground 打开");
-    expect(html).toContain("获取 API Key");
+    expect(html).toContain("开始使用");
     expect(html).toContain("https://console.flatkey.ai/playground");
     expect(html).toContain("model=MiniMax-H3");
   });
@@ -359,7 +359,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('"url":"https://flatkey.ai/zh/models/sonilo-video-to-music"');
   });
 
-  test("uses a local default cover when a catalog icon key is not a real CDN asset", () => {
+  test("uses a large model logo when a catalog icon key is not available", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage
         config={SONILO_VIDEO_TO_MUSIC_CONFIG}
@@ -398,8 +398,15 @@ describe("ModelLandingPage", () => {
     );
 
     const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
-    expect(relatedSection).toContain("ai-agent-poster.png");
-    expect(relatedSection).not.toContain("cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/ai.svg");
+    expect(relatedSection).toContain("related-card-logo-mark");
+    expect(relatedSection).toContain("related-card-logo-bare");
+    expect(relatedSection).toContain("related-card-brand");
+    expect(relatedSection).toContain("flatkey-lockup-light.svg");
+    expect(relatedSection).toContain('style="width:150px;height:150px');
+    expect(relatedSection).toContain('aria-label="Model"');
+    expect(relatedSection).not.toContain("related-arrow");
+    expect(relatedSection).not.toContain("ai-agent-poster.png");
+    expect(relatedSection).not.toContain("related-image");
   });
 
   test("renders GPT-series related model internal links on GPT model pages", () => {
@@ -422,11 +429,12 @@ describe("ModelLandingPage", () => {
     const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
     expect(relatedSection).toContain('class="model-section related"');
     expect(relatedSection).toContain('class="related-grid"');
-    expect(relatedSection).toContain("cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/openai.svg");
-    expect(relatedSection).not.toContain("related-card-top");
+    expect(relatedSection).toContain("/assets/logos/openai.svg");
+    expect(relatedSection).not.toContain("related-image");
+    expect(relatedSection).toContain("related-card-top");
   });
 
-  test("filters related models by modality and uses catalog CDN covers", () => {
+  test("filters related models by modality and uses the corresponding model logo", () => {
     const catalog: PricingModel[] = [
       {
         model_name: "seedance-2.5",
@@ -468,7 +476,9 @@ describe("ModelLandingPage", () => {
     const relatedSection = html.slice(html.indexOf('id="related"'), html.indexOf('id="faq"'));
 
     expect(relatedSection).toContain("kling-2.1");
-    expect(relatedSection).toContain("cdn.example.test");
+    expect(relatedSection).toContain("/assets/logos/kuaishou.svg");
+    expect(relatedSection).not.toContain("cdn.example.test");
+    expect(relatedSection).not.toContain("related-image");
     expect(relatedSection).not.toContain("gpt-5.5");
   });
 
@@ -561,6 +571,63 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("$0.83");
     expect(html).toContain("$1.25");
     expect(html).not.toContain('id="pricing"');
+  });
+
+  test("shows the live cache price in the model hero with the official price crossed out", () => {
+    const model: PricingModel = {
+      model_name: "gpt-5",
+      vendor_name: "OpenAI",
+      quota_type: 0,
+      model_ratio: 0.5,
+      completion_ratio: 2,
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 1, plg: 0.8 },
+          cache: { configured: 0.2, plg: 0.1 },
+          output: { configured: 2, plg: 1.6 },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[model]} allModels={[model]} />
+    );
+
+    expect(html).toContain('class="model-stat-label">Cache /M</div>');
+    expect(html).toContain("$0.1");
+    expect(html).toContain("<s>$0.2</s>");
+    expect(html).not.toContain("Promotional pricing");
+    expect(html).not.toContain("活动价格");
+    expect(html.indexOf('class="model-stat-reference">Reference price: <s>$0.2</s>'))
+      .toBeLessThan(html.indexOf('<div class="model-stat-value">$0.1</div>'));
+  });
+
+  test("places the official hero price before the Flatkey price", () => {
+    const model: PricingModel = {
+      model_name: "veo-3.1-generate-preview",
+      vendor_name: "Google",
+      quota_type: 1,
+      model_ratio: 0,
+      model_price: 0.4,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video"],
+      display_pricing: {
+        billing_kind: "request",
+        prices: { request: { configured: 0.4, plg: 0.32 } },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={getModelLandingConfigForPricingModel(model)}
+        locale="en"
+        liveModels={[model]}
+        allModels={[model]}
+      />
+    );
+    const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('class="model-anchor-bar"'));
+
+    expect(heroStats.indexOf('<div class="model-stat-label">Reference price</div>'))
+      .toBeLessThan(heroStats.indexOf('<div class="model-stat-label">Flatkey price</div>'));
   });
 
   test("keeps image model hero prices aligned with the model directory", () => {

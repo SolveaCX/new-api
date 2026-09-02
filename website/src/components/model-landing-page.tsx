@@ -29,7 +29,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
 import { HomeModelLogo } from "@/components/home-model-logo";
-import { ModelCover } from "@/components/model-cover";
 import { CdnFallbackImage, CdnFallbackVideo } from "@/components/cdn-media";
 import {
   fetchHealthSummary,
@@ -60,6 +59,7 @@ import {
   getVideoPromptTemplateLocalFallbackPoster,
   getVideoPromptTemplates,
   localizeVideoPromptText,
+  VIDEO_PROMPT_TEMPLATES,
 } from "@/lib/video-prompt-templates";
 import {
   modelLandingCopy,
@@ -116,6 +116,8 @@ type MediaExample = {
   video?: string;
   /** Packaged same-source poster used only if the primary media fails. */
   fallbackPoster?: string;
+  /** Original bundled clip used when a CDN clip cannot be loaded. */
+  fallbackVideo?: string;
 };
 
 const isProfessionVideo = (video?: string) => Boolean(video?.includes("/model-showcase/video-profession-"));
@@ -241,6 +243,10 @@ const MEDIA_EXAMPLES: Record<"image" | "video" | "audio", readonly MediaExample[
   ],
 } as const;
 
+function isRemoteMedia(src: string) {
+  return /^https?:\/\//i.test(src);
+}
+
 export function ModelLandingPage({ config: inputConfig, locale, liveModels = [], allModels = [], groupRatio = {}, groupModelRatio = {}, rankings = null, initialHealth }: Props) {
   // Priority pages ship a complete editorial pack per locale. Resolve it once
   // at the page boundary so the shared shell never mixes an English source
@@ -249,6 +255,15 @@ export function ModelLandingPage({ config: inputConfig, locale, liveModels = [],
     () => getLocalizedModelLandingConfig(inputConfig, locale),
     [inputConfig, locale],
   );
+
+  // Next can preserve the previous directory scroll position while navigating
+  // between client-rendered routes. A model detail page is always entered at
+  // its hero, so reset the document position whenever the model or locale
+  // changes (including client-side navigation from the model list).
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [config.slug, locale]);
+
   const imagePlaygroundExample = config.generator?.kind === "image"
     ? getImagePlaygroundExample(config.modelId, locale)
     : undefined;
@@ -478,9 +493,10 @@ function FlatkeyModelDetailPage(props: {
   const isImageCatalogFallback = props.config.slug === "gpt-image-2" && !model;
   const isMiniMaxCatalogFallback = props.config.slug === "minimax-h3" && !model;
   const inputPriceRow = priceRows.rows.find((row) => row.label === props.t("Input /M"));
+  const cachePriceRow = priceRows.rows.find((row) => row.label === props.t("Cache /M"));
   const outputPriceRow = priceRows.rows.find((row) => row.label === props.t("Output /M"));
   const showsTokenPriceBreakdown = Boolean(inputPriceRow && outputPriceRow);
-  const tokenPriceRows = [inputPriceRow, outputPriceRow].filter(
+  const tokenPriceRows = [inputPriceRow, cachePriceRow, outputPriceRow].filter(
     (row): row is FlatkeyPriceTableRow => Boolean(row)
   );
   const dashboardHref = consoleUrl("/dashboard");
@@ -504,13 +520,23 @@ function FlatkeyModelDetailPage(props: {
                   <ArrowLeft aria-hidden="true" />
                   {props.t("Back to Models")}
                 </a>
+                {generator ? (
+                  <a
+                    href={runHref}
+                    onClick={props.onRunClick}
+                    className="model-view-api model-playground-hero-link"
+                  >
+                    <Play className="size-4" aria-hidden="true" />
+                    {props.t("Open in Playground")}
+                  </a>
+                ) : null}
                 <a
                   href={dashboardHref}
                   onClick={navigateToHref}
                   className="flatkey-hero-cta inline-flex h-10 items-center gap-2 px-4 text-sm font-medium shadow-[0_16px_34px_-18px_rgba(124,58,237,0.85)]"
                   style={{ borderRadius: "0.5rem" }}
                 >
-                  {props.t(heroContent?.actionLabel ?? "Get API Key")}
+                  {props.t(heroContent?.actionLabel ?? "Get started")}
                 </a>
                 <a href="#api" className="model-view-api">
                   {props.t("View API")}
@@ -567,8 +593,10 @@ function FlatkeyModelDetailPage(props: {
                     {tokenPriceRows.map((row) => (
                       <div className="model-stat-card" key={row.label}>
                         <div className="model-stat-label">{props.t(row.label)}</div>
+                        <div className="model-stat-reference">
+                          {props.t("Reference price")}: <s>{row.official}</s>
+                        </div>
                         <div className="model-stat-value">{row.flatkey}</div>
-                        <div className="model-stat-reference">{props.t("Reference price")}: {row.official}</div>
                       </div>
                     ))}
                     <div className="model-stat-card">
@@ -583,6 +611,18 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">{heroProvider}</div>
                     </div>
                     <div className="model-stat-card">
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t("Reference price") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
+                      <div className={isSeedanceCatalogFormula || isImageCatalogFallback || isMiniMaxCatalogFallback ? "model-stat-value" : "model-stat-value model-stat-reference-value"}>
+                        {isSeedanceCatalogFormula
+                          ? props.t("Varies by resolution and video input")
+                          : isImageCatalogFallback
+                            ? props.t("OpenAI table varies by modality/batch")
+                            : isMiniMaxCatalogFallback
+                              ? props.t("$0.08 / sec 768P · $0.13 / sec 2K")
+                              : <s>{localizedHeroReferencePrice}</s>}
+                      </div>
+                    </div>
+                    <div className="model-stat-card">
                       <div className="model-stat-label">{isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
@@ -590,18 +630,6 @@ function FlatkeyModelDetailPage(props: {
                           : isImageCatalogFallback
                             ? props.t("$4.00–$24.00 / 1M catalog units")
                             : localizedHeroFlatkeyPrice}
-                      </div>
-                    </div>
-                    <div className="model-stat-card">
-                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t("Reference price") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
-                      <div className="model-stat-value">
-                        {isSeedanceCatalogFormula
-                          ? props.t("Varies by resolution and video input")
-                          : isImageCatalogFallback
-                            ? props.t("OpenAI table varies by modality/batch")
-                            : isMiniMaxCatalogFallback
-                              ? props.t("$0.08 / sec 768P · $0.13 / sec 2K")
-                              : localizedHeroReferencePrice}
                       </div>
                     </div>
                   </>
@@ -670,7 +698,7 @@ function FlatkeyModelDetailPage(props: {
                       className="outline-button"
                     >
                       <KeyRound className="size-4" />
-                      {props.t("Get API Key")}
+                      {props.t("Get started")}
                     </a>
                   </div>
                 </div>
@@ -998,7 +1026,7 @@ function MediaModelLanding(props: {
                     onClick={props.onRunClick}
                     className="rounded-full border border-[#0B0B0F14] px-4 py-2.5 text-center text-sm font-bold hover:border-[#7c3aed]/35 hover:text-[#4c1d95]"
                   >
-                    {props.t("Get API Key")}
+                    {props.t("Get started")}
                   </a>
                 </div>
               </div>
@@ -2075,11 +2103,21 @@ function OutputPreview(props: {
   // Models without a reviewed profession batch keep their own configured
   // sample. Prefer it over the global media sample so one model never shows
   // another model's asset in the Playground preview.
+  const videoTemplates = props.kind === "video" ? getVideoPromptTemplates(props.modelId, props.locale) : [];
   const videoExample = props.kind === "video"
-    ? getVideoPromptTemplates(props.modelId, props.locale)[0] ?? props.fallbackVideo ?? MEDIA_EXAMPLES.video[0]
+    ? videoTemplates[0] ?? props.fallbackVideo ?? MEDIA_EXAMPLES.video[0]
+    : undefined;
+  const originalVideoExample = videoTemplates[0]
+    ? VIDEO_PROMPT_TEMPLATES.find((template) => template.professionId === videoTemplates[0]?.professionId)
+    : undefined;
+  const localVideoExample = originalVideoExample ?? (props.fallbackVideo?.video && !isRemoteMedia(props.fallbackVideo.video)
+    ? props.fallbackVideo
+    : MEDIA_EXAMPLES.video.find((example) => example.video && !isRemoteMedia(example.video)));
+  const videoFallbackSrc = videoExample?.video && localVideoExample?.video !== videoExample.video
+    ? localVideoExample?.video
     : undefined;
   const videoFallbackPoster = props.kind === "video"
-    ? getVideoPromptTemplateLocalFallbackPoster(props.modelId, videoExample?.professionId) ?? props.fallbackVideo?.fallbackPoster
+    ? getVideoPromptTemplateLocalFallbackPoster(props.modelId, videoExample?.professionId) ?? props.fallbackVideo?.fallbackPoster ?? localVideoExample?.poster
     : undefined;
   const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId, props.locale) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
@@ -2140,6 +2178,7 @@ function OutputPreview(props: {
             key={videoExample.video}
             src={videoExample.video}
             poster={videoExample.poster || videoFallbackPoster || undefined}
+            fallbackSrc={videoFallbackSrc}
             fallbackPoster={videoFallbackPoster}
             alt={props.t("Video preview")}
           />
@@ -2315,7 +2354,6 @@ function RelatedModelsCarousel(props: {
               <div className="grid size-9 place-items-center rounded-full bg-[#f4f0ff] text-sm font-extrabold text-[#6d28d9]">
                 {model.name.slice(0, 1).toUpperCase()}
               </div>
-              <ArrowRight className="size-4 text-[#8b8891] transition group-hover:translate-x-0.5 group-hover:text-[#4c1d95]" />
             </div>
             <div className="mt-4 min-w-0">
               <h4 className="model-related-name text-base font-extrabold text-[#17151d]">{model.name}</h4>
@@ -2497,9 +2535,11 @@ function ModelTabIcon({ name }: { name: ModelTabIconName }) {
 function VideoPreviewMedia(props: {
   src: string;
   poster?: string;
+  fallbackSrc?: string;
   fallbackPoster?: string;
   alt: string;
 }) {
+  const [currentSrc, setCurrentSrc] = useState(props.src);
   const [hasFailed, setHasFailed] = useState(false);
 
   if (hasFailed && props.fallbackPoster) {
@@ -2517,17 +2557,24 @@ function VideoPreviewMedia(props: {
 
   return (
     <video
+      key={currentSrc}
       className="preview-media"
-      src={props.src}
+      src={currentSrc}
       // Reviewed profession clips provide a same-source first frame;
       // use it immediately so the preview never flashes a blank panel
       // while the remote video is buffering.
-      poster={props.poster}
+      poster={currentSrc === props.fallbackSrc ? props.fallbackPoster ?? props.poster : props.poster}
       autoPlay
       muted
       loop
       playsInline
-      onError={() => setHasFailed(true)}
+      onError={() => {
+        if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
+          setCurrentSrc(props.fallbackSrc);
+          return;
+        }
+        setHasFailed(true);
+      }}
       aria-label={props.alt}
     />
   );
@@ -2990,6 +3037,7 @@ function getPromptPosterFallback(item: PromptLibraryItem): string {
  */
 function PromptLibraryVideo(props: {
   src: string;
+  fallbackSrc?: string;
   poster?: string;
   fallbackPoster?: string;
   priority: boolean;
@@ -2997,6 +3045,7 @@ function PromptLibraryVideo(props: {
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVisible, setIsVisible] = useState(props.priority);
+  const [currentSrc, setCurrentSrc] = useState(props.src);
   const [hasFailed, setHasFailed] = useState(false);
 
   useEffect(() => {
@@ -3041,15 +3090,22 @@ function PromptLibraryVideo(props: {
   return (
     <video
       ref={videoRef}
+      key={currentSrc}
       className={props.className}
-      src={props.src}
-      poster={props.poster || props.fallbackPoster}
+      src={currentSrc}
+      poster={currentSrc === props.fallbackSrc ? props.fallbackPoster || props.poster : props.poster || props.fallbackPoster}
       muted
       loop
       autoPlay={isVisible}
       playsInline
       preload={isVisible ? "auto" : "none"}
-      onError={() => setHasFailed(true)}
+      onError={() => {
+        if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
+          setCurrentSrc(props.fallbackSrc);
+          return;
+        }
+        setHasFailed(true);
+      }}
     />
   );
 }
@@ -3103,6 +3159,7 @@ function PromptLibrarySection(props: {
                     key={item.example.video}
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
+                    fallbackSrc={item.example.fallbackVideo}
                     poster={item.example.poster || posterFallback || undefined}
                     fallbackPoster={posterFallback || undefined}
                     priority={isPriorityMedia}
@@ -3202,6 +3259,7 @@ function buildPromptLibraryItems(
           poster: template.poster || (isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster)),
           video: template.video,
           fallbackPoster: getVideoPromptTemplateLocalFallbackPoster(config.modelId, template.professionId),
+          fallbackVideo: VIDEO_PROMPT_TEMPLATES.find((candidate) => candidate.professionId === template.professionId)?.video,
         },
       }));
     }
@@ -3224,7 +3282,11 @@ function buildPromptLibraryItems(
       label: t(item.label),
       prompt: localizeConfiguredPrompt(item.prompt, config.generator?.kind, locale),
       alt: t(item.alt),
-      example: { poster: item.poster, video: item.video },
+      example: {
+        poster: item.poster,
+        video: item.video,
+        fallbackVideo: item.video && isRemoteMedia(item.video) ? MEDIA_EXAMPLES.video[0]?.video : undefined,
+      },
     }));
     // For a model without a reviewed six-profession batch, its configured
     // examples are authoritative. Do not append generic fallback cards that
@@ -3945,13 +4007,10 @@ function FlatkeyPriceRow(props: { row: FlatkeyPriceTableRow; officialLabel: stri
     <div className="rounded-xl border border-violet-500/12 bg-white/62 p-4 dark:bg-white/[0.03]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-sm font-semibold">{props.row.label}</span>
-        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-          {props.row.flatkey}
-        </span>
       </div>
       <div className="grid gap-2">
-        <PriceTrack label={props.flatkeyLabel} value={props.row.flatkey} percent={props.row.flatkeyPercent} kind="flatkey" />
         <PriceTrack label={props.officialLabel} value={props.row.official} percent={props.row.officialPercent} kind="official" />
+        <PriceTrack label={props.flatkeyLabel} value={props.row.flatkey} percent={props.row.flatkeyPercent} kind="flatkey" />
       </div>
     </div>
   );
@@ -4187,18 +4246,26 @@ function buildLiveTokenPriceRows(
   t: (key: string, vars?: Record<string, string>) => string,
   prefix = ""
 ): { rows: FlatkeyPriceTableRow[]; note: string } {
-  return (["input", "output"] as const).map((type) => {
+  const dimensions = [
+    ["input", "Input /M"],
+    ["cache", "Cache /M"],
+    ["output", "Output /M"],
+  ] as const;
+  return dimensions.flatMap(([type, label]) => {
     const plgPrice = resolveModelDisplayPrice(model, type, "plg", groupRatio);
     const configuredPrice = resolveModelDisplayPrice(model, type, "configured", groupRatio);
-    const official = configuredPrice?.value ?? getOfficialPriceUsd(model, type);
+    // Cache is optional in the upstream catalog. Only add the row when the
+    // live display contract or the legacy cache ratio exposes a real value.
+    if (!plgPrice && !configuredPrice) return [];
+    const official = configuredPrice?.value ?? getOfficialPriceUsd(model, type === "output" ? "output" : "input");
     const flatkey = plgPrice?.value ?? discountedPriceUsd(official * getBestGroupRatio(model, groupRatio));
-    return {
-      label: type === "input" ? t("Input /M") : t("Output /M"),
+    return [{
+      label: t(label),
       flatkey: `${prefix}${formatUsdPrice(flatkey)}`,
       official: `${prefix}${formatUsdPrice(official)}`,
       flatkeyPercent: pricePercent(flatkey, official),
       officialPercent: 100,
-    };
+    }];
   }).reduce<{ rows: FlatkeyPriceTableRow[]; note: string }>(
     (result, row) => ({ ...result, rows: [...result.rows, row] }),
     { rows: [], note }
@@ -4295,13 +4362,29 @@ const FEATURED_MODEL_ASSETS = [
   { modelName: "glm-5-3", asset: "/assets/models-featured/zhipu.jpg" },
 ];
 
-const DEFAULT_RELATED_MODEL_ASSET = "/assets/prompts/awesome-images/ai-agent-poster.png";
-
-function RelatedModelCover({ src, alt, sizes }: { src: string; alt: string; sizes: string }) {
-  const originalSrc = src || DEFAULT_RELATED_MODEL_ASSET;
+function RelatedModelCover({ src: _src, alt, sizes }: { src: string; alt: string; sizes: string }) {
   return (
-    <div data-cover-source={originalSrc} data-cover-sizes={sizes} className="absolute inset-0">
-      <ModelCover modelName={alt} className="related-image !aspect-auto size-full" />
+    <div
+      className="related-card-top"
+      data-cover-sizes={sizes}
+      aria-label={alt}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/flatkey-lockup-light.svg"
+        alt="flatkey.ai"
+        className="related-card-brand"
+        loading="lazy"
+      />
+      <div className="related-card-logo-mark" aria-hidden="true">
+        <HomeModelLogo
+          modelName={alt}
+          className="related-card-logo-bare"
+          fallback={alt.charAt(0)}
+          surfaceSize={150}
+          imageSize={126}
+        />
+      </div>
     </div>
   );
 }
@@ -4382,6 +4465,7 @@ function relatedModelAssetFromName(name: string, vendor: string | undefined, mod
   if (modality === "audio") return "/assets/prompts/awesome-images/ai-agent-poster.png";
   return "/assets/prompts/awesome-images/saas-hero-phone.png";
 }
+
 
 function buildModalityLabels(
   config: ModelConfig,
