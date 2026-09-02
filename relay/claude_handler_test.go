@@ -338,3 +338,113 @@ func TestShouldClaudeUseResponsesBridgeForGrokDespiteGlobalPassThrough(t *testin
 
 	require.True(t, shouldClaudeUseResponsesBridge(info))
 }
+
+func TestClaudeHelperRejectsManualFableThinkingAfterModelMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "fable-alias")
+	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, "http://127.0.0.1:1")
+	c.Set("model_mapping", `{"fable-alias":"anthropic/claude-fable-5"}`)
+
+	request := &dto.ClaudeRequest{
+		Model: "fable-alias",
+		Thinking: &dto.Thinking{
+			Type:         "enabled",
+			BudgetTokens: common.GetPointer(4096),
+		},
+	}
+	info := &relaycommon.RelayInfo{
+		Request:         request,
+		OriginModelName: "fable-alias",
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		RelayFormat:     types.RelayFormatClaude,
+	}
+
+	apiErr := ClaudeHelper(c, info)
+	require.NotNil(t, apiErr)
+	require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+	require.Equal(t, "invalid_request_error", apiErr.ToClaudeError().Type)
+	require.Contains(t, apiErr.ToClaudeError().Message, "thinking.type.enabled")
+	require.Equal(t, "anthropic/claude-fable-5", info.UpstreamModelName)
+}
+
+func TestValidateResolvedClaudeThinking(t *testing.T) {
+	tests := []struct {
+		name          string
+		upstreamModel string
+		requestModel  string
+		thinkingType  string
+		wantStatus    int
+	}{
+		{
+			name:          "fable enabled",
+			upstreamModel: "anthropic/claude-fable-5",
+			requestModel:  "fable-alias",
+			thinkingType:  "enabled",
+			wantStatus:    http.StatusBadRequest,
+		},
+		{
+			name:          "fable disabled",
+			upstreamModel: "claude-fable-5:stable",
+			requestModel:  "fable-alias",
+			thinkingType:  "disabled",
+			wantStatus:    http.StatusBadRequest,
+		},
+		{
+			name:          "fable adaptive remains supported",
+			upstreamModel: "claude-fable-5",
+			requestModel:  "claude-fable-5",
+			thinkingType:  "adaptive",
+			wantStatus:    0,
+		},
+		{
+			name:          "other Claude model remains supported",
+			upstreamModel: "claude-opus-4-8",
+			requestModel:  "claude-opus-4-8",
+			thinkingType:  "enabled",
+			wantStatus:    0,
+		},
+		{
+			name:          "thinking model suffix is normalized",
+			upstreamModel: "anthropic/claude-fable-5-thinking",
+			requestModel:  "claude-fable-5-thinking",
+			thinkingType:  "disabled",
+			wantStatus:    http.StatusBadRequest,
+		},
+		{
+			name:         "request model fallback without channel metadata",
+			requestModel: "claude-fable-5",
+			thinkingType: "enabled",
+			wantStatus:   http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				OriginModelName: tt.requestModel,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					UpstreamModelName: tt.upstreamModel,
+				},
+			}
+			req := &dto.ClaudeRequest{
+				Model: tt.requestModel,
+				Thinking: &dto.Thinking{
+					Type: tt.thinkingType,
+				},
+			}
+
+			err := validateResolvedClaudeThinking(info, req)
+			if tt.wantStatus == 0 {
+				require.Nil(t, err)
+				return
+			}
+			require.NotNil(t, err)
+			require.Equal(t, tt.wantStatus, err.StatusCode)
+			require.Equal(t, "invalid_request_error", err.ToClaudeError().Type)
+		})
+	}
+}

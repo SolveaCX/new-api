@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
 	rootconstant "github.com/QuantumNous/new-api/constant"
@@ -18,10 +19,56 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDoRequestDoesNotCommitStreamResponseBeforeUpstreamStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Keep the upstream response pending long enough for the old pre-response
+		// ping goroutine to fire. A ping must never turn a later upstream 400 into
+		// a committed downstream 200.
+		time.Sleep(1200 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_request"}`))
+	}))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(service.ResetProxyClientCache)
+
+	general := operation_setting.GetGeneralSetting()
+	oldEnabled, oldSeconds := general.PingIntervalEnabled, general.PingIntervalSeconds
+	general.PingIntervalEnabled = true
+	general.PingIntervalSeconds = 1
+	t.Cleanup(func() {
+		general.PingIntervalEnabled = oldEnabled
+		general.PingIntervalSeconds = oldSeconds
+	})
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude-fable-5"}`))
+	info := &relaycommon.RelayInfo{
+		IsStream: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelSetting: dto.ChannelSettings{Proxy: proxy.URL},
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://upstream.invalid/v1/messages", strings.NewReader(`{"model":"claude-fable-5"}`))
+	require.NoError(t, err)
+
+	resp, err := doRequest(c, req, info)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.False(t, recorder.Flushed, "upstream error must not be committed by a pre-response SSE ping")
+	require.Empty(t, recorder.Body.String())
+	_ = resp.Body.Close()
+}
 
 func TestTaskRequestDefinitelyNotSentMarkerWrapsPreSendErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
