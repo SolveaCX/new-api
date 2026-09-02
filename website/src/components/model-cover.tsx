@@ -1,4 +1,5 @@
-import { modelCoverAssetUrl } from "@/lib/model-covers";
+import { CdnFallbackImage } from "@/components/cdn-media";
+import { LOCAL_MODEL_COVER, modelCoverAssetUrl } from "@/lib/model-covers";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -19,8 +20,13 @@ export function ModelCover({ modelName, className, compact = false }: Props) {
       )}
       aria-label={`${modelName} — flatkey.ai`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={modelCoverAssetUrl()} alt="" className="absolute inset-0 size-full object-cover" loading="lazy" />
+      <CdnFallbackImage
+        src={modelCoverAssetUrl()}
+        fallbackSrc={LOCAL_MODEL_COVER}
+        alt=""
+        className="absolute inset-0 size-full object-cover"
+        loading="lazy"
+      />
       <img
         src="/flatkey-lockup-light.svg"
         alt="flatkey.ai"

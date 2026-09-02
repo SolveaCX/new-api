@@ -30,6 +30,7 @@ import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
 import { HomeModelLogo } from "@/components/home-model-logo";
 import { ModelCover } from "@/components/model-cover";
+import { CdnFallbackImage, CdnFallbackVideo } from "@/components/cdn-media";
 import {
   fetchHealthSummary,
   fetchModelTrend,
@@ -2143,12 +2144,12 @@ function OutputPreview(props: {
             alt={props.t("Video preview")}
           />
         ) : imageExample ? (
-          <Image
+          <CdnFallbackImage
+            key={imageExample.poster}
             src={imageExample.poster}
             alt={props.t("Image preview")}
-            fill
-            sizes="(min-width: 1024px) 40vw, 100vw"
-            className="preview-media object-cover"
+            fallbackSrc={getImagePromptTemplateLocalFallbackPosters(props.modelId)[0]}
+            className="preview-media absolute inset-0 size-full object-cover"
           />
         ) : (
           <span className="preview-label">
@@ -2187,7 +2188,8 @@ function GeneratedExamplesCarousel(props: {
       <div className="relative overflow-hidden bg-[#10131a]">
         <div className={`relative w-full ${props.kind === "video" ? "aspect-video" : "aspect-[16/10]"}`}>
           {activeExample.video ? (
-            <video
+            <CdnFallbackVideo
+              key={activeExample.video}
               className="h-full w-full object-cover"
               autoPlay
               controls
@@ -2197,14 +2199,16 @@ function GeneratedExamplesCarousel(props: {
               poster={activeExample.poster}
               preload="metadata"
               src={activeExample.video}
+              fallbackPoster={activeExample.fallbackPoster}
+              fallbackAlt={props.t("Video preview")}
             />
           ) : (
-            <Image
+            <CdnFallbackImage
+              key={activeExample.poster}
               src={activeExample.poster}
               alt=""
-              fill
-              sizes="(min-width: 1280px) 820px, (min-width: 1024px) 62vw, 100vw"
-              className="object-cover"
+              fallbackSrc={activeExample.fallbackPoster}
+              className="absolute inset-0 size-full object-cover"
             />
           )}
         </div>
@@ -2259,12 +2263,12 @@ function GeneratedExamplesCarousel(props: {
                 total: String(total),
               })}
             >
-              <Image
+              <CdnFallbackImage
+                key={example.poster}
                 src={example.poster}
                 alt=""
-                fill
-                sizes="(min-width: 1024px) 90px, 30vw"
-                className="object-cover"
+                fallbackSrc={example.fallbackPoster}
+                className="absolute inset-0 size-full object-cover"
               />
               {example.video ? (
                 <span className="absolute top-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-black/62 text-white">

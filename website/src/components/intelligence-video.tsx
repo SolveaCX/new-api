@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type IntelligenceVideoProps = {
   className?: string;
   poster: string;
   src: string;
+  fallbackPoster?: string;
+  fallbackSrc?: string;
   ariaLabel: string;
 };
 
 export function IntelligenceVideo(props: IntelligenceVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [source, setSource] = useState(props.src);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const playIfVideoTabIsActive = () => {
@@ -32,6 +36,11 @@ export function IntelligenceVideo(props: IntelligenceVideoProps) {
     };
   }, []);
 
+  if (failed && props.fallbackPoster) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className={props.className} src={props.fallbackPoster} alt={props.ariaLabel} />;
+  }
+
   return (
     <video
       ref={videoRef}
@@ -41,14 +50,21 @@ export function IntelligenceVideo(props: IntelligenceVideoProps) {
       loop
       playsInline
       preload="auto"
-      poster={props.poster}
+      src={source}
+      poster={source === props.src ? props.poster : props.fallbackPoster ?? props.poster}
       aria-label={props.ariaLabel}
+      onError={() => {
+        if (props.fallbackSrc && source !== props.fallbackSrc) {
+          setSource(props.fallbackSrc);
+          return;
+        }
+        setFailed(true);
+      }}
       onLoadedData={(event) => {
         event.currentTarget.muted = true;
         void event.currentTarget.play().catch(() => undefined);
       }}
     >
-      <source src={props.src} type="video/mp4" />
     </video>
   );
 }

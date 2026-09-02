@@ -8,6 +8,7 @@ import type { FeaturedSlide } from "@/lib/model-directory-featured";
 import { localizePath, type Locale } from "@/lib/locales";
 import { modelPublicPath } from "@/lib/model-public";
 import { cn } from "@/lib/utils";
+import { CdnFallbackImage, CdnFallbackVideo } from "@/components/cdn-media";
 
 // Featured models carousel. Auto-advances, pausing while the pointer is over it
 // or focus is inside it, and stops entirely when the visitor has asked for
@@ -167,12 +168,13 @@ function SlideMedia(props: { slide: FeaturedSlide; reducedMotion: boolean }) {
 
   if (slide.video && !reducedMotion) {
     return (
-      <video
+      <CdnFallbackVideo
         ref={videoRef}
         key={slide.video}
         className="absolute inset-0 size-full object-cover"
         src={slide.video}
         poster={slide.image}
+        fallbackPoster={slide.fallbackImage}
         autoPlay
         loop
         muted
@@ -193,17 +195,13 @@ function SlideMedia(props: { slide: FeaturedSlide; reducedMotion: boolean }) {
 
   return (
     <div className="absolute inset-0 size-full bg-cover bg-center" style={fallbackStyle}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CdnFallbackImage
+        key={slide.image}
         src={slide.image}
         alt=""
         className="size-full object-cover"
         loading="lazy"
-        onError={(event) => {
-          if (slide.fallbackImage && event.currentTarget.src !== slide.fallbackImage) {
-            event.currentTarget.src = slide.fallbackImage;
-          }
-        }}
+        fallbackSrc={slide.fallbackImage}
       />
     </div>
   );

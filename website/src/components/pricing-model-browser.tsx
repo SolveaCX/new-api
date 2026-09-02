@@ -50,6 +50,7 @@ import { getModelLandingConfigForPricingModel } from "@/lib/model-landing";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
 import { getModelPromotions, modelPromotionLabel } from "@/lib/model-promotions";
+import { CdnFallbackImage } from "@/components/cdn-media";
 import {
   CartesianGrid,
   Line,
@@ -1432,23 +1433,55 @@ function ModalityIcons(props: { modalities: Modality[]; className?: string }) {
 export function ModelLogo(props: { iconKey?: string; fallback: string; size: number }) {
   const [failed, setFailed] = useState(false);
   const src = !failed ? getLobeStaticSvgUrl(props.iconKey) : null;
+  const fallbackSrc = getLocalLogoUrl(props.iconKey);
 
   if (src) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
+      <CdnFallbackImage
         src={src}
         alt=""
         width={props.size}
         height={props.size}
         className="block rounded-sm object-contain"
         style={{ width: props.size, height: props.size }}
+        fallbackSrc={fallbackSrc ?? undefined}
         onError={() => setFailed(true)}
       />
     );
   }
 
   return <span className="text-sm font-black text-violet-700">{props.fallback || "?"}</span>;
+}
+
+function getLocalLogoUrl(iconKey?: string): string | null {
+  if (!iconKey) return null;
+  const normalized = normalizeIconKey(iconKey);
+  if (!normalized) return null;
+  const localByIcon: Record<string, string> = {
+    openai: "openai",
+    anthropic: "claude",
+    "claude-color": "claude",
+    "google-color": "googlegemini",
+    "gemini-color": "googlegemini",
+    "deepseek-color": "deepseek",
+    qwen: "qwen",
+    "qwen-color": "qwen",
+    alibabacloud: "alibabacloud",
+    "alibabacloud-color": "alibabacloud",
+    mistral: "mistralai",
+    xai: "xai",
+    grok: "xai",
+    "meta-color": "meta",
+    moonshot: "moonshotai",
+    "kimi-color": "moonshotai",
+    "bytedance-color": "bytedance",
+    minimax: "minimax",
+    "minimax-color": "minimax",
+    kuaishou: "kuaishou",
+    "kuaishou-color": "kuaishou",
+  };
+  const localName = localByIcon[normalized];
+  return localName ? `/assets/logos/${localName}.svg` : null;
 }
 
 function InfoLine(props: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; mono?: boolean }) {
