@@ -86,6 +86,7 @@ export type DirectoryRow = {
   name: string;
   vendor: string;
   tags?: string[];
+  displayWeight?: number;
   searchText: string;
   series?: string;
   /** Author from the metadata table; falls back to the payload's vendor. */
@@ -112,6 +113,7 @@ export type DirectoryRowInput = {
   name: string;
   vendor: string;
   tags?: string[];
+  displayWeight?: number;
   inputUsd?: number | null;
   outputUsd?: number | null;
   /** Official (pre-discount) input rate, for the discount sort. */
@@ -127,6 +129,7 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
     name: input.name,
     vendor: input.vendor,
     tags: input.tags ?? [],
+    displayWeight: input.displayWeight ?? 0,
     searchText: [input.name, input.vendor, meta?.author ?? "", series ?? "", ...(meta?.categories ?? []), ...(input.endpointTypes ?? [])]
       .join(" ")
       .toLowerCase(),
@@ -321,6 +324,7 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
           const aHasTags = (a.tags?.length ?? 0) > 0;
           const bHasTags = (b.tags?.length ?? 0) > 0;
           if (aHasTags !== bHasTags) return aHasTags ? -1 : 1;
+          if ((a.displayWeight ?? 0) !== (b.displayWeight ?? 0)) return (b.displayWeight ?? 0) - (a.displayWeight ?? 0);
 
           const aSeries = seriesKey(a);
           const bSeries = seriesKey(b);

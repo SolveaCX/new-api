@@ -7,9 +7,16 @@ import {
   getPricingData,
   publicPricingUrl,
   resolveModelDisplayPrice,
+  parseTags,
   sortPricingModelsBySeries,
   type PricingModel,
 } from "./pricing";
+
+describe("parseTags", () => {
+  test("preserves spaces inside comma-delimited tag values", () => {
+    expect(parseTags("Limited discount, New release, HOT")).toEqual(["Limited discount", "New release", "HOT"]);
+  });
+});
 
 describe("publicPricingUrl", () => {
   test("points website pricing at the cached public API", () => {

@@ -157,6 +157,13 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
       },
       minSize: 200,
     },
+    {
+      accessorKey: 'display_weight',
+      meta: { label: t('Weight'), mobileHidden: true },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={t('Weight')} />,
+      cell: ({ row }) => <span className='font-mono text-sm'>{row.original.display_weight ?? 0}</span>,
+      size: 90,
+    },
 
     // Name Rule column
     {
