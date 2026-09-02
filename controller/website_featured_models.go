@@ -28,6 +28,7 @@ type websiteFeaturedModelRequestItem struct {
 	BackgroundImageURL      string `json:"background_image_url"`
 	BackgroundImage         string `json:"background_image"`
 	FallbackBackgroundImage string `json:"fallback_background_image"`
+	Video                   string `json:"video"`
 }
 
 type websiteFeaturedModelResponse struct {
@@ -40,6 +41,7 @@ type websiteFeaturedModelResponse struct {
 	BackgroundImageURL      string `json:"background_image_url,omitempty"`
 	BackgroundImage         string `json:"background_image,omitempty"`
 	FallbackBackgroundImage string `json:"fallback_background_image,omitempty"`
+	Video                   string `json:"video,omitempty"`
 	Available               bool   `json:"available"`
 }
 
@@ -89,6 +91,7 @@ func GetWebsiteFeaturedModels(c *gin.Context) {
 			BackgroundImageURL:      row.BackgroundImageURL,
 			BackgroundImage:         row.BackgroundImage,
 			FallbackBackgroundImage: row.FallbackBackgroundImage,
+			Video:                   row.Video,
 			Available:               ok,
 		})
 	}
@@ -159,6 +162,7 @@ func normalizeWebsiteFeaturedModelItems(request websiteFeaturedModelRequest) ([]
 				BackgroundImageURL:      row.BackgroundImageURL,
 				BackgroundImage:         row.BackgroundImage,
 				FallbackBackgroundImage: row.FallbackBackgroundImage,
+				Video:                   row.Video,
 			}
 		}
 		return items, nil
@@ -182,6 +186,10 @@ func normalizeWebsiteFeaturedModelItems(request websiteFeaturedModelRequest) ([]
 		if err != nil {
 			return nil, errors.New("fallback background image URL must use http(s) or a relative path")
 		}
+		videoURL, err := normalizeWebsiteFeaturedURL(raw.Video)
+		if err != nil {
+			return nil, errors.New("video URL must use http(s) or a relative path")
+		}
 		if len(raw.BackgroundImage) > 12<<20 {
 			return nil, errors.New("background image upload must be smaller than 8 MB")
 		}
@@ -193,6 +201,7 @@ func normalizeWebsiteFeaturedModelItems(request websiteFeaturedModelRequest) ([]
 			BackgroundImageURL:      backgroundURL,
 			BackgroundImage:         strings.TrimSpace(raw.BackgroundImage),
 			FallbackBackgroundImage: fallbackURL,
+			Video:                   videoURL,
 		})
 	}
 	return items, nil
@@ -280,6 +289,7 @@ func attachWebsiteFeaturedConfig(pricing []model.Pricing) []model.Pricing {
 			BackgroundImageURL:      row.BackgroundImageURL,
 			BackgroundImage:         row.BackgroundImage,
 			FallbackBackgroundImage: row.FallbackBackgroundImage,
+			Video:                   row.Video,
 		}
 	}
 	return pricing

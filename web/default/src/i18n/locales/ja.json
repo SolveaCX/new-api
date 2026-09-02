@@ -2387,6 +2387,7 @@
     "Invite Info": "招待情報",
     "Invited": "招待済み",
     "Invited by user ID": "ユーザーIDによる招待",
+    "Invited by user email": "Invited by user email",
     "Invited Users": "招待されたユーザー",
     "Invitee Reward": "招待された側の報酬",
     "Inviter": "招待者",
@@ -5358,7 +5359,9 @@
     "PLG Only": "PLGのみ",
     "PLG Users": "PLGユーザー",
     "All Users": "全ユーザー",
+    "Paid only": "Paid only",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).": "PLGユーザーのみ（group=plg、内部・エンタープライズアカウントは除外）。日付・時刻はすべて米国太平洋時間（PT）。実ブラウズ＝登録時の自動リクエストを除くplaygroundチャット。手動キー作成＝登録2分以降に作成されたAPIキー。キー利用ユーザー＝自動発行キーを含む任意のAPIキーリクエスト。運営コスト＝自動発行キー（登録2分以内に作成）で消費されたクォータ。",
+    "Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.": "Pix / 支付宝等本地支付链路的归因不完整，部分付费用户可能无法追溯到原始广告来源。",
     "Payment Currency": "支払通貨",
     "Signup Method": "登録方法",
     "Last IP": "最終IP",
@@ -6901,6 +6904,7 @@
     "Refresh challenge": "問題を更新",
     "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。",
     "Voice": "音声",
-    "Speed": "速度"
+    "Speed": "速度",
+    "Video URL": "動画 URL"
   }
 }

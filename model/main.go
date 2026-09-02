@@ -336,6 +336,9 @@ func migrateDB() error {
 	if err := BackfillCodexFingerprintSeeds(); err != nil {
 		return err
 	}
+	if err := SeedLegacyWebsiteFeaturedModels(); err != nil {
+		return err
+	}
 	return migrateStartupInvitationValue()
 }
 
@@ -531,6 +534,9 @@ func migrateDBFast() error {
 		return fmt.Errorf("failed to restore standard subscription plan limits: %w", err)
 	}
 	if err := BackfillCodexFingerprintSeeds(); err != nil {
+		return err
+	}
+	if err := SeedLegacyWebsiteFeaturedModels(); err != nil {
 		return err
 	}
 	if err := migrateStartupInvitationValue(); err != nil {

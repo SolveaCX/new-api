@@ -72,6 +72,7 @@ function featuredConfigPayload(item: WebsiteFeaturedListItem) {
     background_image_url: item.background_image_url ?? '',
     background_image: item.background_image ?? '',
     fallback_background_image: item.fallback_background_image ?? '',
+    video: item.video ?? '',
   }
 }
 
@@ -303,6 +304,18 @@ export function WebsiteFeaturedSection() {
                 </div>
                 <div className='basis-full border-t pt-3' />
                 <div className='grid basis-full gap-3 md:grid-cols-2'>
+                  <label className='grid gap-1 text-sm'>
+                    <span className='text-muted-foreground'>
+                      {t('Video URL')}
+                    </span>
+                    <Input
+                      value={item.video ?? ''}
+                      onChange={(event) =>
+                        updateFeaturedField(index, 'video', event.target.value)
+                      }
+                      placeholder='https://... or /assets/...'
+                    />
+                  </label>
                   <label className='grid gap-1 text-sm'>
                     <span className='text-muted-foreground'>
                       {t('Display name')}

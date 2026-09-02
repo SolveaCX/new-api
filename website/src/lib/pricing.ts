@@ -66,6 +66,7 @@ export type PricingModel = {
     background_image_url?: string;
     background_image?: string;
     fallback_background_image?: string;
+    video?: string;
   };
 };
 

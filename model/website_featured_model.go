@@ -19,6 +19,7 @@ type WebsiteFeaturedModel struct {
 	BackgroundImageURL      string `json:"background_image_url" gorm:"size:1024"`
 	BackgroundImage         string `json:"background_image" gorm:"type:text"`
 	FallbackBackgroundImage string `json:"fallback_background_image" gorm:"size:1024"`
+	Video                   string `json:"video" gorm:"size:1024"`
 	CreatedAt               int64  `json:"created_at" gorm:"bigint"`
 	UpdatedAt               int64  `json:"updated_at" gorm:"bigint"`
 }
@@ -34,6 +35,7 @@ type WebsiteFeaturedModelInput struct {
 	BackgroundImageURL      string
 	BackgroundImage         string
 	FallbackBackgroundImage string
+	Video                   string
 }
 
 // WebsiteFeaturedModelConfig is embedded in the public pricing response for
@@ -45,6 +47,7 @@ type WebsiteFeaturedModelConfig struct {
 	BackgroundImageURL      string `json:"background_image_url,omitempty"`
 	BackgroundImage         string `json:"background_image,omitempty"`
 	FallbackBackgroundImage string `json:"fallback_background_image,omitempty"`
+	Video                   string `json:"video,omitempty"`
 }
 
 // ListWebsiteFeaturedModels returns the configured order, with the ID as a
@@ -89,6 +92,7 @@ func ReplaceWebsiteFeaturedModelsWithConfig(items []WebsiteFeaturedModelInput) e
 				BackgroundImageURL:      item.BackgroundImageURL,
 				BackgroundImage:         item.BackgroundImage,
 				FallbackBackgroundImage: item.FallbackBackgroundImage,
+				Video:                   item.Video,
 				CreatedAt:               now,
 				UpdatedAt:               now,
 			}

@@ -2387,6 +2387,7 @@
     "Invite Info": "Informations sur l'invitation",
     "Invited": "Invité",
     "Invited by user ID": "Invité par l'ID utilisateur",
+    "Invited by user email": "Invited by user email",
     "Invited Users": "Utilisateurs invités",
     "Invitee Reward": "Récompense de l'invité",
     "Inviter": "Inviteur",
@@ -5358,7 +5359,9 @@
     "PLG Only": "PLG uniquement",
     "PLG Users": "Utilisateurs PLG",
     "All Users": "Tous les utilisateurs",
+    "Paid only": "Paid only",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).": "Utilisateurs PLG uniquement (group=plg, comptes internes et entreprise exclus). Toutes les dates et heures sont en heure du Pacifique (PT). Navigation réelle = conversations playground hors requête automatique d'inscription ; clés manuelles = clés API créées 2 minutes ou plus après l'inscription ; utilisateurs de clés = toute requête via clé API, y compris les clés auto-provisionnées ; coût d'exploitation = quota consommé via les clés auto-provisionnées (créées dans les 2 minutes suivant l'inscription).",
+    "Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.": "Pix / 支付宝等本地支付链路的归因不完整，部分付费用户可能无法追溯到原始广告来源。",
     "Payment Currency": "Devise de paiement",
     "Signup Method": "Méthode d'inscription",
     "Last IP": "Dernière IP",
@@ -6901,6 +6904,7 @@
     "Refresh challenge": "Actualiser le défi",
     "Complete the graphical verification before creating your account.": "Effectuez la vérification graphique avant de créer votre compte.",
     "Voice": "Voix",
-    "Speed": "Vitesse"
+    "Speed": "Vitesse",
+    "Video URL": "URL vidéo"
   }
 }
