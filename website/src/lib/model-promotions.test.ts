@@ -7,7 +7,7 @@ import {
 
 describe("model promotions", () => {
   test("marks the requested models", () => {
-    expect(getModelPromotions("glm-5.3")).toEqual(["new"]);
+    expect(getModelPromotions("glm-5.3")).toEqual(["limited", "new"]);
     expect(getModelPromotions("glm-5.3-flash")).toEqual(["limited", "new"]);
     expect(getModelPromotions("deepseek-v4-pro")).toEqual(["limited"]);
     expect(getModelPromotions("deepseek-v4-flash")).toEqual(["free"]);
@@ -43,10 +43,10 @@ describe("model promotions", () => {
     ];
     expect(sortModelsByPromotion(models).map((model) => model.model_name)).toEqual([
       "deepseek-v4-flash",
+      "glm-5.3",
       "deepseek-v4-pro",
       "gpt-5.6-sol",
       "plain",
-      "glm-5.3",
     ]);
     expect(sortModelsByPromotion([{ model_name: "plain" }, { model_name: "claude-fable-5.1" }]).map((model) => model.model_name)).toEqual([
       "claude-fable-5.1",

@@ -6,7 +6,7 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
   free: 0,
   limited: 1,
   hot: 2,
-  new: Number.POSITIVE_INFINITY,
+  new: 3,
 };
 
 // Fable 5.1 leads the launch banner and the default model order.
@@ -32,7 +32,7 @@ export function getModelPromotions(modelName: string): ModelPromotion[] {
     promotions.push("free");
   }
   if (
-    /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
+    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name) ||
     /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
   ) {
     promotions.push("limited");

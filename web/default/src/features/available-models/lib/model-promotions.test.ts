@@ -7,7 +7,7 @@ import {
 
 describe('model promotions', () => {
   test('recognizes the requested free, limited, new and hot models', () => {
-    expect(getModelPromotions('glm-5.3')).toEqual(['new'])
+    expect(getModelPromotions('glm-5.3')).toEqual(['limited', 'new'])
     expect(getModelPromotions('glm-5.3-flash')).toEqual(['limited', 'new'])
     expect(getModelPromotions('deepseek-v4-pro')).toEqual(['limited'])
     expect(getModelPromotions('deepseek-v4-flash')).toEqual(['free'])
@@ -23,6 +23,7 @@ describe('model promotions', () => {
     expect(getModelPromotions('claude-opus-4-8')).toContain('hot')
     expect(getModelPromotions('claude-opus-5')).toContain('hot')
     expect(getModelPromotions('claude-sonnet-5')).toContain('hot')
+    expect(getModelPromotions('claude-fable-5.1')).toEqual(['new'])
   })
 
   test('sorts promoted models first while preserving stable order', () => {
@@ -35,10 +36,10 @@ describe('model promotions', () => {
     ] as never[]
     expect(sortModelsByPromotion(models).map((model) => model.id)).toEqual([
       'deepseek-v4-flash',
+      'glm-5.3',
       'deepseek-v4-pro',
       'gpt-5.6-sol',
       'plain',
-      'glm-5.3',
     ])
     expect(modelPromotionPriority('plain')).toBe(Number.POSITIVE_INFINITY)
   })
