@@ -9,9 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Bump the marker after the first deployment could run before the model
-// catalogue was fully populated. The v2 pass backfills those existing rows.
-const modelTagDefaultsSeedKey = "model_tag_defaults_seeded_v2"
+const modelTagDefaultsSeedKey = "model_tag_defaults_seeded_v1"
 
 type modelTagDefault struct {
 	pattern *regexp.Regexp

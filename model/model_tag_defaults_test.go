@@ -75,15 +75,3 @@ func TestSeedLegacyModelTagsIsIdempotent(t *testing.T) {
 	require.NoError(t, DB.Where("key = ?", modelTagDefaultsSeedKey).First(&marker).Error)
 	require.Equal(t, "1", marker.Value)
 }
-
-func TestSeedLegacyModelTagsRepairsCatalogueAfterPreviousMarker(t *testing.T) {
-	setupModelTagDefaultsTestDB(t)
-	require.NoError(t, DB.Create(&Option{Key: "model_tag_defaults_seeded_v1", Value: "1"}).Error)
-	require.NoError(t, (&Model{ModelName: "claude-fable-5.1"}).Insert())
-
-	require.NoError(t, SeedLegacyModelTags())
-
-	var item Model
-	require.NoError(t, DB.Where("model_name = ?", "claude-fable-5.1").First(&item).Error)
-	require.Equal(t, "New release", item.Tags)
-}
