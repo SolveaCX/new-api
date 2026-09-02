@@ -7,7 +7,7 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
   free: 0,
   limited: 1,
   hot: 2,
-  new: Number.POSITIVE_INFINITY,
+  new: 3,
 }
 
 export function getModelPromotions(modelId: string): ModelPromotion[] {
@@ -15,7 +15,7 @@ export function getModelPromotions(modelId: string): ModelPromotion[] {
   const promotions: ModelPromotion[] = []
   if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) promotions.push('free')
   if (
-    /(^|[/])glm[-_.]?5[-_.]?3[-_.]?flash$/.test(name) ||
+    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name) ||
     /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
   ) {
     promotions.push('limited')
@@ -28,7 +28,12 @@ export function getModelPromotions(modelId: string): ModelPromotion[] {
     )
   )
     promotions.push('hot')
-  if (/(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name)) promotions.push('new')
+  if (
+    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name) ||
+    /(^|[/])claude[-_.]?fable[-_.]?5[-_.]?1(?:[-_.]|$)/.test(name)
+  ) {
+    promotions.push('new')
+  }
   return promotions
 }
 
