@@ -2387,6 +2387,7 @@
     "Invite Info": "Invite Info",
     "Invited": "Invited",
     "Invited by user ID": "Invited by user ID",
+    "Invited by user email": "Invited by user email",
     "Invited Users": "Invited Users",
     "Invitee Reward": "Recompensa del invitado",
     "Inviter": "Inviter",
@@ -5358,7 +5359,9 @@
     "PLG Only": "Solo PLG",
     "PLG Users": "Usuarios PLG",
     "All Users": "Todos los usuarios",
+    "Paid only": "Paid only",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).": "Solo usuarios PLG (group=plg, cuentas internas y empresariales excluidas). Todas las fechas y horas en hora del Pacífico de EE. UU. (PT). Navegación real = chats de playground excluyendo la solicitud automática del registro; claves manuales = claves API creadas 2+ minutos después del registro; usuarios de claves = cualquier solicitud con clave API, incluidas las claves autoaprovisionadas; costo operativo = cuota consumida mediante claves autoaprovisionadas (creadas en los 2 primeros minutos tras el registro).",
+    "Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.": "Pix / 支付宝等本地支付链路的归因不完整，部分付费用户可能无法追溯到原始广告来源。",
     "Payment Currency": "Moneda de pago",
     "Signup Method": "Método de registro",
     "Last IP": "Última IP",
@@ -6901,6 +6904,7 @@
     "Refresh challenge": "Actualizar desafío",
     "Complete the graphical verification before creating your account.": "Completa la verificación gráfica antes de crear tu cuenta.",
     "Voice": "Voz",
-    "Speed": "Velocidad"
+    "Speed": "Velocidad",
+    "Video URL": "URL del video"
   }
 }

@@ -39,12 +39,34 @@ func TestReplaceWebsiteFeaturedModelsWithConfigStoresBannerFields(t *testing.T) 
 		BackgroundImageURL:      "https://cdn.example/banner.png",
 		BackgroundImage:         "data:image/png;base64,AA==",
 		FallbackBackgroundImage: "/assets/fallback.png",
+		Video:                   "/assets/banner.mp4",
 	}}))
 	rows, err := ListWebsiteFeaturedModels()
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, "GPT launch", rows[0].DisplayName)
 	require.Equal(t, "data:image/png;base64,AA==", rows[0].BackgroundImage)
+	require.Equal(t, "/assets/banner.mp4", rows[0].Video)
+}
+
+func TestSeedLegacyWebsiteFeaturedModelsIsOneTimeAndPreservesExplicitClear(t *testing.T) {
+	db, _ := setupModelAccessDB(t)
+	previousKeyCol := commonKeyCol
+	t.Cleanup(func() { commonKeyCol = previousKeyCol })
+	commonKeyCol = "`key`"
+	require.NoError(t, db.AutoMigrate(&Option{}, &WebsiteFeaturedModel{}))
+
+	require.NoError(t, SeedLegacyWebsiteFeaturedModels())
+	rows, err := ListWebsiteFeaturedModels()
+	require.NoError(t, err)
+	require.Len(t, rows, len(legacyWebsiteFeaturedDefaults))
+	require.Equal(t, legacyWebsiteFeaturedDefaults[0].ModelName, rows[0].ModelName)
+
+	require.NoError(t, ReplaceWebsiteFeaturedModels(nil))
+	require.NoError(t, SeedLegacyWebsiteFeaturedModels())
+	rows, err = ListWebsiteFeaturedModels()
+	require.NoError(t, err)
+	require.Empty(t, rows)
 }
 
 func websiteFeaturedNames(rows []WebsiteFeaturedModel) []string {

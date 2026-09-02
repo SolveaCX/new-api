@@ -2387,6 +2387,7 @@
     "Invite Info": "Informações do convite",
     "Invited": "Convidado",
     "Invited by user ID": "Convidado por ID de usuário",
+    "Invited by user email": "Invited by user email",
     "Invited Users": "Usuários convidados",
     "Invitee Reward": "Recompensa do Convidado",
     "Inviter": "Convidador",
@@ -5358,7 +5359,9 @@
     "PLG Only": "Somente PLG",
     "PLG Users": "Usuários PLG",
     "All Users": "Todos os usuários",
+    "Paid only": "Paid only",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).": "Somente usuários PLG (group=plg, contas internas e corporativas excluídas). Todas as datas e horários em horário do Pacífico dos EUA (PT). Navegação real = conversas no playground excluindo a solicitação automática do cadastro; chaves manuais = chaves de API criadas 2+ minutos após o cadastro; usuários de chaves = qualquer solicitação via chave de API, incluindo chaves provisionadas automaticamente; custo operacional = cota consumida por chaves provisionadas automaticamente (criadas em até 2 minutos após o cadastro).",
+    "Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.": "Pix / 支付宝等本地支付链路的归因不完整，部分付费用户可能无法追溯到原始广告来源。",
     "Payment Currency": "Moeda de pagamento",
     "Signup Method": "Método de cadastro",
     "Last IP": "Último IP",
@@ -6901,6 +6904,7 @@
     "Refresh challenge": "Atualizar desafio",
     "Complete the graphical verification before creating your account.": "Conclua a verificação gráfica antes de criar sua conta.",
     "Voice": "Voz",
-    "Speed": "Velocidade"
+    "Speed": "Velocidade",
+    "Video URL": "URL do vídeo"
   }
 }

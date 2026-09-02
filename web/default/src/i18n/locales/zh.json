@@ -6904,6 +6904,7 @@
     "Refresh challenge": "刷新图形验证",
     "Complete the graphical verification before creating your account.": "创建账户前，请先完成图形验证。",
     "Voice": "音色",
-    "Speed": "语速"
+    "Speed": "语速",
+    "Video URL": "视频 URL"
   }
 }

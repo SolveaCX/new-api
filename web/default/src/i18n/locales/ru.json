@@ -2387,6 +2387,7 @@
     "Invite Info": "Информация о приглашении",
     "Invited": "Приглашен",
     "Invited by user ID": "Приглашен пользователем с ID",
+    "Invited by user email": "Invited by user email",
     "Invited Users": "Приглашенные пользователи",
     "Invitee Reward": "Награда приглашенному",
     "Inviter": "Пригласивший",
@@ -5358,7 +5359,9 @@
     "PLG Only": "Только PLG",
     "PLG Users": "Пользователи PLG",
     "All Users": "Все пользователи",
+    "Paid only": "Paid only",
     "PLG users only (group=plg, internal and enterprise accounts excluded). All dates and times are US Pacific Time (PT). Real browse = playground chats excluding the auto-fired signup request; manual keys = API keys created 2+ minutes after signup; key users = any API key request including auto-provisioned keys; op cost = quota burned via auto-provisioned keys (created within 2 minutes of signup).": "Только PLG-пользователи (group=plg, внутренние и корпоративные аккаунты исключены). Все даты и время указаны по тихоокеанскому времени США (PT). Реальный просмотр = чаты в playground без автоматического запроса при регистрации; ключи вручную = API-ключи, созданные через 2+ минуты после регистрации; пользователи ключей = любой запрос по API-ключу, включая автосозданные ключи; операционные затраты = квота, израсходованная через автосозданные ключи (созданные в течение 2 минут после регистрации).",
+    "Local payment attribution is incomplete for Pix / Alipay and similar flows, so some paid users may not be traceable back to the original ad source.": "Pix / 支付宝等本地支付链路的归因不完整，部分付费用户可能无法追溯到原始广告来源。",
     "Payment Currency": "Валюта оплаты",
     "Signup Method": "Способ регистрации",
     "Last IP": "Последний IP",
@@ -6901,6 +6904,7 @@
     "Refresh challenge": "Обновить задание",
     "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта.",
     "Voice": "Голос",
-    "Speed": "Скорость"
+    "Speed": "Скорость",
+    "Video URL": "URL видео"
   }
 }

@@ -317,7 +317,7 @@ function buildSlideFromModel(model: PricingModel): FeaturedSlide {
     vendor: model.vendor_name ?? curated?.vendor ?? "AI model",
     image: uploadedImage ?? configuredImage ?? curated?.image ?? model.icon ?? "/assets/models-featured/flatkey-model-cover-clean.png",
     fallbackImage: configuredFallback ?? curated?.fallbackImage,
-    video: curated?.video,
+    video: safeBannerAsset(config?.video) ?? curated?.video,
     tags,
     blurb: description ? localizedRecord(description) : curated?.blurb ?? localizedRecord(""),
   };
