@@ -49,7 +49,7 @@ import { modelIconKey } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   getImagePlaygroundExample,
-  getImagePromptTemplateLocalFallbackPosters,
+  getImagePromptTemplateLocalFallbackPoster,
   getImagePromptTemplateFallbackPosters,
   getImagePromptTemplates,
   localizeImagePromptText,
@@ -57,7 +57,7 @@ import {
 } from "@/lib/image-prompt-templates";
 import {
   getVideoPlaygroundPrompt,
-  getVideoPromptTemplateLocalFallbackPosters,
+  getVideoPromptTemplateLocalFallbackPoster,
   getVideoPromptTemplates,
   localizeVideoPromptText,
 } from "@/lib/video-prompt-templates";
@@ -2079,7 +2079,7 @@ function OutputPreview(props: {
     ? getVideoPromptTemplates(props.modelId, props.locale)[0] ?? props.fallbackVideo ?? MEDIA_EXAMPLES.video[0]
     : undefined;
   const videoFallbackPoster = props.kind === "video"
-    ? getVideoPromptTemplateLocalFallbackPosters(props.modelId)[0] ?? props.fallbackVideo?.fallbackPoster
+    ? getVideoPromptTemplateLocalFallbackPoster(props.modelId, videoExample?.professionId) ?? props.fallbackVideo?.fallbackPoster
     : undefined;
   const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId, props.locale) : undefined;
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
@@ -2144,12 +2144,13 @@ function OutputPreview(props: {
             alt={props.t("Video preview")}
           />
         ) : imageExample ? (
-          <CdnFallbackImage
-            key={imageExample.poster}
+          <Image
             src={imageExample.poster}
             alt={props.t("Image preview")}
-            fallbackSrc={getImagePromptTemplateLocalFallbackPosters(props.modelId)[0]}
-            className="preview-media absolute inset-0 size-full object-cover"
+            fill
+            sizes="(min-width: 1024px) 40vw, 100vw"
+            className="preview-media object-cover"
+            unoptimized
           />
         ) : (
           <span className="preview-label">
@@ -3165,7 +3166,6 @@ function buildPromptLibraryItems(
   if (config.generator?.kind === "image") {
     const templates = getImagePromptTemplates(config.modelId, locale);
     const posters = getImagePromptTemplateFallbackPosters(config.modelId);
-    const localFallbackPosters = getImagePromptTemplateLocalFallbackPosters(config.modelId);
     if (templates.length > 0) {
       return templates.slice(0, 6).map((template, index) => ({
         key: template.id,
@@ -3174,7 +3174,7 @@ function buildPromptLibraryItems(
         alt: t(template.label),
         example: {
           poster: posters[index] ?? template.poster,
-          fallbackPoster: localFallbackPosters[index],
+          fallbackPoster: getImagePromptTemplateLocalFallbackPoster(config.modelId, template.poster),
         },
       }));
     }
@@ -3182,10 +3182,9 @@ function buildPromptLibraryItems(
 
   if (config.generator?.kind === "video") {
     const templates = getVideoPromptTemplates(config.modelId, locale);
-    const localFallbackPosters = getVideoPromptTemplateLocalFallbackPosters(config.modelId);
     hasReviewedVideoTemplates = templates.length > 0;
     if (templates.length > 0) {
-      return templates.slice(0, 6).map((template, index) => ({
+      return templates.slice(0, 6).map((template) => ({
         // The profession is the semantic identity of a card. The legacy
         // template id is retained inside the template for serialized prompts,
         // but must not be used as the media join key.
@@ -3202,7 +3201,7 @@ function buildPromptLibraryItems(
           // rather than inheriting an unrelated local industry image.
           poster: template.poster || (isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster)),
           video: template.video,
-          fallbackPoster: localFallbackPosters[index],
+          fallbackPoster: getVideoPromptTemplateLocalFallbackPoster(config.modelId, template.professionId),
         },
       }));
     }
