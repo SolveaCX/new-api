@@ -625,7 +625,11 @@ func selectRealPersonProviderBinding(userGroup, usingGroup string, specificChann
 		if channel == nil {
 			continue
 		}
-		binding, err := realPersonProviderForChannel(channel)
+		// Candidate selection may use the process-local channel cache. Reload the
+		// selected channel from the database before constructing the provider so
+		// creation starts from the same persisted channel configuration that
+		// verification polling resolves by channel ID on each replica.
+		binding, err := loadUsableRealPersonProviderBinding(channel.Id, group)
 		if err == nil {
 			return binding, nil
 		}

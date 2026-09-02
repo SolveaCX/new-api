@@ -697,6 +697,26 @@ func TestBytePlusRealPersonPinnedChannelSplitsCommaGroupsForAbility(t *testing.T
 	require.Error(t, err)
 }
 
+func TestBytePlusRealPersonAutomaticSelectionRefreshesCachedChannelBeforeBinding(t *testing.T) {
+	newBytePlusRealPersonServiceTestDB(t)
+	fake := &fakeBytePlusRealPersonClient{}
+	installBytePlusRealPersonServiceTestDeps(t, fake)
+	insertBytePlusRealPersonChannel(t, 101, "default", common.ChannelStatusEnabled, structuredRealPersonKeyWithProject("cache-project"))
+
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = true
+	model.InitChannelCache()
+	t.Cleanup(func() { common.MemoryCacheEnabled = oldMemoryCacheEnabled })
+
+	require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", 101).Update("key", structuredRealPersonKeyWithProject("database-project")).Error)
+
+	binding, err := selectRealPersonProviderBinding("default", "default", 0)
+
+	require.NoError(t, err)
+	require.NotNil(t, binding.StorageCredentials)
+	require.Equal(t, "database-project", binding.StorageCredentials.ProjectName)
+}
+
 func TestBytePlusRealPersonVerificationTwoProfilesSameChannelKeepIndependentGroupIDs(t *testing.T) {
 	newBytePlusRealPersonServiceTestDB(t)
 	fake := &fakeBytePlusRealPersonClient{}
@@ -933,6 +953,10 @@ func insertBytePlusRealPersonChannel(t *testing.T, id int, group string, status 
 
 func structuredRealPersonKey() string {
 	return `{"api_key":"video-api-test","access_key_id":"provider-access-test","secret_access_key":"provider-secret-test","project_name":"test-project","real_person_assets":{"enabled":true,"tos_bucket":"bucket","tos_region":"ap-southeast-1","tos_internal_endpoint":"https://tos-ap-southeast-1.ibytepluses.com"}}`
+}
+
+func structuredRealPersonKeyWithProject(project string) string {
+	return strings.Replace(structuredRealPersonKey(), `"project_name":"test-project"`, `"project_name":"`+project+`"`, 1)
 }
 
 func urlOnlyRealPersonKey() string {
