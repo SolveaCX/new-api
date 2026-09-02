@@ -11,7 +11,7 @@ import { buildHomeModelRows } from "@/lib/home-models";
 import type { Locale } from "@/lib/locales";
 import { localizePath } from "@/lib/locales";
 import { ROUTER_ORIGIN, consoleUrl } from "@/lib/origins";
-import { getPricingData } from "@/lib/pricing";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 
 // "Start free trial" lands the user straight on the console API Keys tab:
 // already-authenticated users skip the form, new users land on /keys after signing up.
@@ -31,7 +31,9 @@ const PRIVACY_BADGES = [
 export async function HomePage(props: Props) {
   const copy = getCopy(props.locale);
   const home = getHomeCopy(props.locale);
-  const pricing = await getPricingData();
+  // Use the public-group endpoint, which bypasses the legacy five-minute
+  // aggregate pricing cache so console featured-order changes appear promptly.
+  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
   const tableRows = buildHomeModelRows(pricing);
 
   const apiBaseUrlDescription = (text: string) => text.replace("{{apiBaseUrl}}", API_BASE_URL);
