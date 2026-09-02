@@ -154,7 +154,7 @@ describe('getModelCatalogSummary', () => {
       },
       {
         model: buildModel({ id: 'vid-b', supported_endpoint_types: ['video'] }),
-        price: { kind: 'dynamic' },
+        price: { kind: 'dynamic', discountPercent: null },
       },
     ])
 

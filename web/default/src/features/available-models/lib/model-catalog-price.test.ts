@@ -228,17 +228,18 @@ describe('resolveCatalogPrice', () => {
   })
 
   // A tiered expression has no single number to show; inventing one would
-  // misprice the model on the card.
-  test('reports dynamic billing without inventing a number', () => {
+  // misprice the model on the card. The scope-level saving is still safe to
+  // show because it does not depend on the request's eventual tier.
+  test('reports dynamic billing and its scope discount', () => {
     const price = resolveCatalogPrice(
       buildPricingModel({
         billing_mode: 'tiered_expr',
         billing_expr: 'inputPrice = 1',
       }),
-      { ratio: 1 }
+      { ratio: 0.45 }
     )
 
-    expect(price).toEqual({ kind: 'dynamic' })
+    expect(price).toEqual({ kind: 'dynamic', discountPercent: 55 })
   })
 
   test('ignores a tiered billing mode that carries no expression', () => {
