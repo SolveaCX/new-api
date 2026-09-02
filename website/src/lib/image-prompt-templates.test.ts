@@ -3,6 +3,8 @@ import {
   getImagePlaygroundExample,
   getImagePromptTemplate,
   getImagePromptTemplateFallbackPosters,
+  getImagePromptTemplateLocalFallbackPoster,
+  getImagePromptTemplateLocalFallbackPosters,
   getImagePromptTemplates,
   localizeImagePromptText,
   IMAGE_PROMPT_TEMPLATES,
@@ -223,6 +225,18 @@ describe("image prompt templates", () => {
       getImagePromptTemplates("gemini-2.5-flash-image").map((template) => template.poster),
     );
     expect(getImagePlaygroundExample("unknown-image-model")).toBeUndefined();
+  });
+
+  test("keeps each CDN poster paired with its same-lane local original", () => {
+    const modelId = "gpt-image-2";
+    const primary = getImagePromptTemplateFallbackPosters(modelId);
+    const fallback = getImagePromptTemplateLocalFallbackPosters(modelId);
+
+    expect(primary).toHaveLength(fallback.length);
+    primary.forEach((poster, index) => {
+      expect(getImagePromptTemplateLocalFallbackPoster(modelId, poster)).toBe(fallback[index]);
+    });
+    expect(getImagePromptTemplateLocalFallbackPoster(modelId, "https://cdn.example.invalid/unknown.png")).toBeUndefined();
   });
 
   test("keeps prompt bodies in English on every locale page", () => {

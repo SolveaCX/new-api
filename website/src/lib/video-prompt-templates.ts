@@ -1125,6 +1125,16 @@ export function getVideoPromptTemplateLocalFallbackPosters(modelId: string): rea
   );
 }
 
+/** Resolve the packaged poster paired with one exact profession clip. */
+export function getVideoPromptTemplateLocalFallbackPoster(
+  modelId = "",
+  professionId?: VideoProfessionId,
+): string | undefined {
+  if (!professionId) return undefined;
+  const index = VIDEO_PROFESSION_IDS.indexOf(professionId);
+  return index >= 0 ? getVideoPromptTemplateLocalFallbackPosters(modelId)[index] : undefined;
+}
+
 /** Return six profession templates with one stable media binding per card. */
 export function getVideoPromptTemplates(modelId: string, locale: Locale = "en"): readonly VideoPromptTemplate[] {
   const slug = normalizeVideoModelId(modelId);

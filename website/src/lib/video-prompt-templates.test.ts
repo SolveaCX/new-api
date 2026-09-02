@@ -6,6 +6,8 @@ import {
   VIDEO_PROMPT_TEMPLATES,
   getVideoPlaygroundPrompt,
   getVideoPromptTemplateFallbackPosters,
+  getVideoPromptTemplateLocalFallbackPoster,
+  getVideoPromptTemplateLocalFallbackPosters,
   getVideoPromptTemplates,
   localizeVideoPromptText,
 } from "./video-prompt-templates";
@@ -172,6 +174,15 @@ describe("video profession prompt templates", () => {
       "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-05/minimax-h3-seedance-creator-explainer.jpg",
       "https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/minimax-h3-seedance-music-visual-art.jpg",
     ]);
+  });
+
+  test("keeps each CDN clip paired with its same-profession local poster", () => {
+    const modelId = "seedance-2.5";
+    const fallback = getVideoPromptTemplateLocalFallbackPosters(modelId);
+
+    VIDEO_PROFESSION_IDS.forEach((professionId, index) => {
+      expect(getVideoPromptTemplateLocalFallbackPoster(modelId, professionId)).toBe(fallback[index]);
+    });
   });
 
   test("returns one model-specific template set and keeps unknown models empty", () => {

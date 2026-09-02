@@ -909,6 +909,13 @@ export function getImagePromptTemplateLocalFallbackPosters(modelId = ""): string
   );
 }
 
+/** Resolve the packaged poster paired with one exact CDN poster URL. */
+export function getImagePromptTemplateLocalFallbackPoster(modelId = "", poster = ""): string | undefined {
+  const primaryPosters = getImagePromptTemplateFallbackPosters(modelId);
+  const index = primaryPosters.indexOf(poster);
+  return index >= 0 ? getImagePromptTemplateLocalFallbackPosters(modelId)[index] : undefined;
+}
+
 /**
  * Resolve a model-specific Playground starter, including catalog aliases such
  * as `gemini-3.1-flash-image-preview`. A fresh object keeps callers from
