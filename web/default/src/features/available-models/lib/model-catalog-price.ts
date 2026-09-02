@@ -31,7 +31,11 @@ import type { PricingModel } from '@/features/pricing/types'
  */
 export type CatalogPrice =
   | { kind: 'none' }
-  | { kind: 'dynamic' }
+  | {
+      kind: 'dynamic'
+      /** Saving against the list ratio, when the selected scope is discounted. */
+      discountPercent: number | null
+    }
   | {
       kind: 'second'
       priceUSD: number
@@ -157,10 +161,15 @@ export function resolveCatalogPrice(
 ): CatalogPrice {
   if (!model) return { kind: 'none' }
 
-  // A tiered expression prices per-request against runtime variables; there is
-  // no single unit price to put on a card.
+  // A tiered expression prices against runtime variables; there is no single
+  // unit price to put on a card. We can still show the scope-level saving,
+  // which is independent of the request's eventual tier.
   if (model.billing_mode === 'tiered_expr' && Boolean(model.billing_expr)) {
-    return { kind: 'dynamic' }
+    const ratio = isUsableNumber(options.ratio) ? options.ratio : 1
+    return {
+      kind: 'dynamic',
+      discountPercent: resolveOfficialDiscount(ratio),
+    }
   }
 
   const ratio = isUsableNumber(options.ratio) ? options.ratio : 1

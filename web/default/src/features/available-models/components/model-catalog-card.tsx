@@ -130,7 +130,10 @@ function ModelPricePanel(props: { price: CatalogPrice }) {
   if (price.kind === 'dynamic') {
     return (
       <div className='mt-auto flex flex-col gap-2 border-t pt-4'>
-        <PriceKicker>{t('Billing')}</PriceKicker>
+        <PriceHeader
+          label={t('Billing')}
+          discountPercent={price.discountPercent}
+        />
         <p className='text-base font-semibold'>{t('Dynamic pricing')}</p>
         <p className='text-muted-foreground text-xs leading-relaxed'>
           {t('Price depends on request size and options.')}

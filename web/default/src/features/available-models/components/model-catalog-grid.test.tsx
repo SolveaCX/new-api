@@ -230,7 +230,7 @@ describe('ModelCatalogGrid', () => {
     expect(html).not.toContain('Per request')
   })
 
-  test('names dynamic billing instead of inventing a unit price', () => {
+  test('shows dynamic billing and the scope saving without inventing a unit price', () => {
     const html = renderGrid({
       models: [buildModel()],
       pricing: [
@@ -239,10 +239,12 @@ describe('ModelCatalogGrid', () => {
           billing_expr: 'inputPrice = 1',
         }),
       ],
+      defaultRatio: 0.45,
     })
 
     expect(html).toContain('Dynamic pricing')
     expect(html).not.toContain('Per 1M tokens')
+    expect(html).toContain('Save 55%')
   })
 
   // The category badge already says "Video"; repeating it as an endpoint badge
