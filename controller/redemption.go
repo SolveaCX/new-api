@@ -13,7 +13,10 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+const maxRedemptionCreateCount = 2000
 
 type claimRedemptionRequest struct {
 	Purpose string `json:"purpose"`
@@ -122,36 +125,42 @@ func AddRedemption(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgRedemptionCountPositive)
 		return
 	}
-	if redemption.Count > 100 {
-		common.ApiErrorI18n(c, i18n.MsgRedemptionCountMax)
+	if redemption.Count > maxRedemptionCreateCount {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": i18n.T(c, i18n.MsgRedemptionCountMax),
+		})
 		return
 	}
 	if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
 	}
-	var keys []string
+	keys := make([]string, 0, redemption.Count)
+	rows := make([]model.Redemption, 0, redemption.Count)
+	now := common.GetTimestamp()
 	for i := 0; i < redemption.Count; i++ {
 		key := common.GetUUID()
-		cleanRedemption := model.Redemption{
+		keys = append(keys, key)
+		rows = append(rows, model.Redemption{
 			UserId:      c.GetInt("id"),
 			Name:        redemption.Name,
 			Key:         key,
-			CreatedTime: common.GetTimestamp(),
+			CreatedTime: now,
 			Quota:       redemption.Quota,
 			ExpiredTime: redemption.ExpiredTime,
-		}
-		err = cleanRedemption.Insert()
-		if err != nil {
-			common.SysError("failed to insert redemption: " + err.Error())
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": i18n.T(c, i18n.MsgRedemptionCreateFailed),
-				"data":    keys,
-			})
-			return
-		}
-		keys = append(keys, key)
+		})
+	}
+	if err = model.DB.Transaction(func(tx *gorm.DB) error {
+		return tx.CreateInBatches(rows, 200).Error
+	}); err != nil {
+		common.SysError("failed to insert redemption: " + err.Error())
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": i18n.T(c, i18n.MsgRedemptionCreateFailed),
+			"data":    keys,
+		})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
