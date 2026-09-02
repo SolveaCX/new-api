@@ -29,6 +29,8 @@ describe("model promotions", () => {
     expect(getModelPromotions("claude-opus-4-8")).toEqual(["hot"]);
     expect(getModelPromotions("claude-opus-5")).toEqual(["hot"]);
     expect(getModelPromotions("claude-sonnet-5")).toEqual(["hot"]);
+    expect(getModelPromotions("claude-fable-5.1")).toEqual(["new"]);
+    expect(getModelPromotions("anthropic/claude-fable-5.1-latest")).toEqual(["new"]);
   });
 
   test("sorts free and campaign models ahead of the existing order", () => {
@@ -45,6 +47,10 @@ describe("model promotions", () => {
       "gpt-5.6-sol",
       "plain",
       "glm-5.3",
+    ]);
+    expect(sortModelsByPromotion([{ model_name: "plain" }, { model_name: "claude-fable-5.1" }]).map((model) => model.model_name)).toEqual([
+      "claude-fable-5.1",
+      "plain",
     ]);
   });
 

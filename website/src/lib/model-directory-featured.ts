@@ -25,6 +25,36 @@ export type FeaturedSlide = {
 
 export const FEATURED_SLIDES: FeaturedSlide[] = [
   {
+    modelName: "claude-fable-5.1",
+    displayName: "Fable 5.1",
+    vendor: "Anthropic",
+    image: "/assets/models-featured/claude-fable-5.1.png",
+    tags: {
+      en: ["Coding", "Agents", "Computer Use"],
+      zh: ["编程", "智能体", "计算机操作"],
+      es: ["Programación", "Agentes", "Uso del ordenador"],
+      fr: ["Code", "Agents", "Utilisation de l’ordinateur"],
+      pt: ["Programação", "Agentes", "Uso do computador"],
+      ru: ["Программирование", "Агенты", "Управление компьютером"],
+      ja: ["コーディング", "エージェント", "コンピューター操作"],
+      vi: ["Lập trình", "Tác tử", "Điều khiển máy tính"],
+      de: ["Coding", "Agenten", "Computersteuerung"],
+      id: ["Coding", "Agen", "Penggunaan komputer"],
+    },
+    blurb: {
+      en: "Anthropic's strongest coding model yet: 55.8% on Terminal-Bench 4.0, scientific research more than doubled, and up to 45% cheaper on long agentic runs.",
+      zh: "Anthropic 迄今最强的编程模型：Terminal-Bench 4.0 得分 55.8%，科学研究能力提升一倍以上，长时间智能体运行成本最高可降低 45%。",
+      es: "El modelo de programación más potente de Anthropic hasta la fecha: 55,8 % en Terminal-Bench 4.0, la investigación científica se duplicó con creces y hasta un 45 % menos de coste en ejecuciones largas de agentes.",
+      fr: "Le modèle de programmation le plus puissant d’Anthropic à ce jour : 55,8 % sur Terminal-Bench 4.0, une capacité de recherche scientifique plus que doublée et jusqu’à 45 % de coût en moins pour les longues exécutions d’agents.",
+      pt: "O modelo de programação mais forte da Anthropic até agora: 55,8% no Terminal-Bench 4.0, pesquisa científica mais que dobrou e até 45% menos custo em execuções longas de agentes.",
+      ru: "Самая сильная модель Anthropic для программирования: 55,8% в Terminal-Bench 4.0, результат в научных исследованиях вырос более чем вдвое, а длительные агентные запуски стоят до 45% дешевле.",
+      ja: "Anthropic史上最強のコーディングモデル。Terminal-Bench 4.0で55.8%、科学研究の性能は2倍以上に向上し、長時間のエージェント実行では最大45%低コストです。",
+      vi: "Mô hình lập trình mạnh nhất từ trước đến nay của Anthropic: đạt 55,8% trên Terminal-Bench 4.0, năng lực nghiên cứu khoa học tăng hơn gấp đôi và chi phí chạy tác tử dài giảm tới 45%.",
+      de: "Anthropics bisher stärkstes Coding-Modell: 55,8 % im Terminal-Bench 4.0, mehr als doppelte Leistung bei wissenschaftlicher Forschung und bis zu 45 % geringere Kosten bei langen Agentenläufen.",
+      id: "Model coding terkuat Anthropic sejauh ini: 55,8% di Terminal-Bench 4.0, kemampuan riset ilmiah meningkat lebih dari dua kali lipat, dan biaya proses agen panjang hingga 45% lebih murah.",
+    },
+  },
+  {
     modelName: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     vendor: "Zhipu AI",
