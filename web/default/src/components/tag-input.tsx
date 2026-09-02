@@ -29,6 +29,7 @@ interface TagInputProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  suggestions?: readonly string[]
 }
 
 export function TagInput({
@@ -37,6 +38,7 @@ export function TagInput({
   placeholder,
   className,
   disabled = false,
+  suggestions = [],
 }: TagInputProps) {
   const { t } = useTranslation()
   const placeholderText = placeholder ?? t('Add tags...')
@@ -109,6 +111,25 @@ export function TagInput({
         disabled={disabled}
         className='placeholder:text-muted-foreground min-w-[120px] flex-1 border-0 bg-transparent shadow-none outline-none focus-visible:ring-0'
       />
+      {!disabled && suggestions.some((suggestion) => !value.includes(suggestion)) && (
+        <div className='flex w-full flex-wrap gap-1 pt-1'>
+          {suggestions
+            .filter((suggestion) => !value.includes(suggestion))
+            .map((suggestion) => (
+              <button
+                key={suggestion}
+                type='button'
+                onClick={(e) => {
+                  e.stopPropagation()
+                  addTag(suggestion)
+                }}
+                className='border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-foreground rounded-full border px-2 py-0.5 text-[11px] transition-colors'
+              >
+                {suggestion}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   )
 }

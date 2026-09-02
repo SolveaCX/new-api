@@ -25,6 +25,10 @@ import type { NameRule, ModelStatus, SyncSource } from './types'
 
 export const DEFAULT_PAGE_SIZE = 20
 
+// Existing website promotion labels are now regular model metadata tags. Keep
+// them available as one-click suggestions while allowing arbitrary tags.
+export const MODEL_TAG_SUGGESTIONS = ['Free', 'Limited discount', 'HOT', 'New release'] as const
+
 // ============================================================================
 // Name Rule Options
 // ============================================================================

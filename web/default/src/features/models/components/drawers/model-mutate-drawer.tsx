@@ -80,7 +80,7 @@ import { normalizeJsonString } from '@/features/system-settings/models/utils'
 import type { ModelSettings } from '@/features/system-settings/types'
 import { safeJsonParse } from '@/features/system-settings/utils/json-parser'
 import { createModel, updateModel, getModel, getVendors } from '../../api'
-import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
+import { getNameRuleOptions, ENDPOINT_TEMPLATES, MODEL_TAG_SUGGESTIONS } from '../../constants'
 import { modelsQueryKeys, vendorsQueryKeys, parseModelTags } from '../../lib'
 import type { Model } from '../../types'
 
@@ -774,6 +774,7 @@ export function ModelMutateDrawer({
                         value={field.value || []}
                         onChange={field.onChange}
                         placeholder={t('Add tags...')}
+                        suggestions={MODEL_TAG_SUGGESTIONS}
                       />
                     </FormControl>
                     <FormDescription>
