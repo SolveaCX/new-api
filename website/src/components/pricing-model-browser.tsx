@@ -49,7 +49,6 @@ import { localizePath, type Locale } from "@/lib/locales";
 import { getModelLandingConfigForPricingModel } from "@/lib/model-landing";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
-import { getModelPromotions, modelPromotionLabel } from "@/lib/model-promotions";
 import { CdnFallbackImage } from "@/components/cdn-media";
 import {
   CartesianGrid,
@@ -320,7 +319,6 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
   const tokenBased = isTokenBasedModel(model);
   const endpoints = model.supported_endpoint_types ?? [];
   const tags = parseTags(model.tags);
-  const promotions = getModelPromotions(model.model_name);
   const initial = model.model_name.charAt(0).toUpperCase();
   const iconKey = model.icon || model.vendor_icon;
   const landingConfig = getModelLandingConfigForPricingModel(model);
@@ -353,15 +351,9 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="truncate text-[15px] leading-tight font-black text-slate-950 dark:text-white">{model.model_name}</h3>
-              {promotions.map((promotion) => (
-                <span key={promotion} className={cn(
-                  "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
-                  promotion === "free" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-                  promotion === "limited" && "border-amber-200 bg-amber-50 text-amber-700",
-                  promotion === "hot" && "border-rose-200 bg-rose-50 text-rose-700",
-                  promotion === "new" && "border-sky-200 bg-sky-50 text-sky-700"
-                )}>
-                  {modelPromotionLabel(props.locale, promotion)}
+              {tags.map((tag) => (
+                <span key={tag} className="inline-flex shrink-0 items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap text-violet-700 shadow-sm dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-200">
+                  {tag}
                 </span>
               ))}
             </div>
@@ -438,11 +430,6 @@ function ModelPriceCard(props: { model: PricingModel; locale: Locale; performanc
           {endpoints.slice(0, 2).map((endpoint) => (
             <span key={endpoint} className="text-xs text-slate-500/80 dark:text-slate-400">
               {endpoint}
-            </span>
-          ))}
-          {tags.slice(0, 2).map((tag) => (
-            <span key={tag} className="text-xs text-slate-500/80 dark:text-slate-400">
-              {tag}
             </span>
           ))}
           <span className="text-xs text-slate-400 dark:text-slate-500">1M</span>
