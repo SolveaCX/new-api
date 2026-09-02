@@ -74,7 +74,7 @@ temp_media.upload_failed: "Falha ao enviar imagem"
 # Redemption messages
 redemption.name_length: "O nome do código de resgate deve ter entre 1 e 20 caracteres"
 redemption.count_positive: "A quantidade de códigos de resgate deve ser maior que 0"
-redemption.count_max: "No máximo 100 códigos de resgate podem ser gerados de uma vez"
+redemption.count_max: "No máximo 2000 códigos de resgate podem ser gerados de uma vez"
 redemption.create_failed: "Falha ao criar código de resgate, tente novamente mais tarde"
 redemption.invalid: "Código de resgate inválido"
 redemption.used: "Este código de resgate já foi usado"
