@@ -62,6 +62,47 @@ describe('resolveCatalogPrice', () => {
     expect(price.outputUSD).toBeCloseTo(0.3, 10)
   })
 
+  test.each([
+    {
+      model_name: 'deepseek-v4-flash',
+      configuredInput: 0.396,
+      plgInput: 0.374,
+      discountPercent: 6,
+    },
+    {
+      model_name: 'deepseek-v4-pro',
+      configuredInput: 1.32,
+      plgInput: 1.122,
+      discountPercent: 15,
+    },
+  ])(
+    'shows the PLG discount for $model_name',
+    ({ model_name, configuredInput, plgInput, discountPercent }) => {
+      const price = resolveCatalogPrice(
+        buildPricingModel({
+          model_name,
+          display_pricing: {
+            billing_kind: 'token',
+            prices: {
+              input: { configured: configuredInput, plg: plgInput },
+              output: { configured: configuredInput * 2, plg: plgInput * 2 },
+            },
+          },
+        }),
+        { ratio: 1 }
+      )
+
+      expect(price).toEqual({
+        kind: 'token',
+        inputUSD: plgInput,
+        outputUSD: plgInput * 2,
+        officialInputUSD: configuredInput,
+        officialOutputUSD: configuredInput * 2,
+        discountPercent,
+      })
+    }
+  )
+
   // The official rate is the undiscounted list price — the same price the
   // ratio is applied to — so the card can strike it through next to ours.
   test('quotes the official rate alongside the discounted price', () => {
