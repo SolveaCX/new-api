@@ -333,7 +333,7 @@
 "lov.h2": "用 flatkey 构建,<br>被开发者喜爱。",
 "nav.models": "模型",
 "nav.cli": "CLI",
-"nav.playground": "Playground",
+"nav.playground": "在线体验",
 "nav.rankings": "排行榜",
 "nav.pricing": "价格",
 "nav.compute": "算力",

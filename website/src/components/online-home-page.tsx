@@ -293,6 +293,62 @@ const FEATURED_MODEL_STRIP = [
   ["claude.svg", "claude-opus-5", "Claude · reasoning model"],
 ] as const;
 
+const FEATURED_MODEL_STRIP_ZH = [
+  ["deepseek.svg", "deepseek-v4-pro", "DeepSeek · 推理模型"],
+  ["openai.svg", "openai/gpt-5.6-sol", "GPT · 前沿模型"],
+  ["bytedance.svg", "seedance-2.5", "字节跳动 · 视频模型"],
+  ["zai.svg", "glm-5.3", "GLM · 编程模型"],
+  ["claude.svg", "claude-opus-5", "Claude · 推理模型"],
+] as const;
+
+function localizedFeaturedModels(locale: Locale) {
+  return locale === "zh" ? FEATURED_MODEL_STRIP_ZH : FEATURED_MODEL_STRIP;
+}
+
+function providerDescription(locale: Locale, value: string) {
+  if (locale !== "zh") return value;
+  const labels: Record<string, string> = {
+    "reasoning + coding": "推理 + 编程",
+    "language + multimodal": "语言 + 多模态",
+    "video generation": "视频生成",
+    "reasoning + agents": "推理 + Agent",
+    "long context + agents": "长上下文 + Agent",
+    "multimodal intelligence": "多模态智能",
+    "image + music": "图像 + 音乐",
+    "posts + profiles": "帖子 + 主页",
+    "videos + trends": "视频 + 趋势",
+    "actors + crawlers": "Actors + 爬虫",
+    "browser automation": "浏览器自动化",
+    "neural web search": "神经网络搜索",
+    "sales intelligence": "销售情报",
+    "people enrichment": "人员信息补全",
+    "posts + creators": "帖子 + 创作者",
+    "videos + transcripts": "视频 + 转录",
+    "communities + intent": "社区 + 意图",
+    "local review data": "本地评价数据",
+    "products + reviews": "商品 + 评价",
+    "search intelligence": "搜索情报",
+    "private markets": "私募市场",
+    "agent phone": "Agent 电话",
+    "real-time signals": "实时信号",
+    "voice of customer": "客户之声",
+  };
+  return labels[value] ?? value;
+}
+
+function localizedLabel(locale: Locale, english: string, chinese: string) {
+  return locale === "zh" ? chinese : english;
+}
+
+function localizedVideoLabel(locale: Locale, value: string) {
+  if (locale !== "zh") return value;
+  return ({
+    "Image to Video": "图生视频",
+    "Text to Video": "文生视频",
+    "video generation": "视频生成",
+  } as Record<string, string>)[value] ?? value;
+}
+
 const IMAGE_SELECTED_MODEL = "gpt-image-2";
 const VIDEO_SELECTED_MODEL = "seedance-2.5";
 const VIDEO_RESULT_ASSET = {
@@ -300,8 +356,230 @@ const VIDEO_RESULT_ASSET = {
   video: "https://cdn.shulex-voc.com/flatkey/model-examples/seedance-f1-wet-track.mp4",
 } as const;
 
+type MediaCopy = {
+  prompt: string;
+  imagePrompt: string;
+  videoPrompt: string;
+  criteria: string;
+  selectedModel: string;
+  model: string;
+  imageModel: string;
+  videoModel: string;
+  multimodalModel: string;
+  frontierModel: string;
+  reasoningModel: string;
+  runtime: string;
+  runtimeValue: string;
+  invoice: string;
+  pay: string;
+  imageAlt: string;
+  videoAlt: string;
+};
+
+const MEDIA_COPY_BY_LOCALE: Record<Locale, MediaCopy> = {
+  en: {
+    prompt: "Test Prompt",
+    imagePrompt: "Generate a fashion ad-style product scene for these headphones: a young model wears rose-gold wireless headphones in a bright garden filled with oversized artistic flowers.",
+    videoPrompt: "Black-and-silver F1 car tearing through a wet forest track, low rear follow-cam, white spray, misty pines, cool overcast light, blue-gray and deep-green tones.",
+    criteria: "Criteria",
+    selectedModel: "Selected model",
+    model: "Model",
+    imageModel: "image model",
+    videoModel: "video model",
+    multimodalModel: "multimodal model",
+    frontierModel: "frontier model",
+    reasoningModel: "reasoning model",
+    runtime: "Total runtime",
+    runtimeValue: "18.4 sec",
+    invoice: "One invoice",
+    pay: "Pay per successful call · failed calls $0.00",
+    imageAlt: "Fashion image generated from the headphones reference",
+    videoAlt: "F1 car racing on a wet forest track",
+  },
+  zh: {
+    prompt: "测试提示词",
+    imagePrompt: "为这副耳机生成时尚广告风格的产品场景：年轻女性模特在明亮的户外花园中佩戴玫瑰金无线头戴式耳机，背景是橙红、粉色、薰衣草色和奶油色的超大艺术花朵，营造梦幻的花卉氛围。",
+    videoPrompt: "黑银相间的 F1 赛车冲过潮湿的森林赛道，低机位尾随镜头。轮胎扬起白色水雾，车身在高速中轻微颤动；背景是雾气缭绕的松林和隐约可见的看台。阴天冷光，蓝灰、雾白和深绿色调，雨天、快速、电影感。",
+    criteria: "生成标准",
+    selectedModel: "已选模型",
+    model: "模型",
+    imageModel: "图像模型",
+    videoModel: "视频模型",
+    multimodalModel: "多模态模型",
+    frontierModel: "前沿模型",
+    reasoningModel: "推理模型",
+    runtime: "总运行时间",
+    runtimeValue: "18.4 秒",
+    invoice: "一张账单",
+    pay: "仅成功调用才付费 · 失败调用 $0.00",
+    imageAlt: "根据耳机参考图生成的时尚产品图片",
+    videoAlt: "F1 赛车在潮湿森林赛道上行驶",
+  },
+  es: {
+    prompt: "Prompt de prueba",
+    imagePrompt: "Genera una escena de producto con estilo de anuncio de moda: una joven lleva auriculares inalámbricos color oro rosa en un jardín luminoso lleno de flores artísticas gigantes.",
+    videoPrompt: "Un F1 negro y plateado atraviesa una pista forestal mojada, cámara de seguimiento baja, spray blanco, pinos con niebla y luz fría de cielo nublado.",
+    criteria: "Criterios",
+    selectedModel: "Modelo seleccionado",
+    model: "Modelo",
+    imageModel: "modelo de imagen",
+    videoModel: "modelo de vídeo",
+    multimodalModel: "modelo multimodal",
+    frontierModel: "modelo frontier",
+    reasoningModel: "modelo de razonamiento",
+    runtime: "Tiempo total",
+    runtimeValue: "18,4 s",
+    invoice: "Una factura",
+    pay: "Paga solo las llamadas exitosas · llamadas fallidas $0,00",
+    imageAlt: "Imagen de moda generada a partir de la referencia de auriculares",
+    videoAlt: "Coche F1 en una pista forestal mojada",
+  },
+  fr: {
+    prompt: "Prompt de test",
+    imagePrompt: "Générez une scène produit au style publicitaire : une jeune femme porte un casque sans fil or rose dans un jardin lumineux rempli de grandes fleurs artistiques.",
+    videoPrompt: "Une F1 noire et argent traverse une piste forestière mouillée, caméra arrière basse, gerbes blanches, pins brumeux et lumière froide sous un ciel couvert.",
+    criteria: "Critères",
+    selectedModel: "Modèle sélectionné",
+    model: "Modèle",
+    imageModel: "modèle d’image",
+    videoModel: "modèle vidéo",
+    multimodalModel: "modèle multimodal",
+    frontierModel: "modèle frontier",
+    reasoningModel: "modèle de raisonnement",
+    runtime: "Durée totale",
+    runtimeValue: "18,4 s",
+    invoice: "Une facture",
+    pay: "Payez uniquement les appels réussis · appels échoués : 0,00 $",
+    imageAlt: "Image de mode générée à partir de la référence du casque",
+    videoAlt: "Voiture de F1 sur une piste forestière mouillée",
+  },
+  pt: {
+    prompt: "Prompt de teste",
+    imagePrompt: "Gere uma cena de produto em estilo anúncio de moda: uma jovem usa fones sem fio dourados em um jardim iluminado com flores artísticas gigantes.",
+    videoPrompt: "Um F1 preto e prateado atravessa uma pista florestal molhada, câmera baixa de perseguição, spray branco, pinheiros com neblina e luz fria nublada.",
+    criteria: "Critérios",
+    selectedModel: "Modelo selecionado",
+    model: "Modelo",
+    imageModel: "modelo de imagem",
+    videoModel: "modelo de vídeo",
+    multimodalModel: "modelo multimodal",
+    frontierModel: "modelo frontier",
+    reasoningModel: "modelo de raciocínio",
+    runtime: "Tempo total",
+    runtimeValue: "18,4 s",
+    invoice: "Uma fatura",
+    pay: "Pague apenas pelas chamadas bem-sucedidas · chamadas falhas: $0,00",
+    imageAlt: "Imagem de moda gerada a partir da referência dos fones",
+    videoAlt: "Carro F1 em uma pista florestal molhada",
+  },
+  ru: {
+    prompt: "Тестовый промпт",
+    imagePrompt: "Создайте рекламную сцену в стиле моды: молодая модель в розово-золотых беспроводных наушниках в светлом саду с огромными художественными цветами.",
+    videoPrompt: "Чёрно-серебристый болид F1 мчится по мокрой лесной трассе; низкая камера сзади, белые брызги, туманные сосны и холодный пасмурный свет.",
+    criteria: "Критерии",
+    selectedModel: "Выбранная модель",
+    model: "Модель",
+    imageModel: "модель изображений",
+    videoModel: "видеомодель",
+    multimodalModel: "мультимодальная модель",
+    frontierModel: "передовая модель",
+    reasoningModel: "модель рассуждений",
+    runtime: "Общее время",
+    runtimeValue: "18,4 с",
+    invoice: "Один счёт",
+    pay: "Плата только за успешные вызовы · неуспешные: $0,00",
+    imageAlt: "Модное изображение, созданное по референсу наушников",
+    videoAlt: "Болид F1 на мокрой лесной трассе",
+  },
+  ja: {
+    prompt: "テストプロンプト",
+    imagePrompt: "ファッション広告風の商品シーンを生成：若いモデルがローズゴールドのワイヤレスヘッドホンを着け、巨大なアートフラワーに囲まれた明るい庭に立っています。",
+    videoPrompt: "黒銀の F1 マシンが濡れた森のコースを疾走。低い後方追従カメラ、白い水しぶき、霧の松林、曇天の冷たい光。",
+    criteria: "生成条件",
+    selectedModel: "選択中のモデル",
+    model: "モデル",
+    imageModel: "画像モデル",
+    videoModel: "動画モデル",
+    multimodalModel: "マルチモーダルモデル",
+    frontierModel: "最先端モデル",
+    reasoningModel: "推論モデル",
+    runtime: "合計実行時間",
+    runtimeValue: "18.4 秒",
+    invoice: "1 つの請求書",
+    pay: "成功した呼び出しのみ課金 · 失敗は $0.00",
+    imageAlt: "ヘッドホンの参照画像から生成したファッション画像",
+    videoAlt: "濡れた森のコースを走る F1 マシン",
+  },
+  vi: {
+    prompt: "Prompt thử nghiệm",
+    imagePrompt: "Tạo cảnh sản phẩm phong cách quảng cáo thời trang: người mẫu trẻ đeo tai nghe không dây màu vàng hồng trong khu vườn sáng với những bông hoa nghệ thuật khổng lồ.",
+    videoPrompt: "Xe F1 đen bạc lao qua đường đua rừng ướt, camera bám đuôi thấp, nước bắn trắng, thông phủ sương và ánh sáng lạnh u ám.",
+    criteria: "Tiêu chí",
+    selectedModel: "Model đã chọn",
+    model: "Model",
+    imageModel: "model hình ảnh",
+    videoModel: "model video",
+    multimodalModel: "model đa phương thức",
+    frontierModel: "model tiên phong",
+    reasoningModel: "model suy luận",
+    runtime: "Tổng thời gian chạy",
+    runtimeValue: "18,4 giây",
+    invoice: "Một hóa đơn",
+    pay: "Chỉ tính phí lượt gọi thành công · lượt lỗi $0,00",
+    imageAlt: "Ảnh thời trang tạo từ ảnh tham chiếu tai nghe",
+    videoAlt: "Xe F1 chạy trên đường đua rừng ướt",
+  },
+  de: {
+    prompt: "Test-Prompt",
+    imagePrompt: "Erzeuge eine Mode-Werbeszene: Ein junges Model trägt roségoldene kabellose Kopfhörer in einem hellen Garten mit riesigen künstlerischen Blumen.",
+    videoPrompt: "Ein schwarz-silberner F1-Wagen rast über eine nasse Waldstrecke: tiefe Verfolgerkamera, weißer Sprühnebel, neblige Kiefern und kühles Licht.",
+    criteria: "Kriterien",
+    selectedModel: "Ausgewähltes Modell",
+    model: "Modell",
+    imageModel: "Bildmodell",
+    videoModel: "Videomodell",
+    multimodalModel: "multimodales Modell",
+    frontierModel: "Spitzenmodell",
+    reasoningModel: "Reasoning-Modell",
+    runtime: "Gesamtlaufzeit",
+    runtimeValue: "18,4 s",
+    invoice: "Eine Rechnung",
+    pay: "Nur erfolgreiche Aufrufe werden berechnet · fehlgeschlagene $0,00",
+    imageAlt: "Modebild aus der Kopfhörer-Referenz",
+    videoAlt: "F1-Wagen auf einer nassen Waldstrecke",
+  },
+  id: {
+    prompt: "Prompt uji",
+    imagePrompt: "Buat adegan produk bergaya iklan fesyen: model muda memakai headphone nirkabel warna rose-gold di taman terang dengan bunga artistik berukuran besar.",
+    videoPrompt: "Mobil F1 hitam-perak melaju di lintasan hutan basah, kamera mengikuti dari belakang, cipratan putih, pinus berkabut, dan cahaya dingin mendung.",
+    criteria: "Kriteria",
+    selectedModel: "Model terpilih",
+    model: "Model",
+    imageModel: "model gambar",
+    videoModel: "model video",
+    multimodalModel: "model multimodal",
+    frontierModel: "model frontier",
+    reasoningModel: "model penalaran",
+    runtime: "Total waktu berjalan",
+    runtimeValue: "18,4 dtk",
+    invoice: "Satu tagihan",
+    pay: "Hanya panggilan berhasil yang ditagihkan · gagal $0,00",
+    imageAlt: "Gambar fesyen yang dibuat dari referensi headphone",
+    videoAlt: "Mobil F1 melaju di lintasan hutan basah",
+  },
+};
+
+/*
+ * Keep a single locale-complete copy table so image/video tabs never fall
+ * back to English when the rest of the homepage is localized.
+ */
+function mediaCopy(locale: Locale) {
+  return MEDIA_COPY_BY_LOCALE[locale] ?? MEDIA_COPY_BY_LOCALE.en;
+}
+
 type IntelligenceCopy = {
   title: string;
+  description: string;
   eyebrow: string;
   tabs: [string, string, string];
   promptTitle: string;
@@ -321,6 +599,7 @@ type IntelligenceCopy = {
 const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   en: {
     title: "One key, multi model run",
+    description: "Just use one key — our system intelligently picks the best model or tool for every task, input, and scenario.",
     eyebrow: "Text Intelligence",
     tabs: ["Text Intelligence", "Image Generation", "Video generation"],
     promptTitle: "Test Prompt",
@@ -338,6 +617,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   zh: {
     title: "一个 key，多模型运行",
+    description: "只需一个 key，系统会根据每个任务、输入和场景，智能选择最合适的模型或工具。",
     eyebrow: "文本智能",
     tabs: ["文本智能", "图片生成", "视频生成"],
     promptTitle: "测试提示词",
@@ -355,6 +635,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   es: {
     title: "Una key, múltiples modelos",
+    description: "Usa una sola key: nuestro sistema elige de forma inteligente el mejor modelo o herramienta para cada tarea, entrada y escenario.",
     eyebrow: "Inteligencia de texto",
     tabs: ["Inteligencia de texto", "Generación de imágenes", "Generación de vídeo"],
     promptTitle: "Prompt de prueba",
@@ -372,6 +653,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   fr: {
     title: "Une key, plusieurs modèles",
+    description: "Une seule clé suffit : notre système choisit intelligemment le meilleur modèle ou outil pour chaque tâche, entrée et scénario.",
     eyebrow: "Intelligence textuelle",
     tabs: ["Intelligence textuelle", "Génération d’images", "Génération vidéo"],
     promptTitle: "Prompt de test",
@@ -389,6 +671,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   pt: {
     title: "Uma key, vários modelos",
+    description: "Use uma única key: o sistema escolhe de forma inteligente o melhor modelo ou ferramenta para cada tarefa, entrada e cenário.",
     eyebrow: "Inteligência de texto",
     tabs: ["Inteligência de texto", "Geração de imagens", "Geração de vídeo"],
     promptTitle: "Prompt de teste",
@@ -406,6 +689,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   ru: {
     title: "Один key, несколько моделей",
+    description: "Используйте один key — система сама выберет лучшую модель или инструмент для каждой задачи, входных данных и сценария.",
     eyebrow: "Интеллект для текста",
     tabs: ["Интеллект для текста", "Генерация изображений", "Генерация видео"],
     promptTitle: "Тестовый промпт",
@@ -423,6 +707,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   ja: {
     title: "1 つの key、複数モデルを実行",
+    description: "1 つの key だけで、タスクや入力、シナリオに最適なモデルまたはツールをシステムが自動選択します。",
     eyebrow: "テキストインテリジェンス",
     tabs: ["テキストインテリジェンス", "画像生成", "動画生成"],
     promptTitle: "テストプロンプト",
@@ -440,6 +725,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   vi: {
     title: "Một key, chạy nhiều model",
+    description: "Chỉ cần một key — hệ thống tự chọn model hoặc công cụ phù hợp nhất cho từng tác vụ, đầu vào và kịch bản.",
     eyebrow: "Trí tuệ văn bản",
     tabs: ["Trí tuệ văn bản", "Tạo hình ảnh", "Tạo video"],
     promptTitle: "Prompt thử nghiệm",
@@ -457,6 +743,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   de: {
     title: "Ein Key, mehrere Modelle",
+    description: "Nutze nur einen Key – unser System wählt für jede Aufgabe, Eingabe und jedes Szenario intelligent das beste Modell oder Tool.",
     eyebrow: "Textintelligenz",
     tabs: ["Textintelligenz", "Bildgenerierung", "Videogenerierung"],
     promptTitle: "Test-Prompt",
@@ -474,6 +761,7 @@ const INTELLIGENCE_COPY: Record<Locale, IntelligenceCopy> = {
   },
   id: {
     title: "Satu key, banyak model",
+    description: "Gunakan satu key — sistem kami memilih model atau alat terbaik secara cerdas untuk setiap tugas, input, dan skenario.",
     eyebrow: "Intelijen teks",
     tabs: ["Intelijen teks", "Pembuatan gambar", "Pembuatan video"],
     promptTitle: "Prompt uji",
@@ -731,20 +1019,21 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
           </div>
         </div>
       </header>
-      <section className="modelStrip" aria-label="Featured models">
+      <section className="modelStrip" aria-label={localizedLabel(props.locale, "Featured models", "精选模型")}>
         <div className="modelStripInner">
-          <ModelStripCarousel items={FEATURED_MODEL_STRIP} />
+          <ModelStripCarousel items={localizedFeaturedModels(props.locale)} />
         </div>
       </section>
       <section className="intelligence-section" aria-labelledby="intelligence-heading">
         <div className="intelligence-wrap">
           {(() => {
             const intelligence = INTELLIGENCE_COPY[props.locale];
+            const media = mediaCopy(props.locale);
             return (
               <>
                 <div className="intelligence-heading">
                   <h2 id="intelligence-heading">{intelligence.title}</h2>
-                  <p>Just use one Key — our system intelligently picks the best model/tools for every task, input, and scenario.</p>
+                  <p>{intelligence.description}</p>
                 </div>
                 <div className="intelligence-tabs" role="tablist" aria-label={intelligence.eyebrow}>
                   {intelligence.tabs.map((tab, index) => (
@@ -797,12 +1086,12 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <div className="criteria-pay">{intelligence.footer}</div>
                   </div>
                   <div className="intelligence-models">
-                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · frontier model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-flash</strong><span>DeepSeek · reasoning model</span></div></div>
-                    <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/claude.svg" alt="" /><div className="model-card-copy"><strong>claude-opus-5</strong><span>Claude · reasoning model</span></div><span className="model-card-price">$4.5 / 1M tokens</span></div>
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · multimodal model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/zai.svg" alt="" /><div className="model-card-copy"><strong>z-ai/glm-5.3-flash</strong><span>dal modelGLM · multim</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>openai/gpt-5.6-sol</strong><span>GPT · {media.frontierModel}</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/deepseek.svg" alt="" /><div className="model-card-copy"><strong>deepseek-v4-flash</strong><span>DeepSeek · {media.reasoningModel}</span></div></div>
+                    <div className="model-selected-label">{media.selectedModel}</div>
+                    <div className="model-card selected"><img src="/assets/logos/claude.svg" alt="" /><div className="model-card-copy"><strong>claude-opus-5</strong><span>Claude · {media.reasoningModel}</span></div><span className="model-card-price">$4.5 / 1M tokens</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>google/gemini-3.7-flash</strong><span>Gemini · {media.multimodalModel}</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/zai.svg" alt="" /><div className="model-card-copy"><strong>z-ai/glm-5.3-flash</strong><span>GLM · {media.reasoningModel}</span></div></div>
                   </div>
                   <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
                     <line y1="100" x2="80" y2="100" stroke="url(#criteria-line)" />
@@ -817,30 +1106,30 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                 </div>
                 <div className="intelligence-panel intelligence-panel-media intelligence-panel-image" role="tabpanel">
                   <div className="intelligence-prompt">
-                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />Test Prompt</div>
-                    <img className="prompt-reference" src="/assets/home-tabs/headphones-reference.png" alt="Rose-gold wireless headphones reference" />
-                    <p className="intelligence-prompt-body">Generate a fashion ad-style product scene for these headphones. A young female model wears rose-gold wireless over-ear headphones in a bright outdoor garden with oversized artistic flowers in orange-red, pink, lavender, and cream—a dreamlike floral backdrop.</p>
+                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />{media.prompt}</div>
+                    <img className="prompt-reference" src="/assets/home-tabs/headphones-reference.png" alt={props.locale === "zh" ? "玫瑰金无线耳机参考图" : "Rose-gold wireless headphones reference"} />
+                    <p className="intelligence-prompt-body">{media.imagePrompt}</p>
                     <div className="intelligence-prompt-input" aria-hidden="true"><span /><b>↑</b></div>
                   </div>
                   <div className="intelligence-media-card">
-                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
+                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>{media.criteria}</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
                     <div className="intelligence-media-body">
-                      <img className="intelligence-result-media" src="/assets/home-tabs/image-fashion-result.png" alt="Fashion image generated from the headphones reference" />
+                      <img className="intelligence-result-media" src="/assets/home-tabs/image-fashion-result.png" alt={media.imageAlt} />
                       <div className="media-metrics">
-                        <div className="media-metric"><span>Model</span><strong>{IMAGE_SELECTED_MODEL}</strong></div>
-                        <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
-                        <div className="media-metric"><span>One invoice</span><strong>$0.06</strong></div>
+                        <div className="media-metric"><span>{media.model}</span><strong>{IMAGE_SELECTED_MODEL}</strong></div>
+                        <div className="media-metric"><span>{media.runtime}</span><strong>{media.runtimeValue}</strong></div>
+                        <div className="media-metric"><span>{media.invoice}</span><strong>$0.06</strong></div>
                       </div>
                     </div>
-                    <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
+                    <div className="media-pay"><div>{media.pay}</div></div>
                   </div>
                   <div className="intelligence-models">
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>nano-banana-pro-preview</strong><span>Google · image model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>gemini-3.1-flash-image</strong><span>Google · image model</span></div></div>
-                    <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>{IMAGE_SELECTED_MODEL}</strong><span>OpenAI · image model</span></div><span className="model-card-price">$4 / 1M tokens</span></div>
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>imagen-4.0-ultra-generate-001</strong><span>Google · image model</span></div></div>
-                    <div className="model-card"><span className="model-placeholder" aria-hidden="true">F</span><div className="model-card-copy"><strong>flux-2-pro</strong><span>Black Forest Labs · image model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>nano-banana-pro-preview</strong><span>Google · {media.imageModel}</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>gemini-3.1-flash-image</strong><span>Google · {media.imageModel}</span></div></div>
+                    <div className="model-selected-label">{media.selectedModel}</div>
+                    <div className="model-card selected"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>{IMAGE_SELECTED_MODEL}</strong><span>OpenAI · {media.imageModel}</span></div><span className="model-card-price">$4 / 1M tokens</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>imagen-4.0-ultra-generate-001</strong><span>Google · {media.imageModel}</span></div></div>
+                    <div className="model-card"><span className="model-placeholder" aria-hidden="true">F</span><div className="model-card-copy"><strong>flux-2-pro</strong><span>Black Forest Labs · {media.imageModel}</span></div></div>
                   </div>
                   <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
                     <line y1="100" x2="80" y2="100" stroke="url(#image-line)" />
@@ -855,34 +1144,34 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                 </div>
                 <div className="intelligence-panel intelligence-panel-media intelligence-panel-video" role="tabpanel">
                   <div className="intelligence-prompt">
-                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />Test Prompt</div>
-                    <p className="intelligence-prompt-body">Black-and-silver F1 car tearing through a wet forest track, low rear follow-cam. Tires throw white rooster tails of spray; body trembles at speed. Misty pines and faint grandstands in background. Overcast, cool light. Blue-gray, mist-white, deep green tones. Rainy, fast, cinematic.</p>
+                    <div className="intelligence-card-head"><span className="pixel-mark" aria-hidden="true" />{media.prompt}</div>
+                    <p className="intelligence-prompt-body">{media.videoPrompt}</p>
                     <div className="intelligence-prompt-input" aria-hidden="true"><span /><b>↑</b></div>
                   </div>
                   <div className="intelligence-media-card">
-                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>Criteria</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
+                    <div className="criteria-head"><span className="criteria-icon" aria-hidden="true" /><span>{media.criteria}</span><img className="criteria-shield" src="/assets/flatkey-mark.svg" alt="" /></div>
                     <div className="intelligence-media-body">
                       <IntelligenceVideo
                         className="intelligence-result-media"
                         poster={VIDEO_RESULT_ASSET.poster}
                         src={VIDEO_RESULT_ASSET.video}
-                        ariaLabel="F1 car racing on a wet forest track"
+                        ariaLabel={media.videoAlt}
                       />
                       <div className="media-metrics">
-                        <div className="media-metric"><span>Model</span><strong>{VIDEO_SELECTED_MODEL}</strong></div>
-                        <div className="media-metric"><span>Total runtime</span><strong>18.4 sec</strong></div>
-                        <div className="media-metric"><span>One invoice</span><strong>$0.16</strong></div>
+                        <div className="media-metric"><span>{media.model}</span><strong>{VIDEO_SELECTED_MODEL}</strong></div>
+                        <div className="media-metric"><span>{media.runtime}</span><strong>{media.runtimeValue}</strong></div>
+                        <div className="media-metric"><span>{media.invoice}</span><strong>$0.16</strong></div>
                       </div>
                     </div>
-                    <div className="media-pay"><div>Pay per successful call&nbsp; · &nbsp;failed calls $0.00</div></div>
+                    <div className="media-pay"><div>{media.pay}</div></div>
                   </div>
                   <div className="intelligence-models">
-                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>sora-2</strong><span>OpenAI · video model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/minimax.svg" alt="" /><div className="model-card-copy"><strong>MiniMax-H3</strong><span>MiniMax · video model</span></div></div>
-                    <div className="model-selected-label">Selected model</div>
-                    <div className="model-card selected"><img src="/assets/logos/bytedance.svg" alt="" /><div className="model-card-copy"><strong>{VIDEO_SELECTED_MODEL}</strong><span>ByteDance · video model</span></div><span className="model-card-price">$0.084 / 1M</span></div>
-                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>veo-3.1-generate-preview</strong><span>Google · video model</span></div></div>
-                    <div className="model-card"><img src="/assets/logos/kuaishou.svg" alt="" /><div className="model-card-copy"><strong>kling-2.5-pro</strong><span>Kuaishou · video model</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/openai.svg" alt="" /><div className="model-card-copy"><strong>sora-2</strong><span>OpenAI · {media.videoModel}</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/minimax.svg" alt="" /><div className="model-card-copy"><strong>MiniMax-H3</strong><span>MiniMax · {media.videoModel}</span></div></div>
+                    <div className="model-selected-label">{media.selectedModel}</div>
+                    <div className="model-card selected"><img src="/assets/logos/bytedance.svg" alt="" /><div className="model-card-copy"><strong>{VIDEO_SELECTED_MODEL}</strong><span>ByteDance · {media.videoModel}</span></div><span className="model-card-price">$0.084 / 1M</span></div>
+                    <div className="model-card"><img src="/assets/logos/googlegemini.svg" alt="" /><div className="model-card-copy"><strong>veo-3.1-generate-preview</strong><span>Google · {media.videoModel}</span></div></div>
+                    <div className="model-card"><img src="/assets/logos/kuaishou.svg" alt="" /><div className="model-card-copy"><strong>kling-2.5-pro</strong><span>Kuaishou · {media.videoModel}</span></div></div>
                   </div>
                   <svg className="intelligence-connectors" width="80" height="200" viewBox="0 0 80 200" fill="none" aria-hidden="true">
                     <line y1="100" x2="80" y2="100" stroke="url(#video-line)" />
@@ -924,7 +1213,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
               id="copy-flatkey-setup"
               type="button"
               data-action="copy-flatkey-setup"
-              aria-label="Copy Flatkey setup prompt"
+              aria-label={localizedLabel(props.locale, "Copy Flatkey setup prompt", "复制 Flatkey 配置提示词")}
               data-copy="Set up Flatkey from https://flatkey.ai/SKILL.md"
             >
               <span className="prompt" aria-hidden="true">
@@ -1095,7 +1384,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                       </i>
                       <div>
                         <b>{name}</b>
-                        <span>{desc}</span>
+                        <span>{providerDescription(props.locale, desc)}</span>
                       </div>
                     </article>
                   ))}
@@ -1106,7 +1395,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                       </i>
                       <div>
                         <b>VOC AI</b>
-                        <span>voice of customer</span>
+                        <span>{localizedLabel(props.locale, "voice of customer", "客户之声")}</span>
                       </div>
                     </article>
                   )}
@@ -1115,7 +1404,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                       <Link
                         className="provider-card more-card models-more"
                         href={localizePath("/models", props.locale)}
-                        aria-label="Explore more than 100 official AI models"
+                        aria-label={props.locale === "zh" ? "浏览 100+ 个官方 AI 模型" : "Explore more than 100 official AI models"}
                       >
                         <i
                           className="provider-icon more-icon"
@@ -1143,7 +1432,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                       <a
                         className="provider-card more-card tools-more"
                         href={consoleUrl("/api-marketplace")}
-                        aria-label="Explore more than 1,000 AI tools"
+                        aria-label={props.locale === "zh" ? "探索 1,000+ 个 AI 工具" : "Explore more than 1,000 AI tools"}
                       >
                         <i
                           className="provider-icon more-icon"
@@ -1323,7 +1612,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                 fontWeight="700"
                 fontFamily="monospace"
               >
-                flatkey mesh 99.98%
+                {localizedLabel(props.locale, "flatkey mesh 99.98%", "flatkey 聚合 99.98%")}
               </text>
               <text
                 x="300"
@@ -1333,7 +1622,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                 fontWeight="700"
                 fontFamily="monospace"
               >
-                least stable single channel
+                {localizedLabel(props.locale, "least stable single channel", "最不稳定的单一渠道")}
               </text>
             </svg>
             <p className="rcCap">
@@ -1371,7 +1660,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
               </p>
               <div className="mini">
                 <div className="mbar">
-                  <span>official</span>
+                  <span>{localizedLabel(props.locale, "official", "官方价")}</span>
                   <div className="mtrack">
                     <div
                       className="mfill"
@@ -1537,23 +1826,23 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
           <div className="badges">
             <div className="badge">
               <b className="num">99.5% SLA</b>
-              <span>multi-provider failover · signed</span>
+              <span>{localizedLabel(props.locale, "multi-provider failover · signed", "多供应商故障切换 · 已签署")}</span>
             </div>
             <div className="badge">
               <b>3DS · Stripe</b>
-              <span>fraud-screened payments</span>
+              <span>{localizedLabel(props.locale, "fraud-screened payments", "已通过反欺诈筛查的支付")}</span>
             </div>
             <div className="badge">
-              <b>Invoices 48h</b>
-              <span>enterprise invoicing API</span>
+              <b>{localizedLabel(props.locale, "Invoices 48h", "48 小时发票")}</b>
+              <span>{localizedLabel(props.locale, "enterprise invoicing API", "企业发票 API")}</span>
             </div>
             <div className="badge">
               <b>Ledger API</b>
-              <span>every request, every token</span>
+              <span>{localizedLabel(props.locale, "every request, every token", "每个请求，每个 token")}</span>
             </div>
             <div className="badge">
-              <b>Sub-key governance</b>
-              <span>caps · allowlists · alerts</span>
+              <b>{localizedLabel(props.locale, "Sub-key governance", "子 key 治理")}</b>
+              <span>{localizedLabel(props.locale, "caps · allowlists · alerts", "额度上限 · 白名单 · 告警")}</span>
             </div>
           </div>
         </div>
@@ -1593,7 +1882,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                               fontStyle: "normal",
                             }}
                           >
-                            ✓ verified
+                            {localizedLabel(props.locale, "✓ verified", "✓ 已验证")}
                           </i>{" "}
                           · {meta}
                         </>
@@ -1675,7 +1964,7 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
                     <h3>
                       {title}
                       <br />
-                      {subtitle}
+                      {localizedVideoLabel(props.locale, subtitle)}
                     </h3>
                     <p>
                       <span>{meta}</span>

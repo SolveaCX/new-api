@@ -63,7 +63,7 @@ const legacyNavLabelByLocale: Record<
   zh: {
     compute: "算力",
     enterprise: "企业版",
-    playground: "Playground",
+    playground: "在线体验",
     status: "服务状态",
     usecases: "使用场景",
   },
