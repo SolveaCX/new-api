@@ -63,6 +63,50 @@ function isUsableNumber(value: number | null | undefined): value is number {
   return value !== undefined && value !== null && Number.isFinite(Number(value))
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+type DisplayPrice = {
+  priceUSD: number
+  officialUSD: number | null
+  discountPercent: number | null
+}
+
+function resolveDisplayPrice(
+  pair:
+    | {
+        configured?: number
+        plg?: number
+      }
+    | undefined
+): DisplayPrice | null {
+  if (!pair) return null
+
+  const configured = toFiniteNumber(pair.configured)
+  const plg = toFiniteNumber(pair.plg)
+  const priceUSD = plg ?? configured
+  if (priceUSD === null) return null
+
+  const officialUSD =
+    configured !== null && configured > priceUSD ? configured : null
+  const discountPercent =
+    officialUSD === null ? null : resolveDisplayDiscount(priceUSD, officialUSD)
+
+  return { priceUSD, officialUSD, discountPercent }
+}
+
+function resolveDisplayDiscount(
+  priceUSD: number,
+  officialUSD: number
+): number | null {
+  if (!(officialUSD > 0) || !(priceUSD < officialUSD)) return null
+  const percent = Math.round((1 - priceUSD / officialUSD) * 100)
+  return percent > 0 ? percent : null
+}
+
 export function buildCatalogPriceIndex(
   rows: readonly PricingModel[] | undefined
 ): Map<string, PricingModel> {
@@ -122,12 +166,46 @@ export function resolveCatalogPrice(
   const ratio = isUsableNumber(options.ratio) ? options.ratio : 1
   const discountPercent = resolveOfficialDiscount(ratio)
 
-  const displayPair = model.display_pricing?.prices.second
-  const displayValue = displayPair?.plg ?? displayPair?.configured
-  if (model.display_pricing?.billing_kind === 'per_second' && isUsableNumber(displayValue)) {
-    const official = displayPair?.configured ?? displayValue
-    const discounted = official > 0 && displayValue < official
-    return { kind: 'second', priceUSD: displayValue, officialUSD: discounted ? official : null, discountPercent: discounted ? Math.round((1 - displayValue / official) * 100) : null }
+  // The public pricing payload carries the configured list price alongside
+  // the PLG amount actually shown to product users. Prefer it whenever the
+  // billing kind has a display pair so model-specific overrides (such as the
+  // DeepSeek V4 rates) are not lost behind the legacy model ratio.
+  if (model.display_pricing?.billing_kind === 'per_second') {
+    const displayPrice = resolveDisplayPrice(
+      model.display_pricing.prices.second
+    )
+    if (displayPrice) {
+      return { kind: 'second', ...displayPrice }
+    }
+  }
+
+  if (model.display_pricing?.billing_kind === 'request') {
+    const displayPrice = resolveDisplayPrice(
+      model.display_pricing.prices.request
+    )
+    if (displayPrice) {
+      return { kind: 'request', ...displayPrice }
+    }
+  }
+
+  if (model.display_pricing?.billing_kind === 'token') {
+    const displayInput = resolveDisplayPrice(model.display_pricing.prices.input)
+    if (displayInput) {
+      const displayOutput = resolveDisplayPrice(
+        model.display_pricing.prices.output
+      )
+      return {
+        kind: 'token',
+        inputUSD: displayInput.priceUSD,
+        outputUSD: displayOutput?.priceUSD ?? null,
+        officialInputUSD: displayInput.officialUSD,
+        officialOutputUSD: displayOutput?.officialUSD ?? null,
+        discountPercent:
+          displayInput.discountPercent ??
+          displayOutput?.discountPercent ??
+          null,
+      }
+    }
   }
 
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
