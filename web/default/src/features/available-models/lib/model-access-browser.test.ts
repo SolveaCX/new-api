@@ -153,6 +153,11 @@ describe('available models browser scope selection', () => {
       create_default_scope: null,
       groups: [],
       account_model_ids: ['gpt-main'],
+      models: buildAccess().models.map((model) =>
+        model.id === 'gpt-main'
+          ? { ...model, availability_status: 'available' }
+          : model
+      ),
     })
 
     expect(
@@ -190,8 +195,8 @@ describe('available models browser scope selection', () => {
 
     expect(getModelAccessScopeModelCounts(access)).toEqual(
       new Map([
-        ['auto', 2],
-        ['standard', 1],
+        ['auto', 1],
+        ['standard', 0],
       ])
     )
   })
@@ -457,7 +462,11 @@ describe('available models browser filters', () => {
           : scope
       ),
       models: [
-        ...base.models,
+        ...base.models.map((model) =>
+          model.id === 'gpt-main'
+            ? { ...model, availability_status: 'available' }
+            : model
+        ),
         {
           ...base.models[0],
           id: 'retired-main',
@@ -476,8 +485,44 @@ describe('available models browser filters', () => {
     ).toEqual(['retired-main'])
   })
 
-  test('maps unknown availability to the neutral unknown-failure config', () => {
-    expect(normalizeModelAvailabilityStatus('unknown')).toBe('unknown_failure')
+  test('hides unavailable models from the available-models catalog', () => {
+    const base = buildAccess()
+    const access = buildAccess({
+      groups: [
+        {
+          ...base.groups[0],
+          model_ids: [
+            'gpt-main',
+            'identity-model',
+            'image-main',
+            'retired-main',
+          ],
+        },
+      ],
+      models: [
+        ...base.models,
+        {
+          ...base.models[0],
+          id: 'unknown-failure-model',
+          availability_status: 'unknown_failure',
+        },
+        {
+          ...base.models[0],
+          id: 'retired-main',
+          availability_status: 'official_unsupported',
+        },
+      ],
+    })
+
+    access.groups[0].model_ids.push('unknown-failure-model')
+
+    expect(
+      getModelAccessScopeModels(access, 'auto').map((model) => model.id)
+    ).toEqual(['identity-model', 'image-main'])
+  })
+
+  test('maps legacy unknown availability to the available config', () => {
+    expect(normalizeModelAvailabilityStatus('unknown')).toBe('available')
     expect(normalizeModelAvailabilityStatus('temporary_failure')).toBe(
       'temporary_failure'
     )

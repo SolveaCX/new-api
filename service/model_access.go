@@ -17,7 +17,9 @@ const (
 	ModelAccessScopeSelectableGroup = "selectable_group"
 	ModelAccessScopeFixedAccount    = "fixed_account"
 	modelAccessPLGGroup             = "plg"
-	ModelAvailabilityUnknown        = "unknown"
+	// Kept for compatibility with callers that still understand the legacy
+	// value. Models without a probe state are exposed as available below.
+	ModelAvailabilityUnknown = "unknown"
 )
 
 type ModelAccessVendor struct {
@@ -191,7 +193,10 @@ func resolveStrictModelAccess(groups []string, acceptUnpriced bool) (strictModel
 	for _, modelName := range allModelIDs {
 		metadata := metadataByModel[modelName]
 		endpoints := publicEndpointTypes(modelName, channelTypesByModel[modelName], metadata.Endpoints)
-		availability := ModelAvailabilityUnknown
+		// A missing probe record is not evidence of an outage. Treat it as
+		// available in the user-facing catalog until a real probe records a
+		// failure state.
+		availability := model.ModelAvailabilityAvailable
 		if state, ok := availabilityByModel[modelName]; ok && strings.TrimSpace(state.Status) != "" {
 			availability = state.Status
 		}

@@ -139,7 +139,7 @@ func TestGetUserModelAccessOrdinaryAutoUnionAndPublicMetadata(t *testing.T) {
 	require.Nil(t, metadata["vip-model"].Vendor)
 	require.Equal(t, "public-model", metadata["public-model"].AllowlistMatchKey)
 	require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, metadata["public-model"].SupportedEndpointTypes)
-	require.Equal(t, service.ModelAvailabilityUnknown, metadata["public-model"].AvailabilityStatus)
+	require.Equal(t, "available", metadata["public-model"].AvailabilityStatus)
 
 	var raw map[string]any
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &raw))
@@ -232,7 +232,7 @@ func TestGetUserModelAccessPLGUsesPrivateFixedAccountShape(t *testing.T) {
 	require.Equal(t, []string{"account-model"}, modelAccessIDs(access.Models))
 	require.Equal(t, "Account Vendor", access.Models[0].Vendor.Name)
 	require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, access.Models[0].SupportedEndpointTypes)
-	require.Equal(t, service.ModelAvailabilityUnknown, access.Models[0].AvailabilityStatus)
+	require.Equal(t, "available", access.Models[0].AvailabilityStatus)
 	var raw map[string]any
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &raw))
 	requireExactJSONKeys(t, raw, "success", "message", "data")

@@ -130,7 +130,25 @@ describe('ModelAccessList', () => {
 
     expect(html).toContain('aria-label="Copy to clipboard"')
     expect(html).toContain('Endpoint not specified')
+    expect(html).toContain('Available')
+  })
+
+  test('keeps an actual probe failure distinct from an untested model', () => {
+    const html = renderList(
+      [
+        {
+          id: 'probe-failed-model',
+          allowlist_match_key: 'probe-failed-model',
+          vendor: null,
+          supported_endpoint_types: ['openai'],
+          availability_status: 'unknown_failure',
+        },
+      ],
+      false
+    )
+
     expect(html).toContain('Unknown failure')
+    expect(html).not.toContain('Available')
   })
 
   test('does not render the public model introduction', () => {
