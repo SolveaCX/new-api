@@ -28,6 +28,25 @@ func TestReplaceWebsiteFeaturedModelsEmptyClearsRows(t *testing.T) {
 	require.Empty(t, rows)
 }
 
+func TestReplaceWebsiteFeaturedModelsWithConfigStoresBannerFields(t *testing.T) {
+	db, _ := setupModelAccessDB(t)
+	require.NoError(t, db.AutoMigrate(&WebsiteFeaturedModel{}))
+	require.NoError(t, ReplaceWebsiteFeaturedModelsWithConfig([]WebsiteFeaturedModelInput{{
+		ModelName:               "gpt-5.5",
+		DisplayName:             "GPT launch",
+		Description:             "Banner copy",
+		Tags:                    "Coding, Agents",
+		BackgroundImageURL:      "https://cdn.example/banner.png",
+		BackgroundImage:         "data:image/png;base64,AA==",
+		FallbackBackgroundImage: "/assets/fallback.png",
+	}}))
+	rows, err := ListWebsiteFeaturedModels()
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "GPT launch", rows[0].DisplayName)
+	require.Equal(t, "data:image/png;base64,AA==", rows[0].BackgroundImage)
+}
+
 func websiteFeaturedNames(rows []WebsiteFeaturedModel) []string {
 	names := make([]string, 0, len(rows))
 	for _, row := range rows {

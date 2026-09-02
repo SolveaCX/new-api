@@ -1,13 +1,11 @@
-import type { Locale } from "./locales";
+import { LOCALES, type Locale } from "./locales";
+import type { PricingModel } from "./pricing";
 
-// Featured models carousel above the directory table. Copy and artwork are
-// maintained here rather than in the database — the slate changes with launches,
-// not with traffic, so a deploy is an acceptable edit cost and keeps the blurbs
-// reviewable in code review.
-//
-// `modelName` must match a live model name so the CTA resolves to a real model
-// page; buildFeaturedSlides drops any slide whose model is not in the catalogue,
-// so a retired model quietly leaves the carousel instead of 404-ing.
+// The bundled entries keep the existing artwork and localized launch copy for
+// models that have it. Which models appear is controlled by the public pricing
+// payload (`featured_order`), which is managed from the console. New models can
+// therefore be promoted without editing this file; their tags and description
+// come directly from model metadata configured in the model list.
 
 export type FeaturedSlide = {
   modelName: string;
@@ -273,10 +271,76 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
 ];
 
 /**
- * Slides whose model is actually in the live catalogue. A retired model drops
- * out of the carousel rather than linking to a page that no longer exists.
+ * Build the visible slides from the live catalogue. A retired model drops out
+ * of the carousel rather than linking to a page that no longer exists.
  */
-export function buildFeaturedSlides(liveModelNames: Iterable<string>): FeaturedSlide[] {
-  const live = new Set(liveModelNames);
-  return FEATURED_SLIDES.filter((slide) => live.has(slide.modelName));
+function localizedRecord<T>(value: T, fallback?: Record<Locale, T>): Record<Locale, T> {
+  return Object.fromEntries(
+    LOCALES.map((locale) => [locale, fallback?.[locale] ?? value])
+  ) as Record<Locale, T>;
+}
+
+function safeBannerAsset(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (/^data:image\/(png|jpeg|webp|gif);base64,/i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/")) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildSlideFromModel(model: PricingModel): FeaturedSlide {
+  const curated = FEATURED_SLIDES.find((slide) => slide.modelName === model.model_name);
+  const config = model.featured_config;
+  const modelTags = (config?.tags ?? model.tags ?? "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const tags = modelTags.length > 0
+    ? localizedRecord(modelTags)
+    : curated?.tags ?? localizedRecord([]);
+  const description = (config?.description ?? model.description)?.trim();
+  const uploadedImage = safeBannerAsset(config?.background_image);
+  const configuredImage = safeBannerAsset(config?.background_image_url);
+  const configuredFallback = safeBannerAsset(config?.fallback_background_image);
+
+  return {
+    modelName: model.model_name,
+    displayName: config?.display_name?.trim() || curated?.displayName || model.model_name,
+    vendor: model.vendor_name ?? curated?.vendor ?? "AI model",
+    image: uploadedImage ?? configuredImage ?? curated?.image ?? model.icon ?? "/assets/models-featured/flatkey-model-cover-clean.png",
+    fallbackImage: configuredFallback ?? curated?.fallbackImage,
+    video: curated?.video,
+    tags,
+    blurb: description ? localizedRecord(description) : curated?.blurb ?? localizedRecord(""),
+  };
+}
+
+/**
+ * Builds the banner from the models returned by the public pricing API.
+ *
+ * When at least one model has a configured `featured_order`, only those models
+ * are shown in that order. Before the first console configuration, retain the
+ * launch slate from FEATURED_SLIDES so an empty database does not remove the
+ * banner altogether.
+ */
+export function buildFeaturedSlides(models: PricingModel[]): FeaturedSlide[] {
+  const configured = models
+    .filter((model) => model.featured_order != null)
+    .sort((left, right) => (left.featured_order ?? 0) - (right.featured_order ?? 0));
+
+  if (configured.length > 0) return configured.map(buildSlideFromModel);
+
+  const live = new Map(models.map((model) => [model.model_name, model]));
+  return FEATURED_SLIDES.flatMap((slide) => {
+    const model = live.get(slide.modelName);
+    return model ? [buildSlideFromModel(model)] : [];
+  });
 }
