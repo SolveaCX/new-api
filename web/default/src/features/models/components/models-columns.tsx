@@ -79,6 +79,13 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
   })
 
   return [
+    {
+      id: 'has_tags',
+      accessorFn: (model) => (model.tags?.trim() ? 'true' : 'false'),
+      meta: { label: t('Tags'), hidden: true },
+      enableSorting: false,
+      enableHiding: false,
+    },
     // Checkbox column
     {
       id: 'select',
