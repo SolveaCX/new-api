@@ -524,6 +524,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const affCount = user.aff_count || 0
         const affHistoryQuota = user.aff_history_quota || 0
         const inviterId = user.inviter_id || 0
+        const inviterEmail = user.inviter_email?.trim() || ''
 
         return (
           <div className='flex items-center gap-1'>
@@ -557,7 +558,27 @@ export function useUsersColumns(): ColumnDef<User>[] {
                 <p className='text-xs'>{t('Total invitation revenue')}</p>
               </TooltipContent>
             </Tooltip>
-            {inviterId > 0 && (
+            {inviterEmail && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <StatusBadge
+                      label={`${t('Inviter')}: ${inviterEmail}`}
+                      variant='neutral'
+                      copyable={false}
+                      className='cursor-help'
+                    />
+                  }
+                />
+                <TooltipContent>
+                  <p className='text-xs'>
+                    {t('Invited by user email')} {inviterEmail}
+                    {inviterId > 0 ? ` (${t('User ID')} ${inviterId})` : ''}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {!inviterEmail && inviterId > 0 && (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -576,7 +597,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
                 </TooltipContent>
               </Tooltip>
             )}
-            {inviterId === 0 && (
+            {inviterId === 0 && !inviterEmail && (
               <StatusBadge
                 label={t('No Inviter')}
                 variant='neutral'

@@ -79,6 +79,9 @@ type User struct {
 	// (or last-login) IP. Not persisted — FillIPCountries resolves it at list
 	// time via the embedded iploc database (admin console only).
 	IPCountry string `json:"ip_country,omitempty" gorm:"-"`
+	// InviterEmail is the inviter's email resolved from inviter_id for admin
+	// console display and exports. Not persisted.
+	InviterEmail string `json:"inviter_email,omitempty" gorm:"-"`
 	// SetEmailVerified is a control field for the admin UpdateUser endpoint.
 	// When non-nil it overrides EmailVerifiedAt (true → now, false → 0); when
 	// nil the existing value is left untouched. Never persisted.
@@ -343,6 +346,9 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 		common.SysError("failed to fill paid amounts for user list: " + err.Error())
 	}
 	FillIPCountries(users)
+	if err := FillInviterEmails(users); err != nil {
+		common.SysError("failed to fill inviter emails for user list: " + err.Error())
+	}
 
 	return users, total, nil
 }
@@ -520,6 +526,9 @@ func searchUsersWithQuery(query *gorm.DB, startIdx, num int, users []*User, tota
 		common.SysError("failed to fill paid amounts for user search: " + err.Error())
 	}
 	FillIPCountries(users)
+	if err := FillInviterEmails(users); err != nil {
+		common.SysError("failed to fill inviter emails for user search: " + err.Error())
+	}
 	return users, total, nil
 }
 
@@ -568,6 +577,41 @@ func FillIPCountries(users []*User) {
 		}
 		u.IPCountry = resolveIPCountry(ip)
 	}
+}
+
+// FillInviterEmails resolves inviter_id to inviter email for a batch of users.
+func FillInviterEmails(users []*User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(users))
+	for _, u := range users {
+		if u.InviterId > 0 {
+			ids = append(ids, u.InviterId)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	type inviterRow struct {
+		Id    int    `gorm:"column:id"`
+		Email string `gorm:"column:email"`
+	}
+	var rows []inviterRow
+	if err := DB.Model(&User{}).
+		Select("id, email").
+		Where("id IN ?", ids).
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	emailByID := make(map[int]string, len(rows))
+	for _, row := range rows {
+		emailByID[row.Id] = row.Email
+	}
+	for _, u := range users {
+		u.InviterEmail = emailByID[u.InviterId]
+	}
+	return nil
 }
 
 func resolveIPCountry(ip string) string {

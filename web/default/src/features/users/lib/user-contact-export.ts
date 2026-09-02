@@ -188,7 +188,7 @@ export function buildUserContactsCsv(
         attribution.landingPath,
         user.aff_count ?? 0,
         formatQuota(user.aff_history_quota ?? 0),
-        user.inviter_id ? String(user.inviter_id) : '',
+        user.inviter_email || (user.inviter_id ? String(user.inviter_id) : ''),
         user.wechat_id,
         user.telegram_id,
         user.created_at ? formatTimestamp(user.created_at) : '',

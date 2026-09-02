@@ -28,8 +28,12 @@ export type OpsDauScope = 'plg' | 'all'
 
 export const opsReportQueryKeys = {
   all: ['ops-report'] as const,
-  report: (days: number, dauScope: OpsDauScope, includeDisabled: boolean) =>
-    [...opsReportQueryKeys.all, days, dauScope, includeDisabled] as const,
+  report: (
+    days: number,
+    dauScope: OpsDauScope,
+    includeDisabled: boolean,
+    paidOnly: boolean
+  ) => [...opsReportQueryKeys.all, days, dauScope, includeDisabled, paidOnly] as const,
   stripe: (days: number) =>
     [...opsReportQueryKeys.all, 'stripe', days] as const,
   adsDaily: (days: number) =>
@@ -39,13 +43,15 @@ export const opsReportQueryKeys = {
 export async function getOpsReport(
   days: number,
   dauScope: OpsDauScope,
-  includeDisabled: boolean
+  includeDisabled: boolean,
+  paidOnly: boolean
 ): Promise<ApiResponse<OpsReportData>> {
   const res = await api.get('/api/data/ops_report', {
     params: {
       days,
       dau_scope: dauScope,
       include_disabled: includeDisabled || undefined,
+      paid_only: paidOnly || undefined,
     },
   })
   return res.data
