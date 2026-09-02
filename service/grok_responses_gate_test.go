@@ -13,6 +13,12 @@ func TestGrokSupportsOpenAIResponses(t *testing.T) {
 	}
 }
 
+func TestTokenSpaceDoesNotSupportOpenAIResponses(t *testing.T) {
+	if channelSupportsOpenAIResponses(constant.ChannelTypeTokenSpace) {
+		t.Fatalf("TokenSpace async video channel must not support /v1/responses")
+	}
+}
+
 func TestGrokSupportsResponsesCompactEndpoint(t *testing.T) {
 	ch := &model.Channel{Type: constant.ChannelTypeGrokSubscription}
 	if !channelSupportsRequestedEndpoint(ch, "grok-4", constant.EndpointTypeOpenAIResponseCompact) {

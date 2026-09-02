@@ -33,6 +33,18 @@ func TestInitTaskPersistsModelAPISeedanceSelectedKeyForPolling(t *testing.T) {
 	require.Equal(t, "modelapi-selected-key", task.PrivateData.Key)
 }
 
+func TestInitTaskPersistsTokenSpaceSelectedKeyForPolling(t *testing.T) {
+	task := InitTask(constant.TaskPlatform("114"), &relaycommon.RelayInfo{
+		UserId: 7,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeTokenSpace,
+			ApiKey:      "tokenspace-selected-key",
+		},
+	})
+
+	require.Equal(t, "tokenspace-selected-key", task.PrivateData.Key)
+}
+
 func TestTaskKeyGrokSubscriptionOAuthIsNeverPersisted(t *testing.T) {
 	task := InitTask(constant.TaskPlatform("113"), &relaycommon.RelayInfo{
 		UserId: 7,

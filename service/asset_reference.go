@@ -93,6 +93,13 @@ func (s AssetReferenceSet) readinessForChannelModel(channel *model.Channel, orig
 	if !s.HasReferences() || channel == nil {
 		return AssetReadinessIneligible, false
 	}
+	// A TokenSpace channel without an explicit materializer is intentionally
+	// excluded from ordinary asset-model coverage. Legacy real-person assets are
+	// different: their upstream binding is already owned by this channel and can
+	// be safely reused without creating a new materialization scope.
+	if independentTokenSpaceLegacyRealPersonReferencesReady(s, channel) {
+		return AssetReadinessAllBound, true
+	}
 	if s.strictCoverage {
 		if s.target == nil {
 			return s.preparationReadinessForChannel(channel)
@@ -129,7 +136,13 @@ func assetBindingScopesRequireSingleScope(channel *model.Channel) bool {
 }
 
 func (s AssetReferenceSet) preparationReadinessForChannel(channel *model.Channel) (AssetReadinessClass, bool) {
-	if channel == nil || len(s.preparationChannels) == 0 {
+	if channel == nil {
+		return AssetReadinessIneligible, false
+	}
+	if independentTokenSpaceLegacyRealPersonReferencesReady(s, channel) {
+		return AssetReadinessAllBound, true
+	}
+	if len(s.preparationChannels) == 0 {
 		return AssetReadinessIneligible, false
 	}
 	if _, ok := s.preparationChannels[channel.Id]; !ok {
@@ -137,7 +150,7 @@ func (s AssetReferenceSet) preparationReadinessForChannel(channel *model.Channel
 	}
 	for _, reference := range s.references {
 		asset, ok := s.assets[reference.PublicID]
-		if !ok || asset.AssetType != reference.ExpectedAssetType || !channelCanConsumeAssetType(channel, asset.AssetType) {
+		if !ok || asset.AssetType != reference.ExpectedAssetType || !assetReferenceCanUseChannel(asset, channel) {
 			return AssetReadinessIneligible, false
 		}
 	}
@@ -149,7 +162,7 @@ func (s AssetReferenceSet) readinessForChannelScope(channel *model.Channel, tech
 	recoverableSources := 0
 	for _, reference := range s.references {
 		asset, ok := s.assets[reference.PublicID]
-		if !ok || asset.AssetType != reference.ExpectedAssetType || !channelCanConsumeAssetType(channel, asset.AssetType) {
+		if !ok || asset.AssetType != reference.ExpectedAssetType || !assetReferenceCanUseChannel(asset, channel) {
 			return AssetReadinessIneligible, false
 		}
 		binding, bound := activeAssetReferenceBindingForRequest(asset.Bindings, channel, techMobiScopes)
@@ -193,7 +206,7 @@ func (s AssetReferenceSet) targetReadinessForChannel(channel *model.Channel, ori
 	}
 	for _, reference := range s.references {
 		asset, ok := s.assets[reference.PublicID]
-		if !ok || asset.AssetType != reference.ExpectedAssetType || !channelCanConsumeAssetType(channel, asset.AssetType) {
+		if !ok || asset.AssetType != reference.ExpectedAssetType || !assetReferenceCanUseChannel(asset, channel) {
 			return AssetReadinessIneligible, false
 		}
 		if legacyRealPersonAssetCanUseChannel(asset, channel) {
@@ -245,6 +258,9 @@ func (s AssetReferenceSet) RewriteMapForChannel(channelID int) map[string]string
 func (s AssetReferenceSet) RewriteMapForSelectedChannel(channel *model.Channel, originModel string, apiKey string) map[string]string {
 	if !s.HasReferences() || channel == nil || channel.Id <= 0 {
 		return nil
+	}
+	if independentTokenSpaceLegacyRealPersonReferencesReady(s, channel) {
+		return s.rewriteMapForChannel(channel, nil)
 	}
 	if s.strictCoverage {
 		if s.target == nil {
@@ -821,6 +837,23 @@ func legacyRealPersonAssetCanUseChannel(asset assetReferenceAsset, channel *mode
 	return ok
 }
 
+func assetReferenceCanUseChannel(asset assetReferenceAsset, channel *model.Channel) bool {
+	return channelCanConsumeAssetType(channel, asset.AssetType) || legacyRealPersonAssetCanUseChannel(asset, channel)
+}
+
+func independentTokenSpaceLegacyRealPersonReferencesReady(set AssetReferenceSet, channel *model.Channel) bool {
+	if channel == nil || channel.Type != constant.ChannelTypeTokenSpace || !set.HasReferences() {
+		return false
+	}
+	for _, reference := range set.references {
+		asset, ok := set.assets[reference.PublicID]
+		if !ok || asset.AssetType != reference.ExpectedAssetType || !legacyRealPersonAssetCanUseChannel(asset, channel) {
+			return false
+		}
+	}
+	return true
+}
+
 func isActiveAssetReferenceBinding(binding assetReferenceBinding) bool {
 	return binding.ChannelID > 0 && binding.Status == model.AssetStatusActive && strings.TrimSpace(binding.UpstreamAssetID) != ""
 }
@@ -870,6 +903,11 @@ func channelCanConsumeAssetType(channel *model.Channel, assetType string) bool {
 	switch channel.Type {
 	case constant.ChannelTypeBytePlus:
 		return assetType == "Image" || assetType == "Video" || assetType == "Audio"
+	case constant.ChannelTypeTokenSpace:
+		// The independent type only owns the TokenSpace real-person provider by
+		// default; ordinary asset materialization still requires an explicit
+		// provider configuration.
+		return false
 	case constant.ChannelTypeModelAPISeedance:
 		return assetType == "Image" || assetType == "Video" || assetType == "Audio"
 	case constant.ChannelTypeBlockRunSeedance, constant.ChannelTypeBlockRunVideo, constant.ChannelTypeSora, constant.ChannelTypeTechMobiVideo, constant.ChannelTypeXaiGrokVideo:

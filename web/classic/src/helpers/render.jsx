@@ -407,6 +407,8 @@ export function getChannelIcon(channelType) {
       return <Doubao.Color size={iconSize} />;
     case 111: // ModelAPISeedance
       return <Doubao.Color size={iconSize} />;
+    case 114: // TokenSpace
+      return <Doubao.Color size={iconSize} />;
     case 56: // Replicate
       return <Replicate size={iconSize} />;
     case 8: // 自定义渠道

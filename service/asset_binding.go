@@ -324,6 +324,13 @@ func MaterializeAssetBindingsForChannel(ctx context.Context, userID int, set Ass
 	if !set.HasReferences() || channel == nil {
 		return nil, nil
 	}
+	if independentTokenSpaceLegacyRealPersonReferencesReady(set, channel) {
+		rewriteMap := set.rewriteMapForChannel(channel, nil)
+		if len(rewriteMap) != len(set.references) {
+			return nil, ErrAssetBindingUnavailable
+		}
+		return rewriteMap, nil
+	}
 	var materializeOptions AssetMaterializeOptions
 	if len(options) > 0 {
 		materializeOptions = options[0]
@@ -767,6 +774,9 @@ func sameAssetBindingProviderResult(binding *model.AssetBinding, result AssetMat
 
 func ResolveAssetMaterializeOptions(set AssetReferenceSet, channel *model.Channel, options AssetMaterializeOptions) (AssetMaterializeOptions, int, error) {
 	if channel == nil || !set.HasReferences() {
+		return options, -1, nil
+	}
+	if independentTokenSpaceLegacyRealPersonReferencesReady(set, channel) {
 		return options, -1, nil
 	}
 	config, explicit, err := assetMaterializationConfigForChannel(channel)

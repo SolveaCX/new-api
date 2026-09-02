@@ -72,6 +72,27 @@ func TestBytePlusAssetOriginResolverKeepsResolvedRealPersonPinnedChannelLocked(t
 	require.Equal(t, 131, locked.Id)
 }
 
+func TestBytePlusAssetOriginResolverAcceptsIndependentTokenSpacePinnedChannel(t *testing.T) {
+	restoreDB := useControllerBytePlusAssetDBForTest(t)
+	defer restoreDB()
+	insertControllerBytePlusChannel(t, 133, common.ChannelStatusEnabled, constant.ChannelTypeTokenSpace)
+
+	c := newControllerBytePlusAssetContext()
+	common.SetContextKey(c, constant.ContextKeyBytePlusAssetPinnedChannelID, 133)
+	info := &relaycommon.RelayInfo{
+		ChannelMeta:   &relaycommon.ChannelMeta{},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+	}
+
+	taskErr := resolveOriginTaskWithBytePlusAssetLock(c, info, func(_ *gin.Context, got *relaycommon.RelayInfo) *dto.TaskError {
+		locked, ok := got.LockedChannel.(*model.Channel)
+		require.True(t, ok)
+		require.Equal(t, 133, locked.Id)
+		return nil
+	})
+	require.Nil(t, taskErr)
+}
+
 func TestBytePlusAssetOriginResolverWithoutPinIsUnchanged(t *testing.T) {
 	c := newControllerBytePlusAssetContext()
 	info := &relaycommon.RelayInfo{TaskRelayInfo: &relaycommon.TaskRelayInfo{}}

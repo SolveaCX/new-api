@@ -6,8 +6,8 @@ func TestGrokSubscriptionChannelRegistration(t *testing.T) {
 	if ChannelTypeGrokSubscription != 113 {
 		t.Fatalf("ChannelTypeGrokSubscription = %d, want 113", ChannelTypeGrokSubscription)
 	}
-	if ChannelTypeDummy != 114 {
-		t.Fatalf("ChannelTypeDummy = %d, want 114 (shifted after Grok took over 113)", ChannelTypeDummy)
+	if ChannelTypeDummy != 115 {
+		t.Fatalf("ChannelTypeDummy = %d, want 115 (shifted after TokenSpace took over 114)", ChannelTypeDummy)
 	}
 	if ChannelTypeDummy <= ChannelTypeGrokSubscription {
 		t.Fatalf("ChannelTypeDummy = %d must stay after ChannelTypeGrokSubscription", ChannelTypeDummy)

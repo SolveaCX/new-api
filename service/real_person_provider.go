@@ -89,6 +89,9 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 	if err != nil {
 		return nil, err
 	}
+	if channel.Type == constant.ChannelTypeTokenSpace {
+		return tokenSpaceRealPersonProviderForChannel(channel, config, explicit)
+	}
 	if explicit {
 		if config.Provider != assetMaterializationProviderTokenSpaceMaterial {
 			return nil, errors.New("real person provider unavailable")
@@ -130,10 +133,44 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 	}, nil
 }
 
-// TokenSpaceRealPersonChannelIsUsable reports whether a Doubao video channel
-// is explicitly configured to own TokenSpace real-person profiles and assets.
+func tokenSpaceRealPersonProviderForChannel(channel *model.Channel, config assetMaterializationChannelConfig, explicit bool) (*realPersonProviderBinding, error) {
+	if explicit && config.Provider != assetMaterializationProviderTokenSpaceMaterial {
+		return nil, errors.New("real person provider unavailable")
+	}
+	keys := enabledAssetMaterializeKeys(channel)
+	if len(keys) != 1 || strings.TrimSpace(keys[0].key) == "" {
+		return nil, errors.New("tokenspace real person provider requires exactly one enabled key")
+	}
+	gatewayOrigin := strings.TrimSpace(config.GatewayOrigin)
+	if !explicit {
+		baseURL := strings.TrimSpace(channel.GetBaseURL())
+		if baseURL == "" {
+			baseURL = constant.ChannelBaseURLs[constant.ChannelTypeTokenSpace]
+		}
+		var err error
+		gatewayOrigin, err = normalizedGatewayOrigin(baseURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if gatewayOrigin == "" {
+		return nil, errors.New("tokenspace real person provider requires a gateway")
+	}
+	return &realPersonProviderBinding{
+		Channel: channel,
+		Provider: tokenSpaceRealPersonProvider{
+			channel:       channel,
+			apiKey:        strings.TrimSpace(keys[0].key),
+			gatewayOrigin: gatewayOrigin,
+		},
+	}, nil
+}
+
+// TokenSpaceRealPersonChannelIsUsable reports whether a TokenSpace channel (or
+// a legacy Doubao video channel with an explicit TokenSpace provider) can own
+// real-person profiles and assets.
 func TokenSpaceRealPersonChannelIsUsable(channel *model.Channel) bool {
-	if channel == nil || channel.Type != constant.ChannelTypeDoubaoVideo {
+	if channel == nil || (channel.Type != constant.ChannelTypeDoubaoVideo && channel.Type != constant.ChannelTypeTokenSpace) {
 		return false
 	}
 	_, err := realPersonProviderForChannel(channel)

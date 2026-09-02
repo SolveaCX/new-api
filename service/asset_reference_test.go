@@ -820,6 +820,64 @@ func TestTokenSpaceMaterialConfiguredAssetTypeAllowsImageVideoAndAudio(t *testin
 	require.True(t, channelCanConsumeAssetType(tokenSpaceChannel, "Audio"))
 }
 
+func TestIndependentTokenSpaceAssetTypeRequiresExplicitMaterializer(t *testing.T) {
+	tokenSpaceChannel := &model.Channel{Type: constant.ChannelTypeTokenSpace}
+
+	require.False(t, channelCanConsumeAssetType(tokenSpaceChannel, "Image"))
+	require.False(t, channelCanConsumeAssetType(tokenSpaceChannel, "Video"))
+	require.False(t, channelCanConsumeAssetType(tokenSpaceChannel, "Audio"))
+}
+
+func TestIndependentTokenSpaceLegacyRealPersonBindingRemainsReady(t *testing.T) {
+	channel := &model.Channel{
+		Id:     824,
+		Type:   constant.ChannelTypeTokenSpace,
+		Status: common.ChannelStatusEnabled,
+		Key:    "tokenspace-key",
+	}
+	publicID := "ast_tokenspace_legacy_person"
+	refs := AssetReferenceSet{
+		strictCoverage: true,
+		references:     []assetReference{{PublicID: publicID, ExpectedAssetType: "Image"}},
+		assets: map[string]assetReferenceAsset{
+			publicID: {
+				PublicID:         publicID,
+				AssetType:        "Image",
+				Status:           model.AssetStatusActive,
+				SourceStatus:     model.AssetSourceStatusUnavailable,
+				LegacyBytePlus:   true,
+				LegacyRealPerson: true,
+				Bindings: []assetReferenceBinding{{
+					ChannelID:       channel.Id,
+					UpstreamAssetID: "tokenspace-person-asset",
+					Status:          model.AssetStatusActive,
+				}},
+			},
+		},
+	}
+
+	readiness, ok := refs.ReadinessForChannel(channel)
+	require.True(t, ok)
+	require.Equal(t, AssetReadinessAllBound, readiness)
+	require.Equal(t, map[string]string{
+		"asset://" + publicID: "asset://tokenspace-person-asset",
+	}, refs.RewriteMapForSelectedChannel(channel, "seedance-2.0", channel.Key))
+
+	options, keyIndex, err := ResolveAssetMaterializeOptions(refs, channel, AssetMaterializeOptions{
+		Model:  "seedance-2.0",
+		APIKey: channel.Key,
+	})
+	require.NoError(t, err)
+	require.Equal(t, AssetMaterializeOptions{Model: "seedance-2.0", APIKey: channel.Key}, options)
+	require.Equal(t, -1, keyIndex)
+
+	materialized, err := MaterializeAssetBindingsForChannel(nil, 7, refs, channel, options)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"asset://" + publicID: "asset://tokenspace-person-asset",
+	}, materialized)
+}
+
 func TestSeedanceProxyCapabilitySupportsAudio(t *testing.T) {
 	seedanceProxyChannel := &model.Channel{
 		Type:          constant.ChannelTypeBytePlus,

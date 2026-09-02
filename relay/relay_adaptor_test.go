@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel/copilot"
 	"github.com/QuantumNous/new-api/relay/channel/task/byteplus"
+	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskgroksubscription "github.com/QuantumNous/new-api/relay/channel/task/groksubscription"
 	"github.com/QuantumNous/new-api/relay/channel/task/hailuo"
 	hailuov2 "github.com/QuantumNous/new-api/relay/channel/task/hailuo_v2"
@@ -65,6 +66,16 @@ func TestGetTaskAdaptor_BytePlus(t *testing.T) {
 	}
 	if _, ok := adaptor.(*byteplus.TaskAdaptor); !ok {
 		t.Fatalf("adaptor type = %T, want *byteplus.TaskAdaptor", adaptor)
+	}
+}
+
+func TestGetTaskAdaptor_TokenSpaceUsesSeedanceAdaptor(t *testing.T) {
+	adaptor := GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeTokenSpace)))
+	if adaptor == nil {
+		t.Fatal("expected TokenSpace task adaptor")
+	}
+	if _, ok := adaptor.(*taskdoubao.TaskAdaptor); !ok {
+		t.Fatalf("adaptor type = %T, want *doubao.TaskAdaptor", adaptor)
 	}
 }
 

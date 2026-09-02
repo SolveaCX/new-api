@@ -297,7 +297,7 @@ func channelSupportsRequestedEndpoint(channel *model.Channel, modelName string, 
 }
 
 func channelSupportsOpenAIResponses(channelType int) bool {
-	if channelType == constant.ChannelTypeBytePlus {
+	if channelType == constant.ChannelTypeBytePlus || channelType == constant.ChannelTypeTokenSpace {
 		return false
 	}
 	apiType, ok := common.ChannelType2APIType(channelType)

@@ -97,6 +97,9 @@ func TestModelAvailabilityProbeConfigMarksMediaModelsUntestable(t *testing.T) {
 	_, _, bytePlusTestable := modelAvailabilityProbeConfig("some-model", constant.ChannelTypeBytePlus)
 	require.False(t, bytePlusTestable)
 
+	_, _, tokenSpaceTestable := modelAvailabilityProbeConfig("some-model", constant.ChannelTypeTokenSpace)
+	require.False(t, tokenSpaceTestable)
+
 	// HappyHorse is served through Ali's general-purpose channel type, but its
 	// models use the async video task API and must never receive a chat probe.
 	for _, modelName := range []string{
