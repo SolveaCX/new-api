@@ -2,7 +2,7 @@
 
 import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown, Filter, Search, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelsDirectoryTable } from "@/components/models-directory-table";
 import { ModelsFeaturedCarousel } from "@/components/models-featured-carousel";
 import { ModelsFilterSidebar, type FilterGroup } from "@/components/models-filter-sidebar";
@@ -66,6 +66,7 @@ export function ModelsDirectory(props: Props) {
   const [sort, setSort] = useState<DirectorySort>(initial.sort);
   const [searchInput, setSearchInput] = useState(initial.q ?? "");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const resultsSectionRef = useRef<HTMLElement>(null);
 
   // Debounced so typing does not re-run the facet sweep on every keystroke.
   useEffect(() => {
@@ -145,12 +146,14 @@ export function ModelsDirectory(props: Props) {
 
   const onToggle = (key: DirectoryFilterKey, value: string | number | boolean) => {
     setFilters((current) => toggleDirectoryFilter(current, key, value as never));
+    scrollToResults(resultsSectionRef);
   };
 
   const onReset = () => {
     setFilters(EMPTY_DIRECTORY_FILTERS);
     setSort("rank");
     setSearchInput("");
+    scrollToResults(resultsSectionRef);
   };
 
   const sidebar = (
@@ -178,7 +181,7 @@ export function ModelsDirectory(props: Props) {
           {sidebar}
         </aside>
 
-        <section className="min-w-0 space-y-4 xl:p-4">
+        <section ref={resultsSectionRef} className="min-w-0 scroll-mt-24 space-y-4">
           <div className="rounded-2xl border border-[#E7E4EC] bg-white p-4 shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-26px_rgba(24,14,38,0.2)] dark:border-white/10 dark:bg-white/[0.03]">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative min-w-0 flex-1">
@@ -273,7 +276,11 @@ export function ModelsDirectory(props: Props) {
 
           {visible.length > 0 ? (
             <ModelsDirectoryTable
-              copy={{ ...copy, colInput: copy.colOurInputPrice, colOutput: copy.colOurOutputPrice }}
+              copy={{
+                ...copy,
+                colInput: copy.colOurInputPrice,
+                colOutput: copy.colOurOutputPrice,
+              }}
               rows={visible}
               locale={props.locale}
               hideOurPrice
@@ -295,6 +302,11 @@ export function ModelsDirectory(props: Props) {
       </div>
     </>
   );
+}
+
+function scrollToResults(ref: { current: HTMLElement | null }) {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
 function stripSort(parsed: DirectoryFilters & { sort: DirectorySort }): DirectoryFilters {

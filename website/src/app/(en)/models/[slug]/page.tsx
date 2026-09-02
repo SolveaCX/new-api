@@ -6,7 +6,6 @@ import {
   getModelLandingConfigs,
   getLocalizedModelLandingConfig,
   buildModelLandingMetadata,
-  limitSeoDescription,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { resolvePublicModel } from "@/lib/model-public";
@@ -57,7 +56,7 @@ export async function generateMetadata(props: Props) {
     }
     return buildMetadata({
       title: config.seoByLocale?.en?.title ?? config.seo.title,
-      description: limitSeoDescription(config.seoByLocale?.en?.description ?? config.seo.description),
+      description: "Current Flatkey pricing and availability are shown from the live model catalog.",
       pathname: `/models/${config.slug}`,
     });
   }

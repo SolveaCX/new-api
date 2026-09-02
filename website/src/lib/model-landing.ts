@@ -561,64 +561,61 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   // The catalog's model_price is a base value used by the billing resolver;
   // it is not a universal per-second retail price. The request formula also
   // depends on resolution and whether a video reference is supplied.
-  officialPrice: "$0.14 base",
-  flatkeyPrice: "$0.14 base",
-  estFlatkey: "$0.14 base",
-  estOfficial: "$0.14 base",
+  officialPrice: "Pricing data unavailable",
+  flatkeyPrice: "Pricing data unavailable",
+  estFlatkey: "Pricing data unavailable",
+  estOfficial: "Pricing data unavailable",
   examplePrompt:
     "A cinematic product shot of a sports car on a wet track, soft studio lighting, high detail.",
   priceUnit: "Pricing",
   rows: [
-    { label: "Request price", flatkey: "$0.140 × duration", official: "See request formula" },
-    { label: "Request price", flatkey: "$0.314 × duration", official: "See request formula" },
-    { label: "Video reference input", flatkey: "$0.084–$0.188 × video seconds", official: "See request formula" },
+    { label: "Request price", flatkey: "Pricing data unavailable", official: "Pricing data unavailable" },
     { label: "Coverage", flatkey: "", value: "Seedance 2.5 · Seedance 2.0 · Kling · Veo · Sora" },
   ],
   seo: {
     title: "Seedance 2.5 AI video generator — API and pricing | Flatkey",
-    description:
-      "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
+    description: "Use ByteDance Seedance 2.5 through the Flatkey API. Current pricing is shown from the live model catalog and varies by request settings.",
   },
   seoByLocale: {
     en: {
       title: "Seedance 2.5 AI video generator — API and pricing | Flatkey",
-      description: "Use ByteDance Seedance 2.5 as an AI video generator through the Flatkey API: text-to-video, image-to-video, 4–30 second clips, reference media, and 480p/720p pricing.",
+      description: "Use ByteDance Seedance 2.5 through the Flatkey API: 480p costs $0.140 × duration, 720p costs $0.314 × duration, and video references cost $0.084–$0.188 per video second.",
     },
     pt: {
       title: "Gerador de vídeo IA Seedance 2.5 e preços da API | Flatkey",
-      description: "Use o Seedance 2.5 da ByteDance como gerador de vídeo por IA na API Flatkey: texto para vídeo, imagem para vídeo, clipes de 4–30 segundos e preços para 480p/720p.",
+      description: "Use o Seedance 2.5 da ByteDance na API Flatkey. O preço atual é mostrado pelo catálogo de modelos em tempo real e varia conforme a solicitação.",
     },
     zh: {
       title: "Seedance 2.5 AI 视频生成器与 API 价格 | Flatkey",
-      description: "通过 Flatkey API 使用 ByteDance Seedance 2.5：支持文生视频、图生视频、4–30 秒片段、参考素材，以及 480p/720p 定价。",
+      description: "通过 Flatkey API 使用 ByteDance Seedance 2.5。当前价格来自实时模型目录，并会根据请求设置变化。",
     },
     es: {
       title: "Generador de vídeo IA Seedance 2.5 y precios de API | Flatkey",
-      description: "Usa ByteDance Seedance 2.5 como generador de vídeo IA con la API de Flatkey: texto a vídeo, imagen a vídeo, clips de 4–30 segundos y precios 480p/720p.",
+      description: "Usa ByteDance Seedance 2.5 con la API de Flatkey. El precio actual procede del catálogo de modelos en vivo y varía según la solicitud.",
     },
     fr: {
       title: "Générateur vidéo IA Seedance 2.5 et tarifs API | Flatkey",
-      description: "Utilisez ByteDance Seedance 2.5 comme générateur vidéo IA via l’API Flatkey : texte-vers-vidéo, image-vers-vidéo, clips de 4 à 30 secondes et tarifs 480p/720p.",
+      description: "Utilisez ByteDance Seedance 2.5 via l’API Flatkey. Le tarif actuel provient du catalogue de modèles en direct et varie selon la requête.",
     },
     ru: {
       title: "ИИ-генератор видео Seedance 2.5 и цены API | Flatkey",
-      description: "Используйте ByteDance Seedance 2.5 через API Flatkey: текст-видео, изображение-видео, клипы 4–30 секунд, референсы и цены 480p/720p.",
+      description: "Используйте ByteDance Seedance 2.5 через API Flatkey. Текущая цена берётся из актуального каталога моделей и зависит от запроса.",
     },
     ja: {
       title: "Seedance 2.5 AI動画生成とAPI料金 | Flatkey",
-      description: "Flatkey APIでByteDance Seedance 2.5を利用。テキストから動画、画像から動画、4～30秒のクリップ、参照素材、480p/720p料金に対応します。",
+      description: "Flatkey APIでByteDance Seedance 2.5を利用できます。現在の料金はライブモデルカタログに基づき、リクエスト設定で変わります。",
     },
     vi: {
       title: "Trình tạo video AI Seedance 2.5 và giá API | Flatkey",
-      description: "Dùng ByteDance Seedance 2.5 qua API Flatkey: văn bản thành video, ảnh thành video, clip 4–30 giây, media tham chiếu và giá 480p/720p.",
+      description: "Dùng ByteDance Seedance 2.5 qua API Flatkey. Giá hiện tại lấy từ danh mục mô hình trực tiếp và thay đổi theo yêu cầu.",
     },
     de: {
       title: "Seedance 2.5 KI-Videogenerator und API-Preise | Flatkey",
-      description: "Nutzen Sie ByteDance Seedance 2.5 über die Flatkey-API: Text-zu-Video, Bild-zu-Video, 4–30-Sekunden-Clips, Referenzmedien und 480p/720p-Preise.",
+      description: "Nutzen Sie ByteDance Seedance 2.5 über die Flatkey-API. Der aktuelle Preis stammt aus dem Live-Modellkatalog und hängt von der Anfrage ab.",
     },
     id: {
       title: "Generator Video AI Seedance 2.5 dan harga API | Flatkey",
-      description: "Gunakan ByteDance Seedance 2.5 melalui API Flatkey: teks menjadi video, gambar menjadi video, klip 4–30 detik, media referensi, serta harga 480p/720p.",
+      description: "Gunakan ByteDance Seedance 2.5 melalui API Flatkey. Harga saat ini berasal dari katalog model langsung dan bergantung pada permintaan.",
     },
   },
   positioning: "Best for product videos, ad creative, and image-to-video production",
@@ -635,14 +632,13 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
   ],
   landingContent: {
     hero: {
-      title: "Seedance 2.5 AI video generator and API",
+      title: "Seedance 2.5 AI Video API",
       description: "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.",
       logo: "/logos/seedance.png",
       breadcrumb: ["Models", "Video generation", "Seedance 2.5 API"],
       actionLabel: "Get started",
       provider: "ByteDance",
-      flatkeyPrice: "$0.140 × duration",
-      referencePrice: "See request formula",
+      // Amounts are filled from the live pricing catalog at render time.
     },
     performance: {
       eyebrow: "Performance",
@@ -762,7 +758,7 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
     },
     faq: [
       { question: "What is Seedance 2.5?", answer: "Seedance 2.5 is ByteDance's audio-video generation model for text-to-video and image-to-video requests, with reference media and optional audio controls." },
-      { question: "How much does Seedance 2.5 cost?", answer: "The catalog base is $0.14, but the request formula varies: 480p without video input is $0.140 × duration; 720p is $0.314 × duration; video-reference formulas use total video seconds and resolution." },
+      { question: "How much does Seedance 2.5 cost?", answer: "Current pricing is shown from the live Flatkey pricing catalog. The applicable amount can vary by resolution, duration, reference media, and account group." },
       { question: "What can I use it for?", answer: "Use it for micro-drama and comic storyboards, product and UGC variants, film previsualization, game cinematics, creator clips, and market-research creative tests." },
       { question: "How do I use the model in my app?", answer: "POST to /v1/videos with the Seedance content[] format, retain the asynchronous task id, and fetch the result from /v1/videos/{task_id}/content." },
       { question: "Can I control output features?", answer: "Yes. Set 480p or 720p, 4–30 seconds, a supported ratio, generate_audio, and the documented reference/frame fields." },
@@ -1587,10 +1583,10 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   [SONILO_VIDEO_TO_MUSIC_CONFIG.slug]: SONILO_VIDEO_TO_MUSIC_CONFIG,
 };
 
-const GENERIC_MEDIA_PRICE_BY_KIND: Record<ModelGeneratorConfig["kind"], { priceUnit: ModelLandingKey; flatkey: string; official: string }> = {
-  image: { priceUnit: "/ image", flatkey: "$0.04", official: "$0.06" },
-  video: { priceUnit: "/ second", flatkey: "$0.047", official: "$0.07" },
-  audio: { priceUnit: "/ request", flatkey: "$0.0048", official: "$0.009" },
+const GENERIC_MEDIA_PRICE_BY_KIND: Record<ModelGeneratorConfig["kind"], { priceUnit: ModelLandingKey }> = {
+  image: { priceUnit: "/ image" },
+  video: { priceUnit: "/ second" },
+  audio: { priceUnit: "/ request" },
 };
 
 const GENERIC_MEDIA_FIELDS: Record<ModelGeneratorConfig["kind"], ModelGeneratorField[]> = {
@@ -1679,6 +1675,7 @@ function getGenericMediaProfile(model: PricingModel, kind: ModelGeneratorConfig[
 }
 
 export type ModelLandingKey =
+  | "Seedance 2.5 AI Video API"
   | "All models"
   | "Back to Models"
   | "View Pricing"
@@ -2206,10 +2203,25 @@ function modelPricingSummary(model: PricingModel, task: string): { en: string; p
     const output = valueText(valueFor("output"));
     if (input && output) return tokenPriceCopy(`${input} input/${output} output per 1M tokens`, `${input} entrada/${output} saída por 1M tokens`, input, output);
     if (input) return tokenPriceCopy(`${input} input per 1M tokens`, `${input} entrada por 1M tokens`, input);
-    return kind === "tiered_expr" ? genericPriceCopy("time-tiered token pricing", "preço de tokens por faixa de horário") : genericPriceCopy("token pricing", "preço por tokens");
+    return kind === "tiered_expr" ? genericPriceCopy("time-tiered token pricing", "preço de tokens por faixa de horário") : unavailablePricingCopy();
   }
   const request = valueText(valueFor("request")) ?? valueText(model.model_price);
-  return request ? requestPriceCopy(request) : genericPriceCopy("request pricing", "preço por solicitação");
+  return request ? requestPriceCopy(request) : unavailablePricingCopy();
+}
+
+function unavailablePricingCopy(): { en: string; pt: string } & Partial<Record<Locale, string>> {
+  return {
+    en: "Current pricing is unavailable",
+    pt: "O preço atual não está disponível",
+    zh: "当前价格暂不可用",
+    es: "El precio actual no está disponible",
+    fr: "Le tarif actuel est indisponible",
+    ru: "Текущая цена недоступна",
+    ja: "現在の料金は利用できません",
+    vi: "Chưa có giá hiện tại",
+    de: "Der aktuelle Preis ist nicht verfügbar",
+    id: "Harga saat ini tidak tersedia",
+  };
 }
 
 function genericPriceCopy(en: string, pt: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
@@ -2299,9 +2311,10 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
     ? { ...config.landingContent, ...priorityOverride.landingContent }
     : config.landingContent ?? buildGenericLandingContent(model, config.generator?.kind ?? inferMediaKind(model) ?? "text");
   const metadataTask = config.generator?.kind ? metadataTaskForLandingKind(config.generator.kind) : undefined;
-  const dynamicMetadata = priorityOverride?.seo
-    ? null
-    : buildModelLandingMetadata(model, { locale: "en", task: metadataTask });
+  // Keep priority titles when they carry a deliberate search phrase, but
+  // always rebuild the description from the live pricing payload so metadata
+  // cannot drift from the price table.
+  const dynamicMetadata = buildModelLandingMetadata(model, { locale: "en", task: metadataTask });
   return {
     ...config,
     ...priorityOverride,
@@ -2315,7 +2328,10 @@ export function modelLandingConfigForModel(config: ModelConfig, model: PricingMo
       : {}),
     ...(dynamicMetadata
       ? {
-          seo: { title: dynamicMetadata.title, description: dynamicMetadata.description },
+          seo: {
+            title: priorityOverride?.seo?.title ?? dynamicMetadata.title,
+            description: dynamicMetadata.description,
+          },
           seoByLocale: buildModelSeoByLocale(model, metadataTask),
         }
       : {}),
@@ -2607,8 +2623,8 @@ function buildGenericMediaLandingConfig(model: PricingModel): ModelConfig | null
   const officialName = model.vendor_name ?? "Provider";
   const liveSecond = model.display_pricing?.prices.second?.plg ?? model.display_pricing?.prices.second?.configured;
   const liveOfficialSecond = model.display_pricing?.prices.second?.configured ?? liveSecond;
-  const liveFlatkeyPrice = liveSecond != null ? formatPriceLiteral(liveSecond) : price.flatkey;
-  const liveOfficialPrice = liveOfficialSecond != null ? formatPriceLiteral(liveOfficialSecond) : price.official;
+  const liveFlatkeyPrice = liveSecond != null ? formatPriceLiteral(liveSecond) : "Pricing data unavailable";
+  const liveOfficialPrice = liveOfficialSecond != null ? formatPriceLiteral(liveOfficialSecond) : "Pricing data unavailable";
   const landingContent = buildGenericLandingContent(model, kind);
   const mediaProfile = getGenericMediaProfile(model, kind);
   const metadata = buildModelLandingMetadata(model, { locale: "en", task: metadataTaskForLandingKind(kind) });
@@ -2667,12 +2683,8 @@ function buildGenericTextLandingConfig(model: PricingModel): ModelConfig {
   const displayName = model.model_name;
   const officialName = model.vendor_name ?? "Provider";
   const tokenBased = model.quota_type === 0;
-  const officialUnitPrice = tokenBased
-    ? Number(model.model_ratio ?? 0) * 2 * Number(model.completion_ratio ?? 1)
-    : Number(model.model_price ?? 0);
-  const flatkeyUnitPrice = officialUnitPrice * 0.67;
-  const officialPrice = officialUnitPrice > 0 ? formatPriceLiteral(officialUnitPrice) : "$0";
-  const flatkeyPrice = flatkeyUnitPrice > 0 ? formatPriceLiteral(flatkeyUnitPrice) : "$0";
+  const officialPrice = "Pricing data unavailable";
+  const flatkeyPrice = "Pricing data unavailable";
   const landingContent = buildGenericLandingContent(model, "text");
   const metadata = buildModelLandingMetadata(model, { locale: "en" });
 
@@ -3918,6 +3930,7 @@ function formatPriceLiteral(value: number): string {
 }
 
 const en: Record<ModelLandingKey, string> = {
+  "Seedance 2.5 AI Video API": "Seedance 2.5 AI Video API",
   "All models": "All models",
   "Back to Models": "Back to Models",
   "View Pricing": "View Pricing",
@@ -8853,6 +8866,7 @@ const seedanceFactCopy: Partial<Record<Locale, Record<string, string>>> = {
 // Seedance key so the page stays complete without duplicating the whole copy
 // tree.
 const seedance25SourceAliases: Record<string, string> = {
+  "Seedance 2.5 AI Video API": "Seedance 2.5 AI Video Generator & API",
   "Seedance 2.5 AI video generator and API": "Seedance 2.5 AI Video Generator & API",
   "Seedance 2.5 AI video API performance and uptime": "Seedance 2.5 usage activity",
   "Seedance 2.5 video API usage activity": "Seedance 2.5 usage activity",
@@ -8867,6 +8881,7 @@ const seedance25SourceAliases: Record<string, string> = {
 
 const seedance25DirectTranslations: Partial<Record<Locale, Record<string, string>>> = {
   en: {
+    "Seedance 2.5 AI Video API": "Seedance 2.5 AI Video API",
     "Seedance 2.5 AI video generator and API": "Seedance 2.5 AI video generator and API",
     "Seedance 2.5 AI video API performance and uptime": "Seedance 2.5 AI video API performance and availability",
     "Seedance 2.5 video API usage activity": "Seedance 2.5 video API usage activity",
@@ -8879,6 +8894,7 @@ const seedance25DirectTranslations: Partial<Record<Locale, Record<string, string
     "API, pricing, and release-date questions": "API, pricing, and release-date questions",
   },
   pt: {
+    "Seedance 2.5 AI Video API": "API de vídeo IA Seedance 2.5",
     "Seedance 2.5 AI video generator and API": "Gerador de vídeo IA Seedance 2.5 e API",
     "Seedance 2.5 AI video API performance and uptime": "Desempenho e disponibilidade da API de vídeo IA Seedance 2.5",
     "Seedance 2.5 video API usage activity": "Uso da API de vídeo Seedance 2.5 e atividade das solicitações",
@@ -8890,6 +8906,14 @@ const seedance25DirectTranslations: Partial<Record<Locale, Record<string, string
     "Other Seedance and AI video generator APIs": "Outras APIs do Seedance e de geração de vídeo com IA",
     "API, pricing, and release-date questions": "Perguntas sobre a API, preços e data de lançamento",
   },
+  zh: { "Seedance 2.5 AI Video API": "Seedance 2.5 AI 视频 API" },
+  es: { "Seedance 2.5 AI Video API": "API de vídeo IA Seedance 2.5" },
+  fr: { "Seedance 2.5 AI Video API": "API vidéo IA Seedance 2.5" },
+  ru: { "Seedance 2.5 AI Video API": "Видео API Seedance 2.5 с ИИ" },
+  ja: { "Seedance 2.5 AI Video API": "Seedance 2.5 AI動画API" },
+  vi: { "Seedance 2.5 AI Video API": "API video AI Seedance 2.5" },
+  de: { "Seedance 2.5 AI Video API": "Seedance 2.5 KI-Video-API" },
+  id: { "Seedance 2.5 AI Video API": "API video AI Seedance 2.5" },
 };
 
 /**

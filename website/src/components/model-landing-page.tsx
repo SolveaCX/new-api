@@ -395,7 +395,11 @@ function FlatkeyModelDetailPage(props: {
   const hasPromptLibrary = mediaKind === "image" || mediaKind === "video";
   const examples = configuredGenerator ? MEDIA_EXAMPLES[configuredGenerator.kind] : [];
   const modelDescription = buildModelDescription(props.config, model, props.t, props.locale);
-  const faqItems = buildModelFaq(props.config, props.t);
+  const faqItems = buildModelFaq(props.config, props.t).map((item) =>
+    /cost|price|pricing|多少钱|价格|料金|preço|tarif|цена|giá|Preis|harga/i.test(item.question)
+      ? { ...item, answer: props.t("Use the pricing section above for current Flatkey prices from our pricing API.") }
+      : item,
+  );
   const schema = buildModelSchema({
     locale: props.locale,
     modelName: props.config.displayName,
@@ -405,11 +409,11 @@ function FlatkeyModelDetailPage(props: {
     // the other audited priority pages expose multiple token, image, or UTC
     // dimensions. Do not turn any of those editorial tables into a misleading
     // single Product Offer. Their exact dimensions remain visible below.
-    inputPriceUsd: props.config.slug === "seedance-2.5" || Boolean(props.config.landingContent?.pricing)
-      ? Number.NaN
-      : model
-        ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
-        : parsePrice(priceRows.rows[0]?.flatkey ?? `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`) ?? Number.NaN,
+    // Product offers are only emitted when a live catalog model exists. Never
+    // turn a curated config amount into structured pricing data.
+    inputPriceUsd: model
+      ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
+      : Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
   });
@@ -462,21 +466,19 @@ function FlatkeyModelDetailPage(props: {
   const trendSuccess = averageFinite(trend.map((point) => point.success_rate));
   const successRate = summary?.success_rate ?? trendSuccess;
   const ttft = summary?.avg_ttft_ms ?? trendAvgTtftMs(trend);
-  const heroPrice = priceRows.rows[0]?.flatkey ?? (model ? "—" : `${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`);
+  const unavailablePrice = props.t("Pricing data unavailable");
   const heroTags = buildHeroTags(props.config, model, props.t);
-  const referencePrice = priceRows.rows.find((row) => row.official)?.official ?? props.config.officialPrice;
+  const referencePrice = priceRows.rows.find((row) => row.official)?.official ?? unavailablePrice;
   const landingContent = props.config.landingContent;
   const heroContent = landingContent?.hero;
   const heroProvider = heroContent?.provider ?? providerName;
-  // Keep the hero pricing cards tied to the live pricing API whenever a
-  // catalog match exists. Prototype values remain the fallback for pages that
-  // are rendered without live pricing data.
+  // Keep the hero pricing cards tied exclusively to the live pricing API.
   const heroFlatkeyPrice = model
-    ? priceRows.rows[0]?.flatkey ?? heroContent?.flatkeyPrice ?? heroPrice
-    : heroContent?.flatkeyPrice ?? heroPrice;
+    ? priceRows.rows[0]?.flatkey ?? unavailablePrice
+    : unavailablePrice;
   const heroReferencePrice = model
-    ? priceRows.rows[0]?.official ?? heroContent?.referencePrice ?? referencePrice
-    : heroContent?.referencePrice ?? referencePrice;
+    ? priceRows.rows[0]?.official ?? referencePrice
+    : unavailablePrice;
   // Prototype landing content stores human-readable price units (for example
   // "$0.14 / second") directly on the model config. Localize those units at
   // render time so localized pages do not mix a translated shell with English
@@ -487,6 +489,7 @@ function FlatkeyModelDetailPage(props: {
     .replaceAll("/ request", props.t("/ request"));
   const localizedHeroFlatkeyPrice = localizeHeroPrice(heroFlatkeyPrice);
   const localizedHeroReferencePrice = localizeHeroPrice(heroReferencePrice);
+  const heroTitle = buildHumanReadableModelTitle(props.config, props.locale);
   const isSeedanceCatalogFormula = props.config.slug === "seedance-2.5";
   const seedanceHeroPerSecondPrice = (priceRows.rows[0]?.flatkey ?? localizedHeroFlatkeyPrice)
     .replace(/\s*×\s*duration/i, ` ${props.t("/ second")}`);
@@ -565,7 +568,7 @@ function FlatkeyModelDetailPage(props: {
                       imageSize={28}
                     />
                   )}
-                  <h1>{props.config.displayName}</h1>
+                  <h1>{heroTitle}</h1>
                 </div>
                 <div className="model-id-line">
                   <Link href={localizePath(`/models/${props.config.slug}`, props.locale)}>{props.config.modelId}</Link>
@@ -616,20 +619,20 @@ function FlatkeyModelDetailPage(props: {
                         {isSeedanceCatalogFormula
                           ? props.t("Varies by resolution and video input")
                           : isImageCatalogFallback
-                            ? props.t("OpenAI table varies by modality/batch")
-                            : isMiniMaxCatalogFallback
-                              ? props.t("$0.08 / sec 768P · $0.13 / sec 2K")
-                              : <s>{localizedHeroReferencePrice}</s>}
+                            ? unavailablePrice
+                            : localizedHeroFlatkeyPrice}
                       </div>
                     </div>
                     <div className="model-stat-card">
-                      <div className="model-stat-label">{isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Flatkey price")}</div>
+                      <div className="model-stat-label">{isSeedanceCatalogFormula ? props.t("Reference price") : isMiniMaxCatalogFallback ? props.t("MiniMax-H3 768P / sec") : props.t("Reference price")}</div>
                       <div className="model-stat-value">
                         {isSeedanceCatalogFormula
-                          ? `from ${seedanceHeroPerSecondPrice}`
+                          ? localizedHeroReferencePrice
                           : isImageCatalogFallback
-                            ? props.t("$4.00–$24.00 / 1M catalog units")
-                            : localizedHeroFlatkeyPrice}
+                            ? unavailablePrice
+                            : isMiniMaxCatalogFallback
+                              ? unavailablePrice
+                              : localizedHeroReferencePrice}
                       </div>
                     </div>
                   </>
@@ -940,7 +943,7 @@ function MediaModelLanding(props: {
                   <Icon className="size-4" />
                 </span>
                 <h1 className="text-[clamp(2.25rem,5vw,3.7rem)] leading-none font-extrabold tracking-tight">
-                  {props.config.displayName}
+                  {buildHumanReadableModelTitle(props.config, props.locale)}
                 </h1>
                 <button
                   type="button"
@@ -962,7 +965,7 @@ function MediaModelLanding(props: {
               <div className="mt-5 flex flex-wrap gap-2.5">
                 <Pill label={props.t("Model Type")} value={generator.kind === "video" ? props.t("Text to Video") : generator.kind === "audio" ? props.t("Audio") : props.t("Image to Image")} />
                 <Pill label={props.t("API")} value={generator.endpoint} />
-                <Pill label={props.t("Pricing")} value={`${props.config.flatkeyPrice} ${props.t(props.config.priceUnit)}`} />
+                <Pill label={props.t("Pricing")} value={props.primaryLiveModel ? props.t("Live catalog model") : props.t("Pricing data unavailable")} />
               </div>
             </div>
           </section>
@@ -1272,7 +1275,7 @@ function TextModelGuide(props: {
                   <Code2 className="size-4" />
                 </span>
                 <h1 className="text-[clamp(2.25rem,5vw,3.7rem)] leading-none font-extrabold tracking-tight">
-                  {props.config.modelId}
+                  {buildHumanReadableModelTitle(props.config, props.locale)}
                 </h1>
                 <button
                   type="button"
@@ -3597,10 +3600,10 @@ function ModelPricingSection(props: {
   allowPlayground?: boolean;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const editorialRows = props.content.rows ?? [];
-  const rows = editorialRows.length > 0
-    ? editorialRows
-    : props.liveRows.map((row) => ({ label: row.label, value: row.flatkey, detail: row.official }));
+  // Monetary values must always come from the pricing API. Curated editorial
+  // rows may describe dimensions, but their amounts can become stale; use the
+  // live rows for both the feature card and the breakdown table.
+  const rows = props.liveRows.map((row) => ({ label: row.label, value: row.flatkey, detail: row.official }));
   const featured = rows[0];
   const productFacts = buildPricingProductFacts(props.config);
   const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
@@ -3617,7 +3620,7 @@ function ModelPricingSection(props: {
           <FlatkeySectionHeading
             eyebrow={props.t(props.content.eyebrow ?? "Pricing")}
             title={props.t(props.content.title)}
-            description={props.t(props.content.description)}
+            description={props.liveNote}
           />
           <div className="pricing-conversion-grid">
             <article className="pricing-feature-card">
@@ -3677,7 +3680,7 @@ function ModelPricingSection(props: {
                 </tbody>
               </table>
             )}
-            <p className="pricing-note">{props.t(props.content.note ?? props.liveNote)}</p>
+            <p className="pricing-note">{props.liveNote}</p>
           </div>
         </div>
       </div>
@@ -4052,100 +4055,11 @@ function buildFlatkeyPriceRows(
   t: (key: string, vars?: Record<string, string>) => string
 ): { rows: FlatkeyPriceTableRow[]; note: string } {
   const note = t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API.");
-  // Seedance 2.5 is billed from a documented request formula rather than a
-  // single per-second price. Keep the detail page honest even when the live
-  // catalog exposes only its $0.14 model-price base.
-  if (config.slug === "seedance-2.5") {
-    return {
-      note: t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API."),
-      rows: [
-        {
-          label: t("Request price"),
-          flatkey: "$0.140 × duration",
-          official: t("Catalog formula"),
-          flatkeyPercent: 100,
-          officialPercent: 100,
-        },
-        {
-          label: t("Request price"),
-          flatkey: "$0.314 × duration",
-          official: t("Catalog formula"),
-          flatkeyPercent: 100,
-          officialPercent: 100,
-        },
-        {
-          label: t("Video reference input"),
-          flatkey: "$0.084–$0.188 × video seconds",
-          official: t("Depends on resolution"),
-          flatkeyPercent: 100,
-          officialPercent: 100,
-        },
-      ],
-    };
-  }
+  const unavailablePrice = t("Pricing data unavailable");
   if (!model) {
-    const generatorKind = config.generator?.kind;
-    if (generatorKind === "video") {
-      return {
-        note,
-        rows: [{
-          label: t("Price / second"),
-          flatkey: `${config.flatkeyPrice} ${t("/ second")}`,
-          official: `${config.officialPrice} ${t("/ second")}`,
-          flatkeyPercent: 67,
-          officialPercent: 100,
-        }],
-      };
-    }
-    if (generatorKind === "image") {
-      return {
-        note,
-        rows: [{
-          label: t("Price / image"),
-          flatkey: `${config.flatkeyPrice} ${t("/ image")}`,
-          official: `${config.officialPrice} ${t("/ image")}`,
-          flatkeyPercent: 67,
-          officialPercent: 100,
-        }],
-      };
-    }
-    if (generatorKind === "audio") {
-      return {
-        note,
-        rows: [{
-          label: t("Request price"),
-          flatkey: `${config.flatkeyPrice} ${t("/ request")}`,
-          official: `${config.officialPrice} ${t("/ request")}`,
-          flatkeyPercent: 67,
-          officialPercent: 100,
-        }],
-      };
-    }
-
-    const configuredInput = config.rows.find((row) => /input/i.test(row.label) && row.flatkey && row.official);
-    const configuredOutput = config.rows.find((row) => /output/i.test(row.label) && row.flatkey && row.official);
-    const inputFlatkey = configuredInput?.flatkey ?? config.flatkeyPrice;
-    const inputOfficial = configuredInput?.official ?? config.officialPrice;
-    const outputFlatkey = configuredOutput?.flatkey ?? config.flatkeyPrice;
-    const outputOfficial = configuredOutput?.official ?? config.officialPrice;
     return {
       note,
-      rows: [
-        {
-          label: t("Input /M"),
-          flatkey: inputFlatkey,
-          official: inputOfficial,
-          flatkeyPercent: pricePercent(parsePrice(inputFlatkey) ?? 0, parsePrice(inputOfficial) ?? 0),
-          officialPercent: 100,
-        },
-        {
-          label: t("Output /M"),
-          flatkey: outputFlatkey,
-          official: outputOfficial,
-          flatkeyPercent: pricePercent(parsePrice(outputFlatkey) ?? 0, parsePrice(outputOfficial) ?? 0),
-          officialPercent: 100,
-        },
-      ],
+      rows: [{ label: t("Pricing"), flatkey: unavailablePrice, official: unavailablePrice, flatkeyPercent: 0, officialPercent: 0 }],
     };
   }
 
@@ -4201,29 +4115,23 @@ function buildFlatkeyPriceRows(
         }],
       };
     }
-    const official = getOfficialPriceUsd(model);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
-    const unitKey = generatorKind === "image" ? "/ image" : generatorKind === "audio" ? "/ request" : "/ second";
-    const labelKey = generatorKind === "image" ? "Price / image" : generatorKind === "audio" ? "Request price" : "Price / second";
     return {
       note,
-      rows: [
-        {
-          label: t(labelKey),
-          flatkey: `${formatUsdPrice(flatkey)} ${t(unitKey)}`,
-          official: `${formatUsdPrice(official)} ${t(unitKey)}`,
-          flatkeyPercent: pricePercent(flatkey, official),
-          officialPercent: 100,
-        },
-      ],
+      rows: [{ label: t("Pricing"), flatkey: unavailablePrice, official: unavailablePrice, flatkeyPercent: 0, officialPercent: 0 }],
     };
   }
 
   if (!isTokenBasedModel(model)) {
-    const official = getOfficialPriceUsd(model);
-    const listed = official * getBestGroupRatio(model, groupRatio);
-    const flatkey = discountedPriceUsd(listed);
+    const requestPrice = resolveModelDisplayPrice(model, "request", "plg", groupRatio);
+    const officialRequestPrice = resolveModelDisplayPrice(model, "request", "configured", groupRatio);
+    if (!requestPrice) {
+      return {
+        note,
+        rows: [{ label: t("Pricing"), flatkey: unavailablePrice, official: unavailablePrice, flatkeyPercent: 0, officialPercent: 0 }],
+      };
+    }
+    const official = officialRequestPrice?.value ?? requestPrice.value;
+    const flatkey = requestPrice.value;
     return {
       note,
       rows: [{
@@ -4492,6 +4400,28 @@ function modelModalityKey(model: PricingModel) {
   if (/video/.test(endpoints) || /(^|-)(video|seedance|kling|sora|veo|wan)(-|$)/.test(name)) return "video";
   if (/image/.test(endpoints) || /(^|-)(image|imagen|flux|dall-e)(-|$)/.test(name)) return "image";
   return "text";
+}
+
+function buildHumanReadableModelTitle(
+  config: ModelConfig,
+  locale: Locale,
+): string {
+  const name = config.displayName.replace(/\s+(?:AI\s+)?(?:video|image|audio)?\s*(?:generator\s+and\s+)?API$/i, "").trim();
+  const kind = config.generator?.kind;
+  const suffixes: Record<Locale, { text: string; image: string; video: string; audio: string }> = {
+    en: { text: "API", image: "AI Image API", video: "AI Video API", audio: "Audio API" },
+    zh: { text: "API", image: "AI 图像 API", video: "AI 视频 API", audio: "音频 API" },
+    es: { text: "API", image: "API de imágenes con IA", video: "API de vídeo con IA", audio: "API de audio" },
+    fr: { text: "API", image: "API d’images IA", video: "API vidéo IA", audio: "API audio" },
+    pt: { text: "API", image: "API de imagem com IA", video: "API de vídeo com IA", audio: "API de áudio" },
+    ru: { text: "API", image: "API генерации изображений", video: "API генерации видео", audio: "Аудио API" },
+    ja: { text: "API", image: "AI画像API", video: "AI動画API", audio: "音声API" },
+    vi: { text: "API", image: "API hình ảnh AI", video: "API video AI", audio: "API âm thanh" },
+    de: { text: "API", image: "KI-Bild-API", video: "KI-Video-API", audio: "Audio-API" },
+    id: { text: "API", image: "API gambar AI", video: "API video AI", audio: "API audio" },
+  };
+  const suffix = suffixes[locale] ?? suffixes.en;
+  return `${name} ${kind === "image" ? suffix.image : kind === "video" ? suffix.video : kind === "audio" ? suffix.audio : suffix.text}`;
 }
 
 function buildModelDescription(

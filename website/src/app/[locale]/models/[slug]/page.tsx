@@ -18,6 +18,18 @@ import { fetchModelHealthData } from "@/lib/model-health-server";
 import { buildMetadata } from "@/lib/seo";
 import { getSkagLandingMetadataInput } from "@/lib/skag-landing";
 
+const LIVE_PRICING_UNAVAILABLE_DESCRIPTION: Record<string, string> = {
+  zh: "当前 Flatkey 价格和可用性来自实时模型目录。",
+  es: "Los precios y la disponibilidad actuales de Flatkey proceden del catálogo de modelos en vivo.",
+  fr: "Les tarifs et la disponibilité actuels de Flatkey proviennent du catalogue de modèles en direct.",
+  pt: "Os preços e a disponibilidade atuais da Flatkey vêm do catálogo de modelos em tempo real.",
+  ru: "Текущие цены и доступность Flatkey показываются из актуального каталога моделей.",
+  ja: "Flatkey の現在の料金と提供状況は、ライブモデルカタログから表示されます。",
+  vi: "Giá và tình trạng khả dụng hiện tại của Flatkey lấy từ danh mục mô hình trực tiếp.",
+  de: "Die aktuellen Flatkey-Preise und die Verfügbarkeit stammen aus dem Live-Modellkatalog.",
+  id: "Harga dan ketersediaan Flatkey saat ini berasal dari katalog model langsung.",
+};
+
 type Props = {
   params: Promise<{ locale: string; slug: string }>;
 };
@@ -64,7 +76,7 @@ export async function generateMetadata(props: Props) {
     const localizedSeo = getLocalizedModelLandingSeo(config, params.locale);
     return buildMetadata({
       title: localizedSeo.title,
-      description: limitSeoDescription(localizedSeo.description),
+      description: LIVE_PRICING_UNAVAILABLE_DESCRIPTION[params.locale] ?? LIVE_PRICING_UNAVAILABLE_DESCRIPTION.zh,
       pathname: `/models/${config.slug}`,
       locale: params.locale,
     });

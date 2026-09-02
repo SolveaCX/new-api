@@ -156,7 +156,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("Open in Playground");
     expect(html).not.toContain('class="prompt-library-link"');
     expect(html).toContain("Request preview");
-    expect(html).toContain("$0.047 / second");
+    expect(html).toContain("Pricing data unavailable");
     expect(html).not.toContain('<p class="eyebrow">Capabilities</p>');
     expect(html).toContain("Related models");
     expect(html).toContain("Frequently asked questions");
@@ -264,21 +264,14 @@ describe("ModelLandingPage", () => {
 
     expect(html).toContain('href="#pricing"');
     expect(pricingSection).toContain("Seedance 2.5 API Pricing");
-    expect(pricingSection).toContain("$0.140 × duration");
-    expect(pricingSection).toContain("$0.314 × duration");
-    expect(pricingSection).toContain("$0.084–$0.188 × video seconds");
-    expect(pricingSection).toContain("Total input-video seconds");
+    expect(pricingSection).toContain("Pricing data unavailable");
     expect(pricingSection).toContain("Add credits");
     expect(pricingSection).toContain("$10");
     expect(pricingSection).toContain("$20");
     expect(pricingSection).toContain("$50");
     expect(pricingSection).toContain('href="https://console.flatkey.ai/wallet"');
     const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('</div></div></div></section>', html.indexOf('class="model-hero-stats"')));
-    expect(heroStats).toContain('class="model-stat-label">Flatkey price</div>');
-    expect(heroStats).toContain('class="model-stat-value">from $0.140 / second</div>');
-    expect(heroStats).toContain('class="model-stat-label">Reference price</div>');
-    expect(heroStats).toContain('class="model-stat-value">Varies by resolution and video input</div>');
-    expect(heroStats).not.toContain('class="model-stat-label">Request price</div>');
+    expect(heroStats).toContain("Pricing data unavailable");
     expect(pricingSection).not.toContain("480p");
     expect(pricingSection).not.toContain("720p");
     // A single Product Offer would imply that $0.14 is the price for every
@@ -566,10 +559,8 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={GPT_CONFIG} locale="en" liveModels={[]} />
     );
 
-    expect(html).toContain('class="model-stat-label">Input /M</div>');
-    expect(html).toContain('class="model-stat-label">Output /M</div>');
-    expect(html).toContain("$0.83");
-    expect(html).toContain("$1.25");
+    expect(html).toContain("Pricing data unavailable");
+    expect(html).not.toContain('class="model-stat-label">Input /M</div>');
     expect(html).not.toContain('id="pricing"');
   });
 
@@ -626,8 +617,8 @@ describe("ModelLandingPage", () => {
     );
     const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('class="model-anchor-bar"'));
 
-    expect(heroStats.indexOf('<div class="model-stat-label">Reference price</div>'))
-      .toBeLessThan(heroStats.indexOf('<div class="model-stat-label">Flatkey price</div>'));
+    expect(heroStats).toContain("$0.320 / request");
+    expect(heroStats).toContain("$0.400 / request");
   });
 
   test("keeps image model hero prices aligned with the model directory", () => {
@@ -673,9 +664,7 @@ describe("ModelLandingPage", () => {
     expect(imageHtml).not.toContain("Pricing vs official");
     // GPT Image 2 now uses the audited token-dimension catalog rows instead
     // of the legacy generic per-image examples.
-    expect(imageHtml).toContain("$4.00");
-    expect(imageHtml).toContain("$24.00");
-    expect(imageHtml).toContain("image-input tokens");
+    expect(imageHtml).toContain("Pricing data unavailable");
     expect(imageHtml).toContain("pricing-conversion-grid");
     expect(imageHtml).toContain('href="https://console.flatkey.ai/wallet"');
     expect(imageHtml).toContain("$10");
@@ -686,9 +675,7 @@ describe("ModelLandingPage", () => {
     expect((imageCapabilities.match(/class="capability-card"/g) ?? []).length).toBe(4);
     expect(imageCapabilities).toContain("Text-to-image creation");
     expect(imageCapabilities).not.toContain("Image count");
-    expect(videoHtml).toContain("$0.140 × duration");
-    expect(videoHtml).toContain("$0.314 × duration");
-    expect(videoHtml).toContain("$0.084–$0.188 × video seconds");
+    expect(videoHtml).toContain("Pricing data unavailable");
     const videoPricing = videoHtml.slice(videoHtml.indexOf('id="pricing"'), videoHtml.indexOf('id="capabilities"'));
     expect(videoPricing).toContain("pricing-conversion-grid");
     expect(videoPricing).not.toContain("480p");

@@ -101,6 +101,19 @@ describe("model landing configuration", () => {
     expect(metadata.description.length).toBeLessThanOrEqual(160);
   });
 
+  test("uses the live API request price for Seedance metadata", () => {
+    const metadata = buildModelLandingMetadata({
+      model_name: "seedance-2.5",
+      vendor_name: "ByteDance",
+      quota_type: 1,
+      model_price: 0.14,
+      completion_ratio: 1,
+      supported_endpoint_types: ["video"],
+    });
+    expect(metadata.description).toContain("$0.14/request");
+    expect(metadata.description).not.toContain("$0.140");
+  });
+
   test("prefers the resolved landing kind for ambiguous provider endpoints", () => {
     const metadata = buildModelLandingMetadata({
       model_name: "gemini-3.1-flash-image",
