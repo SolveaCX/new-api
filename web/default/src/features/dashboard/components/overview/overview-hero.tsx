@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { type ComponentType, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   Claude,
   DeepSeek,
@@ -89,7 +90,11 @@ export function OverviewHero() {
         </div>
       </div>
 
-      <div className='bg-card flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border px-2 py-1.5 shadow-xs sm:flex-nowrap sm:px-1.5'>
+      <Link
+        to='/available-models'
+        aria-label={t('Browse available models and pricing')}
+        className='bg-card hover:bg-accent focus-visible:ring-ring flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border px-2 py-1.5 shadow-xs transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none sm:flex-nowrap sm:px-1.5'
+      >
         <div className='flex items-center pl-0.5'>
           {featuredModels.slice(0, 5).map((model) => {
             const Logo = model.logo
@@ -109,7 +114,7 @@ export function OverviewHero() {
         <span className='text-muted-foreground max-w-[15rem] pr-1 text-[13px] sm:max-w-none sm:pr-2'>
           {t('One key connects you to the models shaping AI')}
         </span>
-      </div>
+      </Link>
     </section>
   )
 }
