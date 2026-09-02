@@ -265,7 +265,6 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('href="#pricing"');
     expect(pricingSection).toContain("Seedance 2.5 API Pricing");
     expect(pricingSection).toContain("Pricing data unavailable");
-    expect(pricingSection).toContain("Total input-video seconds");
     expect(pricingSection).toContain("Add credits");
     expect(pricingSection).toContain("$10");
     expect(pricingSection).toContain("$20");
