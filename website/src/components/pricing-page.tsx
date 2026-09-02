@@ -1000,8 +1000,6 @@ export async function ModelsPage(props: PricingPageProps) {
             groupModelRatio={pricing.groupModelRatio}
             initialSearch={props.searchParams}
           />
-
-          <PricingSeoContent locale={props.locale} modelCount={allModels.length} vendorCount={pricing.vendors.length} />
         </div>
       </main>
     </SiteShell>
