@@ -639,7 +639,7 @@ export const SEEDANCE_25_CONFIG: ModelConfig = {
       description: "ByteDance Seedance 2.5 is an audio-video generation model for text-to-video and image-to-video workflows. Use reference media, first/last-frame controls, 4–30-second requests, and optional audio through Flatkey's /v1/videos endpoint.",
       logo: "/logos/seedance.png",
       breadcrumb: ["Models", "Video generation", "Seedance 2.5 API"],
-      actionLabel: "Quick Start",
+      actionLabel: "Get started",
       provider: "ByteDance",
       flatkeyPrice: "$0.140 × duration",
       referencePrice: "See request formula",
@@ -1758,6 +1758,8 @@ export type ModelLandingKey =
   | "Weighted avg output price"
   | "Cache read"
   | "Cache write"
+  | "Cache /M"
+  | "Get started"
   | "Request price"
   | "Reference price"
   | "Varies by resolution and video input"
@@ -3997,6 +3999,8 @@ const en: Record<ModelLandingKey, string> = {
   "Weighted avg output price": "Weighted avg output price",
   "Cache read": "Cache read",
   "Cache write": "Cache write",
+  "Cache /M": "Cache /M",
+  "Get started": "Get started",
   "Request price": "Request price",
   "Reference price": "Reference price",
   "Flatkey routes your request to available upstream channels for this model and keeps billing under one account.": "Flatkey routes your request to available upstream channels for this model and keeps billing under one account.",
@@ -7047,6 +7051,52 @@ const supplementalModelLandingCopy: Partial<Record<Locale, Partial<Record<ModelL
   },
 };
 
+// These labels are used by the refreshed detail shell itself. Keep them in a
+// complete table so every generated locale route renders the same controls
+// and price explanation instead of falling back to English.
+const modelDetailRequestedCopy: Record<Locale, Record<string, string>> = {
+  en: {
+    "Cache /M": "Cache /M",
+    "Get started": "Get started",
+  },
+  zh: {
+    "Cache /M": "缓存 /M",
+    "Get started": "开始使用",
+  },
+  es: {
+    "Cache /M": "Caché /M",
+    "Get started": "Empezar",
+  },
+  fr: {
+    "Cache /M": "Cache /M",
+    "Get started": "Commencer",
+  },
+  pt: {
+    "Cache /M": "Cache /M",
+    "Get started": "Começar",
+  },
+  ru: {
+    "Cache /M": "Кэш /M",
+    "Get started": "Начать",
+  },
+  ja: {
+    "Cache /M": "キャッシュ /M",
+    "Get started": "はじめる",
+  },
+  vi: {
+    "Cache /M": "Cache /M",
+    "Get started": "Bắt đầu",
+  },
+  de: {
+    "Cache /M": "Cache /M",
+    "Get started": "Loslegen",
+  },
+  id: {
+    "Cache /M": "Cache /M",
+    "Get started": "Mulai",
+  },
+};
+
 const modelComparisonCopy: Record<Locale, Partial<Record<ModelLandingKey, string>>> = {
   en: {
     "Compare the current model with the previous generation before you migrate.": "Compare the current model with the previous generation before you migrate.",
@@ -9482,6 +9532,7 @@ export function modelLandingCopy(locale: Locale, key: ModelLandingKey, vars: Rec
     seedanceSourceCopy(locale, key) ? { [key]: seedanceSourceCopy(locale, key)! } : undefined,
     seedanceModelCopy[locale],
     modelDetailUiAdditions[locale],
+    modelDetailRequestedCopy[locale],
     modelDetailSharedCopy[locale],
     modelConfigFactCopy[locale],
     modelDetailUiCopy[locale],

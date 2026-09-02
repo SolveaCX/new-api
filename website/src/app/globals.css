@@ -1323,6 +1323,11 @@ html:has(.model-prototype) {
   box-shadow: none;
 }
 
+.model-prototype .model-playground-hero-link {
+  width: auto;
+  gap: 8px;
+}
+
 .model-prototype .model-view-api:hover,
 .model-prototype .model-view-api:focus-visible {
   border-color: #a9a4b2;
@@ -1526,6 +1531,11 @@ html:has(.model-prototype) {
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-prototype .model-stat-reference-value {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .model-prototype .model-anchor-bar {
@@ -7608,14 +7618,16 @@ html:has(.model-prototype) {
  * moved into normal flow so a wrapped localized title/description contributes
  * to the card height instead of being hidden by an absolute 110px overlay. */
 .model-prototype .related-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: none !important;
-  grid-auto-rows: minmax(305px, auto) !important;
+  grid-auto-rows: auto !important;
 }
 
 .model-prototype .related-card {
   display: flex;
+  aspect-ratio: 1 / 1;
   height: auto !important;
-  min-height: 305px !important;
+  min-height: 0 !important;
   flex-direction: column;
   overflow: hidden;
 }
@@ -7744,4 +7756,173 @@ html:has(.model-prototype) {
   overflow-wrap: anywhere;
   white-space: normal !important;
   text-overflow: clip !important;
+}
+
+/* Hero actions share one control height and vertical rhythm. The primary CTA
+ * previously carried a 40px utility height while the outlined links kept the
+ * legacy 32px height, which made the three actions visibly misaligned. */
+.model-prototype .model-hero-actions > :is(.model-view-api, .flatkey-hero-cta) {
+  box-sizing: border-box;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px !important;
+  line-height: 20px !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 620px) {
+  .model-prototype .model-hero-actions > :is(.model-view-api, .flatkey-hero-cta) {
+    min-width: 0;
+    padding-inline: 10px !important;
+    font-size: 13px;
+  }
+}
+
+/* Related cards keep the original Flatkey cover composition. The keyhole has
+ * been removed from the base artwork; the exact Flatkey lockup and each live
+ * model logo are positioned as responsive foreground elements. */
+.model-prototype .related-card {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  background:
+    radial-gradient(circle at 66% 54%, rgb(225 216 255 / 0.34) 0%, rgb(225 216 255 / 0.12) 22%, transparent 38%),
+    linear-gradient(180deg, transparent 67%, rgb(255 255 255 / 0.18) 78%, rgb(250 247 255 / 0.84) 100%),
+    url("/assets/models-featured/flatkey-model-cover-no-key.png") center / cover;
+  box-shadow: 0 18px 42px -32px rgb(58 35 111 / 0.42);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.model-prototype .related-card::before,
+.model-prototype .related-card:has(.related-image)::before {
+  display: none !important;
+}
+
+.model-prototype .related-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 24px 50px -30px rgb(76 29 149 / 0.5);
+}
+
+.model-prototype .related-card-top {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0;
+  display: block;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
+.model-prototype .related-card-brand {
+  position: absolute !important;
+  top: clamp(24px, 7%, 36px);
+  left: clamp(20px, 7%, 36px);
+  z-index: 2;
+  width: clamp(96px, 28%, 150px) !important;
+  height: auto;
+  filter: drop-shadow(0 4px 10px rgb(76 29 149 / 0.1));
+}
+
+.model-prototype .related-card-top .related-card-logo-mark {
+  position: absolute !important;
+  top: 54%;
+  left: 66%;
+  z-index: 1;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+    width: clamp(120px, 40%, 190px) !important;
+    height: clamp(120px, 40%, 190px) !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: radial-gradient(circle, rgb(255 255 255 / 0.72) 0%, rgb(255 255 255 / 0.42) 42%, rgb(255 255 255 / 0) 74%) !important;
+    box-shadow: none !important;
+    backdrop-filter: none;
+  overflow: visible !important;
+  transform: translate(-50%, -50%);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease;
+}
+
+.model-prototype .related-card-top .related-card-logo-mark img {
+    position: relative;
+    z-index: 1;
+    width: calc(100% - 24px) !important;
+    height: calc(100% - 24px) !important;
+    filter: drop-shadow(0 10px 16px rgb(34 23 101 / 0.22));
+}
+
+.model-prototype .related-card:hover .related-card-logo-mark {
+  transform: translate(-50%, calc(-50% - 4px)) scale(1.04);
+}
+
+.model-prototype .related-card .related-copy {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  min-height: 110px;
+  padding: 28px clamp(20px, 7%, 36px) clamp(22px, 7%, 34px);
+  color: #171525;
+  background: linear-gradient(180deg, transparent 0%, rgb(255 255 255 / 0.28) 18%, rgb(250 248 255 / 0.86) 68%, rgb(250 248 255 / 0.98) 100%);
+}
+
+.model-prototype .related-card .related-copy strong {
+  color: #171525;
+  text-shadow: none;
+}
+
+.model-prototype .related-card .related-copy span {
+  color: #716a82;
+}
+
+/* Related cards remain square while the grid changes columns at the same
+ * density points as the rest of the page. The old 305px minimum row forced
+ * four cards to overflow their columns at intermediate desktop widths. */
+@media (max-width: 1100px) {
+  .model-prototype .related-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* On phones the cards use the full content width, with enough breathing room
+ * for translated names and descriptions to wrap without colliding. */
+@media (max-width: 620px) {
+  .model-prototype .related-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .model-prototype .related-card {
+    aspect-ratio: 1 / 1;
+  }
+
+  .model-prototype .related-card-brand {
+    top: 24px;
+    left: 20px;
+    width: 104px !important;
+  }
+
+  .model-prototype .related-card-top .related-card-logo-mark {
+    top: 52%;
+    left: 68%;
+    width: 120px !important;
+    height: 120px !important;
+  }
+
+  .model-prototype .related-card-top .related-card-logo-mark img {
+    width: 98px !important;
+    height: 98px !important;
+  }
+
+  .model-prototype .related-card .related-copy {
+    min-height: 108px;
+    padding: 28px 18px 18px;
+  }
 }
