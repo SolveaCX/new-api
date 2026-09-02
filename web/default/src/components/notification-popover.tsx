@@ -72,14 +72,19 @@ const announcementMarkdownClassName =
   '[&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 ' +
   '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1'
 
+const collapsedAnnouncementMarkdownLayoutClassName =
+  '[&_h1]:my-0 [&_h2]:my-0 [&_h3]:my-0 [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0 ' +
+  '[&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-0 ' +
+  '[&_p]:leading-6 [&_li]:leading-6'
+
 function ExpandableMarkdown({ content }: { content: string }) {
-  const contentRef = useRef<HTMLDivElement>(null)
+  const naturalContentRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [canExpand, setCanExpand] = useState(false)
   const { t } = useTranslation()
 
   useEffect(() => {
-    const element = contentRef.current
+    const element = naturalContentRef.current
     if (!element) return
 
     const measure = () => {
@@ -120,21 +125,38 @@ function ExpandableMarkdown({ content }: { content: string }) {
 
   return (
     <div
-      ref={contentRef}
       role={canExpand ? 'button' : undefined}
       tabIndex={canExpand ? 0 : undefined}
       aria-haspopup={canExpand ? 'dialog' : undefined}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={
-        canExpand
-          ? "relative max-h-[4.5rem] cursor-pointer overflow-hidden after:absolute after:right-0 after:bottom-0 after:bg-popover after:px-1 after:font-medium after:content-['...']"
-          : undefined
-      }
+      className='relative'
     >
-      <Markdown className={announcementMarkdownClassName}>
-        {content}
-      </Markdown>
+      <div
+        className={
+          canExpand
+            ? "relative max-h-[4.5rem] overflow-hidden after:absolute after:right-0 after:bottom-0 after:h-6 after:bg-popover after:pl-1 after:font-medium after:leading-6 after:content-['...']"
+            : undefined
+        }
+      >
+        <Markdown className={collapsedAnnouncementMarkdownLayoutClassName}>
+          {content}
+        </Markdown>
+      </div>
+      {canExpand ? (
+        <span className='bg-popover absolute top-0 right-0 z-10 whitespace-nowrap pl-2 font-medium leading-6'>
+          {t('More')}
+        </span>
+      ) : null}
+      <div
+        ref={naturalContentRef}
+        aria-hidden='true'
+        className='pointer-events-none invisible absolute inset-x-0 top-0 -z-10'
+      >
+        <Markdown className={collapsedAnnouncementMarkdownLayoutClassName}>
+          {content}
+        </Markdown>
+      </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className='max-h-[min(80vh,40rem)] overflow-y-auto sm:max-w-2xl'>
           <DialogHeader>
@@ -269,12 +291,20 @@ function AnnouncementsContent({
               <div className='flex items-start gap-3'>
                 <div className='flex min-w-0 flex-1 flex-col gap-2'>
                   <div className='text-sm'>
-                    <ExpandableMarkdown content={item.content || ''} />
+                    {item.source === 'notice' ? (
+                      <ExpandableMarkdown content={item.content || ''} />
+                    ) : (
+                      <Markdown>{item.content || ''}</Markdown>
+                    )}
                   </div>
 
                   {item.extra ? (
                     <div className='text-muted-foreground text-xs'>
-                      <ExpandableMarkdown content={item.extra} />
+                      {item.source === 'notice' ? (
+                        <ExpandableMarkdown content={item.extra} />
+                      ) : (
+                        <Markdown>{item.extra}</Markdown>
+                      )}
                     </div>
                   ) : null}
 
