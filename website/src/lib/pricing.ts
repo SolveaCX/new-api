@@ -477,7 +477,9 @@ export function formatRatio(value: number | null | undefined): string {
 export function parseTags(tags?: string): string[] {
   if (!tags) return [];
   return tags
-    .split(/[,\s]+/)
+    // Tags are stored as comma-delimited values. Keep spaces inside a tag so
+    // labels such as "Limited discount" and "New release" render as one chip.
+    .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 4);
