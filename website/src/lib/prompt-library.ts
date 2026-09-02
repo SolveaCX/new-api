@@ -1,21 +1,16 @@
 import { type Locale, withIdFallback } from "./locales";
-import { getImagePromptTemplates } from "./image-prompt-templates";
-import { getVideoPromptTemplateLocalFallbackPoster, getVideoPromptTemplates, VIDEO_PROFESSION_MODEL_IDS } from "./video-prompt-templates";
-import { SITE_ORIGIN } from "./origins";
 
 export type PromptArtifact =
   | {
       kind: "image";
       alt: string;
       url: string;
-      assetId?: string;
     }
   | {
       kind: "video";
       alt: string;
       poster: string;
       url: string;
-      assetId?: string;
     }
   | {
       kind: "text";
@@ -1212,104 +1207,6 @@ export const staticPromptItems: PromptItem[] = [
   },
 ];
 
-/**
- * Model-detail media is the canonical reviewed output for the public model
- * pages. Keep the prompt gallery joined to that registry so a card can never
- * drift away from the asset shown on the corresponding model page.
- */
-const MODEL_DETAIL_IMAGE_IDS = [
-  "gpt-image-2",
-  "gemini-2-5-flash-image",
-  "gemini-3-pro-image",
-  "gemini-3-1-flash-image",
-  "gemini-3-1-flash-lite-image",
-  "grok-imagine-image",
-  "grok-imagine-image-pro",
-  "grok-imagine-image-quality",
-  "nano-banana-pro-preview",
-] as const;
-
-const MODEL_DETAIL_CATALOG_DATE = "2026-09-02";
-
-function modelDetailSource(modelId: string): PromptSource {
-  return {
-    capturedAt: MODEL_DETAIL_CATALOG_DATE,
-    label: "Flatkey model detail",
-    platform: "Flatkey generated",
-    url: `${SITE_ORIGIN}/models/${modelId}`,
-  };
-}
-
-function modelDetailImagePromptItems(): PromptItem[] {
-  return MODEL_DETAIL_IMAGE_IDS.flatMap((modelId) => {
-    const english = getImagePromptTemplates(modelId, "en");
-    const chinese = getImagePromptTemplates(modelId, "zh");
-    return english.map((template, index) => {
-      const zhTemplate = chinese[index] ?? template;
-      const assetId = `model-detail-image-${modelId}-${template.id}`;
-      return {
-        artifact: {
-          alt: `${template.label} — ${modelId}`,
-          assetId,
-          kind: "image" as const,
-          url: template.poster,
-        },
-        category: "image" as const,
-        model: modelId,
-        output: outputLabel(template.label, zhTemplate.label, template.ratio as PromptItem["output"]["ratio"]),
-        prompt: template.prompt,
-        slug: assetId,
-        source: modelDetailSource(modelId),
-        summary: promptText(
-          `Reviewed ${template.label.toLowerCase()} output from the ${modelId} model detail page.`,
-          `${modelId} 模型详情页已审核的「${zhTemplate.label}」示例产物。`,
-        ),
-        tags: ["model-detail", "reviewed", ...template.tags],
-        title: promptText(`${modelId} — ${template.label}`, `${modelId} — ${zhTemplate.label}`),
-        updatedAt: MODEL_DETAIL_CATALOG_DATE,
-      } satisfies PromptItem;
-    });
-  });
-}
-
-function modelDetailVideoPromptItems(): PromptItem[] {
-  return VIDEO_PROFESSION_MODEL_IDS.flatMap((modelId) => {
-    const english = getVideoPromptTemplates(modelId, "en");
-    const chinese = getVideoPromptTemplates(modelId, "zh");
-    return english.map((template, index) => {
-      const zhTemplate = chinese[index] ?? template;
-      const assetId = `model-detail-video-${modelId}-${template.professionId}`;
-      return {
-        artifact: {
-          alt: `${template.label} — ${modelId}`,
-          assetId,
-          kind: "video" as const,
-          poster: template.poster || getVideoPromptTemplateLocalFallbackPoster(modelId, template.professionId) || "/assets/model-showcase/coastal-landmark.png",
-          url: template.video,
-        },
-        category: "video" as const,
-        model: modelId,
-        output: outputLabel(`${template.label} · ${template.duration}s`, `${zhTemplate.label} · ${template.duration}秒`, template.ratio as PromptItem["output"]["ratio"]),
-        prompt: template.prompt,
-        slug: assetId,
-        source: modelDetailSource(modelId),
-        summary: promptText(
-          `Reviewed ${template.label.toLowerCase()} clip from the ${modelId} model detail page.`,
-          `${modelId} 模型详情页已审核的「${zhTemplate.label}」视频产物。`,
-        ),
-        tags: ["model-detail", "reviewed", ...template.tags],
-        title: promptText(`${modelId} — ${template.label}`, `${modelId} — ${zhTemplate.label}`),
-        updatedAt: MODEL_DETAIL_CATALOG_DATE,
-      } satisfies PromptItem;
-    });
-  });
-}
-
-const modelDetailPromptItems = [
-  ...modelDetailImagePromptItems(),
-  ...modelDetailVideoPromptItems(),
-];
-
 function hasArtifact(item: PromptItem): boolean {
   if (item.artifact.kind === "image") return Boolean(item.artifact.url);
   if (item.artifact.kind === "video") return Boolean(item.artifact.url);
@@ -1322,16 +1219,12 @@ function hasArtifact(item: PromptItem): boolean {
 export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem[] {
   const bySlug = new Map<string, PromptItem>();
 
-  for (const item of [...staticPromptItems, ...modelDetailPromptItems].filter(hasArtifact)) {
+  for (const item of staticPromptItems.filter(hasArtifact)) {
     if (category && item.category !== category) continue;
     bySlug.set(item.slug, item);
   }
 
-  return Array.from(bySlug.values()).sort((a, b) => {
-    const aModelDetail = a.tags.includes("model-detail") ? 1 : 0;
-    const bModelDetail = b.tags.includes("model-detail") ? 1 : 0;
-    return bModelDetail - aModelDetail || Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-  });
+  return Array.from(bySlug.values()).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
 export function getCliMediaPromptItem(category: "image" | "video", slug: string): PromptItem | undefined {
