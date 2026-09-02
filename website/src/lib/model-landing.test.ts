@@ -657,6 +657,29 @@ describe("model landing configuration", () => {
     }
   });
 
+  test("localizes curated pricing-table labels across every non-English locale", () => {
+    const cases = [
+      MINIMAX_H3_CONFIG,
+      GPT_IMAGE_2_CONFIG,
+      GPT_CONFIG,
+      DEEPSEEK_CONFIG,
+    ];
+    const sourceValues = [
+      "MiniMax-H3 catalog base / sec",
+      "Provider table varies by modality/batch",
+      "Cache writes (Flatkey catalog)",
+      "Peak UTC cache-miss / cache-hit / output",
+      "Off-peak UTC cache-miss / cache-hit / output",
+    ];
+    for (const config of cases) {
+      for (const locale of LOCALES.filter((item) => item !== "en")) {
+        const localized = getLocalizedModelLandingConfig(config, locale);
+        const text = JSON.stringify({ rows: localized.rows, pricing: localized.landingContent?.pricing });
+        for (const source of sourceValues) expect(text).not.toContain(source);
+      }
+    }
+  });
+
   test("translates shared model-detail labels and related cards", () => {
     const labels = [
       "Usage",

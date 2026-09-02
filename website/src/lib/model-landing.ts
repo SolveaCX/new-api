@@ -9213,9 +9213,81 @@ const modelConfigFactCopy: Record<Locale, Record<string, string>> = {
   },
 };
 
+// A few curated pricing rows use long, sentence-like labels that are not
+// shared i18n keys. Keep them in one residual map so localized model pages do
+// not expose English table copy when the same config is reused across locales.
+const modelConfigFactResidualCopy: Record<Locale, Record<string, string>> = {
+  en: {},
+  zh: {
+    "MiniMax-H3 catalog base / sec": "MiniMax-H3 目录基础价格 / 秒",
+    "Provider table varies by modality/batch": "供应商价格表因模态和批次而异",
+    "Cache writes (Flatkey catalog)": "缓存写入（Flatkey 目录）",
+    "Peak UTC cache-miss / cache-hit / output": "UTC 高峰：缓存未命中 / 命中 / 输出",
+    "Off-peak UTC cache-miss / cache-hit / output": "UTC 非高峰：缓存未命中 / 命中 / 输出",
+  },
+  es: {
+    "MiniMax-H3 catalog base / sec": "Base del catálogo de MiniMax-H3 / s",
+    "Provider table varies by modality/batch": "La tabla del proveedor varía según la modalidad y el lote",
+    "Cache writes (Flatkey catalog)": "Escrituras de caché (catálogo de Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Pico UTC: entrada sin caché / con caché / salida",
+    "Off-peak UTC cache-miss / cache-hit / output": "Fuera de pico UTC: entrada sin caché / con caché / salida",
+  },
+  fr: {
+    "MiniMax-H3 catalog base / sec": "Base catalogue MiniMax-H3 / s",
+    "Provider table varies by modality/batch": "Le tableau tarifaire du fournisseur varie selon la modalité et le lot",
+    "Cache writes (Flatkey catalog)": "Écritures de cache (catalogue Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Pointe UTC : entrée sans cache / avec cache / sortie",
+    "Off-peak UTC cache-miss / cache-hit / output": "Hors pointe UTC : entrée sans cache / avec cache / sortie",
+  },
+  pt: {
+    "MiniMax-H3 catalog base / sec": "Base do catálogo MiniMax-H3 / s",
+    "Provider table varies by modality/batch": "A tabela do provedor varia conforme a modalidade e o lote",
+    "Cache writes (Flatkey catalog)": "Gravações de cache (catálogo Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Pico UTC: entrada sem cache / com cache / saída",
+    "Off-peak UTC cache-miss / cache-hit / output": "Fora do pico UTC: entrada sem cache / com cache / saída",
+  },
+  ru: {
+    "MiniMax-H3 catalog base / sec": "Базовая ставка MiniMax-H3 в каталоге / с",
+    "Provider table varies by modality/batch": "Таблица цен поставщика зависит от модальности и пакета",
+    "Cache writes (Flatkey catalog)": "Запись в кэш (каталог Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Пиковое время UTC: без кэша / с кэшем / вывод",
+    "Off-peak UTC cache-miss / cache-hit / output": "Непиковое время UTC: без кэша / с кэшем / вывод",
+  },
+  ja: {
+    "MiniMax-H3 catalog base / sec": "MiniMax-H3 カタログ基本料金 / 秒",
+    "Provider table varies by modality/batch": "プロバイダーの料金表はモダリティとバッチにより異なります",
+    "Cache writes (Flatkey catalog)": "キャッシュ書き込み（Flatkey カタログ）",
+    "Peak UTC cache-miss / cache-hit / output": "UTC ピーク：キャッシュミス / キャッシュヒット / 出力",
+    "Off-peak UTC cache-miss / cache-hit / output": "UTC オフピーク：キャッシュミス / キャッシュヒット / 出力",
+  },
+  vi: {
+    "MiniMax-H3 catalog base / sec": "Mức cơ bản MiniMax-H3 trong danh mục / giây",
+    "Provider table varies by modality/batch": "Bảng giá nhà cung cấp thay đổi theo modality và batch",
+    "Cache writes (Flatkey catalog)": "Ghi bộ nhớ đệm (catalog Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Cao điểm UTC: đầu vào không có cache / có cache / đầu ra",
+    "Off-peak UTC cache-miss / cache-hit / output": "Ngoài cao điểm UTC: đầu vào không có cache / có cache / đầu ra",
+  },
+  de: {
+    "MiniMax-H3 catalog base / sec": "MiniMax-H3-Katalogbasis / Sek.",
+    "Provider table varies by modality/batch": "Die Preistabelle des Anbieters variiert nach Modalität und Batch",
+    "Cache writes (Flatkey catalog)": "Cache-Schreibvorgänge (Flatkey-Katalog)",
+    "Peak UTC cache-miss / cache-hit / output": "UTC-Spitzenzeit: Cache-Miss / Cache-Hit / Ausgabe",
+    "Off-peak UTC cache-miss / cache-hit / output": "UTC-Nebenzeit: Cache-Miss / Cache-Hit / Ausgabe",
+  },
+  id: {
+    "MiniMax-H3 catalog base / sec": "Basis katalog MiniMax-H3 / detik",
+    "Provider table varies by modality/batch": "Tabel harga penyedia bervariasi menurut modalitas dan batch",
+    "Cache writes (Flatkey catalog)": "Penulisan cache (katalog Flatkey)",
+    "Peak UTC cache-miss / cache-hit / output": "Puncak UTC: input tanpa cache / dengan cache / output",
+    "Off-peak UTC cache-miss / cache-hit / output": "Di luar puncak UTC: input tanpa cache / dengan cache / output",
+  },
+};
+
 function localizeModelConfigFact(locale: Locale, value: string | undefined): string | undefined {
   if (value === undefined) return value;
-  return modelConfigFactCopy[locale]?.[value] ?? modelLandingCopy(locale, value as ModelLandingKey);
+  return modelConfigFactResidualCopy[locale]?.[value]
+    ?? modelConfigFactCopy[locale]?.[value]
+    ?? modelLandingCopy(locale, value as ModelLandingKey);
 }
 
 /** Localize config-level prose for every model family, including static pages. */
