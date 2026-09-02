@@ -1,4 +1,5 @@
 import { APP_CONSOLE_ORIGIN } from "@/lib/origins";
+import { modelPromotionPriority } from "@/lib/model-promotions";
 
 export const API_BASE_URL = APP_CONSOLE_ORIGIN;
 export const WEBSITE_PUBLIC_PRICING_GROUP = "plg";
@@ -264,9 +265,9 @@ export function filterPricingModels(models: PricingModel[], search: PricingSearc
 
 export function sortPricingModelsBySeries(models: PricingModel[]): PricingModel[] {
   return [...models].sort((a, b) => {
-    const aHasTags = parseTags(a.tags).length > 0;
-    const bHasTags = parseTags(b.tags).length > 0;
-    if (aHasTags !== bHasTags) return aHasTags ? -1 : 1;
+    const aPromotion = modelPromotionPriority(a.model_name);
+    const bPromotion = modelPromotionPriority(b.model_name);
+    if (aPromotion !== bPromotion) return aPromotion - bPromotion;
 
     const aFeaturedOrder = Number.isFinite(a.featured_order)
       ? (a.featured_order as number)

@@ -61,17 +61,17 @@ const TEST_METADATA: Record<string, ModelDirectoryMetadata> = {
 };
 
 function rows(
-  names: Array<{ name: string; vendor: string; inputUsd?: number; outputUsd?: number; officialUsd?: number; tags?: string[] }>
+  names: Array<{ name: string; vendor: string; inputUsd?: number; outputUsd?: number; officialUsd?: number }>
 ) {
   return names.map((input) => buildDirectoryRow({ ...input, metadata: TEST_METADATA[input.name] }, NOW));
 }
 
 const SAMPLE = rows([
-  { name: "claude-opus-5", vendor: "Anthropic", inputUsd: 5, outputUsd: 25, tags: ["HOT"] },
-  { name: "gpt-5.6-sol", vendor: "OpenAI", inputUsd: 5, outputUsd: 7, tags: ["HOT"] },
+  { name: "claude-opus-5", vendor: "Anthropic", inputUsd: 5, outputUsd: 25 },
+  { name: "gpt-5.6-sol", vendor: "OpenAI", inputUsd: 5, outputUsd: 7 },
   { name: "gpt-4o-mini", vendor: "OpenAI", inputUsd: 0.15, outputUsd: 0.6 },
-  { name: "deepseek-v4-pro", vendor: "DeepSeek", inputUsd: 1.32, outputUsd: 2, tags: ["Limited discount"] },
-  { name: "seedance-2.5", vendor: "ByteDance", inputUsd: 0.14, tags: ["HOT"] },
+  { name: "deepseek-v4-pro", vendor: "DeepSeek", inputUsd: 1.32, outputUsd: 2 },
+  { name: "seedance-2.5", vendor: "ByteDance", inputUsd: 0.14 },
   { name: "gemini-2.5-flash", vendor: "Google", inputUsd: 0.3, outputUsd: 2.5 },
 ]);
 
@@ -321,10 +321,10 @@ describe("facet counts", () => {
 });
 
 describe("sorting", () => {
-  test("tagged models lead while series and board order remain stable", () => {
+  test("most popular leads with the board order, then overall rank", () => {
     const sorted = sortDirectoryRows(SAMPLE, "rank");
-    expect(sorted.slice(0, 4).every((row) => (row.tags?.length ?? 0) > 0)).toBe(true);
-    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["gpt-5.6-sol", "deepseek-v4-pro", "seedance-2.5"]);
+    expect(sorted[0].name).toBe("deepseek-v4-pro");
+    expect(sorted.map((row) => row.name).slice(0, 3)).toEqual(["deepseek-v4-pro", "gpt-5.6-sol", "seedance-2.5"]);
   });
 
   test("keeps campaign models in stable rank order", () => {

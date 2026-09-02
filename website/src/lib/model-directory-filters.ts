@@ -6,6 +6,7 @@ import {
   type PriceBandId,
 } from "./model-directory-meta";
 import type { ModelDirectoryMetadata } from "./pricing";
+import { modelPromotionPriority } from "./model-promotions";
 
 // Filter engine for the /models directory. Mirrors the prototype's semantics:
 //
@@ -85,7 +86,6 @@ export const DIRECTORY_FILTER_KEYS: DirectoryFilterKey[] = [
 export type DirectoryRow = {
   name: string;
   vendor: string;
-  tags?: string[];
   searchText: string;
   series?: string;
   /** Author from the metadata table; falls back to the payload's vendor. */
@@ -111,7 +111,6 @@ export type DirectoryRow = {
 export type DirectoryRowInput = {
   name: string;
   vendor: string;
-  tags?: string[];
   inputUsd?: number | null;
   outputUsd?: number | null;
   /** Official (pre-discount) input rate, for the discount sort. */
@@ -126,7 +125,6 @@ export function buildDirectoryRow(input: DirectoryRowInput, now: Date = new Date
   return {
     name: input.name,
     vendor: input.vendor,
-    tags: input.tags ?? [],
     searchText: [input.name, input.vendor, meta?.author ?? "", series ?? "", ...(meta?.categories ?? []), ...(input.endpointTypes ?? [])]
       .join(" ")
       .toLowerCase(),
@@ -314,18 +312,18 @@ export function sortDirectoryRows(rows: DirectoryRow[], sort: DirectorySort): Di
         for (const row of sorted) {
           const series = seriesKey(row);
           if (!series) continue;
-          const key = `${(row.tags?.length ?? 0) > 0 ? "tagged" : "untagged"}::${series}`;
+          const key = `${modelPromotionPriority(row.name)}::${series}`;
           seriesCounts.set(key, (seriesCounts.get(key) ?? 0) + 1);
         }
         return sorted.sort((a, b) => {
-          const aHasTags = (a.tags?.length ?? 0) > 0;
-          const bHasTags = (b.tags?.length ?? 0) > 0;
-          if (aHasTags !== bHasTags) return aHasTags ? -1 : 1;
+          const aPriority = modelPromotionPriority(a.name);
+          const bPriority = modelPromotionPriority(b.name);
+          if (aPriority !== bPriority) return aPriority - bPriority;
 
           const aSeries = seriesKey(a);
           const bSeries = seriesKey(b);
-          const aSeriesGroup = aSeries ? seriesCounts.get(`${aHasTags ? "tagged" : "untagged"}::${aSeries}`) ?? 0 : 0;
-          const bSeriesGroup = bSeries ? seriesCounts.get(`${bHasTags ? "tagged" : "untagged"}::${bSeries}`) ?? 0 : 0;
+          const aSeriesGroup = aSeries ? seriesCounts.get(`${aPriority}::${aSeries}`) ?? 0 : 0;
+          const bSeriesGroup = bSeries ? seriesCounts.get(`${bPriority}::${bSeries}`) ?? 0 : 0;
           return aSeriesGroup > 1 || bSeriesGroup > 1
             ? bySeriesThenPopularity(a, b)
             : byPopularity(a, b);

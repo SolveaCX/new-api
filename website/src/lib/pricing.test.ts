@@ -198,20 +198,6 @@ describe("sortPricingModelsBySeries", () => {
       "gpt-4o-mini",
     ]);
   });
-
-  test("puts tagged models first while preserving the existing order within each group", () => {
-    const sorted = sortPricingModelsBySeries([
-      { ...baseModel, vendor_name: "OpenAI", model_name: "gpt-5", tags: "" },
-      { ...baseModel, vendor_name: "Anthropic", model_name: "claude-sonnet-4", tags: "Coding" },
-      { ...baseModel, vendor_name: "OpenAI", model_name: "gpt-4o", tags: "Featured, Agents" },
-    ]);
-
-    expect(sorted.map((model) => model.model_name)).toEqual([
-      "gpt-4o",
-      "claude-sonnet-4",
-      "gpt-5",
-    ]);
-  });
 });
 
 describe("group model ratio", () => {

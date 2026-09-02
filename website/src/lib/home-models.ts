@@ -18,8 +18,6 @@ import {
 export type HomePricedModel = {
   name: string;
   vendor: string;
-  /** Tags configured on model metadata in the console. */
-  tags?: string[];
   official: string;
   discounted: string;
   officialUsd: number;
@@ -168,7 +166,6 @@ export function buildRowsForModels(
       const directoryMeta = model.directory_metadata;
       return {
         name: model.model_name,
-        tags: parseTags(model.tags),
         // The metadata table is authoritative for the author: the payload
         // leaves vendor_id empty for some models (Macaron, Veo, Gemma) and
         // would otherwise fall back to the literal "AI".
@@ -216,7 +213,6 @@ function toHomeRow(model: PricingModel, data: PricingData): HomePricedModel {
   const vendor = model.vendor_name ?? getVendorName(model, data.vendors);
   return {
     name: model.model_name,
-    tags: parseTags(model.tags),
     vendor,
     official: formatUsdPrice(official),
     discounted: formatUsdPrice(discountedPriceUsd(listed)),

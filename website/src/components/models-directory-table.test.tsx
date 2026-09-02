@@ -220,7 +220,6 @@ describe("ModelsDirectoryTable", () => {
             discountedUsd: 0.8,
             iconKey: "zai",
             top10: 1,
-            tags: ["Limited discount", "New release"],
           },
         ]}
       />
