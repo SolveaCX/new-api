@@ -17,8 +17,6 @@ import type { HomePricedModel } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import { formatContextTokens } from "@/lib/model-directory-meta";
 import { modelPublicPath } from "@/lib/model-public";
-import { getModelPromotions, modelPromotionLabel } from "@/lib/model-promotions";
-import { cn } from "@/lib/utils";
 
 // Column labels. The directory supplies the full set; the pricing explorer
 // supplies only the original five, and the extra columns are skipped rather
@@ -180,8 +178,6 @@ function DirectoryRow(props: {
   const contextLabel = formatContextTokens(row.contextTokens);
   const discount = discountPercent(row.officialUsd, row.discountedUsd);
   const attribution = attributionLabel(row.vendor, row.series);
-  const promotions = props.locale ? getModelPromotions(row.name) : [];
-  const promotionLocale = props.locale ?? "en";
 
   return (
     <tr ref={ref} className="border-b border-[#F1EFF5] transition-colors last:border-b-0 hover:bg-[#FAF9FC] dark:border-white/[0.055] dark:hover:bg-white/[0.03]">
@@ -214,19 +210,6 @@ function DirectoryRow(props: {
                 </span>
               ) : null}
               <ModelTagBadges tags={row.tags} />
-              {promotions.length > 0 ? (
-                <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                  {promotions.map((promotion) => (
-                    <span key={promotion} className={cn(
-                      "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap shadow-sm",
-                      promotion === "free" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-                      promotion === "limited" && "border-amber-200 bg-amber-50 text-amber-700",
-                      promotion === "hot" && "border-rose-200 bg-rose-50 text-rose-700",
-                      promotion === "new" && "border-sky-200 bg-sky-50 text-sky-700"
-                    )}>{modelPromotionLabel(promotionLocale, promotion)}</span>
-                  ))}
-                </span>
-              ) : null}
             </span>
           </Link>
         ) : (

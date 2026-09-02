@@ -339,6 +339,9 @@ func migrateDB() error {
 	if err := SeedLegacyWebsiteFeaturedModels(); err != nil {
 		return err
 	}
+	if err := SeedLegacyModelTags(); err != nil {
+		return err
+	}
 	return migrateStartupInvitationValue()
 }
 
@@ -537,6 +540,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := SeedLegacyWebsiteFeaturedModels(); err != nil {
+		return err
+	}
+	if err := SeedLegacyModelTags(); err != nil {
 		return err
 	}
 	if err := migrateStartupInvitationValue(); err != nil {
