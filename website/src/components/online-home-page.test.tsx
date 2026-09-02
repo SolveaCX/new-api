@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { Locale } from "@/lib/locales";
 
 mock.module("server-only", () => ({}));
 
@@ -57,6 +58,61 @@ describe("OnlineHomePage", () => {
     expect(hrefBeforeText(html, "最高领取 $40 免费额度")).toBe(
       "https://console.flatkey.ai/sign-up?redirect=%2Fdashboard%2Foverview&lng=zh",
     );
+  });
+
+  test("localizes the redesigned homepage panels for Chinese", async () => {
+    const { OnlineHomePage } = await import("./online-home-page");
+    const html = renderToStaticMarkup(await OnlineHomePage({ locale: "zh" }));
+
+    expect(html).toContain("精选模型");
+    expect(html).toContain("只需一个 key，系统会根据每个任务、输入和场景");
+    expect(html).toContain("测试提示词");
+    expect(html).toContain("生成标准");
+    expect(html).toContain("已选模型");
+    expect(html).toContain("仅成功调用才付费");
+    expect(html).not.toContain("Test Prompt");
+    expect(html).not.toContain("Selected model");
+    expect(html).not.toContain("Total runtime");
+    expect(html).not.toContain("Pay per successful call");
+    expect(html).not.toContain("voice of customer");
+  });
+
+  test("localizes image and video generation tabs across supported locales", async () => {
+    const expected = {
+      zh: ["测试提示词", "生成标准", "18.4 秒"],
+      es: ["Prompt de prueba", "Criterios", "18,4 s"],
+      fr: ["Prompt de test", "Critères", "18,4 s"],
+      pt: ["Prompt de teste", "Critérios", "18,4 s"],
+      ru: ["Тестовый промпт", "Критерии", "18,4 с"],
+      ja: ["テストプロンプト", "生成条件", "18.4 秒"],
+      vi: ["Prompt thử nghiệm", "Tiêu chí", "18,4 giây"],
+      de: ["Test-Prompt", "Kriterien", "18,4 s"],
+      id: ["Prompt uji", "Kriteria", "18,4 dtk"],
+    } as const;
+
+    for (const [locale, [prompt, criteria, runtime]] of Object.entries(expected)) {
+      const { OnlineHomePage } = await import("./online-home-page");
+      const html = renderToStaticMarkup(await OnlineHomePage({ locale: locale as Locale }));
+      const imagePanel = panelMarkup(
+        html,
+        '<div class="intelligence-panel intelligence-panel-media intelligence-panel-image"',
+        '<div class="intelligence-panel intelligence-panel-media intelligence-panel-video"',
+      );
+      const videoPanel = panelMarkup(
+        html,
+        '<div class="intelligence-panel intelligence-panel-media intelligence-panel-video"',
+        '<section class="tools-intro"',
+      );
+
+      for (const value of [prompt, criteria, runtime]) {
+        expect(imagePanel).toContain(value);
+        expect(videoPanel).toContain(value);
+      }
+      for (const value of ["Test Prompt", "Criteria", "Selected model", "Total runtime", "Pay per successful call", "18.4 sec"]) {
+        expect(imagePanel).not.toContain(value);
+        expect(videoPanel).not.toContain(value);
+      }
+    }
   });
 
   test("uses task-specific models and keeps each media result aligned with its selected model", async () => {
