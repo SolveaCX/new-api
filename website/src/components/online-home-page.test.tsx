@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Locale } from "@/lib/locales";
+import type { Locale } from "@/lib/locales";
 
 mock.module("server-only", () => ({}));
 
@@ -31,7 +32,7 @@ describe("OnlineHomePage", () => {
       await OnlineHomePage({ locale: "en" }),
     );
 
-    expect(hrefBeforeText(html, "Get Up to $40 in Free Credits")).toBe(
+    expect(hrefBeforeText(html, "Quick Start")).toBe(
       overviewHref,
     );
     expect(hrefBeforeText(html, "Get started")).toBe(signupHref);
@@ -43,21 +44,46 @@ describe("OnlineHomePage", () => {
       await OnlineHomePage({ locale: "en", hasConsoleSessionHint: true }),
     );
 
-    expect(hrefBeforeText(html, "Get Up to $40 in Free Credits")).toBe(
+    expect(hrefBeforeText(html, "Quick Start")).toBe(
       overviewHref,
     );
     expect(hrefBeforeText(html, "Get started")).toBe(signupHref);
   });
 
-  test("keeps the free-credits CTA pointed at the console overview in a non-English locale", async () => {
+  test("keeps the primary CTA pointed at the console overview in a non-English locale", async () => {
     const { OnlineHomePage } = await import("./online-home-page");
     const html = renderToStaticMarkup(
       await OnlineHomePage({ locale: "zh" }),
     );
 
-    expect(hrefBeforeText(html, "最高领取 $40 免费额度")).toBe(
+    expect(hrefBeforeText(html, "快速开始")).toBe(
       "https://console.flatkey.ai/sign-up?redirect=%2Fdashboard%2Foverview&lng=zh",
     );
+  });
+
+  test("localizes the primary CTA across every homepage locale", async () => {
+    const labels = {
+      en: "Quick Start",
+      zh: "快速开始",
+      es: "Inicio rápido",
+      fr: "Démarrage rapide",
+      pt: "Início rápido",
+      ru: "Быстрый старт",
+      ja: "クイックスタート",
+      vi: "Bắt đầu nhanh",
+      de: "Schnellstart",
+      id: "Mulai cepat",
+    } as const;
+
+    const { OnlineHomePage } = await import("./online-home-page");
+    for (const [locale, label] of Object.entries(labels)) {
+      const html = renderToStaticMarkup(
+        await OnlineHomePage({ locale: locale as Locale }),
+      );
+      expect(hrefBeforeText(html, label)).toBe(
+        `https://console.flatkey.ai/sign-up?redirect=%2Fdashboard%2Foverview&lng=${locale}`,
+      );
+    }
   });
 
   test("localizes the redesigned homepage panels for Chinese", async () => {
