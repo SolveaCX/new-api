@@ -73,29 +73,6 @@ function formatRatioCompact(ratio: number | undefined): string {
     : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
-function getGroupRatioText(other: LogOtherData | null): string | null {
-  const groupModelRatio = other?.group_model_ratio
-  if (groupModelRatio != null && Number.isFinite(groupModelRatio)) {
-    return `${formatRatioCompact(groupModelRatio)}x`
-  }
-
-  const userGroupRatio = other?.user_group_ratio
-  if (
-    userGroupRatio != null &&
-    userGroupRatio !== -1 &&
-    Number.isFinite(userGroupRatio)
-  ) {
-    return `${formatRatioCompact(userGroupRatio)}x`
-  }
-
-  const groupRatio = other?.group_ratio
-  if (groupRatio != null && groupRatio !== 1 && Number.isFinite(groupRatio)) {
-    return `${formatRatioCompact(groupRatio)}x`
-  }
-
-  return null
-}
-
 function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
   const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
   if (!match) return { prefix: '', amount: value }
@@ -497,17 +474,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const tokenName = log.token_name
       if (!tokenName) return null
 
-      const other = parseLogOther(log.other)
       const displayName = sensitiveVisible ? tokenName : '••••'
-      let group = log.group
-      if (!group) group = other?.group || ''
-
-      const metaParts: string[] = []
-      const groupRatioText = getGroupRatioText(other)
-      if (group) {
-        metaParts.push(sensitiveVisible ? group : '••••')
-      }
-      if (groupRatioText) metaParts.push(groupRatioText)
 
       return (
         <div className='flex max-w-[200px] flex-col gap-0.5'>
@@ -530,11 +497,6 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               )}
             </Tooltip>
           </TooltipProvider>
-          {metaParts.length > 0 && (
-            <span className='text-muted-foreground/60 truncate [font-family:var(--font-body)] !text-xs'>
-              {metaParts.join(' · ')}
-            </span>
-          )}
         </div>
       )
     },
