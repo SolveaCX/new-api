@@ -4697,6 +4697,7 @@
     "Top up ${{amount}} → get ${{total}}": "Rechargez ${{amount}} → recevez ${{total}}",
     "Top up $1000 get $500": "Rechargez $1000, obtenez $500",
     "Top up $200 get $100": "Rechargez $200, obtenez $100",
+    "Top up balance": "Recharger le solde",
     "Top up balance and view billing history.": "Recharger le solde et consulter l'historique de facturation.",
     "Top Users": "Top utilisateurs",
     "Top vendors": "Top fournisseurs",

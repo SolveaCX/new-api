@@ -4697,6 +4697,7 @@
     "Top up ${{amount}} → get ${{total}}": "${{amount}} チャージ → ${{total}} 付与",
     "Top up $1000 get $500": "$1000 チャージで $500 進呈",
     "Top up $200 get $100": "$200 チャージで $100 進呈",
+    "Top up balance": "残高をチャージ",
     "Top up balance and view billing history.": "残高をチャージし、請求履歴を確認。",
     "Top Users": "上位ユーザー",
     "Top vendors": "人気ベンダー",

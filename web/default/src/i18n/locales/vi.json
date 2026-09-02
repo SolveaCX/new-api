@@ -4697,6 +4697,7 @@
     "Top up ${{amount}} → get ${{total}}": "Nạp ${{amount}} → nhận ${{total}}",
     "Top up $1000 get $500": "Nạp $1000 nhận $500",
     "Top up $200 get $100": "Nạp $200 nhận $100",
+    "Top up balance": "Nạp số dư",
     "Top up balance and view billing history.": "Nạp tiền vào tài khoản và xem lịch sử thanh toán.",
     "Top Users": "Người dùng hàng đầu",
     "Top vendors": "Nhà cung cấp hàng đầu",

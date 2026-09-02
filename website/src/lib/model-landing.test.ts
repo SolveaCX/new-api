@@ -576,6 +576,60 @@ describe("model landing configuration", () => {
     }
   });
 
+  test("localizes generated model detail pages for every media family and locale", () => {
+    const cases = [
+      {
+        model_name: "seedance-2.0",
+        vendor_name: "ByteDance",
+        supported_endpoint_types: ["video"],
+        directory_metadata: { modalities: ["video"], categories: ["Marketing"] },
+      },
+      {
+        model_name: "gpt-live-catalog",
+        vendor_name: "OpenAI",
+        supported_endpoint_types: ["openai"],
+        directory_metadata: { modalities: ["text"], categories: ["Reasoning"] },
+      },
+      {
+        model_name: "image-live-catalog",
+        vendor_name: "Image Provider",
+        supported_endpoint_types: ["image-generation"],
+        directory_metadata: { modalities: ["image"], categories: ["Marketing"] },
+      },
+      {
+        model_name: "audio-live-catalog",
+        vendor_name: "Audio Provider",
+        supported_endpoint_types: ["audio"],
+        directory_metadata: { modalities: ["audio"], categories: ["Audio"] },
+      },
+    ] as const;
+
+    for (const model of cases) {
+      const source = getModelLandingConfigForPricingModel({
+        ...model,
+        quota_type: 0,
+        model_ratio: 1,
+        completion_ratio: 1,
+      });
+      const sourceContent = source.landingContent;
+      expect(sourceContent?.faq?.[0]?.question).toContain("What is");
+
+      for (const locale of LOCALES.filter((item) => item !== "en")) {
+        const localized = getLocalizedModelLandingConfig(source, locale);
+        const localizedContent = localized.landingContent;
+        expect(localizedContent?.hero?.title).not.toBe(sourceContent?.hero?.title);
+        expect(localizedContent?.capabilitiesTitle).not.toBe(sourceContent?.capabilitiesTitle);
+        expect(localizedContent?.faq?.[0]?.question).not.toBe(sourceContent?.faq?.[0]?.question);
+        expect(localizedContent?.faq?.[0]?.answer).not.toBe(sourceContent?.faq?.[0]?.answer);
+
+        const localizedText = JSON.stringify(localizedContent);
+        expect(localizedText).not.toContain("core capabilities");
+        expect(localizedText).not.toContain("What is ");
+        expect(localizedText).not.toContain("The model is listed");
+      }
+    }
+  });
+
   test("does not leak English compact labels into translated model shells", () => {
     const labels = ["Prompt", "Performance", "Endpoint"] as const;
     for (const locale of LOCALES.filter((item) => item !== "en")) {
