@@ -146,6 +146,20 @@ func setModelAccessBilling(t *testing.T, ratios map[string]float64, modes, expre
 	}))
 }
 
+func setModelAccessVideoBilling(t *testing.T, rules string) {
+	t.Helper()
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting_video.video_price_rules": rules,
+	}))
+}
+
+func TestModelHasVisibleBillingAcceptsVideoPriceRules(t *testing.T) {
+	setupServiceModelAccessDB(t)
+	setModelAccessVideoBilling(t, `[{"model":"seedance-2.0","match":{"resolution":"720p"},"price_per_second":0.03,"basis":"output_duration"}]`)
+
+	require.True(t, modelHasVisibleBilling("seedance-2.0", false))
+}
+
 func TestTokenAllowsModelUsesCanonicalMatching(t *testing.T) {
 	require.True(t, TokenAllowsModel(map[string]bool{"gpt-4-gizmo-*": true}, "gpt-4-gizmo-customer"))
 	require.True(t, TokenAllowsModel(map[string]bool{"gemini-2.5-pro-thinking-*": true}, "gemini-2.5-pro-thinking-8192"))
