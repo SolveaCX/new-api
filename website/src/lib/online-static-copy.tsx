@@ -220,7 +220,7 @@ const en: OnlineCopy = {
   },
   home: {
     balance: "FLATKEY BALANCE",
-    ctaKey: "Get Up to $40 in Free Credits",
+    ctaKey: "Quick Start",
     ctaModels: "Model List",
     eyebrow: "DEEPSEEK KIMI GLM CODEX CLAUDE CODE",
     heroTitle: (
@@ -415,7 +415,7 @@ const zh: OnlineCopy = {
   home: {
     ...en.home,
     balance: "FLATKEY 统一余额",
-    ctaKey: "最高领取 $40 免费额度",
+    ctaKey: "快速开始",
     ctaModels: "模型列表",
     eyebrow: "DEEPSEEK KIMI GLM CODEX CLAUDE CODE",
     heroTitle: (
