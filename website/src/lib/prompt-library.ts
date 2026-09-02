@@ -1,6 +1,6 @@
 import { type Locale, withIdFallback } from "./locales";
 import { getImagePromptTemplates } from "./image-prompt-templates";
-import { getVideoPromptTemplateLocalFallbackPoster, getVideoPromptTemplates, VIDEO_PROFESSION_MODEL_IDS } from "./video-prompt-templates";
+import { getVideoPromptTemplateLocalFallbackPosters, getVideoPromptTemplates, VIDEO_PROFESSION_IDS, VIDEO_PROFESSION_MODEL_IDS } from "./video-prompt-templates";
 
 export type PromptArtifact =
   | {
@@ -1276,15 +1276,17 @@ function modelDetailVideoPromptItems(): PromptItem[] {
   return VIDEO_PROFESSION_MODEL_IDS.flatMap((modelId) => {
     const english = getVideoPromptTemplates(modelId, "en");
     const chinese = getVideoPromptTemplates(modelId, "zh");
+    const fallbackPosters = getVideoPromptTemplateLocalFallbackPosters(modelId);
     return english.map((template, index) => {
       const zhTemplate = chinese[index] ?? template;
       const assetId = `model-detail-video-${modelId}-${template.professionId}`;
+      const professionIndex = VIDEO_PROFESSION_IDS.indexOf(template.professionId);
       return {
         artifact: {
           alt: `${template.label} — ${modelId}`,
           assetId,
           kind: "video" as const,
-          poster: template.poster || getVideoPromptTemplateLocalFallbackPoster(modelId, template.professionId) || "/assets/model-showcase/coastal-landmark.png",
+          poster: template.poster || fallbackPosters[professionIndex] || "/assets/model-showcase/coastal-landmark.png",
           url: template.video,
         },
         category: "video" as const,
