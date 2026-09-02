@@ -213,6 +213,7 @@ function DirectoryRow(props: {
                   {attribution}
                 </span>
               ) : null}
+              <ModelTagBadges tags={row.tags} />
               {promotions.length > 0 ? (
                 <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
                   {promotions.map((promotion) => (
@@ -245,6 +246,7 @@ function DirectoryRow(props: {
               <span className="text-muted-foreground/70 block truncate text-[11px]">
                 {attribution}
               </span>
+              <ModelTagBadges tags={row.tags} />
             </span>
           </div>
         )}
@@ -293,6 +295,22 @@ function DirectoryRow(props: {
         </div>
       </td>
     </tr>
+  );
+}
+
+function ModelTagBadges(props: { tags?: string[] }) {
+  if (!props.tags || props.tags.length === 0) return null;
+  return (
+    <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+      {props.tags.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex max-w-full items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] leading-none font-semibold whitespace-nowrap text-violet-700 shadow-sm dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-200"
+        >
+          {tag}
+        </span>
+      ))}
+    </span>
   );
 }
 
