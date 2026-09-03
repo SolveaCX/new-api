@@ -91,7 +91,7 @@ export function ModelsDirectoryTable(props: Props) {
         <table className="w-max min-w-full table-auto border-collapse text-sm">
         <thead>
           <tr className="border-b border-[#EFECF3] bg-[#FBFAFC] text-left text-[11px] leading-4 font-bold tracking-[0.08em] text-[#6B7280] uppercase dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
-            <th className="sticky left-0 z-10 min-w-[320px] bg-[#FBFAFC] px-3 py-3.5 font-bold lg:static lg:z-auto 2xl:px-5 dark:bg-white/[0.02]">{props.copy.colModel}</th>
+            <th className="sticky left-0 z-10 w-[clamp(220px,24vw,280px)] min-w-[220px] max-w-[280px] bg-[#FBFAFC] px-3 py-3.5 font-bold lg:static lg:z-auto 2xl:px-5 dark:bg-white/[0.02]">{props.copy.colModel}</th>
             <th className="min-w-[132px] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colOfficial}</th>
             {!props.hideOurPrice ? (
               <th className="min-w-[132px] px-2 py-3.5 text-right font-bold 2xl:px-3">
@@ -185,7 +185,7 @@ function DirectoryRow(props: {
 
   return (
     <tr ref={ref} className="border-b border-[#F1EFF5] transition-colors last:border-b-0 hover:bg-[#FAF9FC] dark:border-white/[0.055] dark:hover:bg-white/[0.03]">
-      <td className="sticky left-0 z-[1] min-w-[320px] bg-white px-3 py-3 lg:static lg:z-auto lg:bg-transparent 2xl:px-5 dark:bg-[#17151c] lg:dark:bg-transparent">
+      <td className="sticky left-0 z-[1] w-[clamp(220px,24vw,280px)] min-w-[220px] max-w-[280px] bg-white px-3 py-3 lg:static lg:z-auto lg:bg-transparent 2xl:px-5 dark:bg-[#17151c] lg:dark:bg-transparent">
         {props.locale ? (
           <Link
             href={localizePath(modelPublicPath(row.name), props.locale)}
@@ -202,7 +202,7 @@ function DirectoryRow(props: {
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-center">
                 <span
-                  className="shrink-0 whitespace-nowrap font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline"
+                  className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] font-semibold tracking-tight underline-offset-2 hover:underline"
                   title={row.name}
                 >
                   {row.name}
@@ -228,7 +228,7 @@ function DirectoryRow(props: {
             />
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="shrink-0 whitespace-nowrap font-mono text-[13px] font-semibold tracking-tight" title={row.name}>{row.name}</span>
+                <span className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] font-semibold tracking-tight" title={row.name}>{row.name}</span>
               </span>
               <span className="text-muted-foreground/70 block truncate text-[11px]">
                 {attribution}
