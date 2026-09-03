@@ -638,10 +638,12 @@ describe("ModelLandingPage", () => {
     expect(html).toContain('class="model-stat-label">Cache /M</div>');
     expect(html).toContain("$0.1");
     expect(html).toContain("<s>$0.2</s>");
+    expect(html).toContain('class="model-hero-price-discount"');
+    expect(html).toContain(">-50%</span>");
     expect(html).not.toContain("Promotional pricing");
     expect(html).not.toContain("活动价格");
     expect(html.indexOf('class="model-stat-reference">Reference price: <s>$0.2</s>'))
-      .toBeLessThan(html.indexOf('<div class="model-stat-value">$0.1</div>'));
+      .toBeLessThan(html.indexOf('<div class="model-stat-value model-stat-value-with-discount"><span>$0.1</span>'));
   });
 
   test("shows the official video price crossed out before the Flatkey price", () => {
@@ -703,6 +705,37 @@ describe("ModelLandingPage", () => {
     expect(html).not.toContain("Cache /M");
     expect(html).not.toContain("1M tokens");
     expect(html).not.toContain("pricing-breakdown-card");
+  });
+
+  test("normalizes legacy milli-dollar image prices on detail pages", () => {
+    const imageModel: PricingModel = {
+      model_name: "grok-imagine-image-pro",
+      vendor_name: "xAI",
+      quota_type: 0,
+      model_ratio: 37.5,
+      completion_ratio: 100,
+      supported_endpoint_types: ["openai", "openai-response"],
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 75, plg: 60 },
+          output: { configured: 7500, plg: 6000 },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={getModelLandingConfigForPricingModel(imageModel)}
+        locale="en"
+        liveModels={[imageModel]}
+        allModels={[imageModel]}
+      />
+    );
+
+    expect(html).toContain("<s>$0.075</s>");
+    expect(html).toContain("$0.060 / image");
+    expect(html).not.toContain("$75.000");
+    expect(html).not.toContain("$60.000");
   });
 
   test("shows every video resolution price in the feature card", () => {

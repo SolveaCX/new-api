@@ -1,4 +1,4 @@
-import { modelIconKey } from "@/lib/home-models";
+import { modelIconKey, resolveImageDisplayPrice as resolveHomeImageDisplayPrice } from "@/lib/home-models";
 import { withIdFallback } from "@/lib/locales";
 import type { Locale } from "@/lib/locales";
 import {
@@ -470,10 +470,28 @@ function buildModelPublicPriceRows(model: PricingModel, fallbackGroupRatio: Reco
   };
   const imageModel = classifyPublicModel(model) === "image";
   if (imageModel) {
-    const price = resolveImageDisplayPrice(effectiveModel, fallbackGroupRatio);
-    return price
-      ? [{ labelKey: "imagePrice", list: formatUsdPrice(price.configured ?? price.value), discounted: price.text, unit: "/ image", from: price.from }]
-      : [];
+    const price = resolveHomeImageDisplayPrice(effectiveModel, fallbackGroupRatio);
+    if (price) {
+      return [{ labelKey: "imagePrice", list: formatUsdPrice(price.configured ?? price.value), discounted: price.text, unit: "/ image", from: price.from }];
+    }
+    // When the catalog has no per-image contract, preserve the provider's
+    // native token dimensions instead of inventing a per-image amount.
+    if (isTokenBasedModel(model)) {
+      return ([
+        ["input", "input"],
+        ["output", "output"],
+        ["cacheRead", "cache"],
+      ] as const).flatMap(([labelKey, dimension]) => {
+        const plg = resolveModelDisplayPrice(effectiveModel, dimension, "plg", fallbackGroupRatio);
+        const configured = resolveModelDisplayPrice(effectiveModel, dimension, "configured", fallbackGroupRatio);
+        if (!plg && !configured) return [];
+        const list = configured?.value ?? 0;
+        const discounted = plg?.value ?? list * (fallbackGroupRatio.plg ?? 1);
+        if (list <= 0 || discounted <= 0) return [];
+        return [{ labelKey, list: formatUsdPrice(list), discounted: formatUsdPrice(discounted), unit: "/ 1M tokens", from: Boolean(plg?.from || configured?.from) }];
+      });
+    }
+    return [];
   }
 
   const displayKind = hasUsableDisplayKind(effectiveModel, fallbackGroupRatio) ? model.display_pricing?.billing_kind : undefined;
@@ -504,13 +522,6 @@ function buildModelPublicPriceRows(model: PricingModel, fallbackGroupRatio: Reco
       from: price.from,
     }];
   });
-}
-
-function resolveImageDisplayPrice(model: PricingModel, fallbackGroupRatio: Record<string, number>): ResolvedModelDisplayPrice | null {
-  const preferred = resolveModelDisplayPrice(model, "image", "plg", fallbackGroupRatio);
-  const fallback = preferred ?? resolveModelDisplayPrice(model, "request", "plg", fallbackGroupRatio) ?? resolveModelDisplayPrice(model, "input", "plg", fallbackGroupRatio);
-  if (!fallback) return null;
-  return fallback.dimension === "image" ? fallback : { ...fallback, dimension: "image", unit: "/ image" };
 }
 
 function hasUsableDisplayKind(model: PricingModel, fallbackGroupRatio: Record<string, number>): boolean {

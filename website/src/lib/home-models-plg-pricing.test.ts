@@ -129,6 +129,62 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.cache).toBeUndefined();
   });
 
+  test("normalizes milli-dollar token contracts for image models", () => {
+    const [row] = buildRowsForModels([{
+      ...PLG_MODEL,
+      model_name: "grok-imagine-image-pro",
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 75, plg: 60 },
+          output: { configured: 7500, plg: 6000 },
+        },
+      },
+      directory_metadata: {
+        author: "xAI",
+        providers: ["xAI"],
+        modalities: ["text", "image"],
+        context_tokens: null,
+        series: "Grok",
+        categories: ["Marketing"],
+        released_at: "2026-08-04",
+        distillable: false,
+      },
+    }], VENDORS, PLG_GROUP_RATIO);
+
+    expect(row.official).toBe("$0.075");
+    expect(row.discounted).toBe("$0.06");
+    expect(row.officialUsd).toBeCloseTo(0.075);
+    expect(row.discountedUsd).toBeCloseTo(0.06);
+    expect(row.priceUnit).toBe("per image");
+    expect(row.input).toBeUndefined();
+    expect(row.output).toBeUndefined();
+    expect(row.cache).toBeUndefined();
+  });
+
+  test("keeps multimodal text models token-priced", () => {
+    const [row] = buildRowsForModels([{
+      ...PLG_MODEL,
+      model_name: "claude-fable-5.1",
+      cache_ratio: 0.25,
+      directory_metadata: {
+        author: "Anthropic",
+        providers: ["Anthropic"],
+        modalities: ["text", "image"],
+        context_tokens: 200000,
+        series: "Claude",
+        categories: ["Writing"],
+        released_at: "2026-08-01",
+        distillable: false,
+      },
+    }], VENDORS, PLG_GROUP_RATIO);
+
+    expect(row.priceUnit).toBe("per 1M tokens");
+    expect(row.input).toBeDefined();
+    expect(row.output).toBeDefined();
+    expect(row.cache).toBeDefined();
+  });
+
   test("describes request rows with per-request unit metadata", () => {
     const requestModel: PricingModel = {
       model_name: "some-video-model",

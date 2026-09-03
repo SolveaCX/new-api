@@ -95,7 +95,7 @@ export function ModelsDirectoryTable(props: Props) {
   if (props.rows.length === 0) return null;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#E7E4EC] bg-white shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-24px_rgba(24,14,38,0.18)] dark:border-white/10 dark:bg-white/[0.03]">
+    <div className="models-directory-table overflow-hidden rounded-2xl border border-[#E7E4EC] bg-white shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-24px_rgba(24,14,38,0.18)] dark:border-white/10 dark:bg-white/[0.03]">
       <div className="touch-pan-x overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
         <table className="w-max min-w-full table-auto border-collapse text-sm">
         <thead>
@@ -360,6 +360,7 @@ export function attributionLabel(vendor: string | undefined, series: string | un
 export function discountPercent(officialUsd: number, discountedUsd: number): number | null {
   if (!Number.isFinite(officialUsd) || !Number.isFinite(discountedUsd)) return null;
   if (officialUsd <= 0 || discountedUsd < 0) return null;
+  if (discountedUsd === 0 && officialUsd > 0) return 100;
   const percent = (1 - discountedUsd / officialUsd) * 100;
   return percent < 0 ? null : percent;
 }

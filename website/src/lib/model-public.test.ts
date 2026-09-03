@@ -140,7 +140,7 @@ describe("model public pricing rows", () => {
     ]);
   });
 
-  test("uses one per-image row for image models, including token-marked providers", () => {
+  test("falls back to token dimensions when image pricing is unavailable", () => {
     const view = buildModelPublicView(
       model({
         model_name: "grok-imagine-image-pro",
@@ -152,9 +152,8 @@ describe("model public pricing rows", () => {
       pricingData()
     );
 
-    expect(view.priceRows).toHaveLength(1);
-    expect(view.priceRows[0]?.labelKey).toBe("imagePrice");
-    expect(view.priceRows[0]?.unit).toBe("/ image");
+    expect(view.priceRows.map((row) => row.labelKey)).toEqual(["input", "output"]);
+    expect(view.priceRows.every((row) => row.unit === "/ 1M tokens")).toBe(true);
   });
 
   test("uses display pricing units and from semantics when provided", () => {
