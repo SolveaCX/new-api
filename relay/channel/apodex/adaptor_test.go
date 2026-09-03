@@ -107,25 +107,33 @@ func TestApodexClearsStreamOptionsForDeepModels(t *testing.T) {
 	}
 }
 
-func TestApodexDefaultsOmittedCoreChatStreamToFalse(t *testing.T) {
+func TestApodexPreservesOmittedCoreChatStream(t *testing.T) {
 	a := &Adaptor{}
+	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeChatCompletions}
 	req := &dto.GeneralOpenAIRequest{Model: "apodex-1.1"}
-	if _, err := a.ConvertOpenAIRequest(nil, &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeChatCompletions}, req); err != nil {
+	if _, err := a.ConvertOpenAIRequest(nil, info, req); err != nil {
 		t.Fatal(err)
 	}
-	if req.Stream == nil || *req.Stream {
-		t.Fatalf("omitted stream must be explicit false, got %#v", req.Stream)
+	if req.Stream != nil {
+		t.Fatalf("omitted stream must remain omitted, got %#v", req.Stream)
+	}
+	if info.IsStream {
+		t.Fatal("core chat model should retain the non-streaming default")
 	}
 }
 
-func TestApodexDefaultsOmittedDeepChatStreamToFalse(t *testing.T) {
+func TestApodexDefaultsOmittedDeepChatStreamToStreaming(t *testing.T) {
 	a := &Adaptor{}
+	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeChatCompletions}
 	req := &dto.GeneralOpenAIRequest{Model: "apodex-1-1-deep-research"}
-	if _, err := a.ConvertOpenAIRequest(nil, &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeChatCompletions}, req); err != nil {
+	if _, err := a.ConvertOpenAIRequest(nil, info, req); err != nil {
 		t.Fatal(err)
 	}
-	if req.Stream == nil || *req.Stream {
-		t.Fatalf("omitted stream must be explicit false for deep models, got %#v", req.Stream)
+	if req.Stream != nil {
+		t.Fatalf("omitted stream must remain omitted, got %#v", req.Stream)
+	}
+	if !info.IsStream {
+		t.Fatal("deep chat model should use Apodex's streaming default")
 	}
 }
 
@@ -150,10 +158,11 @@ func TestApodexAcceptsResponsesMode(t *testing.T) {
 	}
 }
 
-func TestApodexDefaultsOmittedResponsesStreamToFalse(t *testing.T) {
+func TestApodexDefaultsOmittedResponsesStreamToStreaming(t *testing.T) {
 	a := &Adaptor{}
+	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeResponses}
 	req := dto.OpenAIResponsesRequest{Model: "apodex-1-1-deep-research"}
-	converted, err := a.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeResponses}, req)
+	converted, err := a.ConvertOpenAIResponsesRequest(nil, info, req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,8 +170,11 @@ func TestApodexDefaultsOmittedResponsesStreamToFalse(t *testing.T) {
 	if !ok {
 		t.Fatalf("converted request type = %T", converted)
 	}
-	if convertedReq.Stream == nil || *convertedReq.Stream {
-		t.Fatalf("omitted stream must be explicit false, got %#v", convertedReq.Stream)
+	if convertedReq.Stream != nil {
+		t.Fatalf("omitted stream must remain omitted, got %#v", convertedReq.Stream)
+	}
+	if !info.IsStream {
+		t.Fatal("Responses should use Apodex's streaming default")
 	}
 }
 

@@ -81,9 +81,12 @@ func (a *Adaptor) ConvertOpenAIRequest(_ *gin.Context, info *relaycommon.RelayIn
 	if info != nil && info.RelayMode != relayconstant.RelayModeChatCompletions {
 		return nil, fmt.Errorf("apodex: relay mode %d is not supported", info.RelayMode)
 	}
-	if req.Stream == nil {
-		stream := false
-		req.Stream = &stream
+	// Leave an omitted stream field untouched so Apodex can apply its model
+	// specific default. Deep research chat models default to SSE; reflect that
+	// upstream behavior in the relay before the response arrives. Explicit
+	// stream=true/false remains authoritative through RelayInfo initialization.
+	if req.Stream == nil && info != nil && isDeepModel(req.Model) {
+		info.IsStream = true
 	}
 	if isDeepModel(req.Model) {
 		req.StreamOptions = nil
@@ -99,9 +102,11 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(_ *gin.Context, info *relaycommo
 	if info != nil && info.RelayMode != relayconstant.RelayModeResponses {
 		return nil, fmt.Errorf("apodex: relay mode %d is not supported", info.RelayMode)
 	}
-	if req.Stream == nil {
-		stream := false
-		req.Stream = &stream
+	// Apodex Responses defaults to a streaming SSE response when stream is
+	// omitted. Keep the field omitted and prime relay response dispatch with
+	// that default; an explicit stream value remains unchanged.
+	if req.Stream == nil && info != nil {
+		info.IsStream = true
 	}
 	return (&openai.Adaptor{}).ConvertOpenAIResponsesRequest(nil, info, req)
 }
