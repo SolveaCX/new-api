@@ -24,15 +24,16 @@ type WebsitePricePair struct {
 }
 
 type WebsiteDisplayPrices struct {
-	Second      *WebsitePricePair `json:"second,omitempty"`
-	Input       *WebsitePricePair `json:"input,omitempty"`
-	Output      *WebsitePricePair `json:"output,omitempty"`
-	Cache       *WebsitePricePair `json:"cache,omitempty"`
-	CreateCache *WebsitePricePair `json:"create_cache,omitempty"`
-	Image       *WebsitePricePair `json:"image,omitempty"`
-	AudioInput  *WebsitePricePair `json:"audio_input,omitempty"`
-	AudioOutput *WebsitePricePair `json:"audio_output,omitempty"`
-	Request     *WebsitePricePair `json:"request,omitempty"`
+	Second             *WebsitePricePair            `json:"second,omitempty"`
+	SecondByResolution map[string]*WebsitePricePair `json:"second_by_resolution,omitempty"`
+	Input              *WebsitePricePair            `json:"input,omitempty"`
+	Output             *WebsitePricePair            `json:"output,omitempty"`
+	Cache              *WebsitePricePair            `json:"cache,omitempty"`
+	CreateCache        *WebsitePricePair            `json:"create_cache,omitempty"`
+	Image              *WebsitePricePair            `json:"image,omitempty"`
+	AudioInput         *WebsitePricePair            `json:"audio_input,omitempty"`
+	AudioOutput        *WebsitePricePair            `json:"audio_output,omitempty"`
+	Request            *WebsitePricePair            `json:"request,omitempty"`
 }
 
 type WebsitePricingPrices struct {
@@ -129,13 +130,16 @@ func buildWebsiteDisplayPricing(
 		}
 
 		row := WebsiteDisplayPricing{}
-		secondPrice, hasSecondPrice, secondErr := websiteDisplaySecondPrice(item.ModelName, videoRules, ratioInfo.GroupRatio)
+		secondPrice, secondByResolution, hasSecondPrice, secondErr := websiteDisplaySecondPrices(item.ModelName, videoRules, ratioInfo.GroupRatio)
 		if secondErr != nil {
 			return nil, fmt.Errorf("invalid per-second price for model %q: %w", item.ModelName, secondErr)
 		}
 		if hasSecondPrice {
 			row.BillingKind = "per_second"
 			row.Prices.Second = secondPrice
+			if len(secondByResolution) > 0 {
+				row.Prices.SecondByResolution = secondByResolution
+			}
 			displayPricing[item.ModelName] = row
 			continue
 		}
@@ -323,12 +327,13 @@ func buildWebsitePricingV2(
 	}, nil
 }
 
-func websiteDisplaySecondPrice(modelName string, rules []billing_setting.VideoPriceRule, groupRatio float64) (*WebsitePricePair, bool, error) {
+func websiteDisplaySecondPrices(modelName string, rules []billing_setting.VideoPriceRule, groupRatio float64) (*WebsitePricePair, map[string]*WebsitePricePair, bool, error) {
 	var (
 		bestPrice float64
 		found     bool
 		valid     int
 	)
+	byResolution := make(map[string][]float64)
 	for _, rule := range rules {
 		if rule.Model != modelName || !validWebsitePrice(rule.PricePerSecond) || rule.PricePerSecond <= 0 {
 			continue
@@ -338,16 +343,34 @@ func websiteDisplaySecondPrice(modelName string, rules []billing_setting.VideoPr
 			bestPrice = rule.PricePerSecond
 			found = true
 		}
+		if resolution := rule.Match["resolution"]; resolution != "" {
+			byResolution[resolution] = append(byResolution[resolution], rule.PricePerSecond)
+		}
 	}
 	if !found {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	price, err := websitePricePair(bestPrice, groupRatio)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	price.From = valid > 1
-	return price, true, nil
+	resolutionPrices := make(map[string]*WebsitePricePair, len(byResolution))
+	for resolution, values := range byResolution {
+		best := values[0]
+		for _, value := range values[1:] {
+			if value < best {
+				best = value
+			}
+		}
+		pair, pairErr := websitePricePair(best, groupRatio)
+		if pairErr != nil {
+			return nil, nil, false, pairErr
+		}
+		pair.From = len(values) > 1
+		resolutionPrices[resolution] = pair
+	}
+	return price, resolutionPrices, true, nil
 }
 
 func featuredOrderOrMax(order *int) int {

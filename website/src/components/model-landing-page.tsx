@@ -3446,14 +3446,7 @@ function SeedancePricingSection(props: {
   note: string;
   t: (key: string, vars?: Record<string, string>) => string;
 }) {
-  const videoReferenceLabel = props.t("Video reference input");
-  const displayRows = props.rows.map((row, index) => ({
-    ...row,
-    // Keep the commercial card easy to scan. The exact request formula stays
-    // visible, while resolution names remain available in the generator form
-    // instead of dominating the pricing headline.
-    label: index === 2 ? videoReferenceLabel : props.t("Request price"),
-  }));
+  const displayRows = props.rows;
   const featured = displayRows[0];
   const duration = props.config.generator?.fields.find((field) => field.name === "duration");
   const productFacts = [
@@ -3502,9 +3495,9 @@ function SeedancePricingSection(props: {
               <tbody>
                 {displayRows.map((row, index) => (
                   <tr key={`${row.label}-${row.flatkey}`}>
-                    <td>{props.t(row.label)}</td>
+                    <td>{row.label}</td>
                     <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
-                    <td>{index === 2 ? props.t("Total input-video seconds") : props.t("Output duration")}</td>
+                    <td>{props.t("Output duration")}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4054,6 +4047,11 @@ function buildFlatkeyPriceRows(
     };
   }
 
+  if (config.generator?.kind === "video" && model.display_pricing?.second_by_resolution) {
+    const resolutionRows = buildVideoResolutionPriceRows(config, model, t);
+    if (resolutionRows.length > 0) return { note, rows: resolutionRows };
+  }
+
   const defaultDisplayPrice = resolveModelDisplayPrice(model, undefined, "plg", groupRatio);
   // Use the same default display dimension as the model directory. Some image
   // models are billed through the token path in the live catalog, so forcing
@@ -4136,6 +4134,31 @@ function buildFlatkeyPriceRows(
   }
 
   return buildLiveTokenPriceRows(model, groupRatio, note, t);
+}
+
+function buildVideoResolutionPriceRows(
+  config: ModelConfig,
+  model: PricingModel,
+  t: (key: string, vars?: Record<string, string>) => string,
+): FlatkeyPriceTableRow[] {
+  const entries = Object.entries(model.display_pricing?.second_by_resolution ?? {})
+    .map(([resolution, pair]) => {
+      const flatkey = pair.plg ?? pair.configured;
+      const official = pair.configured ?? flatkey;
+      if (flatkey == null || official == null || !Number.isFinite(flatkey) || !Number.isFinite(official)) return null;
+      const minimum = config.generator?.fields.find((field) => field.name === "duration")?.min;
+      const from = pair.from ? "from " : "";
+      const duration = minimum != null ? ` · ${minimum}s min` : "";
+      return {
+        label: `${resolution} · ${t("Price / second")}`,
+        flatkey: `${from}${formatDetailUsdPrice(flatkey)} ${t("/ second")}${duration}`,
+        official: `${from}${formatDetailUsdPrice(official)} ${t("/ second")}${duration}`,
+        flatkeyPercent: pricePercent(flatkey, official),
+        officialPercent: 100,
+      } satisfies FlatkeyPriceTableRow;
+    })
+    .filter((row): row is FlatkeyPriceTableRow => row != null);
+  return entries.sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
 }
 
 function buildLiveTokenPriceRows(

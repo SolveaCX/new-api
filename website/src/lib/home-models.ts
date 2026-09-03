@@ -34,6 +34,8 @@ export type HomePricedModel = {
   inputOfficial?: string;
   output?: string;
   outputOfficial?: string;
+  cache?: string;
+  cacheOfficial?: string;
   billing?: string;
   capabilities?: string[];
   endpointTypes?: string[];
@@ -151,13 +153,17 @@ export function buildRowsForModels(
       const officialDisplayPrice = displayPrice
         ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio)
         : null;
-      const inputPrice = resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio);
+      const billingUnit = modelBillingUnit(model, displayPrice?.unit);
+      const inputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio) : null;
       const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", effectiveGroupRatio) : null;
-      const outputPrice = resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio);
+      const outputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio) : null;
       const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", effectiveGroupRatio) : null;
+      const cachePrice = billingUnit === "token"
+        ? resolveModelDisplayPrice(model, "cache", "plg", effectiveGroupRatio)
+        : null;
+      const officialCachePrice = cachePrice ? resolveModelDisplayPrice(model, "cache", "configured", effectiveGroupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
       const discountedUsd = usesParsedDisplayPrice ? displayPrice.value : discountedPriceUsd(listed);
-      const billingUnit = modelBillingUnit(model, displayPrice?.unit);
       // Video models are billed per second rather than by input/output tokens.
       // Their display contract therefore has no `input`/`output` dimensions;
       // expose the billed per-second rate as our output price so the directory
@@ -183,6 +189,8 @@ export function buildRowsForModels(
         inputOfficial: officialInputPrice?.text,
         output: displayedOutputPrice?.text,
         outputOfficial: displayedOfficialOutputPrice?.text,
+        cache: cachePrice?.text,
+        cacheOfficial: officialCachePrice?.text,
         billingUnit,
         inputFilterUsd,
         outputFilterUsd,

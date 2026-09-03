@@ -75,6 +75,12 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.pricePrefix).toBeUndefined();
   });
 
+  test("exposes the cache price for token models", () => {
+    const [row] = buildRowsForModels([{ ...PLG_MODEL, cache_ratio: 0.25 }], VENDORS, PLG_GROUP_RATIO);
+    expect(row.cache).toBe("$0.09");
+    expect(row.cacheOfficial).toBe("$0.1");
+  });
+
   test("describes request rows with per-request unit metadata", () => {
     const requestModel: PricingModel = {
       model_name: "some-video-model",
@@ -120,6 +126,17 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.outputOfficial).toBe("$0.08");
     expect(row.inputFilterUsd).toBe(row.discountedUsd);
     expect(row.outputFilterUsd).toBe(row.discountedUsd);
+  });
+
+  test("does not expose token input pricing for per-second video rows", () => {
+    const [row] = buildRowsForModels([{
+      ...PLG_MODEL,
+      model_name: "seedance-2.5",
+      display_pricing: { billing_kind: "per_second", prices: { second: { configured: 0.14, plg: 0.084 } } },
+    }], VENDORS, PLG_GROUP_RATIO);
+    expect(row.input).toBeUndefined();
+    expect(row.output).toBe("$0.084");
+    expect(row.cache).toBeUndefined();
   });
 
   test("explicit per-second display pricing outranks token quota type for filter fields", () => {
