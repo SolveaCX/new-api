@@ -144,15 +144,6 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
     matches: (model) => Boolean(model.display_pricing?.prices?.input?.from || model.display_pricing?.prices?.output?.from),
   },
   {
-    slug: "distillable-models",
-    icon: "◌",
-    copy: copy({
-      en: { title: "Distillable AI Models", shortDescription: "Browse models that support distillation and fine-tuning workflows.", intro: "Explore models marked as distillable for compliant training datasets and specialized workflows.", criteria: "Models with the distillable capability in directory metadata.", empty: "Distillable models are being added to the catalog." },
-      zh: { title: "可蒸馏的 AI 模型", shortDescription: "浏览支持蒸馏和微调工作流的模型。", intro: "查找目录中标记为可蒸馏、适合训练和专项工作流的模型。", criteria: "模型目录元数据中标记为可蒸馏的模型。", empty: "可蒸馏模型正在加入目录。" },
-    }),
-    matches: (model) => model.directory_metadata?.distillable === true,
-  },
-  {
     slug: "roleplay-creative-writing",
     icon: "✎",
     copy: copy({

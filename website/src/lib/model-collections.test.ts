@@ -15,7 +15,6 @@ describe("model collections", () => {
       "/collections/tool-calling",
       "/collections/free-models",
       "/collections/discounted-models",
-      "/collections/distillable-models",
       "/collections/roleplay-creative-writing",
       "/collections/vision-models",
       "/collections/openclaw-models",

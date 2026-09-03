@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BarChart3, Check, Layers3, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import {
   getModelCollectionCopy,
@@ -18,7 +18,6 @@ const COLLECTION_DISPLAY_ORDER = [
   "free-models",
   "discounted-models",
   "tool-calling",
-  "distillable-models",
   "coding",
   "roleplay-creative-writing",
   "vision-models",
@@ -89,13 +88,14 @@ function formatContext(value: number | null | undefined): string | null {
   return String(value);
 }
 
-function CollectionCard(props: { collection: ModelCollectionDefinition; locale: Locale }) {
+function CollectionCard(props: { collection: ModelCollectionDefinition; locale: Locale; index: number }) {
   const copy = getModelCollectionCopy(props.collection, props.locale);
   const ui = getUiCopy(props.locale);
   return (
     <Link
       href={localizePath(`/collections/${props.collection.slug}`, props.locale)}
-      className="group flex min-h-[168px] flex-col rounded-lg border border-[#E8E5EF] bg-[#FBFBFD] p-5 transition hover:border-[#C9B8FF] hover:bg-white hover:shadow-[0_12px_30px_-24px_rgba(76,29,149,.35)] sm:p-6"
+      className="landing-animate-fade-up group flex min-h-[168px] flex-col rounded-lg border border-[#E8E5EF] bg-[#FBFBFD] p-5 opacity-0 transition hover:border-[#C9B8FF] hover:bg-white hover:shadow-[0_12px_30px_-24px_rgba(76,29,149,.35)] sm:p-6"
+      style={{ animationDelay: `${120 + props.index * 55}ms` }}
     >
       <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#16151B] sm:text-xl">{copy.title}</h2>
       <p className="mt-2 text-sm leading-6 text-[#65616F]">{copy.shortDescription}</p>
@@ -112,14 +112,14 @@ export function ModelCollectionsIndex(props: { locale: Locale }) {
       <section className="py-16 sm:py-24">
         <div className={`${shellClass} pt-8 pb-8 sm:pt-10 sm:pb-10`}>
           <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#7C3AED]">{ui.collections}</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.045em] text-[#16151B] sm:text-6xl">{ui.heroTitle}</h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#5F5A68]">{ui.heroDescription}</p>
+            <p className="landing-animate-fade-up text-sm font-semibold uppercase tracking-[0.18em] text-[#7C3AED] opacity-0">{ui.collections}</p>
+            <h1 className="landing-animate-fade-up mt-4 text-4xl font-semibold tracking-[-0.045em] text-[#16151B] opacity-0 sm:text-6xl" style={{ animationDelay: "60ms" }}>{ui.heroTitle}</h1>
+            <p className="landing-animate-fade-up mt-5 max-w-2xl text-lg leading-8 text-[#5F5A68] opacity-0" style={{ animationDelay: "100ms" }}>{ui.heroDescription}</p>
           </div>
           <div className="mt-12 grid gap-4 sm:grid-cols-2">
             {[...MODEL_COLLECTIONS]
               .sort((a, b) => COLLECTION_DISPLAY_ORDER.indexOf(a.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]) - COLLECTION_DISPLAY_ORDER.indexOf(b.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]))
-              .map((collection) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} />)}
+              .map((collection, index) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} index={index} />)}
           </div>
         </div>
       </section>
@@ -181,18 +181,11 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
 
       <section className="bg-white py-14 sm:py-20">
         <div className="model-container">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div>
+          <div>
               <div className="mb-8 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{ui.featured}</h2></div>
               <div className="rounded-2xl border border-[#E8E5EF] bg-white p-6 sm:p-8">
                 {cards.length ? cards.map((model) => <ModelRow key={model.href} model={model} locale={props.locale} usage={usageByName.get(model.rawName)} />) : <p className="text-sm text-[#777180]">{copy.empty}</p>}
               </div>
-            </div>
-            <aside className="h-fit rounded-2xl border border-[#E8E5EF] bg-[#FBFAFE] p-6">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#3C3548]"><Layers3 className="size-4 text-[#7C3AED]" />{ui.criteria}</div>
-              <p className="mt-4 text-sm leading-6 text-[#65616F]">{copy.criteria}</p>
-              <div className="mt-6 grid gap-3 text-sm text-[#4C4657]"><div className="flex gap-2"><Check className="mt-0.5 size-4 shrink-0 text-[#7C3AED]" />{ui.capabilities}</div><div className="flex gap-2"><BarChart3 className="mt-0.5 size-4 shrink-0 text-[#7C3AED]" />{ui.signals}</div></div>
-            </aside>
           </div>
         </div>
       </section>
