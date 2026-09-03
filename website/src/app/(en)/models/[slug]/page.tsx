@@ -7,6 +7,7 @@ import {
   getLocalizedModelLandingConfig,
   buildModelLandingMetadata,
   modelDetailTitle,
+  limitSeoDescription,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { resolvePublicModel } from "@/lib/model-public";
@@ -28,11 +29,11 @@ export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (params.slug === "gpt-api") {
     const input = getSkagLandingMetadataInput("gpt-api");
-    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), description: limitSeoDescription(input.description), absoluteTitle: true });
   }
   if (params.slug === "claude-api") {
     const input = getSkagLandingMetadataInput("claude-api");
-    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), description: limitSeoDescription(input.description), absoluteTitle: true });
   }
   const config = getModelLandingConfig(params.slug);
   const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
@@ -59,7 +60,7 @@ export async function generateMetadata(props: Props) {
     }
     return buildMetadata({
       title: modelDetailTitle(config.seoByLocale?.en?.title ?? config.seo.title),
-      description: "Current Flatkey pricing and availability are shown from the live model catalog.",
+      description: limitSeoDescription("Current Flatkey pricing and availability are shown from the live model catalog."),
       pathname: `/models/${config.slug}`,
       absoluteTitle: true,
     });

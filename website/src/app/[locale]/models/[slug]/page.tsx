@@ -46,11 +46,11 @@ export async function generateMetadata(props: Props) {
   if (!isLocale(params.locale)) return {};
   if (params.slug === "gpt-api") {
     const input = getSkagLandingMetadataInput("gpt-api", params.locale);
-    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), description: limitSeoDescription(input.description), absoluteTitle: true });
   }
   if (params.slug === "claude-api") {
     const input = getSkagLandingMetadataInput("claude-api", params.locale);
-    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), description: limitSeoDescription(input.description), absoluteTitle: true });
   }
   const config = getModelLandingConfig(params.slug);
   const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
@@ -79,7 +79,7 @@ export async function generateMetadata(props: Props) {
     const localizedSeo = getLocalizedModelLandingSeo(config, params.locale);
     return buildMetadata({
       title: modelDetailTitle(localizedSeo.title),
-      description: LIVE_PRICING_UNAVAILABLE_DESCRIPTION[params.locale] ?? LIVE_PRICING_UNAVAILABLE_DESCRIPTION.zh,
+      description: limitSeoDescription(LIVE_PRICING_UNAVAILABLE_DESCRIPTION[params.locale] ?? LIVE_PRICING_UNAVAILABLE_DESCRIPTION.zh),
       pathname: `/models/${config.slug}`,
       locale: params.locale,
       absoluteTitle: true,

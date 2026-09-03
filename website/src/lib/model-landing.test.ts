@@ -16,6 +16,8 @@ import {
   getModelLandingConfigForModel,
   getModelLandingConfigForPricingModel,
   buildModelLandingMetadata,
+  limitSeoDescription,
+  limitSeoTitle,
   getModelLandingPathnames,
   getPriorityModelLandingPathnames,
   getLocalizedModelLandingConfig,
@@ -72,7 +74,8 @@ describe("model landing configuration", () => {
       expect(metadata.description).toContain("Live Provider");
       expect(metadata.description).toContain("$1.25");
       expect(metadata.description).toContain("128K-token");
-      expect(metadata.description.length).toBeLessThanOrEqual(160);
+      expect(metadata.title.length).toBeLessThanOrEqual(60);
+      expect(metadata.description.length).toBeLessThanOrEqual(155);
     }
   });
 
@@ -98,7 +101,8 @@ describe("model landing configuration", () => {
     }, { locale: "pt" });
     expect(metadata.description).toContain("modelo de vídeo");
     expect(metadata.description).toContain("Provedor ao Vivo");
-    expect(metadata.description.length).toBeLessThanOrEqual(160);
+    expect(metadata.title.length).toBeLessThanOrEqual(60);
+    expect(metadata.description.length).toBeLessThanOrEqual(155);
   });
 
   test("uses the live API request price for Seedance metadata", () => {
@@ -169,7 +173,8 @@ describe("model landing configuration", () => {
       const metadata = buildModelLandingMetadata(model, { locale });
       expect(metadata.title).toContain(expectedTitleTerms[locale]);
       expect(metadata.description).toContain("Provider Global");
-      expect(metadata.description.length).toBeLessThanOrEqual(160);
+      expect(metadata.title.length).toBeLessThanOrEqual(60);
+      expect(metadata.description.length).toBeLessThanOrEqual(155);
       if (locale !== "en") expect(metadata.description).not.toContain("via Flatkey; Provider Global model");
     }
   });
@@ -194,7 +199,8 @@ describe("model landing configuration", () => {
 
     for (const locale of LOCALES) {
       const metadata = buildModelLandingMetadata(model, { locale });
-      expect(metadata.description.length).toBeLessThanOrEqual(160);
+      expect(metadata.title.length).toBeLessThanOrEqual(60);
+      expect(metadata.description.length).toBeLessThanOrEqual(155);
       expect(metadata.description).toContain("Anthropic");
       expect(metadata.description).toContain("$1.25");
       expect(metadata.description).toContain("200K");
@@ -213,11 +219,18 @@ describe("model landing configuration", () => {
       directory_metadata: { context_tokens: 200000, modalities: ["text"] },
     });
 
-    expect(metadata.title).toBe("claude-fable-5.1 API (chat/completions), pricing & FAQs | Flatkey");
+    expect(metadata.title).toBe("claude-fable-5.1 API, pricing & FAQs | Flatkey");
+    expect(metadata.title.length).toBeLessThanOrEqual(60);
     expect(metadata.title).not.toContain("flatkey.ai");
     expect(metadata.description).toContain("Priced at");
     expect(metadata.description).toContain("200K-token context window");
-    expect(metadata.description).toContain("older models");
+    expect(metadata.description).toContain("Older models");
+  });
+
+  test("enforces strict SERP title and description limits", () => {
+    expect(limitSeoTitle("A very long model detail title with pricing and frequently asked questions | Flatkey").length).toBeLessThanOrEqual(60);
+    expect(limitSeoTitle("A very long model detail title | Flatkey").endsWith("| Flatkey")).toBe(true);
+    expect(limitSeoDescription("A ".repeat(120)).length).toBeLessThanOrEqual(155);
   });
 
   test("defines paid-search landing pages for DeepSeek, Qwen, and GLM APIs", () => {
