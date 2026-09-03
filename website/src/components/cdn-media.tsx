@@ -56,6 +56,7 @@ export const CdnFallbackVideo = forwardRef<HTMLVideoElement, CdnFallbackVideoPro
   return (
     <video
       {...videoProps}
+      muted
       ref={ref}
       src={source}
       onError={(event) => {

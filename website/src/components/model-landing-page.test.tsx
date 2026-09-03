@@ -171,6 +171,7 @@ describe("ModelLandingPage", () => {
     );
 
     expect(html).toContain("aria-label=\"Breadcrumb\"");
+    expect(html).toContain('href="/">Flatkey</a>');
     expect(html).toContain("href=\"/models\"");
     expect(html).toContain("All models");
     expect(html).toContain("Seedance 2.0");

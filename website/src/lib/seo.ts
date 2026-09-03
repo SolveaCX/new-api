@@ -8,6 +8,8 @@ export const HOMEPAGE_SOCIAL_IMAGE = `${SITE_ORIGIN}/assets/og-image.png`;
 
 export type SeoInput = {
   title: string;
+  /** Keep a page-specific brand suffix from being processed by the root title template. */
+  absoluteTitle?: boolean;
   description: string;
   pathname: string;
   locale?: Locale;
@@ -31,7 +33,7 @@ export function buildMetadata(input: SeoInput): Metadata {
   const socialImage = input.image ?? DEFAULT_SOCIAL_IMAGE;
 
   return {
-    title,
+    title: input.absoluteTitle ? { absolute: title } : title,
     description: input.description,
     metadataBase: new URL(SITE_ORIGIN),
     alternates: {
