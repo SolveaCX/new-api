@@ -280,6 +280,42 @@ describe("ModelLandingPage", () => {
     expect(schema).not.toContain('"offers"');
   });
 
+  test("shows Seedance resolution prices with the minimum duration", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={SEEDANCE_25_CONFIG}
+        locale="zh"
+        liveModels={[{
+          model_name: "seedance-2.5",
+          vendor_name: "ByteDance",
+          quota_type: 1,
+          model_ratio: 0,
+          completion_ratio: 0,
+          model_price: 0.14,
+          enable_groups: ["plg"],
+        }]}
+        groupRatio={{ plg: 0.6 }}
+        allModels={[]}
+      />,
+    );
+    expect(html).toContain("480p");
+    expect(html).toContain("720p");
+    expect(html).toContain("4s min");
+    // The detail table renders Flatkey's visible-group rates. The audited
+    // official Seedance tiers ($0.140/$0.314) are discounted by the 0.6
+    // visible-group ratio in this fixture.
+    expect(html).toContain("$0.084");
+    expect(html).toContain("$0.188");
+    const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('class="model-anchor-bar"'));
+    expect(heroStats).toContain('class="model-stat-label">官方价格</div>');
+    expect(heroStats).toContain('class="model-stat-label">Flatkey 价格</div>');
+    expect(heroStats).toContain("model-hero-price-value-reference");
+    expect(heroStats).toContain("<s>$0.140</s>");
+    expect(heroStats).toContain(" / 秒 · 4s min</span>");
+    expect(heroStats).toContain("$0.084 / 秒 · 4s min");
+    expect(heroStats).not.toContain("因分辨率和视频输入而异");
+  });
+
   test("renders back and playground actions on localized media model landings", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={MINIMAX_H3_CONFIG} locale="zh" liveModels={[]} />
@@ -593,7 +629,7 @@ describe("ModelLandingPage", () => {
       .toBeLessThan(html.indexOf('<div class="model-stat-value">$0.1</div>'));
   });
 
-  test("places the official hero price before the Flatkey price", () => {
+  test("shows the official video price crossed out before the Flatkey price", () => {
     const model: PricingModel = {
       model_name: "veo-3.1-generate-preview",
       vendor_name: "Google",
@@ -617,8 +653,12 @@ describe("ModelLandingPage", () => {
     );
     const heroStats = html.slice(html.indexOf('class="model-hero-stats"'), html.indexOf('class="model-anchor-bar"'));
 
-    expect(heroStats).toContain("$0.320 / request");
-    expect(heroStats).toContain("$0.400 / request");
+    expect(heroStats).toContain('class="model-stat-label">Reference price</div>');
+    expect(heroStats).toContain('class="model-stat-label">Flatkey price</div>');
+    expect(heroStats).toContain('model-hero-price-value model-hero-price-value-reference"><s>$0.400</s>');
+    expect(heroStats).toContain('class="model-hero-price-suffix"> / request</span>');
+    expect(heroStats).toContain('class="model-hero-price-value">$0.320 / request</span>');
+    expect(heroStats.indexOf("$0.400 / request")).toBeLessThan(heroStats.indexOf("$0.320 / request"));
   });
 
   test("keeps image model hero prices aligned with the model directory", () => {
@@ -641,10 +681,10 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[imageModel]} allModels={[imageModel]} />
     );
 
-    expect(html).toContain("Input /M");
-    expect(html).toContain("$4");
-    expect(html).toContain("$24");
-    expect(html).not.toContain("$6.4 / image");
+    expect(html).toContain("Price / image");
+    expect(html).toContain("$6.400 / image");
+    expect(html).toContain("$8.000 / image");
+    expect(html).not.toContain("Input /M");
   });
 
   test("uses previous-generation capability comparison and type-specific media pricing", () => {
