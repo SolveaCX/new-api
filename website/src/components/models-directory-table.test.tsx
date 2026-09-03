@@ -223,7 +223,7 @@ describe("ModelsDirectoryTable", () => {
 
     expect(html).toContain("touch-pan-x overflow-x-auto overscroll-x-contain");
     expect(html).toContain("w-max min-w-full table-auto border-collapse text-sm");
-    expect(html).toContain("sticky left-0 z-10 min-w-[320px]");
+    expect(html).toContain("sticky left-0 z-10 w-[clamp(220px,24vw,280px)] min-w-[220px] max-w-[280px]");
     expect(html).toContain("min-w-[132px] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal");
     expect(html).not.toContain("hidden w-[11%]");
   });
@@ -261,7 +261,7 @@ describe("ModelsDirectoryTable", () => {
     expect(newReleaseIndex).toBeGreaterThan(limitedIndex);
     expect(modelCell).not.toContain("TOP");
     expect(modelCell).toContain('title="glm-5.3-flash"');
-    expect(modelCell).toContain("shrink-0 whitespace-nowrap font-mono");
+    expect(modelCell).toContain("min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono");
     expect(modelCell).not.toContain("truncate font-mono");
     expect(modelCell).toContain("text-muted-foreground/70 block truncate text-[11px]");
     expect(modelCell).toContain("mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5");
