@@ -22,6 +22,30 @@ type HasImage interface {
 	HasImage() bool
 }
 
+// NormalizeClaudeModelName canonicalizes a Claude model identifier for
+// capability checks. Channel aliases may include a provider path, revision
+// tag, or the synthetic -thinking suffix; those decorations do not change
+// the underlying model family.
+func NormalizeClaudeModelName(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if slash := strings.LastIndex(model, "/"); slash >= 0 {
+		model = model[slash+1:]
+	}
+	if colon := strings.IndexByte(model, ':'); colon >= 0 {
+		model = model[:colon]
+	}
+	return strings.TrimSuffix(model, "-thinking")
+}
+
+// IsClaudeFable5Model reports whether a normalized Claude model belongs to
+// the Fable 5 family, including versioned siblings such as claude-fable-5.1.
+// Keeping this predicate in relay/common ensures request validation and
+// response streaming apply identical model boundaries without a package cycle.
+func IsClaudeFable5Model(model string) bool {
+	normalized := NormalizeClaudeModelName(model)
+	return normalized == "claude-fable-5" || strings.HasPrefix(normalized, "claude-fable-5.")
+}
+
 func GetFullRequestURL(baseURL string, requestURL string, channelType int) string {
 	fullRequestURL := fmt.Sprintf("%s%s", baseURL, requestURL)
 

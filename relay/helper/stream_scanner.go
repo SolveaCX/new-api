@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -58,32 +59,91 @@ func copyCodexSSEHeaders(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 }
 
+// StreamDataGate runs before a data event is handed to the provider handler.
+// It returns ready=false while the caller wants the event held back, ready=true
+// when the held events may be replayed, and a non-nil error when the stream
+// must terminate before anything is written downstream.
+type StreamDataGate func(data string) (ready bool, err error)
+
+// StreamDataGateEnd is called after the upstream stream reaches a natural
+// [DONE] or EOF boundary while the gate is still closed. It lets a gated
+// protocol decide whether buffered events are safe to replay at end-of-stream
+// (for example, a short but otherwise valid stream without [DONE]).
+type StreamDataGateEnd func() (ready bool, err error)
+
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
+	_ = streamScannerHandler(c, resp, info, nil, nil, dataHandler)
+}
+
+// StreamScannerHandlerWithDataGate is the opt-in variant for protocols that
+// need to validate an initial event before committing SSE headers. The normal
+// StreamScannerHandler path is unchanged. Events held by the gate are replayed
+// in order once it returns ready=true; timeout and ping lifecycles still start
+// immediately when this function is called.
+func StreamScannerHandlerWithDataGate(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, gate StreamDataGate, dataHandler func(data string, sr *StreamResult)) error {
+	return streamScannerHandler(c, resp, info, gate, nil, dataHandler)
+}
+
+// StreamScannerHandlerWithDataGateAndEnd is the gated variant for protocols
+// that need an explicit end-of-stream decision before replaying buffered
+// events. StreamScannerHandlerWithDataGate remains available for callers that
+// do not need end finalization.
+func StreamScannerHandlerWithDataGateAndEnd(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, gate StreamDataGate, gateEnd StreamDataGateEnd, dataHandler func(data string, sr *StreamResult)) error {
+	return streamScannerHandler(c, resp, info, gate, gateEnd, dataHandler)
+}
+
+type streamDataEvent struct {
+	data string
+	end  bool
+}
+
+func streamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, gate StreamDataGate, gateEnd StreamDataGateEnd, dataHandler func(data string, sr *StreamResult)) (resultErr error) {
 
 	if resp == nil || dataHandler == nil {
-		return
+		return nil
 	}
 
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
 
-	// 确保响应体总是被关闭
-	defer func() {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-	}()
+	// Ensure the upstream body is closed exactly once. A gated preflight error
+	// closes it immediately to interrupt a scanner blocked in Read; the defer
+	// below remains the fallback for every other exit path.
+	var bodyCloseOnce sync.Once
+	closeBody := func() {
+		bodyCloseOnce.Do(func() {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
+	defer closeBody()
 
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
 
 	var (
-		stopChan   = make(chan bool, 3) // 增加缓冲区避免阻塞
-		scanner    = NewStreamScanner(resp.Body)
-		ticker     = time.NewTicker(streamingTimeout)
-		pingTicker *time.Ticker
-		writeMutex sync.Mutex     // Mutex to protect concurrent writes
-		wg         sync.WaitGroup // 用于等待所有 goroutine 退出
+		stopChan        = make(chan bool, 3) // 增加缓冲区避免阻塞
+		scanner         = NewStreamScanner(resp.Body)
+		ticker          = time.NewTicker(streamingTimeout)
+		pingTicker      *time.Ticker
+		writeMutex      sync.Mutex     // Mutex to protect concurrent writes
+		wg              sync.WaitGroup // 用于等待所有 goroutine 退出
+		streamStart     = make(chan struct{})
+		streamStartOnce sync.Once
+		gateAccepted    atomic.Bool
 	)
+	startStream := func() {
+		SetEventStreamHeaders(c)
+	}
+	releaseStream := func() {
+		streamStartOnce.Do(func() {
+			close(streamStart)
+		})
+	}
+	var gateErrorChan chan error
+	if gate != nil {
+		gateErrorChan = make(chan error, 1)
+	}
 
 	// First-response watchdog: catches "alive but silent" upstream where
 	// keep-alive comments/blank lines keep the per-chunk ticker reset
@@ -110,6 +170,18 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				}
 			}
 		})
+	}
+	openGate := func() {
+		if gate == nil || !gateAccepted.CompareAndSwap(false, true) {
+			return
+		}
+		// The scanner can receive several prelude events before the data handler
+		// opens the gate. Treat the gate transition as the first accepted response
+		// and start a fresh idle window from that point.
+		info.SetFirstResponseTime()
+		stopFRTTimer()
+		ticker.Reset(streamingTimeout)
+		startStream()
 	}
 
 	generalSettings := operation_setting.GetGeneralSetting()
@@ -152,16 +224,31 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		case <-time.After(5 * time.Second):
 			logger.LogError(c, "timeout waiting for goroutines to exit")
 		}
+		if gateErrorChan != nil {
+			select {
+			case resultErr = <-gateErrorChan:
+			default:
+			}
+		}
 
 		close(stopChan)
 	}()
 
 	scanner.Split(bufio.ScanLines)
 	copyCodexSSEHeaders(c, resp, info)
-	SetEventStreamHeaders(c)
+	if gate == nil {
+		startStream()
+		releaseStream()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer func() {
+		if resultErr != nil {
+			cancel()
+			closeBody()
+		}
+	}()
 
 	ctx = context.WithValue(ctx, "stop_chan", stopChan)
 
@@ -178,6 +265,19 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				}
 				logger.LogDebug(c, "ping goroutine exited")
 			}()
+
+			// A gated stream must not let a keep-alive commit the response before
+			// the first upstream event has been validated. The regular path has
+			// streamStart closed already, so its behavior is unchanged.
+			select {
+			case <-streamStart:
+			case <-ctx.Done():
+				return
+			case <-stopChan:
+				return
+			case <-c.Request.Context().Done():
+				return
+			}
 
 			// 添加超时保护，防止 goroutine 无限运行
 			maxPingDuration := 30 * time.Minute // 最大 ping 持续时间
@@ -227,7 +327,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		})
 	}
 
-	dataChan := make(chan string, 10)
+	dataChan := make(chan streamDataEvent, 10)
 
 	wg.Add(1)
 	gopool.Go(func() {
@@ -240,12 +340,70 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			common.SafeSendBool(stopChan, true)
 		}()
 		sr := newStreamResult(info.StreamStatus)
-		for data := range dataChan {
+		pending := make([]string, 0, 4)
+		gateOpen := gate == nil
+		dispatch := func(data string) bool {
 			sr.reset()
 			writeMutex.Lock()
 			dataHandler(data, sr)
 			writeMutex.Unlock()
-			if sr.IsStopped() {
+			return sr.IsStopped()
+		}
+		for event := range dataChan {
+			if event.end {
+				if !gateOpen && gateEnd != nil {
+					ready, gateErr := gateEnd()
+					if gateErr != nil {
+						closeBody()
+						if gateErrorChan != nil {
+							gateErrorChan <- gateErr
+						}
+						sr.reset()
+						sr.Stop(gateErr)
+						return
+					}
+					if ready {
+						gateOpen = true
+						openGate()
+						for _, pendingData := range pending {
+							if dispatch(pendingData) {
+								return
+							}
+						}
+						pending = nil
+						releaseStream()
+					}
+				}
+				return
+			}
+			data := event.data
+			if !gateOpen {
+				ready, gateErr := gate(data)
+				if gateErr != nil {
+					closeBody()
+					if gateErrorChan != nil {
+						gateErrorChan <- gateErr
+					}
+					sr.reset()
+					sr.Stop(gateErr)
+					return
+				}
+				pending = append(pending, data)
+				if !ready {
+					continue
+				}
+				gateOpen = true
+				openGate()
+				for _, pendingData := range pending {
+					if dispatch(pendingData) {
+						return
+					}
+				}
+				pending = nil
+				releaseStream()
+				continue
+			}
+			if dispatch(data) {
 				return
 			}
 		}
@@ -294,13 +452,15 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
-				info.SetFirstResponseTime()
-				// First real data event arrived; stand down the FRT watchdog.
-				stopFRTTimer()
+				if gate == nil || gateAccepted.Load() {
+					info.SetFirstResponseTime()
+					// First accepted data event arrived; stand down the FRT watchdog.
+					stopFRTTimer()
+				}
 				info.ReceivedResponseCount++
 
 				select {
-				case dataChan <- data:
+				case dataChan <- streamDataEvent{data: data}:
 				case <-ctx.Done():
 					return
 				case <-stopChan:
@@ -309,6 +469,13 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			} else {
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 				logger.LogDebug(c, "received [DONE], stopping scanner")
+				if gate != nil && !gateAccepted.Load() {
+					select {
+					case dataChan <- streamDataEvent{end: true}:
+					case <-ctx.Done():
+					case <-stopChan:
+					}
+				}
 				return
 			}
 		}
@@ -320,10 +487,21 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			}
 		}
 		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+		if gate != nil && !gateAccepted.Load() {
+			select {
+			case dataChan <- streamDataEvent{end: true}:
+			case <-ctx.Done():
+			case <-stopChan:
+			}
+		}
 	})
 
 	// 主循环等待完成或超时
 	select {
+	case gateErr := <-gateErrorChan:
+		if gateErr != nil {
+			resultErr = gateErr
+		}
 	case <-ticker.C:
 		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, nil)
 	case <-frtTimerC:
@@ -347,4 +525,5 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	} else {
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}
+	return resultErr
 }

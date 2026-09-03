@@ -394,6 +394,13 @@ func TestValidateResolvedClaudeThinking(t *testing.T) {
 			wantStatus:    http.StatusBadRequest,
 		},
 		{
+			name:          "fable sibling variant enabled",
+			upstreamModel: "anthropic/claude-fable-5.1",
+			requestModel:  "fable-variant-alias",
+			thinkingType:  "enabled",
+			wantStatus:    http.StatusBadRequest,
+		},
+		{
 			name:          "fable adaptive remains supported",
 			upstreamModel: "claude-fable-5",
 			requestModel:  "claude-fable-5",

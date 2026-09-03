@@ -2,6 +2,7 @@ package helper
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,6 +68,48 @@ func (s *slowReader) Read(p []byte) (int, error) {
 	return s.r.Read(p)
 }
 
+// blockingReadCloser returns one complete SSE line and then blocks until the
+// body is closed. It makes a gated preflight failure observable: the scanner
+// must interrupt the blocked read instead of waiting for the upstream to end.
+type blockingReadCloser struct {
+	first      []byte
+	closed     chan struct{}
+	closeOnce  sync.Once
+	closeCount atomic.Int64
+	started    chan struct{}
+}
+
+func newBlockingReadCloser(first string) *blockingReadCloser {
+	return &blockingReadCloser{
+		first:   []byte(first),
+		closed:  make(chan struct{}),
+		started: make(chan struct{}),
+	}
+}
+
+func (r *blockingReadCloser) Read(p []byte) (int, error) {
+	if len(r.first) > 0 {
+		n := copy(p, r.first)
+		r.first = r.first[n:]
+		select {
+		case <-r.started:
+		default:
+			close(r.started)
+		}
+		return n, nil
+	}
+	<-r.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (r *blockingReadCloser) Close() error {
+	r.closeOnce.Do(func() {
+		r.closeCount.Add(1)
+		close(r.closed)
+	})
+	return nil
+}
+
 // ---------- Basic correctness ----------
 
 func TestStreamScannerHandler_NilInputs(t *testing.T) {
@@ -80,6 +123,135 @@ func TestStreamScannerHandler_NilInputs(t *testing.T) {
 
 	StreamScannerHandler(c, nil, info, func(data string, sr *StreamResult) {})
 	StreamScannerHandler(c, &http.Response{Body: io.NopCloser(strings.NewReader(""))}, info, nil)
+}
+
+func TestStreamScannerHandlerWithDataGatePropagatesErrorBeforeDispatch(t *testing.T) {
+	c, resp, info := setupStreamTest(t, strings.NewReader("data: first\n\n"))
+	wantErr := errors.New("preflight rejected")
+	var dispatched atomic.Int64
+
+	gotErr := StreamScannerHandlerWithDataGate(c, resp, info,
+		func(data string) (bool, error) {
+			return false, wantErr
+		},
+		func(data string, sr *StreamResult) {
+			dispatched.Add(1)
+		})
+
+	require.ErrorIs(t, gotErr, wantErr)
+	assert.Equal(t, int64(0), dispatched.Load(), "gated events must not reach the handler after preflight failure")
+	assert.False(t, c.Writer.Written(), "preflight failure must not commit the downstream response")
+}
+
+func TestStreamScannerHandlerWithDataGateCancelsBlockedScannerOnError(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	body := newBlockingReadCloser("data: first\n\n")
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	info := &relaycommon.RelayInfo{
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}
+	resp := &http.Response{Body: body}
+	wantErr := errors.New("preflight rejected while upstream is blocked")
+	var dispatched atomic.Int64
+
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		done <- StreamScannerHandlerWithDataGate(c, resp, info,
+			func(data string) (bool, error) {
+				return false, wantErr
+			},
+			func(data string, sr *StreamResult) {
+				dispatched.Add(1)
+			})
+	}()
+
+	select {
+	case <-body.started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("scanner did not start reading the upstream body")
+	}
+
+	select {
+	case gotErr := <-done:
+		elapsed := time.Since(start)
+		require.ErrorIs(t, gotErr, wantErr)
+		assert.Less(t, elapsed, 2*time.Second, "gate failure should cancel a blocked scanner promptly")
+	case <-time.After(3 * time.Second):
+		// Unblock the intentionally stuck reader so a failing implementation does
+		// not leak a goroutine into the rest of the package test process.
+		_ = body.Close()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+		t.Fatal("gated stream did not return after preflight failure")
+	}
+
+	assert.Equal(t, int64(1), body.closeCount.Load(), "upstream body should be closed exactly once")
+	assert.Equal(t, int64(0), dispatched.Load(), "gated events must not reach the handler after preflight failure")
+	assert.False(t, recorder.Flushed, "preflight failure must not flush a downstream SSE response")
+	assert.False(t, c.Writer.Written(), "preflight failure must not commit the downstream response")
+}
+
+func TestStreamScannerHandlerWithDataGateReplaysPendingEventsInOrder(t *testing.T) {
+	body := "data: first\n\ndata: second\n\ndata: release\n\n"
+	c, resp, info := setupStreamTest(t, strings.NewReader(body))
+	var received []string
+
+	gotErr := StreamScannerHandlerWithDataGate(c, resp, info,
+		func(data string) (bool, error) {
+			return data == "release", nil
+		},
+		func(data string, sr *StreamResult) {
+			received = append(received, data)
+			_ = StringData(c, data)
+		})
+
+	require.NoError(t, gotErr)
+	require.Equal(t, []string{"first", "second", "release"}, received)
+	assert.True(t, c.Writer.Written(), "accepted gated data should start the event stream")
+}
+
+func TestStreamScannerHandlerWithDataGateEndReleasesPendingEventsAtNaturalEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "eof", body: "data: short\n\n"},
+		{name: "done", body: "data: short\n\ndata: [DONE]\n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, resp, info := setupStreamTest(t, strings.NewReader(tc.body))
+			var endCalls atomic.Int64
+			var received []string
+
+			gotErr := StreamScannerHandlerWithDataGateAndEnd(c, resp, info,
+				func(data string) (bool, error) {
+					return false, nil
+				},
+				func() (bool, error) {
+					endCalls.Add(1)
+					return true, nil
+				},
+				func(data string, sr *StreamResult) {
+					received = append(received, data)
+					_ = StringData(c, data)
+				})
+
+			require.NoError(t, gotErr)
+			require.Equal(t, int64(1), endCalls.Load())
+			assert.Equal(t, []string{"short"}, received)
+			assert.True(t, c.Writer.Written(), "end-approved pending data should start the event stream")
+		})
+	}
 }
 
 func TestStreamScannerHandlerCopiesCodexResponseHeadersOnlyForCodex(t *testing.T) {

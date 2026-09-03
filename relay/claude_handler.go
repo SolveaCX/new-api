@@ -293,7 +293,7 @@ func validateResolvedClaudeThinking(info *relaycommon.RelayInfo, request *dto.Cl
 	if model == "" {
 		model = normalizeResolvedClaudeModelName(info.OriginModelName)
 	}
-	if model != "claude-fable-5" {
+	if !relaycommon.IsClaudeFable5Model(model) {
 		return nil
 	}
 
@@ -316,12 +316,5 @@ func validateResolvedClaudeThinking(info *relaycommon.RelayInfo, request *dto.Cl
 }
 
 func normalizeResolvedClaudeModelName(model string) string {
-	model = strings.ToLower(strings.TrimSpace(model))
-	if slash := strings.LastIndex(model, "/"); slash >= 0 {
-		model = model[slash+1:]
-	}
-	if colon := strings.IndexByte(model, ':'); colon >= 0 {
-		model = model[:colon]
-	}
-	return strings.TrimSuffix(model, "-thinking")
+	return relaycommon.NormalizeClaudeModelName(model)
 }
