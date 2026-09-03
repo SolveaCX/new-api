@@ -1522,6 +1522,61 @@ html:has(.model-prototype) {
   white-space: nowrap;
 }
 
+.model-prototype .model-hero-price-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  width: 100%;
+  min-width: 0;
+  line-height: 22px;
+}
+
+.model-prototype .model-hero-price-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.model-prototype .model-hero-price-resolution {
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: var(--model-muted);
+  background: #f0edf5;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.model-prototype .model-hero-price-value {
+  color: var(--model-ink);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 22px;
+}
+
+.model-prototype .model-hero-price-value-reference {
+  color: var(--model-quiet);
+  font-weight: 500;
+}
+
+.model-prototype .model-hero-price-value-reference s {
+  text-decoration-thickness: 1px;
+}
+
+.model-prototype .model-hero-price-suffix {
+  color: var(--model-quiet);
+}
+
+.model-prototype .model-stat-value:has(.model-hero-price-breakdown) {
+  height: auto;
+  min-height: 27px;
+  overflow: visible;
+  white-space: normal;
+}
+
 .model-prototype .model-stat-reference {
   width: 100%;
   overflow: hidden;
