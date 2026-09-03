@@ -139,11 +139,53 @@ func indexComma(s string) int {
 	return -1
 }
 
+// GPT Image prices are charged per generated image and vary by quality and
+// output size. The lowest tier is the base used by Flatkey's fixed-price
+// configuration; other tiers are represented as request-level multipliers.
+const gptImageLowestPrice = 0.011
+
+var gptImagePrices = map[string]map[string]float64{
+	"low": {
+		"1024x1024": 0.011,
+		"1024x1536": 0.016,
+		"1536x1024": 0.016,
+	},
+	"medium": {
+		"1024x1024": 0.042,
+		"1024x1536": 0.063,
+		"1536x1024": 0.063,
+	},
+	"high": {
+		"1024x1024": 0.167,
+		"1024x1536": 0.25,
+		"1536x1024": 0.25,
+	},
+}
+
+func gptImagePriceRatio(quality, size string) float64 {
+	quality = strings.ToLower(strings.TrimSpace(quality))
+	size = strings.ToLower(strings.TrimSpace(size))
+	if quality == "" || quality == "auto" {
+		quality = "low"
+	}
+	if size == "" || size == "auto" {
+		size = "1024x1024"
+	}
+	if qualityPrices, ok := gptImagePrices[quality]; ok {
+		if price, ok := qualityPrices[size]; ok {
+			return price / gptImageLowestPrice
+		}
+	}
+	return 1
+}
+
 func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	var sizeRatio = 1.0
 	var qualityRatio = 1.0
 
-	if strings.HasPrefix(i.Model, "dall-e") {
+	if strings.HasPrefix(i.Model, "gpt-image-") {
+		sizeRatio = gptImagePriceRatio(i.Quality, i.Size)
+	} else if strings.HasPrefix(i.Model, "dall-e") {
 		// Size
 		if i.Size == "256x256" {
 			sizeRatio = 0.4
