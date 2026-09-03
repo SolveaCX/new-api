@@ -10,7 +10,25 @@ import {
 } from "@/lib/model-collections";
 import { localizePath, type Locale } from "@/lib/locales";
 import { displayTokens, type RankingsData } from "@/lib/rankings-live";
-import { type PricingData } from "@/lib/pricing";
+import {
+  getPricingData,
+  WEBSITE_PUBLIC_PRICING_GROUP,
+  type PricingData,
+} from "@/lib/pricing";
+import {
+  AGE_BANDS,
+  categoriesForModels,
+  CONTEXT_BUCKETS,
+  formatContextTokens,
+  MODALITIES,
+  PRICE_BANDS,
+  providersForModels,
+  seriesForModels,
+  vendorsForModels,
+} from "@/lib/model-directory-meta";
+import { AGE_BAND_LABELS, categoryLabel, getDirectoryCopy, MODALITY_LABELS } from "@/lib/model-directory-copy";
+import { directoryHref } from "@/lib/model-directory-url";
+import { EMPTY_DIRECTORY_FILTERS, type DirectoryFilters, type DirectoryFilterKey } from "@/lib/model-directory-filters";
 
 const shellClass = "fk-site-frame";
 
@@ -32,6 +50,10 @@ const uiCopy = {
     capabilities: "Live catalog capabilities",
     signals: "Usage and pricing signals",
     details: "View model details",
+    browseByFilter: "Browse by filter",
+    browseByFilterDescription: "Start with the same filters used in the model directory, then compare the matching models.",
+    viewAll: "View all",
+    more: "More",
   },
   zh: {
     collections: "模型集合",
@@ -50,15 +72,19 @@ const uiCopy = {
     capabilities: "实时目录能力",
     signals: "调用量与价格信号",
     details: "查看模型详情",
+    browseByFilter: "按条件浏览",
+    browseByFilterDescription: "使用模型目录中的相同筛选条件，快速找到并比较符合条件的模型。",
+    viewAll: "查看全部",
+    more: "更多",
   },
-  es: { collections: "Colecciones", heroTitle: "Encuentra el modelo de IA adecuado para cada tarea.", heroDescription: "Explora colecciones de modelos para programación, imágenes, vídeo, herramientas y más, con detalles, uso y precios públicos.", updated: "Actualizado con datos del catálogo", browse: "Ver colección", allModels: "Ver todos los modelos", compare: "Comparar modelos", featured: "Modelos destacados", usage: "uso semanal", context: "contexto", from: "desde", explore: "Explora más colecciones", criteria: "Cómo se crea esta colección", capabilities: "Capacidades del catálogo", signals: "Señales de uso y precio", details: "Ver detalles del modelo" },
-  fr: { collections: "Collections", heroTitle: "Trouvez le modèle IA adapté à chaque tâche.", heroDescription: "Explorez des collections pour le code, l’image, la vidéo, les outils et plus, avec détails, usage et tarifs publics.", updated: "Mis à jour avec les données du catalogue", browse: "Voir la collection", allModels: "Voir tous les modèles", compare: "Comparer les modèles", featured: "Modèles sélectionnés", usage: "utilisation hebdomadaire", context: "contexte", from: "à partir de", explore: "Explorer d’autres collections", criteria: "Comment cette collection est créée", capabilities: "Capacités du catalogue", signals: "Signaux d’usage et de prix", details: "Voir les détails du modèle" },
-  pt: { collections: "Coleções", heroTitle: "Encontre o modelo de IA certo para cada tarefa.", heroDescription: "Explore coleções para programação, imagens, vídeo, ferramentas e muito mais, com detalhes, uso e preços públicos.", updated: "Atualizado com dados do catálogo", browse: "Ver coleção", allModels: "Ver todos os modelos", compare: "Comparar modelos", featured: "Modelos em destaque", usage: "uso semanal", context: "contexto", from: "a partir de", explore: "Explore mais coleções", criteria: "Como esta coleção é criada", capabilities: "Capacidades do catálogo", signals: "Sinais de uso e preço", details: "Ver detalhes do modelo" },
-  ru: { collections: "Подборки", heroTitle: "Найдите подходящую ИИ-модель для каждой задачи.", heroDescription: "Изучайте подборки для программирования, изображений, видео, инструментов и других сценариев с актуальными ценами и данными.", updated: "Обновляется по данным каталога", browse: "Открыть подборку", allModels: "Все модели", compare: "Сравнить модели", featured: "Избранные модели", usage: "за неделю", context: "контекст", from: "от", explore: "Другие подборки", criteria: "Как формируется подборка", capabilities: "Возможности каталога", signals: "Сигналы использования и цены", details: "Подробнее о модели" },
-  ja: { collections: "コレクション", heroTitle: "タスクに合った AI モデルを見つけましょう。", heroDescription: "コーディング、画像、動画、ツール呼び出しなどのモデルを、詳細・利用量・公開価格とともに比較できます。", updated: "最新のカタログデータで更新", browse: "コレクションを見る", allModels: "すべてのモデル", compare: "モデルを比較", featured: "注目のモデル", usage: "週間利用量", context: "コンテキスト", from: "から", explore: "他のコレクション", criteria: "このコレクションの基準", capabilities: "カタログの機能", signals: "利用量と価格のシグナル", details: "モデルの詳細を見る" },
-  vi: { collections: "Bộ sưu tập", heroTitle: "Tìm mô hình AI phù hợp cho từng công việc.", heroDescription: "Khám phá bộ sưu tập cho lập trình, hình ảnh, video, gọi công cụ và hơn thế nữa với dữ liệu, lượt dùng và giá công khai.", updated: "Cập nhật theo catalog trực tiếp", browse: "Xem bộ sưu tập", allModels: "Xem tất cả mô hình", compare: "So sánh mô hình", featured: "Mô hình nổi bật", usage: "lượt dùng mỗi tuần", context: "ngữ cảnh", from: "từ", explore: "Khám phá bộ sưu tập khác", criteria: "Cách tạo bộ sưu tập", capabilities: "Khả năng trong catalog", signals: "Tín hiệu sử dụng và giá", details: "Xem chi tiết mô hình" },
-  de: { collections: "Sammlungen", heroTitle: "Finden Sie das passende KI-Modell für jede Aufgabe.", heroDescription: "Entdecken Sie Sammlungen für Code, Bilder, Video, Tool-Calling und mehr mit aktuellen Details, Nutzung und öffentlichen Preisen.", updated: "Mit aktuellen Katalogdaten aktualisiert", browse: "Sammlung öffnen", allModels: "Alle Modelle", compare: "Modelle vergleichen", featured: "Ausgewählte Modelle", usage: "Nutzung pro Woche", context: "Kontext", from: "ab", explore: "Weitere Sammlungen", criteria: "So entsteht diese Sammlung", capabilities: "Katalogfunktionen", signals: "Nutzungs- und Preissignale", details: "Modelldetails ansehen" },
-  id: { collections: "Koleksi", heroTitle: "Temukan model AI yang tepat untuk setiap tugas.", heroDescription: "Jelajahi koleksi untuk coding, gambar, video, pemanggilan alat, dan lainnya dengan detail, penggunaan, serta harga publik.", updated: "Diperbarui dengan data katalog langsung", browse: "Lihat koleksi", allModels: "Lihat semua model", compare: "Bandingkan model", featured: "Model pilihan", usage: "penggunaan mingguan", context: "konteks", from: "mulai", explore: "Jelajahi koleksi lain", criteria: "Cara koleksi ini dibuat", capabilities: "Kemampuan katalog", signals: "Sinyal penggunaan dan harga", details: "Lihat detail model" },
+  es: { collections: "Colecciones", heroTitle: "Encuentra el modelo de IA adecuado para cada tarea.", heroDescription: "Explora colecciones de modelos para programación, imágenes, vídeo, herramientas y más, con detalles, uso y precios públicos.", updated: "Actualizado con datos del catálogo", browse: "Ver colección", allModels: "Ver todos los modelos", compare: "Comparar modelos", featured: "Modelos destacados", usage: "uso semanal", context: "contexto", from: "desde", explore: "Explora más colecciones", criteria: "Cómo se crea esta colección", capabilities: "Capacidades del catálogo", signals: "Señales de uso y precio", details: "Ver detalles del modelo", browseByFilter: "Explorar por filtro", browseByFilterDescription: "Usa los mismos filtros del directorio para encontrar y comparar modelos.", viewAll: "Ver todos", more: "Más" },
+  fr: { collections: "Collections", heroTitle: "Trouvez le modèle IA adapté à chaque tâche.", heroDescription: "Explorez des collections pour le code, l’image, la vidéo, les outils et plus, avec détails, usage et tarifs publics.", updated: "Mis à jour avec les données du catalogue", browse: "Voir la collection", allModels: "Voir tous les modèles", compare: "Comparer les modèles", featured: "Modèles sélectionnés", usage: "utilisation hebdomadaire", context: "contexte", from: "à partir de", explore: "Explorer d’autres collections", criteria: "Comment cette collection est créée", capabilities: "Capacités du catalogue", signals: "Signaux d’usage et de prix", details: "Voir les détails du modèle", browseByFilter: "Parcourir par filtre", browseByFilterDescription: "Utilisez les mêmes filtres que l’annuaire pour trouver et comparer les modèles.", viewAll: "Tout voir", more: "Plus" },
+  pt: { collections: "Coleções", heroTitle: "Encontre o modelo de IA certo para cada tarefa.", heroDescription: "Explore coleções para programação, imagens, vídeo, ferramentas e muito mais, com detalhes, uso e preços públicos.", updated: "Atualizado com dados do catálogo", browse: "Ver coleção", allModels: "Ver todos os modelos", compare: "Comparar modelos", featured: "Modelos em destaque", usage: "uso semanal", context: "contexto", from: "a partir de", explore: "Explore mais coleções", criteria: "Como esta coleção é criada", capabilities: "Capacidades do catálogo", signals: "Sinais de uso e preço", details: "Ver detalhes do modelo", browseByFilter: "Explorar por filtro", browseByFilterDescription: "Use os mesmos filtros do diretório para encontrar e comparar modelos.", viewAll: "Ver todos", more: "Mais" },
+  ru: { collections: "Подборки", heroTitle: "Найдите подходящую ИИ-модель для каждой задачи.", heroDescription: "Изучайте подборки для программирования, изображений, видео, инструментов и других сценариев с актуальными ценами и данными.", updated: "Обновляется по данным каталога", browse: "Открыть подборку", allModels: "Все модели", compare: "Сравнить модели", featured: "Избранные модели", usage: "за неделю", context: "контекст", from: "от", explore: "Другие подборки", criteria: "Как формируется подборка", capabilities: "Возможности каталога", signals: "Сигналы использования и цены", details: "Подробнее о модели", browseByFilter: "По фильтрам", browseByFilterDescription: "Используйте те же фильтры каталога, чтобы находить и сравнивать модели.", viewAll: "Все модели", more: "Ещё" },
+  ja: { collections: "コレクション", heroTitle: "タスクに合った AI モデルを見つけましょう。", heroDescription: "コーディング、画像、動画、ツール呼び出しなどのモデルを、詳細・利用量・公開価格とともに比較できます。", updated: "最新のカタログデータで更新", browse: "コレクションを見る", allModels: "すべてのモデル", compare: "モデルを比較", featured: "注目のモデル", usage: "週間利用量", context: "コンテキスト", from: "から", explore: "他のコレクション", criteria: "このコレクションの基準", capabilities: "カタログの機能", signals: "利用量と価格のシグナル", details: "モデルの詳細を見る", browseByFilter: "フィルターから探す", browseByFilterDescription: "モデル一覧と同じフィルターでモデルを検索・比較できます。", viewAll: "すべて見る", more: "もっと見る" },
+  vi: { collections: "Bộ sưu tập", heroTitle: "Tìm mô hình AI phù hợp cho từng công việc.", heroDescription: "Khám phá bộ sưu tập cho lập trình, hình ảnh, video, gọi công cụ và hơn thế nữa với dữ liệu, lượt dùng và giá công khai.", updated: "Cập nhật theo catalog trực tiếp", browse: "Xem bộ sưu tập", allModels: "Xem tất cả mô hình", compare: "So sánh mô hình", featured: "Mô hình nổi bật", usage: "lượt dùng mỗi tuần", context: "ngữ cảnh", from: "từ", explore: "Khám phá bộ sưu tập khác", criteria: "Cách tạo bộ sưu tập", capabilities: "Khả năng trong catalog", signals: "Tín hiệu sử dụng và giá", details: "Xem chi tiết mô hình", browseByFilter: "Duyệt theo bộ lọc", browseByFilterDescription: "Dùng cùng bộ lọc của danh mục để tìm và so sánh mô hình.", viewAll: "Xem tất cả", more: "Thêm" },
+  de: { collections: "Sammlungen", heroTitle: "Finden Sie das passende KI-Modell für jede Aufgabe.", heroDescription: "Entdecken Sie Sammlungen für Code, Bilder, Video, Tool-Calling und mehr mit aktuellen Details, Nutzung und öffentlichen Preisen.", updated: "Mit aktuellen Katalogdaten aktualisiert", browse: "Sammlung öffnen", allModels: "Alle Modelle", compare: "Modelle vergleichen", featured: "Ausgewählte Modelle", usage: "Nutzung pro Woche", context: "Kontext", from: "ab", explore: "Weitere Sammlungen", criteria: "So entsteht diese Sammlung", capabilities: "Katalogfunktionen", signals: "Nutzungs- und Preissignale", details: "Modelldetails ansehen", browseByFilter: "Nach Filter durchsuchen", browseByFilterDescription: "Nutzen Sie dieselben Verzeichnisfilter, um Modelle zu finden und zu vergleichen.", viewAll: "Alle anzeigen", more: "Mehr" },
+  id: { collections: "Koleksi", heroTitle: "Temukan model AI yang tepat untuk setiap tugas.", heroDescription: "Jelajahi koleksi untuk coding, gambar, video, pemanggilan alat, dan lainnya dengan detail, penggunaan, serta harga publik.", updated: "Diperbarui dengan data katalog langsung", browse: "Lihat koleksi", allModels: "Lihat semua model", compare: "Bandingkan model", featured: "Model pilihan", usage: "penggunaan mingguan", context: "konteks", from: "mulai", explore: "Jelajahi koleksi lain", criteria: "Cara koleksi ini dibuat", capabilities: "Kemampuan katalog", signals: "Sinyal penggunaan dan harga", details: "Lihat detail model", browseByFilter: "Jelajahi berdasarkan filter", browseByFilterDescription: "Gunakan filter direktori yang sama untuk menemukan dan membandingkan model.", viewAll: "Lihat semua", more: "Lainnya" },
 } as const;
 
 function getUiCopy(locale: Locale) {
@@ -91,8 +117,124 @@ function CollectionCard(props: { collection: ModelCollectionDefinition; locale: 
   );
 }
 
-export function ModelCollectionsIndex(props: { locale: Locale }) {
+type FilterLinkGroup = {
+  key: DirectoryFilterKey;
+  label: string;
+  links: Array<{ label: string; href: string }>;
+};
+
+function priceBandLabel(band: (typeof PRICE_BANDS)[number]): string {
+  const min = "min" in band ? band.min : undefined;
+  const max = "max" in band ? band.max : undefined;
+  if (min == null && max != null) return `< $${max}`;
+  if (min != null && max == null) return `$${min}+`;
+  return `$${min}–$${max}`;
+}
+
+function filterHref(locale: Locale, key: DirectoryFilterKey, value: string | number | boolean): string {
+  const filters: DirectoryFilters = { ...EMPTY_DIRECTORY_FILTERS, [key]: [value] } as DirectoryFilters;
+  return directoryHref(locale, filters);
+}
+
+function buildFilterLinkGroups(locale: Locale, pricing: PricingData): FilterLinkGroup[] {
+  const copy = getDirectoryCopy(locale);
+  const metadataRows = pricing.models.map((model) => model.directory_metadata);
+  const limit = (values: string[], max = 12) => values.slice(0, max);
+  const groups: FilterLinkGroup[] = [
+    {
+      key: "modalities",
+      label: copy.groupModalities,
+      links: MODALITIES.map((value) => ({ label: MODALITY_LABELS[locale][value], href: filterHref(locale, "modalities", value) })),
+    },
+    {
+      key: "context",
+      label: copy.groupContext,
+      links: CONTEXT_BUCKETS.map((value, index) => ({
+        label: index === CONTEXT_BUCKETS.length - 1 ? `${formatContextTokens(value)}` : `${formatContextTokens(value)}+`,
+        href: filterHref(locale, "context", value),
+      })),
+    },
+    {
+      key: "inputPrice",
+      label: copy.groupInputPrice,
+      links: PRICE_BANDS.map((band) => ({ label: priceBandLabel(band), href: filterHref(locale, "inputPrice", band.id) })),
+    },
+    {
+      key: "outputPrice",
+      label: copy.groupOutputPrice,
+      links: PRICE_BANDS.map((band) => ({ label: priceBandLabel(band), href: filterHref(locale, "outputPrice", band.id) })),
+    },
+    {
+      key: "categories",
+      label: copy.groupCategories,
+      links: limit(categoriesForModels(metadataRows)).map((value) => ({ label: categoryLabel(locale, value), href: filterHref(locale, "categories", value) })),
+    },
+    {
+      key: "series",
+      label: copy.groupSeries,
+      links: limit(seriesForModels(metadataRows)).map((value) => ({ label: value, href: filterHref(locale, "series", value) })),
+    },
+    {
+      key: "providers",
+      label: copy.groupProviders,
+      links: limit(providersForModels(metadataRows)).map((value) => ({ label: value, href: filterHref(locale, "providers", value) })),
+    },
+    {
+      key: "vendors",
+      label: copy.groupVendors,
+      links: limit(vendorsForModels(metadataRows)).map((value) => ({ label: value, href: filterHref(locale, "vendors", value) })),
+    },
+    {
+      key: "age",
+      label: copy.groupAge,
+      links: AGE_BANDS.map((value) => ({ label: AGE_BAND_LABELS[locale][value], href: filterHref(locale, "age", value) })),
+    },
+    {
+      key: "distillable",
+      label: copy.groupDistillable,
+      links: [true, false].map((value) => ({ label: value ? copy.yes : copy.no, href: filterHref(locale, "distillable", value) })),
+    },
+  ];
+  return groups.filter((group) => group.links.length > 0);
+}
+
+function FilterBrowseSection(props: { locale: Locale; pricing: PricingData }) {
   const ui = getUiCopy(props.locale);
+  const groups = buildFilterLinkGroups(props.locale, props.pricing);
+  return (
+    <section className="border-t border-[#ECEAF1] bg-[#FBFAFE] py-14 sm:py-20">
+      <div className={`${shellClass}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28] sm:text-3xl">{ui.browseByFilter}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#65616F]">{ui.browseByFilterDescription}</p>
+          </div>
+          <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-1 text-sm font-semibold text-[#6D28D9] hover:underline">
+            {ui.viewAll}<ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {groups.map((group) => (
+            <div key={group.key} className="rounded-2xl border border-[#E7E4EC] bg-white p-5 shadow-[0_8px_30px_-28px_rgba(36,20,64,.4)]">
+              <h3 className="text-sm font-semibold text-[#3C3548]">{group.label}</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {group.links.map((link) => (
+                  <Link key={link.href} href={link.href} className="inline-flex items-center rounded-lg border border-[#E7E4EC] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#45414C] transition hover:-translate-y-px hover:border-[#C9B8FF] hover:bg-[#F8F4FF] hover:text-[#5B21B6]">
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export async function ModelCollectionsIndex(props: { locale: Locale }) {
+  const ui = getUiCopy(props.locale);
+  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
   return (
     <SiteShell locale={props.locale} pathname="/collections">
       <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[#FAFAFC]">
@@ -108,6 +250,7 @@ export function ModelCollectionsIndex(props: { locale: Locale }) {
           </div>
         </div>
       </section>
+      <FilterBrowseSection locale={props.locale} pricing={pricing} />
       </main>
     </SiteShell>
   );
