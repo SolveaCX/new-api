@@ -4,6 +4,7 @@ import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingPathnames } from "@/lib/model-landing";
+import { getModelCollectionPathnames } from "@/lib/model-collections";
 import { seriesForModels } from "@/lib/model-directory-meta";
 import { modelPublicPath } from "@/lib/model-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
@@ -62,6 +63,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/", 1, "daily"),
     ...entry("/pricing", 0.8, "daily"),
     ...entry("/models", 0.82, "daily"),
+    ...entry("/collections", 0.84, "daily"),
     ...entry(TOOLS_LANDING_PATH, 0.9, "daily"),
     ...entry("/docs", 0.7, "weekly"),
     ...entry("/playground", 0.7, "weekly"),
@@ -89,6 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const modelLandingEntries = getModelLandingPathnames()
     .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname))
     .flatMap((pathname) => entry(pathname, 0.82, "daily"));
+  const collectionEntries = getModelCollectionPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly"));
   const skagLandingEntries = SKAG_LANDING_SLUGS.flatMap((slug) =>
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );
@@ -148,6 +151,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticEntries,
     ...marketEntries,
     ...modelLandingEntries,
+    ...collectionEntries,
     ...skagLandingEntries,
     ...toolsAdLandingEntries,
     ...modelPublicEntries,

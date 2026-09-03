@@ -47,6 +47,7 @@ const legacyNavLabelByLocale: Record<
   Locale,
   {
     compute: string;
+    collections: string;
     enterprise: string;
     playground: string;
     status: string;
@@ -55,6 +56,7 @@ const legacyNavLabelByLocale: Record<
 > = withIdFallback({
   en: {
     compute: "Compute",
+    collections: "Collections",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Status",
@@ -62,6 +64,7 @@ const legacyNavLabelByLocale: Record<
   },
   zh: {
     compute: "算力",
+    collections: "模型集合",
     enterprise: "企业版",
     playground: "在线体验",
     status: "服务状态",
@@ -69,6 +72,7 @@ const legacyNavLabelByLocale: Record<
   },
   es: {
     compute: "Compute",
+    collections: "Colecciones",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Estado",
@@ -76,6 +80,7 @@ const legacyNavLabelByLocale: Record<
   },
   fr: {
     compute: "Compute",
+    collections: "Collections",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Statut",
@@ -83,6 +88,7 @@ const legacyNavLabelByLocale: Record<
   },
   pt: {
     compute: "Compute",
+    collections: "Coleções",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Status",
@@ -90,6 +96,7 @@ const legacyNavLabelByLocale: Record<
   },
   ru: {
     compute: "Compute",
+    collections: "Подборки",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Статус",
@@ -97,6 +104,7 @@ const legacyNavLabelByLocale: Record<
   },
   ja: {
     compute: "Compute",
+    collections: "コレクション",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "ステータス",
@@ -104,6 +112,7 @@ const legacyNavLabelByLocale: Record<
   },
   vi: {
     compute: "Compute",
+    collections: "Bộ sưu tập",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Trạng thái",
@@ -111,6 +120,7 @@ const legacyNavLabelByLocale: Record<
   },
   de: {
     compute: "Compute",
+    collections: "Sammlungen",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Status",
@@ -118,6 +128,7 @@ const legacyNavLabelByLocale: Record<
   },
   id: {
     compute: "Compute",
+    collections: "Koleksi",
     enterprise: "Enterprise",
     playground: "Playground",
     status: "Status",
@@ -592,6 +603,7 @@ export function SiteHeader(props: Props) {
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
+      { href: "/collections", label: legacyLabels.collections, publicPath: true },
       { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },

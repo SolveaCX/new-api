@@ -22,6 +22,7 @@ type FooterLink = {
 const footerLabels = withIdFallback({
   en: {
     product: "Product",
+    collections: "Collections",
     developers: "Developers",
     company: "Company",
     socials: "Socials",
@@ -38,6 +39,7 @@ const footerLabels = withIdFallback({
   },
   zh: {
     product: "产品",
+    collections: "模型集合",
     developers: "开发者",
     company: "公司",
     socials: "社交",
@@ -54,6 +56,7 @@ const footerLabels = withIdFallback({
   },
   es: {
     product: "Producto",
+    collections: "Colecciones",
     developers: "Desarrolladores",
     company: "Empresa",
     socials: "Redes",
@@ -70,6 +73,7 @@ const footerLabels = withIdFallback({
   },
   fr: {
     product: "Produit",
+    collections: "Collections",
     developers: "Développeurs",
     company: "Entreprise",
     socials: "Réseaux",
@@ -86,6 +90,7 @@ const footerLabels = withIdFallback({
   },
   pt: {
     product: "Produto",
+    collections: "Coleções",
     developers: "Desenvolvedores",
     company: "Empresa",
     socials: "Redes",
@@ -102,6 +107,7 @@ const footerLabels = withIdFallback({
   },
   ru: {
     product: "Продукт",
+    collections: "Подборки",
     developers: "Разработчикам",
     company: "Компания",
     socials: "Соцсети",
@@ -118,6 +124,7 @@ const footerLabels = withIdFallback({
   },
   ja: {
     product: "プロダクト",
+    collections: "コレクション",
     developers: "開発者向け",
     company: "会社",
     socials: "ソーシャル",
@@ -134,6 +141,7 @@ const footerLabels = withIdFallback({
   },
   vi: {
     product: "Sản phẩm",
+    collections: "Bộ sưu tập",
     developers: "Nhà phát triển",
     company: "Công ty",
     socials: "Mạng xã hội",
@@ -150,6 +158,7 @@ const footerLabels = withIdFallback({
   },
   de: {
     product: "Produkt",
+    collections: "Sammlungen",
     developers: "Entwickler",
     company: "Unternehmen",
     socials: "Socials",
@@ -205,6 +214,7 @@ export function SiteFooter(props: SiteFooterProps) {
   const currentYear = new Date().getFullYear();
   const productLinks: FooterLink[] = [
     { href: "/models", label: siteCopy.nav.modelPricing },
+    { href: "/collections", label: labels.collections },
     { href: "/tools", label: labels.tools },
     { href: "/playground", label: labels.playground },
     { href: "/rankings", label: siteCopy.nav.rankings },

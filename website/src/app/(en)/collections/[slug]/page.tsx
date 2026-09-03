@@ -1,0 +1,28 @@
+import { notFound } from "next/navigation";
+import { ModelCollectionDetail } from "@/components/model-collections-page";
+import { getModelCollection, getModelCollectionCopy, MODEL_COLLECTIONS } from "@/lib/model-collections";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+import { fetchRankingsData } from "@/lib/rankings-live";
+import { buildMetadata } from "@/lib/seo";
+
+type Props = { params: Promise<{ slug: string }> };
+
+export function generateStaticParams() {
+  return MODEL_COLLECTIONS.map((collection) => ({ slug: collection.slug }));
+}
+
+export async function generateMetadata(props: Props) {
+  const params = await props.params;
+  const collection = getModelCollection(params.slug);
+  if (!collection) return {};
+  const copy = getModelCollectionCopy(collection, "en");
+  return buildMetadata({ title: `${copy.title} | Flatkey`, description: copy.shortDescription, pathname: `/collections/${collection.slug}`, absoluteTitle: true });
+}
+
+export default async function Page(props: Props) {
+  const params = await props.params;
+  const collection = getModelCollection(params.slug);
+  if (!collection) notFound();
+  const [pricing, rankings] = await Promise.all([getPricingData(WEBSITE_PUBLIC_PRICING_GROUP), fetchRankingsData()]);
+  return <ModelCollectionDetail locale="en" collection={collection} pricing={pricing} rankings={rankings} />;
+}
