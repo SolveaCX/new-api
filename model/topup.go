@@ -501,24 +501,6 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 	return credited, nil
 }
 
-// topUpQueryWindowSeconds 限制充值记录查询的时间窗口（秒）。
-const topUpQueryWindowSeconds int64 = 30 * 24 * 60 * 60
-
-// topUpQueryCutoff 返回允许查询的最早 create_time（秒级 Unix 时间戳）。
-func topUpQueryCutoff() int64 {
-	return common.GetTimestamp() - topUpQueryWindowSeconds
-}
-
-// visibleUserTopUps limits wallet history to orders that have reached a
-// meaningful terminal state. Pending checkouts and expired sessions are
-// intentionally omitted from the user-facing list.
-func visibleUserTopUps(query *gorm.DB) *gorm.DB {
-	return query.Where("status NOT IN ?", []string{
-		common.TopUpStatusPending,
-		common.TopUpStatusExpired,
-	})
-}
-
 func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
@@ -531,10 +513,8 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 		}
 	}()
 
-	cutoff := topUpQueryCutoff()
-
 	// Get total count within transaction
-	query := visibleUserTopUps(tx.Model(&TopUp{})).Where("user_id = ? AND create_time >= ? AND (amount > 0 OR money > 0)", userId, cutoff)
+	query := tx.Model(&TopUp{}).Where("user_id = ? AND (amount > 0 OR money > 0)", userId)
 	err = query.Count(&total).Error
 	if err != nil {
 		tx.Rollback()
@@ -601,7 +581,7 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 		}
 	}()
 
-	query := visibleUserTopUps(tx.Model(&TopUp{})).Where("user_id = ? AND create_time >= ? AND (amount > 0 OR money > 0)", userId, topUpQueryCutoff())
+	query := tx.Model(&TopUp{}).Where("user_id = ? AND (amount > 0 OR money > 0)", userId)
 	if keyword != "" {
 		pattern, perr := sanitizeLikePattern(keyword)
 		if perr != nil {
