@@ -708,6 +708,55 @@ describe("ModelLandingPage", () => {
     expect(html).not.toContain("$0.32 / second");
   });
 
+  test("uses the live effective input rate for schema offers and omits request offers", () => {
+    const tokenHtml = renderToStaticMarkup(
+      <ModelLandingPage
+        config={GPT_CONFIG}
+        locale="en"
+        groupRatio={{ plg: 0.9 }}
+        groupModelRatio={{ plg: { "gpt-5": 0.5 } }}
+        liveModels={[{
+          model_name: "gpt-5",
+          vendor_name: "OpenAI",
+          quota_type: 0,
+          model_ratio: 0.5,
+          completion_ratio: 2,
+          enable_groups: ["plg"],
+          display_pricing: {
+            billing_kind: "token",
+            prices: {
+              input: { configured: 1, plg: 0.5 },
+              output: { configured: 2, plg: 1 },
+            },
+          },
+        }]}
+      />,
+    );
+    const tokenSchema = tokenHtml.slice(tokenHtml.indexOf('type="application/ld+json"'));
+    expect(tokenSchema).toContain('"price":0.5');
+
+    const requestHtml = renderToStaticMarkup(
+      <ModelLandingPage
+        config={GPT_CONFIG}
+        locale="en"
+        liveModels={[{
+          model_name: "request-model",
+          vendor_name: "Provider",
+          quota_type: 1,
+          model_ratio: 0,
+          completion_ratio: 1,
+          model_price: 0.04,
+          display_pricing: {
+            billing_kind: "request",
+            prices: { request: { configured: 0.04, plg: 0.02 } },
+          },
+        }]}
+      />,
+    );
+    const requestSchema = requestHtml.slice(requestHtml.indexOf('type="application/ld+json"'));
+    expect(requestSchema).not.toContain('"offers"');
+  });
+
   test("renders media-only prompt libraries for image and video models", () => {
     const imageHtml = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[]} />

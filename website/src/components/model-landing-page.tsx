@@ -411,8 +411,13 @@ function FlatkeyModelDetailPage(props: {
     // single Product Offer. Their exact dimensions remain visible below.
     // Product offers are only emitted when a live catalog model exists. Never
     // turn a curated config amount into structured pricing data.
-    inputPriceUsd: model
-      ? discountedPriceUsd(getOfficialPriceUsd(model) * getBestGroupRatio(model, props.groupRatio))
+    // Structured offers are defined as the effective input-token rate. Resolve
+    // that value from the same live display contract used by the visible price
+    // rows. Request/per-second models (and tiered models without a single rate)
+    // must not be represented as a token offer, and model-specific group
+    // ratios must be applied before falling back to legacy ratio math.
+    inputPriceUsd: model && model.billing_mode !== "tiered_expr"
+      ? resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio)?.value ?? Number.NaN
       : Number.NaN,
     pagePath: localizePath(`/models/${props.config.slug}`, props.locale),
     faq: faqItems.map((item) => ({ q: item.question, a: item.answer })),
