@@ -104,6 +104,38 @@ describe("ModelsDirectoryTable", () => {
     expect(html).not.toContain("$1 /req");
   });
 
+  test("shows official input and output prices together for token models", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={{
+          ...getModelsDirectoryTableCopy("en"),
+          colOfficialInput: "Official input",
+          colOfficialOutput: "Official output",
+        }}
+        hideOurPrice
+        rows={[{
+          name: "gpt-5.6-sol",
+          vendor: "OpenAI",
+          official: "$5",
+          discounted: "$4",
+          officialUsd: 5,
+          discountedUsd: 4,
+          inputOfficial: "$5",
+          outputOfficial: "$24",
+          iconKey: "openai",
+          priceUnit: "per 1M tokens",
+        }]}
+      />
+    );
+
+    const officialCell = html.match(/<td class="text-muted-foreground[\s\S]*?<\/td>/)?.[0] ?? "";
+    expect(officialCell).toContain("Official input");
+    expect(officialCell).toContain("$5");
+    expect(officialCell).toContain("Official output");
+    expect(officialCell).toContain("$24");
+  });
+
   test("localizes second and request units on the Chinese models page", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable

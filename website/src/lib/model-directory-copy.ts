@@ -20,6 +20,8 @@ export type DirectoryCopy = {
   noResultsHint: string;
   colModel: string;
   colOfficial: string;
+  colOfficialInput: string;
+  colOfficialOutput: string;
   colOurPrice: string;
   colOurInputPrice: string;
   colOurOutputPrice: string;
@@ -72,6 +74,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Try loosening one of the conditions.",
     colModel: "Model",
     colOfficial: "Official",
+    colOfficialInput: "Official input",
+    colOfficialOutput: "Official output",
     colOurPrice: "Our price",
     colOurInputPrice: "Our input",
     colOurOutputPrice: "Our output",
@@ -118,6 +122,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "试试放宽其中一个条件。",
     colModel: "模型",
     colOfficial: "官方价",
+    colOfficialInput: "官方输入",
+    colOfficialOutput: "官方输出",
     colOurPrice: "我们的价格",
     colOurInputPrice: "我们的输入",
     colOurOutputPrice: "我们的输出",
@@ -162,6 +168,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Prueba a relajar alguna de las condiciones.",
     colModel: "Modelo",
     colOfficial: "Oficial",
+    colOfficialInput: "Entrada oficial",
+    colOfficialOutput: "Salida oficial",
     colOurPrice: "Nuestro precio",
     colOurInputPrice: "Entrada propia",
     colOurOutputPrice: "Salida propia",
@@ -208,6 +216,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Essayez d'assouplir l'une des conditions.",
     colModel: "Modèle",
     colOfficial: "Officiel",
+    colOfficialInput: "Entrée officielle",
+    colOfficialOutput: "Sortie officielle",
     colOurPrice: "Notre prix",
     colOurInputPrice: "Entrée Flatkey",
     colOurOutputPrice: "Sortie Flatkey",
@@ -252,6 +262,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Tente afrouxar uma das condições.",
     colModel: "Modelo",
     colOfficial: "Oficial",
+    colOfficialInput: "Entrada oficial",
+    colOfficialOutput: "Saída oficial",
     colOurPrice: "Nosso preço",
     colOurInputPrice: "Entrada Flatkey",
     colOurOutputPrice: "Saída Flatkey",
@@ -296,6 +308,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Попробуйте ослабить одно из условий.",
     colModel: "Модель",
     colOfficial: "Официальная",
+    colOfficialInput: "Официальный ввод",
+    colOfficialOutput: "Официальный вывод",
     colOurPrice: "Наша цена",
     colOurInputPrice: "Наш ввод",
     colOurOutputPrice: "Наш вывод",
@@ -340,6 +354,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "いずれかの条件をゆるめてみてください。",
     colModel: "モデル",
     colOfficial: "公式価格",
+    colOfficialInput: "公式入力",
+    colOfficialOutput: "公式出力",
     colOurPrice: "当社価格",
     colOurInputPrice: "当社入力",
     colOurOutputPrice: "当社出力",
@@ -384,6 +400,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Hãy thử nới lỏng một trong các điều kiện.",
     colModel: "Mô hình",
     colOfficial: "Giá gốc",
+    colOfficialInput: "Đầu vào chính thức",
+    colOfficialOutput: "Đầu ra chính thức",
     colOurPrice: "Giá của chúng tôi",
     colOurInputPrice: "Đầu vào Flatkey",
     colOurOutputPrice: "Đầu ra Flatkey",
@@ -428,6 +446,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Versuchen Sie, eine der Bedingungen zu lockern.",
     colModel: "Modell",
     colOfficial: "Offiziell",
+    colOfficialInput: "Offizieller Input",
+    colOfficialOutput: "Offizieller Output",
     colOurPrice: "Unser Preis",
     colOurInputPrice: "Unser Input",
     colOurOutputPrice: "Unser Output",
@@ -472,6 +492,8 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     noResultsHint: "Coba longgarkan salah satu kondisinya.",
     colModel: "Model",
     colOfficial: "Resmi",
+    colOfficialInput: "Input resmi",
+    colOfficialOutput: "Output resmi",
     colOurPrice: "Harga kami",
     colOurInputPrice: "Masukan kami",
     colOurOutputPrice: "Keluaran kami",
