@@ -6,6 +6,7 @@ import {
   buildBlogIndexSchema,
   buildHomepageSchema,
   buildModelSchema,
+  buildModelsDirectorySchema,
   stringifyJsonLd,
 } from "./schema";
 
@@ -245,5 +246,41 @@ describe("model structured data", () => {
         }),
       })
     );
+  });
+
+  test("omits incomplete Product entities when no stable price is available", () => {
+    const graph = buildModelSchema({
+      locale: "es",
+      modelName: "claude-opus-4-8",
+      vendorName: "Anthropic",
+      description: "Claude Opus through flatkey.ai.",
+      inputPriceUsd: Number.NaN,
+      pagePath: "/es/models/claude-opus-4-8",
+      faq: [{ q: "How is it billed?", a: "Pricing varies by the live catalog." }],
+    });
+
+    expect(graph["@graph"]).not.toContainEqual(expect.objectContaining({ "@type": "Product" }));
+    expect(graph["@graph"]).toContainEqual(expect.objectContaining({ "@type": "FAQPage" }));
+    expect(JSON.stringify(graph)).not.toContain("offers");
+  });
+
+  test("keeps no-price directory entries as links instead of incomplete Products", () => {
+    const graph = buildModelsDirectorySchema({
+      locale: "en",
+      title: "Models",
+      description: "Model catalogue.",
+      totalCount: 2,
+      items: [
+        { name: "gpt-5", path: "/models/gpt-5", position: 1, vendor: "OpenAI", priceUsd: 0.5 },
+        { name: "claude-opus-4-8", path: "/models/claude-opus-4-8", position: 2, vendor: "Anthropic", priceUsd: Number.NaN },
+      ],
+    });
+
+    const collection = graph["@graph"].find((item) => item["@type"] === "CollectionPage");
+    const itemList = collection?.mainEntity as { itemListElement?: unknown[] };
+    const entries = itemList.itemListElement ?? [];
+    expect(entries[0]).toMatchObject({ item: { "@type": "Product", offers: { price: 0.5 } } });
+    expect(entries[1]).toMatchObject({ name: "claude-opus-4-8", url: "https://flatkey.ai/models/claude-opus-4-8" });
+    expect(JSON.stringify(entries[1])).not.toContain('"Product"');
   });
 });

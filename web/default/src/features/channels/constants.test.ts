@@ -104,3 +104,11 @@ test('GitHub Copilot channel is selectable with its official endpoint', () => {
     'Copilot authorization is available after saving the channel'
   )
 })
+
+test('Apodex channel is selectable and model-fetchable', () => {
+  expect(CHANNEL_TYPES[114]).toBe('Apodex')
+  expect(CHANNEL_TYPE_OPTIONS.some((option) => option.value === 114)).toBe(true)
+  expect(MODEL_FETCHABLE_TYPES.has(114)).toBe(true)
+  expect(getChannelTypeConfig(114).defaultBaseUrl).toBe('https://api.apodex.ai')
+  expect(getChannelTypeConfig(114).icon).toBe('openai')
+})

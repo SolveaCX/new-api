@@ -60,6 +60,7 @@ func setupSubscriptionPurchaseServiceTestDB(t *testing.T) {
 		&model.Log{},
 		&model.SubscriptionPlan{},
 		&model.SubscriptionOrder{},
+		&model.TopUp{},
 		&model.UserSubscription{},
 		&model.SubscriptionProviderBinding{},
 		&model.UserSubscriptionContract{},
@@ -2684,6 +2685,15 @@ func TestPurchaseSubscriptionBalanceThreeMonthsChargesFullPriceOnce(t *testing.T
 	require.Equal(t, model.SubscriptionRenewalSourceWallet, result.Order.RenewalSource)
 	require.Equal(t, model.PaymentProviderBalance, result.Order.PaymentProvider)
 	require.Contains(t, result.Order.PlanSnapshot, `"media_credits_monthly":25`)
+
+	var history model.TopUp
+	require.NoError(t, model.DB.Where("trade_no = ?", result.Order.TradeNo).First(&history).Error)
+	require.Equal(t, result.Order.UserId, history.UserId)
+	require.Zero(t, history.Amount)
+	require.Equal(t, result.Order.Money, history.Money)
+	require.Equal(t, common.TopUpStatusSuccess, history.Status)
+	require.Equal(t, model.PaymentMethodBalance, history.PaymentMethod)
+	require.Equal(t, model.PaymentProviderBalance, history.PaymentProvider)
 
 	var user model.User
 	require.NoError(t, model.DB.First(&user, "id = ?", 7303).Error)

@@ -4,6 +4,7 @@ import { ModelLandingPage } from "./model-landing-page";
 import {
   GPT_CONFIG,
   GPT_IMAGE_2_CONFIG,
+  GEMINI_CONFIG,
   MINIMAX_H3_CONFIG,
   SONILO_VIDEO_TO_MUSIC_CONFIG,
   SEEDANCE_25_CONFIG,
@@ -161,7 +162,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("Related models");
     expect(html).toContain("Frequently asked questions");
     expect(html).toContain('type="application/ld+json"');
-    expect(html).toContain('"@type":"Product"');
+    expect(html).not.toContain('"@type":"Product"');
     expect(html).toContain('"@type":"FAQPage"');
   });
 
@@ -278,6 +279,7 @@ describe("ModelLandingPage", () => {
     // A single Product Offer would imply that $0.14 is the price for every
     // request, which is not true for resolution/duration/reference variants.
     const schema = html.slice(html.indexOf('type="application/ld+json"'), html.indexOf('</script>'));
+    expect(schema).not.toContain('"@type":"Product"');
     expect(schema).not.toContain('"offers"');
   });
 
@@ -386,7 +388,7 @@ describe("ModelLandingPage", () => {
     expect(html).not.toContain("继续浏览 Flatkey");
     expect(html).not.toContain('href="/zh/models/gpt-image-2"');
     expect(html).not.toContain('href="/zh/models/seedance-api"');
-    expect(html).toContain('"url":"https://flatkey.ai/zh/models/sonilo-video-to-music"');
+    expect(html).toContain('"item":"https://flatkey.ai/zh/models/sonilo-video-to-music"');
   });
 
   test("uses a large model logo when a catalog icon key is not available", () => {
@@ -522,7 +524,7 @@ describe("ModelLandingPage", () => {
     expect(html).toContain("All models");
     expect(html).toContain("gpt-5");
     expect(html).toContain('type="application/ld+json"');
-    expect(html).toContain('"url":"https://flatkey.ai/models/gpt-api"');
+    expect(html).toContain('"item":"https://flatkey.ai/models/gpt-api"');
     expect(html).not.toContain('id="workbench"');
   });
 
@@ -598,7 +600,19 @@ describe("ModelLandingPage", () => {
 
     expect(html).toContain("Pricing data unavailable");
     expect(html).not.toContain('class="model-stat-label">Input /M</div>');
-    expect(html).not.toContain('id="pricing"');
+    expect(html).toContain('id="pricing"');
+    expect(html).toContain("pricing-conversion-grid");
+  });
+
+  test("renders a pricing section for static model families without live pricing data", () => {
+    const html = renderToStaticMarkup(
+      <ModelLandingPage config={GEMINI_CONFIG} locale="zh" liveModels={[]} />
+    );
+
+    expect(html).toContain('href="#pricing"');
+    expect(html).toContain('id="pricing"');
+    expect(html).toContain("Gemini API 价格");
+    expect(html).toContain("价格数据暂不可用");
   });
 
   test("shows the live cache price in the model hero with the official price crossed out", () => {
@@ -682,10 +696,51 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[imageModel]} allModels={[imageModel]} />
     );
 
-    expect(html).toContain("Price / image");
-    expect(html).toContain("$6.400 / image");
-    expect(html).toContain("$8.000 / image");
-    expect(html).not.toContain("Input /M");
+    expect(html).toContain("Input /M");
+    expect(html).toContain("$4");
+    expect(html).toContain("$24");
+    expect(html).toContain("Output /M");
+    expect(html).toContain("1M tokens");
+    expect(html).not.toContain("Price / image");
+    expect(html).not.toContain("$8.000 / image");
+    expect(html).not.toContain("$6.400 / image");
+    expect(html).not.toContain("pricing-breakdown-card");
+  });
+
+  test("shows every video resolution price in the feature card", () => {
+    const videoModel: PricingModel = {
+      model_name: "seedance-2.5",
+      vendor_name: "ByteDance",
+      quota_type: 1,
+      model_ratio: 0,
+      completion_ratio: 0,
+      supported_endpoint_types: ["video"],
+      display_pricing: {
+        billing_kind: "per_second",
+        prices: { second: { configured: 0.314, plg: 0.2512 } },
+        second_by_resolution: {
+          "480p": { configured: 0.14, plg: 0.112 },
+          "720p": { configured: 0.314, plg: 0.2512 },
+          "1080p": { configured: 0.5, plg: 0.4 },
+          "2K": { configured: 0.8, plg: 0.64 },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ModelLandingPage
+        config={SEEDANCE_25_CONFIG}
+        locale="en"
+        liveModels={[videoModel]}
+        allModels={[videoModel]}
+      />
+    );
+    const pricing = html.slice(html.indexOf('id="pricing"'), html.indexOf('id="capabilities"'));
+
+    for (const resolution of ["480p", "720p", "1080p", "2K"]) {
+      expect(pricing).toContain(resolution);
+    }
+    expect(pricing).not.toContain("pricing-breakdown-card");
+    expect(pricing).not.toContain("Pricing dimension");
   });
 
   test("uses previous-generation capability comparison and type-specific media pricing", () => {
@@ -744,8 +799,8 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={config} locale="en" liveModels={[veoModel]} allModels={[veoModel]} />
     );
 
-    expect(html).toContain("$0.320 / request");
-    expect(html).toContain("$0.400 / request");
+    expect(html).toContain("model-hero-price-value-reference");
+    expect(html).toContain('class="model-hero-price-value">$0.320 / request</span>');
     expect(html).not.toContain("$0.32 / second");
   });
 
@@ -795,6 +850,7 @@ describe("ModelLandingPage", () => {
       />,
     );
     const requestSchema = requestHtml.slice(requestHtml.indexOf('type="application/ld+json"'));
+    expect(requestSchema).not.toContain('"@type":"Product"');
     expect(requestSchema).not.toContain('"offers"');
   });
 

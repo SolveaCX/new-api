@@ -179,9 +179,14 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
   // or missing price would serialize to null / an invalid price and hand search
   // engines a broken price signal.
   const validPrice = Number.isFinite(input.inputPriceUsd) && input.inputPriceUsd >= 0;
-  return graph([
-    websiteSchema(),
-    {
+  const items: JsonLdObject[] = [websiteSchema()];
+
+  // A Product without offers, review, or aggregateRating is not eligible for
+  // Google's Product rich results. Variable-priced and temporarily unavailable
+  // models still have useful FAQ and breadcrumb data, but must not be emitted
+  // as an incomplete Product entity.
+  if (validPrice) {
+    items.push({
       "@type": "Product",
       name: `${input.modelName} API`,
       description: input.description,
@@ -189,22 +194,21 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
       brand: { "@type": "Brand", name: input.vendorName },
       url: pageUrl,
       image: PRODUCT_IMAGE_URL,
-      ...(validPrice
-        ? {
-            offers: {
-              "@type": "Offer",
-              priceCurrency: "USD",
-              price: input.inputPriceUsd,
-              description: `Effective ${SITE_NAME} price for ${input.modelName}`,
-              availability: "https://schema.org/InStock",
-              url: pageUrl,
-              seller: organizationSchema(),
-              hasMerchantReturnPolicy: digitalServiceReturnPolicy(),
-              shippingDetails: digitalServiceShippingDetails(),
-            },
-          }
-        : {}),
-    },
+      offers: {
+        "@type": "Offer",
+        priceCurrency: "USD",
+        price: input.inputPriceUsd,
+        description: `Effective ${SITE_NAME} price for ${input.modelName}`,
+        availability: "https://schema.org/InStock",
+        url: pageUrl,
+        seller: organizationSchema(),
+        hasMerchantReturnPolicy: digitalServiceReturnPolicy(),
+        shippingDetails: digitalServiceShippingDetails(),
+      },
+    });
+  }
+
+  items.push(
     {
       "@type": "FAQPage",
       mainEntity: input.faq.map((item) => ({
@@ -217,7 +221,9 @@ export function buildModelSchema(input: ModelSchemaInput): JsonLdGraph {
       { name: "Models", item: modelsUrl },
       { name: input.modelName, item: pageUrl },
     ]),
-  ]);
+  );
+
+  return graph(items);
 }
 
 type RankingsSchemaInput = {
@@ -370,28 +376,38 @@ export function buildModelsDirectorySchema(input: ModelsDirectorySchemaInput): J
         "@type": "ItemList",
         name: input.title,
         numberOfItems: input.totalCount,
-        itemListElement: input.items.map((item) => ({
-          "@type": "ListItem",
-          position: item.position,
-          item: {
-            "@type": "Product",
-            name: item.name,
-            url: absoluteUrl(item.path),
-            ...(item.vendor ? { brand: { "@type": "Brand", name: item.vendor } } : {}),
-            ...(item.priceUsd != null && item.priceUsd > 0
-              ? {
-                  offers: {
-                    "@type": "Offer",
-                    price: item.priceUsd,
-                    priceCurrency: "USD",
-                    availability: "https://schema.org/InStock",
-                    url: directoryUrl,
-                    ...(item.priceUnit ? { description: item.priceUnit } : {}),
-                  },
-                }
-              : {}),
-          },
-        })),
+        itemListElement: input.items.map((item) => {
+          const hasValidPrice = typeof item.priceUsd === "number" && Number.isFinite(item.priceUsd) && item.priceUsd >= 0;
+          const listItem: JsonLdObject = {
+            "@type": "ListItem",
+            position: item.position,
+          };
+
+          // Keep catalogue entries with missing/variable prices as plain list
+          // links. A Product without offers, review, or aggregateRating causes
+          // the same invalid Product warning as model detail pages.
+          if (!hasValidPrice) {
+            return { ...listItem, name: item.name, url: absoluteUrl(item.path) };
+          }
+
+          return {
+            ...listItem,
+            item: {
+              "@type": "Product",
+              name: item.name,
+              url: absoluteUrl(item.path),
+              ...(item.vendor ? { brand: { "@type": "Brand", name: item.vendor } } : {}),
+              offers: {
+                "@type": "Offer",
+                price: item.priceUsd,
+                priceCurrency: "USD",
+                availability: "https://schema.org/InStock",
+                url: directoryUrl,
+                ...(item.priceUnit ? { description: item.priceUnit } : {}),
+              },
+            },
+          };
+        }),
       },
     },
     breadcrumbSchema([{ name: input.title, item: directoryUrl }]),
