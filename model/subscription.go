@@ -1244,6 +1244,14 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	return tx.Save(&topup).Error
 }
 
+// UpsertSubscriptionOrderTopUpHistoryTx mirrors a subscription order into the
+// wallet billing-history table using the caller's transaction. Subscription
+// purchase flows that complete inside their own lifecycle transaction use this
+// helper to keep the order and its user-visible history row atomic.
+func UpsertSubscriptionOrderTopUpHistoryTx(tx *gorm.DB, order *SubscriptionOrder) error {
+	return upsertSubscriptionTopUpTx(tx, order)
+}
+
 // SyncSubscriptionOrderTopUpHistory mirrors the current SubscriptionOrder payment
 // state into TopUp history so existing billing-history and resume flows can use it.
 func SyncSubscriptionOrderTopUpHistory(tradeNo string) error {

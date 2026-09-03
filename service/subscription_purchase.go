@@ -964,6 +964,9 @@ func applyBalancePrepaidPurchaseTx(tx *gorm.DB, user *model.User, contract *mode
 		if grant != nil && grant.Entitlement != nil {
 			transition.SubscriptionScopeID = int64(grant.Entitlement.Id)
 		}
+		if err := model.UpsertSubscriptionOrderTopUpHistoryTx(tx, locked); err != nil {
+			return err
+		}
 		if err := createPrepaidTermSegmentsTx(tx, contract.Id, locked.Id, plan.Id, PrepaidTermAllocation{
 			CanonicalWalletUnitPrice: plan.PriceAmount,
 		}, periodStart, cmd.Months); err != nil {

@@ -1208,6 +1208,9 @@ func applyBalanceOnePeriodChangeTx(tx *gorm.DB, user *model.User, contract *mode
 		if grant != nil && grant.Entitlement != nil {
 			transition.SubscriptionScopeID = int64(grant.Entitlement.Id)
 		}
+		if err := model.UpsertSubscriptionOrderTopUpHistoryTx(tx, locked); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {

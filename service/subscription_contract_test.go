@@ -59,6 +59,7 @@ func setupSubscriptionContractServiceTestDB(t *testing.T) {
 		&model.Log{},
 		&model.SubscriptionPlan{},
 		&model.SubscriptionOrder{},
+		&model.TopUp{},
 		&model.UserSubscription{},
 		&model.SubscriptionProviderBinding{},
 		&model.UserSubscriptionContract{},
@@ -236,6 +237,15 @@ func TestBalancePurchaseCreatesOnePeriodWithoutBinding(t *testing.T) {
 	require.Len(t, orders, 1)
 	require.Equal(t, common.TopUpStatusSuccess, orders[0].Status)
 	require.Equal(t, model.PaymentProviderBalance, orders[0].PaymentProvider)
+
+	var history model.TopUp
+	require.NoError(t, model.DB.Where("trade_no = ?", orders[0].TradeNo).First(&history).Error)
+	require.Equal(t, orders[0].UserId, history.UserId)
+	require.Zero(t, history.Amount)
+	require.Equal(t, orders[0].Money, history.Money)
+	require.Equal(t, common.TopUpStatusSuccess, history.Status)
+	require.Equal(t, model.PaymentMethodBalance, history.PaymentMethod)
+	require.Equal(t, model.PaymentProviderBalance, history.PaymentProvider)
 
 	var bindingCount int64
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("user_id = ?", 7101).Count(&bindingCount).Error)
