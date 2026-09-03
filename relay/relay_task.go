@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -83,6 +86,15 @@ func resolveSecondBillingRatios(adaptor any) (map[string]float64, error) {
 		return nil, err
 	}
 	return ratios, nil
+}
+
+// hasValidSecondBillingUnits reports whether an adaptor produced the single
+// required billing unit for a configured per-second video price.  Do not
+// accept arbitrary ratio keys or non-finite/non-positive values: those would
+// either bypass the configured price or produce an invalid quota.
+func hasValidSecondBillingUnits(ratios map[string]float64) bool {
+	units, ok := ratios[taskcommon.BillingUnitsKey]
+	return ok && units > 0 && !math.IsNaN(units) && !math.IsInf(units, 0)
 }
 
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
@@ -251,21 +263,38 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 
 	// 4. 价格计算：基础模型价格
 	info.OriginModelName = modelName
+	_, supportsSecondBilling := adaptor.(secondBillingAdaptor)
+	usesSecondBilling := supportsSecondBilling && billing_setting.IsVideoModelConfigured(
+		billing_setting.GetVideoPriceRules(), modelName)
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
-	if err != nil {
+	legacyPriceData, legacyErr := priceData, err
+	provisionalSecondBilling := supportsSecondBilling && (err != nil || !priceData.UsePrice || priceData.ModelPrice <= 0 ||
+		math.IsNaN(priceData.ModelPrice) || math.IsInf(priceData.ModelPrice, 0))
+	if err != nil && !provisionalSecondBilling {
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}
-	info.PriceData = priceData
-	if validator, ok := adaptor.(taskPriceDataValidator); ok {
-		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
-			return nil, taskErr
+	if provisionalSecondBilling {
+		groupRatioInfo := priceData.GroupRatioInfo
+		if err != nil {
+			groupRatioInfo = helper.HandleGroupRatio(c, info)
+		}
+		priceData = types.PriceData{
+			ModelPrice:     1,
+			UsePrice:       true,
+			Quota:          int(common.QuotaPerUnit * groupRatioInfo.GroupRatio),
+			GroupRatioInfo: groupRatioInfo,
+		}
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && groupRatioInfo.GroupRatio == 0 {
+			priceData.FreeModel = true
 		}
 	}
+	info.PriceData = priceData
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+	estimatedRatios := adaptor.EstimateBilling(c, info)
+	if len(estimatedRatios) > 0 {
 		for k, v := range estimatedRatios {
 			info.PriceData.AddOtherRatio(k, v)
 		}
@@ -279,6 +308,30 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 	secondRatios, secondErr := resolveSecondBillingRatios(adaptor)
 	if secondErr != nil {
 		return nil, service.TaskErrorWrapperLocal(secondErr, "video_price_not_configured", http.StatusBadRequest)
+	}
+	if provisionalSecondBilling {
+		if !hasValidSecondBillingUnits(secondRatios) {
+			// No per-second quote was produced: restore the legacy result and
+			// preserve the original model-price error/validator behavior.
+			info.PriceData = legacyPriceData
+			for k, v := range estimatedRatios {
+				info.PriceData.AddOtherRatio(k, v)
+			}
+			if legacyErr != nil {
+				return nil, service.TaskErrorWrapper(legacyErr, "model_price_error", http.StatusBadRequest)
+			}
+			secondRatios = nil
+		}
+	}
+	if validator, ok := adaptor.(taskPriceDataValidator); ok {
+		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
+	if usesSecondBilling && !provisionalSecondBilling && !hasValidSecondBillingUnits(secondRatios) {
+		return nil, service.TaskErrorWrapperLocal(
+			fmt.Errorf("model %s produced invalid per-second billing units", modelName),
+			"video_price_not_configured", http.StatusBadRequest)
 	}
 	for k, v := range secondRatios {
 		info.PriceData.AddOtherRatio(k, v)
