@@ -157,10 +157,12 @@ function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: 
         {props.usage != null ? <span className="text-sm font-medium text-[#777180]">{displayTokens(props.usage).toLocaleString()} {ui.usage}</span> : null}
       </div>
       {props.model.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#5F5A68]">{props.model.description}</p> : null}
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#777180]">
-        {formatContext(props.model.context) ? <span>{formatContext(props.model.context)} {ui.context}</span> : null}
-        {props.model.price ? <span>{props.model.price}</span> : null}
-        <Link href={localizePath(props.model.href, props.locale)} className="inline-flex items-center rounded-md bg-[#F2ECFF] px-2.5 py-1 font-semibold !text-[#6D28D9] transition hover:bg-[#E9D5FF] hover:!text-[#5B21B6] hover:shadow-[0_6px_12px_-8px_rgba(76,29,149,.65)]">{ui.details}</Link>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#777180]">
+          {formatContext(props.model.context) ? <span>{formatContext(props.model.context)} {ui.context}</span> : null}
+          {props.model.price ? <span>{props.model.price}</span> : null}
+        </div>
+        <Link href={localizePath(props.model.href, props.locale)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[#F2ECFF] px-2.5 py-1.5 text-xs font-semibold !text-[#6D28D9] transition hover:-translate-y-px hover:bg-[#E9D5FF] hover:!text-[#5B21B6] hover:shadow-[0_6px_12px_-8px_rgba(76,29,149,.65)]">{ui.details}<ArrowRight className="size-3.5" aria-hidden="true" /></Link>
       </div>
     </article>
   );
@@ -189,7 +191,6 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
             <p className="mt-6 max-w-3xl text-lg leading-8 text-[#5F5A68]">{copy.intro}</p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold !text-white transition hover:-translate-y-0.5 hover:!bg-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.8)]">{ui.allModels}<ArrowRight className="size-4" /></Link>
-              <Link href={localizePath("/models?view=compare", props.locale)} className="inline-flex items-center gap-2 rounded-lg border border-[#D8D2E4] bg-white px-4 py-2.5 text-sm font-semibold !text-[#3C3548] transition hover:-translate-y-0.5 hover:border-[#A78BFA] hover:!text-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.45)]">{ui.compare}</Link>
             </div>
           </div>
         </div>
