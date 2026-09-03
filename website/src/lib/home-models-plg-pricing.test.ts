@@ -81,6 +81,30 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.cacheOfficial).toBe("$0.1");
   });
 
+  test("uses per-image pricing without cache details for image generation models", () => {
+    const [row] = buildRowsForModels([{
+      ...PLG_MODEL,
+      model_name: "gpt-image-2",
+      supported_endpoint_types: ["image-generation"],
+      display_pricing: {
+        billing_kind: "token",
+        prices: {
+          input: { configured: 5, plg: 4 },
+          output: { configured: 30, plg: 24 },
+          cache: { configured: 1.25, plg: 1 },
+          image: { configured: 8, plg: 6.4 },
+        },
+      },
+    }], VENDORS, PLG_GROUP_RATIO);
+
+    expect(row.official).toBe("$8");
+    expect(row.discounted).toBe("$6.4");
+    expect(row.priceUnit).toBe("per image");
+    expect(row.input).toBeUndefined();
+    expect(row.output).toBeUndefined();
+    expect(row.cache).toBeUndefined();
+  });
+
   test("describes request rows with per-request unit metadata", () => {
     const requestModel: PricingModel = {
       model_name: "some-video-model",

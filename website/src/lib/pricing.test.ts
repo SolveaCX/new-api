@@ -447,7 +447,7 @@ describe("resolveDisplayPrice", () => {
     expect(resolved?.source).toBe("display");
   });
 
-  test("keeps token units for image and audio dimensions that scale token counts", () => {
+  test("uses per-image units for image prices and token units for audio dimensions", () => {
     const model = {
       ...tokenModel,
       display_pricing: {
@@ -460,7 +460,11 @@ describe("resolveDisplayPrice", () => {
       },
     };
 
-    for (const dimension of ["image", "audio_input", "audio_output"] as const) {
+    const image = resolveModelDisplayPrice(model, "image", "plg");
+    expect(image?.unit).toBe("/ image");
+    expect(image?.source).toBe("display");
+
+    for (const dimension of ["audio_input", "audio_output"] as const) {
       const resolved = resolveModelDisplayPrice(model, dimension, "plg");
       expect(resolved?.unit).toBe("/ 1M tokens");
       expect(resolved?.source).toBe("display");

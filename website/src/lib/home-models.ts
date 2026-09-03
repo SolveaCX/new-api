@@ -138,6 +138,7 @@ export function buildRowsForModels(
   return models
     .filter((model) => getOfficialPriceUsd(model) > 0 || resolveModelDisplayPrice(model, undefined, "plg", groupRatio) != null)
     .map((model) => {
+      const imageGeneration = isImageGenerationModel(model);
       const official = getOfficialPriceUsd(model);
       // Per-model overrides in group_model_ratio beat the flat group ratio
       // during billing, so the quoted price has to apply them too — otherwise a
@@ -149,16 +150,16 @@ export function buildRowsForModels(
       const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, overrides);
       const listed = official * getBestGroupRatio(model, effectiveGroupRatio);
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
-      const displayPrice = resolveModelDisplayPrice(model, undefined, "plg", effectiveGroupRatio);
+      const displayPrice = resolveModelDisplayPrice(model, imageGeneration ? "image" : undefined, "plg", effectiveGroupRatio);
       const officialDisplayPrice = displayPrice
         ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio)
         : null;
       const billingUnit = modelBillingUnit(model, displayPrice?.unit);
-      const inputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio) : null;
+      const inputPrice = billingUnit === "token" && !imageGeneration ? resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio) : null;
       const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", effectiveGroupRatio) : null;
-      const outputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio) : null;
+      const outputPrice = billingUnit === "token" && !imageGeneration ? resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio) : null;
       const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", effectiveGroupRatio) : null;
-      const cachePrice = billingUnit === "token"
+      const cachePrice = billingUnit === "token" && !imageGeneration
         ? resolveModelDisplayPrice(model, "cache", "plg", effectiveGroupRatio)
         : null;
       const officialCachePrice = cachePrice ? resolveModelDisplayPrice(model, "cache", "configured", effectiveGroupRatio) : null;
@@ -168,8 +169,8 @@ export function buildRowsForModels(
       // Their display contract therefore has no `input`/`output` dimensions;
       // expose the billed per-second rate as our output price so the directory
       // table does not render an empty output column for video rows.
-      const displayedOutputPrice = billingUnit === "second" ? displayPrice : outputPrice;
-      const displayedOfficialOutputPrice = billingUnit === "second" ? officialDisplayPrice : officialOutputPrice;
+      const displayedOutputPrice = billingUnit === "second" ? displayPrice : imageGeneration ? null : outputPrice;
+      const displayedOfficialOutputPrice = billingUnit === "second" ? officialDisplayPrice : imageGeneration ? null : officialOutputPrice;
       const inputFilterUsd = billingUnit === "token" ? inputPrice?.value : discountedUsd;
       const outputFilterUsd = billingUnit === "token" ? outputPrice?.value : discountedUsd;
       const directoryMeta = model.directory_metadata;
@@ -206,6 +207,11 @@ export function buildRowsForModels(
         iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
       };
     });
+}
+
+function isImageGenerationModel(model: PricingModel): boolean {
+  const endpointTypes = model.supported_endpoint_types ?? [];
+  return endpointTypes.includes("image-generation") || /(^|[-_.])(image|banana)/i.test(model.model_name);
 }
 
 function pricedTokenModels(data: PricingData): PricingModel[] {

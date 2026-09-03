@@ -4015,11 +4015,10 @@ function buildFlatkeyPriceRows(
   }
 
   const defaultDisplayPrice = resolveModelDisplayPrice(model, undefined, "plg", groupRatio);
-  // Image-capable token models (for example gpt-image-2) can expose an
-  // image-specific conversion ratio alongside their canonical input/output
-  // token rates. The directory uses the token contract for these models, so
-  // prefer the same rows here to keep list and detail prices identical.
-  if (isTokenBasedModel(model) && defaultDisplayPrice?.unit === "/ 1M tokens") {
+  // Token-priced models use the canonical input/cache/output rows. Image
+  // generation models stay on their per-image contract below, even when the
+  // upstream payload also exposes token conversion fields.
+  if (config.generator?.kind !== "image" && isTokenBasedModel(model) && defaultDisplayPrice?.unit === "/ 1M tokens") {
     const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice.from ? "from " : "");
     if (tokenRows.rows.length > 0) return tokenRows;
   }

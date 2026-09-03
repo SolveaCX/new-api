@@ -696,14 +696,12 @@ describe("ModelLandingPage", () => {
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="en" liveModels={[imageModel]} allModels={[imageModel]} />
     );
 
-    expect(html).toContain("Input /M");
-    expect(html).toContain("$4");
-    expect(html).toContain("$24");
-    expect(html).toContain("Output /M");
-    expect(html).toContain("1M tokens");
-    expect(html).not.toContain("Price / image");
-    expect(html).not.toContain("$8.000 / image");
-    expect(html).not.toContain("$6.400 / image");
+    expect(html).toContain("Price / image");
+    expect(html).toContain("$6.400 / image");
+    expect(html).not.toContain("Input /M");
+    expect(html).not.toContain("Output /M");
+    expect(html).not.toContain("Cache /M");
+    expect(html).not.toContain("1M tokens");
     expect(html).not.toContain("pricing-breakdown-card");
   });
 
