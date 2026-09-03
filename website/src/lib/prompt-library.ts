@@ -1,4 +1,5 @@
 import { type Locale, withIdFallback } from "./locales";
+import { APP_CONSOLE_ORIGIN } from "./origins";
 
 export type PromptArtifact =
   | {
@@ -49,6 +50,22 @@ export type PromptItem = {
   tags: string[];
   title: Record<Locale, string>;
   updatedAt: string;
+};
+
+type PromptLibraryApiItem = {
+  artifact?: unknown;
+  category?: string;
+  model?: string;
+  output?: unknown;
+  prompt?: string;
+  slug?: string;
+  source?: unknown;
+  source_platform?: string;
+  source_url?: string;
+  summary?: unknown;
+  tags?: unknown;
+  title?: unknown;
+  updatedAt?: string;
 };
 
 export type PromptLibraryCopy = {
@@ -1214,6 +1231,135 @@ function hasArtifact(item: PromptItem): boolean {
   if (item.artifact.kind === "code") return Boolean(item.artifact.code);
   if (item.artifact.kind === "storyboard") return item.artifact.frames.length > 0;
   return false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function localizedText(value: unknown, fallback: string): Record<Locale, string> {
+  const record = isRecord(value) ? value : {};
+  const en = typeof record.en === "string" && record.en.trim() ? record.en : fallback;
+  const zh = typeof record.zh === "string" && record.zh.trim() ? record.zh : en;
+  return withIdFallback({
+    en,
+    zh,
+    es: typeof record.es === "string" && record.es.trim() ? record.es : en,
+    fr: typeof record.fr === "string" && record.fr.trim() ? record.fr : en,
+    pt: typeof record.pt === "string" && record.pt.trim() ? record.pt : en,
+    ru: typeof record.ru === "string" && record.ru.trim() ? record.ru : en,
+    ja: typeof record.ja === "string" && record.ja.trim() ? record.ja : en,
+    vi: typeof record.vi === "string" && record.vi.trim() ? record.vi : en,
+    de: typeof record.de === "string" && record.de.trim() ? record.de : en,
+  });
+}
+
+function promptSource(value: unknown, sourcePlatform = "", sourceUrl = ""): PromptSource {
+  const record = isRecord(value) ? value : {};
+  const platform = String(record.platform || sourcePlatform || "External") as PromptSource["platform"];
+  return {
+    capturedAt: String(record.captured_at || record.capturedAt || today),
+    label: String(record.label || sourcePlatform || "External"),
+    platform: ["GitHub", "Social", "Official docs", "Flatkey generated", "Local migration", "External"].includes(platform) ? platform : "External",
+    url: String(record.url || sourceUrl || ""),
+  };
+}
+
+function isOwnedPromptSource(source: PromptSource): boolean {
+  const value = `${source.platform} ${source.label}`.toLowerCase();
+  return source.platform === "Local migration" || value.includes("flatkey generated") || value.includes("owned") || value.includes("自有");
+}
+
+function outputRatio(value: unknown, artifact: PromptArtifact): PromptItem["output"]["ratio"] {
+  const ratio = isRecord(value) ? String(value.ratio || "") : "";
+  if (["1:1", "3:2", "4:3", "9:16", "16:9", "3x3"].includes(ratio)) return ratio as PromptItem["output"]["ratio"];
+  return artifact.kind === "video" ? "16:9" : "1:1";
+}
+
+function promptArtifact(value: unknown): PromptArtifact | null {
+  if (!isRecord(value)) return null;
+  const kind = String(value.kind || "");
+  if (kind === "image" && typeof value.url === "string" && value.url) {
+    return { kind, url: value.url, alt: String(value.alt || "Prompt artifact") };
+  }
+  if (kind === "video" && typeof value.url === "string" && value.url) {
+    return { kind, url: value.url, poster: String(value.poster || ""), alt: String(value.alt || "Prompt artifact") };
+  }
+  if (kind === "text" && typeof value.body === "string" && value.body) {
+    return { kind, body: value.body, title: String(value.title || "Prompt output") };
+  }
+  if (kind === "code" && typeof value.code === "string" && value.code) {
+    return { kind, code: value.code, language: String(value.language || "text") };
+  }
+  if (kind === "storyboard" && Array.isArray(value.frames) && value.frames.length > 0) {
+    return { kind, frames: value.frames.map((frame) => String(frame)).filter(Boolean) };
+  }
+  return null;
+}
+
+function normalizeApiPromptItem(value: PromptLibraryApiItem): PromptItem | null {
+  const slug = String(value.slug || "").trim();
+  const category = String(value.category || "").trim();
+  const prompt = String(value.prompt || "").trim();
+  const artifact = promptArtifact(value.artifact);
+  if (!slug || !prompt || !artifact) return null;
+  if (!["image", "video", "audio", "text", "agent"].includes(category)) return null;
+  const source = promptSource(value.source, value.source_platform, value.source_url);
+  if (!source.url && !isOwnedPromptSource(source)) return null;
+  const title = localizedText(value.title, slug.replace(/-/g, " "));
+  const output = {
+    label: localizedText(isRecord(value.output) ? value.output.label : undefined, artifact.kind),
+    ratio: outputRatio(value.output, artifact),
+  };
+  return {
+    artifact,
+    category: category as PromptItem["category"],
+    model: String(value.model || ""),
+    output,
+    prompt,
+    slug,
+    source,
+    summary: localizedText(value.summary, title.en),
+    tags: Array.isArray(value.tags) ? value.tags.map((tag) => String(tag)).filter(Boolean) : [],
+    title,
+    updatedAt: String(value.updatedAt || source.capturedAt || today),
+  };
+}
+
+async function fetchPromptLibraryApi(path: string): Promise<unknown> {
+  const response = await fetch(`${APP_CONSOLE_ORIGIN}${path}`, {
+    next: { revalidate: 300 },
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export async function fetchCliMediaPromptItems(category?: "image" | "video"): Promise<PromptItem[]> {
+  const path = `/api/prompt-library${category ? `?category=${encodeURIComponent(category)}` : ""}`;
+  try {
+    const payload = await fetchPromptLibraryApi(path);
+    const data = isRecord(payload) ? payload.data : null;
+    const rawItems = isRecord(data) && Array.isArray(data.items) ? data.items : [];
+    const items = rawItems
+      .map((item) => normalizeApiPromptItem(item as PromptLibraryApiItem))
+      .filter((item): item is PromptItem => Boolean(item))
+      .filter((item) => !category || item.category === category);
+    if (items.length > 0) {
+      return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    }
+  } catch {}
+  return getCliMediaPromptItems(category);
+}
+
+export async function fetchCliMediaPromptItem(category: "image" | "video", slug: string): Promise<PromptItem | undefined> {
+  try {
+    const payload = await fetchPromptLibraryApi(`/api/prompt-library/${encodeURIComponent(slug)}`);
+    const data = isRecord(payload) ? payload.data : null;
+    const rawItem = isRecord(data) ? data.item : null;
+    const item = rawItem ? normalizeApiPromptItem(rawItem as PromptLibraryApiItem) : null;
+    if (item && item.category === category) return item;
+  } catch {}
+  return getCliMediaPromptItem(category, slug);
 }
 
 export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem[] {

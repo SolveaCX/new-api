@@ -13,7 +13,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata(props: Props) {
   const params = await props.params;
-  const meta = getCliMediaDetailMetadata("video", params.slug, "en");
+  const meta = await getCliMediaDetailMetadata("video", params.slug, "en");
   if (!meta) return {};
   return buildMetadata({
     title: meta.title,
@@ -24,7 +24,7 @@ export async function generateMetadata(props: Props) {
 
 export default async function Page(props: Props) {
   const params = await props.params;
-  const meta = getCliMediaDetailMetadata("video", params.slug, "en");
+  const meta = await getCliMediaDetailMetadata("video", params.slug, "en");
   if (!meta) notFound();
   return <CliMediaPromptDetailPage kind="video" locale="en" slug={params.slug} />;
 }
