@@ -13,6 +13,7 @@ import { localizePath, type Locale } from "@/lib/locales";
 import { displayTokens, type RankingsData } from "@/lib/rankings-live";
 import { type PricingData } from "@/lib/pricing";
 import { consoleUrl } from "@/lib/origins";
+import { buildCollectionDetailSchema, buildCollectionsIndexSchema, stringifyJsonLd } from "@/lib/schema";
 
 const shellClass = "fk-site-frame";
 const COLLECTION_DISPLAY_ORDER = [
@@ -112,8 +113,21 @@ function CollectionCard(props: { collection: ModelCollectionDefinition; locale: 
 
 export function ModelCollectionsIndex(props: { locale: Locale }) {
   const ui = getUiCopy(props.locale);
+  const orderedCollections = [...MODEL_COLLECTIONS].sort(
+    (a, b) => COLLECTION_DISPLAY_ORDER.indexOf(a.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]) - COLLECTION_DISPLAY_ORDER.indexOf(b.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]),
+  );
+  const schema = buildCollectionsIndexSchema({
+    locale: props.locale,
+    title: ui.collections,
+    description: ui.heroDescription,
+    collections: orderedCollections.map((collection) => ({
+      name: getModelCollectionCopy(collection, props.locale).title,
+      path: localizePath(`/collections/${collection.slug}`, props.locale),
+    })),
+  });
   return (
     <SiteShell locale={props.locale} pathname="/collections">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
       <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[#FAFAFC]">
       <section className="border-b border-[#ECEAF1] bg-gradient-to-b from-[#F8F6FF] via-[#FBFAFD] to-[#FAFAFC] py-20 sm:py-28">
         <div className={`${shellClass} text-center`}>
@@ -129,9 +143,7 @@ export function ModelCollectionsIndex(props: { locale: Locale }) {
       <section className="bg-[#FAFAFC] py-14 sm:py-20">
         <div className={`${shellClass}`}>
           <div className="grid gap-4 sm:grid-cols-2">
-            {[...MODEL_COLLECTIONS]
-              .sort((a, b) => COLLECTION_DISPLAY_ORDER.indexOf(a.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]) - COLLECTION_DISPLAY_ORDER.indexOf(b.slug as (typeof COLLECTION_DISPLAY_ORDER)[number]))
-              .map((collection, index) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} index={index} />)}
+            {orderedCollections.map((collection, index) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} index={index} />)}
           </div>
         </div>
       </section>
@@ -178,9 +190,24 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
   });
   const cards = models.map((model) => ({ ...modelCardData(model, props.pricing), rawName: model.model_name }));
   const related = MODEL_COLLECTIONS.filter((collection) => collection.slug !== props.collection.slug);
+  const schema = buildCollectionDetailSchema({
+    locale: props.locale,
+    collectionsName: ui.collections,
+    slug: props.collection.slug,
+    title: copy.title,
+    description: copy.intro,
+    models: cards.map((model, index) => ({
+      name: model.name,
+      path: localizePath(model.href, props.locale),
+      position: index + 1,
+      vendor: model.vendor,
+      description: model.description || undefined,
+    })),
+  });
 
   return (
     <SiteShell locale={props.locale} pathname={`/collections/${props.collection.slug}`}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
       <main className="model-detail-page model-prototype relative overflow-x-hidden bg-white text-[#171a21]">
       <section className="model-hero">
         <div className="model-container">
@@ -196,7 +223,7 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         </div>
       </section>
 
-      <section className="bg-white py-14 sm:py-20">
+      <section className="bg-white py-10 sm:py-14">
         <div className="model-container">
           <div>
               <div className="mb-8 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{ui.featured}</h2></div>

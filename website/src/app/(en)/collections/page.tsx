@@ -1,9 +1,12 @@
 import { ModelCollectionsIndex } from "@/components/model-collections-page";
+import { getModelCollectionsSeoCopy } from "@/lib/model-collections";
 import { buildMetadata } from "@/lib/seo";
 
+const seoCopy = getModelCollectionsSeoCopy("en");
+
 export const metadata = buildMetadata({
-  title: "AI Model Collections | Flatkey",
-  description: "Browse curated AI model collections for coding, image generation, video, tool calling, and more through one API.",
+  title: seoCopy.title,
+  description: seoCopy.description,
   pathname: "/collections",
   absoluteTitle: true,
 });

@@ -263,6 +263,89 @@ type ModelsDirectorySchemaInput = {
   totalCount: number;
 };
 
+type CollectionsIndexSchemaInput = {
+  locale: Locale;
+  title: string;
+  description: string;
+  collections: Array<{ name: string; path: string }>;
+};
+
+/** JSON-LD for the top-level curated collections directory. */
+export function buildCollectionsIndexSchema(input: CollectionsIndexSchemaInput): JsonLdGraph {
+  const collectionsUrl = absoluteUrl(localizePath("/collections", input.locale));
+  return graph([
+    websiteSchema(),
+    {
+      "@type": "CollectionPage",
+      name: input.title,
+      description: input.description,
+      url: collectionsUrl,
+      inLanguage: localeLanguageTag(input.locale),
+      isPartOf: websiteSchema(),
+      publisher: organizationSchema(),
+      mainEntity: {
+        "@type": "ItemList",
+        name: input.title,
+        numberOfItems: input.collections.length,
+        itemListElement: input.collections.map((collection, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: collection.name,
+          url: absoluteUrl(collection.path),
+        })),
+      },
+    },
+    breadcrumbSchema([{ name: input.title, item: collectionsUrl }]),
+  ]);
+}
+
+type CollectionDetailSchemaInput = {
+  locale: Locale;
+  collectionsName: string;
+  slug: string;
+  title: string;
+  description: string;
+  models: Array<{ name: string; path: string; position: number; vendor?: string; description?: string }>;
+};
+
+/** JSON-LD for a collection detail page and its featured model directory. */
+export function buildCollectionDetailSchema(input: CollectionDetailSchemaInput): JsonLdGraph {
+  const collectionsUrl = absoluteUrl(localizePath("/collections", input.locale));
+  const detailUrl = absoluteUrl(localizePath(`/collections/${input.slug}`, input.locale));
+  return graph([
+    websiteSchema(),
+    {
+      "@type": "CollectionPage",
+      name: input.title,
+      description: input.description,
+      url: detailUrl,
+      inLanguage: localeLanguageTag(input.locale),
+      isPartOf: { "@type": "CollectionPage", name: input.collectionsName, url: collectionsUrl },
+      publisher: organizationSchema(),
+      mainEntity: {
+        "@type": "ItemList",
+        name: input.title,
+        numberOfItems: input.models.length,
+        itemListElement: input.models.map((model) => ({
+          "@type": "ListItem",
+          position: model.position,
+          item: {
+            "@type": "Product",
+            name: model.name,
+            description: model.description,
+            url: absoluteUrl(model.path),
+            ...(model.vendor ? { brand: { "@type": "Brand", name: model.vendor } } : {}),
+          },
+        })),
+      },
+    },
+    breadcrumbSchema([
+      { name: input.collectionsName, item: collectionsUrl },
+      { name: input.title, item: detailUrl },
+    ]),
+  ]);
+}
+
 /**
  * Directory schema for /models: a CollectionPage carrying an ItemList of the
  * catalogue. Each entry is a Product with an Offer so the listed price is

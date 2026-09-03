@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ModelCollectionDetail } from "@/components/model-collections-page";
-import { getModelCollection, getModelCollectionCopy, MODEL_COLLECTIONS } from "@/lib/model-collections";
+import { getModelCollection, getModelCollectionSeoDescription, getModelCollectionCopy, MODEL_COLLECTIONS } from "@/lib/model-collections";
 import { isLocale, type Locale, LOCALES } from "@/lib/locales";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { fetchRankingsData } from "@/lib/rankings-live";
@@ -18,7 +18,7 @@ export async function generateMetadata(props: Props) {
   const collection = getModelCollection(params.slug);
   if (!collection) return {};
   const copy = getModelCollectionCopy(collection, params.locale as Locale);
-  return buildMetadata({ title: `${copy.title} | Flatkey`, description: copy.shortDescription, pathname: `/collections/${collection.slug}`, locale: params.locale as Locale, absoluteTitle: true });
+  return buildMetadata({ title: `${copy.title} | Flatkey`, description: getModelCollectionSeoDescription(collection, params.locale as Locale), pathname: `/collections/${collection.slug}`, locale: params.locale as Locale, absoluteTitle: true });
 }
 
 export default async function Page(props: Props) {

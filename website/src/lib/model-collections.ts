@@ -23,6 +23,103 @@ export type ModelCollectionDefinition = {
   matches: (model: PricingModel) => boolean;
 };
 
+export type ModelCollectionsSeoCopy = { title: string; description: string };
+
+const MODEL_COLLECTIONS_SEO_COPY: Record<Locale, ModelCollectionsSeoCopy> = {
+  en: {
+    title: "AI Model Collections: Image, Video, Coding & More | Flatkey",
+    description: "Explore curated AI model collections for image generation, video, coding, tool calling, embeddings, speech, and search. Compare live model capabilities and public API pricing on Flatkey.",
+  },
+  zh: {
+    title: "AI 模型集合：图像、视频、编程模型 | Flatkey",
+    description: "浏览图像生成、视频、编程、工具调用、嵌入、语音和搜索等 AI 模型集合，在 Flatkey 比较实时能力与公开 API 价格。",
+  },
+  es: {
+    title: "Colecciones de modelos de IA: imágenes, vídeo, código y más | Flatkey",
+    description: "Explora colecciones de IA para imágenes, vídeo, programación, herramientas, embeddings, voz y búsqueda. Compara capacidades y precios públicos en Flatkey.",
+  },
+  fr: {
+    title: "Collections de modèles IA : image, vidéo, code et plus | Flatkey",
+    description: "Découvrez des collections pour l’image, la vidéo, le code, les outils, les embeddings, la voix et la recherche. Comparez capacités et tarifs API publics sur Flatkey.",
+  },
+  pt: {
+    title: "Coleções de modelos de IA: imagem, vídeo, código e mais | Flatkey",
+    description: "Explore coleções para imagem, vídeo, programação, ferramentas, embeddings, voz e pesquisa. Compare capacidades e preços públicos de API na Flatkey.",
+  },
+  ru: {
+    title: "Подборки ИИ-моделей: изображения, видео, код и другое | Flatkey",
+    description: "Изучайте подборки моделей для изображений, видео, программирования, инструментов, embeddings, речи и поиска. Сравнивайте возможности и публичные цены API в Flatkey.",
+  },
+  ja: {
+    title: "AI モデルコレクション：画像・動画・コーディングなど | Flatkey",
+    description: "画像生成、動画、コーディング、ツール呼び出し、埋め込み、音声、検索向けの AI モデルを集めました。Flatkey で機能と公開 API 料金を比較できます。",
+  },
+  vi: {
+    title: "Bộ sưu tập mô hình AI: hình ảnh, video, coding và hơn thế | Flatkey",
+    description: "Khám phá bộ sưu tập cho tạo ảnh, video, lập trình, gọi công cụ, embedding, giọng nói và tìm kiếm. So sánh khả năng và giá API công khai trên Flatkey.",
+  },
+  de: {
+    title: "KI-Modellsammlungen: Bild, Video, Code und mehr | Flatkey",
+    description: "Entdecken Sie Sammlungen für Bildgenerierung, Video, Programmierung, Tool-Calling, Embeddings, Sprache und Suche. Vergleichen Sie Funktionen und öffentliche API-Preise bei Flatkey.",
+  },
+  id: {
+    title: "Koleksi Model AI: Gambar, Video, Coding & Lainnya | Flatkey",
+    description: "Jelajahi koleksi model AI untuk pembuatan gambar, video, coding, pemanggilan alat, embedding, suara, dan pencarian. Bandingkan kemampuan serta harga API publik di Flatkey.",
+  },
+};
+
+export function getModelCollectionsSeoCopy(locale: Locale): ModelCollectionsSeoCopy {
+  return MODEL_COLLECTIONS_SEO_COPY[locale] ?? MODEL_COLLECTIONS_SEO_COPY.en;
+}
+
+const DETAIL_SEO_SUFFIX: Record<Locale, string> = {
+  en: " Compare live model details, usage signals, context, and public pricing through the Flatkey unified API.",
+  zh: " 通过 Flatkey 统一 API 比较实时模型详情、调用量、上下文和公开价格。",
+  es: " Compara detalles, uso, contexto y precios públicos mediante la API unificada de Flatkey.",
+  fr: " Comparez détails, usage, contexte et tarifs publics via l’API unifiée de Flatkey.",
+  pt: " Compare detalhes, uso, contexto e preços públicos pela API unificada da Flatkey.",
+  ru: " Сравнивайте подробности, использование, контекст и публичные цены через единый API Flatkey.",
+  ja: " Flatkey の統合 API でモデルの詳細、利用量、コンテキスト、公開料金を比較できます。",
+  vi: " So sánh chi tiết, lượt dùng, ngữ cảnh và giá công khai qua API hợp nhất của Flatkey.",
+  de: " Vergleichen Sie Details, Nutzung, Kontext und öffentliche Preise über die einheitliche Flatkey-API.",
+  id: " Bandingkan detail model, penggunaan, konteks, dan harga publik melalui API terpadu Flatkey.",
+};
+
+export function getModelCollectionSeoDescription(collection: ModelCollectionDefinition, locale: Locale): string {
+  const collectionCopy = getModelCollectionCopy(collection, locale);
+  return `${collectionCopy.shortDescription}${DETAIL_SEO_SUFFIX[locale] ?? DETAIL_SEO_SUFFIX.en}`;
+}
+
+const LOCALIZED_COLLECTION_TITLES: Record<string, Partial<Record<Locale, string>>> = {
+  "Best AI Models for Image Generation": { id: "Model AI terbaik untuk pembuatan gambar" },
+  "Best AI Models for Coding": { id: "Model AI terbaik untuk coding" },
+  "Best AI Models for Video Generation": { id: "Model AI terbaik untuk pembuatan video" },
+  "AI Models with Tool Calling": { id: "Model AI dengan pemanggilan alat" },
+  "Free AI Models on Flatkey": { es: "Modelos de IA gratuitos en Flatkey", fr: "Modèles IA gratuits sur Flatkey", pt: "Modelos de IA gratuitos na Flatkey", ru: "Бесплатные ИИ-модели в Flatkey", ja: "Flatkey の無料 AI モデル", vi: "Mô hình AI miễn phí trên Flatkey", de: "Kostenlose KI-Modelle auf Flatkey", id: "Model AI gratis di Flatkey" },
+  "Discounted AI Models on Flatkey": { es: "Modelos de IA con descuento en Flatkey", fr: "Modèles IA remisés sur Flatkey", pt: "Modelos de IA com desconto na Flatkey", ru: "ИИ-модели со скидкой в Flatkey", ja: "Flatkey の割引 AI モデル", vi: "Mô hình AI giảm giá trên Flatkey", de: "Vergünstigte KI-Modelle auf Flatkey", id: "Model AI diskon di Flatkey" },
+  "Best AI Models for Roleplay and Creative Writing": { es: "Mejores modelos de IA para roleplay y escritura creativa", fr: "Meilleurs modèles IA pour le roleplay et l’écriture créative", pt: "Melhores modelos de IA para roleplay e escrita criativa", ru: "Лучшие ИИ-модели для ролевых игр и творчества", ja: "ロールプレイと創作に最適な AI モデル", vi: "Mô hình AI tốt nhất cho nhập vai và sáng tác", de: "Beste KI-Modelle für Rollenspiel und kreatives Schreiben", id: "Model AI terbaik untuk roleplay dan penulisan kreatif" },
+  "AI Models with Vision": { es: "Modelos de IA con visión", fr: "Modèles IA avec vision", pt: "Modelos de IA com visão", ru: "ИИ-модели с компьютерным зрением", ja: "画像理解に対応した AI モデル", vi: "Mô hình AI hỗ trợ thị giác", de: "KI-Modelle mit Bildverständnis", id: "Model AI dengan kemampuan vision" },
+  "Top AI Models Used by OpenClaw": { es: "Modelos de IA más usados por OpenClaw", fr: "Modèles IA populaires avec OpenClaw", pt: "Principais modelos de IA usados pelo OpenClaw", ru: "Популярные ИИ-модели для OpenClaw", ja: "OpenClaw で使われる AI モデル", vi: "Mô hình AI phổ biến cho OpenClaw", de: "Top-KI-Modelle für OpenClaw", id: "Model AI teratas yang digunakan OpenClaw" },
+  "Text Embedding Models": { es: "Modelos de embeddings de texto", fr: "Modèles d’embeddings de texte", pt: "Modelos de embedding de texto", ru: "Модели текстовых embeddings", ja: "テキスト埋め込みモデル", vi: "Mô hình embedding văn bản", de: "Text-Embedding-Modelle", id: "Model embedding teks" },
+  "Best Audio Generation Models": { es: "Mejores modelos de IA para generar audio", fr: "Meilleurs modèles IA pour générer de l’audio", pt: "Melhores modelos de IA para geração de áudio", ru: "Лучшие ИИ-модели для генерации аудио", ja: "音声生成に最適な AI モデル", vi: "Mô hình AI tốt nhất để tạo âm thanh", de: "Beste KI-Modelle für Audiogenerierung", id: "Model AI terbaik untuk menghasilkan audio" },
+  "Best Text-to-Speech Models": { es: "Mejores modelos de texto a voz", fr: "Meilleurs modèles de synthèse vocale", pt: "Melhores modelos de texto para fala", ru: "Лучшие модели синтеза речи", ja: "音声合成に最適な AI モデル", vi: "Mô hình chuyển văn bản thành giọng nói", de: "Beste Text-to-Speech-Modelle", id: "Model text-to-speech terbaik" },
+  "Best Speech-to-Text and Transcription Models": { es: "Mejores modelos de voz a texto y transcripción", fr: "Meilleurs modèles de reconnaissance et transcription vocales", pt: "Melhores modelos de fala para texto e transcrição", ru: "Лучшие модели распознавания и транскрибации речи", ja: "音声認識と文字起こしに最適な AI モデル", vi: "Mô hình chuyển giọng nói thành văn bản tốt nhất", de: "Beste Sprach-zu-Text- und Transkriptionsmodelle", id: "Model speech-to-text dan transkripsi terbaik" },
+  "Best Rerank Models for Search and RAG": { es: "Mejores modelos de reranking para búsqueda y RAG", fr: "Meilleurs modèles de reranking pour la recherche et le RAG", pt: "Melhores modelos de rerank para pesquisa e RAG", ru: "Лучшие rerank-модели для поиска и RAG", ja: "検索と RAG に最適なリランキングモデル", vi: "Mô hình rerank tốt nhất cho tìm kiếm và RAG", de: "Beste Rerank-Modelle für Suche und RAG", id: "Model rerank terbaik untuk pencarian dan RAG" },
+};
+
+const LOCALIZED_FALLBACK_FIELDS: Record<Locale, Omit<ModelCollectionCopy, "title">> = {
+  en: { shortDescription: "Compare models for this AI workflow through one API.", intro: "Browse current models for this workflow and compare capabilities, usage, and public pricing before you build.", criteria: "Models are grouped using live catalog capabilities and availability.", empty: "Models are being added to this collection." },
+  zh: { shortDescription: "通过统一 API 比较适合该 AI 工作流的模型。", intro: "浏览适合该工作流的实时模型，在接入前比较能力、调用量和公开价格。", criteria: "根据实时模型目录中的能力与可用性进行归类。", empty: "相关模型正在加入目录。" },
+  es: { shortDescription: "Compara modelos para este flujo de IA con una sola API.", intro: "Explora modelos actuales para este flujo y compara capacidades, uso y precios públicos.", criteria: "Agrupamos modelos según las capacidades y disponibilidad del catálogo.", empty: "Los modelos se añadirán a esta colección." },
+  fr: { shortDescription: "Comparez les modèles de ce workflow IA via une seule API.", intro: "Parcourez les modèles disponibles et comparez capacités, usage et tarifs publics.", criteria: "Les modèles sont regroupés selon les capacités et la disponibilité du catalogue.", empty: "Les modèles seront bientôt ajoutés à cette collection." },
+  pt: { shortDescription: "Compare modelos para este fluxo de IA em uma única API.", intro: "Explore modelos atuais para o fluxo e compare capacidades, uso e preços públicos.", criteria: "Os modelos são agrupados pelas capacidades e disponibilidade do catálogo.", empty: "Modelos serão adicionados a esta coleção." },
+  ru: { shortDescription: "Сравните модели для этого ИИ-сценария через единый API.", intro: "Изучите доступные модели и сравните возможности, использование и публичные цены.", criteria: "Модели группируются по возможностям и доступности в каталоге.", empty: "Модели для этой подборки скоро появятся." },
+  ja: { shortDescription: "1 つの API でこの AI ワークフロー向けモデルを比較できます。", intro: "現在利用できるモデルを確認し、機能・利用量・公開料金を比較できます。", criteria: "カタログの機能と提供状況を基準にモデルを分類します。", empty: "このコレクションのモデルは準備中です。" },
+  vi: { shortDescription: "So sánh mô hình cho quy trình AI này qua một API.", intro: "Khám phá mô hình hiện có và so sánh khả năng, lượt dùng cùng giá công khai.", criteria: "Mô hình được nhóm theo khả năng và tình trạng sẵn có trong catalog.", empty: "Mô hình cho bộ sưu tập này sẽ sớm được bổ sung." },
+  de: { shortDescription: "Vergleichen Sie Modelle für diesen KI-Workflow über eine API.", intro: "Entdecken Sie verfügbare Modelle und vergleichen Sie Funktionen, Nutzung und öffentliche Preise.", criteria: "Die Gruppierung basiert auf Funktionen und Verfügbarkeit im Katalog.", empty: "Modelle für diese Sammlung werden bald ergänzt." },
+  id: { shortDescription: "Bandingkan model untuk alur kerja AI ini melalui satu API.", intro: "Jelajahi model yang tersedia dan bandingkan kemampuan, penggunaan, serta harga publik.", criteria: "Model dikelompokkan berdasarkan kemampuan dan ketersediaan di katalog.", empty: "Model untuk koleksi ini akan segera ditambahkan." },
+};
+
 const copy = (values: Partial<Record<Locale, ModelCollectionCopy>>): Record<Locale, ModelCollectionCopy> => {
   const fallback: ModelCollectionCopy = {
       title: "AI Model Collection",
@@ -32,7 +129,14 @@ const copy = (values: Partial<Record<Locale, ModelCollectionCopy>>): Record<Loca
       empty: "No models are available in this collection yet.",
   };
   const english = values.en ?? fallback;
-  return Object.fromEntries(LOCALES.map((locale) => [locale, values[locale] ?? english])) as Record<Locale, ModelCollectionCopy>;
+  return Object.fromEntries(
+    LOCALES.map((locale) => {
+      if (values[locale]) return [locale, values[locale]];
+      const localizedFields = LOCALIZED_FALLBACK_FIELDS[locale] ?? LOCALIZED_FALLBACK_FIELDS.en;
+      const localizedTitle = LOCALIZED_COLLECTION_TITLES[english.title]?.[locale] ?? (locale === "en" ? english.title : `${localizedFields.shortDescription.split(" ")[0]} AI Model Collection`);
+      return [locale, { title: localizedTitle, ...localizedFields }];
+    }),
+  ) as Record<Locale, ModelCollectionCopy>;
 };
 
 const textOf = (model: PricingModel) =>

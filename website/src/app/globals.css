@@ -1235,6 +1235,18 @@ html:has(.model-prototype) {
   gap: 8px;
 }
 
+/* Collection detail pages use a compact content-first hero. The full model
+ * prototype reserves space for stats and tabs that collections do not render. */
+.model-detail-page .model-hero {
+  height: auto;
+  min-height: 0;
+  padding: 20px 0 32px;
+}
+
+.model-detail-page .model-hero > .model-container {
+  height: auto;
+}
+
 .model-prototype .model-hero-top {
   display: flex;
   width: 100%;
