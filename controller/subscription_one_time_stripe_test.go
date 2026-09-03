@@ -835,7 +835,7 @@ func TestOneTimePlanCheckoutRejectsMissingQuote(t *testing.T) {
 	require.Contains(t, err.Error(), "quote is unavailable")
 }
 
-func TestOneTimePlanWebhookRejectsAmountCurrencySessionAndMethodMismatch(t *testing.T) {
+func TestOneTimePlanWebhookRejectsCurrencySessionAndMethodMismatch(t *testing.T) {
 	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
 	order.ProviderSessionId = "cs_expected"
 
@@ -844,7 +844,6 @@ func TestOneTimePlanWebhookRejectsAmountCurrencySessionAndMethodMismatch(t *test
 		mutate func(map[string]interface{})
 		want   string
 	}{
-		{name: "amount", mutate: func(object map[string]interface{}) { object["amount_total"] = float64(3990) }, want: "amount mismatch"},
 		{name: "currency", mutate: func(object map[string]interface{}) { object["currency"] = "usd" }, want: "currency mismatch"},
 		{name: "session", mutate: func(object map[string]interface{}) { object["id"] = "cs_other" }, want: "session mismatch"},
 		{name: "method", mutate: func(object map[string]interface{}) { object["payment_method_types"] = []interface{}{"card"} }, want: "payment method mismatch"},
@@ -1295,7 +1294,7 @@ func TestOneTimePlanPaidWebhookReturnsPermanentErrorForValidationMismatch(t *tes
 		return nil, errors.New("must not fulfill mismatched event")
 	}
 	object := oneTimeStripePaidSessionObject(order)
-	object["amount_total"] = float64(3990)
+	object["currency"] = "usd"
 
 	err := handleStripeOneTimePlanPaid(context.Background(), stripe.Event{ID: "evt_one_time_permanent", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order.TradeNo, "127.0.0.1")
 
@@ -1477,35 +1476,33 @@ func TestOneTimePlanWebhookAcceptsManualPromotionDiscountedTotal(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestOneTimePlanWebhookRejectsManualPromotionAmountDrift(t *testing.T) {
+func TestOneTimePlanWebhookDoesNotCompareStripeAmounts(t *testing.T) {
 	testCases := []struct {
-		name     string
-		subtotal float64
-		discount float64
-		total    float64
-		want     string
+		name      string
+		selection service.StripeCheckoutDiscountSource
+		subtotal  float64
+		discount  float64
+		total     float64
 	}{
-		{name: "subtotal drifts from local quote", subtotal: 20000, discount: 5000, total: 15000, want: "expected subtotal 30000 got 20000"},
-		{name: "total is not subtotal less discount", subtotal: 30000, discount: 15000, total: 14000, want: "expected 30000 less discount 15000 got 14000"},
+		{name: "manual promotion halves the total", selection: service.StripeCheckoutDiscountManual, subtotal: 30000, discount: 15000, total: 15000},
+		{name: "adaptive pricing or coupon changes the total without a selection", selection: service.StripeCheckoutDiscountNone, subtotal: 29000, discount: 0, total: 29000},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 30000, 3)
-			order.ProviderSessionId = "cs_one_time_manual_promo_drift"
+			order.ProviderSessionId = "cs_one_time_amount_ignored"
 			order.CheckoutRevision = 2
 			object := oneTimeStripePaidSessionObject(order)
 			object["amount_subtotal"] = tc.subtotal
 			object["amount_total"] = tc.total
 			object["total_details"] = map[string]interface{}{"amount_discount": tc.discount, "amount_shipping": float64(0), "amount_tax": float64(0)}
-			object["discounts"] = []interface{}{map[string]interface{}{"coupon": nil, "promotion_code": "promo_manual_half"}}
 			metadata := object["metadata"].(map[string]interface{})
 			metadata["checkout_revision"] = "2"
-			metadata["discount_selection"] = string(service.StripeCheckoutDiscountManual)
+			metadata["discount_selection"] = string(tc.selection)
 
 			err := validateOneTimePlanStripeSessionEvent(stripe.Event{Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order)
 
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.want)
+			require.NoError(t, err)
 		})
 	}
 }
