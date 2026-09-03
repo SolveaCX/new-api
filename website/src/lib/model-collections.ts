@@ -241,6 +241,7 @@ export function modelCardData(model: PricingModel, pricing: PricingData) {
     href: modelPublicPath(model.model_name),
     name: model.featured_config?.display_name || model.model_name,
     vendor,
+    iconKey: model.icon || model.vendor_icon || model.model_name,
     description: model.description || "",
     context: model.directory_metadata?.context_tokens,
     price: price ? formatResolvedModelDisplayPrice(price) : null,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
+import { ModelLogo } from "@/components/pricing-model-browser";
 import {
   getModelCollectionCopy,
   modelCardData,
@@ -144,9 +145,14 @@ function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: 
   return (
     <article className="border-t border-[#ECEAF1] py-6 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-[#E7E4EC] bg-[#FBFAFC] text-[#5B21B6] shadow-[0_8px_18px_-14px_rgba(76,29,149,.5)]">
+            <ModelLogo iconKey={props.model.iconKey} fallback={props.model.name.charAt(0).toUpperCase()} size={22} />
+          </span>
+          <div className="min-w-0">
           <Link href={localizePath(props.model.href, props.locale)} className="text-base font-semibold text-[#201D28] hover:text-[#6D28D9]">{props.model.name}</Link>
           <p className="mt-1 text-sm text-[#777180]">{props.model.vendor}</p>
+          </div>
         </div>
         {props.usage != null ? <span className="text-sm font-medium text-[#777180]">{displayTokens(props.usage).toLocaleString()} {ui.usage}</span> : null}
       </div>
@@ -154,7 +160,7 @@ function ModelRow(props: { model: ReturnType<typeof modelCardData> & { rawName: 
       <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#777180]">
         {formatContext(props.model.context) ? <span>{formatContext(props.model.context)} {ui.context}</span> : null}
         {props.model.price ? <span>{props.model.price}</span> : null}
-        <Link href={localizePath(props.model.href, props.locale)} className="text-[#6D28D9] hover:underline">{ui.details}</Link>
+        <Link href={localizePath(props.model.href, props.locale)} className="inline-flex items-center rounded-md bg-[#F2ECFF] px-2.5 py-1 font-semibold !text-[#6D28D9] transition hover:bg-[#E9D5FF] hover:!text-[#5B21B6] hover:shadow-[0_6px_12px_-8px_rgba(76,29,149,.65)]">{ui.details}</Link>
       </div>
     </article>
   );
@@ -178,13 +184,12 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         <div className="model-container">
           <nav className="text-sm text-[#777180]"><Link href={localizePath("/collections", props.locale)} className="hover:text-[#6D28D9]">{ui.collections}</Link><span className="mx-2">/</span><span>{copy.title}</span></nav>
           <div className="mt-8 max-w-4xl">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-[#F2ECFF] text-xl text-[#6D28D9]">{props.collection.icon}</div>
             <h1 className="mt-6 text-4xl font-semibold tracking-[-0.045em] text-[#16151B] sm:text-6xl">{copy.title}</h1>
             <p className="mt-4 text-sm font-medium text-[#777180]">{ui.updated}</p>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-[#5F5A68]">{copy.intro}</p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#5B21B6]">{ui.allModels}<ArrowRight className="size-4" /></Link>
-              <Link href={localizePath("/models?view=compare", props.locale)} className="inline-flex items-center gap-2 rounded-lg border border-[#D8D2E4] bg-white px-4 py-2.5 text-sm font-semibold text-[#3C3548] hover:border-[#A78BFA]">{ui.compare}</Link>
+              <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold !text-white transition hover:-translate-y-0.5 hover:!bg-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.8)]">{ui.allModels}<ArrowRight className="size-4" /></Link>
+              <Link href={localizePath("/models?view=compare", props.locale)} className="inline-flex items-center gap-2 rounded-lg border border-[#D8D2E4] bg-white px-4 py-2.5 text-sm font-semibold !text-[#3C3548] transition hover:-translate-y-0.5 hover:border-[#A78BFA] hover:!text-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.45)]">{ui.compare}</Link>
             </div>
           </div>
         </div>
