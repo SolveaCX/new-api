@@ -3562,7 +3562,8 @@ function ModelPricingSection(props: {
   // live rows for both the feature card and the breakdown table.
   const rows = props.liveRows.map((row) => ({ label: row.label, value: row.flatkey, detail: row.official }));
   const featured = rows[0];
-  const productFacts = buildPricingProductFacts(props.config, props.t);
+  const tokenPricingLabels = new Set([props.t("Input /M"), props.t("Cache /M"), props.t("Output /M")]);
+  const productFacts = buildPricingProductFacts(props.config, props.t, rows.some((row) => tokenPricingLabels.has(row.label)));
   const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
   const actionHref = allowPlayground ? "#workbench" : "#api";
   const actionLabel = allowPlayground ? props.t("Try a prompt") : props.t("View API");
@@ -3603,6 +3604,7 @@ function ModelPricingSection(props: {
 function buildPricingProductFacts(
   config: ModelConfig,
   t: (key: string, vars?: Record<string, string>) => string,
+  tokenPricing = false,
 ): Array<{ label: string; value: string }> {
   const generator = config.generator;
   if (generator?.kind === "image") {
@@ -3612,7 +3614,7 @@ function buildPricingProductFacts(
     return [
       { label: "Model Type", value: "Text to Image" },
       { label: "API", value: generator.endpoint },
-      { label: "Billing basis", value: getPricingBasisLabel("image", t) },
+      { label: "Billing basis", value: tokenPricing ? "1M tokens" : getPricingBasisLabel("image", t) },
       { label: "Outputs", value: outputCount ? `${outputCount.min ?? 1}–${outputCount.max ?? 1}` : "1" },
       { label: "Size", value: size?.options?.join(" · ") ?? "auto" },
       ...(quality?.options ? [{ label: "Quality", value: quality.options.join(" · ") }] : []),
@@ -4013,6 +4015,15 @@ function buildFlatkeyPriceRows(
   }
 
   const defaultDisplayPrice = resolveModelDisplayPrice(model, undefined, "plg", groupRatio);
+  // Image-capable token models (for example gpt-image-2) can expose an
+  // image-specific conversion ratio alongside their canonical input/output
+  // token rates. The directory uses the token contract for these models, so
+  // prefer the same rows here to keep list and detail prices identical.
+  if (isTokenBasedModel(model) && defaultDisplayPrice?.unit === "/ 1M tokens") {
+    const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice.from ? "from " : "");
+    if (tokenRows.rows.length > 0) return tokenRows;
+  }
+
   if (config.generator?.kind === "image") {
     const imagePrice = resolveModelDisplayPrice(model, "image", "plg", groupRatio);
     const officialImagePrice = resolveModelDisplayPrice(model, "image", "configured", groupRatio);
@@ -4029,13 +4040,6 @@ function buildFlatkeyPriceRows(
         }],
       };
     }
-  }
-  // Use the same default display dimension as the model directory. Some image
-  // models are billed through the token path in the live catalog, so forcing
-  // an image-only price here would make the detail card disagree with the
-  // list even though both values came from the same pricing payload.
-  if (isTokenBasedModel(model) && defaultDisplayPrice?.unit === "/ 1M tokens") {
-    return buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice.from ? "from " : "");
   }
 
   if (config.generator) {
