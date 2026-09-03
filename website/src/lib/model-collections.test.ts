@@ -13,6 +13,17 @@ describe("model collections", () => {
       "/collections/coding",
       "/collections/video-generation",
       "/collections/tool-calling",
+      "/collections/free-models",
+      "/collections/discounted-models",
+      "/collections/distillable-models",
+      "/collections/roleplay-creative-writing",
+      "/collections/vision-models",
+      "/collections/openclaw-models",
+      "/collections/text-embedding-models",
+      "/collections/audio-generation-models",
+      "/collections/text-to-speech-models",
+      "/collections/speech-to-text-models",
+      "/collections/rerank-models",
     ]);
   });
 

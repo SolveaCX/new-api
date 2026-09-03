@@ -125,6 +125,105 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
     }),
     matches: (model) => /tool.?calling|function.?calling|function call|agentic|agent workflow/i.test(textOf(model)),
   },
+  {
+    slug: "free-models",
+    icon: "◇",
+    copy: copy({
+      en: { title: "Free AI Models on Flatkey", shortDescription: "Explore models with zero or near-zero token pricing through one API.", intro: "Compare free and zero-cost AI models available through Flatkey for experiments, prototypes, and everyday workloads.", criteria: "Models with a zero or promotional public price in the live catalog.", empty: "Free models are being added to the catalog." },
+      zh: { title: "Flatkey 上的免费 AI 模型", shortDescription: "通过统一 API 体验免费或接近免费的模型。", intro: "浏览适合实验、原型和日常任务的免费 AI 模型。", criteria: "实时目录中价格为零或处于免费促销状态的模型。", empty: "免费模型正在加入目录。" },
+    }),
+    matches: (model) => model.model_ratio === 0 || model.model_price === 0,
+  },
+  {
+    slug: "discounted-models",
+    icon: "%",
+    copy: copy({
+      en: { title: "Discounted AI Models on Flatkey", shortDescription: "Find models with promotional pricing and lower-cost access.", intro: "Discover models with an active discount or promotional rate in the public catalog.", criteria: "Models whose public rate is below the configured reference rate.", empty: "Discounted models are being added to the catalog." },
+      zh: { title: "Flatkey 上的折扣 AI 模型", shortDescription: "查找有促销价格、调用成本更低的模型。", intro: "发现公开目录中正在提供折扣或促销价格的模型。", criteria: "公开价格低于配置参考价格的模型。", empty: "折扣模型正在加入目录。" },
+    }),
+    matches: (model) => Boolean(model.display_pricing?.prices?.input?.from || model.display_pricing?.prices?.output?.from),
+  },
+  {
+    slug: "distillable-models",
+    icon: "◌",
+    copy: copy({
+      en: { title: "Distillable AI Models", shortDescription: "Browse models that support distillation and fine-tuning workflows.", intro: "Explore models marked as distillable for compliant training datasets and specialized workflows.", criteria: "Models with the distillable capability in directory metadata.", empty: "Distillable models are being added to the catalog." },
+      zh: { title: "可蒸馏的 AI 模型", shortDescription: "浏览支持蒸馏和微调工作流的模型。", intro: "查找目录中标记为可蒸馏、适合训练和专项工作流的模型。", criteria: "模型目录元数据中标记为可蒸馏的模型。", empty: "可蒸馏模型正在加入目录。" },
+    }),
+    matches: (model) => model.directory_metadata?.distillable === true,
+  },
+  {
+    slug: "roleplay-creative-writing",
+    icon: "✎",
+    copy: copy({
+      en: { title: "Best AI Models for Roleplay and Creative Writing", shortDescription: "Compare models for character chat, roleplay, and imaginative writing.", intro: "Find models suited to character conversations, roleplay, storytelling, and creative writing.", criteria: "Models whose names, tags, categories, or descriptions indicate roleplay or creative writing.", empty: "Roleplay models are being added to the catalog." },
+      zh: { title: "角色扮演与创意写作 AI 模型", shortDescription: "比较适合角色聊天、角色扮演和创意写作的模型。", intro: "查找适合角色对话、故事创作和创意写作的模型。", criteria: "名称、标签、分类或描述中包含角色扮演与创意写作信号的模型。", empty: "角色扮演模型正在加入目录。" },
+    }),
+    matches: (model) => /roleplay|creative writing|character chat|sillytavern|janitor|creative/i.test(textOf(model)),
+  },
+  {
+    slug: "vision-models",
+    icon: "◉",
+    copy: copy({
+      en: { title: "AI Models with Vision", shortDescription: "Compare multimodal models for image understanding and visual questions.", intro: "Explore multimodal language models that can read images, charts, screenshots, and other visual content.", criteria: "Models with image input metadata that are not primarily image-generation models.", empty: "Vision models are being added to the catalog." },
+      zh: { title: "支持视觉理解的多模态 AI 模型", shortDescription: "比较可理解图片和视觉内容的多模态模型。", intro: "浏览能够读取图片、图表、截图并回答视觉问题的多模态模型。", criteria: "具有图像输入能力且主要用途不是图像生成的模型。", empty: "视觉模型正在加入目录。" },
+    }),
+    matches: (model) => hasModality(model, "image") && !/image-generation|text-to-image|dall.?e|imagen|flux|seedream|banana/i.test(textOf(model)),
+  },
+  {
+    slug: "openclaw-models",
+    icon: "⌁",
+    copy: copy({
+      en: { title: "Top AI Models Used by OpenClaw", shortDescription: "See popular models for autonomous agent workflows and tool use.", intro: "Browse models suited to OpenClaw-style autonomous agents, ranked with live usage signals.", criteria: "Models that support agentic workflows and are ranked by the live usage data shown on this page.", empty: "OpenClaw models are being added to the catalog." },
+      zh: { title: "OpenClaw 常用的 AI 模型", shortDescription: "查看适合自主 Agent 工作流和工具调用的热门模型。", intro: "浏览适合 OpenClaw 类自主 Agent 的模型，并参考实时调用量。", criteria: "支持 Agent 工作流，并按本页实时调用数据排序的模型。", empty: "OpenClaw 模型正在加入目录。" },
+    }),
+    matches: (model) => /openclaw|agentic|agent|tool.?calling|function.?calling/i.test(textOf(model)),
+  },
+  {
+    slug: "text-embedding-models",
+    icon: "≋",
+    copy: copy({
+      en: { title: "Text Embedding Models", shortDescription: "Find embedding APIs for semantic search, RAG, and clustering.", intro: "Compare text embedding models for semantic search, retrieval pipelines, clustering, and similarity matching.", criteria: "Models identified as embeddings by catalog metadata, endpoint, name, or description.", empty: "Embedding models are being added to the catalog." },
+      zh: { title: "文本嵌入模型", shortDescription: "查找适合语义搜索、RAG 和聚类的嵌入 API。", intro: "比较适合语义搜索、检索增强、聚类和相似度匹配的文本嵌入模型。", criteria: "目录元数据、接口、名称或描述中标记为嵌入模型的模型。", empty: "嵌入模型正在加入目录。" },
+    }),
+    matches: (model) => /embedding|embed|bge-|e5-|gte-|text-embedding| jina-embeddings/i.test(textOf(model)),
+  },
+  {
+    slug: "audio-generation-models",
+    icon: "♫",
+    copy: copy({
+      en: { title: "Best Audio Generation Models", shortDescription: "Compare models for music, sound, and audio-output applications.", intro: "Explore models for music generation, sound effects, and other audio-output workflows.", criteria: "Models with audio output or audio-generation signals in the catalog.", empty: "Audio generation models are being added to the catalog." },
+      zh: { title: "最佳音频生成模型", shortDescription: "比较适合音乐、声音和音频输出的模型。", intro: "浏览适合音乐生成、音效和其他音频输出工作流的模型。", criteria: "目录中具有音频输出或音频生成能力信号的模型。", empty: "音频生成模型正在加入目录。" },
+    }),
+    matches: (model) => hasModality(model, "audio") && /audio|music|sound|tts|speech/i.test(textOf(model)),
+  },
+  {
+    slug: "text-to-speech-models",
+    icon: "◖",
+    copy: copy({
+      en: { title: "Best Text-to-Speech Models", shortDescription: "Compare TTS models for voice generation and narration.", intro: "Find text-to-speech models for voice generation, narration, accessibility, and audio apps.", criteria: "Models identified as text-to-speech by catalog metadata or descriptions.", empty: "Text-to-speech models are being added to the catalog." },
+      zh: { title: "最佳文本转语音模型", shortDescription: "比较适合语音生成、旁白和无障碍应用的 TTS 模型。", intro: "查找用于语音生成、旁白、无障碍和音频应用的文本转语音模型。", criteria: "目录元数据或描述中标记为文本转语音的模型。", empty: "文本转语音模型正在加入目录。" },
+    }),
+    matches: (model) => /text.?to.?speech|tts|speech synthesis|voice generation/i.test(textOf(model)),
+  },
+  {
+    slug: "speech-to-text-models",
+    icon: "◗",
+    copy: copy({
+      en: { title: "Best Speech-to-Text and Transcription Models", shortDescription: "Find models for transcription, captions, meetings, and speech recognition.", intro: "Compare speech-to-text and transcription models for meetings, calls, captions, and voice interfaces.", criteria: "Models identified as speech recognition, transcription, or speech-to-text in the catalog.", empty: "Speech-to-text models are being added to the catalog." },
+      zh: { title: "最佳语音转文字与转录模型", shortDescription: "查找适合转录、字幕、会议和语音识别的模型。", intro: "比较适合会议、通话、字幕和语音交互的语音转文字模型。", criteria: "目录中标记为语音识别、转录或语音转文字的模型。", empty: "语音转文字模型正在加入目录。" },
+    }),
+    matches: (model) => /speech.?to.?text|transcri|automatic speech recognition|whisper/i.test(textOf(model)),
+  },
+  {
+    slug: "rerank-models",
+    icon: "⇅",
+    copy: copy({
+      en: { title: "Best Rerank Models for Search and RAG", shortDescription: "Compare rerankers for semantic search and retrieval quality.", intro: "Explore reranking models for semantic search, RAG pipelines, and recommendation systems.", criteria: "Models identified as rerank or reranker models in the catalog.", empty: "Rerank models are being added to the catalog." },
+      zh: { title: "搜索与 RAG 最佳重排模型", shortDescription: "比较用于语义搜索和检索质量优化的重排模型。", intro: "浏览适合语义搜索、RAG 流程和推荐系统的重排模型。", criteria: "目录中标记为 rerank 或 reranker 的模型。", empty: "重排模型正在加入目录。" },
+    }),
+    matches: (model) => /rerank|reranker|re-rank/i.test(textOf(model)),
+  },
 ];
 
 export function getModelCollection(slug: string): ModelCollectionDefinition | null {
@@ -141,7 +240,7 @@ export function getModelCollectionCopy(collection: ModelCollectionDefinition, lo
 
 export function selectCollectionModels(collection: ModelCollectionDefinition, models: PricingModel[], limit = 18): PricingModel[] {
   const matched = models.filter(collection.matches);
-  return (matched.length ? matched : models).slice(0, limit);
+  return matched.slice(0, limit);
 }
 
 export function modelCardData(model: PricingModel, pricing: PricingData) {
