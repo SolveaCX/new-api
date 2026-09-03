@@ -23,6 +23,7 @@ export type DirectoryCopy = {
   colOurPrice: string;
   colOurInputPrice: string;
   colOurOutputPrice: string;
+  colOurCachePrice: string;
   colDiscount: string;
   colLatency: string;
   colHealth: string;
@@ -74,6 +75,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Our price",
     colOurInputPrice: "Our input",
     colOurOutputPrice: "Our output",
+    colOurCachePrice: "Our cache",
     colDiscount: "Discount",
     colLatency: "Latency",
     colHealth: "Health score",
@@ -119,6 +121,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "我们的价格",
     colOurInputPrice: "我们的输入",
     colOurOutputPrice: "我们的输出",
+    colOurCachePrice: "我们的缓存",
     colDiscount: "折扣",
     colLatency: "延迟",
     colHealth: "健康评分",
@@ -162,6 +165,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Nuestro precio",
     colOurInputPrice: "Entrada propia",
     colOurOutputPrice: "Salida propia",
+    colOurCachePrice: "Caché propio",
     colDiscount: "Descuento",
     colLatency: "Latencia",
     colHealth: "Puntuación de salud",
@@ -207,6 +211,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Notre prix",
     colOurInputPrice: "Entrée Flatkey",
     colOurOutputPrice: "Sortie Flatkey",
+    colOurCachePrice: "Cache Flatkey",
     colDiscount: "Remise",
     colLatency: "Latence",
     colHealth: "Score de santé",
@@ -250,6 +255,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Nosso preço",
     colOurInputPrice: "Entrada Flatkey",
     colOurOutputPrice: "Saída Flatkey",
+    colOurCachePrice: "Cache Flatkey",
     colDiscount: "Desconto",
     colLatency: "Latência",
     colHealth: "Pontuação de saúde",
@@ -293,6 +299,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Наша цена",
     colOurInputPrice: "Наш ввод",
     colOurOutputPrice: "Наш вывод",
+    colOurCachePrice: "Наш кэш",
     colDiscount: "Скидка",
     colLatency: "Задержка",
     colHealth: "Оценка здоровья",
@@ -336,6 +343,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "当社価格",
     colOurInputPrice: "当社入力",
     colOurOutputPrice: "当社出力",
+    colOurCachePrice: "当社キャッシュ",
     colDiscount: "割引",
     colLatency: "レイテンシ",
     colHealth: "健全性スコア",
@@ -379,6 +387,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Giá của chúng tôi",
     colOurInputPrice: "Đầu vào Flatkey",
     colOurOutputPrice: "Đầu ra Flatkey",
+    colOurCachePrice: "Bộ nhớ đệm Flatkey",
     colDiscount: "Giảm giá",
     colLatency: "Độ trễ",
     colHealth: "Điểm sức khỏe",
@@ -422,6 +431,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Unser Preis",
     colOurInputPrice: "Unser Input",
     colOurOutputPrice: "Unser Output",
+    colOurCachePrice: "Unser Cache",
     colDiscount: "Rabatt",
     colLatency: "Latenz",
     colHealth: "Gesundheitswert",
@@ -465,6 +475,7 @@ export const DIRECTORY_COPY: Record<Locale, DirectoryCopy> = {
     colOurPrice: "Harga kami",
     colOurInputPrice: "Masukan kami",
     colOurOutputPrice: "Keluaran kami",
+    colOurCachePrice: "Cache kami",
     colDiscount: "Diskon",
     colLatency: "Latensi",
     colHealth: "Skor kesehatan",

@@ -35,6 +35,7 @@ export type ModelsDirectoryTableCopy = {
   contextUnavailable?: string;
   colInput?: string;
   colOutput?: string;
+  colCache?: string;
 };
 
 type Props = {
@@ -99,6 +100,7 @@ export function ModelsDirectoryTable(props: Props) {
             ) : null}
             {props.copy.colInput ? <th className="min-w-[132px] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:px-3">{props.copy.colInput}</th> : null}
             {props.copy.colOutput ? <th className="min-w-[132px] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:px-3">{props.copy.colOutput}</th> : null}
+            {props.copy.colCache ? <th className="min-w-[132px] px-2 py-3.5 text-right text-[10px] font-bold leading-4 whitespace-normal 2xl:px-3">{props.copy.colCache}</th> : null}
             {props.copy.colDiscount ? <th className="min-w-[100px] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colDiscount}</th> : null}
             {props.copy.colContext ? <th className="min-w-[100px] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colContext}</th> : null}
             <th className="min-w-[90px] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colLatency}</th>
@@ -118,6 +120,7 @@ export function ModelsDirectoryTable(props: Props) {
               showContext={props.copy.colContext != null}
               showInput={props.copy.colInput != null}
               showOutput={props.copy.colOutput != null}
+              showCache={props.copy.colCache != null}
               hideOurPrice={props.hideOurPrice}
               locale={props.locale}
               onVisible={() => loadTrend(row.name)}
@@ -140,6 +143,7 @@ function DirectoryRow(props: {
   showContext: boolean;
   showInput: boolean;
   showOutput: boolean;
+  showCache: boolean;
   hideOurPrice?: boolean;
   locale?: Locale;
   onVisible: () => void;
@@ -244,6 +248,7 @@ function DirectoryRow(props: {
       ) : null}
       {props.showInput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
       {props.showOutput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.output ? <PriceCell price={row.output} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
+      {props.showCache ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.cache ? <PriceCell price={row.cache} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
       {props.showDiscount ? (
         <td className="px-2 py-3 text-right font-mono text-[12px] 2xl:px-3 2xl:text-[13px]">
           {discount == null ? (

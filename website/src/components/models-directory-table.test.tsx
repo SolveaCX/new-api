@@ -178,6 +178,29 @@ describe("ModelsDirectoryTable", () => {
     expect(cells[3]).toContain("$0.072");
   });
 
+  test("renders cache pricing in the cache column", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={{ ...getModelsDirectoryTableCopy("en"), colCache: "Our cache" }}
+        hideOurPrice
+        rows={[{
+          name: "gpt-5-mini",
+          vendor: "OpenAI",
+          official: "$0.5",
+          discounted: "$0.2",
+          officialUsd: 0.5,
+          discountedUsd: 0.2,
+          iconKey: "openai",
+          priceUnit: "per 1M tokens",
+          cache: "$0.1",
+        }]}
+      />
+    );
+    expect(html).toContain("Our cache");
+    expect(html).toContain("$0.1");
+  });
+
   test("keeps every column available through horizontal scrolling", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable

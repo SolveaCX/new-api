@@ -92,6 +92,7 @@ export type DisplayPricePair = {
 export type ModelDisplayPricing = {
   billing_kind: DisplayPricingUnit;
   prices: Partial<Record<DisplayPricingDimension, DisplayPricePair>>;
+  second_by_resolution?: Record<string, DisplayPricePair>;
 };
 
 export type ResolvedModelDisplayPrice = {
@@ -601,7 +602,26 @@ function parseModelDisplayPricing(value: unknown): ModelDisplayPricing | null {
     };
   }
 
-  return { billing_kind: billingKind, prices };
+  const secondByResolution: Record<string, DisplayPricePair> = {};
+  if (isRecord(value.second_by_resolution)) {
+    for (const [resolution, pair] of Object.entries(value.second_by_resolution)) {
+      if (!isRecord(pair)) continue;
+      const configured = parseDisplayPriceValue(pair.configured);
+      const plg = parseDisplayPriceValue(pair.plg);
+      if (configured == null && plg == null) continue;
+      secondByResolution[resolution] = {
+        ...(configured == null ? {} : { configured }),
+        ...(plg == null ? {} : { plg }),
+        from: pair.from === true,
+      };
+    }
+  }
+
+  return {
+    billing_kind: billingKind,
+    prices,
+    ...(Object.keys(secondByResolution).length > 0 ? { second_by_resolution: secondByResolution } : {}),
+  };
 }
 
 function parseDisplayPriceValue(value: unknown): number | null {

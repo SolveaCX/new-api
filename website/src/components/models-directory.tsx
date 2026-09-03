@@ -282,6 +282,7 @@ export function ModelsDirectory(props: Props) {
                 ...copy,
                 colInput: copy.colOurInputPrice,
                 colOutput: copy.colOurOutputPrice,
+                colCache: copy.colOurCachePrice,
               }}
               rows={visible}
               locale={props.locale}
@@ -333,6 +334,8 @@ function toTableRow(name: string, priced: Map<string, HomePricedModel>) {
     inputOfficial: row.inputOfficial,
     output: row.output,
     outputOfficial: row.outputOfficial,
+    cache: row.cache,
+    cacheOfficial: row.cacheOfficial,
     priceUnit: row.priceUnit,
     pricePrefix: row.pricePrefix,
     contextTokens: row.contextTokens ?? null,
