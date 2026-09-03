@@ -47,6 +47,9 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 		default:
 			endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}
 		}
+	case constant.ChannelTypeApodex:
+		// Apodex exposes both OpenAI Chat Completions and Responses endpoints.
+		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse}
 	case constant.ChannelTypeSora:
 		endpointTypes = []constant.EndpointType{constant.EndpointTypeOpenAIVideo}
 	case constant.ChannelTypeDoubaoVideo:

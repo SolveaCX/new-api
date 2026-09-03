@@ -119,3 +119,16 @@ func TestGrokSubscriptionEndpointTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEndpointTypesByChannelType_ApodexSupportsChatAndResponses(t *testing.T) {
+	got := GetEndpointTypesByChannelType(constant.ChannelTypeApodex, "apodex-1-1-deep-research")
+	if !containsEndpointType(got, constant.EndpointTypeOpenAI) {
+		t.Fatalf("expected Apodex endpoints to contain %q, got %v", constant.EndpointTypeOpenAI, got)
+	}
+	if !containsEndpointType(got, constant.EndpointTypeOpenAIResponse) {
+		t.Fatalf("expected Apodex endpoints to contain %q, got %v", constant.EndpointTypeOpenAIResponse, got)
+	}
+	if len(got) < 2 {
+		t.Fatalf("expected Apodex to advertise both chat and responses, got %v", got)
+	}
+}

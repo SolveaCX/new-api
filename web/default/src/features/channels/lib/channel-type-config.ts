@@ -240,6 +240,24 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
         'Save the channel first, then connect a Grok subscription account via OAuth.',
     },
   },
+  114: {
+    id: 114,
+    name: CHANNEL_TYPES[114],
+    icon: 'openai',
+    defaultBaseUrl: 'https://api.apodex.ai',
+    supportedModels: [
+      'apodex-1.1',
+      'apodex-1.1-mini',
+      'apodex-1-1-deep-research',
+      'apodex-1-1-deep-solve',
+      'apodex-1-1-deep-discover',
+    ],
+    hints: {
+      baseUrl: 'Default: https://api.apodex.ai',
+      key: 'Apodex API key',
+      models: 'Use model IDs from Apodex',
+    },
+  },
 }
 
 /**

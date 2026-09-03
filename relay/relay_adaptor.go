@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
+	"github.com/QuantumNous/new-api/relay/channel/apodex"
 	"github.com/QuantumNous/new-api/relay/channel/aws"
 	"github.com/QuantumNous/new-api/relay/channel/baidu"
 	"github.com/QuantumNous/new-api/relay/channel/baidu_v2"
@@ -170,6 +171,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &blockrun.Adaptor{}
 	case constant.APITypeCopilot:
 		return &copilot.Adaptor{}
+	case constant.APITypeApodex:
+		return &apodex.Adaptor{}
 	}
 	return nil
 }

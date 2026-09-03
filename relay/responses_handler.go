@@ -130,6 +130,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 			return newAPIError
 		}
+		// Pass-through requests may omit `stream`; infer the actual response
+		// mode from the upstream content type before dispatching the handler.
+		updateResponsesStreamState(info, httpResp)
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
@@ -182,6 +185,17 @@ func normalizeOpenAIResponsesRequest(request any) (*dto.OpenAIResponsesRequest, 
 	default:
 		return nil, fmt.Errorf("invalid request type, expected dto.OpenAIResponsesRequest or dto.OpenAIResponsesCompactionRequest, got %T", request)
 	}
+}
+
+// updateResponsesStreamState reconciles the relay mode with the upstream
+// response. In particular, Responses providers may default an omitted stream
+// field to SSE while pass-through leaves info.IsStream at its request default.
+// Preserve an explicit streaming request even if a provider responds with JSON.
+func updateResponsesStreamState(info *relaycommon.RelayInfo, resp *http.Response) {
+	if info == nil || resp == nil {
+		return
+	}
+	info.IsStream = info.IsStream || strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
 }
 
 func shouldPassThroughResponsesRequest(info *relaycommon.RelayInfo) bool {
