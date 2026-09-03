@@ -29,3 +29,21 @@ func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
 	require.Equal(t, []string{"https://example.com/first.png"}, storedReq.Images)
 	require.Equal(t, constant.TaskActionGenerate, info.Action)
 }
+
+func TestClaudeFable5ModelFamilyPredicate(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		model string
+		want  bool
+	}{
+		{name: "canonical", model: "claude-fable-5", want: true},
+		{name: "provider revision", model: "anthropic/claude-fable-5.1:stable", want: true},
+		{name: "thinking suffix", model: "CLAUDE-FABLE-5.1-thinking", want: true},
+		{name: "different major model", model: "claude-fable-50", want: false},
+		{name: "different family", model: "claude-opus-4-8", want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, IsClaudeFable5Model(tt.model))
+		})
+	}
+}

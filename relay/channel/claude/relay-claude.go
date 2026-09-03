@@ -881,6 +881,169 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 	}
 }
 
+const (
+	// Claude's upstream may encode a request validation failure as a 200 SSE
+	// stream. Keep the initial validation gate bounded so a normal provider
+	// prelude cannot be held indefinitely while we wait for a meaningful event.
+	claudeStreamPreflightMinEvents = 4
+	claudeStreamPreflightMaxBytes  = 1 << 20
+	claudeStreamPreflightMaxEvents = 32
+	claudeEmbeddedErrorPrefix      = "[Error: The model returned the following errors:"
+)
+
+func claudeStreamPreludeError(data string, detectEmbeddedError bool, preludeText *strings.Builder) *types.NewAPIError {
+	var claudeResponse dto.ClaudeResponse
+	if err := common.UnmarshalJsonStr(data, &claudeResponse); err != nil {
+		return nil
+	}
+
+	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+		statusCode := claudeStreamErrorStatusCode(claudeError.Type)
+		return types.WithClaudeError(*claudeError, statusCode, claudeStreamErrorOptions(statusCode)...)
+	}
+
+	if !detectEmbeddedError || claudeResponse.Delta == nil {
+		return nil
+	}
+	text := claudeResponse.Delta.GetText()
+	if text == "" {
+		return nil
+	}
+	if preludeText != nil {
+		preludeText.WriteString(text)
+		if streamErr := claudeEmbeddedStreamError(preludeText.String()); streamErr != nil {
+			return streamErr
+		}
+	}
+	return claudeEmbeddedStreamError(text)
+}
+
+func claudeEmbeddedStreamError(text string) *types.NewAPIError {
+	for searchFrom := 0; searchFrom < len(text); {
+		markerOffset := strings.Index(text[searchFrom:], claudeEmbeddedErrorPrefix)
+		if markerOffset < 0 {
+			return nil
+		}
+		markerOffset += searchFrom
+		messageStart := markerOffset + len(claudeEmbeddedErrorPrefix)
+		messageEnd := strings.IndexByte(text[messageStart:], ']')
+		if messageEnd < 0 {
+			// The marker may be split across multiple content deltas. Keep the
+			// gate closed until a closing bracket arrives or the bounded window
+			// rejects the stream as unterminated.
+			return nil
+		}
+		messageEnd += messageStart
+		message := strings.TrimSpace(text[messageStart:messageEnd])
+		lowerMessage := strings.ToLower(message)
+		if message != "" && (strings.Contains(lowerMessage, "prompt is too long") ||
+			strings.Contains(lowerMessage, "model_max_prompt_tokens_exceeded")) {
+			return types.WithClaudeError(types.ClaudeError{
+				Type:    "invalid_request_error",
+				Message: message,
+			}, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		searchFrom = messageEnd + 1
+	}
+	return nil
+}
+
+func claudeStreamErrorOptions(statusCode int) []types.NewAPIErrorOptions {
+	if statusCode == http.StatusBadRequest {
+		return []types.NewAPIErrorOptions{types.ErrOptionWithSkipRetry()}
+	}
+	// Keep transient/authentication failures under the centralized retry policy;
+	// only a client-side validation error is definitively non-retryable.
+	return nil
+}
+
+func claudeStreamErrorStatusCode(errorType string) int {
+	switch strings.ToLower(strings.TrimSpace(errorType)) {
+	case "invalid_request_error":
+		return http.StatusBadRequest
+	case "authentication_error":
+		return http.StatusUnauthorized
+	case "permission_error":
+		return http.StatusForbidden
+	case "not_found_error":
+		return http.StatusNotFound
+	case "rate_limit_error":
+		return http.StatusTooManyRequests
+	case "overloaded_error":
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusBadGateway
+	}
+}
+
+func claudeStreamPreludeReady(data string) (bool, *types.NewAPIError) {
+	var claudeResponse dto.ClaudeResponse
+	if err := common.UnmarshalJsonStr(data, &claudeResponse); err != nil {
+		return false, types.NewError(
+			err,
+			types.ErrorCodeBadResponseBody,
+			types.ErrOptionWithStatusCode(http.StatusBadGateway),
+		)
+	}
+	if strings.TrimSpace(claudeResponse.Type) == "" {
+		return false, types.NewError(
+			fmt.Errorf("claude stream event is missing type"),
+			types.ErrorCodeBadResponseBody,
+			types.ErrOptionWithStatusCode(http.StatusBadGateway),
+		)
+	}
+
+	switch claudeResponse.Type {
+	case "message_start", "content_block_start", "ping":
+		return false, nil
+	case "content_block_delta":
+		if claudeResponse.Delta == nil {
+			return false, nil
+		}
+		return strings.TrimSpace(claudeResponse.Delta.GetText()) != "" ||
+			(claudeResponse.Delta.Thinking != nil && strings.TrimSpace(*claudeResponse.Delta.Thinking) != "") ||
+			(claudeResponse.Delta.PartialJson != nil && strings.TrimSpace(*claudeResponse.Delta.PartialJson) != "") ||
+			claudeResponse.Delta.Delta != "", nil
+	default:
+		return true, nil
+	}
+}
+
+func claudeEmbeddedStreamErrorCandidate(text string) bool {
+	text = strings.TrimSpace(text)
+	if strings.Contains(text, claudeEmbeddedErrorPrefix) {
+		// A complete recognized marker is returned by claudeEmbeddedStreamError;
+		// any remaining marker without a closing bracket is still a candidate.
+		markerOffset := strings.LastIndex(text, claudeEmbeddedErrorPrefix)
+		return !strings.Contains(text[markerOffset+len(claudeEmbeddedErrorPrefix):], "]")
+	}
+	// Also hold a suffix that could be the beginning of a split marker. This
+	// prevents a marker split across deltas from being released at the first
+	// ordinary-looking fragment.
+	for i := len(claudeEmbeddedErrorPrefix) - 1; i > 0; i-- {
+		if strings.HasSuffix(text, claudeEmbeddedErrorPrefix[:i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isFable5ClaudeModel(info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	models := []string{info.OriginModelName}
+	if info.ChannelMeta != nil {
+		models = append(models, info.ChannelMeta.UpstreamModelName)
+	}
+	for _, model := range models {
+		if relaycommon.IsClaudeFable5Model(model) {
+			return true
+		}
+	}
+	return false
+}
+
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	claudeInfo := &ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
@@ -889,19 +1052,138 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		ResponseText: strings.Builder{},
 		Usage:        &dto.Usage{},
 	}
+	preflightEvents := 0
+	preflightBytes := 0
+	preludeText := strings.Builder{}
+	preflightDone := false
+	preflightUsable := false
+	detectEmbeddedError := isFable5ClaudeModel(info)
 	var err *types.NewAPIError
-	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+	dataHandler := func(data string, sr *helper.StreamResult) {
 		err = HandleStreamResponseData(c, info, claudeInfo, data)
 		if err != nil {
 			sr.Stop(err)
 		}
-	})
+	}
+	var gateErr error
+	if detectEmbeddedError {
+		gate := helper.StreamDataGate(func(data string) (bool, error) {
+			if preflightDone {
+				return true, nil
+			}
+			preflightEvents++
+			preflightBytes += len(data)
+			if streamErr := claudeStreamPreludeError(data, true, &preludeText); streamErr != nil {
+				return false, streamErr
+			}
+			ready, parseErr := claudeStreamPreludeReady(data)
+			if parseErr != nil {
+				return false, parseErr
+			}
+			preflightUsable = preflightUsable || ready
+			// An embedded Fable error can be split across multiple deltas. Keep
+			// holding a candidate marker until the closing bracket arrives, even
+			// when the current delta otherwise looks like a normal text event.
+			if claudeEmbeddedStreamErrorCandidate(preludeText.String()) {
+				if preflightEvents >= claudeStreamPreflightMaxEvents ||
+					preflightBytes >= claudeStreamPreflightMaxBytes {
+					return false, types.NewError(
+						fmt.Errorf("claude stream embedded error did not terminate"),
+						types.ErrorCodeBadResponseBody,
+						types.ErrOptionWithStatusCode(http.StatusBadGateway),
+					)
+				}
+				return false, nil
+			}
+			// Keep a small bounded look-ahead after the first ordinary text event.
+			// This catches an embedded validation error that arrives immediately
+			// after a normal-looking fragment without buffering an entire reply.
+			if ready && preflightEvents < claudeStreamPreflightMinEvents {
+				ready = false
+			}
+			if (preflightEvents >= claudeStreamPreflightMaxEvents ||
+				preflightBytes >= claudeStreamPreflightMaxBytes) && !preflightUsable {
+				return false, types.NewError(
+					fmt.Errorf("claude stream ended without a usable response event"),
+					types.ErrorCodeBadResponseBody,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway),
+				)
+			}
+			ready = ready ||
+				(preflightUsable && (preflightEvents >= claudeStreamPreflightMaxEvents ||
+					preflightBytes >= claudeStreamPreflightMaxBytes))
+			if ready {
+				preflightDone = true
+			}
+			return ready, nil
+		})
+		gateEnd := helper.StreamDataGateEnd(func() (bool, error) {
+			if candidate := claudeEmbeddedStreamErrorCandidate(preludeText.String()); candidate {
+				return false, types.NewError(
+					fmt.Errorf("claude stream embedded error did not terminate"),
+					types.ErrorCodeBadResponseBody,
+					types.ErrOptionWithStatusCode(http.StatusBadGateway),
+				)
+			}
+			if !preflightUsable {
+				return false, nil
+			}
+			preflightDone = true
+			return true, nil
+		})
+		gateErr = helper.StreamScannerHandlerWithDataGateAndEnd(c, resp, info, gate, gateEnd, dataHandler)
+	} else {
+		// Preserve the immediate-header and post-commit behavior for every
+		// provider/model that is not Fable 5.
+		helper.StreamScannerHandler(c, resp, info, dataHandler)
+	}
+	if gateErr != nil {
+		clearClaudeStreamHeaders(c)
+		if apiErr, ok := gateErr.(*types.NewAPIError); ok {
+			return nil, apiErr
+		}
+		return nil, types.NewError(gateErr, types.ErrorCodeBadResponse)
+	}
+	if detectEmbeddedError && !preflightDone {
+		clearClaudeStreamHeaders(c)
+		return nil, types.NewError(
+			fmt.Errorf("claude stream ended before a valid response event"),
+			types.ErrorCodeEmptyResponse,
+			types.ErrOptionWithStatusCode(http.StatusBadGateway),
+		)
+	}
 	if err != nil {
+		clearClaudeStreamHeaders(c)
 		return nil, err
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
 	return claudeInfo.Usage, nil
+}
+
+// DoApiRequest sets the SSE headers as soon as a successful upstream response
+// is known. A preflight error is still safe to render as JSON, so remove those
+// headers before controller.Relay writes the Claude error envelope.
+func clearClaudeStreamHeaders(c *gin.Context) {
+	if c == nil || c.Writer == nil {
+		return
+	}
+	if c.Writer.Written() {
+		return
+	}
+	if _, ok := c.Get("event_stream_headers_set"); !ok {
+		return
+	}
+	for _, name := range []string{
+		"Content-Type",
+		"Cache-Control",
+		"Connection",
+		"Transfer-Encoding",
+		"X-Accel-Buffering",
+	} {
+		c.Writer.Header().Del(name)
+	}
+	delete(c.Keys, "event_stream_headers_set")
 }
 
 func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, httpResp *http.Response, data []byte) *types.NewAPIError {
