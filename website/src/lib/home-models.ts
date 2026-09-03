@@ -13,6 +13,7 @@ import {
   type PricingData,
   type ModelDirectoryMetadata,
   type PricingModel,
+  type ResolvedModelDisplayPrice,
 } from "./pricing";
 
 export type HomePricedModel = {
@@ -150,7 +151,7 @@ export function buildRowsForModels(
       const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, overrides);
       const listed = official * getBestGroupRatio(model, effectiveGroupRatio);
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
-      const displayPrice = resolveModelDisplayPrice(model, imageGeneration ? "image" : undefined, "plg", effectiveGroupRatio);
+      const displayPrice = resolveDisplayPriceForModel(model, imageGeneration, effectiveGroupRatio);
       const officialDisplayPrice = displayPrice
         ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio)
         : null;
@@ -212,6 +213,29 @@ export function buildRowsForModels(
 function isImageGenerationModel(model: PricingModel): boolean {
   const endpointTypes = model.supported_endpoint_types ?? [];
   return endpointTypes.includes("image-generation") || /(^|[-_.])(image|banana)/i.test(model.model_name);
+}
+
+function resolveDisplayPriceForModel(
+  model: PricingModel,
+  imageGeneration: boolean,
+  groupRatio: Record<string, number>
+): ResolvedModelDisplayPrice | null {
+  const preferred = resolveModelDisplayPrice(model, imageGeneration ? "image" : undefined, "plg", groupRatio);
+  if (!imageGeneration) return preferred;
+
+  // Some image providers still publish their per-image amount through the
+  // legacy request dimension. Reuse that amount but normalize the visible
+  // dimension so the directory consistently reports "$… / image".
+  const fallback =
+    preferred ??
+    resolveModelDisplayPrice(model, "request", "plg", groupRatio) ??
+    // A few image endpoints are still marked as token quota models and only
+    // expose their amount through the input dimension. Treat that published
+    // amount as the per-image list price rather than leaking token units.
+    resolveModelDisplayPrice(model, "input", "plg", groupRatio);
+  if (!fallback) return null;
+  if (fallback.dimension === "image") return fallback;
+  return { ...fallback, dimension: "image", unit: "/ image" };
 }
 
 function pricedTokenModels(data: PricingData): PricingModel[] {

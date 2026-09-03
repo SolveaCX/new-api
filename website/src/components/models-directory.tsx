@@ -280,13 +280,15 @@ export function ModelsDirectory(props: Props) {
             <ModelsDirectoryTable
               copy={{
                 ...copy,
-                colInput: copy.colOurInputPrice,
-                colOutput: copy.colOurOutputPrice,
-                colCache: copy.colOurCachePrice,
+                colInputLabel: copy.colInputDimension,
+                colOutputLabel: copy.colOutputDimension,
+                colCacheLabel: copy.colCacheDimension,
+                colOurInput: copy.colOurInputPrice,
+                colOurOutput: copy.colOurOutputPrice,
+                colOurCache: copy.colOurCachePrice,
               }}
               rows={visible}
               locale={props.locale}
-              hideOurPrice
             />
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-[#E7E4EC] bg-white px-6 py-14 text-center dark:border-white/10 dark:bg-white/[0.03]">

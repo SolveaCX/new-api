@@ -140,6 +140,23 @@ describe("model public pricing rows", () => {
     ]);
   });
 
+  test("uses one per-image row for image models, including token-marked providers", () => {
+    const view = buildModelPublicView(
+      model({
+        model_name: "grok-imagine-image-pro",
+        quota_type: 0,
+        model_ratio: 37.5,
+        completion_ratio: 1,
+        supported_endpoint_types: ["image-generation"],
+      }),
+      pricingData()
+    );
+
+    expect(view.priceRows).toHaveLength(1);
+    expect(view.priceRows[0]?.labelKey).toBe("imagePrice");
+    expect(view.priceRows[0]?.unit).toBe("/ image");
+  });
+
   test("uses display pricing units and from semantics when provided", () => {
     const view = buildModelPublicView(
       model({

@@ -105,6 +105,30 @@ describe("buildRowsForModels on the plg payload", () => {
     expect(row.cache).toBeUndefined();
   });
 
+  test("normalizes legacy request-priced image models to per-image display", () => {
+    const [row] = buildRowsForModels([{
+      ...PLG_MODEL,
+      model_name: "grok-imagine-image",
+      quota_type: 1,
+      model_ratio: 0,
+      completion_ratio: 0,
+      model_price: 0.02,
+      supported_endpoint_types: ["image-generation"],
+      display_pricing: {
+        billing_kind: "request",
+        prices: { request: { configured: 0.02, plg: 0.016 } },
+      },
+    }], VENDORS, PLG_GROUP_RATIO);
+
+    expect(row.official).toBe("$0.02");
+    expect(row.discounted).toBe("$0.016");
+    expect(row.priceUnit).toBe("per image");
+    expect(row.billingUnit).toBe("request");
+    expect(row.input).toBeUndefined();
+    expect(row.output).toBeUndefined();
+    expect(row.cache).toBeUndefined();
+  });
+
   test("describes request rows with per-request unit metadata", () => {
     const requestModel: PricingModel = {
       model_name: "some-video-model",

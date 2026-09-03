@@ -14,6 +14,7 @@ import {
   resolveModelDisplayPrice,
   type PricingData,
   type PricingModel,
+  type ResolvedModelDisplayPrice,
 } from "@/lib/pricing";
 
 // Public per-model page (rankings / directory click-through target).
@@ -467,6 +468,14 @@ function buildModelPublicPriceRows(model: PricingModel, fallbackGroupRatio: Reco
     ...model,
     group_ratio: { ...fallbackGroupRatio, ...(model.group_ratio ?? {}) },
   };
+  const imageModel = classifyPublicModel(model) === "image";
+  if (imageModel) {
+    const price = resolveImageDisplayPrice(effectiveModel, fallbackGroupRatio);
+    return price
+      ? [{ labelKey: "imagePrice", list: formatUsdPrice(price.configured ?? price.value), discounted: price.text, unit: "/ image", from: price.from }]
+      : [];
+  }
+
   const displayKind = hasUsableDisplayKind(effectiveModel, fallbackGroupRatio) ? model.display_pricing?.billing_kind : undefined;
   const dimensions: Array<[ModelPriceLabelKey, DisplayPricingDimension]> = displayKind === "per_second"
     ? [["input", "second"]]
@@ -495,6 +504,13 @@ function buildModelPublicPriceRows(model: PricingModel, fallbackGroupRatio: Reco
       from: price.from,
     }];
   });
+}
+
+function resolveImageDisplayPrice(model: PricingModel, fallbackGroupRatio: Record<string, number>): ResolvedModelDisplayPrice | null {
+  const preferred = resolveModelDisplayPrice(model, "image", "plg", fallbackGroupRatio);
+  const fallback = preferred ?? resolveModelDisplayPrice(model, "request", "plg", fallbackGroupRatio) ?? resolveModelDisplayPrice(model, "input", "plg", fallbackGroupRatio);
+  if (!fallback) return null;
+  return fallback.dimension === "image" ? fallback : { ...fallback, dimension: "image", unit: "/ image" };
 }
 
 function hasUsableDisplayKind(model: PricingModel, fallbackGroupRatio: Record<string, number>): boolean {

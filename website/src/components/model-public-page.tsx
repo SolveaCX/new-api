@@ -157,6 +157,7 @@ export function ModelPublicPage(props: ModelPublicPageProps) {
     if (props.locale !== "zh") return unit;
     if (unit === "/ second") return "/ 秒";
     if (unit === "/ request") return "/ 次";
+    if (unit === "/ image") return "/ 张";
     return unit;
   };
 
