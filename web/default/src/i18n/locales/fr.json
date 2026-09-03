@@ -680,6 +680,7 @@
     "Block email aliases (e.g., user+alias@domain.com)": "Bloquer les alias d'e-mail (par exemple, utilisateur+alias@domaine.com)",
     "Blocked keywords": "Mots-clés bloqués",
     "BlockRun": "BlockRun",
+    "Apodex": "Apodex",
     "Blocks messages when sensitive keywords are detected.": "Bloque les messages lorsque des mots-clés sensibles sont détectés.",
     "Body param": "Paramètre de corps",
     "Bonus claim limit per user": "Limite de bonus par utilisateur",

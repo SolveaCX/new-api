@@ -2,6 +2,7 @@ package relay
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -11,6 +12,31 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpdateResponsesStreamStateFromContentType(t *testing.T) {
+	info := &relaycommon.RelayInfo{}
+	updateResponsesStreamState(info, &http.Response{Header: http.Header{"Content-Type": []string{"text/event-stream; charset=utf-8"}}})
+	if !info.IsStream {
+		t.Fatal("SSE response must mark relay info as streaming")
+	}
+
+	info = &relaycommon.RelayInfo{}
+	updateResponsesStreamState(info, &http.Response{Header: http.Header{"Content-Type": []string{"application/json"}}})
+	if info.IsStream {
+		t.Fatal("JSON response must not mark a non-streaming request as streaming")
+	}
+
+	info = &relaycommon.RelayInfo{IsStream: true}
+	updateResponsesStreamState(info, &http.Response{Header: http.Header{"Content-Type": []string{"application/json"}}})
+	if !info.IsStream {
+		t.Fatal("explicit streaming request must remain streaming")
+	}
+}
+
+func TestUpdateResponsesStreamStateHandlesNilResponse(t *testing.T) {
+	updateResponsesStreamState(nil, nil)
+	updateResponsesStreamState(&relaycommon.RelayInfo{}, nil)
+}
 
 func TestShouldPassThroughResponsesRequest_BlockRunBridgeForcesConvert(t *testing.T) {
 	original := model_setting.GetGlobalSettings().PassThroughRequestEnabled

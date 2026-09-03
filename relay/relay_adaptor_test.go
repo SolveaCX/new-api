@@ -146,3 +146,10 @@ func TestGetTaskAdaptor_ModelAPISeedance(t *testing.T) {
 		t.Fatalf("channel name = %q, want modelapi-seedance", got)
 	}
 }
+
+func TestGetAdaptor_Apodex(t *testing.T) {
+	adaptor := GetAdaptor(constant.APITypeApodex)
+	if adaptor == nil || adaptor.GetChannelName() != "apodex" {
+		t.Fatalf("expected Apodex adaptor, got %#v", adaptor)
+	}
+}

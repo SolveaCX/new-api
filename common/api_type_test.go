@@ -40,3 +40,10 @@ func TestGrokSubscriptionAPITypeMapping(t *testing.T) {
 		t.Fatalf("GrokSubscription API type = %d, want %d", apiType, constant.APITypeGrokSubscription)
 	}
 }
+
+func TestApodexChannelTypeUsesDedicatedAPIType(t *testing.T) {
+	apiType, ok := ChannelType2APIType(constant.ChannelTypeApodex)
+	if !ok || apiType != constant.APITypeApodex {
+		t.Fatalf("Apodex api type = %d (ok=%v), want %d", apiType, ok, constant.APITypeApodex)
+	}
+}

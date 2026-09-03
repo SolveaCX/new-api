@@ -319,6 +319,8 @@ func channelSupportsOpenAIResponses(channelType int) bool {
 		constant.APITypeCodex,
 		constant.APITypeBlockRun:
 		return true
+	case constant.APITypeApodex:
+		return true
 	default:
 		return false
 	}

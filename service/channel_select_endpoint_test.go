@@ -394,6 +394,9 @@ func TestChannelSupportsRequestEndpointRejectsUnsupportedResponsesAdaptors(t *te
 	require.True(t, ChannelSupportsRequestEndpoint(ctx, &model.Channel{
 		Type: constant.ChannelTypeBlockRun,
 	}, "gpt-5.4"))
+	require.True(t, ChannelSupportsRequestEndpoint(ctx, &model.Channel{
+		Type: constant.ChannelTypeApodex,
+	}, "apodex-1.1"))
 	require.False(t, ChannelSupportsRequestEndpoint(ctx, &model.Channel{
 		Type: constant.ChannelTypeAnthropic,
 	}, "gpt-5.4"))
