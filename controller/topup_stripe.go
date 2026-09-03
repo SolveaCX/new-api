@@ -1452,9 +1452,8 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 		paymentStatus != string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired) {
 		return errors.New("Stripe one-time checkout is not paid")
 	}
-	actualAmount := stripeEventAmountMinor(event, "amount_total")
-	if actualAmount != order.PaymentAmountMinor {
-		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d got %d", order.PaymentAmountMinor, actualAmount)
+	if err := validateOneTimePlanStripeSessionAmount(event, order, paidDiscountSource); err != nil {
+		return err
 	}
 	actualCurrency := strings.ToUpper(strings.TrimSpace(event.GetObjectValue("currency")))
 	if actualCurrency != strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)) {
@@ -1514,6 +1513,34 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 		if actual != item.expected {
 			return fmt.Errorf("Stripe one-time checkout metadata %s mismatch", item.key)
 		}
+	}
+	return nil
+}
+
+// validateOneTimePlanStripeSessionAmount checks the paid amount against the local
+// order. A manual promotion code replaces the Checkout Session after the order was
+// quoted, so the local order still carries the pre-promotion amount: the session
+// subtotal must match the local quote and the total must be that subtotal net of
+// the Stripe-reported discount. Every other selection must pay the local amount.
+func validateOneTimePlanStripeSessionAmount(event stripe.Event, order *model.SubscriptionOrder, paidDiscountSource service.StripeCheckoutDiscountSource) error {
+	actualTotal := stripeEventAmountMinor(event, "amount_total")
+	if paidDiscountSource != service.StripeCheckoutDiscountManual {
+		if actualTotal != order.PaymentAmountMinor {
+			return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d got %d", order.PaymentAmountMinor, actualTotal)
+		}
+		return nil
+	}
+	quote, err := oneTimePlanQuoteFromOrder(order)
+	if err != nil {
+		return err
+	}
+	actualSubtotal := stripeEventAmountMinor(event, "amount_subtotal")
+	if actualSubtotal != quote.TotalAmountMinor {
+		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected subtotal %d got %d", quote.TotalAmountMinor, actualSubtotal)
+	}
+	actualDiscount := stripeEventAmountMinor(event, "total_details", "amount_discount")
+	if actualTotal != actualSubtotal-actualDiscount {
+		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d less discount %d got %d", actualSubtotal, actualDiscount, actualTotal)
 	}
 	return nil
 }
@@ -2004,8 +2031,8 @@ func stripePaymentProcessingErrorClass(err error) string {
 	}
 }
 
-func stripeEventAmountMinor(event stripe.Event, key string) int64 {
-	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, key))
+func stripeEventAmountMinor(event stripe.Event, keys ...string) int64 {
+	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, keys...))
 	if rawAmount == "" {
 		return 0
 	}
