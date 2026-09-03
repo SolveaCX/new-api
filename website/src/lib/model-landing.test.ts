@@ -71,7 +71,7 @@ describe("model landing configuration", () => {
       expect(taskNeedles.some((needle) => metadata.title.toLowerCase().includes(needle))).toBe(true);
       expect(metadata.description).toContain("Live Provider");
       expect(metadata.description).toContain("$1.25");
-      expect(metadata.description).toContain("128,000-token");
+      expect(metadata.description).toContain("128K-token");
       expect(metadata.description.length).toBeLessThanOrEqual(160);
     }
   });
@@ -96,7 +96,7 @@ describe("model landing configuration", () => {
         distillable: false,
       },
     }, { locale: "pt" });
-    expect(metadata.description).toContain("API de geração de vídeo");
+    expect(metadata.description).toContain("modelo de vídeo");
     expect(metadata.description).toContain("Provedor ao Vivo");
     expect(metadata.description.length).toBeLessThanOrEqual(160);
   });
@@ -126,7 +126,7 @@ describe("model landing configuration", () => {
       display_pricing: { billing_kind: "token", prices: { input: { plg: 1 }, output: { plg: 2 } } },
     } as PricingModel, { task: "image generation" });
     expect(metadata.title).toContain("image generation API");
-    expect(metadata.description).toContain("image generation");
+    expect(metadata.description).toContain("image model");
   });
 
   test("localizes live metadata templates for every supported locale", () => {
@@ -172,6 +172,52 @@ describe("model landing configuration", () => {
       expect(metadata.description.length).toBeLessThanOrEqual(160);
       if (locale !== "en") expect(metadata.description).not.toContain("via Flatkey; Provider Global model");
     }
+  });
+
+  test("keeps model facts and comparison intent in every locale", () => {
+    const model: PricingModel = {
+      model_name: "claude-fable-5.1",
+      vendor_name: "Anthropic",
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 2,
+      supported_endpoint_types: ["anthropic"],
+      display_pricing: {
+        billing_kind: "token",
+        prices: { input: { plg: 1.25 }, output: { plg: 2.5 } },
+      },
+      directory_metadata: {
+        context_tokens: 200000,
+        modalities: ["text"],
+      },
+    };
+
+    for (const locale of LOCALES) {
+      const metadata = buildModelLandingMetadata(model, { locale });
+      expect(metadata.description.length).toBeLessThanOrEqual(160);
+      expect(metadata.description).toContain("Anthropic");
+      expect(metadata.description).toContain("$1.25");
+      expect(metadata.description).toContain("200K");
+    }
+  });
+
+  test("uses the requested English model-detail metadata shape", () => {
+    const metadata = buildModelLandingMetadata({
+      model_name: "claude-fable-5.1",
+      vendor_name: "Anthropic",
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 2,
+      supported_endpoint_types: ["anthropic"],
+      display_pricing: { billing_kind: "token", prices: { input: { plg: 1.25 }, output: { plg: 2.5 } } },
+      directory_metadata: { context_tokens: 200000, modalities: ["text"] },
+    });
+
+    expect(metadata.title).toBe("claude-fable-5.1 API (chat/completions), pricing & FAQs | Flatkey");
+    expect(metadata.title).not.toContain("flatkey.ai");
+    expect(metadata.description).toContain("Priced at");
+    expect(metadata.description).toContain("200K-token context window");
+    expect(metadata.description).toContain("older models");
   });
 
   test("defines paid-search landing pages for DeepSeek, Qwen, and GLM APIs", () => {

@@ -177,7 +177,7 @@ export function ModelPublicPage(props: ModelPublicPageProps) {
       {/* Breadcrumb */}
       <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1 text-xs text-[#6B6475] dark:text-slate-300/72">
         <Link href={localizePath("/", props.locale)} className="hover:text-[#0B0B0F] dark:hover:text-white">
-          flatkey.ai
+          Flatkey
         </Link>
         <ChevronRight className="size-3" />
         <Link href={modelsUrl} className="hover:text-[#0B0B0F] dark:hover:text-white">

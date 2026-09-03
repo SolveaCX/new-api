@@ -1,0 +1,2 @@
+Page family,页面范围,Locale/语言,Status/状态,Primary keyword/主关键词,Commercial keyword/商业关键词,Secondary clusters/次级主题,Intent/搜索意图,SV,GSV,KD,TP,CPC,Parent Topic/父主题,FAQ status/FAQ 状态,Opportunity/机会
+All model detail pages,/{locale}/models/{slug},en; zh; es; fr; pt; ru; ja; vi; de; id,validated,{model} API,{model} pricing,"provider; model type; task; context window; API endpoint",informational + commercial/action,N/A,N/A,N/A,N/A,N/A,N/A,Existing visible model-specific FAQ retained,Catalog-driven coverage and clearer SERP metadata

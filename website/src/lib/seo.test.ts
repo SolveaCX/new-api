@@ -48,4 +48,14 @@ describe("buildMetadata", () => {
       "https://flatkey.ai/assets/og-image.png",
     ]);
   });
+  test("supports absolute titles for model pages", () => {
+    const metadata = buildMetadata({
+      title: "Claude Fable 5.1 API | Flatkey",
+      description: "A model detail page.",
+      pathname: "/models/claude-fable-5.1",
+      absoluteTitle: true,
+    });
+
+    expect(metadata.title).toEqual({ absolute: "Claude Fable 5.1 API | Flatkey" });
+  });
 });

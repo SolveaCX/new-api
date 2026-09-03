@@ -2053,6 +2053,12 @@ export type ModelLandingMetadata = {
   locale?: Locale;
 };
 
+/** Add the single model-page brand suffix without duplicating the root domain suffix. */
+export function modelDetailTitle(title: string): string {
+  const withoutBrand = title.replace(/\s*\|\s*flatkey(?:\.ai)?\s*$/i, "").trim();
+  return `${withoutBrand} | Flatkey`;
+}
+
 /** Build short, live-data metadata for any catalog model (including models
  * without a curated landing config). Curated copy remains the fallback when
  * the pricing endpoint has no matching model.
@@ -2136,21 +2142,82 @@ function buildMetadataTitle(name: string, task: string, locale: Locale): string 
   return `${prefix[locale]}${suffix[locale]}`;
 }
 
+const METADATA_TASK_CAPABILITIES: Record<string, Partial<Record<Locale, string>>> = {
+  "chat/completions": { en: "chat/code", pt: "chat e código", zh: "对话与编程", es: "chat y código", fr: "chat et code", ru: "чат и код", ja: "チャットとコード", vi: "chat và lập trình", de: "Chat und Code", id: "chat dan coding" },
+  "image generation": { en: "image creation and editing", pt: "criação e edição de imagens", zh: "图像创作与编辑", es: "crear y editar imágenes", fr: "création et édition d’images", ru: "создание и редактирование изображений", ja: "画像の作成と編集", vi: "tạo và chỉnh sửa ảnh", de: "Bilderstellung und -bearbeitung", id: "pembuatan dan pengeditan gambar" },
+  "video generation": { en: "text-to-video and image-to-video", pt: "texto e imagem para vídeo", zh: "文生视频和图生视频", es: "texto e imagen a vídeo", fr: "texte et image en vidéo", ru: "видео из текста и изображения", ja: "テキスト・画像から動画", vi: "text và ảnh thành video", de: "Text- und Bild-zu-Video", id: "teks dan gambar ke video" },
+  "video-to-music": { en: "video soundtracks", pt: "trilhas para vídeo", zh: "视频配乐", es: "bandas sonoras para vídeo", fr: "bandes-son pour vidéo", ru: "саундтреки для видео", ja: "動画用サウンドトラック", vi: "nhạc nền video", de: "Video-Soundtracks", id: "soundtrack video" },
+  embedding: { en: "semantic search", pt: "busca semântica", zh: "语义搜索", es: "búsqueda semántica", fr: "recherche sémantique", ru: "семантический поиск", ja: "セマンティック検索", vi: "tìm kiếm ngữ nghĩa", de: "semantische Suche", id: "pencarian semantik" },
+  reranking: { en: "search result ranking", pt: "classificação de resultados", zh: "搜索结果重排序", es: "ordenar resultados", fr: "classement des résultats", ru: "ранжирование поиска", ja: "検索結果の再ランキング", vi: "xếp hạng kết quả", de: "Suchergebnisse zu ranken", id: "pemeringkatan hasil" },
+  audio: { en: "speech, music and sound", pt: "fala, música e som", zh: "语音、音乐和声音", es: "voz, música y sonido", fr: "parole, musique et son", ru: "речь, музыку и звук", ja: "音声・音楽・サウンド", vi: "giọng nói, nhạc và âm thanh", de: "Sprache, Musik und Sound", id: "suara, musik, dan audio" },
+  "AI model": { en: "general AI workflows", pt: "fluxos de trabalho de IA", zh: "通用 AI 工作流", es: "flujos de trabajo de IA", fr: "workflows IA", ru: "общие AI-сценарии", ja: "汎用 AI ワークフロー", vi: "quy trình AI tổng quát", de: "allgemeine KI-Workflows", id: "workflow AI umum" },
+};
+
+function metadataTaskCapability(task: string, locale: Locale): string {
+  return METADATA_TASK_CAPABILITIES[task]?.[locale] ?? METADATA_TASK_CAPABILITIES[task]?.en ?? "AI workflows";
+}
+
+const METADATA_MODEL_TYPES: Record<string, Partial<Record<Locale, string>>> = {
+  "chat/completions": { en: "chat", pt: "chat", zh: "对话", es: "chat", fr: "chat", ru: "чат", ja: "チャット", vi: "chat", de: "Chat", id: "chat" },
+  "image generation": { en: "image", pt: "imagem", zh: "图像", es: "imagen", fr: "image", ru: "изображений", ja: "画像", vi: "hình ảnh", de: "Bild", id: "gambar" },
+  "video generation": { en: "video", pt: "vídeo", zh: "视频", es: "vídeo", fr: "vidéo", ru: "видео", ja: "動画", vi: "video", de: "Video", id: "video" },
+  "video-to-music": { en: "video-to-music", pt: "vídeo-para-música", zh: "视频转音乐", es: "vídeo a música", fr: "vidéo vers musique", ru: "видео-в-музыку", ja: "動画から音楽", vi: "video thành nhạc", de: "Video-zu-Musik", id: "video-ke-musik" },
+  embedding: { en: "embedding", pt: "embedding", zh: "向量嵌入", es: "embedding", fr: "embedding", ru: "эмбеддинговая", ja: "埋め込み", vi: "embedding", de: "Embedding", id: "embedding" },
+  reranking: { en: "reranking", pt: "reranking", zh: "重排序", es: "reranking", fr: "reclassement", ru: "reranking", ja: "リランキング", vi: "xếp hạng lại", de: "Reranking", id: "reranking" },
+  audio: { en: "audio", pt: "áudio", zh: "音频", es: "audio", fr: "audio", ru: "аудио", ja: "音声", vi: "âm thanh", de: "Audio", id: "audio" },
+  "AI model": { en: "AI", pt: "IA", zh: "AI", es: "IA", fr: "IA", ru: "ИИ", ja: "AI", vi: "AI", de: "KI", id: "AI" },
+};
+
+function metadataModelType(task: string, locale: Locale): string {
+  return METADATA_MODEL_TYPES[task]?.[locale] ?? METADATA_MODEL_TYPES[task]?.en ?? "AI";
+}
+
+function formatLocalizedContextWindow(tokens: number | null | undefined, locale: Locale): string {
+  if (!tokens || tokens <= 0) return "";
+  const value = tokens >= 1_000_000
+    ? `${Math.round(tokens / 1_000_000)}M-token`
+    : `${Math.round(tokens / 1000)}K-token`;
+  switch (locale) {
+    case "zh": return `${value.replace("-token", " token")} 上下文窗口`;
+    case "ja": return `${value.replace("-token", "トークン")}のコンテキストウィンドウ`;
+    case "ru": return `контекстное окно ${value.replace("-token", " токенов")}`;
+    case "de": return `${value.replace("-token", "-Token")}-Kontextfenster`;
+    case "es": return `ventana de contexto de ${value.replace("-token", " tokens")}`;
+    case "fr": return `fenêtre de contexte de ${value.replace("-token", " tokens")}`;
+    case "pt": return `janela de contexto de ${value.replace("-token", " tokens")}`;
+    case "vi": return `cửa sổ ngữ cảnh ${value.replace("-token", " token")}`;
+    case "id": return `jendela konteks ${value.replace("-token", " token")}`;
+    default: return `${value} context window`;
+  }
+}
+
 function buildMetadataDescription(input: { name: string; provider: string; task: string; pricing: string; context: number | null | undefined; locale: Locale }): string {
-  const taskName = taskLabel(input.task, input.locale);
-  const context = input.context && input.context > 0 ? formatLocalizedContext(input.context, input.locale) : null;
-  const facts = (providerLabel: string) => [providerLabel, input.pricing, context].filter(Boolean).join("; ");
+  const type = metadataModelType(input.task, input.locale);
+  const capability = metadataTaskCapability(input.task, input.locale);
+  const context = formatLocalizedContextWindow(input.context, input.locale);
+  const contextPart = context || {
+    en: "context varies by route",
+    zh: "上下文窗口随路由变化",
+    es: "la ventana de contexto varía según la ruta",
+    fr: "fenêtre de contexte variable selon la route",
+    pt: "a janela de contexto varia por rota",
+    ru: "контекстное окно зависит от маршрута",
+    ja: "コンテキストはルートにより異なります",
+    vi: "cửa sổ ngữ cảnh tùy theo route",
+    de: "Kontextfenster je nach Route",
+    id: "jendela konteks bergantung pada rute",
+  }[input.locale];
   switch (input.locale) {
-    case "pt": return `${input.name}: API de ${taskName} pela Flatkey; ${facts(`modelo ${input.provider}`)}.`;
-    case "zh": return `${input.name}提供${taskName} API，可通过 Flatkey 使用；${facts(`${input.provider} 模型`)}。`;
-    case "es": return `${input.name}: ${taskName} mediante la API de Flatkey; ${facts(`modelo de ${input.provider}`)}.`;
-    case "fr": return `${input.name} : ${taskName} via l’API Flatkey ; ${facts(`modèle ${input.provider}`)}.`;
-    case "ru": return `${input.name}: ${taskName} через API Flatkey; ${facts(`модель ${input.provider}`)}.`;
-    case "ja": return `${input.name}の${taskName}をFlatkey APIで利用。${facts(`${input.provider}モデル`)}。`;
-    case "vi": return `${input.name}: ${taskName} qua API Flatkey; ${facts(`mô hình ${input.provider}`)}.`;
-    case "de": return `${input.name}: ${taskName} über die Flatkey-API; ${facts(`${input.provider}-Modell`)}.`;
-    case "id": return `${input.name}: ${taskName} melalui API Flatkey; ${facts(`model ${input.provider}`)}.`;
-    default: return `${input.name} ${taskName} via Flatkey; ${facts(`${input.provider} model`)}.`;
+    case "zh": return `${input.name}是${input.provider}的${type}模型，可用于${capability}。价格为${input.pricing}。${contextPart}。比较旧模型价格/性能。`;
+    case "ja": return `${input.name}は${input.provider}の${type}モデルで、${capability}に対応。料金は${input.pricing}。${contextPart}。旧モデルと価格・性能を比較。`;
+    case "ru": return `${input.name} — ${type}-модель ${input.provider} для ${capability}. Цена: ${input.pricing}. ${contextPart}. Сравните цену/производительность со старыми моделями.`;
+    case "de": return `${input.name}: ${type}-Modell von ${input.provider} für ${capability}. Preis: ${input.pricing}. ${contextPart}. Preis/Leistung mit älteren Modellen vergleichen.`;
+    case "fr": return `${input.name} : modèle ${type} de ${input.provider} pour ${capability}. Tarif : ${input.pricing}. ${contextPart}. Comparez prix/performance aux anciens modèles.`;
+    case "pt": return `${input.name}: modelo de ${type} da ${input.provider} para ${capability}. Preço: ${input.pricing}. ${contextPart}. Compare preço/desempenho com modelos antigos.`;
+    case "es": return `${input.name}: modelo de ${type} de ${input.provider} para ${capability}. Precio: ${input.pricing}. ${contextPart}. Compara precio/rendimiento vs modelos antiguos.`;
+    case "vi": return `${input.name}: model ${type} của ${input.provider} cho ${capability}. Giá: ${input.pricing}. ${contextPart}. So sánh giá/hiệu năng với model cũ.`;
+    case "id": return `${input.name}: model ${type} dari ${input.provider} untuk ${capability}. Harga: ${input.pricing}. ${contextPart}. Bandingkan harga/performa dengan model lama.`;
+    default: return `${input.name}: ${input.provider} ${type} model for ${capability}. Priced at ${input.pricing}. ${contextPart}. Compare price/performance vs older models.`;
   }
 }
 
@@ -2201,8 +2268,8 @@ function modelPricingSummary(model: PricingModel, task: string): { en: string; p
   if (kind === "token" || kind === "tiered_expr" || model.quota_type === 0) {
     const input = valueText(valueFor("input"));
     const output = valueText(valueFor("output"));
-    if (input && output) return tokenPriceCopy(`${input} input/${output} output per 1M tokens`, `${input} entrada/${output} saída por 1M tokens`, input, output);
-    if (input) return tokenPriceCopy(`${input} input per 1M tokens`, `${input} entrada por 1M tokens`, input);
+    if (input && output) return tokenPriceCopy(`${input}/${output} per 1M tokens`, `${input}/${output} por 1M tokens`, input, output);
+    if (input) return tokenPriceCopy(`${input} per 1M tokens`, `${input} por 1M tokens`, input);
     return kind === "tiered_expr" ? genericPriceCopy("time-tiered token pricing", "preço de tokens por faixa de horário") : unavailablePricingCopy();
   }
   const request = valueText(valueFor("request")) ?? valueText(model.model_price);
@@ -2230,26 +2297,26 @@ function genericPriceCopy(en: string, pt: string): { en: string; pt: string } & 
 
 function mediaPriceCopy(value: string, unit: "image" | "audio"): { en: string; pt: string } & Partial<Record<Locale, string>> {
   const units = { image: { pt: "imagem", zh: "图像", es: "imagen", fr: "image", ru: "изображение", ja: "画像", vi: "ảnh", de: "Bild", id: "gambar" }, audio: { pt: "áudio", zh: "音频", es: "audio", fr: "audio", ru: "аудио", ja: "音声", vi: "âm thanh", de: "Audio", id: "audio" } }[unit];
-  return { en: `from ${value}/${unit} pricing`, pt: `preço a partir de ${value}/${units.pt}`, zh: `价格从 ${value}/${units.zh}起`, es: `precios desde ${value}/${units.es}`, fr: `tarifs à partir de ${value}/${units.fr}`, ru: `цена от ${value} за ${units.ru}`, ja: `${value}/${units.ja}から`, vi: `giá từ ${value}/${units.vi}`, de: `ab ${value}/${units.de}`, id: `mulai ${value}/${units.id}` };
+  return { en: `${value} per ${unit}`, pt: `${value} por ${units.pt}`, zh: `每${units.zh} ${value}`, es: `${value} por ${units.es}`, fr: `${value} par ${units.fr}`, ru: `${value} за ${units.ru}`, ja: `${units.ja} ${value}`, vi: `${value}/${units.vi}`, de: `${value} pro ${units.de}`, id: `${value} per ${units.id}` };
 }
 
 function secondPriceCopy(value: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
-  return { en: `from ${value}/second pricing`, pt: `preço a partir de ${value}/segundo`, zh: `价格从 ${value}/秒起`, es: `precios desde ${value}/segundo`, fr: `tarifs à partir de ${value}/seconde`, ru: `цена от ${value} за секунду`, ja: `${value}/秒から`, vi: `giá từ ${value}/giây`, de: `ab ${value}/Sekunde`, id: `mulai ${value}/detik` };
+  return { en: `${value} per second`, pt: `${value} por segundo`, zh: `每秒 ${value}`, es: `${value} por segundo`, fr: `${value} par seconde`, ru: `${value} за секунду`, ja: `1秒 ${value}`, vi: `${value}/giây`, de: `${value} pro Sekunde`, id: `${value} per detik` };
 }
 
 function requestPriceCopy(value: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
-  return { en: `from ${value}/request pricing`, pt: `preço a partir de ${value}/solicitação`, zh: `价格从 ${value}/请求起`, es: `precios desde ${value}/solicitud`, fr: `tarifs à partir de ${value}/requête`, ru: `цена от ${value} за запрос`, ja: `${value}/リクエストから`, vi: `giá từ ${value}/yêu cầu`, de: `ab ${value}/Anfrage`, id: `mulai ${value}/permintaan` };
+  return { en: `${value}/request`, pt: `${value} por solicitação`, zh: `每次请求 ${value}`, es: `${value} por solicitud`, fr: `${value} par requête`, ru: `${value} за запрос`, ja: `1リクエスト ${value}`, vi: `${value}/yêu cầu`, de: `${value} pro Anfrage`, id: `${value} per permintaan` };
 }
 
 function tokenPriceCopy(en: string, pt: string, input: string, output?: string): { en: string; pt: string } & Partial<Record<Locale, string>> {
-  const zh = output ? `${input} 输入/${output} 输出，每 100 万 token` : `${input} 输入，每 100 万 token`;
-  const es = output ? `${input} entrada/${output} salida por 1M tokens` : `${input} entrada por 1M tokens`;
-  const fr = output ? `${input} entrée/${output} sortie par 1M de tokens` : `${input} entrée par 1M de tokens`;
-  const ru = output ? `${input} ввод/${output} вывод за 1 млн токенов` : `${input} ввод за 1 млн токенов`;
-  const ja = output ? `入力${input}/出力${output}（100万トークンあたり）` : `入力${input}（100万トークンあたり）`;
-  const vi = output ? `đầu vào ${input}/đầu ra ${output} mỗi 1M token` : `đầu vào ${input} mỗi 1M token`;
-  const de = output ? `${input} Eingabe/${output} Ausgabe je 1M Token` : `${input} Eingabe je 1M Token`;
-  const id = output ? `input ${input}/output ${output} per 1M token` : `input ${input} per 1M token`;
+  const zh = output ? `${input}/${output}，每 100 万 token` : `${input}，每 100 万 token`;
+  const es = output ? `${input}/${output} por 1M tokens` : `${input} por 1M tokens`;
+  const fr = output ? `${input}/${output} par 1M de tokens` : `${input} par 1M de tokens`;
+  const ru = output ? `${input}/${output} за 1 млн токенов` : `${input} за 1 млн токенов`;
+  const ja = output ? `${input}/${output}（100万トークンあたり）` : `${input}（100万トークンあたり）`;
+  const vi = output ? `${input}/${output} mỗi 1M token` : `${input} mỗi 1M token`;
+  const de = output ? `${input}/${output} je 1M Token` : `${input} je 1M Token`;
+  const id = output ? `${input}/${output} per 1M token` : `${input} per 1M token`;
   return { en, pt, zh, es, fr, ru, ja, vi, de, id };
 }
 

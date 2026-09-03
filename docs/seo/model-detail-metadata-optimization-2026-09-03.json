@@ -1,0 +1,66 @@
+{
+  "status": "validated",
+  "collectionDate": "2026-09-03",
+  "timezone": "Asia/Shanghai",
+  "scope": {
+    "routePattern": "/models/[slug]",
+    "locales": ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de", "id"],
+    "pageFamilies": ["curated model landing", "live catalog model detail"]
+  },
+  "evidence": {
+    "modelFacts": "Existing live pricing/catalog payload consumed by website server routes",
+    "ahrefs": "N/A: AHREFS_API_KEY unavailable",
+    "serp": "N/A: no SERP evidence collected",
+    "keywordMetrics": "N/A: SV, GSV, KD, TP, CPC and Parent Topic unavailable"
+  },
+  "policy": {
+    "titleBrandSuffix": "| Flatkey",
+    "descriptionMaxCharacters": 160,
+    "descriptionFields": ["model type", "provider", "task capability", "price", "context window", "older-model price/performance comparison"],
+    "breadcrumb": ["Flatkey", "All models", "{model}"],
+    "video": {"autoplay": true, "loop": true, "playsInline": true, "muted": true}
+  },
+  "matrix": [
+    {
+      "pageFamily": "all model detail pages",
+      "routePattern": "/{locale}/models/{slug}",
+      "locales": ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de", "id"],
+      "status": "validated",
+      "primaryKeyword": "{model} API",
+      "commercialKeyword": "{model} pricing",
+      "secondaryClusters": ["provider", "model type", "task", "context window", "API endpoint"],
+      "intent": "informational + commercial/action",
+      "sv": "N/A",
+      "gsv": "N/A",
+      "kd": "N/A",
+      "tp": "N/A",
+      "cpc": "N/A",
+      "parentTopic": "N/A",
+      "faqStatus": "existing visible model-specific FAQ retained",
+      "opportunity": "catalog-driven coverage and clearer SERP metadata"
+    }
+  ],
+  "renderedChecks": [
+    {
+      "url": "http://localhost:4005/models/claude-fable-5.1",
+      "title": "claude-fable-5.1 API (chat/completions), pricing & FAQs | Flatkey",
+      "descriptionMax160": true,
+      "breadcrumb": "Flatkey > All models > claude-fable-5.1",
+      "videoCount": 0
+    },
+    {
+      "url": "http://localhost:4005/zh/models/seedance-2.5",
+      "title": "Seedance 2.5视频生成 API、价格与常见问题 | Flatkey",
+      "descriptionMax160": true,
+      "breadcrumb": "Flatkey > 全部模型 > seedance-2.5",
+      "videoCount": 7,
+      "allVideosMuted": true
+    }
+  ],
+  "validation": {
+    "tests": "66 passed, 0 failed",
+    "typecheck": "passed",
+    "lint": "passed with 26 existing img warnings",
+    "build": "passed; 885 static pages generated"
+  }
+}

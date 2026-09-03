@@ -514,7 +514,6 @@ function FlatkeyModelDetailPage(props: {
               <ModelLandingBreadcrumb
                 locale={props.locale}
                 modelName={props.config.modelId}
-                segments={heroContent?.breadcrumb}
                 t={props.t}
                 className="model-breadcrumb"
               />
@@ -1460,29 +1459,16 @@ function ModelLandingActions(props: {
 function ModelLandingBreadcrumb(props: {
   locale: Locale;
   modelName: string;
-  segments?: string[];
   t: (key: string, vars?: Record<string, string>) => string;
   className?: string;
 }) {
-  if (props.segments?.length) {
-    return (
-    <nav aria-label={props.t("Breadcrumb")} className={`flex min-w-0 flex-wrap items-center gap-1 text-xs text-[#6B6475] dark:text-slate-300/72 ${props.className ?? ""}`}>
-        {props.segments.map((segment, index) => (
-          <Fragment key={`${segment}-${index}`}>
-            {index > 0 ? <span className="model-breadcrumb-sep" aria-hidden="true">/</span> : null}
-            <span className={index === props.segments!.length - 1 ? "min-w-0 truncate" : undefined}>{props.t(segment)}</span>
-          </Fragment>
-        ))}
-      </nav>
-    );
-  }
   return (
     <nav
       aria-label={props.t("Breadcrumb")}
       className={`flex min-w-0 flex-wrap items-center gap-1 text-xs text-[#6B6475] dark:text-slate-300/72 ${props.className ?? ""}`}
     >
       <Link href={localizePath("/", props.locale)} className="hover:text-[#0B0B0F] dark:hover:text-white">
-        flatkey.ai
+        Flatkey
       </Link>
       <ChevronRight className="size-3" />
       <Link href={localizePath("/models", props.locale)} className="hover:text-[#0B0B0F] dark:hover:text-white">

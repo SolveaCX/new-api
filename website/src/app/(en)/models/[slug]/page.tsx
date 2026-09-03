@@ -6,6 +6,7 @@ import {
   getModelLandingConfigs,
   getLocalizedModelLandingConfig,
   buildModelLandingMetadata,
+  modelDetailTitle,
   resolveModelLandingModels,
 } from "@/lib/model-landing";
 import { resolvePublicModel } from "@/lib/model-public";
@@ -26,10 +27,12 @@ export function generateStaticParams() {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (params.slug === "gpt-api") {
-    return buildMetadata(getSkagLandingMetadataInput("gpt-api"));
+    const input = getSkagLandingMetadataInput("gpt-api");
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
   }
   if (params.slug === "claude-api") {
-    return buildMetadata(getSkagLandingMetadataInput("claude-api"));
+    const input = getSkagLandingMetadataInput("claude-api");
+    return buildMetadata({ ...input, title: modelDetailTitle(input.title), absoluteTitle: true });
   }
   const config = getModelLandingConfig(params.slug);
   const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
@@ -52,12 +55,13 @@ export async function generateMetadata(props: Props) {
               ? "audio"
               : undefined,
       });
-      return buildMetadata(dynamic);
+      return buildMetadata({ ...dynamic, absoluteTitle: true });
     }
     return buildMetadata({
-      title: config.seoByLocale?.en?.title ?? config.seo.title,
+      title: modelDetailTitle(config.seoByLocale?.en?.title ?? config.seo.title),
       description: "Current Flatkey pricing and availability are shown from the live model catalog.",
       pathname: `/models/${config.slug}`,
+      absoluteTitle: true,
     });
   }
   const model = resolvePublicModel(pricing.models, params.slug);
@@ -67,7 +71,7 @@ export async function generateMetadata(props: Props) {
     vendor_name: model.vendor_name ?? getVendorName(model, pricing.vendors),
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
-  return buildMetadata(buildModelLandingMetadata(modelWithVendor, {
+  return buildMetadata({ ...buildModelLandingMetadata(modelWithVendor, {
     pathname: `/models/${modelSpecificConfig.slug}`,
     task: modelSpecificConfig.generator?.kind === "image"
       ? "image generation"
@@ -76,7 +80,7 @@ export async function generateMetadata(props: Props) {
         : modelSpecificConfig.generator?.kind === "audio"
           ? "audio"
           : undefined,
-  }));
+  }), absoluteTitle: true });
 }
 
 export default async function Page(props: Props) {
