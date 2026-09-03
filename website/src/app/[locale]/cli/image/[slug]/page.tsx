@@ -17,7 +17,7 @@ export function generateStaticParams() {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
-  const meta = getCliMediaDetailMetadata("image", params.slug, params.locale);
+  const meta = await getCliMediaDetailMetadata("image", params.slug, params.locale);
   if (!meta) return {};
   return buildMetadata({
     title: meta.title,
@@ -30,7 +30,7 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === "en") notFound();
-  const meta = getCliMediaDetailMetadata("image", params.slug, params.locale);
+  const meta = await getCliMediaDetailMetadata("image", params.slug, params.locale);
   if (!meta) notFound();
   return <CliMediaPromptDetailPage kind="image" locale={params.locale} slug={params.slug} />;
 }
