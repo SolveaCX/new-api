@@ -1452,10 +1452,10 @@ func validateOneTimePlanStripeSessionEvent(event stripe.Event, order *model.Subs
 		paymentStatus != string(stripe.CheckoutSessionPaymentStatusNoPaymentRequired) {
 		return errors.New("Stripe one-time checkout is not paid")
 	}
-	actualAmount := stripeEventAmountMinor(event, "amount_total")
-	if actualAmount != order.PaymentAmountMinor {
-		return fmt.Errorf("Stripe one-time checkout amount mismatch: expected %d got %d", order.PaymentAmountMinor, actualAmount)
-	}
+	// Do not compare Stripe amounts with the locally stored quote. Promotion codes,
+	// coupons, Adaptive Pricing and tax can all change what Stripe charges after the
+	// local order was quoted; the trusted contract is the session identity, the
+	// checkout authority metadata and the payment method. Mirrors the top-up path.
 	actualCurrency := strings.ToUpper(strings.TrimSpace(event.GetObjectValue("currency")))
 	if actualCurrency != strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)) {
 		return fmt.Errorf("Stripe one-time checkout currency mismatch: expected %s got %s", strings.ToUpper(strings.TrimSpace(order.PaymentCurrency)), actualCurrency)
@@ -2004,8 +2004,8 @@ func stripePaymentProcessingErrorClass(err error) string {
 	}
 }
 
-func stripeEventAmountMinor(event stripe.Event, key string) int64 {
-	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, key))
+func stripeEventAmountMinor(event stripe.Event, keys ...string) int64 {
+	rawAmount := strings.TrimSpace(stripeEventObjectValue(event, keys...))
 	if rawAmount == "" {
 		return 0
 	}

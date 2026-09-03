@@ -835,7 +835,7 @@ func TestOneTimePlanCheckoutRejectsMissingQuote(t *testing.T) {
 	require.Contains(t, err.Error(), "quote is unavailable")
 }
 
-func TestOneTimePlanWebhookRejectsAmountCurrencySessionAndMethodMismatch(t *testing.T) {
+func TestOneTimePlanWebhookRejectsCurrencySessionAndMethodMismatch(t *testing.T) {
 	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoicePix, "BRL", 4990, 1)
 	order.ProviderSessionId = "cs_expected"
 
@@ -844,7 +844,6 @@ func TestOneTimePlanWebhookRejectsAmountCurrencySessionAndMethodMismatch(t *test
 		mutate func(map[string]interface{})
 		want   string
 	}{
-		{name: "amount", mutate: func(object map[string]interface{}) { object["amount_total"] = float64(3990) }, want: "amount mismatch"},
 		{name: "currency", mutate: func(object map[string]interface{}) { object["currency"] = "usd" }, want: "currency mismatch"},
 		{name: "session", mutate: func(object map[string]interface{}) { object["id"] = "cs_other" }, want: "session mismatch"},
 		{name: "method", mutate: func(object map[string]interface{}) { object["payment_method_types"] = []interface{}{"card"} }, want: "payment method mismatch"},
@@ -1295,7 +1294,7 @@ func TestOneTimePlanPaidWebhookReturnsPermanentErrorForValidationMismatch(t *tes
 		return nil, errors.New("must not fulfill mismatched event")
 	}
 	object := oneTimeStripePaidSessionObject(order)
-	object["amount_total"] = float64(3990)
+	object["currency"] = "usd"
 
 	err := handleStripeOneTimePlanPaid(context.Background(), stripe.Event{ID: "evt_one_time_permanent", Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order.TradeNo, "127.0.0.1")
 
@@ -1414,13 +1413,16 @@ func oneTimeStripePaidSessionObject(order *model.SubscriptionOrder) map[string]i
 		metadata["recall_promotion_code_id"] = strings.TrimSpace(order.RecallPromotionCodeId)
 		metadata["recall_discount_amount_minor"] = strconv.FormatInt(order.RecallDiscountAmountMinor, 10)
 	}
+	discountMinor := order.RecallDiscountAmountMinor + order.SubscriptionDiscountAmountMinor
 	return map[string]interface{}{
 		"id":                   order.ProviderSessionId,
 		"mode":                 string(stripe.CheckoutSessionModePayment),
 		"status":               "complete",
 		"payment_status":       "paid",
 		"client_reference_id":  order.TradeNo,
+		"amount_subtotal":      float64(order.PaymentAmountMinor + discountMinor),
 		"amount_total":         float64(order.PaymentAmountMinor),
+		"total_details":        map[string]interface{}{"amount_discount": float64(discountMinor), "amount_shipping": float64(0), "amount_tax": float64(0)},
 		"currency":             strings.ToLower(strings.TrimSpace(order.PaymentCurrency)),
 		"livemode":             false,
 		"payment_method_types": []interface{}{order.PaymentMethod},
@@ -1454,4 +1456,53 @@ func stripeStringSliceValues(values []*string) []string {
 		}
 	}
 	return out
+}
+
+func TestOneTimePlanWebhookAcceptsManualPromotionDiscountedTotal(t *testing.T) {
+	order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 30000, 3)
+	order.ProviderSessionId = "cs_one_time_manual_promo"
+	order.CheckoutRevision = 2
+	object := oneTimeStripePaidSessionObject(order)
+	object["amount_subtotal"] = float64(30000)
+	object["amount_total"] = float64(15000)
+	object["total_details"] = map[string]interface{}{"amount_discount": float64(15000), "amount_shipping": float64(0), "amount_tax": float64(0)}
+	object["discounts"] = []interface{}{map[string]interface{}{"coupon": nil, "promotion_code": "promo_manual_half"}}
+	metadata := object["metadata"].(map[string]interface{})
+	metadata["checkout_revision"] = "2"
+	metadata["discount_selection"] = string(service.StripeCheckoutDiscountManual)
+
+	err := validateOneTimePlanStripeSessionEvent(stripe.Event{Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order)
+
+	require.NoError(t, err)
+}
+
+func TestOneTimePlanWebhookDoesNotCompareStripeAmounts(t *testing.T) {
+	testCases := []struct {
+		name      string
+		selection service.StripeCheckoutDiscountSource
+		subtotal  float64
+		discount  float64
+		total     float64
+	}{
+		{name: "manual promotion halves the total", selection: service.StripeCheckoutDiscountManual, subtotal: 30000, discount: 15000, total: 15000},
+		{name: "adaptive pricing or coupon changes the total without a selection", selection: service.StripeCheckoutDiscountNone, subtotal: 29000, discount: 0, total: 29000},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			order := oneTimeStripeOrderForTest(service.SubscriptionPaymentChoiceAlipay, "USD", 30000, 3)
+			order.ProviderSessionId = "cs_one_time_amount_ignored"
+			order.CheckoutRevision = 2
+			object := oneTimeStripePaidSessionObject(order)
+			object["amount_subtotal"] = tc.subtotal
+			object["amount_total"] = tc.total
+			object["total_details"] = map[string]interface{}{"amount_discount": tc.discount, "amount_shipping": float64(0), "amount_tax": float64(0)}
+			metadata := object["metadata"].(map[string]interface{})
+			metadata["checkout_revision"] = "2"
+			metadata["discount_selection"] = string(tc.selection)
+
+			err := validateOneTimePlanStripeSessionEvent(stripe.Event{Type: stripe.EventTypeCheckoutSessionCompleted, Data: &stripe.EventData{Object: object}}, order)
+
+			require.NoError(t, err)
+		})
+	}
 }
