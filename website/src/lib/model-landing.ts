@@ -7,6 +7,9 @@ import {
   getPriorityModelTranslations,
 } from "./priority-model-copy";
 
+export const SEO_TITLE_MAX_LENGTH = 60;
+export const SEO_DESCRIPTION_MAX_LENGTH = 155;
+
 export type ModelPriceRow = {
   label: string;
   flatkey: string;
@@ -2053,10 +2056,29 @@ export type ModelLandingMetadata = {
   locale?: Locale;
 };
 
+function normalizeSeoText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/** Keep the model-page brand suffix visible while fitting common SERP title limits. */
+export function limitSeoTitle(value: string): string {
+  const normalized = normalizeSeoText(value);
+  if (normalized.length <= SEO_TITLE_MAX_LENGTH) return normalized;
+
+  const suffixMatch = normalized.match(/(\s*\|\s*Flatkey)$/i);
+  const suffix = suffixMatch?.[1] ?? "";
+  const prefixBudget = SEO_TITLE_MAX_LENGTH - suffix.length - 1;
+  const prefixSource = suffix ? normalized.slice(0, -suffix.length).trimEnd() : normalized;
+  const clippedPrefix = prefixSource.slice(0, Math.max(1, prefixBudget));
+  const wordSafePrefix = clippedPrefix.replace(/\s+\S*$/, "").trim() || clippedPrefix.trim();
+  const result = `${wordSafePrefix}…${suffix}`.trim();
+  return result.slice(0, SEO_TITLE_MAX_LENGTH).trimEnd();
+}
+
 /** Add the single model-page brand suffix without duplicating the root domain suffix. */
 export function modelDetailTitle(title: string): string {
   const withoutBrand = title.replace(/\s*\|\s*flatkey(?:\.ai)?\s*$/i, "").trim();
-  return `${withoutBrand} | Flatkey`;
+  return limitSeoTitle(`${withoutBrand} | Flatkey`);
 }
 
 /** Build short, live-data metadata for any catalog model (including models
@@ -2073,7 +2095,7 @@ export function buildModelLandingMetadata(
   const pricing = modelPricingSummary(model, task);
   const context = model.directory_metadata?.context_tokens;
   const locale = options.locale ?? "en";
-  const title = buildMetadataTitle(name, task, locale);
+  const title = limitSeoTitle(buildMetadataTitle(name, task, locale));
   const description = limitSeoDescription(buildMetadataDescription({
     name,
     provider,
@@ -2134,18 +2156,24 @@ function buildMetadataTitle(name: string, task: string, locale: Locale): string 
   if (task === "chat/completions") {
     const endpoint = " (chat/completions)";
     const suffix: Record<Locale, string> = { en: ", pricing & FAQs | Flatkey", pt: ", preços e FAQs | Flatkey", zh: "、价格与常见问题 | Flatkey", es: ", precios y FAQ | Flatkey", fr: ", tarifs et FAQ | Flatkey", ru: ", цены и FAQ | Flatkey", ja: "・料金・FAQ | Flatkey", vi: ", giá và FAQ | Flatkey", de: ", Preise & FAQs | Flatkey", id: ", harga & FAQ | Flatkey" };
-    return `${apiName}${endpoint}${suffix[locale]}`;
+    const fullTitle = `${apiName}${endpoint}${suffix[locale]}`;
+    if (fullTitle.length <= SEO_TITLE_MAX_LENGTH) return fullTitle;
+    const compactTitle = `${apiName}${suffix[locale]}`;
+    return compactTitle.length <= SEO_TITLE_MAX_LENGTH ? compactTitle : `${apiName} | Flatkey`;
   }
   const taskName = taskLabel(task, locale);
   const suffix: Record<Locale, string> = { en: ", pricing & FAQs | Flatkey", pt: ", preços e FAQs | Flatkey", zh: "、价格与常见问题 | Flatkey", es: ", precios y FAQ | Flatkey", fr: ", tarifs et FAQ | Flatkey", ru: ", цены и FAQ | Flatkey", ja: "・料金・FAQ | Flatkey", vi: ", giá và FAQ | Flatkey", de: ", Preise & FAQs | Flatkey", id: ", harga & FAQ | Flatkey" };
   const prefix: Record<Locale, string> = { en: `${name} ${taskName} API`, pt: `${name} API de ${taskName}`, zh: `${name}${taskName} API`, es: `${name} API de ${taskName}`, fr: `${name} API de ${taskName}`, ru: `${name}: API для ${taskName}`, ja: `${name} ${taskName} API`, vi: `${name} API ${taskName}`, de: `${name} ${taskName}-API`, id: `${name} API ${taskName}` };
-  return `${prefix[locale]}${suffix[locale]}`;
+  const fullTitle = `${prefix[locale]}${suffix[locale]}`;
+  if (fullTitle.length <= SEO_TITLE_MAX_LENGTH) return fullTitle;
+  const compactTitle = `${prefix[locale]} | Flatkey`;
+  return compactTitle.length <= SEO_TITLE_MAX_LENGTH ? compactTitle : `${prefix[locale]} | Flatkey`;
 }
 
 const METADATA_TASK_CAPABILITIES: Record<string, Partial<Record<Locale, string>>> = {
   "chat/completions": { en: "chat/code", pt: "chat e código", zh: "对话与编程", es: "chat y código", fr: "chat et code", ru: "чат и код", ja: "チャットとコード", vi: "chat và lập trình", de: "Chat und Code", id: "chat dan coding" },
   "image generation": { en: "image creation and editing", pt: "criação e edição de imagens", zh: "图像创作与编辑", es: "crear y editar imágenes", fr: "création et édition d’images", ru: "создание и редактирование изображений", ja: "画像の作成と編集", vi: "tạo và chỉnh sửa ảnh", de: "Bilderstellung und -bearbeitung", id: "pembuatan dan pengeditan gambar" },
-  "video generation": { en: "text-to-video and image-to-video", pt: "texto e imagem para vídeo", zh: "文生视频和图生视频", es: "texto e imagen a vídeo", fr: "texte et image en vidéo", ru: "видео из текста и изображения", ja: "テキスト・画像から動画", vi: "text và ảnh thành video", de: "Text- und Bild-zu-Video", id: "teks dan gambar ke video" },
+  "video generation": { en: "text/image-to-video", pt: "texto e imagem para vídeo", zh: "文生视频和图生视频", es: "texto e imagen a vídeo", fr: "texte et image en vidéo", ru: "видео из текста и изображения", ja: "テキスト・画像から動画", vi: "text và ảnh thành video", de: "Text- und Bild-zu-Video", id: "teks dan gambar ke video" },
   "video-to-music": { en: "video soundtracks", pt: "trilhas para vídeo", zh: "视频配乐", es: "bandas sonoras para vídeo", fr: "bandes-son pour vidéo", ru: "саундтреки для видео", ja: "動画用サウンドトラック", vi: "nhạc nền video", de: "Video-Soundtracks", id: "soundtrack video" },
   embedding: { en: "semantic search", pt: "busca semântica", zh: "语义搜索", es: "búsqueda semántica", fr: "recherche sémantique", ru: "семантический поиск", ja: "セマンティック検索", vi: "tìm kiếm ngữ nghĩa", de: "semantische Suche", id: "pencarian semantik" },
   reranking: { en: "search result ranking", pt: "classificação de resultados", zh: "搜索结果重排序", es: "ordenar resultados", fr: "classement des résultats", ru: "ранжирование поиска", ja: "検索結果の再ランキング", vi: "xếp hạng kết quả", de: "Suchergebnisse zu ranken", id: "pemeringkatan hasil" },
@@ -2198,26 +2226,33 @@ function buildMetadataDescription(input: { name: string; provider: string; task:
   const contextPart = context || {
     en: "context varies by route",
     zh: "上下文窗口随路由变化",
-    es: "la ventana de contexto varía según la ruta",
-    fr: "fenêtre de contexte variable selon la route",
-    pt: "a janela de contexto varia por rota",
-    ru: "контекстное окно зависит от маршрута",
+    es: "contexto por ruta",
+    fr: "contexte par route",
+    pt: "contexto por rota",
+    ru: "контекст по маршруту",
     ja: "コンテキストはルートにより異なります",
     vi: "cửa sổ ngữ cảnh tùy theo route",
-    de: "Kontextfenster je nach Route",
-    id: "jendela konteks bergantung pada rute",
+    de: "Kontext je nach Route",
+    id: "konteks per rute",
   }[input.locale];
   switch (input.locale) {
     case "zh": return `${input.name}是${input.provider}的${type}模型，可用于${capability}。价格为${input.pricing}。${contextPart}。比较旧模型价格/性能。`;
     case "ja": return `${input.name}は${input.provider}の${type}モデルで、${capability}に対応。料金は${input.pricing}。${contextPart}。旧モデルと価格・性能を比較。`;
-    case "ru": return `${input.name} — ${type}-модель ${input.provider} для ${capability}. Цена: ${input.pricing}. ${contextPart}. Сравните цену/производительность со старыми моделями.`;
-    case "de": return `${input.name}: ${type}-Modell von ${input.provider} für ${capability}. Preis: ${input.pricing}. ${contextPart}. Preis/Leistung mit älteren Modellen vergleichen.`;
-    case "fr": return `${input.name} : modèle ${type} de ${input.provider} pour ${capability}. Tarif : ${input.pricing}. ${contextPart}. Comparez prix/performance aux anciens modèles.`;
-    case "pt": return `${input.name}: modelo de ${type} da ${input.provider} para ${capability}. Preço: ${input.pricing}. ${contextPart}. Compare preço/desempenho com modelos antigos.`;
-    case "es": return `${input.name}: modelo de ${type} de ${input.provider} para ${capability}. Precio: ${input.pricing}. ${contextPart}. Compara precio/rendimiento vs modelos antiguos.`;
-    case "vi": return `${input.name}: model ${type} của ${input.provider} cho ${capability}. Giá: ${input.pricing}. ${contextPart}. So sánh giá/hiệu năng với model cũ.`;
-    case "id": return `${input.name}: model ${type} dari ${input.provider} untuk ${capability}. Harga: ${input.pricing}. ${contextPart}. Bandingkan harga/performa dengan model lama.`;
-    default: return `${input.name}: ${input.provider} ${type} model for ${capability}. Priced at ${input.pricing}. ${contextPart}. Compare price/performance vs older models.`;
+    case "ru": return `${input.name}: ${type}-модель ${input.provider}; ${capability}. Цена ${input.pricing}; ${contextPart}. Сравните цену/эффективность со старыми.`;
+    case "de": return `${input.name}: ${type}-Modell von ${input.provider}; ${capability}. Preis ${input.pricing}; ${contextPart}. Vergleich Preis/Leistung mit älteren.`;
+    case "fr": return `${input.name} : modèle ${type} de ${input.provider}; ${capability}. Tarif ${input.pricing}; ${contextPart}. Comparez prix/performance aux anciens.`;
+    case "pt": return `${input.name}: modelo de ${type} da ${input.provider}; ${capability}. Preço ${input.pricing}; ${contextPart}. Compare preço/desempenho com antigos.`;
+    case "es": return `${input.name}: modelo ${type} de ${input.provider}; ${capability}. Precio ${input.pricing}; ${contextPart}. Compara precio/rendimiento vs viejos.`;
+    case "vi": return `${input.name}: model ${type} của ${input.provider}; ${capability}. Giá ${input.pricing}; ${contextPart}. So sánh giá/hiệu năng với model cũ.`;
+    case "id": return `${input.name}: model ${type} dari ${input.provider}; ${capability}. Harga ${input.pricing}; ${contextPart}. Bandingkan harga/performa dengan model lama.`;
+    default: {
+      const compactContext = contextPart
+        .replace(/ context window$/i, " context")
+        .replace(/^context varies by route$/i, "route-based context");
+      const full = `${input.name}: ${input.provider} ${type} model; ${capability}. Priced at ${input.pricing}. ${contextPart}. Older models: price/performance.`;
+      if (full.length <= SEO_DESCRIPTION_MAX_LENGTH) return full;
+      return `${input.name}: ${input.provider} ${type} model; ${capability}. Priced at ${input.pricing}. ${compactContext}. Older models: price/performance.`;
+    }
   }
 }
 
@@ -2325,10 +2360,10 @@ function formatContext(tokens: number): string {
 }
 
 export function limitSeoDescription(value: string): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 160) return normalized;
-  const clipped = normalized.slice(0, 159).replace(/\s+\S*$/, "").trim();
-  return `${clipped || normalized.slice(0, 159).trim()}…`;
+  const normalized = normalizeSeoText(value);
+  if (normalized.length <= SEO_DESCRIPTION_MAX_LENGTH) return normalized;
+  const clipped = normalized.slice(0, SEO_DESCRIPTION_MAX_LENGTH - 1).replace(/\s+\S*$/, "").trim();
+  return `${clipped || normalized.slice(0, SEO_DESCRIPTION_MAX_LENGTH - 1).trim()}…`;
 }
 
 export function getModelLandingConfigForModel(modelId: string): ModelConfig | null {
