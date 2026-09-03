@@ -5947,9 +5947,8 @@ html:has(.model-prototype) {
 }
 
 /* Conversion pricing cards -------------------------------------------------
- * Keep the headline focused on a real catalog amount. Product configuration
- * details live beside it, while the compact table below remains available for
- * users who need the exact billing formula.
+ * Keep the headline focused on real catalog amounts. Product configuration
+ * details live beside it, and media models list every available price row.
  */
 .model-prototype .pricing-conversion-grid {
   display: grid;
@@ -6012,13 +6011,6 @@ html:has(.model-prototype) {
   font-weight: 700;
   line-height: 1.1;
   overflow-wrap: anywhere;
-}
-
-.model-prototype .pricing-feature-card > p {
-  margin: 14px 0 0;
-  color: var(--model-muted);
-  font-size: 13px;
-  line-height: 20px;
 }
 
 .model-prototype .pricing-feature-action {
@@ -6085,10 +6077,6 @@ html:has(.model-prototype) {
   color: var(--model-ink);
   font-weight: 600;
   text-align: right;
-}
-
-.model-prototype .pricing-breakdown-card {
-  margin-top: 0;
 }
 
 /* Release the prototype's fixed playground height so the editor can grow with

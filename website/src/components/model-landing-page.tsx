@@ -477,6 +477,13 @@ function FlatkeyModelDetailPage(props: {
   const heroContent = landingContent?.hero;
   const heroProvider = heroContent?.provider ?? providerName;
   const heroTitle = buildHumanReadableModelTitle(props.config, props.locale);
+  const pricingContent = landingContent?.pricing ?? {
+    eyebrow: props.t("Pricing"),
+    title: `${props.config.displayName} ${props.t("Pricing")}`,
+    description: props.t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API."),
+    note: props.t("Prices below are calculated from Flatkey pricing data for this model and the visible groups currently returned by our pricing API."),
+    rows: [],
+  };
   const formatHeroPriceRows = (field: "flatkey" | "official") => priceRows.rows
     .slice(0, 3)
     .map((row) => {
@@ -627,7 +634,7 @@ function FlatkeyModelDetailPage(props: {
           </div>
         </section>
 
-        <ModelSectionNav generator={generator} showPricing={props.config.slug === "seedance-2.5" || Boolean(landingContent?.pricing)} t={props.t} />
+        <ModelSectionNav generator={generator} showPricing t={props.t} />
 
         {generator ? (
           <section id="workbench" className="model-section model-playground playground">
@@ -764,18 +771,18 @@ function FlatkeyModelDetailPage(props: {
 
         <ModelActivitySection config={props.config} trend={trend} summary={summary} t={props.t} />
 
-        {landingContent?.pricing ? (
+        {props.config.slug === "seedance-2.5" ? (
+          <SeedancePricingSection config={props.config} rows={priceRows.rows} note={priceRows.note} t={props.t} />
+        ) : (
           <ModelPricingSection
             config={props.config}
-            content={landingContent.pricing}
+            content={pricingContent}
             liveRows={priceRows.rows}
             liveNote={priceRows.note}
             allowPlayground={Boolean(generator)}
             t={props.t}
           />
-        ) : props.config.slug === "seedance-2.5" ? (
-          <SeedancePricingSection config={props.config} rows={priceRows.rows} note={priceRows.note} t={props.t} />
-        ) : null}
+        )}
 
         <ModelCapabilitiesSection config={props.config} t={props.t} />
 
@@ -3456,35 +3463,10 @@ function SeedancePricingSection(props: {
                 <span className="pricing-live-badge">{props.t("Live catalog model")}</span>
               </div>
               <div className="pricing-feature-value">{featured?.flatkey ?? "—"}</div>
-              <p>{pricingBasis}</p>
-              <PricingFeatureExamples
-                rows={displayRows.slice(0, 3).map((row) => ({ label: row.label, value: row.flatkey }))}
-              />
+              <PricingFeatureExamples rows={displayRows.map((row) => ({ label: row.label, value: row.flatkey }))} />
               <a href="#workbench" className="pricing-feature-action">{props.t("Try a prompt")} <span aria-hidden="true">↗</span></a>
             </article>
             <PricingWalletCard facts={productFacts} t={props.t} />
-          </div>
-          <div className="pricing-card pricing-breakdown-card">
-            <table>
-              <caption className="sr-only">{props.t("Seedance 2.5 request pricing formulas")}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{props.t("Scenario")}</th>
-                  <th scope="col">{props.t("Flatkey formula")}</th>
-                  <th scope="col">{props.t("Billing basis")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((row, index) => (
-                  <tr key={`${row.label}-${row.flatkey}`}>
-                    <td>{row.label}</td>
-                    <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
-                    <td>{pricingBasis}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="pricing-note">{props.t("The catalog base and request formula are shown separately; final settlement follows the task estimate and account limits.")}</p>
           </div>
         </div>
       </div>
@@ -3584,7 +3566,7 @@ function ModelPricingSection(props: {
   const allowPlayground = props.allowPlayground ?? Boolean(props.config.generator && props.config.generator.kind !== "audio");
   const actionHref = allowPlayground ? "#workbench" : "#api";
   const actionLabel = allowPlayground ? props.t("Try a prompt") : props.t("View API");
-  const featureExamples = rows.slice(0, 3).map((row) => ({
+  const featureExamples = (props.config.generator ? rows : rows.slice(0, 3)).map((row) => ({
     label: props.t(row.label),
     value: props.t(row.value),
   }));
@@ -3607,55 +3589,10 @@ function ModelPricingSection(props: {
                 <span className="pricing-live-badge">{props.t("Live catalog model")}</span>
               </div>
               <div className="pricing-feature-value">{featured ? props.t(featured.value) : "—"}</div>
-              <p>{featured?.detail ? props.t(featured.detail) : props.t(props.content.note ?? props.liveNote)}</p>
               <PricingFeatureExamples rows={featureExamples} />
               <a href={actionHref} className="pricing-feature-action">{actionLabel} <span aria-hidden="true">↗</span></a>
             </article>
             <PricingWalletCard facts={productFacts} t={props.t} />
-          </div>
-          <div className="pricing-card pricing-breakdown-card">
-            {rows?.length ? (
-              <table>
-                <caption className="sr-only">{props.t(props.content.title)}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{props.t("Pricing dimension")}</th>
-                    <th scope="col">{props.t("Flatkey rate")}</th>
-                    <th scope="col">{props.t("Billing note")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={`${row.label}-${row.value}`}>
-                      <td>{props.t(row.label)}</td>
-                      <td className="font-mono font-semibold text-emerald-700">{props.t(row.value)}</td>
-                      <td>{row.detail ? props.t(row.detail) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <table>
-                <caption className="sr-only">{props.t(props.content.title)}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{props.t("Pricing dimension")}</th>
-                    <th scope="col">{props.t("Flatkey rate")}</th>
-                    <th scope="col">{props.t("Reference rate")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {props.liveRows.map((row) => (
-                    <tr key={row.label}>
-                      <td>{props.t(row.label)}</td>
-                      <td className="font-mono font-semibold text-emerald-700">{row.flatkey}</td>
-                      <td>{row.official}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <p className="pricing-note">{props.liveNote}</p>
           </div>
         </div>
       </div>
