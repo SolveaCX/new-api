@@ -24,11 +24,20 @@ import { modelPublicPath } from "@/lib/model-public";
 export type ModelsDirectoryTableCopy = {
   colModel: string;
   colOfficial: string;
+  colOfficialInput?: string;
+  colOfficialOutput?: string;
+  colOfficialCache?: string;
+  colInputLabel?: string;
+  colOutputLabel?: string;
+  colCacheLabel?: string;
   colLatency: string;
   colHealth: string;
   /** The discounted-price column; named colFlatkey by the pricing explorer. */
   colFlatkey?: string;
   colOurPrice?: string;
+  colOurInput?: string;
+  colOurOutput?: string;
+  colOurCache?: string;
   /** Supplying these opts the row into the extra directory columns. */
   colDiscount?: string;
   colContext?: string;
@@ -86,15 +95,15 @@ export function ModelsDirectoryTable(props: Props) {
   if (props.rows.length === 0) return null;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#E7E4EC] bg-white shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-24px_rgba(24,14,38,0.18)] dark:border-white/10 dark:bg-white/[0.03]">
+    <div className="models-directory-table overflow-hidden rounded-2xl border border-[#E7E4EC] bg-white shadow-[0_1px_2px_rgba(24,14,38,0.04),0_12px_32px_-24px_rgba(24,14,38,0.18)] dark:border-white/10 dark:bg-white/[0.03]">
       <div className="touch-pan-x overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
         <table className="w-max min-w-full table-auto border-collapse text-sm">
         <thead>
           <tr className="border-b border-[#EFECF3] bg-[#FBFAFC] text-left text-[11px] leading-4 font-bold tracking-[0.08em] text-[#6B7280] uppercase dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
             <th className="sticky left-0 z-10 w-[clamp(220px,24vw,280px)] min-w-[220px] max-w-[280px] bg-[#FBFAFC] px-3 py-3.5 font-bold lg:static lg:z-auto 2xl:px-5 dark:bg-white/[0.02]">{props.copy.colModel}</th>
-            <th className="min-w-[132px] px-2 py-3.5 text-right font-bold 2xl:px-3">{props.copy.colOfficial}</th>
+            <th className="min-w-[132px] px-2 py-3.5 text-left font-bold 2xl:px-3">{props.copy.colOfficial}</th>
             {!props.hideOurPrice ? (
-              <th className="min-w-[132px] px-2 py-3.5 text-right font-bold 2xl:px-3">
+              <th className="min-w-[132px] px-2 py-3.5 text-left font-bold 2xl:px-3">
                 {props.copy.colOurPrice ?? props.copy.colFlatkey}
               </th>
             ) : null}
@@ -112,6 +121,9 @@ export function ModelsDirectoryTable(props: Props) {
             <DirectoryRow
               key={row.name}
               row={row}
+              inputLabel={props.copy.colInputLabel ?? props.copy.colOfficialInput ?? props.copy.colOurInput}
+              outputLabel={props.copy.colOutputLabel ?? props.copy.colOfficialOutput ?? props.copy.colOurOutput}
+              cacheLabel={props.copy.colCacheLabel ?? props.copy.colOfficialCache ?? props.copy.colOurCache}
               perf={summary[row.name]}
               trend={trends[row.name] ?? []}
               healthLabel={props.copy.colHealth}
@@ -135,6 +147,9 @@ export function ModelsDirectoryTable(props: Props) {
 
 function DirectoryRow(props: {
   row: HomePricedModel;
+  inputLabel?: string;
+  outputLabel?: string;
+  cacheLabel?: string;
   perf: HomePerfSummary | undefined;
   trend: HomeTrendPoint[];
   healthLabel: string;
@@ -238,12 +253,24 @@ function DirectoryRow(props: {
           </div>
         )}
       </td>
-      <td className="text-muted-foreground px-2 py-3 text-right font-mono text-[12px] 2xl:px-3 2xl:text-[13px]">
-        <PriceCell price={row.official} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} struck />
+      <td className="text-muted-foreground px-2 py-3 text-left font-mono text-[12px] 2xl:px-3 2xl:text-[13px]">
+        <OfficialPriceCell
+          row={row}
+          locale={props.locale}
+          inputLabel={props.inputLabel}
+          outputLabel={props.outputLabel}
+          cacheLabel={props.cacheLabel}
+        />
       </td>
       {!props.hideOurPrice ? (
-        <td className="px-2 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 2xl:px-3">
-          <PriceCell price={row.discounted} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} />
+        <td className="px-2 py-3 text-left font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300 2xl:px-3">
+          <OurPriceCell
+            row={row}
+            locale={props.locale}
+            inputLabel={props.inputLabel}
+            outputLabel={props.outputLabel}
+            cacheLabel={props.cacheLabel}
+          />
         </td>
       ) : null}
       {props.showInput ? <td className="px-3 py-3 text-right font-mono text-[13px] font-bold text-violet-700 dark:text-violet-300">{row.input ? <PriceCell price={row.input} unit={localizePriceUnit(row.priceUnit, props.locale)} prefix={row.pricePrefix} /> : "—"}</td> : null}
@@ -333,6 +360,7 @@ export function attributionLabel(vendor: string | undefined, series: string | un
 export function discountPercent(officialUsd: number, discountedUsd: number): number | null {
   if (!Number.isFinite(officialUsd) || !Number.isFinite(discountedUsd)) return null;
   if (officialUsd <= 0 || discountedUsd < 0) return null;
+  if (discountedUsd === 0 && officialUsd > 0) return 100;
   const percent = (1 - discountedUsd / officialUsd) * 100;
   return percent < 0 ? null : percent;
 }
@@ -340,12 +368,74 @@ export function discountPercent(officialUsd: number, discountedUsd: number): num
 function PriceCell(props: { price: string; unit?: string; prefix?: string; struck?: boolean }) {
   const price = props.struck ? <span className="line-through">{props.price}</span> : props.price;
   return (
-    <span className="inline-flex flex-col items-end gap-0.5">
-      <span>
+    <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
+      <span className="whitespace-nowrap">
         {props.prefix ? <span className="mr-1 font-sans text-[11px] font-semibold">{props.prefix}</span> : null}
         {price}
       </span>
-      {props.unit ? <span className="text-muted-foreground/50 font-sans text-[9px] font-medium normal-case">{props.unit}</span> : null}
+      {props.unit ? <span className="text-muted-foreground/50 font-sans text-[9px] font-medium normal-case whitespace-nowrap">{props.unit}</span> : null}
+    </span>
+  );
+}
+
+function PriceLine(props: { label?: string; price?: string; unit?: string; prefix?: string; struck?: boolean }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      {props.label ? <span className="font-sans text-[9px] font-medium normal-case opacity-60 whitespace-nowrap">{props.label}</span> : null}
+      {props.price ? (
+        <PriceCell price={props.price} unit={props.unit} prefix={props.prefix} struck={props.struck} />
+      ) : (
+        <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
+          <span className="text-muted-foreground/60">—</span>
+          {props.unit ? <span className="text-muted-foreground/50 font-sans text-[9px] font-medium normal-case whitespace-nowrap">{props.unit}</span> : null}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function isTokenPricingRow(row: HomePricedModel): boolean {
+  return row.billingUnit === "token" || row.priceUnit === "per 1M tokens";
+}
+
+function OurPriceCell(props: {
+  row: HomePricedModel;
+  locale?: Locale;
+  inputLabel?: string;
+  outputLabel?: string;
+  cacheLabel?: string;
+}) {
+  const unit = localizePriceUnit(props.row.priceUnit, props.locale);
+  if (!isTokenPricingRow(props.row)) {
+    return <PriceCell price={props.row.discounted} unit={unit} prefix={props.row.pricePrefix} />;
+  }
+
+  return (
+    <span className="inline-flex flex-col items-start gap-1 whitespace-nowrap">
+      <PriceLine label={props.inputLabel} price={props.row.input} unit={unit} prefix={props.row.pricePrefix} />
+      <PriceLine label={props.outputLabel} price={props.row.output} unit={unit} prefix={props.row.pricePrefix} />
+      <PriceLine label={props.cacheLabel} price={props.row.cache} unit={unit} prefix={props.row.pricePrefix} />
+    </span>
+  );
+}
+
+function OfficialPriceCell(props: {
+  row: HomePricedModel;
+  locale?: Locale;
+  inputLabel?: string;
+  outputLabel?: string;
+  cacheLabel?: string;
+}) {
+  const unit = localizePriceUnit(props.row.priceUnit, props.locale);
+  if (!isTokenPricingRow(props.row)) {
+    return <PriceCell price={props.row.official} unit={unit} prefix={props.row.pricePrefix} struck />;
+  }
+
+  return (
+    <span className="inline-flex flex-col items-start gap-1 whitespace-nowrap">
+      <PriceLine label={props.inputLabel} price={props.row.inputOfficial} unit={unit} prefix={props.row.pricePrefix} struck />
+      <PriceLine label={props.outputLabel} price={props.row.outputOfficial} unit={unit} prefix={props.row.pricePrefix} struck />
+      <PriceLine label={props.cacheLabel} price={props.row.cacheOfficial} unit={unit} prefix={props.row.pricePrefix} struck />
     </span>
   );
 }
@@ -355,6 +445,7 @@ function localizePriceUnit(unit: string | undefined, locale: Locale | undefined)
   if (unit === "per second") return "/ 秒";
   if (unit === "per request") return "/ 次";
   if (unit === "per 1M tokens") return "/ 1M tokens";
+  if (unit === "per image") return "/ 张";
   return unit;
 }
 

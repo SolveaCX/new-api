@@ -710,15 +710,17 @@ function unitForDisplayDimension(dimension: DisplayPricingDimension): string {
       return "/ second";
     case "request":
       return "/ request";
-    // Image and audio ratios multiply token counts in the billing pipeline
-    // (see service/text_quota.go), so every remaining dimension is priced per
-    // 1M tokens. Keep the switch exhaustive so a new dimension must pick a
-    // unit explicitly.
+    // Image prices are quoted per generated image. Audio ratios multiply token
+    // counts in the billing pipeline (see service/text_quota.go), so audio
+    // dimensions remain per 1M tokens. Keep the switch exhaustive so a new
+    // dimension must pick a unit explicitly.
     case "input":
     case "output":
     case "cache":
     case "create_cache":
+      return "/ 1M tokens";
     case "image":
+      return "/ image";
     case "audio_input":
     case "audio_output":
       return "/ 1M tokens";

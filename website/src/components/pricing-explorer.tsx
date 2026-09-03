@@ -17,6 +17,7 @@ import {
   type PricingVendor,
 } from "@/lib/pricing";
 import { localizePath, type Locale } from "@/lib/locales";
+import { getDirectoryCopy } from "@/lib/model-directory-copy";
 import { cn } from "@/lib/utils";
 
 type PricingExplorerProps = {
@@ -256,9 +257,19 @@ export function PricingExplorer(props: PricingExplorerProps) {
 }
 
 export function getModelsDirectoryTableCopy(locale: Locale) {
+  const directoryCopy = getDirectoryCopy(locale);
   return {
     ...getHomeCopy(locale).table,
     ...DIRECTORY_TABLE_LABELS[locale],
+    colOfficialInput: directoryCopy.colOfficialInput,
+    colOfficialOutput: directoryCopy.colOfficialOutput,
+    colOfficialCache: directoryCopy.colOfficialCache,
+    colInputLabel: directoryCopy.colInputDimension,
+    colOutputLabel: directoryCopy.colOutputDimension,
+    colCacheLabel: directoryCopy.colCacheDimension,
+    colOurInput: directoryCopy.colOurInputPrice,
+    colOurOutput: directoryCopy.colOurOutputPrice,
+    colOurCache: directoryCopy.colOurCachePrice,
   };
 }
 

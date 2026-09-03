@@ -140,6 +140,22 @@ describe("model public pricing rows", () => {
     ]);
   });
 
+  test("falls back to token dimensions when image pricing is unavailable", () => {
+    const view = buildModelPublicView(
+      model({
+        model_name: "grok-imagine-image-pro",
+        quota_type: 0,
+        model_ratio: 37.5,
+        completion_ratio: 1,
+        supported_endpoint_types: ["image-generation"],
+      }),
+      pricingData()
+    );
+
+    expect(view.priceRows.map((row) => row.labelKey)).toEqual(["input", "output"]);
+    expect(view.priceRows.every((row) => row.unit === "/ 1M tokens")).toBe(true);
+  });
+
   test("uses display pricing units and from semantics when provided", () => {
     const view = buildModelPublicView(
       model({

@@ -1,4 +1,4 @@
-import { modelIconKey } from "@/lib/home-models";
+import { modelIconKey, resolveImageDisplayPrice as resolveHomeImageDisplayPrice } from "@/lib/home-models";
 import { withIdFallback } from "@/lib/locales";
 import type { Locale } from "@/lib/locales";
 import {
@@ -14,6 +14,7 @@ import {
   resolveModelDisplayPrice,
   type PricingData,
   type PricingModel,
+  type ResolvedModelDisplayPrice,
 } from "@/lib/pricing";
 
 // Public per-model page (rankings / directory click-through target).
@@ -467,6 +468,32 @@ function buildModelPublicPriceRows(model: PricingModel, fallbackGroupRatio: Reco
     ...model,
     group_ratio: { ...fallbackGroupRatio, ...(model.group_ratio ?? {}) },
   };
+  const imageModel = classifyPublicModel(model) === "image";
+  if (imageModel) {
+    const price = resolveHomeImageDisplayPrice(effectiveModel, fallbackGroupRatio);
+    if (price) {
+      return [{ labelKey: "imagePrice", list: formatUsdPrice(price.configured ?? price.value), discounted: price.text, unit: "/ image", from: price.from }];
+    }
+    // When the catalog has no per-image contract, preserve the provider's
+    // native token dimensions instead of inventing a per-image amount.
+    if (isTokenBasedModel(model)) {
+      return ([
+        ["input", "input"],
+        ["output", "output"],
+        ["cacheRead", "cache"],
+      ] as const).flatMap(([labelKey, dimension]) => {
+        const plg = resolveModelDisplayPrice(effectiveModel, dimension, "plg", fallbackGroupRatio);
+        const configured = resolveModelDisplayPrice(effectiveModel, dimension, "configured", fallbackGroupRatio);
+        if (!plg && !configured) return [];
+        const list = configured?.value ?? 0;
+        const discounted = plg?.value ?? list * (fallbackGroupRatio.plg ?? 1);
+        if (list <= 0 || discounted <= 0) return [];
+        return [{ labelKey, list: formatUsdPrice(list), discounted: formatUsdPrice(discounted), unit: "/ 1M tokens", from: Boolean(plg?.from || configured?.from) }];
+      });
+    }
+    return [];
+  }
+
   const displayKind = hasUsableDisplayKind(effectiveModel, fallbackGroupRatio) ? model.display_pricing?.billing_kind : undefined;
   const dimensions: Array<[ModelPriceLabelKey, DisplayPricingDimension]> = displayKind === "per_second"
     ? [["input", "second"]]
