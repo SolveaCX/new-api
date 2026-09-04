@@ -705,6 +705,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 		} else if returnSourceURL {
 			task.PrivateData.ResultURL = strings.TrimSpace(taskResult.Url)
+		} else if taskcommon.ShouldProxyResultURL(task.ChannelId, task.Group) {
+			task.PrivateData.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
 		} else if taskcommon.ShouldWhitelabelChannelType(ch.Type) {
 			// Whitelabel channel: never expose upstream URL to customers. The
 			// real URL stays in task.Data (used by controller.VideoProxy).

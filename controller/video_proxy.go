@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	taskblockrunseedance "github.com/QuantumNous/new-api/relay/channel/task/blockrunseedance"
+	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	tasksonilo "github.com/QuantumNous/new-api/relay/channel/task/sonilo"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
@@ -150,6 +151,12 @@ func VideoProxy(c *gin.Context) {
 		videoURL = extractBlockRunVideoURL(task)
 	case constant.ChannelTypeBlockRunSeedance:
 		videoURL = taskblockrunseedance.ExtractUpstreamVideoURL(task.Data)
+	case constant.ChannelTypeDoubaoVideo:
+		if channel.Id == 106 {
+			videoURL = taskdoubao.ExtractUpstreamVideoURL(task.Data)
+		} else {
+			videoURL = task.GetResultURL()
+		}
 	case constant.ChannelTypeJimengZhizinan:
 		videoURL = taskjimengzhizinan.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeTechMobiVideo:

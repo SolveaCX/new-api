@@ -97,6 +97,16 @@ type responseTask struct {
 	UpdatedAt int64 `json:"updated_at"`
 }
 
+// ExtractUpstreamVideoURL reads the upstream video URL from a persisted Doubao
+// polling response. Invalid or incomplete responses do not contain a usable URL.
+func ExtractUpstreamVideoURL(body []byte) string {
+	var task responseTask
+	if err := common.Unmarshal(body, &task); err != nil {
+		return ""
+	}
+	return task.Content.VideoURL
+}
+
 // ============================
 // Adaptor implementation
 // ============================
@@ -424,6 +434,9 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	var dResp responsePayload
 	if err := common.Unmarshal(responseBody, &dResp); err != nil {
 		taskErr = service.TaskErrorWrapper(errors.Wrapf(err, "body: %s", responseBody), "unmarshal_response_body_failed", http.StatusInternalServerError)
+		if info != nil && info.ChannelMeta != nil && taskcommon.ShouldProxyResultURL(info.ChannelId, info.UsingGroup) {
+			taskErr.Message = "task failed at upstream provider"
+		}
 		return
 	}
 
@@ -524,15 +537,29 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.TaskID = originTask.TaskID
 	openAIVideo.Status = originTask.Status.ToVideoStatus()
 	openAIVideo.SetProgressStr(originTask.Progress)
-	openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	publicURL := dResp.Content.VideoURL
+	if taskcommon.ShouldProxyResultURL(originTask.ChannelId, originTask.Group) {
+		publicURL = taskcommon.PublicResultURL(originTask)
+	}
+	if strings.TrimSpace(publicURL) != "" {
+		openAIVideo.SetMetadata("url", publicURL)
+	}
 	openAIVideo.CreatedAt = originTask.CreatedAt
 	openAIVideo.CompletedAt = originTask.UpdatedAt
 	openAIVideo.Model = originTask.Properties.OriginModelName
 
 	if dResp.Status == "failed" {
+		message := dResp.Error.Message
+		code := dResp.Error.Code
+		if taskcommon.ShouldProxyResultURL(originTask.ChannelId, originTask.Group) {
+			code = "upstream_error"
+			if strings.TrimSpace(message) != "" {
+				message = "task failed at upstream provider"
+			}
+		}
 		openAIVideo.Error = &dto.OpenAIVideoError{
-			Message: dResp.Error.Message,
-			Code:    dResp.Error.Code,
+			Message: message,
+			Code:    code,
 		}
 	}
 

@@ -4,7 +4,110 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 )
+
+func TestShouldProxyResultURL(t *testing.T) {
+	tests := []struct {
+		name      string
+		channelID int
+		group     string
+		want      bool
+	}{
+		{name: "channel 106 plg", channelID: 106, group: "plg", want: true},
+		{name: "channel 106 other group", channelID: 106, group: "default", want: false},
+		{name: "channel 106 group is case sensitive", channelID: 106, group: "PLG", want: false},
+		{name: "other channel plg", channelID: 105, group: "plg", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ShouldProxyResultURL(tt.channelID, tt.group); got != tt.want {
+				t.Fatalf("ShouldProxyResultURL(%d, %q) = %v, want %v", tt.channelID, tt.group, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublicResultURL(t *testing.T) {
+	oldServerAddress := system_setting.ServerAddress
+	system_setting.ServerAddress = "https://gateway.example"
+	t.Cleanup(func() { system_setting.ServerAddress = oldServerAddress })
+
+	tests := []struct {
+		name string
+		task *model.Task
+		want string
+	}{
+		{
+			name: "nil task has no public result URL",
+			task: nil,
+			want: "",
+		},
+		{
+			name: "successful channel 106 plg task uses proxy",
+			task: &model.Task{
+				TaskID:    "task_public",
+				ChannelId: 106,
+				Group:     "plg",
+				Status:    model.TaskStatusSuccess,
+				PrivateData: model.TaskPrivateData{
+					ResultURL: "https://upstream.example/video.mp4",
+				},
+			},
+			want: "https://gateway.example/v1/videos/task_public/content",
+		},
+		{
+			name: "unfinished channel 106 plg task does not synthesize proxy or leak fail reason",
+			task: &model.Task{
+				TaskID:     "task_pending",
+				ChannelId:  106,
+				Group:      "plg",
+				Status:     model.TaskStatusInProgress,
+				FailReason: "https://upstream.example/leaked-from-fallback.mp4",
+				PrivateData: model.TaskPrivateData{
+					ResultURL: "",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "failed channel 106 plg task never returns a stored upstream result",
+			task: &model.Task{
+				TaskID:     "task_failed",
+				ChannelId:  106,
+				Group:      "plg",
+				Status:     model.TaskStatusFailure,
+				FailReason: "https://upstream.example/leaked-from-fallback.mp4",
+				PrivateData: model.TaskPrivateData{
+					ResultURL: "stored-result",
+				},
+			},
+			want: "",
+		},
+		{
+			name: "channel 106 non-plg uses existing result behavior",
+			task: &model.Task{
+				ChannelId: 106,
+				Group:     "default",
+				Status:    model.TaskStatusSuccess,
+				PrivateData: model.TaskPrivateData{
+					ResultURL: "https://upstream.example/video.mp4",
+				},
+			},
+			want: "https://upstream.example/video.mp4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PublicResultURL(tt.task); got != tt.want {
+				t.Fatalf("PublicResultURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestShouldWhitelabelPlatform(t *testing.T) {
 	tests := []struct {

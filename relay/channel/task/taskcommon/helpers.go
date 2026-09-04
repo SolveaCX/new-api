@@ -191,6 +191,26 @@ func BuildProxyURL(taskID string) string {
 	return fmt.Sprintf("%s/v1/videos/%s/content", system_setting.ServerAddress, taskID)
 }
 
+// ShouldProxyResultURL reports whether a task result must use the public proxy
+// based on the concrete channel record and request group.
+func ShouldProxyResultURL(channelID int, group string) bool {
+	return channelID == 106 && group == "plg"
+}
+
+// PublicResultURL returns the customer-facing result URL for a task.
+func PublicResultURL(task *model.Task) string {
+	if task == nil {
+		return ""
+	}
+	if !ShouldProxyResultURL(task.ChannelId, task.Group) {
+		return task.GetResultURL()
+	}
+	if task.Status == model.TaskStatusSuccess {
+		return BuildProxyURL(task.TaskID)
+	}
+	return ""
+}
+
 // Status-to-progress mapping constants for polling updates.
 const (
 	ProgressSubmitted  = "10%"
