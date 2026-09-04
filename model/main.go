@@ -15,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 
 	"github.com/glebarez/sqlite"
-	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -162,7 +161,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, error) {
 		} else {
 			common.LogSqlType = common.DatabaseTypeMySQL
 		}
-		return gorm.Open(mysql.Open(dsn), &gorm.Config{
+		return gorm.Open(newMySQLDialector(dsn), &gorm.Config{
 			PrepareStmt: true, // precompile SQL
 		})
 	}
@@ -439,6 +438,7 @@ func orderedMigrationModels() []migrationModel {
 		{&ComputeNode{}, "ComputeNode"},
 		{&DataToolCall{}, "DataToolCall"},
 		{&BytePlusAssetGroup{}, "BytePlusAssetGroup"},
+		{&BytePlusAssetBindingGroup{}, "BytePlusAssetBindingGroup"},
 		{&BytePlusRealPersonProfile{}, "BytePlusRealPersonProfile"},
 		{&BytePlusVisualValidationSession{}, "BytePlusVisualValidationSession"},
 		{&APIIdempotencyRecord{}, "APIIdempotencyRecord"},

@@ -1569,6 +1569,38 @@ html:has(.model-prototype) {
   line-height: 22px;
 }
 
+.model-prototype .model-hero-price-discount {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  margin-inline-start: 4px;
+  padding: 2px 6px;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 999px;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.1);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 14px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.model-prototype .model-stat-value-with-discount {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: visible;
+}
+
+.dark .model-prototype .model-hero-price-discount {
+  border-color: rgba(110, 231, 183, 0.24);
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.14);
+}
+
 .model-prototype .model-hero-price-value-reference {
   color: var(--model-quiet);
   font-weight: 500;
@@ -5220,6 +5252,25 @@ html:has(.model-prototype) {
 }
 
 @media (max-width: 900px) {
+  .models-directory-table th,
+  .models-directory-table td {
+    padding-inline: 0.5rem;
+  }
+
+  .models-directory-table th:first-child,
+  .models-directory-table td:first-child {
+    width: 190px;
+    min-width: 190px;
+    max-width: 190px;
+  }
+
+  .models-directory-table th:nth-child(2),
+  .models-directory-table th:nth-child(3),
+  .models-directory-table td:nth-child(2),
+  .models-directory-table td:nth-child(3) {
+    min-width: 118px;
+  }
+
   .model-prototype .model-anchor-bar {
     top: 132px;
   }
@@ -6891,6 +6942,23 @@ html:has(.model-prototype) {
   text-align: right;
 }
 
+.model-prototype .pricing-example-values {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.model-prototype .pricing-example-reference {
+  flex: none;
+  color: var(--model-quiet);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .model-prototype .model-anchor-bar {
     top: var(--model-site-header-height, 132px);
@@ -6954,6 +7022,10 @@ html:has(.model-prototype) {
 
   .model-prototype .pricing-example-row strong {
     text-align: left;
+  }
+
+  .model-prototype .pricing-example-values {
+    justify-content: flex-start;
   }
 }
 

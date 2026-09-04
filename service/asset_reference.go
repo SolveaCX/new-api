@@ -125,7 +125,7 @@ func assetBindingScopesRequireSingleScope(channel *model.Channel) bool {
 		descriptor, ok := assetMaterializationProviderDescriptors[config.Provider]
 		return ok && descriptor.CredentialScoped
 	}
-	return channel.Type == constant.ChannelTypeTechMobiVideo
+	return channel.Type == constant.ChannelTypeTechMobiVideo || channel.Type == constant.ChannelTypeBytePlus
 }
 
 func (s AssetReferenceSet) preparationReadinessForChannel(channel *model.Channel) (AssetReadinessClass, bool) {
@@ -314,19 +314,22 @@ func assetBindingScopesForRequest(channel *model.Channel, originModel string) (m
 	if channel == nil {
 		return nil, false
 	}
-	config, explicit, err := assetMaterializationConfigForChannel(channel)
+	_, explicit, err := assetMaterializationConfigForChannel(channel)
 	if err != nil {
 		return nil, false
 	}
-	if explicit {
-		switch config.Provider {
-		case assetMaterializationProviderSeedanceProxy, assetMaterializationProviderTokenSpaceMaterial:
-		default:
-			return nil, false
-		}
-		mappedModel, ok := assetReferenceMappedModel(channel.GetModelMapping(), originModel)
-		if !ok || strings.TrimSpace(mappedModel) == "" {
-			return nil, false
+	credentialScoped := assetBindingScopesRequireSingleScope(channel)
+	if explicit && !credentialScoped {
+		return nil, false
+	}
+	if credentialScoped {
+		mappedModel := strings.TrimSpace(originModel)
+		if channel.Type != constant.ChannelTypeBytePlus || explicit {
+			var ok bool
+			mappedModel, ok = assetReferenceMappedModel(channel.GetModelMapping(), originModel)
+			if !ok || strings.TrimSpace(mappedModel) == "" {
+				return nil, false
+			}
 		}
 		keys := enabledAssetMaterializeKeys(channel)
 		if len(keys) == 0 {
@@ -342,48 +345,29 @@ func assetBindingScopesForRequest(channel *model.Channel, originModel string) (m
 		}
 		return scopes, len(scopes) > 0
 	}
-	if channel.Type != constant.ChannelTypeTechMobiVideo {
-		return nil, true
-	}
-	if strings.TrimSpace(originModel) == "" {
-		return nil, false
-	}
-	mappedModel, ok := assetReferenceMappedModel(channel.GetModelMapping(), originModel)
-	if !ok {
-		return nil, false
-	}
-	keys := enabledAssetMaterializeKeys(channel)
-	if len(keys) == 0 {
-		return nil, false
-	}
-	scopes := make(map[string]struct{}, len(keys))
-	for _, key := range keys {
-		scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: mappedModel, APIKey: key.key})
-		if err != nil {
-			continue
-		}
-		scopes[scope] = struct{}{}
-	}
-	return scopes, len(scopes) > 0
+	return nil, true
 }
 
 func assetBindingScopesForSelectedKey(channel *model.Channel, originModel string, apiKey string) (map[string]struct{}, bool) {
 	if channel == nil {
 		return nil, false
 	}
-	config, explicit, err := assetMaterializationConfigForChannel(channel)
+	_, explicit, err := assetMaterializationConfigForChannel(channel)
 	if err != nil {
 		return nil, false
 	}
-	if explicit {
-		switch config.Provider {
-		case assetMaterializationProviderSeedanceProxy, assetMaterializationProviderTokenSpaceMaterial:
-		default:
-			return nil, false
-		}
-		mappedModel, ok := assetReferenceMappedModel(channel.GetModelMapping(), originModel)
-		if !ok || strings.TrimSpace(mappedModel) == "" {
-			return nil, false
+	credentialScoped := assetBindingScopesRequireSingleScope(channel)
+	if explicit && !credentialScoped {
+		return nil, false
+	}
+	if credentialScoped {
+		mappedModel := strings.TrimSpace(originModel)
+		if channel.Type != constant.ChannelTypeBytePlus || explicit {
+			var ok bool
+			mappedModel, ok = assetReferenceMappedModel(channel.GetModelMapping(), originModel)
+			if !ok || strings.TrimSpace(mappedModel) == "" {
+				return nil, false
+			}
 		}
 		scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: mappedModel, APIKey: strings.TrimSpace(apiKey)})
 		if err != nil {
@@ -391,21 +375,7 @@ func assetBindingScopesForSelectedKey(channel *model.Channel, originModel string
 		}
 		return map[string]struct{}{scope: {}}, true
 	}
-	if channel.Type != constant.ChannelTypeTechMobiVideo {
-		return nil, true
-	}
-	mappedModel, ok := assetReferenceMappedModel(channel.GetModelMapping(), originModel)
-	if !ok {
-		return nil, false
-	}
-	scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{
-		Model:  mappedModel,
-		APIKey: strings.TrimSpace(apiKey),
-	})
-	if err != nil {
-		return nil, false
-	}
-	return map[string]struct{}{scope: {}}, true
+	return nil, true
 }
 
 func assetReferenceMappedModel(rawMapping string, originModel string) (string, bool) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -83,6 +86,15 @@ func resolveSecondBillingRatios(adaptor any) (map[string]float64, error) {
 		return nil, err
 	}
 	return ratios, nil
+}
+
+// hasValidSecondBillingUnits reports whether an adaptor produced the single
+// required billing unit for a configured per-second video price.  Do not
+// accept arbitrary ratio keys or non-finite/non-positive values: those would
+// either bypass the configured price or produce an invalid quota.
+func hasValidSecondBillingUnits(ratios map[string]float64) bool {
+	units, ok := ratios[taskcommon.BillingUnitsKey]
+	return ok && units > 0 && !math.IsNaN(units) && !math.IsInf(units, 0)
 }
 
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
@@ -251,21 +263,38 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 
 	// 4. 价格计算：基础模型价格
 	info.OriginModelName = modelName
+	_, supportsSecondBilling := adaptor.(secondBillingAdaptor)
+	usesSecondBilling := supportsSecondBilling && billing_setting.IsVideoModelConfigured(
+		billing_setting.GetVideoPriceRules(), modelName)
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
-	if err != nil {
+	legacyPriceData, legacyErr := priceData, err
+	provisionalSecondBilling := supportsSecondBilling && (err != nil || !priceData.UsePrice || priceData.ModelPrice <= 0 ||
+		math.IsNaN(priceData.ModelPrice) || math.IsInf(priceData.ModelPrice, 0))
+	if err != nil && !provisionalSecondBilling {
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 	}
-	info.PriceData = priceData
-	if validator, ok := adaptor.(taskPriceDataValidator); ok {
-		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
-			return nil, taskErr
+	if provisionalSecondBilling {
+		groupRatioInfo := priceData.GroupRatioInfo
+		if err != nil {
+			groupRatioInfo = helper.HandleGroupRatio(c, info)
+		}
+		priceData = types.PriceData{
+			ModelPrice:     1,
+			UsePrice:       true,
+			Quota:          int(common.QuotaPerUnit * groupRatioInfo.GroupRatio),
+			GroupRatioInfo: groupRatioInfo,
+		}
+		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume && groupRatioInfo.GroupRatio == 0 {
+			priceData.FreeModel = true
 		}
 	}
+	info.PriceData = priceData
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+	estimatedRatios := adaptor.EstimateBilling(c, info)
+	if len(estimatedRatios) > 0 {
 		for k, v := range estimatedRatios {
 			info.PriceData.AddOtherRatio(k, v)
 		}
@@ -279,6 +308,30 @@ func prepareTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, reserveBilli
 	secondRatios, secondErr := resolveSecondBillingRatios(adaptor)
 	if secondErr != nil {
 		return nil, service.TaskErrorWrapperLocal(secondErr, "video_price_not_configured", http.StatusBadRequest)
+	}
+	if provisionalSecondBilling {
+		if !hasValidSecondBillingUnits(secondRatios) {
+			// No per-second quote was produced: restore the legacy result and
+			// preserve the original model-price error/validator behavior.
+			info.PriceData = legacyPriceData
+			for k, v := range estimatedRatios {
+				info.PriceData.AddOtherRatio(k, v)
+			}
+			if legacyErr != nil {
+				return nil, service.TaskErrorWrapper(legacyErr, "model_price_error", http.StatusBadRequest)
+			}
+			secondRatios = nil
+		}
+	}
+	if validator, ok := adaptor.(taskPriceDataValidator); ok {
+		if taskErr := validator.ValidateTaskPriceData(info); taskErr != nil {
+			return nil, taskErr
+		}
+	}
+	if usesSecondBilling && !provisionalSecondBilling && !hasValidSecondBillingUnits(secondRatios) {
+		return nil, service.TaskErrorWrapperLocal(
+			fmt.Errorf("model %s produced invalid per-second billing units", modelName),
+			"video_price_not_configured", http.StatusBadRequest)
 	}
 	for k, v := range secondRatios {
 		info.PriceData.AddOtherRatio(k, v)
@@ -329,15 +382,16 @@ func ExecutePreparedTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, pref
 	// 9. 发送请求
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		taskErr := sanitizeTaskErrorForRelayInfo(info, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError))
 		return &TaskSubmitResult{
 			Platform:            platform,
 			Quota:               preflight.Quota,
 			OutcomeMayBeUnknown: !channel.IsDefinitelyNotSent(err),
-		}, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
+		}, taskErr
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
 		statusCode := resp.StatusCode
-		taskErr := taskSubmitStatusError(platform, resp)
+		taskErr := taskSubmitStatusErrorWithPolicy(platform, resp, relayInfoUsesProxyResultURL(info))
 		if taskSubmitStatusMayBeUnknown(platform, statusCode) {
 			return &TaskSubmitResult{
 				Platform:            platform,
@@ -420,6 +474,10 @@ const (
 )
 
 func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) *dto.TaskError {
+	return taskSubmitStatusErrorWithPolicy(platform, resp, false)
+}
+
+func taskSubmitStatusErrorWithPolicy(platform constant.TaskPlatform, resp *http.Response, forceGeneric bool) *dto.TaskError {
 	statusCode := http.StatusInternalServerError
 	if resp != nil {
 		statusCode = resp.StatusCode
@@ -437,10 +495,26 @@ func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) 
 	if readErr != nil || strings.TrimSpace(message) == "" {
 		message = taskSubmitErrorFallbackMessage
 	}
+	if forceGeneric {
+		taskErr := service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
+		taskErr.Message = "task failed at upstream provider"
+		return taskErr
+	}
 	if channelType, err := strconv.Atoi(string(platform)); err == nil && taskcommon.ShouldWhitelabelChannelType(channelType) {
 		message = "task failed at upstream provider"
 	}
 	return service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
+}
+
+func relayInfoUsesProxyResultURL(info *relaycommon.RelayInfo) bool {
+	return info != nil && info.ChannelMeta != nil && taskcommon.ShouldProxyResultURL(info.ChannelId, info.UsingGroup)
+}
+
+func sanitizeTaskErrorForRelayInfo(info *relaycommon.RelayInfo, taskErr *dto.TaskError) *dto.TaskError {
+	if taskErr != nil && relayInfoUsesProxyResultURL(info) {
+		taskErr.Message = "task failed at upstream provider"
+	}
+	return taskErr
 }
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。
@@ -689,7 +763,7 @@ func generationTaskRespBody(task *model.Task) ([]byte, error) {
 		Usage:  task.PrivateData.UsageDTO(),
 	}
 	if task.Status == model.TaskStatusSuccess {
-		if url := task.GetResultURL(); strings.TrimSpace(url) != "" {
+		if url := taskcommon.PublicResultURL(task); strings.TrimSpace(url) != "" {
 			resp.Content = []generationTaskContent{{
 				Type: "video_url",
 				VideoURL: generationTaskVideoURL{
@@ -699,8 +773,12 @@ func generationTaskRespBody(task *model.Task) ([]byte, error) {
 		}
 	}
 	if task.Status == model.TaskStatusFailure {
+		message := taskcommon.ScrubBrandedText(task.FailReason)
+		if taskcommon.ShouldProxyResultURL(task.ChannelId, task.Group) && strings.TrimSpace(task.FailReason) != "" {
+			message = "task failed at upstream provider"
+		}
 		resp.Error = &dto.OpenAIVideoError{
-			Message: taskcommon.ScrubBrandedText(task.FailReason),
+			Message: message,
 		}
 	}
 	return common.Marshal(resp)
@@ -840,14 +918,14 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 	}
 }
 
-// TaskModel2Dto builds the customer-facing task DTO. For channels listed in
-// taskcommon.whitelabelChannels the upstream envelope (task.Data) and the
-// internal upstream_model_name are stripped so the response carries no
-// provider branding. Admin/internal views must call TaskModel2DtoAdmin
-// instead to preserve the raw payload for debugging.
+// TaskModel2Dto builds the customer-facing task DTO. Globally whitelabeled
+// platforms and group-routed proxy results strip the upstream envelope and
+// internal upstream_model_name. Admin/internal views must call
+// TaskModel2DtoAdmin instead to preserve the raw payload for debugging.
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	d := taskModel2DtoFull(task)
-	if taskcommon.ShouldWhitelabelPlatform(task.Platform) {
+	groupProxy := taskcommon.ShouldProxyResultURL(task.ChannelId, task.Group)
+	if taskcommon.ShouldWhitelabelPlatform(task.Platform) || groupProxy {
 		d.Data = nil
 		props := task.Properties
 		props.UpstreamModelName = ""
@@ -855,8 +933,16 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		// Bypass GetResultURL's FailReason fallback — for non-success tasks
 		// it would otherwise expose the raw upstream error string. Only the
 		// proxy URL (set by polling on success) is safe to surface.
-		d.ResultURL = task.PrivateData.ResultURL
-		d.FailReason = taskcommon.ScrubBrandedText(task.FailReason)
+		if groupProxy {
+			d.ResultURL = taskcommon.PublicResultURL(task)
+		} else {
+			d.ResultURL = task.PrivateData.ResultURL
+		}
+		if groupProxy && strings.TrimSpace(task.FailReason) != "" {
+			d.FailReason = "task failed at upstream provider"
+		} else {
+			d.FailReason = taskcommon.ScrubBrandedText(task.FailReason)
+		}
 	}
 	return d
 }

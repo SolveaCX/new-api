@@ -13,6 +13,7 @@ import {
   type PricingData,
   type ModelDirectoryMetadata,
   type PricingModel,
+  type ResolvedModelDisplayPrice,
 } from "./pricing";
 
 export type HomePricedModel = {
@@ -138,6 +139,7 @@ export function buildRowsForModels(
   return models
     .filter((model) => getOfficialPriceUsd(model) > 0 || resolveModelDisplayPrice(model, undefined, "plg", groupRatio) != null)
     .map((model) => {
+      const imageGeneration = isImageGenerationModel(model);
       const official = getOfficialPriceUsd(model);
       // Per-model overrides in group_model_ratio beat the flat group ratio
       // during billing, so the quoted price has to apply them too — otherwise a
@@ -147,19 +149,31 @@ export function buildRowsForModels(
       const overrides =
         Object.keys(groupModelRatio).length > 0 ? groupModelRatio : modelScopedGroupModelRatio(model);
       const effectiveGroupRatio = buildEffectiveGroupRatio(model, groupRatio, overrides);
-      const listed = official * getBestGroupRatio(model, effectiveGroupRatio);
+      const bestGroupRatio = getBestGroupRatio(model, effectiveGroupRatio);
+      const safeGroupRatio = bestGroupRatio > 0 ? bestGroupRatio : 1;
+      const listed = official * safeGroupRatio;
       const vendor = model.vendor_name ?? getVendorName(model, vendors);
-      const displayPrice = resolveModelDisplayPrice(model, undefined, "plg", effectiveGroupRatio);
+      const rawDisplayPrice = resolveDisplayPriceForModel(model, imageGeneration, effectiveGroupRatio);
+      const imageDisplayPrice = imageGeneration ? resolveImageDisplayPrice(model, effectiveGroupRatio) : null;
+      const displayPrice = imageDisplayPrice ?? (rawDisplayPrice && rawDisplayPrice.value > 0
+        ? rawDisplayPrice
+        : isTokenBasedModel(model) ? resolveUsableTokenDisplayPrice(model, "input", effectiveGroupRatio) : rawDisplayPrice);
       const officialDisplayPrice = displayPrice
-        ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio)
+        ? resolveModelDisplayPrice(model, displayPrice.dimension, "configured", effectiveGroupRatio) ??
+          configuredDisplayPriceFromResolved(displayPrice)
         : null;
+      const hasOfficialDisplayPrice = Boolean(officialDisplayPrice && officialDisplayPrice.value > 0);
       const billingUnit = modelBillingUnit(model, displayPrice?.unit);
-      const inputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "input", "plg", effectiveGroupRatio) : null;
+      // Image models with no explicit per-image contract retain their native
+      // token dimensions so the directory can show input/output/cache per 1M
+      // tokens instead of mislabeling an input token amount as per-image.
+      const exposeTokenDimensions = billingUnit === "token" && (!imageGeneration || !imageDisplayPrice);
+      const inputPrice = exposeTokenDimensions ? resolveUsableTokenDisplayPrice(model, "input", effectiveGroupRatio) : null;
       const officialInputPrice = inputPrice ? resolveModelDisplayPrice(model, "input", "configured", effectiveGroupRatio) : null;
-      const outputPrice = billingUnit === "token" ? resolveModelDisplayPrice(model, "output", "plg", effectiveGroupRatio) : null;
+      const outputPrice = exposeTokenDimensions ? resolveUsableTokenDisplayPrice(model, "output", effectiveGroupRatio) : null;
       const officialOutputPrice = outputPrice ? resolveModelDisplayPrice(model, "output", "configured", effectiveGroupRatio) : null;
-      const cachePrice = billingUnit === "token"
-        ? resolveModelDisplayPrice(model, "cache", "plg", effectiveGroupRatio)
+      const cachePrice = exposeTokenDimensions
+        ? resolveUsableTokenDisplayPrice(model, "cache", effectiveGroupRatio)
         : null;
       const officialCachePrice = cachePrice ? resolveModelDisplayPrice(model, "cache", "configured", effectiveGroupRatio) : null;
       const usesParsedDisplayPrice = displayPrice?.source === "display";
@@ -181,9 +195,9 @@ export function buildRowsForModels(
         // leaves vendor_id empty for some models (Macaron, Veo, Gemma) and
         // would otherwise fall back to the literal "AI".
         vendor: directoryMeta?.author ?? vendor,
-        official: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.text : formatUsdPrice(official),
+        official: usesParsedDisplayPrice && hasOfficialDisplayPrice ? officialDisplayPrice!.text : formatUsdPrice(official),
         discounted: usesParsedDisplayPrice ? displayPrice.text : formatUsdPrice(discountedUsd),
-        officialUsd: usesParsedDisplayPrice && officialDisplayPrice ? officialDisplayPrice.value : official,
+        officialUsd: usesParsedDisplayPrice && hasOfficialDisplayPrice ? officialDisplayPrice!.value : official,
         discountedUsd,
         input: inputPrice?.text,
         inputOfficial: officialInputPrice?.text,
@@ -206,6 +220,134 @@ export function buildRowsForModels(
         iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
       };
     });
+}
+
+function isImageGenerationModel(model: PricingModel): boolean {
+  const endpointTypes = model.supported_endpoint_types ?? [];
+  return (
+    endpointTypes.includes("image-generation") ||
+    /(^|[-_.])(image|banana)/i.test(model.model_name)
+  );
+}
+
+export function resolveImageDisplayPrice(
+  model: PricingModel,
+  groupRatio: Record<string, number>,
+  variant: "plg" | "configured" = "plg",
+): ResolvedModelDisplayPrice | null {
+  // Tiered image models often have no parsed display_pricing entry. Their
+  // billing expression still carries the canonical image-output coefficient
+  // (for example `img_o * 120`, i.e. $120 per 1M image tokens). Image output
+  // usage is normalized to 1,000 tokens per generated image for the public
+  // catalog, so expose that coefficient as a comparable per-image rate.
+  const tieredImagePrice = resolveTieredImageOutputPrice(model, groupRatio, variant);
+  if (tieredImagePrice) return tieredImagePrice;
+
+  const explicitImagePrice = resolveModelDisplayPrice(model, "image", variant, groupRatio);
+  if (explicitImagePrice) return explicitImagePrice;
+
+  const displayPrice = variant === "configured"
+    ? resolveModelDisplayPrice(model, "image", "configured", groupRatio)
+      ?? resolveModelDisplayPrice(model, "request", "configured", groupRatio)
+      ?? resolveDisplayPriceForModel(model, true, groupRatio)
+    : resolveDisplayPriceForModel(model, true, groupRatio);
+  if (!displayPrice) return null;
+  if (displayPrice.dimension === "image") return displayPrice;
+  if (displayPrice.dimension === "request") {
+    return { ...displayPrice, dimension: "image", unit: "/ image" };
+  }
+  // Token-priced image models are only treated as per-image when the payload
+  // matches the known milli-dollar provider contract. Otherwise callers must
+  // keep the native input/output/cache token dimensions visible.
+  if (displayPrice.dimension !== "input" || !isMilliDollarImagePrice(model)) return null;
+  const source = variant === "plg"
+    ? displayPrice
+    : resolveModelDisplayPrice(model, "input", "configured", groupRatio) ?? displayPrice;
+  const configured = source.configured != null ? source.configured / 1000 : undefined;
+  const plg = source.plg != null ? source.plg / 1000 : undefined;
+  const value = source.value / 1000;
+  return {
+    ...source,
+    text: formatUsdPrice(value),
+    value,
+    configuredValue: configured,
+    configured,
+    plg,
+    dimension: "image",
+    unit: "/ image",
+  };
+}
+
+function resolveTieredImageOutputPrice(
+  model: PricingModel,
+  groupRatio: Record<string, number>,
+  variant: "plg" | "configured",
+): ResolvedModelDisplayPrice | null {
+  if (model.billing_mode !== "tiered_expr" || !model.billing_expr) return null;
+  const coefficients = [...model.billing_expr.matchAll(/(?:img_o\s*\*\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\*\s*img_o)/gi)]
+    .map((match) => Number(match[1] ?? match[2]))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (coefficients.length === 0) return null;
+
+  const uniqueCoefficients = [...new Set(coefficients)].sort((a, b) => a - b);
+  const configured = uniqueCoefficients[0] / 1000;
+  const ratio = variant === "plg"
+    ? groupRatio.plg ?? model.group_ratio?.plg ?? 1
+    : 1;
+  if (!Number.isFinite(ratio) || ratio < 0) return null;
+  const value = configured * ratio;
+  return {
+    text: formatUsdPrice(value),
+    value,
+    variant,
+    dimension: "image",
+    configuredValue: configured,
+    configured,
+    plg: configured * (groupRatio.plg ?? model.group_ratio?.plg ?? 1),
+    unit: "/ image",
+    from: uniqueCoefficients.length > 1,
+    source: "display",
+  };
+}
+
+function resolveDisplayPriceForModel(
+  model: PricingModel,
+  imageGeneration: boolean,
+  groupRatio: Record<string, number>
+): ResolvedModelDisplayPrice | null {
+  const preferred = resolveModelDisplayPrice(model, imageGeneration ? "image" : undefined, "plg", groupRatio);
+  if (!imageGeneration) return preferred;
+
+  // Some image providers still publish their per-image amount through the
+  // legacy request dimension. Reuse that amount but normalize the visible
+  // dimension so the directory consistently reports "$… / image".
+  const fallback =
+    preferred ??
+    resolveModelDisplayPrice(model, "request", "plg", groupRatio) ??
+    resolveModelDisplayPrice(model, "input", "plg", groupRatio);
+  if (!fallback) return null;
+  if (fallback.dimension === "image") return fallback;
+  if (fallback.dimension === "request") return { ...fallback, dimension: "image", unit: "/ image" };
+
+  return fallback;
+}
+
+function configuredDisplayPriceFromResolved(price: ResolvedModelDisplayPrice): ResolvedModelDisplayPrice | null {
+  if (price.configured == null || !Number.isFinite(price.configured)) return null;
+  return {
+    ...price,
+    text: formatUsdPrice(price.configured),
+    value: price.configured,
+    variant: "configured",
+  };
+}
+
+function isMilliDollarImagePrice(model: PricingModel): boolean {
+  if (model.display_pricing?.billing_kind !== "token") return false;
+  const input = model.display_pricing.prices.input;
+  const output = model.display_pricing.prices.output;
+  if (!input || !output || input.configured == null || output.configured == null) return false;
+  return input.configured > 0 && output.configured / input.configured >= 50;
 }
 
 function pricedTokenModels(data: PricingData): PricingModel[] {
@@ -268,6 +410,29 @@ function modelBillingUnit(model: PricingModel, displayUnit?: string): "token" | 
   if (displayUnit === "/ request") return "request";
   if (isTokenBasedModel(model)) return "token";
   return "request";
+}
+
+function resolveUsableTokenDisplayPrice(
+  model: PricingModel,
+  dimension: "input" | "output" | "cache",
+  groupRatio: Record<string, number>,
+): ResolvedModelDisplayPrice | null {
+  const parsed = resolveModelDisplayPrice(model, dimension, "plg", groupRatio);
+  if (parsed && parsed.value >= 0) {
+    const configuredValue = resolveModelDisplayPrice(model, dimension, "configured", groupRatio)?.value;
+    if (parsed.value > 0 || (configuredValue != null && configuredValue > 0)) return parsed;
+  }
+  const configured = resolveModelDisplayPrice(model, dimension, "configured", groupRatio);
+  if (!configured || configured.value <= 0) return null;
+  const ratio = getBestGroupRatio(model, groupRatio);
+  const value = configured.value * ratio;
+  return {
+    ...configured,
+    text: formatUsdPrice(value),
+    value,
+    variant: "plg",
+    plg: value,
+  };
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {

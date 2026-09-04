@@ -73,3 +73,10 @@
 - `github.com/pkg/errors` — `errors.Wrap` / `Wrapf`
 
 <!-- MANUAL: -->
+
+## Flatkey 渠道实例例外
+
+- 豆包渠道类型默认仍为非白标、直接返回上游 URL。
+- 数据库渠道 ID `106` 且任务冻结分组精确为 `plg` 时例外：用户结果 URL 必须返回 Flatkey `/v1/videos/{task_id}/content` 代理地址；其他分组保持原上游 URL。
+- 该判断必须使用任务落库时的 `Task.Group`，不可在查询时读取用户当前分组。`106/plg` 的用户 DTO 隐藏上游 `Data` 与内部模型名，失败文案和错误码须中性化；管理员 DTO 保留原始数据。
+- 内容代理必须从持久化的豆包轮询响应 `content.video_url` 提取真实上游地址，不可回读已代理化的 `PrivateData.ResultURL`，否则会递归请求自身。

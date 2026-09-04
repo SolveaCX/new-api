@@ -62,6 +62,16 @@ func AssetMaterializeErrorClass(err error) string {
 			return class
 		}
 	}
+	var bytePlusErr *BytePlusAPIError
+	if errors.As(err, &bytePlusErr) {
+		class := assetMaterializeClassForHTTPStatus(bytePlusErr.StatusCode, bytePlusErr.Code)
+		if class != AssetMaterializeErrorInternal {
+			return class
+		}
+		if bytePlusErr.Definitive {
+			return AssetMaterializeErrorDefinitive
+		}
+	}
 	if errors.Is(err, context.DeadlineExceeded) || isNetTimeout(err) {
 		return AssetMaterializeErrorTimeout
 	}

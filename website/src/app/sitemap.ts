@@ -3,18 +3,25 @@ import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
 import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
-import { getModelLandingPathnames } from "@/lib/model-landing";
 import { getModelCollectionPathnames } from "@/lib/model-collections";
+import { getModelLandingConfigForPricingModel, getModelLandingPathnames } from "@/lib/model-landing";
 import { seriesForModels } from "@/lib/model-directory-meta";
-import { modelPublicPath } from "@/lib/model-public";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
 import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
-import { getPricingData } from "@/lib/pricing";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+
+// The model list comes from the live public catalog. Do not prerender this
+// route during a website build where the console API may be unavailable.
+export const dynamic = "force-dynamic";
 
 const base = "https://flatkey.ai";
-const REDIRECT_MODEL_LANDING_PATHS = new Set(["/models/gpt-api", "/models/claude-api"]);
+const REDIRECT_MODEL_LANDING_PATHS = new Set([
+  "/models/gpt-api",
+  "/models/claude-api",
+  "/models/seedance-2-5",
+]);
 
 function entry(
   pathname: string,
@@ -57,8 +64,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [localizedPosts, categories, pricing] = await Promise.all([
     Promise.all(LOCALES.map(async (locale) => ({ locale, posts: await getAllBlogPosts(locale) }))),
     getBlogCategories(),
-    getPricingData(),
+    // Keep the sitemap model set identical to the model detail pages and the
+    // public directory. The unscoped endpoint can expose models from groups
+    // that are not available on the public (PLG) detail route.
+    getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
   ]);
+  // A transient pricing outage must not produce a successful but incomplete
+  // sitemap. Google will retry a 5xx response; serving only static entries
+  // would make the entire live model catalog disappear from discovery.
+  if (pricing.models.length === 0) {
+    throw new Error("Sitemap pricing catalog is unavailable");
+  }
   const staticEntries = [
     ...entry("/", 1, "daily"),
     ...entry("/pricing", 0.8, "daily"),
@@ -88,9 +104,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/sla", 0.3, "yearly"),
     ...entry("/refund-policy", 0.3, "yearly"),
   ];
-  const modelLandingEntries = getModelLandingPathnames()
-    .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname))
-    .flatMap((pathname) => entry(pathname, 0.82, "daily"));
+  const modelLandingPathnames = getModelLandingPathnames()
+    .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname));
+  const modelLandingEntries = modelLandingPathnames.flatMap((pathname) => entry(pathname, 0.82, "daily"));
   const collectionEntries = getModelCollectionPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly"));
   const skagLandingEntries = SKAG_LANDING_SLUGS.flatMap((slug) =>
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
@@ -98,10 +114,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const toolsAdLandingEntries = getToolsAdLandingPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly", ["en"]));
   // Every live model gets its own public page (/models/<name>); include them so
   // search engines discover the full catalog, not just the curated landings.
-  const landingSlugs = new Set(getModelLandingPathnames().map((pathname) => pathname.replace(/^\/models\//, "")));
+  const landingPaths = new Set(modelLandingPathnames);
   const modelPublicEntries = pricing.models
-    .filter((model) => !landingSlugs.has(model.model_name))
-    .flatMap((model) => entry(modelPublicPath(model.model_name), 0.6, "daily"));
+    .flatMap((model) => {
+      // Resolve the same canonical slug used by the detail route. This keeps
+      // casing-only aliases (for example MiniMax-H3) out of the sitemap and
+      // avoids duplicate entries for curated single-model landings.
+      const canonicalPath = `/models/${getModelLandingConfigForPricingModel(model).slug}`;
+      if (REDIRECT_MODEL_LANDING_PATHS.has(canonicalPath) || landingPaths.has(canonicalPath)) return [];
+      return entry(canonicalPath, 0.6, "daily");
+    });
   // Market acquisition pages are single-locale (no i18n alternates by design).
   const marketEntries = getMarketPathnames().map((pathname) => ({
     url: `${base}${pathname}`,

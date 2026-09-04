@@ -118,16 +118,15 @@ func assetModelCandidatesForChannel(channel *model.Channel, modelName string) []
 			CredentialIndex: -1,
 		}}
 	}
-	config, explicit, err := assetMaterializationConfigForChannel(channel)
+	_, explicit, err := assetMaterializationConfigForChannel(channel)
 	if err != nil {
 		return nil
 	}
-	if explicit {
-		switch config.Provider {
-		case assetMaterializationProviderSeedanceProxy, assetMaterializationProviderTokenSpaceMaterial:
-		default:
-			return nil
-		}
+	credentialScoped := assetBindingScopesRequireSingleScope(channel)
+	if explicit && !credentialScoped {
+		return nil
+	}
+	if credentialScoped {
 		keys := enabledAssetMaterializeKeys(channel)
 		candidates := make([]AssetModelTargetCandidate, 0, len(keys))
 		for _, key := range keys {
@@ -147,39 +146,19 @@ func assetModelCandidatesForChannel(channel *model.Channel, modelName string) []
 		}
 		return candidates
 	}
-	if channel.Type != constant.ChannelTypeTechMobiVideo {
-		scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: mappedModel})
-		if err != nil {
-			return nil
-		}
-		return []AssetModelTargetCandidate{{
-			ChannelID:       channel.Id,
-			ChannelType:     channel.Type,
-			Priority:        channel.GetPriority(),
-			Weight:          channel.GetWeight(),
-			MappedModel:     mappedModel,
-			BindingScope:    scope,
-			CredentialIndex: -1,
-		}}
+	scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: mappedModel})
+	if err != nil {
+		return nil
 	}
-	keys := enabledAssetMaterializeKeys(channel)
-	candidates := make([]AssetModelTargetCandidate, 0, len(keys))
-	for _, key := range keys {
-		scope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: mappedModel, APIKey: key.key})
-		if err != nil {
-			continue
-		}
-		candidates = append(candidates, AssetModelTargetCandidate{
-			ChannelID:       channel.Id,
-			ChannelType:     channel.Type,
-			Priority:        channel.GetPriority(),
-			Weight:          channel.GetWeight(),
-			MappedModel:     mappedModel,
-			BindingScope:    scope,
-			CredentialIndex: key.index,
-		})
-	}
-	return candidates
+	return []AssetModelTargetCandidate{{
+		ChannelID:       channel.Id,
+		ChannelType:     channel.Type,
+		Priority:        channel.GetPriority(),
+		Weight:          channel.GetWeight(),
+		MappedModel:     mappedModel,
+		BindingScope:    scope,
+		CredentialIndex: -1,
+	}}
 }
 
 func sortAssetModelTargetCandidates(candidates []AssetModelTargetCandidate) {
@@ -202,6 +181,7 @@ func assetModelCandidateKey(candidate AssetModelTargetCandidate) string {
 		strconv.Itoa(candidate.ChannelID),
 		candidate.MappedModel,
 		candidate.BindingScope,
+		strconv.Itoa(candidate.CredentialIndex),
 	}, "\x00")
 }
 
@@ -347,16 +327,15 @@ func ResolveAssetModelTargetOptions(target model.AssetModelCoverageTarget, chann
 		return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
 	}
 	options := AssetMaterializeOptions{Model: strings.TrimSpace(target.MappedModel)}
-	config, explicit, err := assetMaterializationConfigForChannel(channel)
+	_, explicit, err := assetMaterializationConfigForChannel(channel)
 	if err != nil {
 		return AssetMaterializeOptions{}, -1, err
 	}
-	if explicit {
-		switch config.Provider {
-		case assetMaterializationProviderSeedanceProxy, assetMaterializationProviderTokenSpaceMaterial:
-		default:
-			return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
-		}
+	credentialScoped := assetBindingScopesRequireSingleScope(channel)
+	if explicit && !credentialScoped {
+		return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
+	}
+	if credentialScoped {
 		keys := enabledAssetMaterializeKeys(channel)
 		for _, key := range keys {
 			if key.index != target.CredentialIndex {
@@ -374,25 +353,7 @@ func ResolveAssetModelTargetOptions(target model.AssetModelCoverageTarget, chann
 		}
 		return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
 	}
-	if channel.Type != constant.ChannelTypeTechMobiVideo {
-		return options, -1, nil
-	}
-	keys := enabledAssetMaterializeKeys(channel)
-	for _, key := range keys {
-		if key.index != target.CredentialIndex {
-			continue
-		}
-		options.APIKey = key.key
-		scope, err := assetBindingScopeForChannel(channel, options)
-		if err != nil {
-			return AssetMaterializeOptions{}, -1, err
-		}
-		if scope != target.BindingScope {
-			return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
-		}
-		return options, key.index, nil
-	}
-	return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
+	return options, -1, nil
 }
 
 func assetModelCoverageTargetFromCandidate(scope AssetModelScope, modelName string, candidate AssetModelTargetCandidate, candidateIndex int) model.AssetModelCoverageTarget {

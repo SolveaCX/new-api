@@ -44,7 +44,7 @@ import {
   type HomeTrendPoint,
 } from "@/lib/home-live";
 import { SiteShell } from "@/components/site-shell";
-import { modelIconKey } from "@/lib/home-models";
+import { modelIconKey, resolveImageDisplayPrice } from "@/lib/home-models";
 import { localizePath, type Locale } from "@/lib/locales";
 import {
   getImagePlaygroundExample,
@@ -488,7 +488,11 @@ function FlatkeyModelDetailPage(props: {
     .slice(0, 3)
     .map((row) => {
       const resolution = /^(\d+p) ·/.exec(row.label)?.[1];
-      return { resolution, value: row[field] };
+      return {
+        resolution,
+        value: row[field],
+        discountPct: field === "flatkey" ? Math.max(0, 100 - row.flatkeyPercent) : undefined,
+      };
     });
   const heroOfficialPriceRows = model ? formatHeroPriceRows("official") : [];
   const heroFlatkeyPriceRows = model ? formatHeroPriceRows("flatkey") : [];
@@ -597,7 +601,10 @@ function FlatkeyModelDetailPage(props: {
                         <div className="model-stat-reference">
                           {props.t("Reference price")}: <s>{row.official}</s>
                         </div>
-                        <div className="model-stat-value">{row.flatkey}</div>
+                        <div className="model-stat-value model-stat-value-with-discount">
+                          <span>{row.flatkey}</span>
+                          <DiscountBadge discountPct={100 - row.flatkeyPercent} />
+                        </div>
                       </div>
                     ))}
                     <div className="model-stat-card">
@@ -624,7 +631,7 @@ function FlatkeyModelDetailPage(props: {
                       <div className="model-stat-value">
                         {isImageCatalogFallback || isMiniMaxCatalogFallback || !model
                           ? unavailablePrice
-                          : <HeroPriceBreakdown rows={heroFlatkeyPriceRows} />}
+                          : <HeroPriceBreakdown rows={heroFlatkeyPriceRows} showDiscount />}
                       </div>
                     </div>
                   </>
@@ -3483,14 +3490,17 @@ function getPricingBasisLabel(
   return "1M tokens";
 }
 
-function PricingFeatureExamples(props: { rows: Array<{ label: string; value: string }> }) {
+function PricingFeatureExamples(props: { rows: Array<{ label: string; value: string; detail?: string }> }) {
   if (props.rows.length === 0) return null;
   return (
     <div className="pricing-example-list">
       {props.rows.map((row) => (
         <div className="pricing-example-row" key={`${row.label}-${row.value}`}>
           <span>{row.label}</span>
-          <strong>{row.value}</strong>
+          <div className="pricing-example-values">
+            <strong>{row.value}</strong>
+            {row.detail ? <span className="pricing-example-reference"><s>{row.detail}</s></span> : null}
+          </div>
         </div>
       ))}
     </div>
@@ -3570,6 +3580,7 @@ function ModelPricingSection(props: {
   const featureExamples = (props.config.generator ? rows : rows.slice(0, 3)).map((row) => ({
     label: props.t(row.label),
     value: props.t(row.value),
+    detail: row.detail,
   }));
   return (
     <section id="pricing" className="model-section model-pricing">
@@ -3923,7 +3934,11 @@ function FlatkeyMetricCard(props: { label: string; value: string; valueNode?: Re
   );
 }
 
-function HeroPriceBreakdown(props: { rows: Array<{ resolution?: string; value: string }>; reference?: boolean }) {
+function HeroPriceBreakdown(props: {
+  rows: Array<{ resolution?: string; value: string; discountPct?: number }>;
+  reference?: boolean;
+  showDiscount?: boolean;
+}) {
   if (props.rows.length === 0) return <>—</>;
   return (
     <span className="model-hero-price-breakdown">
@@ -3933,7 +3948,12 @@ function HeroPriceBreakdown(props: { rows: Array<{ resolution?: string; value: s
           {(() => {
             const match = /^(from\s+)?(\$[\d.,]+)(.*)$/.exec(row.value);
             if (!props.reference || !match) {
-              return <span className="model-hero-price-value">{row.value}</span>;
+              return (
+                <>
+                  <span className="model-hero-price-value">{row.value}</span>
+                  {props.showDiscount ? <DiscountBadge discountPct={row.discountPct ?? 0} /> : null}
+                </>
+              );
             }
             return (
               <span className="model-hero-price-value model-hero-price-value-reference">
@@ -3943,6 +3963,16 @@ function HeroPriceBreakdown(props: { rows: Array<{ resolution?: string; value: s
           })()}
         </span>
       ))}
+    </span>
+  );
+}
+
+function DiscountBadge(props: { discountPct: number }) {
+  const discountPct = Math.max(0, Math.min(100, Math.round(props.discountPct)));
+  if (discountPct <= 0) return null;
+  return (
+    <span className="model-hero-price-discount">
+      -{discountPct}%
     </span>
   );
 }
@@ -3986,7 +4016,10 @@ function formatDetailUsdPrice(value: number): string {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
+    // Keep the three-decimal baseline for readable detail cards, but retain
+    // smaller image prices (for example $0.0088) instead of rounding them to
+    // a value that no longer matches the model directory.
+    maximumFractionDigits: 6,
   }).format(value);
 }
 
@@ -4015,18 +4048,17 @@ function buildFlatkeyPriceRows(
   }
 
   const defaultDisplayPrice = resolveModelDisplayPrice(model, undefined, "plg", groupRatio);
-  // Image-capable token models (for example gpt-image-2) can expose an
-  // image-specific conversion ratio alongside their canonical input/output
-  // token rates. The directory uses the token contract for these models, so
-  // prefer the same rows here to keep list and detail prices identical.
-  if (isTokenBasedModel(model) && defaultDisplayPrice?.unit === "/ 1M tokens") {
-    const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice.from ? "from " : "");
+  // Token-priced models use the canonical input/cache/output rows. Image
+  // generation models stay on their per-image contract below, even when the
+  // upstream payload also exposes token conversion fields.
+  if (config.generator?.kind !== "image" && (isTokenBasedModel(model) || defaultDisplayPrice?.unit === "/ 1M tokens")) {
+    const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice?.from ? "from " : "");
     if (tokenRows.rows.length > 0) return tokenRows;
   }
 
   if (config.generator?.kind === "image") {
-    const imagePrice = resolveModelDisplayPrice(model, "image", "plg", groupRatio);
-    const officialImagePrice = resolveModelDisplayPrice(model, "image", "configured", groupRatio);
+    const imagePrice = resolveImageDisplayPrice(model, groupRatio);
+    const officialImagePrice = resolveImageDisplayPrice(model, groupRatio, "configured");
     if (imagePrice) {
       const official = officialImagePrice?.value ?? imagePrice.configured ?? imagePrice.value;
       return {
@@ -4039,6 +4071,13 @@ function buildFlatkeyPriceRows(
           officialPercent: 100,
         }],
       };
+    }
+    // Some image providers publish only token dimensions. Keep those native
+    // input/output/cache rows and label them per 1M tokens instead of forcing
+    // a false per-image amount.
+    if (isTokenBasedModel(model)) {
+      const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t);
+      if (tokenRows.rows.length > 0) return tokenRows;
     }
   }
 
@@ -4056,12 +4095,15 @@ function buildFlatkeyPriceRows(
         : null;
       const official = officialDisplayPrice?.value ?? perUnit.configured ?? perUnit.value;
       const flatkey = perUnit.value;
-      const unitKey = perUnit.unit === "/ second"
-        ? "/ second"
-        : perUnit.unit === "/ request"
-          ? "/ request"
-          : generatorKind === "image"
-            ? "/ image"
+      // Image model detail pages use the same per-image presentation as the
+      // model directory, even when the upstream catalog exposes the amount
+      // under a generic request dimension.
+      const unitKey = generatorKind === "image"
+        ? "/ image"
+        : perUnit.unit === "/ second"
+          ? "/ second"
+          : perUnit.unit === "/ request"
+            ? "/ request"
             : generatorKind === "audio"
               ? "/ request"
               : "/ second";
@@ -4184,13 +4226,18 @@ function buildLiveTokenPriceRows(
     ["output", "Output /M"],
   ] as const;
   return dimensions.flatMap(([type, label]) => {
-    const plgPrice = resolveModelDisplayPrice(model, type, "plg", groupRatio);
+    const resolvedPlgPrice = resolveModelDisplayPrice(model, type, "plg", groupRatio);
     const configuredPrice = resolveModelDisplayPrice(model, type, "configured", groupRatio);
+    // A zero PLG value is an incomplete catalog row, not a free model price.
+    // Recompute it from the configured amount and visible group ratio so the
+    // detail page never renders $0 with a misleading -100% discount badge.
+    const plgPrice = resolvedPlgPrice;
     // Cache is optional in the upstream catalog. Only add the row when the
     // live display contract or the legacy cache ratio exposes a real value.
-    if (!plgPrice && !configuredPrice) return [];
+    if ((!plgPrice && !configuredPrice) || (configuredPrice && configuredPrice.value <= 0)) return [];
     const official = configuredPrice?.value ?? getOfficialPriceUsd(model, type === "output" ? "output" : "input");
     const flatkey = plgPrice?.value ?? discountedPriceUsd(official * getBestGroupRatio(model, groupRatio));
+    if (!Number.isFinite(official) || official <= 0 || !Number.isFinite(flatkey) || flatkey < 0) return [];
     return [{
       label: t(label),
       flatkey: `${prefix}${formatUsdPrice(flatkey)}`,

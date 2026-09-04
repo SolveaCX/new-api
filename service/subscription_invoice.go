@@ -829,6 +829,9 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 			if err := tx.Model(locked).Where("id = ?", locked.Id).Update("provider_payload", locked.ProviderPayload).Error; err != nil {
 				return err
 			}
+			if err := model.UpsertSubscriptionOrderTopUpHistoryTx(tx, locked); err != nil {
+				return err
+			}
 			intent.Status = model.SubscriptionChangeIntentStatusApplied
 			intent.ProviderInvoiceId = invoiceID
 			intent.ProviderBindingId = binding.Id

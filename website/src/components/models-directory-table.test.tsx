@@ -104,6 +104,73 @@ describe("ModelsDirectoryTable", () => {
     expect(html).not.toContain("$1 /req");
   });
 
+  test("shows official input and output prices together for token models", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={{
+          ...getModelsDirectoryTableCopy("en"),
+          colOfficialInput: "Official input",
+          colOfficialOutput: "Official output",
+        }}
+        hideOurPrice
+        rows={[{
+          name: "gpt-5.6-sol",
+          vendor: "OpenAI",
+          official: "$5",
+          discounted: "$4",
+          officialUsd: 5,
+          discountedUsd: 4,
+          inputOfficial: "$5",
+          outputOfficial: "$24",
+          iconKey: "openai",
+          priceUnit: "per 1M tokens",
+        }]}
+      />
+    );
+
+    const officialCell = html.match(/<td class="text-muted-foreground[\s\S]*?<\/td>/)?.[0] ?? "";
+    expect(officialCell).toContain("Input");
+    expect(officialCell).toContain("$5");
+    expect(officialCell).toContain("Output");
+    expect(officialCell).toContain("$24");
+  });
+
+  test("keeps token prices in one compact row per dimension for both columns", () => {
+    const html = renderToStaticMarkup(
+      <ModelsDirectoryTable
+        locale="en"
+        copy={getModelsDirectoryTableCopy("en")}
+        rows={[{
+          name: "gpt-5.6-sol",
+          vendor: "OpenAI",
+          official: "$5",
+          discounted: "$4",
+          officialUsd: 5,
+          discountedUsd: 4,
+          billingUnit: "token",
+          priceUnit: "per 1M tokens",
+          input: "$4",
+          inputOfficial: "$5",
+          output: "$19.2",
+          outputOfficial: "$24",
+          cache: "$1",
+          cacheOfficial: "$1.25",
+          iconKey: "openai",
+        }]}
+      />
+    );
+
+    expect(html).toContain(">Input</span>");
+    expect(html).toContain(">Output</span>");
+    expect(html).toContain(">Cache</span>");
+    expect(html).not.toContain("Official cache");
+    expect(html).not.toContain("Our cache");
+    expect(html).toContain("$1.25");
+    expect(html).toContain("$1");
+    expect(html).toContain("whitespace-nowrap");
+  });
+
   test("localizes second and request units on the Chinese models page", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable

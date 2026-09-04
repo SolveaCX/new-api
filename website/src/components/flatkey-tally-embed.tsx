@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Locale } from "@/lib/locales";
 import { withIdFallback } from "@/lib/locales";
+import { getTallyEmbedUrl, getTallyFormUrl } from "@/lib/tally";
 
 const TALLY_EMBED_SCRIPT_SRC = "https://tally.so/widgets/embed.js";
-const TALLY_FORM_ID = "1A6gM4";
-const TALLY_EMBED_SRC = `https://tally.so/embed/${TALLY_FORM_ID}?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1`;
 
 const TALLY_COPY: Record<Locale, { openForm: string; title: string; unavailable: string }> = withIdFallback({
   en: {
@@ -69,7 +68,7 @@ let tallyEmbedScriptPromise: Promise<void> | null = null;
 
 export function FlatkeyTallyEmbed(props: { locale: Locale; className?: string; iframeClassName?: string; loading?: "lazy" | "eager" }) {
   const [loadFailed, setLoadFailed] = useState(false);
-  const tallyEmbedSrc = useMemo(() => TALLY_EMBED_SRC, []);
+  const tallyEmbedSrc = useMemo(() => getTallyEmbedUrl(props.locale), [props.locale]);
   const copy = TALLY_COPY[props.locale] ?? TALLY_COPY.en;
 
   useEffect(() => {
@@ -113,7 +112,7 @@ export function FlatkeyTallyEmbed(props: { locale: Locale; className?: string; i
           {copy.unavailable}{" "}
           <a
             className="font-medium text-violet-700 underline-offset-4 hover:underline"
-            href={`https://tally.so/r/${TALLY_FORM_ID}`}
+            href={getTallyFormUrl(props.locale)}
             rel="noreferrer"
             target="_blank"
           >

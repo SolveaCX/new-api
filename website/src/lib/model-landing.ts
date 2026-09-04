@@ -1,6 +1,7 @@
 import { LOCALES, type Locale } from "./locales";
 import { withIdFallback } from "@/lib/locales";
 import { formatUsdPrice, type PricingModel } from "./pricing";
+import { resolveImageDisplayPrice } from "./home-models";
 import {
   getPriorityModelCopy,
   getPriorityModelTranslationMapForSource,
@@ -2285,7 +2286,8 @@ function modelPricingSummary(model: PricingModel, task: string): { en: string; p
   // metadata describes the actual unit instead of incorrectly saying only
   // "token pricing".
   if (task === "image generation") {
-    const value = valueText(valueFor("image"));
+    const resolvedImage = resolveImageDisplayPrice(model, {});
+    const value = valueText(resolvedImage?.value) ?? valueText(valueFor("image"));
     if (value) return mediaPriceCopy(value, "image");
   }
   if (task === "audio") {
@@ -2860,7 +2862,12 @@ function buildGenericLandingContent(
   const context = model.directory_metadata?.context_tokens && model.directory_metadata.context_tokens > 0
     ? formatContext(model.directory_metadata.context_tokens)
     : "Context window not listed in the catalog";
-  const pricing = modelPricingSummary(model, task).en;
+  // The landing kind is authoritative for media pages. Some image routes
+  // expose OpenAI-compatible endpoints (and token-shaped legacy fields), so
+  // inferring the task from endpoint names alone would describe them as text
+  // pricing even though the page and generator are per-image.
+  const pricingTask = kind === "image" ? "image generation" : task;
+  const pricing = modelPricingSummary(model, pricingTask).en;
   const categories = model.directory_metadata?.categories?.filter(Boolean).slice(0, 3).join(", ");
   const categoryLine = categories ? `Catalog categories: ${categories}.` : "The catalog does not list a category for this model.";
   const endpointLine = `Flatkey routes this model through ${endpoint}.`;

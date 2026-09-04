@@ -42,20 +42,18 @@ func (bytePlusAssetBindingMaterializer) CreateAsset(ctx context.Context, input A
 	if input.Channel == nil {
 		return AssetMaterializeResult{}, errors.New("asset channel unavailable")
 	}
-	creds, err := ParseBytePlusCredentials(input.Channel.Key)
+	creds, err := bytePlusAssetMaterializeCredentials(input)
 	if err != nil {
 		return AssetMaterializeResult{}, err
 	}
-	if err := creds.ValidateAssets(); err != nil {
-		return AssetMaterializeResult{}, err
-	}
+	bindingScope := bytePlusBindingScopeForCredentials(creds)
 	client, err := bytePlusAssetClientFactory(input.Channel)
 	if err != nil {
 		return AssetMaterializeResult{}, err
 	}
-	group, apiErr := ensureBytePlusAssetGroup(ctx, input.UserID, input.Channel, creds, client)
-	if apiErr != nil {
-		return AssetMaterializeResult{}, apiErr
+	group, err := ensureBytePlusAssetBindingGroup(ctx, input.UserID, input.Channel, creds, client, bindingScope)
+	if err != nil {
+		return AssetMaterializeResult{}, err
 	}
 	sourceURL := strings.TrimSpace(input.SourceURL)
 	if sourceURL == "" && input.SignSource != nil {
@@ -64,12 +62,11 @@ func (bytePlusAssetBindingMaterializer) CreateAsset(ctx context.Context, input A
 			return AssetMaterializeResult{}, err
 		}
 	}
-	upstreamID, _, err := client.CreateAsset(ctx, creds, BytePlusCreateAssetRequest{
-		GroupID:   group.UpstreamGroupId,
+	group, upstreamID, _, err := createBytePlusAssetWithGroupRecovery(ctx, input.UserID, input.Channel, creds, client, group, BytePlusCreateAssetRequest{
 		URL:       sourceURL,
 		AssetType: input.Asset.AssetType,
 		Name:      opaqueBytePlusAssetName(),
-	})
+	}, bindingScope)
 	if err != nil {
 		return AssetMaterializeResult{}, err
 	}
@@ -103,11 +100,8 @@ func (bytePlusAssetBindingMaterializer) GetAsset(ctx context.Context, input Asse
 	if input.Channel == nil {
 		return AssetMaterializeResult{}, errors.New("asset channel unavailable")
 	}
-	creds, err := ParseBytePlusCredentials(input.Channel.Key)
+	creds, err := bytePlusAssetMaterializeCredentials(input)
 	if err != nil {
-		return AssetMaterializeResult{}, err
-	}
-	if err := creds.ValidateAssets(); err != nil {
 		return AssetMaterializeResult{}, err
 	}
 	client, err := bytePlusAssetClientFactory(input.Channel)
@@ -124,9 +118,75 @@ func (bytePlusAssetBindingMaterializer) GetAsset(ctx context.Context, input Asse
 	}, nil
 }
 
+func bytePlusAssetMaterializeCredentials(input AssetMaterializeInput) (BytePlusCredentials, error) {
+	credentialKey := strings.TrimSpace(input.APIKey)
+	if credentialKey == "" && input.Channel != nil {
+		credentialKey = strings.TrimSpace(input.Channel.Key)
+	}
+	creds, err := ParseBytePlusCredentials(credentialKey)
+	if err != nil {
+		return BytePlusCredentials{}, err
+	}
+	if err := creds.ValidateAssets(); err != nil {
+		return BytePlusCredentials{}, err
+	}
+	return creds, nil
+}
+
+func isBytePlusGroupNotFound(err error) bool {
+	var apiErr *BytePlusAPIError
+	return errors.As(err, &apiErr) &&
+		apiErr.Definitive &&
+		apiErr.StatusCode == http.StatusNotFound &&
+		strings.TrimSpace(apiErr.Code) == "NotFound.group_id"
+}
+
+func bytePlusAPIErrorRequestID(err error) string {
+	var apiErr *BytePlusAPIError
+	if !errors.As(err, &apiErr) {
+		return ""
+	}
+	return strings.TrimSpace(apiErr.RequestID)
+}
+
+func createBytePlusAssetWithGroupRecovery(ctx context.Context, userID int, channel *model.Channel, creds BytePlusCredentials, client bytePlusAssetAPI, group *model.BytePlusAssetBindingGroup, request BytePlusCreateAssetRequest, bindingScope string) (*model.BytePlusAssetBindingGroup, string, string, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		request.GroupID = group.UpstreamGroupId
+		upstreamID, requestID, err := client.CreateAsset(ctx, creds, request)
+		if err == nil {
+			return group, upstreamID, requestID, nil
+		}
+		if !isBytePlusGroupNotFound(err) {
+			return group, "", requestID, err
+		}
+		now, timestampErr := bytePlusAssetDBTimestamp(ctx)
+		if timestampErr != nil {
+			return group, "", requestID, timestampErr
+		}
+		if _, invalidateErr := model.InvalidateActiveBytePlusAssetBindingGroup(
+			group.Id,
+			group.UpstreamGroupId,
+			bytePlusAPIErrorRequestID(err),
+			"upstream asset group not found",
+			now,
+		); invalidateErr != nil {
+			return group, "", requestID, invalidateErr
+		}
+		if attempt == 1 {
+			return group, "", requestID, err
+		}
+		group, err = ensureBytePlusAssetBindingGroup(ctx, userID, channel, creds, client, bindingScope)
+		if err != nil {
+			return group, "", "", err
+		}
+	}
+	return group, "", "", errors.New("byteplus asset creation retry exhausted")
+}
+
 var (
-	bytePlusAssetNow      = common.GetTimestamp
-	bytePlusAssetPublicID = func() (string, error) {
+	bytePlusAssetNow         = common.GetTimestamp
+	bytePlusAssetDBTimestamp = model.GetDBTimestampWithContext
+	bytePlusAssetPublicID    = func() (string, error) {
 		random, err := common.GenerateRandomCharsKey(bytePlusAssetPublicIDRandomLen)
 		if err != nil {
 			return "", err
@@ -158,7 +218,6 @@ func CreateBytePlusAsset(ctx context.Context, userID int, userGroup string, usin
 	if err != nil {
 		return nil, assetError(err, types.ErrorCodeAssetChannelUnavailable, http.StatusServiceUnavailable)
 	}
-
 	group, apiErr := ensureBytePlusAssetGroup(ctx, userID, channel, creds, client)
 	if apiErr != nil {
 		return nil, apiErr
@@ -323,6 +382,56 @@ func DeleteBytePlusAsset(ctx context.Context, userID int, publicID string) *type
 		return nil
 	}
 	return retry()
+}
+
+func ensureBytePlusAssetBindingGroup(ctx context.Context, userID int, channel *model.Channel, creds BytePlusCredentials, client bytePlusAssetAPI, bindingScope string) (*model.BytePlusAssetBindingGroup, error) {
+	now, err := bytePlusAssetDBTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group, owner, err := model.ClaimBytePlusAssetBindingGroup(userID, channel.Id, bindingScope, now, now-bytePlusAssetGroupLeaseStaleSecs)
+	if err != nil {
+		return nil, err
+	}
+	if group.Status == model.BytePlusAssetGroupStatusActive && strings.TrimSpace(group.UpstreamGroupId) != "" {
+		return group, nil
+	}
+	if !owner {
+		reloaded, err := waitForActiveBytePlusAssetBindingGroup(userID, channel.Id, bindingScope)
+		if err != nil {
+			return nil, err
+		}
+		if reloaded != nil {
+			return reloaded, nil
+		}
+		return nil, ErrAssetBindingInitializing
+	}
+
+	upstreamGroupID, requestID, err := client.CreateAssetGroup(ctx, creds, opaqueBytePlusAssetGroupName())
+	if err != nil {
+		failedAt, timestampErr := bytePlusAssetDBTimestamp(ctx)
+		if timestampErr != nil {
+			return nil, timestampErr
+		}
+		_, _ = model.FailBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, requestID, "upstream asset group creation failed", failedAt)
+		return nil, err
+	}
+	activatedAt, err := bytePlusAssetDBTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := model.ActivateBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, upstreamGroupID, requestID, activatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if !updated {
+		return nil, ErrAssetBindingInitializing
+	}
+	group.UpstreamGroupId = upstreamGroupID
+	group.UpstreamRequestId = requestID
+	group.Status = model.BytePlusAssetGroupStatusActive
+	group.UpdatedTime = activatedAt
+	return group, nil
 }
 
 func ensureBytePlusAssetGroup(ctx context.Context, userID int, channel *model.Channel, creds BytePlusCredentials, client bytePlusAssetAPI) (*model.BytePlusAssetGroup, *types.NewAPIError) {
@@ -560,6 +669,20 @@ func waitForActiveBytePlusAssetGroup(userID int, channelID int) (*model.BytePlus
 		bytePlusAssetGroupRetryDelay(attempt)
 		var group model.BytePlusAssetGroup
 		if err := model.DB.Where("user_id = ? AND channel_id = ?", userID, channelID).First(&group).Error; err != nil {
+			return nil, err
+		}
+		if group.Status == model.BytePlusAssetGroupStatusActive && strings.TrimSpace(group.UpstreamGroupId) != "" {
+			return &group, nil
+		}
+	}
+	return nil, nil
+}
+
+func waitForActiveBytePlusAssetBindingGroup(userID int, channelID int, bindingScope string) (*model.BytePlusAssetBindingGroup, error) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		bytePlusAssetGroupRetryDelay(attempt)
+		var group model.BytePlusAssetBindingGroup
+		if err := model.DB.Where("user_id = ? AND channel_id = ? AND binding_scope = ?", userID, channelID, bindingScope).First(&group).Error; err != nil {
 			return nil, err
 		}
 		if group.Status == model.BytePlusAssetGroupStatusActive && strings.TrimSpace(group.UpstreamGroupId) != "" {

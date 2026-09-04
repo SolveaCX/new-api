@@ -2,11 +2,13 @@ package copilot
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -128,4 +130,84 @@ func TestUnsupportedConversionsFailClearly(t *testing.T) {
 	if _, err := a.ConvertOpenAIResponsesRequest(nil, chatInfo(), dto.OpenAIResponsesRequest{}); !errors.Is(err, errUnsupportedEndpoint) {
 		t.Fatalf("responses error = %v", err)
 	}
+}
+
+func TestScrubCopilotResponseHeaders(t *testing.T) {
+	resp := &http.Response{Header: http.Header{
+		"X-GitHub-Request-Id":          []string{"github-request"},
+		"X-GitHub-Copilot-Request-Te":  []string{"true"},
+		"X-Copilot-Service-Request-Id": []string{"service-request"},
+		"X-Request-Id":                 []string{"local-request"},
+	}}
+
+	scrubCopilotResponseHeaders(resp)
+
+	for _, name := range []string{
+		"x-github-request-id",
+		"x-github-copilot-request-te",
+		"x-copilot-service-request-id",
+	} {
+		if got := resp.Header.Get(name); got != "" {
+			t.Fatalf("%s leaked: %q", name, got)
+		}
+	}
+	if got := resp.Header.Get("X-Request-Id"); got != "local-request" {
+		t.Fatalf("unrelated response header = %q, want local-request", got)
+	}
+}
+
+func TestScrubCopilotResponseBodyRemovesUsage(t *testing.T) {
+	body, err := newCopilotResponseBody(io.NopCloser(strings.NewReader(`{"id":"resp","copilot_usage":{"nano_aiu":1},"result":{"copilot_usage":{"nano_aiu":2},"text":"ok"}}`)), false)
+	require.NoError(t, err)
+	defer body.Close()
+
+	got, err := io.ReadAll(body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"resp","result":{"text":"ok"}}`, string(got))
+}
+
+func TestScrubCopilotResponseStreamRemovesUsage(t *testing.T) {
+	input := "event: message\ndata: {\"id\":\"resp\",\"copilot_usage\":{\"nano_aiu\":1},\"text\":\"ok\"}\n\ndata: [DONE]\n"
+	body, err := newCopilotResponseBody(io.NopCloser(strings.NewReader(input)), true)
+	require.NoError(t, err)
+	defer body.Close()
+
+	got, err := io.ReadAll(body)
+	require.NoError(t, err)
+	if strings.Contains(string(got), "copilot_usage") || strings.Contains(string(got), "nano_aiu") {
+		t.Fatalf("Copilot usage leaked from stream: %s", got)
+	}
+	if !strings.Contains(string(got), "\"text\":\"ok\"") || !strings.Contains(string(got), "[DONE]") {
+		t.Fatalf("stream content was not preserved: %s", got)
+	}
+}
+
+func TestDoResponseScrubsCopilotMetadataBeforeDelegating(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := chatInfo()
+	info.ChannelMeta.ChannelType = constant.ChannelTypeCopilot
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":                 []string{"application/json"},
+			"X-GitHub-Request-Id":          []string{"github-request"},
+			"X-GitHub-Copilot-Request-Te":  []string{"true"},
+			"X-Copilot-Service-Request-Id": []string{"service-request"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"id":"resp","object":"chat.completion","model":"model","choices":[],"copilot_usage":{"nano_aiu":1}}`)),
+	}
+
+	_, apiErr := (&Adaptor{}).DoResponse(c, resp, info)
+	require.Nil(t, apiErr)
+	for _, name := range []string{
+		"x-github-request-id",
+		"x-github-copilot-request-te",
+		"x-copilot-service-request-id",
+	} {
+		require.Empty(t, recorder.Header().Get(name), "%s should not be returned", name)
+	}
+	require.NotContains(t, recorder.Body.String(), "copilot_usage")
+	require.NotContains(t, recorder.Body.String(), "nano_aiu")
 }
