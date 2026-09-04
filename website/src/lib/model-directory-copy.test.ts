@@ -76,7 +76,7 @@ describe("directory copy", () => {
 
   test("count interpolation uses locale-formatted numbers", () => {
     expect(formatCount(DIRECTORY_COPY.en.modelsFound, 1234)).toBe("1,234 models found");
-    expect(formatCount(DIRECTORY_COPY.zh.modelsFound, 95)).toBe("找到 95 个模型");
+    expect(formatCount(DIRECTORY_COPY.zh.modelsFound, 95)).toBe("共 95 个模型");
   });
 
   test("getDirectoryCopy returns the locale's own table", () => {
