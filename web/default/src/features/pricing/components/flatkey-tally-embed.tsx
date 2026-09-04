@@ -19,10 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { getTallyEmbedUrl, getTallyFormUrl } from '@/lib/tally'
 
 const TALLY_EMBED_SCRIPT_SRC = 'https://tally.so/widgets/embed.js'
-const TALLY_FORM_ID = '1A6gM4'
-const TALLY_EMBED_SRC = `https://tally.so/embed/${TALLY_FORM_ID}?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1`
 
 let tallyEmbedScriptPromise: Promise<void> | null = null
 
@@ -81,9 +80,12 @@ const loadTallyEmbedScript = (): Promise<void> => {
 }
 
 export function FlatkeyTallyEmbed(props: FlatkeyTallyEmbedProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [loadFailed, setLoadFailed] = useState(false)
-  const tallyEmbedSrc = useMemo(() => TALLY_EMBED_SRC, [])
+  const tallyEmbedSrc = useMemo(
+    () => getTallyEmbedUrl(i18n.language),
+    [i18n.language],
+  )
 
   useEffect(() => {
     let mounted = true
@@ -127,7 +129,7 @@ export function FlatkeyTallyEmbed(props: FlatkeyTallyEmbedProps) {
           {t('Sales inquiry form could not be loaded.')}{' '}
           <a
             className='font-medium text-violet-700 underline-offset-4 hover:underline dark:text-violet-100'
-            href={`https://tally.so/r/${TALLY_FORM_ID}`}
+            href={getTallyFormUrl(i18n.language)}
             rel='noreferrer'
             target='_blank'
           >

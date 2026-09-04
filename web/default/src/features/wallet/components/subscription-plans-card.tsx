@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
 import { getCurrencyDisplay } from '@/lib/currency'
+import { getTallyEmbedUrl } from '@/lib/tally'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -99,9 +100,6 @@ interface SubscriptionPlansCardProps {
 const EXTERNAL_RETURN_POLL_KEY = 'new-api:subscription-change-return-pending'
 const RENEWAL_FAILURE_TOAST_SHOWN = 'renewal failure toast shown'
 const RENEWAL_MUTATION_ALREADY_IN_FLIGHT = 'renewal mutation already in flight'
-const ENTERPRISE_CONTACT_FORM_URL =
-  'https://tally.so/embed/1A6gM4?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1&originPage=%2Fcontact'
-
 const PLAN_DISPLAY_ORDER: Record<string, number> = {
   go: 0,
   pro: 1,
@@ -1156,7 +1154,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
           <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overscroll-contain overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
             <iframe
               title={t('Talk to sales')}
-              src={ENTERPRISE_CONTACT_FORM_URL}
+              src={getTallyEmbedUrl(i18n.language, '/contact')}
               className='h-[780px] w-full max-w-none origin-top-left border-0'
               style={{ zoom: 0.78 }}
               scrolling='yes'
