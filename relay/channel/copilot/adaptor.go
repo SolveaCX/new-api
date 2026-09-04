@@ -104,6 +104,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	if info == nil || (info.RelayFormat != types.RelayFormatClaude && info.RelayMode != relayconstant.RelayModeChatCompletions) {
 		return nil, types.NewError(errUnsupportedEndpoint, types.ErrorCodeInvalidRequest)
 	}
+	if err := scrubCopilotResponse(resp, info.IsStream); err != nil {
+		return nil, types.NewError(err, types.ErrorCodeReadResponseBodyFailed)
+	}
 	if info.RelayFormat == types.RelayFormatClaude {
 		info.FinalRequestRelayFormat = types.RelayFormatClaude
 		if info.IsStream {
