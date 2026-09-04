@@ -18,6 +18,170 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBytePlusAssetModelWorkerAdoptsLegacyBlankScopeBeforeCreatingNewAsset(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_adopt_legacy")
+	channel := insertMaterializeChannel(t, 131)
+	bindingScope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		BindingScope:    "",
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	materializer := &recordingAssetMaterializer{getStatus: model.AssetStatusActive}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+	target := model.AssetModelCoverageTarget{
+		ChannelId:    channel.Id,
+		BindingScope: bindingScope,
+	}
+
+	binding, err := prepareAssetModelBinding(
+		context.Background(),
+		asset,
+		target,
+		channel,
+		AssetMaterializeOptions{APIKey: channel.Key},
+		"node-a",
+		200,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, binding)
+	require.Equal(t, bindingScope, binding.BindingScope)
+	require.Equal(t, "legacy-asset", binding.UpstreamAssetId)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+}
+
+func TestPrepareAssetModelReadinessAdoptsLegacyBytePlusBindingWithExpiredSource(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_expired_adopt")
+	require.NoError(t, model.DB.Model(&model.Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"source_status":     model.AssetSourceStatusExpired,
+		"source_expires_at": int64(50),
+	}).Error)
+	asset.SourceStatus = model.AssetSourceStatusExpired
+	asset.SourceExpiresAt = 50
+
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: structuredBytePlusKey(),
+		Mapping: `{"seedance-2.0":"seedance-2.0"}`,
+	})
+	scope := AssetModelScope{ScopeKey: "scope-byteplus-expired-adopt", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 90)
+	require.NoError(t, err)
+	require.NoError(t, model.EnsureAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames, 90))
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       target.ChannelId,
+		BindingScope:    "",
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		CreatedAt:       80,
+		UpdatedAt:       80,
+	}).Error)
+
+	materializer := &scriptedAssetModelMaterializer{get: []scriptedAssetModelGet{{
+		result: AssetMaterializeResult{UpstreamAssetID: "legacy-asset", Status: model.AssetStatusActive},
+	}}}
+	registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	claimed, err := model.ClaimAssetModelReadinessLease(row.Id, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+
+	err = PrepareAssetModelReadiness(context.Background(), row, "node-a", time.Unix(100, 0))
+
+	require.NoError(t, err)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusActive, row.Status)
+	binding, err := model.GetAssetBindingForScope(asset.Id, target.ChannelId, target.BindingScope)
+	require.NoError(t, err)
+	require.Equal(t, "legacy-asset", binding.UpstreamAssetId)
+	require.Equal(t, target.BindingScope, binding.BindingScope)
+	require.Equal(t, []string{"legacy-asset"}, materializer.getUpstreamIDs())
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+}
+
+func TestPrepareAssetModelReadinessDoesNotCreateFromExpiredSourceWithoutReusableBinding(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_expired_missing")
+	require.NoError(t, model.DB.Model(&model.Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"source_status":     model.AssetSourceStatusExpired,
+		"source_expires_at": int64(50),
+	}).Error)
+
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: structuredBytePlusKey(),
+		Mapping: `{"seedance-2.0":"seedance-2.0"}`,
+	})
+	scope := AssetModelScope{ScopeKey: "scope-byteplus-expired-missing", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 90)
+	require.NoError(t, err)
+	require.NoError(t, model.EnsureAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames, 90))
+	materializer := &scriptedAssetModelMaterializer{}
+	registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	claimed, err := model.ClaimAssetModelReadinessLease(row.Id, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+
+	err = PrepareAssetModelReadiness(context.Background(), row, "node-a", time.Unix(100, 0))
+
+	require.NoError(t, err)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusFailed, row.Status)
+	require.Equal(t, "source_unavailable", row.ErrorClass)
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+}
+
+func TestBytePlusAssetModelWorkerGroupContentionKeepsBindingAndReadinessRetryable(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_group_contention")
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: structuredBytePlusKey(), Mapping: `{"seedance-2.0":"seedance-2.0"}`,
+	})
+	scope := AssetModelScope{ScopeKey: "scope-byteplus-group-contention", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 90)
+	require.NoError(t, err)
+	require.NoError(t, model.EnsureAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames, 90))
+	registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, &scriptedAssetModelMaterializer{
+		create: []scriptedAssetModelCreate{{err: ErrAssetBindingInitializing}},
+	})
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	claimed, err := model.ClaimAssetModelReadinessLease(row.Id, "node-a", 100, 160)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+
+	err = PrepareAssetModelReadiness(context.Background(), row, "node-a", time.Unix(100, 0))
+
+	require.NoError(t, err)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusRetryWaiting, row.Status)
+	binding, err := model.GetAssetBindingForScope(asset.Id, target.ChannelId, target.BindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetBindingStatusPending, binding.Status)
+	require.Empty(t, binding.LeaseOwner)
+}
+
 func TestAssetModelWorkerRetriesTransientScheduleAndPublishesActiveOnlyWhenExact(t *testing.T) {
 	newAssetModelWorkerTestDB(t)
 	installAssetServiceTestDeps(t)
@@ -187,6 +351,47 @@ func TestAssetModelRotationAdvancesCandidateAfterGenerationWindowAndKeepsOldBind
 	require.NoError(t, model.DB.Where("asset_id = ? AND channel_id = ?", asset.Id, second.ChannelId).Order("id ASC").Find(&bindings).Error)
 	require.Len(t, bindings, 2)
 	require.NotEqual(t, bindings[0].BindingScope, bindings[1].BindingScope)
+}
+
+func TestBytePlusAssetModelWorkerRotatesCredentialsWithinSharedScope(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	firstKey := structuredBytePlusKeyWith("video-old", "shared-access", "secret-old", "shared-project")
+	secondKey := structuredBytePlusKeyWith("video-new", "shared-access", "secret-new", "shared-project")
+	materializer := &keyAwareAssetModelMaterializer{
+		failKeys: map[string]error{firstKey: &AssetMaterializeFailure{Class: AssetMaterializeErrorDefinitive, HTTPStatus: http.StatusBadRequest}},
+	}
+	registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_rotate_shared_scope")
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "[" + firstKey + "," + secondKey + "]",
+		Mapping:     `{"seedance-2.0":"seedance-2.0"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: true, MultiKeySize: 2},
+	})
+	scope := AssetModelScope{ScopeKey: "scope-byteplus-worker-rotated-credentials", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 90)
+	require.NoError(t, err)
+	require.Equal(t, 0, target.CredentialIndex)
+	require.NoError(t, model.EnsureAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames, 90))
+
+	processed, err := runAssetModelReadinessBatchAt(t, "node-a", 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	rotated := requireAssetModelTarget(t, scope, "seedance-2.0")
+	require.Equal(t, 1, rotated.CredentialIndex)
+	require.Equal(t, target.BindingScope, rotated.BindingScope)
+
+	processed, err = runAssetModelReadinessBatchAt(t, "node-a", 101)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, "seedance-2.0")
+	require.Equal(t, model.AssetModelReadinessStatusActive, row.Status)
+	binding, err := model.GetAssetBindingForScope(asset.Id, rotated.ChannelId, rotated.BindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.Equal(t, "upstream-"+secondKey, binding.UpstreamAssetId)
+	require.Equal(t, int64(2), atomic.LoadInt64(&materializer.createCalls))
 }
 
 func TestAssetModelDefinitiveCandidatesFailOnlyAfterAllCandidatesExhausted(t *testing.T) {
@@ -531,7 +736,7 @@ func TestAssetModelWorkerRetryableProcessingRefreshSchedulesRetryWithoutFailingB
 	asset := insertMaterializeAsset(t, "ast_worker_refresh_retry_aaaaaa")
 	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
 		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
-		Priority: 80, Weight: 50, Key: "byteplus-key",
+		Priority: 80, Weight: 50, Key: structuredBytePlusKey(),
 		Mapping: `{"seedance-2.0":"byteplus/seedance-pro"}`,
 	})
 	scope := AssetModelScope{ScopeKey: "scope-" + asset.PublicId, Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}

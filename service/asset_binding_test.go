@@ -250,14 +250,43 @@ func TestAssetBindingMaterializeExpectedLeaseExpiryFenceRejectsStaleSameOwnerLea
 	require.Empty(t, binding.UpstreamAssetId)
 }
 
+func TestBytePlusScopedGroupContentionReleasesBindingWithoutFailure(t *testing.T) {
+	newAssetServiceTestDB(t)
+	installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_group_contention")
+	channel := insertMaterializeChannel(t, 131)
+	materializer := &recordingAssetMaterializer{createErr: ErrAssetBindingInitializing}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+	assetBindingNow = func() time.Time { return time.Unix(100, 0) }
+	t.Cleanup(func() { assetBindingNow = time.Now })
+
+	_, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID: asset.UserId, PublicID: asset.PublicId, Channel: channel, APIKey: channel.Key,
+		LeaseOwner: "node-a", PollLimit: 1, LeaseTTL: time.Minute, ExpectedType: "Image",
+	})
+
+	require.ErrorIs(t, err, ErrAssetBindingInitializing)
+	bindingScope, scopeErr := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, scopeErr)
+	binding, loadErr := model.GetAssetBindingForScope(asset.Id, channel.Id, bindingScope)
+	require.NoError(t, loadErr)
+	require.Equal(t, model.AssetBindingStatusPending, binding.Status)
+	require.Empty(t, binding.LeaseOwner)
+	require.Zero(t, binding.LeaseExpiresAt)
+}
+
 func TestAssetBindingReusesActiveBindingWithoutSigningOrProviderCreate(t *testing.T) {
 	newAssetServiceTestDB(t)
 	store := installAssetServiceTestDeps(t)
 	asset := insertMaterializeAsset(t, "ast_33333333333333333333333333333333")
 	channel := insertMaterializeChannel(t, 131)
+	bindingScope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, err)
 	require.NoError(t, model.DB.Create(&model.AssetBinding{
 		AssetId:         asset.Id,
 		ChannelId:       channel.Id,
+		BindingScope:    bindingScope,
 		Status:          model.AssetStatusActive,
 		UpstreamGroupId: "group-existing",
 		UpstreamAssetId: "upstream-existing",
@@ -286,6 +315,160 @@ func TestAssetBindingReusesActiveBindingWithoutSigningOrProviderCreate(t *testin
 	require.Equal(t, "asset://upstream-existing", result.RewriteURI)
 	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
 	require.Len(t, store.signed, 0)
+}
+
+func TestBytePlusMaterializeAdoptsAccessibleLegacyBlankScopeBinding(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_adopt_legacy_scope")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		BindingScope:    "",
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"source_status":     model.AssetSourceStatusExpired,
+		"source_expires_at": int64(99),
+	}).Error)
+	materializer := &recordingAssetMaterializer{getStatus: model.AssetStatusActive}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		APIKey:       channel.Key,
+		LeaseOwner:   "node-a",
+		PollLimit:    1,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://legacy-asset", result.RewriteURI)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+	require.Len(t, store.signed, 0)
+	bindingScope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, err)
+	adopted, err := model.GetAssetBindingForScope(asset.Id, channel.Id, bindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, adopted.Status)
+	require.Equal(t, "legacy-asset", adopted.UpstreamAssetId)
+	_, err = model.GetAssetBindingForScope(asset.Id, channel.Id, "")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestBytePlusMaterializeAdoptsLegacyBindingOverFailedScopedPlaceholder(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_adopt_over_failed_scope")
+	channel := insertMaterializeChannel(t, 131)
+	bindingScope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		BindingScope:    "",
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:      asset.Id,
+		ChannelId:    channel.Id,
+		BindingScope: bindingScope,
+		Status:       model.AssetStatusFailed,
+		ErrorCode:    AssetMaterializeErrorDefinitive,
+		CreatedAt:    101,
+		UpdatedAt:    101,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.Asset{}).Where("id = ?", asset.Id).Updates(map[string]any{
+		"source_status":     model.AssetSourceStatusExpired,
+		"source_expires_at": int64(99),
+	}).Error)
+	materializer := &recordingAssetMaterializer{getStatus: model.AssetStatusActive}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		APIKey:       channel.Key,
+		LeaseOwner:   "node-a",
+		PollLimit:    1,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://legacy-asset", result.RewriteURI)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Zero(t, atomic.LoadInt64(&materializer.createCalls))
+	require.Len(t, store.signed, 0)
+}
+
+func TestBytePlusMaterializeWrongCredentialNotFoundPreservesLegacyBlankScopeBinding(t *testing.T) {
+	newAssetServiceTestDB(t)
+	store := installAssetServiceTestDeps(t)
+	asset := insertMaterializeAsset(t, "ast_byteplus_replace_legacy_scope")
+	channel := insertMaterializeChannel(t, 131)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       channel.Id,
+		BindingScope:    "",
+		Status:          model.AssetStatusActive,
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}).Error)
+	materializer := &recordingAssetMaterializer{
+		getErr:        &BytePlusAPIError{StatusCode: http.StatusNotFound, RequestID: "req-legacy-missing", Code: "NotFound.asset_id", Definitive: true},
+		createGroupID: "replacement-group",
+		createAssetID: "replacement-asset",
+		createStatus:  model.AssetStatusActive,
+	}
+	restore := registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	defer restore()
+
+	result, err := MaterializeAssetBinding(context.Background(), AssetBindingRequest{
+		UserID:       asset.UserId,
+		PublicID:     asset.PublicId,
+		Channel:      channel,
+		APIKey:       channel.Key,
+		LeaseOwner:   "node-a",
+		PollLimit:    1,
+		LeaseTTL:     time.Minute,
+		ExpectedType: "Image",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "asset://replacement-asset", result.RewriteURI)
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.getCalls))
+	require.Equal(t, int64(1), atomic.LoadInt64(&materializer.createCalls))
+	require.Len(t, store.signed, 1)
+	bindingScope, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: channel.Key})
+	require.NoError(t, err)
+	replacement, err := model.GetAssetBindingForScope(asset.Id, channel.Id, bindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, replacement.Status)
+	require.Equal(t, "replacement-asset", replacement.UpstreamAssetId)
+	legacy, err := model.GetAssetBindingForScope(asset.Id, channel.Id, "")
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, legacy.Status)
+	require.Equal(t, "legacy-asset", legacy.UpstreamAssetId)
+	require.Empty(t, legacy.ErrorCode)
 }
 
 func TestSeedanceProxyAssetBindingReusesActiveBindingAcrossSeedanceModelsOnSameKey(t *testing.T) {
@@ -1661,6 +1844,38 @@ func TestAssetBindingScopeUsesLegacyTechMobiFallbackWhenProviderEmpty(t *testing
 	require.NoError(t, err)
 	require.NotEmpty(t, scope)
 	require.True(t, strings.HasPrefix(scope, "techmobi:v1:"))
+}
+
+func TestAssetBindingScopeForNativeBytePlusUsesAccessKeyAndProjectOnly(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeBytePlus}
+	key := func(apiKey string, accessKeyID string, secretAccessKey string, projectName string) string {
+		t.Helper()
+		payload, err := common.Marshal(BytePlusCredentials{
+			APIKey:          apiKey,
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+			ProjectName:     projectName,
+		})
+		require.NoError(t, err)
+		return string(payload)
+	}
+
+	base, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: key("video-a", "ak-a", "secret-a", "project-a")})
+	require.NoError(t, err)
+	rotatedSecrets, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: key("video-b", "ak-a", "secret-b", "project-a")})
+	require.NoError(t, err)
+	otherAccessKey, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: key("video-a", "ak-b", "secret-a", "project-a")})
+	require.NoError(t, err)
+	otherProject, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{APIKey: key("video-a", "ak-a", "secret-a", "project-b")})
+	require.NoError(t, err)
+
+	require.Equal(t, base, rotatedSecrets)
+	require.NotEqual(t, base, otherAccessKey)
+	require.NotEqual(t, base, otherProject)
+	require.True(t, strings.HasPrefix(base, "byteplus:v1:"))
+	for _, secret := range []string{"video-a", "ak-a", "secret-a", "project-a"} {
+		require.NotContains(t, base, secret)
+	}
 }
 
 func TestAssetBindingScopeUsesSeedanceProxyConfigWithoutModelOrType(t *testing.T) {

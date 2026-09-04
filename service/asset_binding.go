@@ -51,6 +51,7 @@ var (
 )
 
 const (
+	bytePlusBindingScopePrefix                     = "byteplus:v1:"
 	assetMaterializationProviderSeedanceProxy      = "seedance_proxy"
 	seedanceProxyBindingScopePrefix                = "seedance-proxy:v1:"
 	assetMaterializationProviderTokenSpaceMaterial = "tokenspace_material"
@@ -423,6 +424,19 @@ func MaterializeAssetBinding(ctx context.Context, request AssetBindingRequest) (
 	} else {
 		existing, existingErr = model.GetAssetBindingForScope(asset.Id, request.Channel.Id, bindingScope)
 	}
+	if errors.Is(existingErr, gorm.ErrRecordNotFound) || (existingErr == nil && !activeAssetBinding(existing) && !processingAssetBinding(existing)) {
+		adopted, adoptErr := adoptLegacyBytePlusAssetBinding(ctx, asset, request.Channel, bindingScope, request.Model, request.APIKey, assetBindingNow().Unix())
+		if adoptErr != nil {
+			if errors.Is(adoptErr, model.ErrAssetBindingAdoptionInProgress) {
+				return AssetBindingResult{}, ErrAssetBindingInitializing
+			}
+			return AssetBindingResult{}, sanitizeAssetBindingError(adoptErr)
+		}
+		if adopted != nil {
+			existing = adopted
+			existingErr = nil
+		}
+	}
 	owner := strings.TrimSpace(request.LeaseOwner)
 	if owner == "" {
 		owner = assetBindingLeaseOwner()
@@ -631,6 +645,10 @@ func createLeasedAssetBinding(ctx context.Context, asset *model.Asset, channel *
 	})
 	if err != nil {
 		errorClass := AssetMaterializeErrorClass(err)
+		if errors.Is(err, ErrAssetBindingInitializing) {
+			_, _ = model.ReleaseAssetBindingForRetryLeaseCAS(asset.Id, channel.Id, bindingScope, owner, expectedLeaseExpiresAt, AssetMaterializeErrorProcessing, assetBindingNow().Unix())
+			return AssetBindingResult{}, ErrAssetBindingInitializing
+		}
 		if IsRetryableAssetMaterializeError(err) {
 			_, _ = model.ReleaseAssetBindingForRetryLeaseCAS(asset.Id, channel.Id, bindingScope, owner, expectedLeaseExpiresAt, errorClass, assetBindingNow().Unix())
 			return AssetBindingResult{}, ErrAssetBindingInitializing
@@ -769,7 +787,7 @@ func ResolveAssetMaterializeOptions(set AssetReferenceSet, channel *model.Channe
 	if channel == nil || !set.HasReferences() {
 		return options, -1, nil
 	}
-	config, explicit, err := assetMaterializationConfigForChannel(channel)
+	_, explicit, err := assetMaterializationConfigForChannel(channel)
 	if err != nil {
 		return AssetMaterializeOptions{}, -1, err
 	}
@@ -793,59 +811,11 @@ func ResolveAssetMaterializeOptions(set AssetReferenceSet, channel *model.Channe
 		}
 		return targetOptions, index, nil
 	}
-	if explicit {
-		switch config.Provider {
-		case assetMaterializationProviderSeedanceProxy, assetMaterializationProviderTokenSpaceMaterial:
-		default:
-			return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
-		}
-		keys := enabledAssetMaterializeKeys(channel)
-		if len(keys) == 0 {
-			return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
-		}
-		selectedKey := strings.TrimSpace(options.APIKey)
-		bestScore := -1
-		bestIndex := -1
-		bestKey := ""
-		for _, candidate := range keys {
-			candidateOptions := AssetMaterializeOptions{Model: options.Model, APIKey: candidate.key}
-			scope, err := assetBindingScopeForChannel(channel, candidateOptions)
-			if err != nil {
-				continue
-			}
-			score := 0
-			feasible := true
-			for _, reference := range set.references {
-				asset := set.assets[reference.PublicID]
-				if _, ok := activeAssetReferenceBindingForScope(asset.Bindings, channel.Id, scope); ok {
-					score++
-					continue
-				}
-				if legacyRealPersonAssetCanUseChannel(asset, channel) {
-					score++
-					continue
-				}
-				if !assetReferenceSourceRecoverable(asset) {
-					feasible = false
-					break
-				}
-			}
-			if !feasible {
-				continue
-			}
-			if score > bestScore || (score == bestScore && strings.TrimSpace(candidate.key) == selectedKey) {
-				bestScore = score
-				bestIndex = candidate.index
-				bestKey = candidate.key
-			}
-		}
-		if bestScore < 0 {
-			return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
-		}
-		options.APIKey = bestKey
-		return options, bestIndex, nil
+	credentialScoped := assetBindingScopesRequireSingleScope(channel)
+	if explicit && !credentialScoped {
+		return AssetMaterializeOptions{}, -1, ErrAssetBindingUnavailable
 	}
-	if channel.Type != constant.ChannelTypeTechMobiVideo {
+	if !credentialScoped {
 		return options, -1, nil
 	}
 	keys := enabledAssetMaterializeKeys(channel)
@@ -867,6 +837,10 @@ func ResolveAssetMaterializeOptions(set AssetReferenceSet, channel *model.Channe
 		for _, reference := range set.references {
 			asset := set.assets[reference.PublicID]
 			if _, ok := activeAssetReferenceBindingForScope(asset.Bindings, channel.Id, scope); ok {
+				score++
+				continue
+			}
+			if legacyRealPersonAssetCanUseChannel(asset, channel) {
 				score++
 				continue
 			}
@@ -950,7 +924,75 @@ func assetBindingScopeForChannel(channel *model.Channel, options AssetMaterializ
 		}
 		return descriptor.BindingScope(config, options)
 	}
+	if channel.Type == constant.ChannelTypeBytePlus {
+		credentialKey := strings.TrimSpace(options.APIKey)
+		if credentialKey == "" {
+			credentialKey = strings.TrimSpace(channel.Key)
+		}
+		creds, err := ParseBytePlusCredentials(credentialKey)
+		if err != nil || creds.ValidateAssets() != nil {
+			return "", ErrAssetBindingUnavailable
+		}
+		return bytePlusBindingScopeForCredentials(creds), nil
+	}
 	return assetBindingScope(channel.Type, options)
+}
+
+func adoptLegacyBytePlusAssetBinding(ctx context.Context, asset *model.Asset, channel *model.Channel, bindingScope string, modelName string, apiKey string, now int64) (*model.AssetBinding, error) {
+	if asset == nil || channel == nil || channel.Type != constant.ChannelTypeBytePlus || !strings.HasPrefix(bindingScope, bytePlusBindingScopePrefix) {
+		return nil, nil
+	}
+	legacy, err := model.GetAssetBindingForScope(asset.Id, channel.Id, "")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !activeAssetBinding(legacy) || strings.TrimSpace(legacy.UpstreamAssetId) == "" {
+		return nil, nil
+	}
+	materializer, err := assetMaterializerForChannel(channel)
+	if err != nil || materializer == nil {
+		return nil, ErrAssetBindingUnavailable
+	}
+	result, err := materializer.GetAsset(ctx, AssetMaterializeInput{
+		UserID:         asset.UserId,
+		Asset:          *asset,
+		Channel:        channel,
+		Model:          modelName,
+		APIKey:         apiKey,
+		IdempotencyKey: assetBindingIdempotencyKey(asset.SHA256, asset.Id, channel.Id, bindingScope),
+	}, legacy.UpstreamAssetId)
+	if err != nil {
+		if IsRetryableAssetMaterializeError(err) {
+			return nil, ErrAssetBindingInitializing
+		}
+		return nil, nil
+	}
+	if strings.TrimSpace(result.Status) == model.AssetStatusProcessing {
+		return nil, ErrAssetBindingInitializing
+	}
+	if strings.TrimSpace(result.Status) != model.AssetStatusActive || strings.TrimSpace(result.UpstreamAssetID) != strings.TrimSpace(legacy.UpstreamAssetId) {
+		return nil, nil
+	}
+	adopted, _, err := model.AdoptActiveAssetBindingForScope(
+		asset.Id,
+		channel.Id,
+		legacy.Id,
+		legacy.UpstreamAssetId,
+		bindingScope,
+		now,
+	)
+	return adopted, err
+}
+
+func bytePlusBindingScopeForCredentials(creds BytePlusCredentials) string {
+	if err := creds.ValidateAssets(); err != nil {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(strings.TrimSpace(creds.AccessKeyID) + "\x00" + strings.TrimSpace(creds.ProjectName)))
+	return bytePlusBindingScopePrefix + hex.EncodeToString(digest[:])
 }
 
 func activeAssetReferenceBindingForScope(bindings []assetReferenceBinding, channelID int, bindingScope string) (assetReferenceBinding, bool) {

@@ -87,9 +87,12 @@ func TestAssetReferenceSetRanksAllActivePartialAndNoBindingReadiness(t *testing.
 	newAssetReferenceDB(t)
 	assetNow = func() time.Time { return time.Unix(100, 0) }
 	t.Cleanup(func() { assetNow = time.Now })
+	bytePlus := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey()}
+	bindingScope, err := assetBindingScopeForChannel(bytePlus, AssetMaterializeOptions{APIKey: bytePlus.Key})
+	require.NoError(t, err)
 
-	allBound := insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_11111111111111111111111111111111", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, UpstreamID: "upstream-all", BindingStatus: model.AssetStatusActive})
-	partial := insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_22222222222222222222222222222222", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, UpstreamID: "upstream-partial", BindingStatus: model.AssetStatusActive})
+	allBound := insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_11111111111111111111111111111111", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, BindingScope: bindingScope, UpstreamID: "upstream-all", BindingStatus: model.AssetStatusActive})
+	partial := insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_22222222222222222222222222222222", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, BindingScope: bindingScope, UpstreamID: "upstream-partial", BindingStatus: model.AssetStatusActive})
 	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_33333333333333333333333333333333", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200})
 
 	allSet, apiErr := ResolveAssetReferences(newAssetReferenceContext(), 7, &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{imageAssetItem(allBound.PublicId)}})
@@ -99,7 +102,6 @@ func TestAssetReferenceSetRanksAllActivePartialAndNoBindingReadiness(t *testing.
 	noneSet, apiErr := ResolveAssetReferences(newAssetReferenceContext(), 7, &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{imageAssetItem("ast_33333333333333333333333333333333")}})
 	require.Nil(t, apiErr)
 
-	bytePlus := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus}
 	allReadiness, ok := allSet.ReadinessForChannel(bytePlus)
 	require.True(t, ok)
 	require.Equal(t, AssetReadinessAllBound, allReadiness)
@@ -195,7 +197,7 @@ func TestResolveAssetReferencesRejectsInvalidLegacyRealPersonProfile(t *testing.
 	}
 }
 
-func TestAssetReferenceSetMixesRecoverableGeneralizedSourceWithLegacyBinding(t *testing.T) {
+func TestAssetReferenceSetDoesNotTreatUnscopedLegacyBindingAsCredentialVerified(t *testing.T) {
 	newAssetReferenceDB(t)
 	assetNow = func() time.Time { return time.Unix(100, 0) }
 	t.Cleanup(func() { assetNow = time.Now })
@@ -208,9 +210,9 @@ func TestAssetReferenceSetMixesRecoverableGeneralizedSourceWithLegacyBinding(t *
 	}})
 	require.Nil(t, apiErr)
 
-	readiness, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus})
-	require.True(t, ok)
-	require.Equal(t, AssetReadinessPartialBound, readiness)
+	readiness, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey()})
+	require.False(t, ok)
+	require.Equal(t, AssetReadinessIneligible, readiness)
 	require.Equal(t, map[string]string{
 		"asset://ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "asset://legacy-upstream",
 	}, refs.RewriteMapForChannel(131))
@@ -395,6 +397,92 @@ func TestExplicitCredentialScopedProviderReadinessRequiresOneKeyScopeToCoverEver
 	require.Equal(t, map[string]string{
 		"asset://ast_scope_b": "asset://asset-b",
 	}, refs.RewriteMapForSelectedChannel(channel, "seedance-2.0-fast", "seedance-key-b"))
+}
+
+func TestNativeBytePlusCredentialScopeControlsReadinessResolutionAndRewrite(t *testing.T) {
+	keyA := structuredBytePlusKeyWith("video-a", "access-a", "secret-a", "project-a")
+	keyB := structuredBytePlusKeyWith("video-b", "access-b", "secret-b", "project-b")
+	channel := &model.Channel{
+		Id:     157,
+		Type:   constant.ChannelTypeBytePlus,
+		Key:    "[" + keyA + "," + keyB + "]",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+		},
+	}
+	scopeA, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: "seedance-2.0-fast", APIKey: keyA})
+	require.NoError(t, err)
+	scopeB, err := assetBindingScopeForChannel(channel, AssetMaterializeOptions{Model: "seedance-2.0-fast", APIKey: keyB})
+	require.NoError(t, err)
+	require.NotEqual(t, scopeA, scopeB)
+
+	refs := AssetReferenceSet{
+		references: []assetReference{
+			{PublicID: "ast_byteplus_one", ExpectedAssetType: "Image"},
+			{PublicID: "ast_byteplus_two", ExpectedAssetType: "Video"},
+		},
+		assets: map[string]assetReferenceAsset{
+			"ast_byteplus_one": {
+				PublicID:     "ast_byteplus_one",
+				AssetType:    "Image",
+				Status:       model.AssetStatusActive,
+				SourceStatus: model.AssetSourceStatusUnavailable,
+				Bindings: []assetReferenceBinding{{
+					ChannelID:       channel.Id,
+					BindingScope:    scopeB,
+					UpstreamAssetID: "byteplus-one",
+					Status:          model.AssetStatusActive,
+				}},
+			},
+			"ast_byteplus_two": {
+				PublicID:     "ast_byteplus_two",
+				AssetType:    "Video",
+				Status:       model.AssetStatusActive,
+				SourceStatus: model.AssetSourceStatusUnavailable,
+				Bindings: []assetReferenceBinding{{
+					ChannelID:       channel.Id,
+					BindingScope:    scopeB,
+					UpstreamAssetID: "byteplus-two",
+					Status:          model.AssetStatusActive,
+				}},
+			},
+		},
+	}
+
+	readiness, ok := refs.ReadinessForChannel(channel, "seedance-2.0-fast")
+	require.True(t, ok)
+	require.Equal(t, AssetReadinessAllBound, readiness)
+	require.Nil(t, refs.RewriteMapForSelectedChannel(channel, "seedance-2.0-fast", keyA))
+
+	options, keyIndex, err := ResolveAssetMaterializeOptions(refs, channel, AssetMaterializeOptions{
+		Model:  "seedance-2.0-fast",
+		APIKey: keyA,
+	})
+	require.NoError(t, err)
+	require.Equal(t, keyB, options.APIKey)
+	require.Equal(t, 1, keyIndex)
+	require.Equal(t, map[string]string{
+		"asset://ast_byteplus_one": "asset://byteplus-one",
+		"asset://ast_byteplus_two": "asset://byteplus-two",
+	}, refs.RewriteMapForSelectedChannel(channel, "seedance-2.0-fast", options.APIKey))
+
+	refs.assets["ast_byteplus_one"] = assetReferenceAsset{
+		PublicID:     "ast_byteplus_one",
+		AssetType:    "Image",
+		Status:       model.AssetStatusActive,
+		SourceStatus: model.AssetSourceStatusUnavailable,
+		Bindings: []assetReferenceBinding{{
+			ChannelID:       channel.Id,
+			BindingScope:    scopeA,
+			UpstreamAssetID: "byteplus-one-a",
+			Status:          model.AssetStatusActive,
+		}},
+	}
+	readiness, ok = refs.ReadinessForChannel(channel, "seedance-2.0-fast")
+	require.False(t, ok)
+	require.Equal(t, AssetReadinessIneligible, readiness)
 }
 
 func TestTokenSpaceMaterialReadyChannelResolvesSelectedCredentialAndRewriteMap(t *testing.T) {
@@ -782,7 +870,10 @@ func TestAssetReferenceSetRequiresOneChannelToConsumeEveryReferencedAsset(t *tes
 	newAssetReferenceDB(t)
 	assetNow = func() time.Time { return time.Unix(100, 0) }
 	t.Cleanup(func() { assetNow = time.Now })
-	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_1234567890abcdefABCDEF1234567890", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, UpstreamID: "image-upstream", BindingStatus: model.AssetStatusActive})
+	bytePlus := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey()}
+	bindingScope, err := assetBindingScopeForChannel(bytePlus, AssetMaterializeOptions{APIKey: bytePlus.Key})
+	require.NoError(t, err)
+	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_1234567890abcdefABCDEF1234567890", AssetType: "Image", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200, BindingChannelID: 131, BindingScope: bindingScope, UpstreamID: "image-upstream", BindingStatus: model.AssetStatusActive})
 	insertAssetReferenceAsset(t, assetReferenceSeed{UserID: 7, PublicID: "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AssetType: "Audio", SourceStatus: model.AssetSourceStatusAvailable, SourceExpiresAt: 200})
 
 	refs, apiErr := ResolveAssetReferences(newAssetReferenceContext(), 7, &dto.SeedanceVideoRequest{Content: []dto.SeedanceContentItem{
@@ -793,7 +884,7 @@ func TestAssetReferenceSetRequiresOneChannelToConsumeEveryReferencedAsset(t *tes
 
 	_, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeOpenAI})
 	require.False(t, ok, "OpenAI video route must not be eligible for audio assets")
-	readiness, ok := refs.ReadinessForChannel(&model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus})
+	readiness, ok := refs.ReadinessForChannel(bytePlus)
 	require.True(t, ok)
 	require.Equal(t, AssetReadinessPartialBound, readiness)
 }
@@ -893,6 +984,7 @@ type assetReferenceSeed struct {
 	SourceStatus     string
 	SourceExpiresAt  int64
 	BindingChannelID int
+	BindingScope     string
 	UpstreamID       string
 	BindingStatus    string
 }
@@ -949,6 +1041,7 @@ func insertAssetReferenceAsset(t *testing.T, seed assetReferenceSeed) model.Asse
 		require.NoError(t, model.DB.Create(&model.AssetBinding{
 			AssetId:         asset.Id,
 			ChannelId:       seed.BindingChannelID,
+			BindingScope:    seed.BindingScope,
 			UpstreamAssetId: seed.UpstreamID,
 			Status:          status,
 			CreatedAt:       100,

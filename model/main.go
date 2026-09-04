@@ -438,6 +438,7 @@ func orderedMigrationModels() []migrationModel {
 		{&ComputeNode{}, "ComputeNode"},
 		{&DataToolCall{}, "DataToolCall"},
 		{&BytePlusAssetGroup{}, "BytePlusAssetGroup"},
+		{&BytePlusAssetBindingGroup{}, "BytePlusAssetBindingGroup"},
 		{&BytePlusRealPersonProfile{}, "BytePlusRealPersonProfile"},
 		{&BytePlusVisualValidationSession{}, "BytePlusVisualValidationSession"},
 		{&APIIdempotencyRecord{}, "APIIdempotencyRecord"},

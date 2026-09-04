@@ -85,6 +85,12 @@ func (e assetModelTargetUnavailableError) Error() string {
 	return "asset model target unavailable"
 }
 
+type assetModelSourceUnavailableError struct{}
+
+func (e assetModelSourceUnavailableError) Error() string {
+	return "asset model source unavailable"
+}
+
 func StartAssetModelReadinessWorker() {
 	startAssetModelReadinessWorkerWithConfig(context.Background(), assetModelReadinessWorkerConfig{})
 }
@@ -194,17 +200,6 @@ func PrepareAssetModelReadiness(ctx context.Context, row model.AssetModelReadine
 	if err := model.DB.First(&asset, row.AssetId).Error; err != nil {
 		return err
 	}
-	if !assetReferenceSourceRecoverable(assetReferenceAsset{
-		Status:          asset.Status,
-		AssetType:       asset.AssetType,
-		SourceStatus:    asset.SourceStatus,
-		StorageBackend:  asset.StorageBackend,
-		StorageBucket:   asset.StorageBucket,
-		ObjectKey:       asset.ObjectKey,
-		SourceExpiresAt: asset.SourceExpiresAt,
-	}) {
-		return finishAssetModelReadinessFailed(row, owner, nowUnix, "source_unavailable")
-	}
 
 	target, err := model.GetAssetModelCoverageTarget(row.ScopeKey, row.ModelName)
 	if err != nil {
@@ -305,6 +300,10 @@ func PrepareAssetModelReadiness(ctx context.Context, row model.AssetModelReadine
 	if errors.As(err, &targetUnavailableErr) {
 		return finishAssetModelReadinessFailed(row, owner, nowUnix, "target_unavailable")
 	}
+	var sourceUnavailableErr assetModelSourceUnavailableError
+	if errors.As(err, &sourceUnavailableErr) {
+		return finishAssetModelReadinessFailed(row, owner, nowUnix, "source_unavailable")
+	}
 	var definitiveErr assetModelBindingDefinitiveError
 	if errors.As(err, &definitiveErr) {
 		return rotateAssetModelReadinessTarget(row, *target, owner, nowUnix)
@@ -319,6 +318,19 @@ func prepareAssetModelBinding(ctx context.Context, asset model.Asset, target mod
 	existing, err := model.GetAssetBindingForScope(asset.Id, target.ChannelId, target.BindingScope)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) || (!activeAssetBinding(existing) && !processingAssetBinding(existing)) {
+		adopted, adoptErr := adoptLegacyBytePlusAssetBinding(ctx, &asset, channel, target.BindingScope, options.Model, options.APIKey, nowUnix)
+		if adoptErr != nil {
+			if errors.Is(adoptErr, model.ErrAssetBindingAdoptionInProgress) {
+				return nil, ErrAssetBindingInitializing
+			}
+			return nil, adoptErr
+		}
+		if adopted != nil {
+			existing = adopted
+			err = nil
+		}
 	}
 	if activeAssetBinding(existing) {
 		return existing, nil
@@ -340,6 +352,17 @@ func prepareAssetModelBinding(ctx context.Context, asset model.Asset, target mod
 		if handled {
 			return &result.Binding, nil
 		}
+	}
+	if !assetReferenceSourceRecoverable(assetReferenceAsset{
+		Status:          asset.Status,
+		AssetType:       asset.AssetType,
+		SourceStatus:    asset.SourceStatus,
+		StorageBackend:  asset.StorageBackend,
+		StorageBucket:   asset.StorageBucket,
+		ObjectKey:       asset.ObjectKey,
+		SourceExpiresAt: asset.SourceExpiresAt,
+	}) {
+		return nil, assetModelSourceUnavailableError{}
 	}
 	binding, _, err := model.CreateAssetBindingForScopeIfAbsent(asset.Id, target.ChannelId, target.BindingScope, nowUnix)
 	if err != nil {
@@ -389,6 +412,10 @@ func prepareAssetModelBinding(ctx context.Context, asset model.Asset, target mod
 	})
 	if err != nil {
 		class := AssetMaterializeErrorClass(err)
+		if errors.Is(err, ErrAssetBindingInitializing) {
+			_, _ = model.ReleaseAssetBindingForRetryLeaseCAS(asset.Id, target.ChannelId, target.BindingScope, owner, bindingLeaseExpiresAt, AssetMaterializeErrorProcessing, nowUnix)
+			return nil, assetModelBindingRetryError{class: AssetMaterializeErrorProcessing}
+		}
 		if IsRetryableAssetMaterializeError(err) {
 			_, _ = model.ReleaseAssetBindingForRetryLeaseCAS(asset.Id, target.ChannelId, target.BindingScope, owner, bindingLeaseExpiresAt, class, nowUnix)
 			return nil, assetModelBindingRetryError{class: class, retryAfter: assetModelRetryAfter(err)}
