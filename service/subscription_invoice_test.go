@@ -778,6 +778,59 @@ func TestReconcilePaidInvoiceGrantsInvoiceFirstPurchase(t *testing.T) {
 	require.Equal(t, "in_first", applied.ProviderInvoiceId)
 }
 
+func TestReconcilePaidInvoicePromotesPendingTopUpWithoutDuplicatingEntitlement(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	const (
+		userID         = 8111
+		planID         = 8211
+		tradeNo        = "sub_invoice_topup_sync"
+		checkoutID     = "cs_invoice_topup_sync"
+		invoiceID      = "in_topup_sync"
+		subscriptionID = "sub_topup_sync"
+	)
+	contract, intent := seedStripeInvoicePurchase(t, userID, planID, tradeNo)
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).
+		Where("trade_no = ?", tradeNo).
+		Update("provider_session_id", checkoutID).Error)
+	require.NoError(t, model.SyncSubscriptionOrderTopUpHistory(tradeNo))
+
+	pendingTopUp := model.GetTopUpByTradeNo(tradeNo)
+	require.NotNil(t, pendingTopUp)
+	require.Equal(t, common.TopUpStatusPending, pendingTopUp.Status)
+
+	restore := replaceStripeInvoiceReconcilers(t, stripeInvoiceFixture(invoiceID, subscriptionID), stripeSubscriptionFixture(subscriptionID, map[string]string{
+		"trade_no":         tradeNo,
+		"user_id":          strconv.Itoa(userID),
+		"plan_id":          strconv.Itoa(planID),
+		"contract_id":      strconv.FormatInt(contract.Id, 10),
+		"change_intent_id": strconv.FormatInt(intent.Id, 10),
+	}))
+	defer restore()
+
+	first, err := ReconcilePaidInvoice(context.Background(), invoiceID)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.True(t, first.Applied)
+
+	second, err := ReconcilePaidInvoice(context.Background(), invoiceID)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.False(t, second.Applied)
+
+	completedTopUp := model.GetTopUpByTradeNo(tradeNo)
+	require.NotNil(t, completedTopUp)
+	require.Equal(t, common.TopUpStatusSuccess, completedTopUp.Status)
+	require.NotZero(t, completedTopUp.CompleteTime)
+
+	var topUpCount int64
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", tradeNo).Count(&topUpCount).Error)
+	require.Equal(t, int64(1), topUpCount)
+
+	var entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&entitlementCount).Error)
+	require.Equal(t, int64(1), entitlementCount)
+}
+
 func TestReconcilePaidInvoiceInitialInvitationUsesDiscountedOrderPaymentAmount(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	userID := 8131
