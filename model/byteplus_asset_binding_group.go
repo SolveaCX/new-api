@@ -7,7 +7,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrBytePlusAssetBindingScopeRequired = errors.New("byteplus asset binding scope is required")
+var (
+	ErrBytePlusAssetBindingScopeRequired           = errors.New("byteplus asset binding scope is required")
+	ErrBytePlusAssetBindingGroupUpstreamIDRequired = errors.New("byteplus asset binding group upstream id is required")
+)
 
 type BytePlusAssetBindingGroup struct {
 	Id                int64  `json:"id"`
@@ -74,7 +77,28 @@ func ClaimBytePlusAssetBindingGroup(userID int, channelID int, bindingScope stri
 	if err != nil {
 		return nil, false, err
 	}
-	return stored, update.RowsAffected == 1, nil
+	owner := update.RowsAffected == 1
+	if !owner && stored.Status == BytePlusAssetGroupStatusActive && strings.TrimSpace(stored.UpstreamGroupId) == "" {
+		recovery := DB.Model(&BytePlusAssetBindingGroup{}).
+			Where("id = ? AND status = ? AND upstream_group_id = ?", stored.Id, BytePlusAssetGroupStatusActive, stored.UpstreamGroupId).
+			Updates(map[string]any{
+				"status":              BytePlusAssetGroupStatusCreating,
+				"error_message":       "",
+				"upstream_group_id":   "",
+				"upstream_request_id": "",
+				"lease_updated_time":  now,
+				"updated_time":        now,
+			})
+		if recovery.Error != nil {
+			return nil, false, recovery.Error
+		}
+		owner = recovery.RowsAffected == 1
+		stored, err = GetBytePlusAssetBindingGroup(userID, channelID, bindingScope)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	return stored, owner, nil
 }
 
 func GetBytePlusAssetBindingGroup(userID int, channelID int, bindingScope string) (*BytePlusAssetBindingGroup, error) {
@@ -86,6 +110,10 @@ func GetBytePlusAssetBindingGroup(userID int, channelID int, bindingScope string
 }
 
 func ActivateBytePlusAssetBindingGroup(groupID int64, leaseUpdatedTime int64, upstreamGroupID string, upstreamRequestID string, now int64) (bool, error) {
+	upstreamGroupID = strings.TrimSpace(upstreamGroupID)
+	if upstreamGroupID == "" {
+		return false, ErrBytePlusAssetBindingGroupUpstreamIDRequired
+	}
 	result := DB.Model(&BytePlusAssetBindingGroup{}).
 		Where("id = ? AND status = ? AND lease_updated_time = ?", groupID, BytePlusAssetGroupStatusCreating, leaseUpdatedTime).
 		Updates(map[string]any{

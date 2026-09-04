@@ -159,12 +159,16 @@ func createBytePlusAssetWithGroupRecovery(ctx context.Context, userID int, chann
 		if !isBytePlusGroupNotFound(err) {
 			return group, "", requestID, err
 		}
+		now, timestampErr := bytePlusAssetDBTimestamp(ctx)
+		if timestampErr != nil {
+			return group, "", requestID, timestampErr
+		}
 		if _, invalidateErr := model.InvalidateActiveBytePlusAssetBindingGroup(
 			group.Id,
 			group.UpstreamGroupId,
 			bytePlusAPIErrorRequestID(err),
 			"upstream asset group not found",
-			bytePlusAssetNow(),
+			now,
 		); invalidateErr != nil {
 			return group, "", requestID, invalidateErr
 		}
@@ -180,8 +184,9 @@ func createBytePlusAssetWithGroupRecovery(ctx context.Context, userID int, chann
 }
 
 var (
-	bytePlusAssetNow      = common.GetTimestamp
-	bytePlusAssetPublicID = func() (string, error) {
+	bytePlusAssetNow         = common.GetTimestamp
+	bytePlusAssetDBTimestamp = model.GetDBTimestampWithContext
+	bytePlusAssetPublicID    = func() (string, error) {
 		random, err := common.GenerateRandomCharsKey(bytePlusAssetPublicIDRandomLen)
 		if err != nil {
 			return "", err
@@ -380,7 +385,10 @@ func DeleteBytePlusAsset(ctx context.Context, userID int, publicID string) *type
 }
 
 func ensureBytePlusAssetBindingGroup(ctx context.Context, userID int, channel *model.Channel, creds BytePlusCredentials, client bytePlusAssetAPI, bindingScope string) (*model.BytePlusAssetBindingGroup, error) {
-	now := bytePlusAssetNow()
+	now, err := bytePlusAssetDBTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
 	group, owner, err := model.ClaimBytePlusAssetBindingGroup(userID, channel.Id, bindingScope, now, now-bytePlusAssetGroupLeaseStaleSecs)
 	if err != nil {
 		return nil, err
@@ -401,10 +409,18 @@ func ensureBytePlusAssetBindingGroup(ctx context.Context, userID int, channel *m
 
 	upstreamGroupID, requestID, err := client.CreateAssetGroup(ctx, creds, opaqueBytePlusAssetGroupName())
 	if err != nil {
-		_, _ = model.FailBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, requestID, "upstream asset group creation failed", bytePlusAssetNow())
+		failedAt, timestampErr := bytePlusAssetDBTimestamp(ctx)
+		if timestampErr != nil {
+			return nil, timestampErr
+		}
+		_, _ = model.FailBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, requestID, "upstream asset group creation failed", failedAt)
 		return nil, err
 	}
-	updated, err := model.ActivateBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, upstreamGroupID, requestID, bytePlusAssetNow())
+	activatedAt, err := bytePlusAssetDBTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := model.ActivateBytePlusAssetBindingGroup(group.Id, group.LeaseUpdatedTime, upstreamGroupID, requestID, activatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +430,7 @@ func ensureBytePlusAssetBindingGroup(ctx context.Context, userID int, channel *m
 	group.UpstreamGroupId = upstreamGroupID
 	group.UpstreamRequestId = requestID
 	group.Status = model.BytePlusAssetGroupStatusActive
-	group.UpdatedTime = bytePlusAssetNow()
+	group.UpdatedTime = activatedAt
 	return group, nil
 }
 

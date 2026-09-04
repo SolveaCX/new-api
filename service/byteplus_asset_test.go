@@ -674,6 +674,245 @@ func TestBytePlusAssetBindingMaterializerReturnsInitializingForFreshScopedGroupC
 	}
 }
 
+func TestBytePlusAssetBindingMaterializerUsesDBTimeDespiteNodeClockSkew(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{groupID: "unexpected-group"}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+
+	const dbNow = int64(5000)
+	bytePlusAssetNow = func() int64 { return 9_000_000_000 }
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) { return dbNow, nil }
+	oldDelay := bytePlusAssetGroupRetryDelay
+	bytePlusAssetGroupRetryDelay = func(int) {}
+	defer func() { bytePlusAssetGroupRetryDelay = oldDelay }()
+
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+	if err := model.DB.Create(&model.BytePlusAssetBindingGroup{
+		UserId: 7, ChannelId: channel.Id, BindingScope: defaultBytePlusAssetGroupScope(t),
+		Status: model.BytePlusAssetGroupStatusCreating, LeaseUpdatedTime: dbNow - 100, CreatedTime: dbNow - 100, UpdatedTime: dbNow - 100,
+	}).Error; err != nil {
+		t.Fatalf("insert fresh scoped group: %v", err)
+	}
+
+	_, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_clock_skew", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/clock-skew.png",
+	})
+
+	if !errors.Is(err, ErrAssetBindingInitializing) {
+		t.Fatalf("error = %T %v, want ErrAssetBindingInitializing", err, err)
+	}
+	if fake.createGroupCalls != 0 || fake.createAssetCalls != 0 {
+		t.Fatalf("node clock skew caused takeover: createGroup=%d createAsset=%d", fake.createGroupCalls, fake.createAssetCalls)
+	}
+	stored, loadErr := model.GetBytePlusAssetBindingGroup(7, channel.Id, defaultBytePlusAssetGroupScope(t))
+	if loadErr != nil {
+		t.Fatalf("load scoped group: %v", loadErr)
+	}
+	if stored.LeaseUpdatedTime != dbNow-100 || stored.Status != model.BytePlusAssetGroupStatusCreating {
+		t.Fatalf("fresh DB-time lease was mutated: %+v", stored)
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerFailsClosedWhenDBTimeUnavailable(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{groupID: "unexpected-group"}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+
+	dbTimeErr := errors.New("database time unavailable")
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) { return 0, dbTimeErr }
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	_, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_db_time_error", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/db-time-error.png",
+	})
+
+	if !errors.Is(err, dbTimeErr) {
+		t.Fatalf("error = %T %v, want injected DB-time error", err, err)
+	}
+	if fake.createGroupCalls != 0 || fake.createAssetCalls != 0 {
+		t.Fatalf("DB-time failure reached upstream: createGroup=%d createAsset=%d", fake.createGroupCalls, fake.createAssetCalls)
+	}
+	var rows int64
+	if countErr := model.DB.Model(&model.BytePlusAssetBindingGroup{}).Count(&rows).Error; countErr != nil {
+		t.Fatalf("count scoped groups: %v", countErr)
+	}
+	if rows != 0 {
+		t.Fatalf("DB-time failure persisted %d scoped groups", rows)
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerUsesDBTimeForCreateAndActivateAuditFields(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID: "db-time-group", groupReqID: "req-db-time-group",
+		assetID: "db-time-asset", assetReqID: "req-db-time-asset",
+		status: BytePlusAssetStatus{UpstreamAssetID: "db-time-asset", Status: model.AssetStatusActive},
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	bytePlusAssetNow = func() int64 { return 9_000_000_000 }
+	dbTimes := []int64{5000, 5010}
+	dbTimeCall := 0
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) {
+		if dbTimeCall >= len(dbTimes) {
+			return 0, errors.New("unexpected DB-time call")
+		}
+		value := dbTimes[dbTimeCall]
+		dbTimeCall++
+		return value, nil
+	}
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	_, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_db_time_lifecycle", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/db-time-lifecycle.png",
+	})
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	stored, loadErr := model.GetBytePlusAssetBindingGroup(7, channel.Id, defaultBytePlusAssetGroupScope(t))
+	if loadErr != nil {
+		t.Fatalf("load scoped group: %v", loadErr)
+	}
+	if dbTimeCall != len(dbTimes) {
+		t.Fatalf("DB-time calls = %d, want %d", dbTimeCall, len(dbTimes))
+	}
+	if stored.CreatedTime != dbTimes[0] || stored.LeaseUpdatedTime != dbTimes[0] || stored.UpdatedTime != dbTimes[1] {
+		t.Fatalf("scoped group audit timestamps = created:%d lease:%d updated:%d, want %d/%d/%d", stored.CreatedTime, stored.LeaseUpdatedTime, stored.UpdatedTime, dbTimes[0], dbTimes[0], dbTimes[1])
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerUsesDBTimeForFailureAuditField(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	upstreamErr := errors.New("upstream create group failed")
+	fake := &fakeBytePlusAssetClient{createErr: upstreamErr}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	bytePlusAssetNow = func() int64 { return 9_000_000_000 }
+	dbTimes := []int64{6000, 6010}
+	dbTimeCall := 0
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) {
+		if dbTimeCall >= len(dbTimes) {
+			return 0, errors.New("unexpected DB-time call")
+		}
+		value := dbTimes[dbTimeCall]
+		dbTimeCall++
+		return value, nil
+	}
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	_, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_db_time_failure", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/db-time-failure.png",
+	})
+	if !errors.Is(err, upstreamErr) {
+		t.Fatalf("error = %T %v, want upstream error", err, err)
+	}
+	stored, loadErr := model.GetBytePlusAssetBindingGroup(7, channel.Id, defaultBytePlusAssetGroupScope(t))
+	if loadErr != nil {
+		t.Fatalf("load failed scoped group: %v", loadErr)
+	}
+	if dbTimeCall != len(dbTimes) {
+		t.Fatalf("DB-time calls = %d, want %d", dbTimeCall, len(dbTimes))
+	}
+	if stored.Status != model.BytePlusAssetGroupStatusFailed || stored.CreatedTime != dbTimes[0] || stored.LeaseUpdatedTime != dbTimes[0] || stored.UpdatedTime != dbTimes[1] {
+		t.Fatalf("failed scoped group audit state = %+v, want DB times %v", stored, dbTimes)
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerUsesDBTimeForMissingGroupReplacementLifecycle(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID: "replacement-db-time-group", groupReqID: "req-replacement-db-time-group",
+		assetID: "replacement-db-time-asset", assetReqID: "req-replacement-db-time-asset",
+		status: BytePlusAssetStatus{UpstreamAssetID: "replacement-db-time-asset", Status: model.AssetStatusActive},
+		createAssetErrs: []error{
+			&BytePlusAPIError{StatusCode: http.StatusNotFound, RequestID: "req-stale-db-time-group", Code: "NotFound.group_id", Definitive: true},
+			nil,
+		},
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	bytePlusAssetNow = func() int64 { return 9_000_000_000 }
+	dbTimes := []int64{7000, 7010, 7020, 7030}
+	dbTimeCall := 0
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) {
+		if dbTimeCall >= len(dbTimes) {
+			return 0, errors.New("unexpected DB-time call")
+		}
+		value := dbTimes[dbTimeCall]
+		dbTimeCall++
+		return value, nil
+	}
+	insertActiveBytePlusBindingGroup(t, 7, 131, "stale-db-time-group")
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+
+	result, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_db_time_replacement", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/db-time-replacement.png",
+	})
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	if result.UpstreamGroupID != "replacement-db-time-group" {
+		t.Fatalf("result upstream group = %q", result.UpstreamGroupID)
+	}
+	stored, loadErr := model.GetBytePlusAssetBindingGroup(7, channel.Id, defaultBytePlusAssetGroupScope(t))
+	if loadErr != nil {
+		t.Fatalf("load replacement scoped group: %v", loadErr)
+	}
+	if dbTimeCall != len(dbTimes) {
+		t.Fatalf("DB-time calls = %d, want %d", dbTimeCall, len(dbTimes))
+	}
+	if stored.CreatedTime != 1900 || stored.LeaseUpdatedTime != dbTimes[2] || stored.UpdatedTime != dbTimes[3] {
+		t.Fatalf("replacement scoped group audit timestamps = created:%d lease:%d updated:%d, want 1900/%d/%d", stored.CreatedTime, stored.LeaseUpdatedTime, stored.UpdatedTime, dbTimes[2], dbTimes[3])
+	}
+}
+
+func TestBytePlusAssetBindingMaterializerRecoversActiveGroupWithBlankUpstreamID(t *testing.T) {
+	newBytePlusAssetServiceTestDB(t)
+	fake := &fakeBytePlusAssetClient{
+		groupID: "recovered-group", groupReqID: "req-recovered-group",
+		assetID: "recovered-asset", assetReqID: "req-recovered-asset",
+		status: BytePlusAssetStatus{UpstreamAssetID: "recovered-asset", Status: model.AssetStatusActive},
+	}
+	restore := installBytePlusAssetServiceTestDeps(t, fake)
+	defer restore()
+	channel := &model.Channel{Id: 131, Type: constant.ChannelTypeBytePlus, Key: structuredBytePlusKey(), Status: common.ChannelStatusEnabled}
+	if err := model.DB.Create(&model.BytePlusAssetBindingGroup{
+		UserId: 7, ChannelId: channel.Id, BindingScope: defaultBytePlusAssetGroupScope(t), UpstreamGroupId: " \t ",
+		Status: model.BytePlusAssetGroupStatusActive, LeaseUpdatedTime: 1900, CreatedTime: 1900, UpdatedTime: 1900,
+	}).Error; err != nil {
+		t.Fatalf("insert corrupt scoped group: %v", err)
+	}
+
+	result, err := (bytePlusAssetBindingMaterializer{}).CreateAsset(context.Background(), AssetMaterializeInput{
+		UserID: 7, Asset: model.Asset{PublicId: "ast_recover_empty_group", AssetType: "Image"}, Channel: channel,
+		SourceURL: "https://example.com/recover-empty-group.png",
+	})
+
+	if err != nil {
+		t.Fatalf("CreateAsset returned error: %v", err)
+	}
+	if result.UpstreamGroupID != "recovered-group" || result.UpstreamAssetID != "recovered-asset" {
+		t.Fatalf("result = %+v", result)
+	}
+	if fake.createGroupCalls != 1 || fake.createAssetCalls != 1 {
+		t.Fatalf("calls createGroup=%d createAsset=%d", fake.createGroupCalls, fake.createAssetCalls)
+	}
+	stored, loadErr := model.GetBytePlusAssetBindingGroup(7, channel.Id, defaultBytePlusAssetGroupScope(t))
+	if loadErr != nil {
+		t.Fatalf("load recovered group: %v", loadErr)
+	}
+	if stored.Status != model.BytePlusAssetGroupStatusActive || stored.UpstreamGroupId != "recovered-group" {
+		t.Fatalf("stored recovered group = %+v", stored)
+	}
+}
+
 func TestBytePlusAssetGroupBindingScopeIgnoresSecretAndAPIKeyRotation(t *testing.T) {
 	first, err := ParseBytePlusCredentials(structuredBytePlusKeyWith("api-one", "ak-one", "secret-one", "project-one"))
 	if err != nil {
@@ -1382,13 +1621,16 @@ func assertAssetPublicErrorDoesNotLeak(t *testing.T, apiErr *types.NewAPIError, 
 func installBytePlusAssetServiceTestDeps(t *testing.T, fake *fakeBytePlusAssetClient) func() {
 	t.Helper()
 	oldNow := bytePlusAssetNow
+	oldDBTimestamp := bytePlusAssetDBTimestamp
 	oldID := bytePlusAssetPublicID
 	oldFactory := bytePlusAssetClientFactory
 	bytePlusAssetNow = func() int64 { return 2000 }
+	bytePlusAssetDBTimestamp = func(context.Context) (int64, error) { return 2000, nil }
 	bytePlusAssetPublicID = func() (string, error) { return "ast_fixed", nil }
 	bytePlusAssetClientFactory = func(channel *model.Channel) (bytePlusAssetAPI, error) { return fake, nil }
 	return func() {
 		bytePlusAssetNow = oldNow
+		bytePlusAssetDBTimestamp = oldDBTimestamp
 		bytePlusAssetPublicID = oldID
 		bytePlusAssetClientFactory = oldFactory
 	}
