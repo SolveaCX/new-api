@@ -10,7 +10,7 @@ func TestBytePlusLegacyAndBindingGroupsUseSeparateTables(t *testing.T) {
 	newAssetTestDB(t, &BytePlusAssetGroup{}, &BytePlusAssetBindingGroup{})
 
 	require.True(t, DB.Migrator().HasTable("byte_plus_asset_groups"))
-	require.True(t, DB.Migrator().HasTable("byteplus_asset_binding_groups"))
+	require.True(t, DB.Migrator().HasTable("byte_plus_asset_binding_groups"))
 }
 
 func TestBytePlusAssetBindingGroupScopesAreIndependent(t *testing.T) {
