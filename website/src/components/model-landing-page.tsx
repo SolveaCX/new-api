@@ -4052,7 +4052,7 @@ function buildFlatkeyPriceRows(
   // generation models stay on their per-image contract below, even when the
   // upstream payload also exposes token conversion fields.
   if (config.generator?.kind !== "image" && (isTokenBasedModel(model) || defaultDisplayPrice?.unit === "/ 1M tokens")) {
-    const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice.from ? "from " : "");
+    const tokenRows = buildLiveTokenPriceRows(model, groupRatio, note, t, defaultDisplayPrice?.from ? "from " : "");
     if (tokenRows.rows.length > 0) return tokenRows;
   }
 
