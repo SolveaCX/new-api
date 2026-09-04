@@ -27,7 +27,7 @@ Each new group row is uniquely identified by:
 
 The video API key and SecretAccessKey are deliberately excluded. Rotating either secret does not change upstream group ownership. AccessKey ID or ProjectName changes do create a distinct group.
 
-This design is preferred over widening the existing table because it is safe during a multi-node Cloud Run rollout and rollback: old revisions continue using the old table, new revisions use the new table, and neither version can query or mutate the other's group rows. The only deployment dependency is that the master migration creates the new table before router traffic reaches the new code.
+This design is preferred over widening the existing table because it isolates the generalized reusable-asset materialization path during a multi-node Cloud Run rollout and rollback. Old revisions use the legacy table for their materialization behavior. New revisions use the new table only for generalized materialization, while their legacy public BytePlus asset API continues to read and write `byte_plus_asset_groups`. The old and new generalized-materialization paths therefore do not share group rows, but new revisions are not globally barred from the legacy table. The only deployment dependency is that the master migration creates the new table before router traffic reaches the new code.
 
 ## Data model and concurrency
 
