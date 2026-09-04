@@ -41,6 +41,18 @@ func TestAssetMaterializeErrorClassDefaultsInternal(t *testing.T) {
 	require.Equal(t, AssetMaterializeErrorInternal, AssetMaterializeErrorClass(errors.New("local upload failed")))
 }
 
+func TestAssetMaterializeErrorClassMapsBytePlusBadRequestToDefinitive(t *testing.T) {
+	err := &BytePlusAPIError{
+		StatusCode: http.StatusBadRequest,
+		RequestID:  "req-invalid",
+		Code:       "InvalidAsset",
+		Definitive: true,
+	}
+
+	require.Equal(t, AssetMaterializeErrorDefinitive, AssetMaterializeErrorClass(err))
+	require.False(t, IsRetryableAssetMaterializeError(err))
+}
+
 func TestAssetMaterializeRetryAfterIgnoresNonPositiveAndExpiredValues(t *testing.T) {
 	now := time.Date(2026, 8, 8, 1, 0, 0, 0, time.UTC)
 

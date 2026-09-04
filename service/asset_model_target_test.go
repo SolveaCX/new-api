@@ -21,7 +21,7 @@ func TestAssetModelTargetCandidatesExpandsTechMobiCredentialsAndSortsDeterminist
 
 	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
 		ID: 106, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
-		Priority: 80, Weight: 20, Key: "byteplus-key",
+		Priority: 80, Weight: 20, Key: structuredBytePlusKey(),
 	})
 	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
 		ID: 120, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
@@ -39,10 +39,10 @@ func TestAssetModelTargetCandidatesExpandsTechMobiCredentialsAndSortsDeterminist
 	require.NoError(t, err)
 	require.Len(t, candidates, 3)
 	require.Equal(t, []int{120, 120, 106}, []int{candidates[0].ChannelID, candidates[1].ChannelID, candidates[2].ChannelID})
-	require.Equal(t, []int{0, 1, -1}, []int{candidates[0].CredentialIndex, candidates[1].CredentialIndex, candidates[2].CredentialIndex})
+	require.Equal(t, []int{0, 1, 0}, []int{candidates[0].CredentialIndex, candidates[1].CredentialIndex, candidates[2].CredentialIndex})
 	require.Equal(t, "doubao/seedance-pro", candidates[0].MappedModel)
 	require.NotEqual(t, candidates[0].BindingScope, candidates[1].BindingScope)
-	require.Empty(t, candidates[2].BindingScope)
+	require.True(t, strings.HasPrefix(candidates[2].BindingScope, bytePlusBindingScopePrefix))
 }
 
 func TestAssetModelTargetCandidatesChecksLowerPriorityTiersAfterIneligibleChannels(t *testing.T) {
@@ -350,6 +350,42 @@ func TestResolveAssetModelTargetOptionsReloadsStoredCredentialIndex(t *testing.T
 	require.Equal(t, "doubao/seedance-pro", options.Model)
 	require.Equal(t, "techmobi-key-b", options.APIKey)
 	require.Equal(t, 1, index)
+}
+
+func TestNativeBytePlusTargetCandidatesExpandEnabledCredentialsAndResolveIndex(t *testing.T) {
+	keyA := structuredBytePlusKeyWith("video-a", "access-a", "secret-a", "project-a")
+	keyB := structuredBytePlusKeyWith("video-b", "access-b", "secret-b", "project-b")
+	channel := &model.Channel{
+		Id:     121,
+		Type:   constant.ChannelTypeBytePlus,
+		Key:    "[" + keyA + "," + keyB + "]",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:         true,
+			MultiKeySize:       2,
+			MultiKeyStatusList: map[int]int{0: common.ChannelStatusManuallyDisabled},
+		},
+	}
+
+	candidates := assetModelCandidatesForChannel(channel, "seedance-2.0-fast")
+	require.Len(t, candidates, 1)
+	require.Equal(t, 1, candidates[0].CredentialIndex)
+	require.True(t, strings.HasPrefix(candidates[0].BindingScope, bytePlusBindingScopePrefix))
+
+	target := model.AssetModelCoverageTarget{
+		ChannelId:       channel.Id,
+		MappedModel:     "seedance-2.0-fast",
+		BindingScope:    candidates[0].BindingScope,
+		CredentialIndex: candidates[0].CredentialIndex,
+	}
+	options, index, err := ResolveAssetModelTargetOptions(target, channel)
+	require.NoError(t, err)
+	require.Equal(t, keyB, options.APIKey)
+	require.Equal(t, 1, index)
+
+	channel.ChannelInfo.MultiKeyStatusList[1] = common.ChannelStatusManuallyDisabled
+	_, _, err = ResolveAssetModelTargetOptions(target, channel)
+	require.ErrorIs(t, err, ErrAssetBindingUnavailable)
 }
 
 func TestResolveAssetModelTargetOptionsReloadsTokenSpaceCredentialIndex(t *testing.T) {

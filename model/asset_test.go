@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -148,6 +149,225 @@ func TestAssetBindingCreateDoesNothingOnDuplicate(t *testing.T) {
 	var count int64
 	require.NoError(t, DB.Model(&AssetBinding{}).Where("asset_id = ? AND channel_id = ?", asset.Id, 131).Count(&count).Error)
 	require.EqualValues(t, 1, count)
+}
+
+func TestAdoptActiveAssetBindingForScopeMovesMatchingLegacyBinding(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_adopt_legacy")
+	legacy := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		BindingScope:    "",
+		UpstreamGroupId: "legacy-group",
+		UpstreamAssetId: "legacy-asset",
+		Status:          AssetStatusActive,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	adopted, created, err := AdoptActiveAssetBindingForScope(
+		asset.Id,
+		131,
+		legacy.Id,
+		"legacy-asset",
+		"byteplus:v1:new-scope",
+		200,
+	)
+
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotNil(t, adopted)
+	require.Equal(t, "byteplus:v1:new-scope", adopted.BindingScope)
+	require.Equal(t, "legacy-group", adopted.UpstreamGroupId)
+	require.Equal(t, "legacy-asset", adopted.UpstreamAssetId)
+	require.Equal(t, AssetStatusActive, adopted.Status)
+	require.NotEqual(t, legacy.Id, adopted.Id)
+	_, err = GetAssetBindingForScope(asset.Id, 131, "")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+}
+
+func TestAdoptActiveAssetBindingForScopePromotesSafeExistingTargetStates(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		status         string
+		leaseOwner     string
+		leaseExpiresAt int64
+	}{
+		{name: "pending", status: AssetBindingStatusPending},
+		{name: "failed", status: AssetStatusFailed},
+		{name: "expired lease", status: AssetBindingStatusLeased, leaseOwner: "stale-owner", leaseExpiresAt: 150},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			newAssetTestDB(t, &Asset{}, &AssetBinding{})
+			asset := insertAssetForAssetTest(t, "asset_binding_adopt_existing_"+strings.ReplaceAll(test.name, " ", "_"))
+			legacy := AssetBinding{
+				AssetId:         asset.Id,
+				ChannelId:       131,
+				BindingScope:    "",
+				UpstreamGroupId: "legacy-group",
+				UpstreamAssetId: "legacy-asset",
+				Status:          AssetStatusActive,
+				CreatedAt:       100,
+				UpdatedAt:       100,
+			}
+			require.NoError(t, DB.Create(&legacy).Error)
+			target := AssetBinding{
+				AssetId:        asset.Id,
+				ChannelId:      131,
+				BindingScope:   "byteplus:v1:new-scope",
+				Status:         test.status,
+				LeaseOwner:     test.leaseOwner,
+				LeaseExpiresAt: test.leaseExpiresAt,
+				ErrorCode:      "old_error",
+				CreatedAt:      120,
+				UpdatedAt:      120,
+			}
+			require.NoError(t, DB.Create(&target).Error)
+
+			adopted, moved, err := AdoptActiveAssetBindingForScope(
+				asset.Id,
+				131,
+				legacy.Id,
+				legacy.UpstreamAssetId,
+				target.BindingScope,
+				200,
+			)
+
+			require.NoError(t, err)
+			require.True(t, moved)
+			require.NotNil(t, adopted)
+			require.Equal(t, target.Id, adopted.Id)
+			require.Equal(t, AssetStatusActive, adopted.Status)
+			require.Equal(t, legacy.UpstreamGroupId, adopted.UpstreamGroupId)
+			require.Equal(t, legacy.UpstreamAssetId, adopted.UpstreamAssetId)
+			require.Empty(t, adopted.LeaseOwner)
+			require.Zero(t, adopted.LeaseExpiresAt)
+			require.Empty(t, adopted.ErrorCode)
+			_, err = GetAssetBindingForScope(asset.Id, 131, "")
+			require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+		})
+	}
+}
+
+func TestAdoptActiveAssetBindingForScopeRejectsLiveTargetWork(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		status         string
+		upstreamID     string
+		leaseExpiresAt int64
+	}{
+		{name: "live lease", status: AssetBindingStatusLeased, leaseExpiresAt: 250},
+		{name: "upstream processing", status: AssetStatusProcessing, upstreamID: "inflight-asset"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			newAssetTestDB(t, &Asset{}, &AssetBinding{})
+			asset := insertAssetForAssetTest(t, "asset_binding_adopt_live_"+strings.ReplaceAll(test.name, " ", "_"))
+			legacy := AssetBinding{
+				AssetId:         asset.Id,
+				ChannelId:       131,
+				BindingScope:    "",
+				UpstreamAssetId: "legacy-asset",
+				Status:          AssetStatusActive,
+				CreatedAt:       100,
+				UpdatedAt:       100,
+			}
+			require.NoError(t, DB.Create(&legacy).Error)
+			target := AssetBinding{
+				AssetId:         asset.Id,
+				ChannelId:       131,
+				BindingScope:    "byteplus:v1:new-scope",
+				Status:          test.status,
+				UpstreamAssetId: test.upstreamID,
+				LeaseOwner:      "current-owner",
+				LeaseExpiresAt:  test.leaseExpiresAt,
+				CreatedAt:       120,
+				UpdatedAt:       120,
+			}
+			require.NoError(t, DB.Create(&target).Error)
+
+			adopted, moved, err := AdoptActiveAssetBindingForScope(asset.Id, 131, legacy.Id, legacy.UpstreamAssetId, target.BindingScope, 200)
+
+			require.ErrorIs(t, err, ErrAssetBindingAdoptionInProgress)
+			require.False(t, moved)
+			require.Nil(t, adopted)
+			stored, loadErr := GetAssetBindingForScope(asset.Id, 131, target.BindingScope)
+			require.NoError(t, loadErr)
+			require.Equal(t, target.Status, stored.Status)
+			require.Equal(t, target.UpstreamAssetId, stored.UpstreamAssetId)
+			legacyStored, loadErr := GetAssetBindingForScope(asset.Id, 131, "")
+			require.NoError(t, loadErr)
+			require.Equal(t, legacy.Id, legacyStored.Id)
+		})
+	}
+}
+
+func TestAdoptActiveAssetBindingForScopeKeepsDifferentConcurrentActiveWinnerAndLegacy(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_adopt_active_target")
+	legacy := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		BindingScope:    "",
+		UpstreamAssetId: "legacy-asset",
+		Status:          AssetStatusActive,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+	target := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		BindingScope:    "byteplus:v1:new-scope",
+		UpstreamAssetId: "current-asset",
+		Status:          AssetStatusActive,
+		CreatedAt:       120,
+		UpdatedAt:       120,
+	}
+	require.NoError(t, DB.Create(&target).Error)
+
+	adopted, moved, err := AdoptActiveAssetBindingForScope(asset.Id, 131, legacy.Id, legacy.UpstreamAssetId, target.BindingScope, 200)
+
+	require.NoError(t, err)
+	require.False(t, moved)
+	require.NotNil(t, adopted)
+	require.Equal(t, target.Id, adopted.Id)
+	require.Equal(t, target.UpstreamAssetId, adopted.UpstreamAssetId)
+	storedLegacy, err := GetAssetBindingForScope(asset.Id, 131, "")
+	require.NoError(t, err)
+	require.Equal(t, legacy.Id, storedLegacy.Id)
+	require.Equal(t, legacy.UpstreamAssetId, storedLegacy.UpstreamAssetId)
+}
+
+func TestAdoptActiveAssetBindingForScopeRejectsStaleOrMismatchedSource(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_adopt_stale")
+	legacy := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       131,
+		BindingScope:    "",
+		UpstreamAssetId: "legacy-asset",
+		Status:          AssetStatusActive,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+
+	for _, test := range []struct {
+		name               string
+		sourceBindingID    int64
+		expectedUpstreamID string
+	}{
+		{name: "wrong binding id", sourceBindingID: legacy.Id + 1, expectedUpstreamID: legacy.UpstreamAssetId},
+		{name: "wrong upstream id", sourceBindingID: legacy.Id, expectedUpstreamID: "other-asset"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			adopted, created, err := AdoptActiveAssetBindingForScope(asset.Id, 131, test.sourceBindingID, test.expectedUpstreamID, "byteplus:v1:new-scope", 200)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.Nil(t, adopted)
+		})
+	}
 }
 
 func TestAssetBindingLeaseTakeover(t *testing.T) {

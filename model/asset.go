@@ -206,8 +206,9 @@ type ExpiredAssetUploadCleanupCandidate struct {
 }
 
 var (
-	errAssetActivationLost   = errors.New("asset activation lost")
-	errAssetCleanupFenceLost = errors.New("asset cleanup fence lost")
+	errAssetActivationLost            = errors.New("asset activation lost")
+	errAssetCleanupFenceLost          = errors.New("asset cleanup fence lost")
+	ErrAssetBindingAdoptionInProgress = errors.New("asset binding adoption target is in progress")
 )
 
 func CreateAsset(asset Asset) (*Asset, error) {
@@ -603,6 +604,96 @@ func GetAssetBindingForScope(assetID int64, channelID int, bindingScope string) 
 		return nil, err
 	}
 	return &binding, nil
+}
+
+func AdoptActiveAssetBindingForScope(assetID int64, channelID int, sourceBindingID int64, expectedUpstreamAssetID string, bindingScope string, now int64) (*AssetBinding, bool, error) {
+	var adopted *AssetBinding
+	moved := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var source AssetBinding
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND asset_id = ? AND channel_id = ? AND binding_scope = ? AND status = ? AND upstream_asset_id = ?",
+				sourceBindingID,
+				assetID,
+				channelID,
+				"",
+				AssetStatusActive,
+				expectedUpstreamAssetID,
+			).
+			First(&source).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		candidate := AssetBinding{
+			AssetId:         source.AssetId,
+			ChannelId:       source.ChannelId,
+			BindingScope:    bindingScope,
+			UpstreamGroupId: source.UpstreamGroupId,
+			UpstreamAssetId: source.UpstreamAssetId,
+			Status:          AssetStatusActive,
+			AttemptCount:    source.AttemptCount,
+			CreatedAt:       source.CreatedAt,
+			UpdatedAt:       now,
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate).Error; err != nil {
+			return err
+		}
+
+		var target AssetBinding
+		if err := tx.Where("asset_id = ? AND channel_id = ? AND binding_scope = ?", assetID, channelID, bindingScope).First(&target).Error; err != nil {
+			return err
+		}
+		if target.Status == AssetStatusProcessing || (target.Status == AssetBindingStatusLeased && target.LeaseExpiresAt > now) {
+			return ErrAssetBindingAdoptionInProgress
+		}
+		if target.Status != AssetStatusActive || strings.TrimSpace(target.UpstreamAssetId) == "" {
+			switch target.Status {
+			case AssetBindingStatusPending, AssetBindingStatusLeased, AssetStatusFailed, AssetStatusActive:
+			default:
+				return ErrAssetBindingAdoptionInProgress
+			}
+			update := tx.Model(&AssetBinding{}).
+				Where("id = ? AND status = ? AND lease_owner = ? AND lease_expires_at = ? AND upstream_asset_id = ?",
+					target.Id, target.Status, target.LeaseOwner, target.LeaseExpiresAt, target.UpstreamAssetId).
+				Updates(map[string]any{
+					"upstream_group_id": source.UpstreamGroupId,
+					"upstream_asset_id": source.UpstreamAssetId,
+					"status":            AssetStatusActive,
+					"error_code":        "",
+					"lease_owner":       "",
+					"lease_expires_at":  int64(0),
+					"updated_at":        now,
+				})
+			if update.Error != nil {
+				return update.Error
+			}
+			if update.RowsAffected != 1 {
+				return ErrAssetBindingAdoptionInProgress
+			}
+			if err := tx.First(&target, target.Id).Error; err != nil {
+				return err
+			}
+		}
+		adopted = &target
+		if target.Status != AssetStatusActive || target.UpstreamAssetId != source.UpstreamAssetId {
+			return nil
+		}
+		deleted := tx.Where("id = ? AND asset_id = ? AND channel_id = ? AND binding_scope = ? AND status = ? AND upstream_asset_id = ?",
+			sourceBindingID, assetID, channelID, "", AssetStatusActive, expectedUpstreamAssetID).Delete(&AssetBinding{})
+		if deleted.Error != nil {
+			return deleted.Error
+		}
+		if deleted.RowsAffected != 1 {
+			return ErrAssetBindingAdoptionInProgress
+		}
+		moved = true
+		return nil
+	})
+	return adopted, moved, err
 }
 
 func GetAssetsWithBindingsByPublicIDsForUser(userID int, publicIDs []string) (map[string]AssetWithBinding, error) {
