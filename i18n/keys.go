@@ -119,6 +119,10 @@ const (
 	// self-heal) or verifying the email in profile settings.
 	MsgUserEmailVerificationRequiredForAPI = "user.email_verification_required_for_api"
 	MsgUserVerificationCodeError           = "user.verification_code_error"
+	MsgUserPhoneVerificationRequired       = "user.phone_verification_required"
+	MsgUserPhoneInvalid                    = "user.phone_invalid"
+	MsgUserPhoneAlreadyRegistered          = "user.phone_already_registered"
+	MsgUserSMSVerificationUnavailable      = "user.sms_verification_unavailable"
 	MsgUserInputInvalid                    = "user.input_invalid"
 	MsgUserNoPermissionSameLevel           = "user.no_permission_same_level"
 	MsgUserNoPermissionHigherLevel         = "user.no_permission_higher_level"

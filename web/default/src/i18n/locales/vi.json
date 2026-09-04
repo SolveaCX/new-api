@@ -6893,6 +6893,14 @@
     "Refresh challenge": "Làm mới thử thách",
     "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản.",
     "Voice": "Giọng nói",
+    "Country code": "Mã quốc gia",
+    "Enter phone number": "Nhập số điện thoại",
+    "Failed to send SMS verification code": "Không thể gửi mã xác minh SMS",
+    "Phone number": "Số điện thoại",
+    "Please enter a valid phone number": "Vui lòng nhập số điện thoại hợp lệ",
+    "Please enter the SMS verification code": "Vui lòng nhập mã xác minh SMS",
+    "SMS verification code": "Mã xác minh SMS",
+    "SMS verification code sent": "Đã gửi mã xác minh SMS",
     "Speed": "Tốc độ"
   }
 }

@@ -23,7 +23,7 @@
       "file": "ja.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 41
+      "untranslatedCount": 42
     },
     "pt": {
       "file": "pt.json",
@@ -35,7 +35,7 @@
       "file": "ru.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 41
+      "untranslatedCount": 42
     },
     "vi": {
       "file": "vi.json",

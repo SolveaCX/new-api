@@ -6893,6 +6893,14 @@
     "Refresh challenge": "問題を更新",
     "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。",
     "Voice": "音声",
+    "Country code": "国番号",
+    "Enter phone number": "電話番号を入力",
+    "Failed to send SMS verification code": "SMS認証コードの送信に失敗しました",
+    "Phone number": "電話番号",
+    "Please enter a valid phone number": "有効な電話番号を入力してください",
+    "Please enter the SMS verification code": "SMS認証コードを入力してください",
+    "SMS verification code": "SMS認証コード",
+    "SMS verification code sent": "SMS認証コードを送信しました",
     "Speed": "速度"
   }
 }

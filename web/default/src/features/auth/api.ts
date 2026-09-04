@@ -210,6 +210,17 @@ export async function getRegistrationEmailVerificationStatus(
   return res.data
 }
 
+// Send SMS verification code for password registration.
+export async function sendPhoneVerification(
+  phoneNumber: string,
+  turnstile?: string
+): Promise<ApiResponse> {
+  const res = await api.get('/api/phone-verification', {
+    params: { phone_number: phoneNumber, turnstile },
+  })
+  return res.data
+}
+
 // Bind email to OAuth account
 export async function bindEmail(
   email: string,

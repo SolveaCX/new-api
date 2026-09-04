@@ -6893,6 +6893,14 @@
     "Refresh challenge": "Actualizar desafío",
     "Complete the graphical verification before creating your account.": "Completa la verificación gráfica antes de crear tu cuenta.",
     "Voice": "Voz",
+    "Country code": "Código de país",
+    "Enter phone number": "Introduce tu número de teléfono",
+    "Failed to send SMS verification code": "No se pudo enviar el código de verificación por SMS",
+    "Phone number": "Número de teléfono",
+    "Please enter a valid phone number": "Introduce un número de teléfono válido",
+    "Please enter the SMS verification code": "Introduce el código de verificación por SMS",
+    "SMS verification code": "Código de verificación por SMS",
+    "SMS verification code sent": "Código de verificación por SMS enviado",
     "Speed": "Velocidad"
   }
 }

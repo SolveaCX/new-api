@@ -89,6 +89,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
+		apiRouter.GET("/phone-verification", middleware.SMSVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendPhoneVerification)
 		apiRouter.GET("/registration/captcha", middleware.CriticalRateLimit(), controller.GetRegistrationCaptcha)
 		apiRouter.POST("/registration/captcha/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.VerifyRegistrationCaptcha)
 		apiRouter.POST("/registration/email-verification/exchange", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ExchangeRegistrationEmailVerification)

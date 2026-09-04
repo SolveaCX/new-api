@@ -6893,6 +6893,14 @@
     "Refresh challenge": "Обновить задание",
     "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта.",
     "Voice": "Голос",
+    "Country code": "Код страны",
+    "Enter phone number": "Введите номер телефона",
+    "Failed to send SMS verification code": "Не удалось отправить код подтверждения по SMS",
+    "Phone number": "Номер телефона",
+    "Please enter a valid phone number": "Введите действительный номер телефона",
+    "Please enter the SMS verification code": "Введите код подтверждения из SMS",
+    "SMS verification code": "Код подтверждения по SMS",
+    "SMS verification code sent": "Код подтверждения по SMS отправлен",
     "Speed": "Скорость"
   }
 }

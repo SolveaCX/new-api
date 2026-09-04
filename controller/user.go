@@ -404,6 +404,25 @@ func Register(c *gin.Context) {
 		}
 		user.EmailVerifiedAt = common.GetTimestamp()
 	}
+	if common.SMSVerificationEnabled {
+		if err := normalizeRegistrationPhone(&user); err != nil {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
+			return
+		}
+		if model.IsPhoneAlreadyTaken(user.PhoneNumber) {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
+			return
+		}
+		if !verifyRegistrationPhone(&user) {
+			if strings.TrimSpace(user.PhoneVerificationCode) == "" {
+				common.ApiErrorI18n(c, i18n.MsgUserPhoneVerificationRequired)
+			} else {
+				common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			}
+			return
+		}
+		user.PhoneVerifiedAt = common.GetTimestamp()
+	}
 	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -417,15 +436,17 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
 	cleanUser := model.User{
-		Username:            user.Username,
-		Password:            user.Password,
-		DisplayName:         user.Username,
-		InviterId:           inviterId,
-		Role:                common.RoleCommonUser, // 明确设置角色为普通用户
-		Status:              common.UserStatusEnabled,
-		RegistrationCountry: registrationCountry,
-		AdsAttribution:      sanitizeAdsAttribution(user.AdsAttribution),
-		EmailVerifiedAt:     user.EmailVerifiedAt,
+		Username:                       user.Username,
+		Password:                       user.Password,
+		DisplayName:                    user.Username,
+		InviterId:                      inviterId,
+		Role:                           common.RoleCommonUser, // 明确设置角色为普通用户
+		Status:                         common.UserStatusEnabled,
+		RegistrationCountry:            registrationCountry,
+		AdsAttribution:                 sanitizeAdsAttribution(user.AdsAttribution),
+		EmailVerifiedAt:                user.EmailVerifiedAt,
+		PhoneNumber:                    user.PhoneNumber,
+		PhoneVerifiedAt:                user.PhoneVerifiedAt,
 		CustomerReferralInviteCode:     customerInvite.Code,
 		CustomerReferralSourcePlatform: customerInvite.Platform,
 	}
