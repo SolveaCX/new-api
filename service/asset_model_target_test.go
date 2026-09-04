@@ -388,6 +388,28 @@ func TestNativeBytePlusTargetCandidatesExpandEnabledCredentialsAndResolveIndex(t
 	require.ErrorIs(t, err, ErrAssetBindingUnavailable)
 }
 
+func TestNativeBytePlusTargetCandidatesKeepRotatedCredentialsWithSameScope(t *testing.T) {
+	newAssetReferenceDB(t)
+	firstKey := structuredBytePlusKeyWith("video-old", "shared-access", "secret-old", "shared-project")
+	secondKey := structuredBytePlusKeyWith("video-new", "shared-access", "secret-new", "shared-project")
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 121, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "[" + firstKey + "," + secondKey + "]",
+		Mapping:     `{"seedance-2.0":"seedance-2.0"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: true, MultiKeySize: 2},
+	})
+
+	candidates, err := AssetModelTargetCandidates(AssetModelScope{
+		ScopeKey: "scope-byteplus-rotated-credentials", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"},
+	}, "seedance-2.0")
+
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	require.Equal(t, 0, candidates[0].CredentialIndex)
+	require.Equal(t, 1, candidates[1].CredentialIndex)
+	require.Equal(t, candidates[0].BindingScope, candidates[1].BindingScope)
+}
+
 func TestResolveAssetModelTargetOptionsReloadsTokenSpaceCredentialIndex(t *testing.T) {
 	channel := &model.Channel{
 		Id:            160,

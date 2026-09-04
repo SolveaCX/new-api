@@ -353,6 +353,47 @@ func TestAssetModelRotationAdvancesCandidateAfterGenerationWindowAndKeepsOldBind
 	require.NotEqual(t, bindings[0].BindingScope, bindings[1].BindingScope)
 }
 
+func TestBytePlusAssetModelWorkerRotatesCredentialsWithinSharedScope(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	firstKey := structuredBytePlusKeyWith("video-old", "shared-access", "secret-old", "shared-project")
+	secondKey := structuredBytePlusKeyWith("video-new", "shared-access", "secret-new", "shared-project")
+	materializer := &keyAwareAssetModelMaterializer{
+		failKeys: map[string]error{firstKey: &AssetMaterializeFailure{Class: AssetMaterializeErrorDefinitive, HTTPStatus: http.StatusBadRequest}},
+	}
+	registerAssetMaterializerForTest(t, constant.ChannelTypeBytePlus, materializer)
+	asset := insertMaterializeAsset(t, "ast_byteplus_worker_rotate_shared_scope")
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 131, ChannelType: constant.ChannelTypeBytePlus, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "[" + firstKey + "," + secondKey + "]",
+		Mapping:     `{"seedance-2.0":"seedance-2.0"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: true, MultiKeySize: 2},
+	})
+	scope := AssetModelScope{ScopeKey: "scope-byteplus-worker-rotated-credentials", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 90)
+	require.NoError(t, err)
+	require.Equal(t, 0, target.CredentialIndex)
+	require.NoError(t, model.EnsureAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames, 90))
+
+	processed, err := runAssetModelReadinessBatchAt(t, "node-a", 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	rotated := requireAssetModelTarget(t, scope, "seedance-2.0")
+	require.Equal(t, 1, rotated.CredentialIndex)
+	require.Equal(t, target.BindingScope, rotated.BindingScope)
+
+	processed, err = runAssetModelReadinessBatchAt(t, "node-a", 101)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, "seedance-2.0")
+	require.Equal(t, model.AssetModelReadinessStatusActive, row.Status)
+	binding, err := model.GetAssetBindingForScope(asset.Id, rotated.ChannelId, rotated.BindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.Equal(t, "upstream-"+secondKey, binding.UpstreamAssetId)
+	require.Equal(t, int64(2), atomic.LoadInt64(&materializer.createCalls))
+}
+
 func TestAssetModelDefinitiveCandidatesFailOnlyAfterAllCandidatesExhausted(t *testing.T) {
 	newAssetModelWorkerTestDB(t)
 	installAssetServiceTestDeps(t)

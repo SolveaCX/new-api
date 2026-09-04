@@ -181,6 +181,7 @@ func assetModelCandidateKey(candidate AssetModelTargetCandidate) string {
 		strconv.Itoa(candidate.ChannelID),
 		candidate.MappedModel,
 		candidate.BindingScope,
+		strconv.Itoa(candidate.CredentialIndex),
 	}, "\x00")
 }
 

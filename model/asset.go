@@ -650,9 +650,12 @@ func AdoptActiveAssetBindingForScope(assetID int64, channelID int, sourceBinding
 		if target.Status == AssetStatusProcessing || (target.Status == AssetBindingStatusLeased && target.LeaseExpiresAt > now) {
 			return ErrAssetBindingAdoptionInProgress
 		}
-		if target.Status != AssetStatusActive || strings.TrimSpace(target.UpstreamAssetId) == "" {
+		if target.Status == AssetStatusActive && strings.TrimSpace(target.UpstreamAssetId) == "" {
+			return ErrAssetBindingAdoptionInProgress
+		}
+		if target.Status != AssetStatusActive {
 			switch target.Status {
-			case AssetBindingStatusPending, AssetBindingStatusLeased, AssetStatusFailed, AssetStatusActive:
+			case AssetBindingStatusPending, AssetBindingStatusLeased, AssetStatusFailed:
 			default:
 				return ErrAssetBindingAdoptionInProgress
 			}
