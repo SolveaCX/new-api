@@ -152,6 +152,71 @@ func TestBytePlusAssetGroupRejectsLatePreviousOwner(t *testing.T) {
 	}
 }
 
+func TestInvalidateBytePlusAssetGroupAllowsFailedGroupToBeReclaimed(t *testing.T) {
+	newBytePlusAssetTestDB(t)
+
+	group, owner, err := ClaimBytePlusAssetGroup(12, 131, 1000, 900)
+	if err != nil || !owner {
+		t.Fatalf("initial claim = %+v owner=%v err=%v", group, owner, err)
+	}
+	updated, err := ActivateBytePlusAssetGroup(group.Id, group.LeaseUpdatedTime, "old-group", "req-old", 1010)
+	if err != nil || !updated {
+		t.Fatalf("activate group updated=%v err=%v", updated, err)
+	}
+
+	updated, err = InvalidateActiveBytePlusAssetGroup(group.Id, "old-group", "req-not-found", "upstream asset group not found", 1020)
+	if err != nil || !updated {
+		t.Fatalf("invalidate group updated=%v err=%v", updated, err)
+	}
+	reclaimed, owner, err := ClaimBytePlusAssetGroup(12, 131, 1030, 900)
+	if err != nil || !owner {
+		t.Fatalf("reclaim group = %+v owner=%v err=%v", reclaimed, owner, err)
+	}
+	if reclaimed.Status != BytePlusAssetGroupStatusCreating || reclaimed.UpstreamGroupId != "" || reclaimed.UpstreamRequestId != "" || reclaimed.ErrorMessage != "" {
+		t.Fatalf("reclaimed group = %+v", reclaimed)
+	}
+}
+
+func TestInvalidateBytePlusAssetGroupRejectsStaleUpstreamID(t *testing.T) {
+	newBytePlusAssetTestDB(t)
+
+	group, owner, err := ClaimBytePlusAssetGroup(13, 131, 1000, 900)
+	if err != nil || !owner {
+		t.Fatalf("initial claim = %+v owner=%v err=%v", group, owner, err)
+	}
+	updated, err := ActivateBytePlusAssetGroup(group.Id, group.LeaseUpdatedTime, "old-group", "req-old", 1010)
+	if err != nil || !updated {
+		t.Fatalf("activate old group updated=%v err=%v", updated, err)
+	}
+	updated, err = InvalidateActiveBytePlusAssetGroup(group.Id, "old-group", "req-not-found", "upstream asset group not found", 1020)
+	if err != nil || !updated {
+		t.Fatalf("invalidate old group updated=%v err=%v", updated, err)
+	}
+	replacement, owner, err := ClaimBytePlusAssetGroup(13, 131, 1030, 900)
+	if err != nil || !owner {
+		t.Fatalf("claim replacement = %+v owner=%v err=%v", replacement, owner, err)
+	}
+	updated, err = ActivateBytePlusAssetGroup(replacement.Id, replacement.LeaseUpdatedTime, "replacement-group", "req-replacement", 1040)
+	if err != nil || !updated {
+		t.Fatalf("activate replacement updated=%v err=%v", updated, err)
+	}
+
+	updated, err = InvalidateActiveBytePlusAssetGroup(group.Id, "old-group", "req-late", "late observer", 1050)
+	if err != nil {
+		t.Fatalf("stale invalidate error: %v", err)
+	}
+	if updated {
+		t.Fatal("stale observer invalidated the replacement group")
+	}
+	stored, _, err := ClaimBytePlusAssetGroup(13, 131, 1060, 900)
+	if err != nil {
+		t.Fatalf("reload replacement: %v", err)
+	}
+	if stored.Status != BytePlusAssetGroupStatusActive || stored.UpstreamGroupId != "replacement-group" || stored.UpstreamRequestId != "req-replacement" {
+		t.Fatalf("replacement group changed: %+v", stored)
+	}
+}
+
 func TestBytePlusAssetOwnershipLookupAndStateUpdates(t *testing.T) {
 	newBytePlusAssetTestDB(t)
 

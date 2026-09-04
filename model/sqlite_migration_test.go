@@ -54,6 +54,8 @@ func TestSQLiteMigrateDBCanRunTwiceOnSameDatabase(t *testing.T) {
 	require.True(t, db.Migrator().HasIndex(&GoogleOAuthClaim{}, "idx_google_oauth_claims_normalized_email"))
 	require.True(t, db.Migrator().HasIndex(&GoogleOAuthClaim{}, "idx_google_oauth_claims_google_id"))
 	require.True(t, db.Migrator().HasIndex(&GoogleOAuthClaim{}, "idx_google_oauth_claims_user_id"))
+	require.True(t, db.Migrator().HasTable(&BytePlusAssetGroup{}))
+	require.True(t, db.Migrator().HasTable(&BytePlusAssetBindingGroup{}))
 
 	require.True(t, db.Migrator().HasIndex(&SubscriptionTermSegment{}, "idx_subscription_term_order_segment"))
 	assertSQLiteSubscriptionTermConstraints(t, db)

@@ -136,6 +136,18 @@ func FailBytePlusAssetGroup(groupID int64, leaseUpdatedTime int64, upstreamReque
 	return result.RowsAffected == 1, result.Error
 }
 
+func InvalidateActiveBytePlusAssetGroup(groupID int64, expectedUpstreamGroupID string, upstreamRequestID string, errorMessage string, now int64) (bool, error) {
+	result := DB.Model(&BytePlusAssetGroup{}).
+		Where("id = ? AND status = ? AND upstream_group_id = ?", groupID, BytePlusAssetGroupStatusActive, expectedUpstreamGroupID).
+		Updates(map[string]any{
+			"upstream_request_id": upstreamRequestID,
+			"status":              BytePlusAssetGroupStatusFailed,
+			"error_message":       errorMessage,
+			"updated_time":        now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
 func CreateBytePlusAsset(asset BytePlusAsset) (*BytePlusAsset, error) {
 	if err := DB.Create(&asset).Error; err != nil {
 		return nil, err
