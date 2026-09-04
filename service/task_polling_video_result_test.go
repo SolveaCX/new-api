@@ -115,6 +115,72 @@ func TestUpdateVideoSingleTaskGrokPollingPassesOriginChannelID(t *testing.T) {
 	require.Empty(t, adaptor.fetchKey, "Grok polling must not use the stored channel key as OAuth")
 }
 
+func TestUpdateVideoSingleTaskChannel106ResultURLPolicy(t *testing.T) {
+	tests := []struct {
+		name  string
+		group string
+		want  func(taskID, upstreamURL string) string
+	}{
+		{
+			name:  "plg persists proxy URL",
+			group: "plg",
+			want: func(taskID, _ string) string {
+				return taskcommon.BuildProxyURL(taskID)
+			},
+		},
+		{
+			name:  "non-plg persists upstream URL",
+			group: "default",
+			want: func(_, upstreamURL string) string {
+				return upstreamURL
+			},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncate(t)
+			ctx := context.Background()
+			taskID := "task_channel_106_" + tt.group
+			upstreamTaskID := "upstream-channel-106-" + tt.group
+			upstreamURL := "https://upstream.example/video-" + tt.group + ".mp4?token=secret"
+			task := &model.Task{
+				TaskID:    taskID,
+				UserId:    960 + i,
+				ChannelId: 106,
+				Group:     tt.group,
+				Quota:     0,
+				Action:    constant.TaskActionGenerate,
+				Status:    model.TaskStatusInProgress,
+				Progress:  "30%",
+				Data:      json.RawMessage(`{"status":"processing"}`),
+				PrivateData: model.TaskPrivateData{
+					UpstreamTaskID: upstreamTaskID,
+				},
+			}
+			require.NoError(t, model.DB.Create(task).Error)
+			ch := &model.Channel{Id: 106, Type: constant.ChannelTypeDoubaoVideo, Key: "sk-channel-106", Status: common.ChannelStatusEnabled}
+			adaptor := &fakeVideoPollingAdaptor{
+				responseBody: []byte(`{"status":"succeeded","content":{"video_url":"` + upstreamURL + `"}}`),
+				taskResult: &relaycommon.TaskInfo{
+					TaskID:   upstreamTaskID,
+					Status:   model.TaskStatusSuccess,
+					Url:      upstreamURL,
+					Progress: "100%",
+				},
+			}
+
+			require.NoError(t, updateVideoSingleTask(ctx, adaptor, ch, upstreamTaskID, map[string]*model.Task{upstreamTaskID: task}))
+
+			var stored model.Task
+			require.NoError(t, model.DB.Where("task_id = ?", taskID).First(&stored).Error)
+			require.EqualValues(t, model.TaskStatusSuccess, stored.Status)
+			require.Equal(t, tt.want(taskID, upstreamURL), stored.PrivateData.ResultURL)
+			require.Contains(t, string(stored.Data), upstreamURL)
+		})
+	}
+}
+
 func TestUpdateVideoSingleTaskGrokVideoResultPersistsPrivateURLAndPublicProxy(t *testing.T) {
 	truncate(t)
 	ctx := context.Background()

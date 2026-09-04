@@ -7,8 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 )
 
 func TestTaskSubmitStatusErrorScrubsBytePlusNonOKBody(t *testing.T) {
@@ -64,6 +67,79 @@ func TestTaskSubmitStatusErrorPreservesDoubaoBody(t *testing.T) {
 	}
 	if !strings.Contains(taskErr.Message, "doubao upstream details") {
 		t.Fatalf("doubao submit error was unexpectedly scrubbed: %q", taskErr.Message)
+	}
+}
+
+func TestTaskSubmitStatusErrorChannel106PlgUsesGenericMessage(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"Doubao Ark secret upstream response"}`)),
+	}
+
+	taskErr := taskSubmitStatusErrorWithPolicy(constant.TaskPlatform("54"), resp, true)
+	if taskErr == nil {
+		t.Fatal("expected task submit status error")
+	}
+	if taskErr.Message != "task failed at upstream provider" {
+		t.Fatalf("message = %q, want generic message", taskErr.Message)
+	}
+	if taskErr.Error == nil || !strings.Contains(taskErr.Error.Error(), "Doubao Ark secret upstream response") {
+		t.Fatalf("internal error lost upstream evidence: %v", taskErr.Error)
+	}
+	encoded, err := common.Marshal(taskErr)
+	if err != nil {
+		t.Fatalf("marshal task error: %v", err)
+	}
+	for _, marker := range []string{"Doubao", "Ark", "secret upstream response"} {
+		if strings.Contains(string(encoded), marker) {
+			t.Fatalf("submit response leaked %q in %s", marker, encoded)
+		}
+	}
+}
+
+func TestRelayInfoUsesProxyResultURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		info *relaycommon.RelayInfo
+		want bool
+	}{
+		{name: "nil info", info: nil, want: false},
+		{name: "nil channel meta", info: &relaycommon.RelayInfo{UsingGroup: "plg"}, want: false},
+		{name: "channel 106 plg", info: &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 106}, UsingGroup: "plg"}, want: true},
+		{name: "channel 106 other group", info: &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 106}, UsingGroup: "default"}, want: false},
+		{name: "other channel plg", info: &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 205}, UsingGroup: "plg"}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := relayInfoUsesProxyResultURL(tc.info); got != tc.want {
+				t.Fatalf("relayInfoUsesProxyResultURL() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeTaskErrorForRelayInfoKeepsInternalEvidence(t *testing.T) {
+	upstreamErr := errors.New("dial Doubao Ark secret host")
+	taskErr := service.TaskErrorWrapper(upstreamErr, "do_request_failed", http.StatusInternalServerError)
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 106},
+		UsingGroup:  "plg",
+	}
+
+	got := sanitizeTaskErrorForRelayInfo(info, taskErr)
+	if got.Message != "task failed at upstream provider" {
+		t.Fatalf("message = %q, want generic message", got.Message)
+	}
+	if got.Error != upstreamErr {
+		t.Fatalf("internal error = %v, want original", got.Error)
+	}
+	encoded, err := common.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal task error: %v", err)
+	}
+	for _, marker := range []string{"Doubao", "Ark", "secret host"} {
+		if strings.Contains(string(encoded), marker) {
+			t.Fatalf("submit response leaked %q in %s", marker, encoded)
+		}
 	}
 }
 

@@ -382,15 +382,16 @@ func ExecutePreparedTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo, pref
 	// 9. 发送请求
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
+		taskErr := sanitizeTaskErrorForRelayInfo(info, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError))
 		return &TaskSubmitResult{
 			Platform:            platform,
 			Quota:               preflight.Quota,
 			OutcomeMayBeUnknown: !channel.IsDefinitelyNotSent(err),
-		}, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
+		}, taskErr
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
 		statusCode := resp.StatusCode
-		taskErr := taskSubmitStatusError(platform, resp)
+		taskErr := taskSubmitStatusErrorWithPolicy(platform, resp, relayInfoUsesProxyResultURL(info))
 		if taskSubmitStatusMayBeUnknown(platform, statusCode) {
 			return &TaskSubmitResult{
 				Platform:            platform,
@@ -473,6 +474,10 @@ const (
 )
 
 func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) *dto.TaskError {
+	return taskSubmitStatusErrorWithPolicy(platform, resp, false)
+}
+
+func taskSubmitStatusErrorWithPolicy(platform constant.TaskPlatform, resp *http.Response, forceGeneric bool) *dto.TaskError {
 	statusCode := http.StatusInternalServerError
 	if resp != nil {
 		statusCode = resp.StatusCode
@@ -490,10 +495,26 @@ func taskSubmitStatusError(platform constant.TaskPlatform, resp *http.Response) 
 	if readErr != nil || strings.TrimSpace(message) == "" {
 		message = taskSubmitErrorFallbackMessage
 	}
+	if forceGeneric {
+		taskErr := service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
+		taskErr.Message = "task failed at upstream provider"
+		return taskErr
+	}
 	if channelType, err := strconv.Atoi(string(platform)); err == nil && taskcommon.ShouldWhitelabelChannelType(channelType) {
 		message = "task failed at upstream provider"
 	}
 	return service.TaskErrorWrapper(fmt.Errorf("%s", message), "fail_to_fetch_task", statusCode)
+}
+
+func relayInfoUsesProxyResultURL(info *relaycommon.RelayInfo) bool {
+	return info != nil && info.ChannelMeta != nil && taskcommon.ShouldProxyResultURL(info.ChannelId, info.UsingGroup)
+}
+
+func sanitizeTaskErrorForRelayInfo(info *relaycommon.RelayInfo, taskErr *dto.TaskError) *dto.TaskError {
+	if taskErr != nil && relayInfoUsesProxyResultURL(info) {
+		taskErr.Message = "task failed at upstream provider"
+	}
+	return taskErr
 }
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。
@@ -742,7 +763,7 @@ func generationTaskRespBody(task *model.Task) ([]byte, error) {
 		Usage:  task.PrivateData.UsageDTO(),
 	}
 	if task.Status == model.TaskStatusSuccess {
-		if url := task.GetResultURL(); strings.TrimSpace(url) != "" {
+		if url := taskcommon.PublicResultURL(task); strings.TrimSpace(url) != "" {
 			resp.Content = []generationTaskContent{{
 				Type: "video_url",
 				VideoURL: generationTaskVideoURL{
@@ -752,8 +773,12 @@ func generationTaskRespBody(task *model.Task) ([]byte, error) {
 		}
 	}
 	if task.Status == model.TaskStatusFailure {
+		message := taskcommon.ScrubBrandedText(task.FailReason)
+		if taskcommon.ShouldProxyResultURL(task.ChannelId, task.Group) && strings.TrimSpace(task.FailReason) != "" {
+			message = "task failed at upstream provider"
+		}
 		resp.Error = &dto.OpenAIVideoError{
-			Message: taskcommon.ScrubBrandedText(task.FailReason),
+			Message: message,
 		}
 	}
 	return common.Marshal(resp)
@@ -893,14 +918,14 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 	}
 }
 
-// TaskModel2Dto builds the customer-facing task DTO. For channels listed in
-// taskcommon.whitelabelChannels the upstream envelope (task.Data) and the
-// internal upstream_model_name are stripped so the response carries no
-// provider branding. Admin/internal views must call TaskModel2DtoAdmin
-// instead to preserve the raw payload for debugging.
+// TaskModel2Dto builds the customer-facing task DTO. Globally whitelabeled
+// platforms and group-routed proxy results strip the upstream envelope and
+// internal upstream_model_name. Admin/internal views must call
+// TaskModel2DtoAdmin instead to preserve the raw payload for debugging.
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 	d := taskModel2DtoFull(task)
-	if taskcommon.ShouldWhitelabelPlatform(task.Platform) {
+	groupProxy := taskcommon.ShouldProxyResultURL(task.ChannelId, task.Group)
+	if taskcommon.ShouldWhitelabelPlatform(task.Platform) || groupProxy {
 		d.Data = nil
 		props := task.Properties
 		props.UpstreamModelName = ""
@@ -908,8 +933,16 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		// Bypass GetResultURL's FailReason fallback — for non-success tasks
 		// it would otherwise expose the raw upstream error string. Only the
 		// proxy URL (set by polling on success) is safe to surface.
-		d.ResultURL = task.PrivateData.ResultURL
-		d.FailReason = taskcommon.ScrubBrandedText(task.FailReason)
+		if groupProxy {
+			d.ResultURL = taskcommon.PublicResultURL(task)
+		} else {
+			d.ResultURL = task.PrivateData.ResultURL
+		}
+		if groupProxy && strings.TrimSpace(task.FailReason) != "" {
+			d.FailReason = "task failed at upstream provider"
+		} else {
+			d.FailReason = taskcommon.ScrubBrandedText(task.FailReason)
+		}
 	}
 	return d
 }

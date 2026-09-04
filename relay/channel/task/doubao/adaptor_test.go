@@ -11,10 +11,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,6 +44,117 @@ func newRelayInfo() *relaycommon.RelayInfo {
 
 func ptrInt(i int) *int    { return &i }
 func ptrBool(b bool) *bool { return &b }
+
+func TestExtractUpstreamVideoURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "success payload", body: `{"status":"succeeded","content":{"video_url":"https://cdn.example/video.mp4"}}`, want: "https://cdn.example/video.mp4"},
+		{name: "missing content", body: `{"status":"processing"}`, want: ""},
+		{name: "malformed payload", body: `{`, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ExtractUpstreamVideoURL([]byte(tc.body)); got != tc.want {
+				t.Fatalf("ExtractUpstreamVideoURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConvertToOpenAIVideoSelectsPublicURLByChannelAndGroup(t *testing.T) {
+	originalServerAddress := system_setting.ServerAddress
+	t.Cleanup(func() { system_setting.ServerAddress = originalServerAddress })
+	system_setting.ServerAddress = "https://router.flatkey.ai"
+
+	for _, tc := range []struct {
+		name      string
+		channelID int
+		group     string
+		wantURL   string
+	}{
+		{name: "channel 106 plg uses proxy", channelID: 106, group: "plg", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
+		{name: "channel 106 other group uses upstream", channelID: 106, group: "default", wantURL: "https://cdn.volces.com/upstream.mp4"},
+		{name: "other Doubao channel uses upstream", channelID: 205, group: "plg", wantURL: "https://cdn.volces.com/upstream.mp4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := &model.Task{
+				TaskID:    "task_public",
+				ChannelId: tc.channelID,
+				Group:     tc.group,
+				Status:    model.TaskStatusSuccess,
+				Data:      []byte(`{"status":"succeeded","content":{"video_url":"https://cdn.volces.com/upstream.mp4"}}`),
+			}
+			raw, err := (&TaskAdaptor{}).ConvertToOpenAIVideo(task)
+			if err != nil {
+				t.Fatalf("ConvertToOpenAIVideo error: %v", err)
+			}
+			var got dto.OpenAIVideo
+			if err := common.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if got.Metadata["url"] != tc.wantURL {
+				t.Fatalf("metadata.url = %v, want %q", got.Metadata["url"], tc.wantURL)
+			}
+		})
+	}
+}
+
+func TestConvertToOpenAIVideoChannel106PlgScrubsFailure(t *testing.T) {
+	task := &model.Task{
+		TaskID:    "task_failed",
+		ChannelId: 106,
+		Group:     "plg",
+		Status:    model.TaskStatusFailure,
+		Data:      []byte(`{"status":"failed","error":{"code":"DoubaoArkInternalError","message":"Doubao Ark endpoint failed"}}`),
+	}
+	raw, err := (&TaskAdaptor{}).ConvertToOpenAIVideo(task)
+	if err != nil {
+		t.Fatalf("ConvertToOpenAIVideo error: %v", err)
+	}
+	var got dto.OpenAIVideo
+	if err := common.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if got.Error == nil || got.Error.Message != "task failed at upstream provider" {
+		t.Fatalf("failure error = %+v", got.Error)
+	}
+	if got.Error.Code != "upstream_error" {
+		t.Fatalf("failure code = %q, want neutral upstream_error", got.Error.Code)
+	}
+	if url, ok := got.Metadata["url"]; ok && url != "" {
+		t.Fatalf("failed task must not expose content URL, got %v", url)
+	}
+}
+
+func TestDoResponseChannel106PlgDoesNotExposeMalformedUpstreamBody(t *testing.T) {
+	c := newJSONCtx(`{}`)
+	info := newRelayInfo()
+	info.ChannelId = 106
+	info.UsingGroup = "plg"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`Doubao Ark secret response`)),
+	}
+
+	_, _, taskErr := (&TaskAdaptor{}).DoResponse(c, resp, info)
+	if taskErr == nil {
+		t.Fatal("expected malformed response error")
+	}
+	if taskErr.Error == nil || !strings.Contains(taskErr.Error.Error(), "Doubao Ark secret response") {
+		t.Fatalf("internal error lost upstream evidence: %v", taskErr.Error)
+	}
+	encoded, err := common.Marshal(taskErr)
+	if err != nil {
+		t.Fatalf("marshal task error: %v", err)
+	}
+	for _, marker := range []string{"Doubao", "Ark", "secret response"} {
+		if strings.Contains(string(encoded), marker) {
+			t.Fatalf("malformed response leaked %q in %s", marker, encoded)
+		}
+	}
+}
 
 // teaAdBody is the official seedance content[] body used across tests: text +
 // two reference images + a reference video + a reference audio, plus scalars
