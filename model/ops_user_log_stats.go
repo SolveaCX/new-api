@@ -174,19 +174,22 @@ func SyncOpsUserLogStats() error {
 			row.UpdatedAt = now
 			rows = append(rows, *row)
 		}
-		if err := LOG_DB.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"first_playground_at", "playground_count", "first_api_key_at",
-				"api_key_count", "last_request_at", "updated_at",
-			}),
-		}).Create(&rows).Error; err != nil {
-			return err
-		}
 		cursor = int64(logs[len(logs)-1].Id)
-		// Persist the cursor after every batch so a crash resumes from here.
-		if err := LOG_DB.Model(&OpsUserLogStatsMeta{}).Where("id = 1").
-			Updates(map[string]interface{}{"last_log_id": cursor, "updated_at": now}).Error; err != nil {
+		// Persist stats and cursor atomically. If either write fails, the next
+		// pass must replay the batch without double-counting it.
+		if err := LOG_DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "user_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"first_playground_at", "playground_count", "first_api_key_at",
+					"api_key_count", "last_request_at", "updated_at",
+				}),
+			}).Create(&rows).Error; err != nil {
+				return err
+			}
+			return tx.Model(&OpsUserLogStatsMeta{}).Where("id = 1").
+				Updates(map[string]interface{}{"last_log_id": cursor, "updated_at": now}).Error
+		}); err != nil {
 			return err
 		}
 		if len(logs) < opsUserLogStatsSyncBatch {

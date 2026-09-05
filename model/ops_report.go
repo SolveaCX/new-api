@@ -339,12 +339,6 @@ func getOpsUserLogStatsFromLogs(userIds []int) ([]*OpsUserLogStats, error) {
 // holds n+1 ascending UTC epoch boundaries — the real report-timezone midnights
 // for the n days — so buckets stay correct across DST transitions. day_ts
 // values are the per-day start epochs.
-//
-// Data now comes from quota_data (hourly per-user-per-model rollups, ~500
-// rows/day) instead of raw logs: a 30-day window covers nearly the whole logs
-// table, so the optimizer full-scans ~45M rows there (measured 100s+ on prod).
-// Trade-off (same as GetOpsAllKeyDailyUsage): quota_data counts all consumption
-// including playground, not only token_id>0 API-key calls.
 func GetOpsKeyDailyUsage(userIds []int, dayStarts []int64) ([]*OpsKeyDaily, error) {
 	if len(dayStarts) < 2 {
 		return nil, nil
@@ -357,12 +351,12 @@ func GetOpsKeyDailyUsage(userIds []int, dayStarts []int64) ([]*OpsKeyDaily, erro
 		sql := fmt.Sprintf(`
 			SELECT user_id,
 			       %s AS day_ts,
-			       COALESCE(SUM(count), 0) AS req_count,
+			       COUNT(*) AS req_count,
 			       COALESCE(SUM(quota), 0) AS quota
-			FROM quota_data
-			WHERE created_at >= ? AND user_id IN ?
-			GROUP BY user_id, %s`, dayExpr, dayExpr)
-		if err := DB.Raw(sql, startTs, chunk).Scan(&batch).Error; err != nil {
+			FROM logs%s
+			WHERE type = ? AND %s AND created_at >= ? AND user_id IN ?
+			GROUP BY user_id, %s`, dayExpr, logsForceIndexHint(), opsExternalAPIKeyLogPredicate, dayExpr)
+		if err := LOG_DB.Raw(sql, LogTypeConsume, startTs, chunk).Scan(&batch).Error; err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
