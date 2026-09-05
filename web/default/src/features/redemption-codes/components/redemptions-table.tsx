@@ -141,7 +141,11 @@ export function RedemptionsTable() {
     onPaginationChange,
     onGlobalFilterChange,
     onColumnFiltersChange,
-    manualPagination: !globalFilter,
+    // Both list and keyword-search endpoints paginate server-side. Keeping
+    // pagination manual while filtering prevents TanStack from paginating the
+    // already-paginated response a second time (which made filtered page 2+
+    // appear empty).
+    manualPagination: true,
     pageCount: Math.ceil((data?.total || 0) / pagination.pageSize),
   })
 
