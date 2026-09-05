@@ -210,6 +210,9 @@ func PrepareAssetModelReadiness(ctx context.Context, row model.AssetModelReadine
 	}
 	if target.Status != model.AssetModelTargetStatusActive {
 		if target.Status == model.AssetModelTargetStatusUnavailable {
+			if !assetModelReadinessHasCompleteTargetSnapshot(row) {
+				return scheduleAssetModelReadinessRetry(row, owner, nowUnix, AssetMaterializeErrorProcessing, 0)
+			}
 			return finishAssetModelReadinessFailed(row, owner, nowUnix, "target_unavailable")
 		}
 		return scheduleAssetModelReadinessRetry(row, owner, nowUnix, AssetMaterializeErrorProcessing, 0)
@@ -717,6 +720,12 @@ func assetModelReadinessMatchesTarget(row model.AssetModelReadiness, target mode
 	return row.TargetGeneration == target.Generation &&
 		row.ChannelId == target.ChannelId &&
 		row.BindingScope == target.BindingScope
+}
+
+func assetModelReadinessHasCompleteTargetSnapshot(row model.AssetModelReadiness) bool {
+	return row.TargetGeneration > 0 &&
+		row.ChannelId > 0 &&
+		strings.TrimSpace(row.BindingScope) != ""
 }
 
 func assetModelScopeFromTarget(target model.AssetModelCoverageTarget) AssetModelScope {

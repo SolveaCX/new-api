@@ -75,17 +75,17 @@ func ReconcileAssetForScope(ctx context.Context, userID int, publicID string, sc
 	if err != nil {
 		return nil, err
 	}
-	if reopened, reopenErr := reopenStaleAssetModelReadinessRows(asset.Id, rows, targets, now); reopenErr != nil {
+	activeBindingKeys, err := loadActiveAssetBindingKeysForTargets(asset.Id, targets)
+	if err != nil {
+		return nil, err
+	}
+	if reloadNeeded, reopenErr := reopenStaleAssetModelReadinessRows(asset.Id, rows, targets, now); reopenErr != nil {
 		return nil, reopenErr
-	} else if reopened {
+	} else if reloadNeeded {
 		rows, err = model.ListAssetModelReadiness(asset.Id, scope.ScopeKey, scope.ModelNames)
 		if err != nil {
 			return nil, err
 		}
-	}
-	activeBindingKeys, err := loadActiveAssetBindingKeysForTargets(asset.Id, targets)
-	if err != nil {
-		return nil, err
 	}
 	strictStatus, err := projectAssetStatusForScope(*asset, scope, rows, targets, activeBindingKeys)
 	if err != nil {
@@ -336,15 +336,29 @@ func markAssetModelReadinessFailed(assetID int64, scopeKey, modelName string, no
 }
 
 func reopenStaleAssetModelReadinessRows(assetID int64, rows []model.AssetModelReadiness, targets map[string]model.AssetModelCoverageTarget, now int64) (bool, error) {
-	reopened := false
+	reloadNeeded := false
 	for _, row := range rows {
-		if row.Status != model.AssetModelReadinessStatusActive {
-			continue
-		}
 		target, ok := targets[row.ModelName]
-		if !ok || assetModelReadinessMatchesTarget(row, target) {
+		if !ok || target.Status != model.AssetModelTargetStatusActive || target.ChannelId <= 0 || strings.TrimSpace(target.BindingScope) == "" {
 			continue
 		}
+		if row.Status == model.AssetModelReadinessStatusFailed {
+			requireActiveBinding := assetModelReadinessHasCompleteTargetSnapshot(row)
+			if row.ErrorClass != "target_unavailable" ||
+				(requireActiveBinding && assetModelReadinessMatchesTarget(row, target)) {
+				continue
+			}
+			reloadNeeded = true
+			_, err := model.ReopenFailedAssetModelReadinessForTargetCAS(row, target, requireActiveBinding, now)
+			if err != nil {
+				return false, err
+			}
+			continue
+		}
+		if row.Status != model.AssetModelReadinessStatusActive || assetModelReadinessMatchesTarget(row, target) {
+			continue
+		}
+		reloadNeeded = true
 		result := model.DB.Model(&model.AssetModelReadiness{}).
 			Where("asset_id = ? AND scope_key = ? AND model_name = ?", assetID, row.ScopeKey, row.ModelName).
 			Where("status = ? AND target_generation = ? AND channel_id = ? AND binding_scope = ?",
@@ -365,7 +379,6 @@ func reopenStaleAssetModelReadinessRows(assetID int64, rows []model.AssetModelRe
 		if result.Error != nil {
 			return false, result.Error
 		}
-		reopened = reopened || result.RowsAffected == 1
 	}
-	return reopened, nil
+	return reloadNeeded, nil
 }

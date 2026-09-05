@@ -554,6 +554,7 @@ func (s *AssetReferenceSet) loadAssetModelTargetReadiness(c *gin.Context, userID
 	if target == nil {
 		return nil
 	}
+	targets := map[string]model.AssetModelCoverageTarget{req.Model: *target}
 	readinessByPublicID := make(map[string]model.AssetModelReadiness, len(s.references))
 	for _, reference := range s.references {
 		asset := s.assets[reference.PublicID]
@@ -563,6 +564,16 @@ func (s *AssetReferenceSet) loadAssetModelTargetReadiness(c *gin.Context, userID
 		rows, err := model.ListAssetModelReadiness(asset.ID, scope.ScopeKey, []string{req.Model})
 		if err != nil {
 			return err
+		}
+		reloadNeeded, err := reopenStaleAssetModelReadinessRows(asset.ID, rows, targets, now)
+		if err != nil {
+			return err
+		}
+		if reloadNeeded {
+			rows, err = model.ListAssetModelReadiness(asset.ID, scope.ScopeKey, []string{req.Model})
+			if err != nil {
+				return err
+			}
 		}
 		if len(rows) > 0 {
 			readinessByPublicID[reference.PublicID] = rows[len(rows)-1]
