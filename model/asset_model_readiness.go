@@ -218,6 +218,68 @@ func ResetAssetModelReadinessForTargetCAS(id int64, owner string, expectedAttemp
 	return result.RowsAffected == 1, nil
 }
 
+func ReopenFailedAssetModelReadinessForTargetCAS(expected AssetModelReadiness, target AssetModelCoverageTarget, requireActiveBinding bool, now int64) (bool, error) {
+	expected.ScopeKey = strings.TrimSpace(expected.ScopeKey)
+	expected.ModelName = strings.TrimSpace(expected.ModelName)
+	target.ScopeKey = strings.TrimSpace(target.ScopeKey)
+	target.ModelName = strings.TrimSpace(target.ModelName)
+	target.BindingScope = strings.TrimSpace(target.BindingScope)
+	if DB == nil ||
+		expected.Id <= 0 ||
+		expected.AssetId <= 0 ||
+		expected.ScopeKey == "" ||
+		expected.ModelName == "" ||
+		expected.Status != AssetModelReadinessStatusFailed ||
+		expected.ErrorClass != "target_unavailable" ||
+		target.Status != AssetModelTargetStatusActive ||
+		target.ScopeKey != expected.ScopeKey ||
+		target.ModelName != expected.ModelName ||
+		target.Generation <= 0 ||
+		target.ChannelId <= 0 ||
+		target.BindingScope == "" {
+		return false, nil
+	}
+
+	activeTargetExists := DB.Model(&AssetModelCoverageTarget{}).
+		Select("1").
+		Where("id = ? AND scope_key = ? AND model_name = ?", target.Id, target.ScopeKey, target.ModelName).
+		Where("generation = ? AND channel_id = ? AND binding_scope = ? AND status = ?", target.Generation, target.ChannelId, target.BindingScope, AssetModelTargetStatusActive)
+
+	query := DB.Model(&AssetModelReadiness{}).
+		Where("id = ? AND asset_id = ? AND scope_key = ? AND model_name = ?", expected.Id, expected.AssetId, expected.ScopeKey, expected.ModelName).
+		Where("status = ? AND error_class = ?", expected.Status, expected.ErrorClass).
+		Where("target_generation = ? AND channel_id = ? AND binding_scope = ?", expected.TargetGeneration, expected.ChannelId, expected.BindingScope).
+		Where("attempt_count = ? AND attempt_started_at = ? AND next_retry_at = ?", expected.AttemptCount, expected.AttemptStartedAt, expected.NextRetryAt).
+		Where("lease_owner = ? AND lease_expires_at = ?", expected.LeaseOwner, expected.LeaseExpiresAt).
+		Where("created_at = ? AND updated_at = ?", expected.CreatedAt, expected.UpdatedAt).
+		Where("EXISTS (?)", activeTargetExists)
+	if requireActiveBinding {
+		activeBindingExists := DB.Model(&AssetBinding{}).
+			Select("1").
+			Where("asset_id = ? AND channel_id = ? AND binding_scope = ?", expected.AssetId, target.ChannelId, target.BindingScope).
+			Where("status = ? AND TRIM(upstream_asset_id) <> ''", AssetStatusActive)
+		query = query.Where("EXISTS (?)", activeBindingExists)
+	}
+
+	result := query.Updates(map[string]any{
+		"target_generation":  target.Generation,
+		"channel_id":         target.ChannelId,
+		"binding_scope":      target.BindingScope,
+		"status":             AssetModelReadinessStatusPending,
+		"error_class":        "",
+		"attempt_count":      0,
+		"attempt_started_at": int64(0),
+		"next_retry_at":      int64(0),
+		"lease_owner":        "",
+		"lease_expires_at":   int64(0),
+		"updated_at":         now,
+	})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func ScheduleAssetModelReadinessRetryCAS(transition AssetModelReadinessTransition, errorClass string, nextRetryAt int64) (bool, error) {
 	return finishAssetModelReadinessCAS(transition, AssetModelReadinessStatusRetryWaiting, sanitizeAssetModelErrorClass(errorClass), nextRetryAt)
 }

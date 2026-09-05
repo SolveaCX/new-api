@@ -113,6 +113,69 @@ func TestAssetReferenceSetRanksAllActivePartialAndNoBindingReadiness(t *testing.
 	require.Equal(t, AssetReadinessRecoverable, noneReadiness)
 }
 
+func TestLoadAssetModelTargetReadinessReopensTargetlessFailureForDirectUse(t *testing.T) {
+	db, _ := setupServiceModelAccessDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.AssetModelCoverageTarget{}, &model.AssetModelReadiness{}))
+	seedModelAccessScope(t, db, 180, "default", constant.ChannelTypeTechMobiVideo, "seedance-2.0")
+	setModelAccessBilling(t, map[string]float64{"seedance-2.0": 1}, nil, nil)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+
+	asset := insertAssetReferenceAsset(t, assetReferenceSeed{
+		UserID:          7,
+		PublicID:        "ast_direct_targetless_recovery_1234",
+		AssetType:       "Image",
+		SourceStatus:    model.AssetSourceStatusAvailable,
+		SourceExpiresAt: time.Now().Add(time.Hour).Unix(),
+	})
+	ctx := assetModelScopeGinContext(t, nil)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	scope, err := ResolveAssetModelScopeForContext(ctx, asset.UserId)
+	require.NoError(t, err)
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     1,
+		AttemptStartedAt: 90,
+		CreatedAt:        90,
+		UpdatedAt:        95,
+	}).Error)
+	refs := AssetReferenceSet{
+		references: []assetReference{{PublicID: asset.PublicId, ExpectedAssetType: "Image"}},
+		assets: map[string]assetReferenceAsset{
+			asset.PublicId: {
+				ID:              asset.Id,
+				PublicID:        asset.PublicId,
+				AssetType:       asset.AssetType,
+				Status:          asset.Status,
+				SourceStatus:    asset.SourceStatus,
+				StorageBackend:  asset.StorageBackend,
+				StorageBucket:   asset.StorageBucket,
+				ObjectKey:       asset.ObjectKey,
+				SourceExpiresAt: asset.SourceExpiresAt,
+			},
+		},
+	}
+
+	err = refs.loadAssetModelTargetReadiness(ctx, asset.UserId, &dto.SeedanceVideoRequest{
+		Model:   "seedance-2.0",
+		Content: []dto.SeedanceContentItem{imageAssetItem(asset.PublicId)},
+	})
+
+	require.NoError(t, err)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusPending, row.Status)
+	require.Empty(t, row.ErrorClass)
+	require.Equal(t, target.Generation, row.TargetGeneration)
+	require.Equal(t, target.ChannelId, row.ChannelId)
+	require.Equal(t, target.BindingScope, row.BindingScope)
+	require.Equal(t, row, refs.readinessByPublicID[asset.PublicId])
+}
+
 func TestAssetReferenceSetAllowsLegacyAndSourceUnavailableOnlyOnActiveOriginalBinding(t *testing.T) {
 	newAssetReferenceDB(t)
 	insertLegacyAssetReferenceAsset(t, 7, 131, "ast_1234567890abcdefABCDEF1234567890", "legacy-upstream", model.BytePlusAssetStatusActive)
