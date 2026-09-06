@@ -21,7 +21,6 @@ type modelTagDefault struct {
 // model-name allowlist. Seed them into model metadata once so administrators
 // can edit the same values from the console going forward.
 var legacyModelTagDefaults = []modelTagDefault{
-	{regexp.MustCompile(`(?i)(^|/)deepseek[-_.]?v4[-_.]?flash$`), "Free"},
 	{regexp.MustCompile(`(?i)(^|[/_.-])ling[-_.]?3\.0[-_.]?flash[-_.]?fin`), "Free"},
 	{regexp.MustCompile(`(?i)(^|/)glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$`), "Limited discount, New release"},
 	{regexp.MustCompile(`(?i)(^|/)deepseek[-_.]?v4[-_.]?pro$`), "Limited discount"},
