@@ -6906,6 +6906,12 @@
     "Complete the graphical verification before creating your account.": "アカウントを作成する前に画像認証を完了してください。",
     "Voice": "音声",
     "Speed": "速度",
-    "Video URL": "動画 URL"
+    "Video URL": "動画 URL",
+    "Welcome Promo": "ウェルカムプロモーション",
+    "Configure the three model cards shown in the homepage welcome popup.": "ホームページのウェルカムポップアップに表示する3つのモデルカードを設定します。",
+    "Logo is mapped automatically from the model name.": "ロゴはモデル名から自動的に割り当てられます。",
+    "Please choose a model for each slot": "各スロットのモデルを選択してください",
+    "Description and offer are required": "説明とオファーは必須です",
+    "Each slot must use a different model": "各スロットには異なるモデルを指定してください"
   }
 }

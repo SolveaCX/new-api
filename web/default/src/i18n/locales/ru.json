@@ -6906,6 +6906,12 @@
     "Complete the graphical verification before creating your account.": "Пройдите графическую проверку перед созданием аккаунта.",
     "Voice": "Голос",
     "Speed": "Скорость",
-    "Video URL": "URL видео"
+    "Video URL": "URL видео",
+    "Welcome Promo": "Приветственная акция",
+    "Configure the three model cards shown in the homepage welcome popup.": "Настройте три карточки моделей в приветственном окне главной страницы.",
+    "Logo is mapped automatically from the model name.": "Логотип автоматически выбирается по названию модели.",
+    "Please choose a model for each slot": "Выберите модель для каждого слота",
+    "Description and offer are required": "Описание и текст предложения обязательны",
+    "Each slot must use a different model": "В каждом слоте должна быть своя модель"
   }
 }

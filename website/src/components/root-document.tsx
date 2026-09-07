@@ -10,6 +10,7 @@ import { SITE_ORIGIN, consoleUrl } from "@/lib/origins";
 import type {
   PublicAnnouncement,
   PublicSiteSettings,
+  WelcomePromoModel,
 } from "@/lib/public-site-settings";
 
 const GTM_IDS = ["GTM-NKH9LPX9", "GTM-5T5LPLSZ"] as const;
@@ -138,6 +139,8 @@ type RootDocumentProps = {
   children: ReactNode;
   docsUrl: string | null;
   announcements?: PublicAnnouncement[];
+  welcomePromo?: WelcomePromoModel[];
+  welcomePromoEnabled: boolean;
   hasConsoleSessionHint: boolean;
   googleOneTap: PublicSiteSettings["googleOneTap"];
   lang: Locale;
@@ -148,6 +151,8 @@ export function RootDocument({
   children,
   docsUrl,
   announcements,
+  welcomePromo,
+  welcomePromoEnabled,
   hasConsoleSessionHint,
   googleOneTap,
   lang,
@@ -218,7 +223,11 @@ export function RootDocument({
         />
         <SiteConfigProvider docsUrl={docsUrl} announcements={announcements}>
           {children}
-          <WelcomePromoModal locale={lang} />
+          <WelcomePromoModal
+            locale={lang}
+            models={welcomePromo}
+            enabled={welcomePromoEnabled}
+          />
         </SiteConfigProvider>
         <Script
           id="solvea-livechat-bootstrap"

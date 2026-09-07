@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -50,6 +51,43 @@ func TestGetStatusIncludesPlaygroundDefaultModel(t *testing.T) {
 	}
 	if response.Data.PlaygroundDefaultModel != "gpt-4.1-mini" {
 		t.Fatalf("playground_default_model = %q, want %q", response.Data.PlaygroundDefaultModel, "gpt-4.1-mini")
+	}
+}
+
+func TestGetStatusWelcomePromoVisibility(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	settings := console_setting.GetConsoleSetting()
+	originalEnabled, originalPromo := settings.WelcomePromoEnabled, settings.WelcomePromo
+	t.Cleanup(func() {
+		settings.WelcomePromoEnabled = originalEnabled
+		settings.WelcomePromo = originalPromo
+	})
+	settings.WelcomePromoEnabled = false
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	GetStatus(ctx)
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, common.DecodeJson(recorder.Body, &response))
+	if _, ok := response.Data["welcome_promo"]; ok {
+		t.Fatal("welcome_promo should be omitted when disabled")
+	}
+
+	settings.WelcomePromoEnabled = true
+	settings.WelcomePromo = console_setting.DefaultWelcomePromo
+	recorder = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	GetStatus(ctx)
+	response = struct {
+		Data map[string]any `json:"data"`
+	}{}
+	require.NoError(t, common.DecodeJson(recorder.Body, &response))
+	if _, ok := response.Data["welcome_promo"]; !ok {
+		t.Fatal("welcome_promo should be present when enabled")
 	}
 }
 
