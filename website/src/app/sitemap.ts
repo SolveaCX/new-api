@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
-import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
+import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingConfigForPricingModel, getModelLandingPathnames } from "@/lib/model-landing";
@@ -10,6 +10,7 @@ import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+import { getCliMediaPromptItems } from "@/lib/prompt-library";
 import { SITE_ORIGIN } from "@/lib/origins";
 
 // The model list comes from the live public catalog. Do not prerender this
@@ -166,6 +167,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const seriesEntries = seriesForModels(pricing.models.map((model) => model.directory_metadata)).flatMap((series) =>
     queryEntry("/models", `series=${encodeURIComponent(series)}`, 0.72, "daily")
   );
+  const cliMediaDetailEntries = [
+    { kind: "image" as const, path: CLI_IMAGE_PATH },
+    { kind: "video" as const, path: CLI_VIDEO_PATH },
+  ].flatMap(({ kind, path }) =>
+    getCliMediaPromptItems(kind).flatMap((item) => entry(`${path}/${item.slug}`, 0.65, "monthly"))
+  );
 
   return [
     ...staticEntries,
@@ -173,6 +180,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...modelLandingEntries,
     ...skagLandingEntries,
     ...toolsAdLandingEntries,
+    ...cliMediaDetailEntries,
     ...modelPublicEntries,
     ...seriesEntries,
     ...categoryEntries,

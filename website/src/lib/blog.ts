@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
+import { DEFAULT_LOCALE, LOCALES, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, consoleUrl } from "@/lib/origins";
 
 const API_BASE_URL = APP_CONSOLE_ORIGIN;
@@ -270,16 +270,28 @@ export async function getBlogCategories(): Promise<BlogCategory[]> {
 }
 
 export async function getBlogPost(slug: string, locale: Locale = DEFAULT_LOCALE): Promise<BlogPost | null> {
-  const params = new URLSearchParams({ language: locale });
-  const post = await fetchBloggerJson<BloggerPost>(
-    `/api/integration/sites/${encodeURIComponent(BLOGGER_SITE_SLUG)}/posts/${encodeURIComponent(slug)}?${params.toString()}`
-  );
-  if (post) {
-    return mapBloggerPost(post);
+  // The Blogger detail endpoint can return a redirect or a stale 404 while
+  // the published list endpoint still contains the article. Treat the list
+  // as the source of truth so article pages, sitemap entries, and hreflang
+  // annotations all use the same published set.
+  const bloggerPosts = await getAllBloggerPosts(locale);
+  if (bloggerPosts !== null) {
+    return bloggerPosts.find((post) => post.slug === slug) ?? null;
   }
   if (locale !== DEFAULT_LOCALE) return null;
 
   return fetchLegacyJson<BlogPost>(`/api/blog/detail/${encodeURIComponent(slug)}`);
+}
+
+export async function getBlogPostLocales(slug: string): Promise<Locale[]> {
+  const localizedPosts = await Promise.all(
+    LOCALES.map(async (locale) => {
+      const posts = await getAllBlogPosts(locale);
+      return posts.some((post) => post.slug === slug) ? locale : null;
+    })
+  );
+
+  return localizedPosts.filter((locale): locale is Locale => locale !== null);
 }
 
 export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE): string {
@@ -313,6 +325,10 @@ export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE):
       h1: (tagName, attribs) => ({
         tagName: "h2",
         attribs,
+      }),
+      img: (tagName, attribs) => ({
+        tagName,
+        attribs: rewriteBlogImageAttributes(attribs),
       }),
       a: (tagName, attribs) => ({
         tagName,
@@ -460,6 +476,33 @@ function rewriteBlogAnchorAttributes(
   else delete nextAttribs.rel;
 
   return nextAttribs;
+}
+
+function rewriteBlogImageAttributes(attribs: Record<string, string>): Record<string, string> {
+  const src = normalizeHtmlAttributeValue(attribs.src);
+  const nextAttribs: Record<string, string> = { ...attribs, alt: normalizeHtmlAttributeValue(attribs.alt) ?? "" };
+
+  if (src) nextAttribs.src = canonicalizeBlogImageSrc(src);
+  else delete nextAttribs.src;
+
+  return nextAttribs;
+}
+
+function canonicalizeBlogImageSrc(src: string): string {
+  const isAbsolute = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(src) || src.startsWith("//");
+  if (!isAbsolute) return src;
+
+  try {
+    const url = new URL(src, SITE_ORIGIN);
+    const hostname = url.hostname.toLowerCase();
+    if (hostname === "flatkey.ai" || hostname === "www.flatkey.ai") {
+      return `${SITE_ORIGIN}${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    // Preserve malformed or external URLs for the sanitizer to handle.
+  }
+
+  return src;
 }
 
 function localizeInternalPublicPath(pathname: string, locale: Locale): string | null {

@@ -102,7 +102,7 @@ export function OnlinePricingPlansSection(props: { locale: Locale }) {
         @media (max-width:640px){.wrap{padding:48px 20px}.wrap>.display{font-size:36px}.wrap>.sub{font-size:15px}.tiers{grid-template-columns:1fr;gap:16px;margin-top:32px}.tier{padding:26px 20px;grid-template-rows:auto auto auto 48px 1fr}.tier .badge{left:18px}.tier .badge.limited{top:16px;right:-58px;width:180px}.tier .tdiscount,.tier.limited-offer .tdiscount{top:20px;right:20px}.tier .taud{padding-right:96px}.tier .tprice{margin-top:18px}.tval{margin-top:14px;padding:16px 15px}}
       `}</style>
       <div className="wrap">
-        <h2 className="display">{copy.pricing.title}</h2>
+        <h1 className="display">{copy.pricing.title}</h1>
         <p className="sub" style={{ marginTop: 16 }}>
           {copy.pricing.sub}
         </p>

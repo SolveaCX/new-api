@@ -59,6 +59,8 @@ describe("sitemap", () => {
       expect(pricingRequests).toEqual(["https://console.flatkey.ai/api/website/pricing?group=plg"]);
       expect(urls).toContain("https://flatkey.ai/pt/5-credit-promo");
       expect(urls).not.toContain("https://flatkey.ai/5-credit-promo");
+      expect(urls.some((url) => url.startsWith("https://flatkey.ai/cli/image/"))).toBe(true);
+      expect(urls.some((url) => url.startsWith("https://flatkey.ai/cli/video/"))).toBe(true);
       expect(promoEntry?.alternates?.languages).toMatchObject({
         "pt-BR": "https://flatkey.ai/pt/5-credit-promo",
       });
