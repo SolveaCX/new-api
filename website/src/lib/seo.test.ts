@@ -58,4 +58,28 @@ describe("buildMetadata", () => {
 
     expect(metadata.title).toEqual({ absolute: "Claude Fable 5.1 API | Flatkey" });
   });
+
+  test("keeps x-default inside the advertised locale set", () => {
+    const metadata = buildMetadata({
+      title: "Careers",
+      description: "Join flatkey.",
+      pathname: "/careers",
+      locale: "zh",
+      locales: ["en", "zh"],
+    });
+
+    expect(metadata.alternates?.languages?.["x-default"]).toBe("https://flatkey.ai/careers");
+  });
+
+  test("uses the only available locale for x-default on localized-only pages", () => {
+    const metadata = buildMetadata({
+      title: "Portuguese promotion",
+      description: "A localized offer.",
+      pathname: "/5-credit-promo",
+      locale: "pt",
+      locales: ["pt"],
+    });
+
+    expect(metadata.alternates?.languages?.["x-default"]).toBe("https://flatkey.ai/pt/5-credit-promo");
+  });
 });

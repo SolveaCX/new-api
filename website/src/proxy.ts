@@ -5,8 +5,16 @@ import {
   getLanguageRedirectPath,
 } from "@/lib/language-routing";
 import { isLocale } from "@/lib/locales";
+import { SITE_ORIGIN } from "@/lib/origins";
 
 export function proxy(request: NextRequest) {
+  const canonicalHost = new URL(SITE_ORIGIN).hostname;
+  if (request.nextUrl.hostname === `www.${canonicalHost}`) {
+    const url = request.nextUrl.clone();
+    url.hostname = canonicalHost;
+    return NextResponse.redirect(url, 301);
+  }
+
   const cookieLocale = request.cookies.get(LANGUAGE_PREFERENCE_COOKIE)?.value;
   const redirectPath = getLanguageRedirectPath({
     pathname: request.nextUrl.pathname,
