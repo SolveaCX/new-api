@@ -54,7 +54,9 @@ func TestSeedLegacyModelTagsBackfillsOnlyEmptyTags(t *testing.T) {
 	var got []Model
 	require.NoError(t, DB.Order("model_name").Find(&got).Error)
 	require.Len(t, got, 3)
-	require.Equal(t, "Free", got[0].Tags)
+	// DeepSeek V4 Flash was a retired free promotion. An empty tag must stay
+	// empty so removing the badge in the console is not undone on restart.
+	require.Empty(t, got[0].Tags)
 	require.Equal(t, "custom", got[1].Tags)
 	require.Empty(t, got[2].Tags)
 }
