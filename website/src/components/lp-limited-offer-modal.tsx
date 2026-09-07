@@ -24,8 +24,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   en: {
     timerLabel: "New plans",
     title: "Plans from USD10/month.",
-    accent: "Usage worth up to 4.5x the price.",
-    body: "One subscription covers GPT, Claude, Gemini, DeepSeek, Kimi and more on official upstream tokens — including text, image, and video usage in one monthly quota worth up to 4.5x what you pay.",
+    accent: "Usage worth up to 1.7x the price.",
+    body: "Get $13 on Go ($10), $45 on Pro ($30), or $170 on Max ($100). One subscription covers GPT, Claude, Gemini, DeepSeek, Kimi and more on official upstream tokens for text, image, and video.",
     officialTokens: "Official upstream tokens",
     longerBalance: "Text, image and video in one plan",
     fabLabel: "Plans",
@@ -36,8 +36,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   zh: {
     timerLabel: "全新套餐",
     title: "订阅套餐每月 $10 起。",
-    accent: "可用量最高达套餐价 4.5 倍。",
-    body: "一份订阅覆盖 GPT、Claude、Gemini、DeepSeek、Kimi 等官方上游 token——文本、图像与视频共用每月统一额度，最高达套餐价的 4.5 倍。",
+    accent: "可用量最高达套餐价 1.7 倍。",
+    body: "Go $10 到账 $13，Pro $30 到账 $45，Max $100 到账 $170。一份订阅覆盖 GPT、Claude、Gemini、DeepSeek、Kimi 等官方上游 token，文本、图像与视频共用每月统一额度。",
     officialTokens: "官方上游 token",
     longerBalance: "文本·图像·视频一个套餐",
     fabLabel: "套餐",
@@ -48,8 +48,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   es: {
     timerLabel: "Nuevos planes",
     title: "Planes desde USD10/mes.",
-    accent: "Uso de hasta 4.5x el precio.",
-    body: "Una suscripción cubre GPT, Claude, Gemini, DeepSeek, Kimi y más con tokens oficiales upstream: texto, imagen y vídeo comparten una cuota mensual de hasta 4.5x lo que pagas.",
+    accent: "Uso de hasta 1.7x el precio.",
+    body: "Recibe $13 con Go ($10), $45 con Pro ($30) o $170 con Max ($100). Una suscripción cubre GPT, Claude, Gemini, DeepSeek, Kimi y más para texto, imagen y vídeo.",
     officialTokens: "Tokens oficiales upstream",
     longerBalance: "Texto, imagen y vídeo en un plan",
     fabLabel: "Planes",
@@ -60,8 +60,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   fr: {
     timerLabel: "Nouveaux plans",
     title: "Plans dès USD10/mois.",
-    accent: "Usage jusqu'à 4,5x le prix.",
-    body: "Un seul abonnement couvre GPT, Claude, Gemini, DeepSeek, Kimi et plus, sur tokens upstream officiels — texte, image et vidéo partagent un quota mensuel valant jusqu'à 4,5x le prix.",
+    accent: "Usage jusqu'à 1,7x le prix.",
+    body: "Recevez $13 avec Go ($10), $45 avec Pro ($30) ou $170 avec Max ($100). Un abonnement couvre GPT, Claude, Gemini, DeepSeek, Kimi et plus pour le texte, l'image et la vidéo.",
     officialTokens: "Tokens upstream officiels",
     longerBalance: "Texte, image et vidéo dans un plan",
     fabLabel: "Plans",
@@ -72,8 +72,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   pt: {
     timerLabel: "Novos planos",
     title: "Planos a partir de USD10/mês.",
-    accent: "Uso de até 4,5x o preço.",
-    body: "Uma assinatura cobre GPT, Claude, Gemini, DeepSeek, Kimi e mais, com tokens oficiais upstream — texto, imagem e vídeo compartilham uma única cota mensal de até 4,5x o que você paga.",
+    accent: "Uso de até 1,7x o preço.",
+    body: "Receba $13 no Go ($10), $45 no Pro ($30) ou $170 no Max ($100). Uma assinatura cobre GPT, Claude, Gemini, DeepSeek, Kimi e mais para texto, imagem e vídeo.",
     officialTokens: "Tokens oficiais upstream",
     longerBalance: "Texto, imagem e vídeo em um plano",
     fabLabel: "Planos",
@@ -84,8 +84,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   ru: {
     timerLabel: "Новые планы",
     title: "Планы от USD10/мес.",
-    accent: "Использование до 4,5x цены.",
-    body: "Одна подписка покрывает GPT, Claude, Gemini, DeepSeek, Kimi и другие модели на официальных upstream token — текст, изображения и видео используют единый месячный лимит до 4,5x цены.",
+    accent: "Использование до 1,7x цены.",
+    body: "Получите $13 с Go ($10), $45 с Pro ($30) или $170 с Max ($100). Одна подписка покрывает GPT, Claude, Gemini, DeepSeek, Kimi и другие модели для текста, изображений и видео.",
     officialTokens: "Официальные upstream token",
     longerBalance: "Текст, изображения и видео в одном плане",
     fabLabel: "Планы",
@@ -96,8 +96,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   ja: {
     timerLabel: "新プラン",
     title: "プランは月額 USD10 から。",
-    accent: "利用枠は料金の最大 4.5 倍。",
-    body: "1 つのサブスクで GPT・Claude・Gemini・DeepSeek・Kimi ほかを公式 upstream token で利用可能——テキスト・画像・動画で共通の月間利用枠は料金の最大 4.5 倍。",
+    accent: "利用枠は料金の最大 1.7 倍。",
+    body: "Go（$10）は $13、Pro（$30）は $45、Max（$100）は $170 分利用できます。1 つのサブスクで GPT・Claude・Gemini・DeepSeek・Kimi ほかをテキスト・画像・動画に利用できます。",
     officialTokens: "公式 upstream token",
     longerBalance: "テキスト・画像・動画を 1 プランで",
     fabLabel: "プラン",
@@ -108,8 +108,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   vi: {
     timerLabel: "Gói mới",
     title: "Các gói từ USD10/tháng.",
-    accent: "Mức dùng tới 4,5x giá.",
-    body: "Một gói thuê bao bao trọn GPT, Claude, Gemini, DeepSeek, Kimi và hơn thế trên token upstream chính thức — văn bản, hình ảnh và video dùng chung hạn mức tháng tới 4,5x giá gói.",
+    accent: "Mức dùng tới 1,7x giá.",
+    body: "Nhận $13 với Go ($10), $45 với Pro ($30) hoặc $170 với Max ($100). Một gói bao trọn GPT, Claude, Gemini, DeepSeek, Kimi và hơn thế cho văn bản, hình ảnh và video.",
     officialTokens: "Token upstream chính thức",
     longerBalance: "Văn bản, ảnh và video trong một gói",
     fabLabel: "Gói",
@@ -120,8 +120,8 @@ export const OFFER_MODAL_COPY: Record<Locale, OfferModalCopy> =withIdFallback({
   de: {
     timerLabel: "Neue Pläne",
     title: "Pläne ab USD10/Monat.",
-    accent: "Nutzung bis zum 4,5-Fachen des Preises.",
-    body: "Ein Abo deckt GPT, Claude, Gemini, DeepSeek, Kimi und mehr auf offiziellen Upstream-Tokens ab — Text, Bild und Video teilen ein Monatskontingent bis zum 4,5-Fachen des Preises.",
+    accent: "Nutzung bis zum 1,7-Fachen des Preises.",
+    body: "Erhalte $13 mit Go ($10), $45 mit Pro ($30) oder $170 mit Max ($100). Ein Abo deckt GPT, Claude, Gemini, DeepSeek, Kimi und mehr für Text, Bild und Video ab.",
     officialTokens: "Offizielle Upstream-Tokens",
     longerBalance: "Text, Bild und Video in einem Plan",
     fabLabel: "Pläne",
@@ -175,7 +175,7 @@ export function LpLimitedOfferModal({ ctaLabel, ctaUrl, locale }: Props) {
         className="fixed right-4 bottom-20 z-50 inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-left text-slate-950 shadow-[0_18px_50px_-22px_rgba(15,23,42,0.45)] transition hover:bg-slate-50 dark:border-violet-300/40 dark:bg-slate-950 dark:text-white dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.9)] dark:hover:bg-slate-900"
       >
         <span className="flex size-10 items-center justify-center rounded-full bg-violet-600 text-sm font-black text-white">
-          4.5×
+          1.7×
         </span>
         <span className="grid">
           <span className="text-xs font-black tracking-[0.14em] text-violet-600 uppercase dark:text-violet-300">{copy.fabLabel}</span>
