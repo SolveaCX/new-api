@@ -49,6 +49,7 @@ const legacyNavLabelByLocale: Record<
     compute: string;
     enterprise: string;
     playground: string;
+    prompts: string;
     status: string;
     usecases: string;
   }
@@ -57,6 +58,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompts",
     status: "Status",
     usecases: "Use Cases",
   },
@@ -64,6 +66,7 @@ const legacyNavLabelByLocale: Record<
     compute: "算力",
     enterprise: "企业版",
     playground: "在线体验",
+    prompts: "提示词",
     status: "服务状态",
     usecases: "使用场景",
   },
@@ -71,6 +74,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompts",
     status: "Estado",
     usecases: "Casos de uso",
   },
@@ -78,6 +82,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompts",
     status: "Statut",
     usecases: "Cas d'usage",
   },
@@ -85,6 +90,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompts",
     status: "Status",
     usecases: "Casos de uso",
   },
@@ -92,6 +98,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Промпты",
     status: "Статус",
     usecases: "Сценарии",
   },
@@ -99,6 +106,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "プロンプト",
     status: "ステータス",
     usecases: "ユースケース",
   },
@@ -106,6 +114,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompt",
     status: "Trạng thái",
     usecases: "Use cases",
   },
@@ -113,6 +122,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompts",
     status: "Status",
     usecases: "Anwendungsfälle",
   },
@@ -120,6 +130,7 @@ const legacyNavLabelByLocale: Record<
     compute: "Compute",
     enterprise: "Enterprise",
     playground: "Playground",
+    prompts: "Prompt",
     status: "Status",
     usecases: "Use case",
   },
@@ -592,6 +603,7 @@ export function SiteHeader(props: Props) {
   const productItems = useMemo<NavItem[]>(
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
+      { href: "/prompts", label: legacyLabels.prompts, publicPath: true },
       { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },
