@@ -1,30 +1,9 @@
-import { notFound } from "next/navigation";
-import { CliMediaPromptDetailPage, getCliMediaDetailMetadata } from "@/components/cli-media-library-page";
-import { getCliMediaPromptItems } from "@/lib/prompt-library";
-import { buildMetadata } from "@/lib/seo";
+import { permanentRedirect } from "next/navigation";
+import { PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
 
-type Props = {
-  params: Promise<{ slug: string }>;
-};
-
-export function generateStaticParams() {
-  return getCliMediaPromptItems("video").map((item) => ({ slug: item.slug }));
-}
-
-export async function generateMetadata(props: Props) {
-  const params = await props.params;
-  const meta = getCliMediaDetailMetadata("video", params.slug, "en");
-  if (!meta) return {};
-  return buildMetadata({
-    title: meta.title,
-    description: meta.description,
-    pathname: meta.pathname,
-  });
-}
+type Props = { params: Promise<{ slug: string }> };
 
 export default async function Page(props: Props) {
   const params = await props.params;
-  const meta = getCliMediaDetailMetadata("video", params.slug, "en");
-  if (!meta) notFound();
-  return <CliMediaPromptDetailPage kind="video" locale="en" slug={params.slug} />;
+  permanentRedirect(`${PROMPT_VIDEO_PATH}/${params.slug}`);
 }

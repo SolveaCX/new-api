@@ -26,7 +26,7 @@ func openAssetModelReadinessTestDB(t *testing.T) {
 		DB = previous
 	})
 	DB = db
-	require.NoError(t, DB.AutoMigrate(&AssetModelCoverageTarget{}, &AssetModelReadiness{}))
+	require.NoError(t, DB.AutoMigrate(&AssetModelCoverageTarget{}, &AssetModelReadiness{}, &AssetBinding{}))
 }
 
 func TestAssetModelReadinessAutoMigrateAndCompositeUniqueness(t *testing.T) {
@@ -217,6 +217,326 @@ func TestAssetModelReadinessCASFencingRetryActiveFailedAndReset(t *testing.T) {
 	row = requireOneReadiness(t, 9, "scope", "model")
 	require.Equal(t, AssetModelReadinessStatusFailed, row.Status)
 	require.Equal(t, "fatal_provider", row.ErrorClass)
+}
+
+func TestReopenFailedAssetModelReadinessForTargetCASResetsExactSnapshot(t *testing.T) {
+	openAssetModelReadinessTestDB(t)
+
+	expected := AssetModelReadiness{
+		AssetId:          71,
+		ScopeKey:         "scope-a",
+		ModelName:        "seedance-2.0-pro",
+		TargetGeneration: 3,
+		ChannelId:        120,
+		BindingScope:     "byteplus:v1:old",
+		Status:           AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     4,
+		AttemptStartedAt: 101,
+		NextRetryAt:      202,
+		LeaseOwner:       "stale-worker",
+		LeaseExpiresAt:   303,
+		CreatedAt:        10,
+		UpdatedAt:        20,
+	}
+	require.NoError(t, DB.Create(&expected).Error)
+
+	target := AssetModelCoverageTarget{
+		ScopeKey:     "scope-a",
+		ModelName:    "seedance-2.0-pro",
+		Generation:   4,
+		ChannelId:    121,
+		BindingScope: "byteplus:v1:new",
+		Status:       AssetModelTargetStatusActive,
+	}
+	require.NoError(t, DB.Create(&target).Error)
+	reopened, err := ReopenFailedAssetModelReadinessForTargetCAS(expected, target, false, 400)
+	require.NoError(t, err)
+	require.True(t, reopened)
+
+	row := requireOneReadiness(t, 71, "scope-a", "seedance-2.0-pro")
+	require.Equal(t, AssetModelReadinessStatusPending, row.Status)
+	require.Empty(t, row.ErrorClass)
+	require.Equal(t, int64(4), row.TargetGeneration)
+	require.Equal(t, 121, row.ChannelId)
+	require.Equal(t, "byteplus:v1:new", row.BindingScope)
+	require.Zero(t, row.AttemptCount)
+	require.Zero(t, row.AttemptStartedAt)
+	require.Zero(t, row.NextRetryAt)
+	require.Empty(t, row.LeaseOwner)
+	require.Zero(t, row.LeaseExpiresAt)
+	require.Equal(t, int64(400), row.UpdatedAt)
+}
+
+func TestReopenFailedAssetModelReadinessForTargetCASRejectsTargetChangedAfterCapture(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(t *testing.T, target AssetModelCoverageTarget)
+	}{
+		{
+			name: "rotated",
+			change: func(t *testing.T, target AssetModelCoverageTarget) {
+				require.NoError(t, DB.Model(&AssetModelCoverageTarget{}).Where("id = ?", target.Id).UpdateColumn("generation", target.Generation+1).Error)
+			},
+		},
+		{
+			name: "became unavailable",
+			change: func(t *testing.T, target AssetModelCoverageTarget) {
+				require.NoError(t, DB.Model(&AssetModelCoverageTarget{}).Where("id = ?", target.Id).UpdateColumn("status", AssetModelTargetStatusUnavailable).Error)
+			},
+		},
+		{
+			name: "deleted",
+			change: func(t *testing.T, target AssetModelCoverageTarget) {
+				require.NoError(t, DB.Delete(&AssetModelCoverageTarget{}, target.Id).Error)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			openAssetModelReadinessTestDB(t)
+
+			expected := AssetModelReadiness{
+				AssetId:          74,
+				ScopeKey:         "scope-a",
+				ModelName:        "seedance-2.0-pro",
+				TargetGeneration: 3,
+				ChannelId:        120,
+				BindingScope:     "byteplus:v1:old",
+				Status:           AssetModelReadinessStatusFailed,
+				ErrorClass:       "target_unavailable",
+				CreatedAt:        10,
+				UpdatedAt:        20,
+			}
+			require.NoError(t, DB.Create(&expected).Error)
+			target := AssetModelCoverageTarget{
+				ScopeKey:     "scope-a",
+				ModelName:    "seedance-2.0-pro",
+				Generation:   4,
+				ChannelId:    121,
+				BindingScope: "byteplus:v1:new",
+				Status:       AssetModelTargetStatusActive,
+				CreatedAt:    10,
+				UpdatedAt:    20,
+			}
+			require.NoError(t, DB.Create(&target).Error)
+			captured := target
+			tt.change(t, target)
+
+			reopened, err := ReopenFailedAssetModelReadinessForTargetCAS(expected, captured, false, 400)
+			require.NoError(t, err)
+			require.False(t, reopened)
+			persisted := requireOneReadiness(t, 74, "scope-a", "seedance-2.0-pro")
+			require.Equal(t, AssetModelReadinessStatusFailed, persisted.Status)
+			require.Equal(t, int64(3), persisted.TargetGeneration)
+		})
+	}
+}
+
+func TestReopenFailedAssetModelReadinessForTargetCASRequiresExactActiveBinding(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(t *testing.T, binding AssetBinding)
+		want   bool
+	}{
+		{name: "active binding", want: true},
+		{
+			name: "binding deactivated",
+			change: func(t *testing.T, binding AssetBinding) {
+				require.NoError(t, DB.Model(&AssetBinding{}).Where("id = ?", binding.Id).UpdateColumn("status", AssetStatusFailed).Error)
+			},
+		},
+		{
+			name: "binding missing",
+			change: func(t *testing.T, binding AssetBinding) {
+				require.NoError(t, DB.Delete(&AssetBinding{}, binding.Id).Error)
+			},
+		},
+		{
+			name: "binding upstream asset cleared",
+			change: func(t *testing.T, binding AssetBinding) {
+				require.NoError(t, DB.Model(&AssetBinding{}).Where("id = ?", binding.Id).UpdateColumn("upstream_asset_id", "").Error)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			openAssetModelReadinessTestDB(t)
+
+			expected := AssetModelReadiness{
+				AssetId:          75,
+				ScopeKey:         "scope-a",
+				ModelName:        "seedance-2.0-pro",
+				TargetGeneration: 3,
+				ChannelId:        120,
+				BindingScope:     "byteplus:v1:old",
+				Status:           AssetModelReadinessStatusFailed,
+				ErrorClass:       "target_unavailable",
+				CreatedAt:        10,
+				UpdatedAt:        20,
+			}
+			require.NoError(t, DB.Create(&expected).Error)
+			target := AssetModelCoverageTarget{
+				ScopeKey:     "scope-a",
+				ModelName:    "seedance-2.0-pro",
+				Generation:   4,
+				ChannelId:    121,
+				BindingScope: "byteplus:v1:new",
+				Status:       AssetModelTargetStatusActive,
+				CreatedAt:    10,
+				UpdatedAt:    20,
+			}
+			require.NoError(t, DB.Create(&target).Error)
+			binding := AssetBinding{
+				AssetId:         expected.AssetId,
+				ChannelId:       target.ChannelId,
+				BindingScope:    target.BindingScope,
+				UpstreamAssetId: "upstream-asset",
+				Status:          AssetStatusActive,
+				CreatedAt:       10,
+				UpdatedAt:       20,
+			}
+			require.NoError(t, DB.Create(&binding).Error)
+			if tt.change != nil {
+				tt.change(t, binding)
+			}
+
+			reopened, err := ReopenFailedAssetModelReadinessForTargetCAS(expected, target, true, 400)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, reopened)
+			persisted := requireOneReadiness(t, 75, "scope-a", "seedance-2.0-pro")
+			if tt.want {
+				require.Equal(t, AssetModelReadinessStatusPending, persisted.Status)
+			} else {
+				require.Equal(t, AssetModelReadinessStatusFailed, persisted.Status)
+				require.Equal(t, int64(3), persisted.TargetGeneration)
+			}
+		})
+	}
+}
+
+func TestReopenFailedAssetModelReadinessForTargetCASRejectsChangedSnapshot(t *testing.T) {
+	tests := []struct {
+		name   string
+		column string
+		value  any
+	}{
+		{name: "status", column: "status", value: AssetModelReadinessStatusProcessing},
+		{name: "error class", column: "error_class", value: "source_unavailable"},
+		{name: "target generation", column: "target_generation", value: int64(8)},
+		{name: "channel", column: "channel_id", value: 121},
+		{name: "binding scope", column: "binding_scope", value: "byteplus:v1:other"},
+		{name: "attempt count", column: "attempt_count", value: 5},
+		{name: "attempt start", column: "attempt_started_at", value: int64(102)},
+		{name: "next retry", column: "next_retry_at", value: int64(203)},
+		{name: "lease owner", column: "lease_owner", value: "new-worker"},
+		{name: "lease expiry", column: "lease_expires_at", value: int64(304)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			openAssetModelReadinessTestDB(t)
+
+			expected := AssetModelReadiness{
+				AssetId:          72,
+				ScopeKey:         "scope-a",
+				ModelName:        "seedance-2.0-pro",
+				TargetGeneration: 3,
+				ChannelId:        120,
+				BindingScope:     "byteplus:v1:old",
+				Status:           AssetModelReadinessStatusFailed,
+				ErrorClass:       "target_unavailable",
+				AttemptCount:     4,
+				AttemptStartedAt: 101,
+				NextRetryAt:      202,
+				LeaseOwner:       "stale-worker",
+				LeaseExpiresAt:   303,
+				CreatedAt:        10,
+				UpdatedAt:        20,
+			}
+			require.NoError(t, DB.Create(&expected).Error)
+			require.NoError(t, DB.Model(&AssetModelReadiness{}).Where("id = ?", expected.Id).UpdateColumn(tt.column, tt.value).Error)
+
+			target := AssetModelCoverageTarget{
+				ScopeKey:     "scope-a",
+				ModelName:    "seedance-2.0-pro",
+				Generation:   4,
+				ChannelId:    121,
+				BindingScope: "byteplus:v1:new",
+				Status:       AssetModelTargetStatusActive,
+			}
+			require.NoError(t, DB.Create(&target).Error)
+			reopened, err := ReopenFailedAssetModelReadinessForTargetCAS(expected, target, false, 400)
+			require.NoError(t, err)
+			require.False(t, reopened)
+			persisted := requireOneReadiness(t, 72, "scope-a", "seedance-2.0-pro")
+			require.NotEqual(t, AssetModelReadinessStatusPending, persisted.Status)
+			require.NotEqual(t, target.Generation, persisted.TargetGeneration)
+		})
+	}
+}
+
+func TestReopenFailedAssetModelReadinessForTargetCASRejectsUnsafeInputs(t *testing.T) {
+	tests := []struct {
+		name           string
+		mutateExpected func(*AssetModelReadiness)
+		mutateTarget   func(*AssetModelCoverageTarget)
+	}{
+		{name: "non failed snapshot", mutateExpected: func(row *AssetModelReadiness) { row.Status = AssetModelReadinessStatusRetryWaiting }},
+		{name: "non target error", mutateExpected: func(row *AssetModelReadiness) { row.ErrorClass = "source_unavailable" }},
+		{name: "inactive new target", mutateTarget: func(target *AssetModelCoverageTarget) { target.Status = AssetModelTargetStatusUnavailable }},
+		{name: "different target scope", mutateTarget: func(target *AssetModelCoverageTarget) { target.ScopeKey = "scope-b" }},
+		{name: "different target model", mutateTarget: func(target *AssetModelCoverageTarget) { target.ModelName = "seedance-2.5" }},
+		{name: "non positive target generation", mutateTarget: func(target *AssetModelCoverageTarget) { target.Generation = 0 }},
+		{name: "non positive target channel", mutateTarget: func(target *AssetModelCoverageTarget) { target.ChannelId = 0 }},
+		{name: "empty target binding scope", mutateTarget: func(target *AssetModelCoverageTarget) { target.BindingScope = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			openAssetModelReadinessTestDB(t)
+
+			expected := AssetModelReadiness{
+				AssetId:          73,
+				ScopeKey:         "scope-a",
+				ModelName:        "seedance-2.0-pro",
+				TargetGeneration: 3,
+				ChannelId:        120,
+				BindingScope:     "byteplus:v1:old",
+				Status:           AssetModelReadinessStatusFailed,
+				ErrorClass:       "target_unavailable",
+				AttemptCount:     4,
+				AttemptStartedAt: 101,
+				NextRetryAt:      202,
+				CreatedAt:        10,
+				UpdatedAt:        20,
+			}
+			if tt.mutateExpected != nil {
+				tt.mutateExpected(&expected)
+			}
+			require.NoError(t, DB.Create(&expected).Error)
+
+			target := AssetModelCoverageTarget{
+				ScopeKey:     "scope-a",
+				ModelName:    "seedance-2.0-pro",
+				Generation:   4,
+				ChannelId:    121,
+				BindingScope: "byteplus:v1:new",
+				Status:       AssetModelTargetStatusActive,
+			}
+			if tt.mutateTarget != nil {
+				tt.mutateTarget(&target)
+			}
+
+			reopened, err := ReopenFailedAssetModelReadinessForTargetCAS(expected, target, false, 400)
+			require.NoError(t, err)
+			require.False(t, reopened)
+			persisted := requireOneReadiness(t, 73, "scope-a", "seedance-2.0-pro")
+			require.Equal(t, int64(3), persisted.TargetGeneration)
+		})
+	}
 }
 
 func TestActivateAssetModelReadinessBindingSetCASActivatesExactCurrentBindingSet(t *testing.T) {

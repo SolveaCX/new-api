@@ -1,31 +1,11 @@
-import { notFound } from "next/navigation";
-import { CliMediaLibraryPage, getCliMediaMetadata } from "@/components/cli-media-library-page";
-import { CLI_VIDEO_PATH } from "@/lib/cli-landing";
-import { isLocale, LOCALES } from "@/lib/locales";
-import { buildMetadata } from "@/lib/seo";
+import { permanentRedirect } from "next/navigation";
+import { PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
+import { isLocale, localizePath } from "@/lib/locales";
 
-type Props = {
-  params: Promise<{ locale: string }>;
-};
-
-export function generateStaticParams() {
-  return LOCALES.filter((locale) => locale !== "en").map((locale) => ({ locale }));
-}
-
-export async function generateMetadata(props: Props) {
-  const params = await props.params;
-  if (!isLocale(params.locale)) return {};
-  const meta = getCliMediaMetadata("video", params.locale);
-  return buildMetadata({
-    title: meta.title,
-    description: meta.description,
-    pathname: CLI_VIDEO_PATH,
-    locale: params.locale,
-  });
-}
+type Props = { params: Promise<{ locale: string }> };
 
 export default async function Page(props: Props) {
   const params = await props.params;
-  if (!isLocale(params.locale) || params.locale === "en") notFound();
-  return <CliMediaLibraryPage kind="video" locale={params.locale} />;
+  if (!isLocale(params.locale) || params.locale === "en") permanentRedirect(PROMPT_VIDEO_PATH);
+  permanentRedirect(localizePath(PROMPT_VIDEO_PATH, params.locale));
 }

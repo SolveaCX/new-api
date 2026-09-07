@@ -488,6 +488,14 @@ func TestAssetModelWorkerFailsWhenTargetAlreadyUnavailable(t *testing.T) {
 	materializer := &scriptedAssetModelMaterializer{}
 	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, materializer)
 	asset, scope, target := seedAssetModelWorkerReadiness(t, "ast_worker_target_unavailable", "techmobi-key-a")
+	require.NoError(t, model.DB.Model(&model.AssetModelReadiness{}).
+		Where("asset_id = ? AND scope_key = ? AND model_name = ?", asset.Id, scope.ScopeKey, target.ModelName).
+		Updates(map[string]any{
+			"target_generation": target.Generation,
+			"channel_id":        target.ChannelId,
+			"binding_scope":     target.BindingScope,
+			"updated_at":        int64(99),
+		}).Error)
 	require.NoError(t, model.DB.Model(&model.AssetModelCoverageTarget{}).
 		Where("scope_key = ? AND model_name = ?", scope.ScopeKey, target.ModelName).
 		Updates(map[string]any{
@@ -503,6 +511,115 @@ func TestAssetModelWorkerFailsWhenTargetAlreadyUnavailable(t *testing.T) {
 	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
 	require.Equal(t, model.AssetModelReadinessStatusFailed, row.Status)
 	require.Equal(t, "target_unavailable", row.ErrorClass)
+}
+
+func TestAssetModelWorkerRetriesWhenTargetBecomesUnavailableBeforeReadinessAdoptsTarget(t *testing.T) {
+	tests := []struct {
+		name             string
+		publicID         string
+		targetGeneration func(model.AssetModelCoverageTarget) int64
+		channelID        func(model.AssetModelCoverageTarget) int
+		bindingScope     func(model.AssetModelCoverageTarget) string
+	}{
+		{name: "targetless", publicID: "ast_worker_targetless_unavailable"},
+		{
+			name: "missing generation", publicID: "ast_worker_missing_generation",
+			channelID:    func(target model.AssetModelCoverageTarget) int { return target.ChannelId },
+			bindingScope: func(target model.AssetModelCoverageTarget) string { return target.BindingScope },
+		},
+		{
+			name: "missing channel", publicID: "ast_worker_missing_channel",
+			targetGeneration: func(target model.AssetModelCoverageTarget) int64 { return target.Generation },
+			bindingScope:     func(target model.AssetModelCoverageTarget) string { return target.BindingScope },
+		},
+		{
+			name: "missing binding scope", publicID: "ast_worker_missing_scope",
+			targetGeneration: func(target model.AssetModelCoverageTarget) int64 { return target.Generation },
+			channelID:        func(target model.AssetModelCoverageTarget) int { return target.ChannelId },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			newAssetModelWorkerTestDB(t)
+			installAssetServiceTestDeps(t)
+			materializer := &scriptedAssetModelMaterializer{}
+			registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, materializer)
+			asset, scope, target := seedAssetModelWorkerReadiness(t, tt.publicID, "techmobi-key-a")
+			updates := map[string]any{"updated_at": int64(99)}
+			if tt.targetGeneration != nil {
+				updates["target_generation"] = tt.targetGeneration(target)
+			}
+			if tt.channelID != nil {
+				updates["channel_id"] = tt.channelID(target)
+			}
+			if tt.bindingScope != nil {
+				updates["binding_scope"] = tt.bindingScope(target)
+			}
+			require.NoError(t, model.DB.Model(&model.AssetModelReadiness{}).
+				Where("asset_id = ? AND scope_key = ? AND model_name = ?", asset.Id, scope.ScopeKey, target.ModelName).
+				Updates(updates).Error)
+			require.NoError(t, model.DB.Model(&model.AssetModelCoverageTarget{}).
+				Where("scope_key = ? AND model_name = ?", scope.ScopeKey, target.ModelName).
+				Updates(map[string]any{
+					"status":     model.AssetModelTargetStatusUnavailable,
+					"updated_at": int64(99),
+				}).Error)
+
+			processed, err := runAssetModelReadinessBatchAt(t, "node-a", 100)
+			require.NoError(t, err)
+			require.Equal(t, 1, processed)
+			require.EqualValues(t, 0, atomic.LoadInt64(&materializer.createCalls))
+
+			row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+			require.Equal(t, model.AssetModelReadinessStatusRetryWaiting, row.Status)
+			require.Equal(t, AssetMaterializeErrorProcessing, row.ErrorClass)
+			require.Equal(t, int64(105), row.NextRetryAt)
+		})
+	}
+}
+
+func TestAssetModelWorkerAdoptsRepublishedTargetAfterTargetlessUnavailableRetry(t *testing.T) {
+	newAssetModelWorkerTestDB(t)
+	installAssetServiceTestDeps(t)
+	materializer := &scriptedAssetModelMaterializer{}
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, materializer)
+	asset, scope, originalTarget := seedAssetModelWorkerReadiness(t, "ast_worker_republish_after_targetless", "techmobi-key-a")
+	require.NoError(t, model.DB.Model(&model.AssetModelCoverageTarget{}).
+		Where("scope_key = ? AND model_name = ?", scope.ScopeKey, originalTarget.ModelName).
+		Updates(map[string]any{
+			"status":     model.AssetModelTargetStatusUnavailable,
+			"updated_at": int64(99),
+		}).Error)
+
+	processed, err := runAssetModelReadinessBatchAt(t, "node-a", 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, originalTarget.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusRetryWaiting, row.Status)
+	require.Equal(t, int64(105), row.NextRetryAt)
+	require.Zero(t, row.TargetGeneration)
+	require.Zero(t, row.ChannelId)
+	require.Empty(t, row.BindingScope)
+
+	republishedTarget, err := ensureAssetModelCoverageTargetAt(scope, originalTarget.ModelName, "target-owner", 101)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetModelTargetStatusActive, republishedTarget.Status)
+	require.Equal(t, originalTarget.Generation+1, republishedTarget.Generation)
+
+	processed, err = runAssetModelReadinessBatchAt(t, "node-b", row.NextRetryAt)
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	row = requireAssetModelReadinessRow(t, asset.Id, scope, originalTarget.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusActive, row.Status)
+	require.Equal(t, republishedTarget.Generation, row.TargetGeneration)
+	require.Equal(t, republishedTarget.ChannelId, row.ChannelId)
+	require.Equal(t, republishedTarget.BindingScope, row.BindingScope)
+
+	binding, err := model.GetAssetBindingForScope(asset.Id, republishedTarget.ChannelId, republishedTarget.BindingScope)
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusActive, binding.Status)
+	require.EqualValues(t, 1, atomic.LoadInt64(&materializer.createCalls))
 }
 
 func TestAssetModelWorkerRevalidatesTargetEligibilityBeforeProviderWrite(t *testing.T) {
