@@ -942,16 +942,17 @@ describe("ModelLandingPage", () => {
     expect(promptLibraryHtml).not.toContain("/assets/cli/product-reveal.mp4");
   });
 
-  test("sends prompt-library make-one-like-this actions to the console overview", () => {
+  test("sends prompt-library make-one-like-this actions to the model-filtered prompt directory", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
     );
 
     expect(hrefBeforeText(html, "做一个类似的")).toBe(
-      "https://console.flatkey.ai/dashboard/overview",
+      "/zh/prompts?model=gpt-image-2",
     );
     const promptLibraryHtml = html.slice(html.indexOf('id="prompt-library"'));
-    expect((promptLibraryHtml.match(/href="https:\/\/console\.flatkey\.ai\/dashboard\/overview"/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/href="\/zh\/prompts\?model=gpt-image-2"/g) ?? []).length).toBe(6);
+    expect(promptLibraryHtml).not.toContain('href="https://console.flatkey.ai/dashboard/overview"');
     expect(promptLibraryHtml).not.toContain('href="#workbench"');
   });
 
