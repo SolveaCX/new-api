@@ -12,10 +12,10 @@ import {
 import { localizePath, type Locale } from "@/lib/locales";
 import { displayTokens, type RankingsData } from "@/lib/rankings-live";
 import { type PricingData } from "@/lib/pricing";
-import { consoleUrl } from "@/lib/origins";
 import { buildCollectionDetailSchema, buildCollectionsIndexSchema, stringifyJsonLd } from "@/lib/schema";
 
 const shellClass = "fk-site-frame";
+const detailShellClass = "mx-auto w-[calc(100%-2rem)] max-w-[900px] sm:w-[calc(100%-3rem)]";
 const COLLECTION_DISPLAY_ORDER = [
   "image-generation",
   "free-models",
@@ -137,13 +137,12 @@ function CollectionCard(props: { collection: ModelCollectionDefinition; locale: 
   return (
     <Link
       href={localizePath(`/collections/${props.collection.slug}`, props.locale)}
-      className="landing-animate-fade-up group flex min-h-[228px] flex-col rounded-lg border border-[#E8E5EF] bg-[#FBFBFD] p-5 opacity-0 transition duration-300 hover:-translate-y-1 hover:border-[#C9B8FF] hover:bg-white hover:shadow-[0_18px_36px_-24px_rgba(76,29,149,.38)] sm:p-6"
+      className="landing-animate-fade-up group flex min-h-[184px] flex-col rounded-lg border border-[#E8E5EF] bg-[#F8F8FA] p-5 opacity-0 transition duration-300 hover:-translate-y-0.5 hover:border-[#C9B8FF] hover:bg-white hover:shadow-[0_16px_32px_-26px_rgba(76,29,149,.42)] sm:p-6"
       style={{ animationDelay: `${120 + props.index * 55}ms` }}
     >
       <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#16151B] sm:text-xl">{copy.title}</h2>
-      <p className="mt-2 text-sm font-medium leading-6 text-[#4D4856]">{copy.shortDescription}</p>
-      <p className="mt-3 text-sm leading-6 text-[#777180]">{copy.intro}</p>
-      <span className="mt-auto inline-flex items-center gap-1 pt-5 text-sm font-semibold text-[#7C3AED]">{ui.browse}<ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
+      <p className="mt-2 text-sm leading-6 text-[#65616F]">{copy.shortDescription} {copy.intro}</p>
+      <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-semibold text-[#7C3AED]">{ui.browse}<ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" /></span>
     </Link>
   );
 }
@@ -166,20 +165,13 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
     <SiteShell locale={props.locale} pathname="/collections">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
       <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[#FAFAFC]">
-      <section className="border-b border-[#ECEAF1] bg-gradient-to-b from-[#F8F6FF] via-[#FBFAFD] to-[#FAFAFC] py-14 sm:py-20">
-        <div className={`${shellClass} text-center`}>
-          <p className="landing-animate-fade-up text-sm font-bold uppercase tracking-[0.16em] text-[#6D28D9] opacity-0">{ui.collections}</p>
-          <h1 className="landing-animate-fade-up mx-auto mt-4 max-w-4xl text-[clamp(2.25rem,5vw,4.75rem)] font-semibold leading-[1.06] tracking-[-0.055em] text-[#0B0B0F] opacity-0" style={{ animationDelay: "60ms" }}>{ui.heroTitle}</h1>
-          <p className="landing-animate-fade-up mx-auto mt-5 max-w-3xl text-base leading-7 text-[#5F5A68] opacity-0 sm:text-lg sm:leading-8" style={{ animationDelay: "110ms" }}>{ui.heroDescription}</p>
-          <div className="landing-animate-fade-up mt-7 flex flex-wrap justify-center gap-3 opacity-0" style={{ animationDelay: "160ms" }}>
-            <a href={consoleUrl("/dashboard")} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-black px-7 text-sm font-semibold !text-white transition hover:-translate-y-0.5 hover:bg-[#202024] hover:shadow-[0_12px_24px_-14px_rgba(0,0,0,.65)]">{ui.openConsole}<ArrowRight className="size-4" aria-hidden="true" /></a>
-            <Link href={localizePath("/pricing", props.locale)} className="inline-flex h-12 items-center justify-center rounded-xl border border-[#E3E0E8] bg-white px-7 text-sm font-semibold text-[#25232B] transition hover:-translate-y-0.5 hover:border-[#C9B8FF] hover:bg-[#FCFAFF] hover:shadow-[0_12px_24px_-14px_rgba(76,29,149,.35)]">{ui.browsePricing}</Link>
+      <section className="py-10 sm:py-14">
+        <div className={`${shellClass} max-w-[1160px]`}>
+          <div className="max-w-5xl">
+            <h1 className="landing-animate-fade-up text-3xl font-semibold tracking-[-0.035em] text-[#16151B] opacity-0 sm:text-4xl" style={{ animationDelay: "40ms" }}>{ui.collections}</h1>
+            <p className="landing-animate-fade-up mt-3 max-w-4xl text-base leading-7 text-[#5F5A68] opacity-0" style={{ animationDelay: "80ms" }}>{ui.heroDescription}</p>
           </div>
-        </div>
-      </section>
-      <section className="bg-[#FAFAFC] py-14 sm:py-20">
-        <div className={`${shellClass}`}>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
             {orderedCollections.map((collection, index) => <CollectionCard key={collection.slug} collection={collection} locale={props.locale} index={index} />)}
           </div>
         </div>
@@ -261,8 +253,8 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
     <SiteShell locale={props.locale} pathname={`/collections/${props.collection.slug}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
       <main className="model-detail-page model-prototype relative overflow-x-hidden bg-white text-[#171a21]">
-      <section className="model-hero">
-        <div className="model-container">
+      <section className="bg-white py-8 sm:py-10">
+        <div className={detailShellClass}>
           <nav className="text-sm text-[#777180]"><Link href={localizePath("/collections", props.locale)} className="hover:text-[#6D28D9]">{ui.collections}</Link><span className="mx-2">/</span><span>{copy.title}</span></nav>
           <div className="mt-4">
             <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[#16151B] sm:text-4xl">{copy.title}</h1>
@@ -276,8 +268,8 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         </div>
       </section>
 
-      <section className="bg-white py-10 sm:py-14">
-        <div className="model-container">
+      <section className="bg-white pb-12 sm:pb-16">
+        <div className={detailShellClass}>
           <div>
               <div className="mb-2 flex items-center gap-3"><Sparkles className="size-5 text-[#7C3AED]" /><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{rankingHeading}</h2></div>
               <p className="mb-3 text-sm leading-6 text-[#777180]">{copy.criteria}</p>
@@ -288,7 +280,7 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
         </div>
       </section>
 
-      <section className="bg-[#FBFAFE] py-14 sm:py-20"><div className="model-container"><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{ui.explore}</h2><div className="mt-6 flex flex-wrap gap-3">{related.map((collection) => <Link key={collection.slug} href={localizePath(`/collections/${collection.slug}`, props.locale)} className="rounded-full border border-[#DDD7E8] bg-white px-4 py-2 text-sm font-medium text-[#4C4657] hover:border-[#A78BFA] hover:text-[#6D28D9]">{getModelCollectionCopy(collection, props.locale).title}</Link>)}</div></div></section>
+      <section className="bg-[#FBFAFE] py-12 sm:py-16"><div className={detailShellClass}><h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#201D28]">{ui.explore}</h2><div className="mt-6 flex flex-wrap gap-3">{related.map((collection) => <Link key={collection.slug} href={localizePath(`/collections/${collection.slug}`, props.locale)} className="rounded-full border border-[#DDD7E8] bg-white px-4 py-2 text-sm font-medium text-[#4C4657] hover:border-[#A78BFA] hover:text-[#6D28D9]">{getModelCollectionCopy(collection, props.locale).title}</Link>)}</div></div></section>
       </main>
     </SiteShell>
   );
