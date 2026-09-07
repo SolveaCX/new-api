@@ -23,9 +23,9 @@ export function OnlineContactPage(props: { locale: Locale }) {
       <div className="contactPage">
         <div className="left">
           <div className="pxgrid" data-seed="89" data-cell="20" data-cols="7" data-rows="4" data-n="10" style={{ top: 8, right: 28, opacity: 0.8 }} />
-          <h2 className="display" style={{ fontSize: 54 }}>
+          <h1 className="display" style={{ fontSize: 54 }}>
             {copy.contact.heading}
-          </h2>
+          </h1>
           <div className="contactWhy">
             {copy.contact.why.map(({ body, num, title }) => (
               <div className="wi" key={num}>

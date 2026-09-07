@@ -70,4 +70,13 @@ describe("sanitizeBlogHtml", () => {
     expect(html).toContain('<h2 id="imported-article-title">Imported article title</h2>');
     expect(html).toContain('<h2 id="section">Section</h2>');
   });
+
+  test("adds alt text and canonicalizes same-site image URLs", () => {
+    const html = sanitizeBlogHtml(
+      '<p><img src="http://www.flatkey.ai/uploads/hero.png" /><img src="https://flatkey.ai/uploads/second.png" alt="Hero" /></p>'
+    );
+
+    expect(html).toContain('src="https://flatkey.ai/uploads/hero.png" alt=""');
+    expect(html).toContain('src="https://flatkey.ai/uploads/second.png" alt="Hero"');
+  });
 });

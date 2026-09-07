@@ -9,6 +9,7 @@ describe("OnlineContactPage", () => {
     const html = renderToStaticMarkup(<OnlineContactPage locale="ja" />);
 
     expect(html).toContain("公式モデルでスケール");
+    expect(html.match(/<h1\b/g)?.length).toBe(1);
     expect(html).toContain("営業に相談");
     expect(html).toContain("data-tally-src");
     expect(html).not.toContain("Scale on official models");
