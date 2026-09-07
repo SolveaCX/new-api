@@ -74,16 +74,16 @@ export function getModelCollectionsSeoCopy(locale: Locale): ModelCollectionsSeoC
 }
 
 const DETAIL_SEO_SUFFIX: Record<Locale, string> = {
-  en: " Compare live model details, usage signals, context, and public pricing through the Flatkey unified API.",
-  zh: " 通过 Flatkey 统一 API 比较实时模型详情、调用量、上下文和公开价格。",
-  es: " Compara detalles, uso, contexto y precios públicos mediante la API unificada de Flatkey.",
-  fr: " Comparez détails, usage, contexte et tarifs publics via l’API unifiée de Flatkey.",
-  pt: " Compare detalhes, uso, contexto e preços públicos pela API unificada da Flatkey.",
-  ru: " Сравнивайте подробности, использование, контекст и публичные цены через единый API Flatkey.",
-  ja: " Flatkey の統合 API でモデルの詳細、利用量、コンテキスト、公開料金を比較できます。",
-  vi: " So sánh chi tiết, lượt dùng, ngữ cảnh và giá công khai qua API hợp nhất của Flatkey.",
-  de: " Vergleichen Sie Details, Nutzung, Kontext und öffentliche Preise über die einheitliche Flatkey-API.",
-  id: " Bandingkan detail model, penggunaan, konteks, dan harga publik melalui API terpadu Flatkey.",
+  en: " Compare capabilities, context, usage, and public API pricing on Flatkey.",
+  zh: " 在 Flatkey 比较模型能力、上下文、调用量和公开 API 价格。",
+  es: " Compara capacidades, contexto, uso y precios públicos de API en Flatkey.",
+  fr: " Comparez les capacités, le contexte, l’usage et les tarifs API publics sur Flatkey.",
+  pt: " Compare capacidades, contexto, uso e preços públicos de API na Flatkey.",
+  ru: " Сравните возможности, контекст, использование и публичные цены API в Flatkey.",
+  ja: " Flatkey で機能、コンテキスト、利用量、公開 API 料金を比較できます。",
+  vi: " So sánh khả năng, ngữ cảnh, lượt dùng và giá API công khai trên Flatkey.",
+  de: " Vergleichen Sie Funktionen, Kontext, Nutzung und öffentliche API-Preise bei Flatkey.",
+  id: " Bandingkan kemampuan, konteks, penggunaan, dan harga API publik di Flatkey.",
 };
 
 export function getModelCollectionSeoDescription(collection: ModelCollectionDefinition, locale: Locale): string {
@@ -339,7 +339,7 @@ export function selectCollectionModels(collection: ModelCollectionDefinition, mo
   return matched.slice(0, limit);
 }
 
-export function modelCardData(model: PricingModel, pricing: PricingData) {
+export function modelCardData(model: PricingModel, pricing: PricingData, fallbackDescription = "") {
   const vendor = model.vendor_name ?? getVendorName(model, pricing.vendors);
   const price = resolveModelDisplayPrice(model, undefined, "plg", pricing.groupRatio);
   return {
@@ -350,7 +350,7 @@ export function modelCardData(model: PricingModel, pricing: PricingData) {
     // official vendor mark from the model family/vendor instead of passing the
     // full model id to the logo component (which would fall back to initials).
     iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
-    description: model.description || "",
+    description: model.featured_config?.description || model.description || model.vendor_description || fallbackDescription,
     context: model.directory_metadata?.context_tokens,
     price: price ? formatResolvedModelDisplayPrice(price) : null,
   };
