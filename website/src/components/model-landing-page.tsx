@@ -3110,6 +3110,7 @@ function PromptLibrarySection(props: {
   if (kind !== "image" && kind !== "video") return null;
   const items = buildPromptLibraryItems(props.config, props.examples, props.t, props.locale);
   const isPrototypeContent = Boolean(props.config.landingContent?.promptLibrary);
+  const promptDirectoryHref = localizePath(`/prompts?model=${encodeURIComponent(props.config.modelId)}`, props.locale);
 
   return (
     <section id="prompt-library" className="model-section prompt-library">
@@ -3185,12 +3186,12 @@ function PromptLibrarySection(props: {
                   >
                     {props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
                   </button>
-                  <a
-                    href={consoleUrl("/dashboard/overview")}
+                  <Link
+                    href={promptDirectoryHref}
                     className="dark-button"
                   >
                     {props.t("Make one like this")}
-                  </a>
+                  </Link>
                 </div>
               </div>
             </article>

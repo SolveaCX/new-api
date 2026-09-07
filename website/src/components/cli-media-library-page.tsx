@@ -1,10 +1,10 @@
-import { ArrowLeft, ArrowRight, ExternalLink, KeyRound, Play, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, ExternalLink, KeyRound, Play, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { CliPromptActionPanel } from "@/components/cli-prompt-action-panel";
 import { SiteShell } from "@/components/site-shell";
-import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH } from "@/lib/cli-landing";
-import { getCliMediaPromptItem, getCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
+import { CLI_LANDING_PATH, PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
+import { fetchCliMediaPromptItem, fetchCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 
@@ -157,7 +157,7 @@ const copyByLocale: Record<Locale, Record<MediaKind, CliMediaCopy>> = withIdFall
 });
 
 export function cliMediaPath(kind: MediaKind) {
-  return kind === "image" ? CLI_IMAGE_PATH : CLI_VIDEO_PATH;
+  return kind === "image" ? PROMPT_IMAGE_PATH : PROMPT_VIDEO_PATH;
 }
 
 export function cliMediaDetailPath(kind: MediaKind, slug: string) {
@@ -174,8 +174,8 @@ export function getCliMediaMetadata(kind: MediaKind, locale: Locale) {
   };
 }
 
-export function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale: Locale) {
-  const item = getCliMediaPromptItem(kind, slug);
+export async function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale: Locale) {
+  const item = await fetchCliMediaPromptItem(kind, slug);
   if (!item) return undefined;
   const title = item.title[locale] ?? item.title.en;
   const summary = item.summary[locale] ?? item.summary.en;
@@ -186,9 +186,9 @@ export function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale:
   };
 }
 
-export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) {
+export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) {
   const copy = copyByLocale[props.locale][props.kind];
-  const items = getCliMediaPromptItems(props.kind);
+  const items = await fetchCliMediaPromptItems(props.kind);
   const featuredItem = items[0];
   const weeklyItems = items.slice(0, 4);
   const curatedItems = items.slice(0, 8);
@@ -199,31 +199,40 @@ export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) 
 
   return (
     <SiteShell locale={props.locale} pathname={currentPath}>
-      <main className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_30%,#ffffff_58%,#f4f1ff_100%)] text-[#0B0B0F]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-60"
-        />
-        <section className="relative z-10 border-b border-violet-500/10 px-6 pt-20 pb-8 md:pt-26">
-          <div className="mx-auto max-w-6xl">
+      <main className="relative min-h-screen overflow-x-hidden bg-white text-[#171a21]">
+        <section className="relative z-10 px-6 pt-10 pb-8 sm:px-8 md:pt-14 md:pb-10 lg:px-10">
+          <div className="mx-auto max-w-[1280px]">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <Link href={localizePath(CLI_LANDING_PATH, props.locale)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#5b21b6] hover:text-[#0B0B0F]">
-                <ArrowLeft className="size-4" />
-                {copy.back}
-              </Link>
+              <PromptBreadcrumb locale={props.locale} kind={props.kind} />
+              <div className="flex flex-wrap items-center gap-2">
+                <a href={keyUrl} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#7c3aed] px-4 text-sm font-extrabold text-white shadow-[0_16px_34px_-18px_rgba(124,58,237,.65)] hover:bg-[#6d28d9]" style={{ color: "#fff" }}>
+                  <KeyRound className="size-4" />
+                  {copy.createKey}
+                </a>
+                <Link href={localizePath(CLI_LANDING_PATH, props.locale)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]">
+                  <ArrowLeft className="size-4" />
+                  {copy.back}
+                </Link>
+              </div>
             </div>
             <div className={`grid gap-8 lg:items-center ${isVideo ? "lg:grid-cols-[0.7fr_1.3fr]" : "lg:grid-cols-[0.78fr_1.22fr]"}`}>
               <div>
-                <p className="mb-3 inline-flex rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-700">{copy.heroBadge}</p>
-                <h1 className={`max-w-xl font-black tracking-tight ${isVideo ? "text-[clamp(2.15rem,4.4vw,4.1rem)] leading-[1.02]" : "text-[clamp(2.35rem,5.2vw,4.65rem)] leading-[0.98]"}`}>
+                <p className="mb-4 inline-flex rounded-full border border-[#ded6f4] bg-[#f4f0ff] px-3.5 py-1.5 text-[13px] font-extrabold text-[#4c1d95]">{copy.heroBadge}</p>
+                <h1 className={`max-w-xl font-extrabold tracking-tight ${isVideo ? "text-[clamp(2.15rem,4.4vw,3.7rem)] leading-none" : "text-[clamp(2.25rem,5vw,3.7rem)] leading-none"}`}>
                   {displayName}
-                  <span className="block bg-gradient-to-r from-violet-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-transparent">{props.locale === "zh" ? "提示词" : "Prompts"}</span>
+                  <span className="block text-[#7c3aed]">{props.locale === "zh" ? "提示词" : "Prompts"}</span>
                 </h1>
-                <p className="mt-4 max-w-lg text-sm leading-6 text-[#62626D] md:text-base">{copy.heroBody}</p>
-                <div className="mt-5 flex flex-wrap gap-2">
+                <p className="mt-5 max-w-lg text-sm leading-6 text-[#62626D] md:text-base">{copy.heroBody}</p>
+                <div className="mt-6 flex flex-wrap gap-2">
                   {copy.filters.map((filter) => (
-                    <span key={filter} className="rounded-full border border-violet-500/14 bg-white/70 px-3 py-1.5 text-xs font-bold text-[#43434C] shadow-[0_12px_34px_-28px_rgba(124,58,237,0.6)] backdrop-blur-sm">{filter}</span>
+                    <span key={filter} className="rounded-full border border-[#0B0B0F14] bg-white px-3 py-1.5 text-xs font-bold text-[#45414C] shadow-sm">{filter}</span>
                   ))}
+                </div>
+                <div className="mt-7 flex items-center gap-3 text-xs font-semibold text-[#77727f]">
+                  <span className="inline-flex size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.4)]" />
+                  <span>{items.length} {displayName.toLowerCase()} prompts</span>
+                  <span className="text-[#c8c3cf]">•</span>
+                  <span>{copy.artifact}</span>
                 </div>
               </div>
               {featuredItem ? <FeaturedPreview copy={copy} item={featuredItem} kind={props.kind} locale={props.locale} /> : null}
@@ -231,10 +240,10 @@ export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) 
           </div>
         </section>
 
-        <section className="relative z-10 px-6 py-12">
-          <div className="mx-auto max-w-6xl">
+        <section className="relative z-10 border-y border-[#0B0B0F0D] bg-[#f8f6fc] px-6 py-10 sm:px-8 md:py-12 lg:px-10">
+          <div className="mx-auto max-w-[1280px]">
             {items.length === 0 ? (
-              <div className="rounded-lg border border-violet-500/16 bg-white/75 p-8 text-sm text-[#62626D]">{copy.empty}</div>
+              <div className="rounded-2xl border border-[#E7E4EC] bg-white p-8 text-sm text-[#62626D] shadow-sm">{copy.empty}</div>
             ) : (
               <>
                 <SectionHeading eyebrow={props.locale === "zh" ? "每周热门" : "Weekly Hot"} title={props.locale === "zh" ? `热门${displayName}提示词` : `Popular ${displayName.toLowerCase()} prompts`} />
@@ -261,9 +270,9 @@ export function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) 
   );
 }
 
-export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Locale; slug: string }) {
+export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Locale; slug: string }) {
   const copy = copyByLocale[props.locale][props.kind];
-  const item = getCliMediaPromptItem(props.kind, props.slug);
+  const item = await fetchCliMediaPromptItem(props.kind, props.slug);
   const keyUrl = consoleUrl("/keys", `lng=${props.locale}`);
 
   if (!item) return null;
@@ -272,7 +281,7 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
   const summary = item.summary[props.locale] ?? item.summary.en;
   const currentPath = cliMediaDetailPath(props.kind, item.slug);
   const listPath = localizePath(cliMediaPath(props.kind), props.locale);
-  const relatedItems = getCliMediaPromptItems(props.kind).filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
+  const relatedItems = (await fetchCliMediaPromptItems(props.kind)).filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
   const isVideo = props.kind === "video";
   const generateParams = new URLSearchParams({
     generate: props.kind,
@@ -285,34 +294,40 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
 
   return (
     <SiteShell locale={props.locale} pathname={currentPath}>
-      <main className="relative min-h-screen bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_30%,#ffffff_58%,#f4f1ff_100%)] text-[#0B0B0F]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-0 bg-[linear-gradient(to_right,rgba(124,58,237,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(124,58,237,0.08)_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] opacity-60"
-        />
-        <section className="relative z-10 border-b border-violet-500/10 px-6 pt-24 pb-10 md:pt-32">
-          <div className="mx-auto max-w-6xl">
-            <Link href={listPath} className="inline-flex items-center gap-2 text-sm font-semibold text-[#5b21b6] hover:text-[#0B0B0F]">
-              <ArrowLeft className="size-4" />
-              {props.locale === "zh" ? "返回列表" : copy.back}
-            </Link>
+      <main className="relative min-h-screen bg-white text-[#171a21]">
+        <section className="relative z-10 px-6 pt-10 pb-8 sm:px-8 md:pt-14 md:pb-10 lg:px-10">
+          <div className="mx-auto max-w-[1280px]">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <PromptBreadcrumb locale={props.locale} kind={props.kind} itemTitle={title} />
+              <div className="flex flex-wrap items-center gap-2">
+                <a href={generateUrl} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#7c3aed] px-4 text-sm font-extrabold text-white shadow-[0_16px_34px_-18px_rgba(124,58,237,.65)] hover:bg-[#6d28d9]" style={{ color: "#fff" }}>
+                  <Sparkles className="size-4" />
+                  {copy.createKey}
+                </a>
+                <Link href={listPath} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]">
+                  <ArrowLeft className="size-4" />
+                  {props.locale === "zh" ? "返回列表" : copy.back}
+                </Link>
+              </div>
+            </div>
             <div className="mt-6 max-w-4xl">
               <div className="mb-4 flex flex-wrap gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-700"><Sparkles className="size-3.5" />{copy.artifact}</span>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#62626D]">{item.updatedAt}</span>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#62626D] shadow-sm">{item.updatedAt}</span>
               </div>
-              <h1 className="text-[clamp(2.6rem,5vw,5.4rem)] leading-[0.95] font-black tracking-tight">{title}</h1>
+              <h1 className="text-[clamp(2.25rem,5vw,3.7rem)] leading-none font-extrabold tracking-tight">{title}</h1>
               <p className="mt-5 max-w-2xl text-base leading-7 text-[#62626D]">{summary}</p>
             </div>
             <div className={`mt-8 grid gap-6 lg:items-start ${isVideo ? "lg:grid-cols-[minmax(0,1.25fr)_300px]" : "lg:grid-cols-[minmax(0,1fr)_320px]"}`}>
-              <article className="overflow-hidden rounded-lg border border-violet-500/16 bg-white/72 shadow-[0_24px_70px_-48px_rgba(91,33,182,0.72)] backdrop-blur-sm">
+              <article className="overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.26)]">
                 <ArtifactPreview artifact={item.artifact} title={title} variant="detail" />
               </article>
               <aside className="space-y-4">
-                <div className="rounded-lg border border-[#0B0B0F14] bg-white p-5 shadow-[0_18px_54px_-46px_rgba(91,33,182,0.7)]">
+                <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-5 shadow-sm">
                   <div className="grid grid-cols-2 gap-3">
                     <DetailMetric label={props.locale === "zh" ? "类型" : "Type"} value={props.kind === "image" ? copy.browseImage : copy.browseVideo} />
                     <DetailMetric label={props.locale === "zh" ? "更新" : "Updated"} value={item.updatedAt} />
+                    <div className="col-span-2"><DetailMetric label={copy.model} value={item.model} /></div>
                   </div>
                   <div className="mt-4 grid gap-4 border-t border-[#0B0B0F10] pt-4">
                     <SourceInfo copy={copy} item={item} locale={props.locale} />
@@ -323,7 +338,7 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
                     ))}
                   </div>
                 </div>
-                <a className="flex items-center justify-between rounded-lg border border-violet-500/20 bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-[0_18px_38px_-26px_rgba(91,33,182,0.9)] hover:bg-violet-700" href={keyUrl} style={{ color: "#fff" }}>
+                <a className="flex items-center justify-between rounded-xl border border-violet-500/20 bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-[0_18px_38px_-26px_rgba(91,33,182,0.45)] hover:bg-violet-700" href={keyUrl} style={{ color: "#fff" }}>
                   <span className="inline-flex items-center gap-2"><KeyRound className="size-4" />{copy.createKey}</span>
                   <ArrowRight className="size-4" />
                 </a>
@@ -332,8 +347,8 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
           </div>
         </section>
 
-        <section className="px-6 py-12">
-          <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="border-y border-[#0B0B0F0D] bg-[#f8f6fc] px-6 py-8 sm:px-8 lg:px-10">
+          <div className="mx-auto grid max-w-[1280px] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <CliPromptActionPanel
               defaultPrompt={item.prompt}
               generateUrl={generateUrl}
@@ -350,8 +365,8 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
         </section>
 
         {relatedItems.length > 0 ? (
-          <section className="px-6 pb-16">
-            <div className="mx-auto max-w-6xl">
+          <section className="px-6 py-12 sm:px-8 lg:px-10">
+            <div className="mx-auto max-w-[1280px]">
               <SectionHeading eyebrow={props.locale === "zh" ? "继续浏览" : "More"} title={props.locale === "zh" ? "相关提示词产物" : "Related prompt outputs"} />
               <div className="grid gap-4 md:grid-cols-3">
                 {relatedItems.map((related) => (
@@ -366,12 +381,40 @@ export function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Local
   );
 }
 
+function PromptBreadcrumb(props: { locale: Locale; kind: MediaKind; itemTitle?: string }) {
+  const copy = copyByLocale[props.locale][props.kind];
+  const mediaLabel = props.kind === "image" ? copy.browseImage : copy.browseVideo;
+  const crumbs = [
+    { label: "Flatkey", href: localizePath("/", props.locale) },
+    { label: mediaLabel, href: localizePath(cliMediaPath(props.kind), props.locale) },
+  ];
+
+  return (
+    <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-[#6B6475]">
+      {crumbs.map((crumb, index) => (
+        <span key={crumb.href} className="inline-flex min-w-0 items-center gap-1">
+          {index > 0 ? <ChevronRight className="size-3 text-[#AAA3B2]" aria-hidden="true" /> : null}
+          <Link href={crumb.href} className="truncate hover:text-[#4c1d95]">
+            {crumb.label}
+          </Link>
+        </span>
+      ))}
+      {props.itemTitle ? (
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <ChevronRight className="size-3 text-[#AAA3B2]" aria-hidden="true" />
+          <span className="min-w-0 truncate font-mono text-[#0B0B0F]/80">{props.itemTitle}</span>
+        </span>
+      ) : null}
+    </nav>
+  );
+}
+
 function SectionHeading(props: { eyebrow: string; title: string }) {
   return (
-    <div className="mb-5 flex items-end justify-between gap-4">
+    <div className="mb-6 flex items-end justify-between gap-4">
       <div>
-        <p className="text-xs font-black tracking-[0.12em] text-violet-600 uppercase">{props.eyebrow}</p>
-        <h2 className="mt-1 text-3xl font-black tracking-tight">{props.title}</h2>
+        <p className="text-xs font-black tracking-[0.16em] text-violet-600 uppercase">{props.eyebrow}</p>
+        <h2 className="mt-2 text-3xl font-black tracking-[-0.035em] text-[#0B0B0F]">{props.title}</h2>
       </div>
     </div>
   );
@@ -381,15 +424,16 @@ function FeaturedPreview(props: { copy: CliMediaCopy; item: PromptItem; kind: Me
   const title = props.item.title[props.locale] ?? props.item.title.en;
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
   return (
-    <article className="overflow-hidden rounded-lg border border-[#0B0B0F18] bg-white shadow-[0_24px_70px_-46px_rgba(91,33,182,0.65)] lg:ml-auto lg:w-full">
+    <article className="overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.26)] lg:ml-auto lg:w-full">
       <Link aria-label={title} href={href}>
         <ArtifactPreview artifact={props.item.artifact} title={title} variant="hero" />
       </Link>
-      <div className="flex items-center justify-between gap-3 border-t border-[#0B0B0F10] px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-[#0B0B0F10] px-5 py-4">
         <div className="min-w-0">
-          <p className="truncate text-sm font-black">{title}</p>
+          <p className="truncate text-sm font-black text-[#0B0B0F]">{title}</p>
+          <p className="mt-1 truncate font-mono text-[11px] font-semibold text-[#77727f]">{props.item.model}</p>
         </div>
-        <span className="rounded border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[11px] font-black text-violet-700">{props.copy.artifact}</span>
+        <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[11px] font-black text-violet-700">{props.copy.artifact}</span>
       </div>
     </article>
   );
@@ -401,31 +445,32 @@ function PromptCard(props: { copy: CliMediaCopy; item: PromptItem; keyUrl: strin
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
 
   return (
-    <article className={`mb-5 break-inside-avoid overflow-hidden rounded-lg border border-[#0B0B0F12] bg-white shadow-[0_20px_70px_-58px_rgba(91,33,182,0.8)] transition-shadow hover:shadow-[0_28px_80px_-54px_rgba(91,33,182,0.95)] ${props.kind === "video" ? "md:mb-6" : ""}`}>
+    <article className={`mb-5 break-inside-avoid overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_20px_70px_-58px_rgba(46,16,101,.28)] transition-transform transition-shadow hover:-translate-y-1 hover:border-violet-500/30 hover:shadow-[0_28px_80px_-54px_rgba(91,33,182,.38)] ${props.kind === "video" ? "md:mb-6" : ""}`}>
       <Link aria-label={title} href={href}>
         <ArtifactPreview artifact={props.item.artifact} title={title} />
       </Link>
       <div className="p-5">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-1 text-[11px] font-bold text-violet-700"><Sparkles className="size-3" />{props.copy.artifact}</span>
+          <span className="rounded-full border border-[#0B0B0F14] bg-white px-2.5 py-1 text-[11px] font-bold text-[#45414C]">{props.item.model}</span>
           <span className="rounded-full bg-[#0B0B0F0A] px-2.5 py-1 text-[11px] font-bold text-[#62626D]">{props.item.updatedAt}</span>
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-[#0B0B0F]">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-[#62626D]">{summary}</p>
-        <div className="mt-5 rounded-lg border border-[#0B0B0F10] bg-[#161020]">
+        <div className="mt-5 rounded-xl border border-[#0B0B0F10] bg-[#161020]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-xs font-semibold text-white/60">{props.copy.prompt}</span>
           </div>
           <pre className="max-h-48 overflow-auto p-4 text-[12px] leading-6 whitespace-pre-wrap text-violet-100"><code>{props.item.prompt}</code></pre>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          {!isOwnedSource(props.item) ? (
-            <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-3 text-sm font-semibold text-[#43434C] hover:border-violet-500/35 hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
+          {!isOwnedSource(props.item) && props.item.source.url ? (
+              <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-3 text-sm font-semibold text-[#43434C] hover:border-violet-500/35 hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="size-4" />
               {props.copy.viewSource}
             </a>
           ) : null}
-          <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-600 px-3 text-sm font-semibold text-white shadow-[0_12px_28px_-18px_rgba(91,33,182,0.9)] hover:bg-violet-700" href={props.keyUrl} style={{ color: "#fff" }}>
+          <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-600 px-3 text-sm font-semibold text-white shadow-[0_12px_28px_-18px_rgba(91,33,182,0.55)] hover:bg-violet-700" href={props.keyUrl} style={{ color: "#fff" }}>
             <KeyRound className="size-4" />
             {props.copy.createKey}
           </a>
@@ -439,14 +484,15 @@ function CompactPromptCard(props: { item: PromptItem; kind: MediaKind; locale: L
   const title = props.item.title[props.locale] ?? props.item.title.en;
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
   return (
-    <article className="overflow-hidden rounded-lg border border-[#0B0B0F14] bg-white shadow-[0_18px_50px_-42px_rgba(91,33,182,0.9)] transition-transform hover:-translate-y-0.5">
+    <article className="overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_18px_50px_-42px_rgba(46,16,101,.3)] transition-transform hover:-translate-y-1 hover:border-violet-500/30">
       <Link aria-label={title} href={href}>
         <ArtifactPreview artifact={props.item.artifact} title={title} variant="compact" />
       </Link>
-      <div className="border-t border-[#0B0B0F10] p-3">
-        <h3 className="line-clamp-2 min-h-10 text-sm font-black leading-5">{title}</h3>
+      <div className="border-t border-[#0B0B0F10] p-4">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-black leading-5 text-[#0B0B0F]">{title}</h3>
         <div className="mt-3 flex items-center justify-end gap-2">
-          <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[11px] font-black text-violet-700">{props.item.updatedAt}</span>
+          <span className="mr-auto min-w-0 truncate font-mono text-[11px] font-semibold text-[#77727f]">{props.item.model}</span>
+          <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-black text-violet-700">{props.item.updatedAt}</span>
         </div>
       </div>
     </article>
@@ -464,7 +510,7 @@ function Info(props: { label: string; value: string }) {
 
 function DetailMetric(props: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#0B0B0F10] bg-[#fbfaff] p-3">
+    <div className="rounded-xl border border-[#0B0B0F10] bg-[#fbfaff] p-3">
       <p className="text-[11px] font-bold tracking-[0.12em] text-[#62626D] uppercase">{props.label}</p>
       <p className="mt-1 truncate text-sm font-black text-[#0B0B0F]">{props.value}</p>
     </div>
@@ -492,7 +538,7 @@ function SourceInfo(props: { copy: CliMediaCopy; item: PromptItem; locale: Local
   return (
     <div>
       <p className="text-[11px] font-bold tracking-[0.12em] text-[#62626D] uppercase">{props.copy.source}</p>
-      {isOwnedSource(props.item) ? (
+      {isOwnedSource(props.item) || !props.item.source.url ? (
         <p className="mt-1 text-sm font-semibold text-[#0B0B0F]">{label}</p>
       ) : (
         <a className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-[#5b21b6] hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
@@ -507,15 +553,15 @@ function SourceInfo(props: { copy: CliMediaCopy; item: PromptItem; locale: Local
 function SourcePanel(props: { copy: CliMediaCopy; item: PromptItem; locale: Locale }) {
   const label = sourceDisplayLabel(props.item, props.locale);
   return (
-    <div className="rounded-lg border border-[#0B0B0F12] bg-white p-5">
+    <div className="rounded-2xl border border-[#0B0B0F12] bg-white p-5 shadow-sm">
       <p className="text-xs font-black tracking-[0.12em] text-violet-600 uppercase">{props.locale === "zh" ? "归属" : "Provenance"}</p>
       <p className="mt-3 text-sm font-semibold text-[#0B0B0F]">{label}</p>
-      {isOwnedSource(props.item) ? (
+      {isOwnedSource(props.item) || !props.item.source.url ? (
         <p className="mt-1 text-sm text-[#62626D]">{props.locale === "zh" ? "Flatkey 自有迁移产物" : "Flatkey owned migrated artifact"}</p>
       ) : (
         <>
           <p className="mt-1 text-sm text-[#62626D]">{props.item.source.platform}</p>
-          <a className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-3 text-sm font-semibold text-[#43434C] hover:border-violet-500/35 hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
+          <a className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl border border-[#0B0B0F14] bg-white px-3 text-sm font-semibold text-[#43434C] hover:border-violet-500/35 hover:text-[#0B0B0F]" href={props.item.source.url} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="size-4" />
             {props.copy.viewSource}
           </a>
@@ -530,7 +576,7 @@ function ArtifactPreview(props: { artifact: PromptArtifact; title: string; varia
   const mediaFillClass = "mx-auto h-full w-auto max-w-none";
   if (props.artifact.kind === "video") {
     return (
-      <div className={`relative flex ${aspect} items-center justify-center overflow-hidden bg-[linear-gradient(135deg,#fbfaff,#ece7fb)]`}>
+      <div className={`relative flex ${aspect} items-center justify-center overflow-hidden bg-[#211c2d]`}>
         {isVideoFile(props.artifact.url) ? (
           <video
             aria-label={props.artifact.alt}
@@ -559,7 +605,7 @@ function ArtifactPreview(props: { artifact: PromptArtifact; title: string; varia
 
   if (props.artifact.kind === "image") {
     return (
-      <div className={`relative flex ${aspect} items-center justify-center overflow-hidden bg-[linear-gradient(135deg,#fbfaff,#ece7fb)]`}>
+      <div className={`relative flex ${aspect} items-center justify-center overflow-hidden bg-[#211c2d]`}>
         <Image src={props.artifact.url} alt={props.artifact.alt} width={1600} height={1200} sizes="(min-width: 1024px) 50vw, 100vw" className={mediaFillClass} />
       </div>
     );

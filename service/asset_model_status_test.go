@@ -96,6 +96,242 @@ func TestReconcileAssetForScopeEnrollsReadinessWithoutPersistingAggregateStatus(
 	require.Equal(t, model.AssetStatusActive, stored.Status, "scope projection must not be written to shared assets.status")
 }
 
+func TestReconcileAssetForScopeReopensHistoricalTargetlessTargetUnavailableFailure(t *testing.T) {
+	newAssetStatusTestDB(t)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 170, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "techmobi-key-a",
+		Mapping:     `{"seedance-2.0":"doubao/seedance-pro"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: false},
+	})
+	asset := insertAssetStatusAsset(t, model.AssetSourceStatusAvailable, model.AssetStatusActive)
+	scope := AssetModelScope{ScopeKey: "scope-targetless-recovery", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     3,
+		AttemptStartedAt: 80,
+		NextRetryAt:      130,
+		LeaseOwner:       "stale-owner",
+		LeaseExpiresAt:   120,
+		CreatedAt:        80,
+		UpdatedAt:        90,
+	}).Error)
+
+	result, err := ReconcileAssetForScope(context.Background(), asset.UserId, asset.PublicId, scope)
+
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusProcessing, result.Status)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusPending, row.Status)
+	require.Empty(t, row.ErrorClass)
+	require.Equal(t, target.Generation, row.TargetGeneration)
+	require.Equal(t, target.ChannelId, row.ChannelId)
+	require.Equal(t, target.BindingScope, row.BindingScope)
+	require.Zero(t, row.AttemptCount)
+	require.Zero(t, row.AttemptStartedAt)
+	require.Zero(t, row.NextRetryAt)
+	require.Empty(t, row.LeaseOwner)
+	require.Zero(t, row.LeaseExpiresAt)
+}
+
+func TestReconcileAssetForScopeReopensMismatchedFailureWithCurrentActiveBinding(t *testing.T) {
+	newAssetStatusTestDB(t)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 171, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "techmobi-key-a",
+		Mapping:     `{"seedance-2.0":"doubao/seedance-pro"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: false},
+	})
+	asset := insertAssetStatusAsset(t, model.AssetSourceStatusAvailable, model.AssetStatusActive)
+	scope := AssetModelScope{ScopeKey: "scope-mismatched-recovery", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetModelCoverageTarget{}).
+		Where("id = ?", target.Id).
+		Update("generation", target.Generation+1).Error)
+	target.Generation++
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       target.ChannelId,
+		BindingScope:    target.BindingScope,
+		Status:          model.AssetStatusActive,
+		UpstreamAssetId: "upstream-current",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		TargetGeneration: target.Generation - 1,
+		ChannelId:        target.ChannelId,
+		BindingScope:     target.BindingScope,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     2,
+		AttemptStartedAt: 80,
+		CreatedAt:        80,
+		UpdatedAt:        90,
+	}).Error)
+
+	result, err := ReconcileAssetForScope(context.Background(), asset.UserId, asset.PublicId, scope)
+
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusProcessing, result.Status)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusPending, row.Status)
+	require.Equal(t, target.Generation, row.TargetGeneration)
+	require.Equal(t, target.ChannelId, row.ChannelId)
+	require.Equal(t, target.BindingScope, row.BindingScope)
+	require.Empty(t, row.ErrorClass)
+	require.Zero(t, row.AttemptCount)
+}
+
+func TestReconcileAssetForScopeDoesNotReopenBoundFailureWithoutCurrentActiveBinding(t *testing.T) {
+	newAssetStatusTestDB(t)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 172, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "techmobi-key-a",
+		Mapping:     `{"seedance-2.0":"doubao/seedance-pro"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: false},
+	})
+	asset := insertAssetStatusAsset(t, model.AssetSourceStatusAvailable, model.AssetStatusActive)
+	scope := AssetModelScope{ScopeKey: "scope-current-failure", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.AssetModelCoverageTarget{}).
+		Where("id = ?", target.Id).
+		Update("generation", target.Generation+1).Error)
+	target.Generation++
+	require.NoError(t, model.DB.Create(&model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		TargetGeneration: target.Generation - 1,
+		ChannelId:        target.ChannelId,
+		BindingScope:     target.BindingScope,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     2,
+		AttemptStartedAt: 80,
+		CreatedAt:        80,
+		UpdatedAt:        90,
+	}).Error)
+
+	result, err := ReconcileAssetForScope(context.Background(), asset.UserId, asset.PublicId, scope)
+
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusFailed, result.Status)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusFailed, row.Status)
+	require.Equal(t, "target_unavailable", row.ErrorClass)
+	require.Equal(t, target.Generation-1, row.TargetGeneration)
+	require.Equal(t, target.ChannelId, row.ChannelId)
+	require.Equal(t, target.BindingScope, row.BindingScope)
+}
+
+func TestReconcileAssetForScopeDoesNotReopenCurrentBoundFailureWithActiveBinding(t *testing.T) {
+	newAssetStatusTestDB(t)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 173, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "techmobi-key-a",
+		Mapping:     `{"seedance-2.0":"doubao/seedance-pro"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: false},
+	})
+	asset := insertAssetStatusAsset(t, model.AssetSourceStatusAvailable, model.AssetStatusActive)
+	scope := AssetModelScope{ScopeKey: "scope-current-bound-failure", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Create(&model.AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       target.ChannelId,
+		BindingScope:    target.BindingScope,
+		Status:          model.AssetStatusActive,
+		UpstreamAssetId: "upstream-current",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		TargetGeneration: target.Generation,
+		ChannelId:        target.ChannelId,
+		BindingScope:     target.BindingScope,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     2,
+		AttemptStartedAt: 80,
+		CreatedAt:        80,
+		UpdatedAt:        90,
+	}).Error)
+
+	result, err := ReconcileAssetForScope(context.Background(), asset.UserId, asset.PublicId, scope)
+
+	require.NoError(t, err)
+	require.Equal(t, model.AssetStatusFailed, result.Status)
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusFailed, row.Status)
+	require.Equal(t, "target_unavailable", row.ErrorClass)
+	require.Equal(t, target.Generation, row.TargetGeneration)
+	require.Equal(t, target.ChannelId, row.ChannelId)
+	require.Equal(t, target.BindingScope, row.BindingScope)
+}
+
+func TestReopenStaleAssetModelReadinessRowsRequestsReloadAfterRecoveryCASLoses(t *testing.T) {
+	newAssetStatusTestDB(t)
+	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})
+	insertAssetModelTargetChannel(t, assetModelTargetChannelSeed{
+		ID: 174, ChannelType: constant.ChannelTypeTechMobiVideo, Group: "default", ModelName: "seedance-2.0",
+		Priority: 80, Weight: 50, Key: "techmobi-key-a",
+		Mapping:     `{"seedance-2.0":"doubao/seedance-pro"}`,
+		ChannelInfo: model.ChannelInfo{IsMultiKey: false},
+	})
+	asset := insertAssetStatusAsset(t, model.AssetSourceStatusAvailable, model.AssetStatusActive)
+	scope := AssetModelScope{ScopeKey: "scope-recovery-cas-loss", Groups: []string{"default"}, ModelNames: []string{"seedance-2.0"}}
+	target, err := ensureAssetModelCoverageTargetAt(scope, "seedance-2.0", "owner", 100)
+	require.NoError(t, err)
+	stale := model.AssetModelReadiness{
+		AssetId:          asset.Id,
+		ScopeKey:         scope.ScopeKey,
+		ModelName:        target.ModelName,
+		Status:           model.AssetModelReadinessStatusFailed,
+		ErrorClass:       "target_unavailable",
+		AttemptCount:     1,
+		AttemptStartedAt: 80,
+		CreatedAt:        80,
+		UpdatedAt:        90,
+	}
+	require.NoError(t, model.DB.Create(&stale).Error)
+	require.NoError(t, model.DB.Model(&model.AssetModelReadiness{}).
+		Where("id = ?", stale.Id).
+		Updates(map[string]any{
+			"status":      model.AssetModelReadinessStatusPending,
+			"error_class": "",
+			"updated_at":  int64(91),
+		}).Error)
+
+	reload, err := reopenStaleAssetModelReadinessRows(
+		asset.Id,
+		[]model.AssetModelReadiness{stale},
+		map[string]model.AssetModelCoverageTarget{target.ModelName: *target},
+		100,
+	)
+
+	require.NoError(t, err)
+	require.True(t, reload, "a CAS loser must reload the winner's persisted state")
+	row := requireAssetModelReadinessRow(t, asset.Id, scope, target.ModelName)
+	require.Equal(t, model.AssetModelReadinessStatusPending, row.Status)
+	require.Empty(t, row.ErrorClass)
+	require.Equal(t, int64(91), row.UpdatedAt)
+}
+
 func TestReconcileAssetForScopeUsesStrictPublicStatusByDefault(t *testing.T) {
 	newAssetStatusTestDB(t)
 	registerAssetMaterializerForTest(t, constant.ChannelTypeTechMobiVideo, &recordingAssetMaterializer{})

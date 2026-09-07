@@ -1,4 +1,5 @@
 import { type Locale, withIdFallback } from "./locales";
+import { APP_CONSOLE_ORIGIN } from "./origins";
 
 export type PromptArtifact =
   | {
@@ -49,6 +50,22 @@ export type PromptItem = {
   tags: string[];
   title: Record<Locale, string>;
   updatedAt: string;
+};
+
+type PromptLibraryApiItem = {
+  artifact?: unknown;
+  category?: string;
+  model?: string;
+  output?: unknown;
+  prompt?: string;
+  slug?: string;
+  source?: unknown;
+  source_platform?: string;
+  source_url?: string;
+  summary?: unknown;
+  tags?: unknown;
+  title?: unknown;
+  updatedAt?: string;
 };
 
 export type PromptLibraryCopy = {
@@ -1216,6 +1233,175 @@ function hasArtifact(item: PromptItem): boolean {
   return false;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function localizedText(value: unknown, fallback: string): Record<Locale, string> {
+  const record = isRecord(value) ? value : {};
+  const en = typeof record.en === "string" && record.en.trim() ? record.en : fallback;
+  const zh = typeof record.zh === "string" && record.zh.trim() ? record.zh : en;
+  return withIdFallback({
+    en,
+    zh,
+    es: typeof record.es === "string" && record.es.trim() ? record.es : en,
+    fr: typeof record.fr === "string" && record.fr.trim() ? record.fr : en,
+    pt: typeof record.pt === "string" && record.pt.trim() ? record.pt : en,
+    ru: typeof record.ru === "string" && record.ru.trim() ? record.ru : en,
+    ja: typeof record.ja === "string" && record.ja.trim() ? record.ja : en,
+    vi: typeof record.vi === "string" && record.vi.trim() ? record.vi : en,
+    de: typeof record.de === "string" && record.de.trim() ? record.de : en,
+  });
+}
+
+function promptSource(value: unknown, sourcePlatform = "", sourceUrl = ""): PromptSource {
+  const record = isRecord(value) ? value : {};
+  const platform = String(record.platform || sourcePlatform || "External") as PromptSource["platform"];
+  return {
+    capturedAt: String(record.captured_at || record.capturedAt || today),
+    label: String(record.label || sourcePlatform || "External"),
+    platform: ["GitHub", "Social", "Official docs", "Flatkey generated", "Local migration", "External"].includes(platform) ? platform : "External",
+    url: safeHttpUrl(record.url || sourceUrl),
+  };
+}
+
+function safeHttpUrl(value: unknown): string {
+  const rawUrl = String(value || "").trim();
+  if (!rawUrl) return "";
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function isOwnedPromptSource(source: PromptSource): boolean {
+  const value = `${source.platform} ${source.label}`.toLowerCase();
+  return source.platform === "Local migration" || value.includes("flatkey generated") || value.includes("owned") || value.includes("自有");
+}
+
+function outputRatio(value: unknown, artifact: PromptArtifact): PromptItem["output"]["ratio"] {
+  const ratio = isRecord(value) ? String(value.ratio || "") : "";
+  if (ratio) return ratio as PromptItem["output"]["ratio"];
+  return artifact.kind === "video" ? "16:9" : "1:1";
+}
+
+function promptArtifact(value: unknown): PromptArtifact | null {
+  if (!isRecord(value)) return null;
+  const kind = String(value.kind || "");
+  if (kind === "image" && typeof value.url === "string" && value.url) {
+    return { kind, url: value.url, alt: String(value.alt || "Prompt artifact") };
+  }
+  if (kind === "video" && typeof value.url === "string" && value.url) {
+    return { kind, url: value.url, poster: String(value.poster || ""), alt: String(value.alt || "Prompt artifact") };
+  }
+  if (kind === "text" && typeof value.body === "string" && value.body) {
+    return { kind, body: value.body, title: String(value.title || "Prompt output") };
+  }
+  if (kind === "code" && typeof value.code === "string" && value.code) {
+    return { kind, code: value.code, language: String(value.language || "text") };
+  }
+  if (kind === "storyboard" && Array.isArray(value.frames) && value.frames.length > 0) {
+    return { kind, frames: value.frames.map((frame) => String(frame)).filter(Boolean) };
+  }
+  return null;
+}
+
+function normalizeApiPromptItem(value: PromptLibraryApiItem): PromptItem | null {
+  const slug = String(value.slug || "").trim();
+  const category = String(value.category || "").trim();
+  const prompt = String(value.prompt || "").trim();
+  const artifact = promptArtifact(value.artifact);
+  if (!slug || !prompt || !artifact) return null;
+  if (!["image", "video", "audio", "text", "agent"].includes(category)) return null;
+  const source = promptSource(value.source, value.source_platform, value.source_url);
+  if (!source.url && !isOwnedPromptSource(source)) return null;
+  const title = localizedText(value.title, slug.replace(/-/g, " "));
+  const output = {
+    label: localizedText(isRecord(value.output) ? value.output.label : undefined, artifact.kind),
+    ratio: outputRatio(value.output, artifact),
+  };
+  return {
+    artifact,
+    category: category as PromptItem["category"],
+    model: String(value.model || ""),
+    output,
+    prompt,
+    slug,
+    source,
+    summary: localizedText(value.summary, title.en),
+    tags: Array.isArray(value.tags) ? value.tags.map((tag) => String(tag)).filter(Boolean) : [],
+    title,
+    updatedAt: String(value.updatedAt || source.capturedAt || today),
+  };
+}
+
+async function fetchPromptLibraryApi(path: string): Promise<unknown> {
+  const response = await fetch(`${APP_CONSOLE_ORIGIN}${path}`, {
+    next: { revalidate: 300 },
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+export async function fetchCliMediaPromptItems(category?: "image" | "video"): Promise<PromptItem[]> {
+  try {
+    const rawItems: unknown[] = [];
+    const pageSize = 100;
+    const maxPages = 20;
+    let page = 1;
+    let total = Number.POSITIVE_INFINITY;
+
+    while (page <= maxPages && rawItems.length < total) {
+      const params = new URLSearchParams({ page: String(page), size: String(pageSize) });
+      if (category) params.set("category", category);
+      const payload = await fetchPromptLibraryApi(`/api/prompt-library?${params}`);
+      const data = isRecord(payload) ? payload.data : null;
+      const pageItems = isRecord(data) && Array.isArray(data.items) ? data.items : [];
+      const responseTotal = isRecord(data) ? Number(data.total) : Number.NaN;
+      total = Number.isFinite(responseTotal) && responseTotal >= 0 ? responseTotal : rawItems.length + pageItems.length;
+      rawItems.push(...pageItems);
+      if (pageItems.length === 0 || pageItems.length < pageSize) break;
+      page += 1;
+    }
+
+    const items = rawItems
+      .map((item) => normalizeApiPromptItem(item as PromptLibraryApiItem))
+      .filter((item): item is PromptItem => Boolean(item))
+      .filter((item) => !category || item.category === category);
+
+    if (category) return items.length > 0 ? sortPromptItems(items) : getCliMediaPromptItems(category);
+
+    // Treat each category as independently API-first. A populated image feed
+    // must not hide the checked-in video/text/agent fallback categories while
+    // those feeds are still empty in the database.
+    const apiCategories = new Set(items.map((item) => item.category));
+    const merged = new Map<string, PromptItem>();
+    for (const item of getCliMediaPromptItems()) {
+      if (!apiCategories.has(item.category)) merged.set(item.slug, item);
+    }
+    for (const item of items) merged.set(item.slug, item);
+    return sortPromptItems(Array.from(merged.values()));
+  } catch {}
+  return getCliMediaPromptItems(category);
+}
+
+function sortPromptItems(items: PromptItem[]): PromptItem[] {
+  return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+export async function fetchCliMediaPromptItem(category: "image" | "video", slug: string): Promise<PromptItem | undefined> {
+  try {
+    const payload = await fetchPromptLibraryApi(`/api/prompt-library/${encodeURIComponent(slug)}`);
+    const data = isRecord(payload) ? payload.data : null;
+    const rawItem = isRecord(data) ? data.item : null;
+    const item = rawItem ? normalizeApiPromptItem(rawItem as PromptLibraryApiItem) : null;
+    if (item && item.category === category) return item;
+  } catch {}
+  return getCliMediaPromptItem(category, slug);
+}
+
 export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem[] {
   const bySlug = new Map<string, PromptItem>();
 
@@ -1224,7 +1410,7 @@ export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem
     bySlug.set(item.slug, item);
   }
 
-  return Array.from(bySlug.values()).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return sortPromptItems(Array.from(bySlug.values()));
 }
 
 export function getCliMediaPromptItem(category: "image" | "video", slug: string): PromptItem | undefined {

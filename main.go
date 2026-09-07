@@ -128,6 +128,9 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
+	// ops 日报的用户日志预聚合(仅在 master 节点跑)
+	go model.StartOpsUserLogStatsSyncTask()
+
 	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
 		if err != nil {

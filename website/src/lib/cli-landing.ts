@@ -1,8 +1,12 @@
 import { LOCALES, type Locale, withIdFallback } from "@/lib/locales";
 
 export const CLI_LANDING_PATH = "/cli";
-export const CLI_IMAGE_PATH = "/cli/image";
-export const CLI_VIDEO_PATH = "/cli/video";
+export const PROMPT_IMAGE_PATH = "/prompts/image";
+export const PROMPT_VIDEO_PATH = "/prompts/video";
+// Kept as aliases for existing CLI landing imports: the CLI entry points now
+// open the standalone prompt library pages.
+export const CLI_IMAGE_PATH = PROMPT_IMAGE_PATH;
+export const CLI_VIDEO_PATH = PROMPT_VIDEO_PATH;
 export const HIGGSFIELD_ALTERNATIVE_PATH = "/higgsfield-alternative";
 
 type CodeSample = {
