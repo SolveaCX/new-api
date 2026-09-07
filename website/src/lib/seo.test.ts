@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildMetadata, HOMEPAGE_SOCIAL_IMAGE } from "./seo";
+import {
+  buildMetadata,
+  getSeoLocaleOptions,
+  HOMEPAGE_SOCIAL_IMAGE,
+  isFallbackLocaleNoIndex,
+  seoIndexableLocales,
+} from "./seo";
 
 describe("buildMetadata", () => {
   test("adds a default social image for Open Graph and Twitter metadata", () => {
@@ -81,5 +87,23 @@ describe("buildMetadata", () => {
     });
 
     expect(metadata.alternates?.languages?.["x-default"]).toBe("https://flatkey.ai/pt/5-credit-promo");
+  });
+
+  test("keeps known English-fallback locale pages out of indexing", () => {
+    expect(isFallbackLocaleNoIndex("/about", "id")).toBe(true);
+    expect(isFallbackLocaleNoIndex("/about", "pt")).toBe(false);
+    expect(isFallbackLocaleNoIndex("/playground", "pt")).toBe(true);
+    expect(seoIndexableLocales("/about")).not.toContain("id");
+    expect(seoIndexableLocales("/about")).toContain("pt");
+    expect(seoIndexableLocales("/playground")).not.toContain("id");
+    expect(seoIndexableLocales("/playground")).not.toContain("pt");
+  });
+
+  test("returns noindex metadata options only for fallback locale variants", () => {
+    expect(getSeoLocaleOptions("/about", "id")).toEqual({ locales: [], noIndex: true });
+    expect(getSeoLocaleOptions("/about", "zh")).toEqual({
+      locales: ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de"],
+      noIndex: false,
+    });
   });
 });
