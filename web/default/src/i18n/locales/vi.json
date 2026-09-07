@@ -6906,6 +6906,12 @@
     "Complete the graphical verification before creating your account.": "Hãy hoàn tất xác minh hình ảnh trước khi tạo tài khoản.",
     "Voice": "Giọng nói",
     "Speed": "Tốc độ",
-    "Video URL": "URL video"
+    "Video URL": "URL video",
+    "Welcome Promo": "Khuyến mãi chào mừng",
+    "Configure the three model cards shown in the homepage welcome popup.": "Cấu hình ba thẻ mô hình hiển thị trong cửa sổ chào mừng trên trang chủ.",
+    "Logo is mapped automatically from the model name.": "Logo được tự động ánh xạ theo tên mô hình.",
+    "Please choose a model for each slot": "Vui lòng chọn một mô hình cho mỗi vị trí",
+    "Description and offer are required": "Mô tả và nội dung ưu đãi là bắt buộc",
+    "Each slot must use a different model": "Mỗi vị trí phải sử dụng một mô hình khác nhau"
   }
 }

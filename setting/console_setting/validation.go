@@ -71,6 +71,8 @@ func ValidateConsoleSettings(settingsStr string, settingType string) error {
 		return validateApiInfo(settingsStr)
 	case "Announcements":
 		return validateAnnouncements(settingsStr)
+	case "WelcomePromo":
+		return validateWelcomePromo(settingsStr)
 	case "FAQ":
 		return validateFAQ(settingsStr)
 	case "UptimeKumaGroups":
@@ -78,6 +80,49 @@ func ValidateConsoleSettings(settingsStr string, settingType string) error {
 	default:
 		return fmt.Errorf("未知的设置类型：%s", settingType)
 	}
+}
+
+func validateWelcomePromo(welcomePromoStr string) error {
+	var models []map[string]interface{}
+	if err := common.Unmarshal([]byte(welcomePromoStr), &models); err != nil {
+		return fmt.Errorf("首屏弹窗模型配置格式错误：%s", err.Error())
+	}
+	if len(models) != 3 {
+		return fmt.Errorf("首屏弹窗模型配置必须包含3个模型")
+	}
+	seen := make(map[string]struct{}, len(models))
+	for i, item := range models {
+		modelName, ok := item["model_name"].(string)
+		modelName = strings.TrimSpace(modelName)
+		if !ok || modelName == "" {
+			return fmt.Errorf("第%d个首屏弹窗模型缺少模型名称", i+1)
+		}
+		if _, exists := seen[modelName]; exists {
+			return fmt.Errorf("第%d个首屏弹窗模型与其他模型重复", i+1)
+		}
+		seen[modelName] = struct{}{}
+		description, ok := item["description"].(string)
+		if !ok || strings.TrimSpace(description) == "" {
+			return fmt.Errorf("第%d个首屏弹窗模型缺少描述", i+1)
+		}
+		if utf8.RuneCountInString(strings.TrimSpace(description)) > 200 {
+			return fmt.Errorf("第%d个首屏弹窗模型描述不能超过200字符", i+1)
+		}
+		offer, ok := item["offer"].(string)
+		if !ok || strings.TrimSpace(offer) == "" {
+			return fmt.Errorf("第%d个首屏弹窗模型缺少优惠文案", i+1)
+		}
+		if utf8.RuneCountInString(strings.TrimSpace(offer)) > 100 {
+			return fmt.Errorf("第%d个首屏弹窗模型优惠文案不能超过100字符", i+1)
+		}
+		if err := checkDangerousContent(description, i+1, "首屏弹窗模型描述"); err != nil {
+			return err
+		}
+		if err := checkDangerousContent(offer, i+1, "首屏弹窗模型优惠文案"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateApiInfo(apiInfoStr string) error {

@@ -25,6 +25,7 @@ import { DashboardSection } from './dashboard-section'
 import { DrawingSettingsSection } from './drawing-settings-section'
 import { FAQSection } from './faq-section'
 import { UptimeKumaSection } from './uptime-kuma-section'
+import { WelcomePromoSection } from './welcome-promo-section'
 
 /**
  * Validate and coerce DataExportDefaultTime to a safe value
@@ -60,6 +61,16 @@ const CONTENT_SECTIONS = [
       <AnnouncementsSectionV2
         enabled={settings['console_setting.announcements_enabled']}
         data={settings['console_setting.announcements']}
+      />
+    ),
+  },
+  {
+    id: 'welcome-promo',
+    titleKey: 'Welcome Promo',
+    build: (settings: ContentSettings) => (
+      <WelcomePromoSection
+        enabled={settings['console_setting.welcome_promo_enabled']}
+        data={settings['console_setting.welcome_promo']}
       />
     ),
   },

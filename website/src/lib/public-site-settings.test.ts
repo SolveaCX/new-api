@@ -11,6 +11,7 @@ import {
   resolveAnnouncementIntro,
   resolveAnnouncementLinkLabel,
   normalizeDocsUrl,
+  normalizeWelcomePromo,
 } from "./public-site-settings";
 
 const originalFetch = globalThis.fetch;
@@ -97,6 +98,8 @@ describe("getDocsUrl", () => {
         enabled: true,
       },
       announcements: [],
+      welcomePromoEnabled: true,
+      welcomePromo: [],
     });
   });
 
@@ -126,6 +129,8 @@ describe("getDocsUrl", () => {
           enabled: false,
         },
         announcements: [],
+        welcomePromoEnabled: true,
+        welcomePromo: [],
       });
     }
   });
@@ -158,6 +163,51 @@ describe("getDocsUrl", () => {
       globalThis.fetch = (() => responseFactory()) as typeof fetch;
       await expect(getDocsUrl()).resolves.toBeNull();
     }
+  });
+
+  test("reads and normalizes welcome promo settings", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              welcome_promo_enabled: false,
+              welcome_promo: [
+                { model_name: " gpt-5.6-sol ", description: "Frontier", offer: "10% off" },
+                { model_name: "glm-5.3-flash", description: "Multimodal", offer: "Offer" },
+              ],
+            },
+          }),
+        ),
+      )) as typeof fetch;
+
+    await expect(getPublicSiteSettings()).resolves.toMatchObject({
+      welcomePromoEnabled: false,
+      welcomePromo: [
+        { model_name: "gpt-5.6-sol", description: "Frontier", offer: "10% off" },
+        { model_name: "glm-5.3-flash", description: "Multimodal", offer: "Offer" },
+      ],
+    });
+  });
+});
+
+describe("welcome promo normalization", () => {
+  test("keeps only safe, complete model cards and trims values", () => {
+    expect(
+      normalizeWelcomePromo([
+        { model_name: " deepseek-v4-pro ", description: " Reasoning ", offer: " 55% off " },
+        { model_name: "glm-5.3-flash", description: "Multimodal", offer: "Offer" },
+        { model_name: "gpt-5.6-sol", description: "Frontier", offer: "Offer" },
+        { model_name: "ignored", description: "Extra", offer: "Extra" },
+        { model_name: "missing-description", description: "", offer: "Offer" },
+      ]),
+    ).toEqual([
+      { model_name: "deepseek-v4-pro", description: "Reasoning", offer: "55% off" },
+      { model_name: "glm-5.3-flash", description: "Multimodal", offer: "Offer" },
+      { model_name: "gpt-5.6-sol", description: "Frontier", offer: "Offer" },
+    ]);
+    expect(normalizeWelcomePromo("not an array")).toEqual([]);
   });
 });
 

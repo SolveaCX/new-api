@@ -516,6 +516,15 @@ func prepareOptionUpdate(c *gin.Context, option *OptionUpdateRequest) bool {
 			})
 			return false
 		}
+	case "console_setting.welcome_promo":
+		err = console_setting.ValidateConsoleSettings(option.Value.(string), "WelcomePromo")
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return false
+		}
 	case "console_setting.faq":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "FAQ")
 		if err != nil {

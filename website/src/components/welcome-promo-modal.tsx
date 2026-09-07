@@ -4,9 +4,11 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { HomeModelLogo } from "@/components/home-model-logo";
 import { LOCALES, type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 import { navigateToHref } from "@/lib/link-navigation";
+import type { WelcomePromoModel } from "@/lib/public-site-settings";
 
 type WelcomePromoCopy = {
   title: string;
@@ -133,9 +135,7 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
 });
 
 type ModelCardProps = {
-  logo: string;
-  logoAlt: string;
-  name: string;
+  modelName: string;
   description: string;
   offer: string;
   secondaryOffer?: string;
@@ -184,9 +184,9 @@ const offerTextClassByLocale: Record<Locale, string> = {
 function ModelCard(props: ModelCardProps) {
   return (
     <div className="relative flex h-[clamp(56px,8vh,64px)] w-full items-center gap-2 overflow-hidden rounded-xl border border-white/65 bg-white/35 p-2 shadow-[0_3px_8px_rgba(0,0,0,0.02)] backdrop-blur-sm max-[479px]:h-[clamp(46px,8vh,52px)] lg:h-[86px] lg:gap-4 lg:rounded-2xl lg:p-5">
-      <Image src={props.logo} alt={props.logoAlt} width={24} height={24} className="size-5 shrink-0 object-contain max-[479px]:size-[18px] lg:size-6" />
+      <HomeModelLogo modelName={props.modelName} surfaceSize={24} imageSize={20} className="size-5 shrink-0 border-0 shadow-none max-[479px]:size-[18px] lg:size-6" />
       <div className="box-border h-auto min-w-0 flex-[1_1_180px] shrink border-r border-black/[0.08] pr-2 lg:w-auto lg:min-w-0 lg:pr-4">
-        <p className="truncate text-sm leading-5 font-semibold tracking-[-0.02em] text-black max-[479px]:text-xs max-[479px]:leading-4 lg:text-base lg:leading-6">{props.name}</p>
+        <p className="truncate text-sm leading-5 font-semibold tracking-[-0.02em] text-black max-[479px]:text-xs max-[479px]:leading-4 lg:text-base lg:leading-6">{props.modelName}</p>
         <p className="break-words text-[11px] leading-4 tracking-[-0.01em] text-black/60 max-[479px]:line-clamp-1 max-[479px]:text-[10px] max-[479px]:leading-3 lg:text-[11px] lg:leading-4">{props.description}</p>
       </div>
       <div className={["flex min-w-0 max-w-[140px] shrink-0 items-center justify-center text-center max-[479px]:max-w-[120px] lg:min-w-[84px] lg:max-w-[120px]", props.secondaryOffer ? "flex-col gap-1 max-[479px]:gap-0.5" : ""].filter(Boolean).join(" ")}>
@@ -206,17 +206,37 @@ export function shouldSuppressWelcomePromo(pathname: string | null | undefined, 
   return !isWelcomePromoHomepage(pathname) || navigationType === "back_forward";
 }
 
-export function WelcomePromoModal({ locale }: { locale: Locale }) {
+const DEFAULT_WELCOME_PROMO_MODELS: WelcomePromoModel[] = [
+  { model_name: "deepseek-v4-pro", description: "DeepSeek reasoning model", offer: "55% off" },
+  { model_name: "glm-5.3-flash", description: "GLM multimodal model", offer: "55% off" },
+  { model_name: "gpt-5.6-sol", description: "GPT frontier model", offer: "55% off" },
+];
+
+export function WelcomePromoModal({
+  locale,
+  models,
+  enabled = true,
+}: {
+  locale: Locale;
+  models?: WelcomePromoModel[];
+  enabled?: boolean;
+}) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [isEntered, setIsEntered] = useState(false);
   const [isBackgroundReady, setIsBackgroundReady] = useState(false);
   const popStateRef = useRef(false);
   const copy = useMemo(() => WELCOME_PROMO_COPY[locale] ?? WELCOME_PROMO_COPY.en, [locale]);
+  const promoModels = models?.length === 3 ? models : DEFAULT_WELCOME_PROMO_MODELS;
   const desktopTitleClass = desktopTitleClassByLocale[locale] ?? desktopTitleClassByLocale.en;
   const desktopActionMarginClass = desktopActionMarginClassByLocale[locale] ?? desktopActionMarginClassByLocale.en;
 
   useEffect(() => {
+    if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsOpen(false);
+      return;
+    }
     if (!isWelcomePromoHomepage(pathname)) return;
     const image = new window.Image();
     image.onload = () => setIsBackgroundReady(true);
@@ -224,7 +244,7 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
     return () => {
       image.onload = null;
     };
-  }, [pathname]);
+  }, [enabled, pathname]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -241,10 +261,10 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
     popStateRef.current = false;
     const timer = window.setTimeout(() => {
       setIsEntered(false);
-      setIsOpen(!shouldSuppressWelcomePromo(pathname, wasPopState ? "back_forward" : navigationType));
+      setIsOpen(enabled && !shouldSuppressWelcomePromo(pathname, wasPopState ? "back_forward" : navigationType));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [pathname]);
+  }, [enabled, pathname]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -294,8 +314,15 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
               </div>
             </div>
             <div className="grid content-start gap-2 lg:content-normal lg:gap-3">
-              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Pro" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
-              <ModelCard logo="/assets/logos/zai.svg" logoAlt="GLM" name="GLM 5.3flash" description={copy.multimodalModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
+              {promoModels.map((model) => (
+                <ModelCard
+                  key={model.model_name}
+                  modelName={model.model_name}
+                  description={model.description}
+                  offer={model.offer}
+                  offerClassName={offerTextClassByLocale[locale]}
+                />
+              ))}
             </div>
           </div>
         </div>
