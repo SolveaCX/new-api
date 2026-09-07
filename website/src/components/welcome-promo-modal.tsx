@@ -14,7 +14,6 @@ type WelcomePromoCopy = {
   topup: string;
   getApiKey: string;
   exploreModels: string;
-  freeLimited: string;
   off: string;
   closeLabel: string;
   dialogLabel: string;
@@ -29,7 +28,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Top up your account – additional 80% off",
     getApiKey: "Get API Key",
     exploreModels: "Explore Models",
-    freeLimited: "Free for a limited time",
     off: "55% off",
     closeLabel: "Close promotion",
     dialogLabel: "Free trial promotion",
@@ -42,7 +40,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "充值到账户，额外享受 80% 折扣",
     getApiKey: "获取 API 密钥",
     exploreModels: "探索模型",
-    freeLimited: "限时免费",
     off: "55% 折扣",
     closeLabel: "关闭优惠弹窗",
     dialogLabel: "免费试用优惠",
@@ -55,7 +52,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Recarga tu cuenta y obtén un 80 % de descuento adicional",
     getApiKey: "Obtener clave API",
     exploreModels: "Explorar modelos",
-    freeLimited: "Gratis por tiempo limitado",
     off: "55 % de descuento",
     closeLabel: "Cerrar promoción",
     dialogLabel: "Promoción de prueba gratis",
@@ -68,7 +64,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Rechargez votre compte : 80 % de remise supplémentaire",
     getApiKey: "Obtenir une clé API",
     exploreModels: "Explorer les modèles",
-    freeLimited: "Gratuit pour une durée limitée",
     off: "55 % de remise",
     closeLabel: "Fermer la promotion",
     dialogLabel: "Promotion d'essai gratuit",
@@ -81,7 +76,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Adicione saldo à conta e ganhe 80% de desconto adicional",
     getApiKey: "Obter chave de API",
     exploreModels: "Explorar modelos",
-    freeLimited: "Grátis por tempo limitado",
     off: "55% de desconto",
     closeLabel: "Fechar promoção",
     dialogLabel: "Promoção de teste grátis",
@@ -94,7 +88,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Пополните счёт и получите дополнительные 80% скидки",
     getApiKey: "Получить API-ключ",
     exploreModels: "Изучить модели",
-    freeLimited: "Бесплатно на ограниченный срок",
     off: "Скидка 55%",
     closeLabel: "Закрыть акцию",
     dialogLabel: "Акция бесплатного пробного периода",
@@ -107,7 +100,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "アカウントにチャージすると、さらに 80% OFF",
     getApiKey: "API キーを取得",
     exploreModels: "モデルを見る",
-    freeLimited: "期間限定無料",
     off: "55% OFF",
     closeLabel: "キャンペーンを閉じる",
     dialogLabel: "無料トライアルキャンペーン",
@@ -120,7 +112,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Nạp tiền vào tài khoản để được giảm thêm 80%",
     getApiKey: "Lấy API key",
     exploreModels: "Khám phá model",
-    freeLimited: "Miễn phí có thời hạn",
     off: "Giảm 55%",
     closeLabel: "Đóng khuyến mãi",
     dialogLabel: "Khuyến mãi dùng thử miễn phí",
@@ -133,7 +124,6 @@ export const WELCOME_PROMO_COPY: Record<Locale, WelcomePromoCopy> = withIdFallba
     topup: "Laden Sie Ihr Konto auf und erhalten Sie zusätzlich 80 % Rabatt",
     getApiKey: "API-Key abrufen",
     exploreModels: "Modelle entdecken",
-    freeLimited: "Zeitlich begrenzt kostenlos",
     off: "55 % Rabatt",
     closeLabel: "Aktion schließen",
     dialogLabel: "Aktion zum kostenlosen Testen",
@@ -304,7 +294,6 @@ export function WelcomePromoModal({ locale }: { locale: Locale }) {
               </div>
             </div>
             <div className="grid content-start gap-2 lg:content-normal lg:gap-3">
-              <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Flash" description={copy.reasoningModel} offer={copy.freeLimited} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/deepseek.svg" logoAlt="DeepSeek" name="DeepSeek V4 Pro" description={copy.reasoningModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
               <ModelCard logo="/assets/logos/zai.svg" logoAlt="GLM" name="GLM 5.3flash" description={copy.multimodalModel} offer={copy.off} offerClassName={offerTextClassByLocale[locale]} />
             </div>
