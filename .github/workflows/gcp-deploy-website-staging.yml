@@ -162,6 +162,7 @@ jobs:
             --region="${REGION}" \
             --image="${{ needs.build.outputs.image_uri }}" \
             --port=4000 \
+            --liveness-probe=httpGet.path=/,httpGet.port=4000,periodSeconds=30,timeoutSeconds=5,failureThreshold=3 \
             --revision-suffix="${revision_suffix}" \
             "${env_args[@]}" \
             --quiet
