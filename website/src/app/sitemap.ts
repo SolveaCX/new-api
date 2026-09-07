@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
-import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
+import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH, PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingConfigForPricingModel, getModelLandingPathnames } from "@/lib/model-landing";
@@ -10,6 +10,7 @@ import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
+import { getCliMediaPromptItems } from "@/lib/prompt-library";
 
 // The model list comes from the live public catalog. Do not prerender this
 // route during a website build where the console API may be unavailable.
@@ -86,6 +87,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...entry("/status", 0.65, "daily"),
     ...entry(APIFY_ALTERNATIVE_PATH, 0.84, "weekly", ["en"]),
     ...entry(CLI_LANDING_PATH, 0.86, "weekly"),
+    ...entry("/prompts", 0.84, "daily"),
+    ...entry(PROMPT_IMAGE_PATH, 0.78, "weekly"),
+    ...entry(PROMPT_VIDEO_PATH, 0.78, "weekly"),
     ...entry(HIGGSFIELD_ALTERNATIVE_PATH, 0.84, "weekly"),
     ...entry("/use-case/codex", 0.84, "weekly"),
     ...entry("/use-case/claude-code", 0.84, "weekly"),
@@ -165,6 +169,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const seriesEntries = seriesForModels(pricing.models.map((model) => model.directory_metadata)).flatMap((series) =>
     queryEntry("/models", `series=${encodeURIComponent(series)}`, 0.72, "daily")
   );
+  const promptEntries = ([
+    [PROMPT_IMAGE_PATH, "image" as const],
+    [PROMPT_VIDEO_PATH, "video" as const],
+  ] as const).flatMap(([pathname, kind]) =>
+    getCliMediaPromptItems(kind).flatMap((item) => entry(`${pathname}/${item.slug}`, 0.62, "weekly"))
+  );
 
   return [
     ...staticEntries,
@@ -174,6 +184,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...toolsAdLandingEntries,
     ...modelPublicEntries,
     ...seriesEntries,
+    ...promptEntries,
     ...categoryEntries,
     ...postEntries,
   ];
