@@ -119,6 +119,18 @@ describe("website documentation links", () => {
     expect(html).not.toContain("size-1.5 shrink-0 rounded-full");
   });
 
+  test("renders Prompts as a first-level desktop navigation link", () => {
+    const html = renderHeader(DOCS_URL, "/prompts");
+    const promptsLink = openingTagBeforeText(html, "a", "Prompts");
+
+    expect(promptsLink).toContain('href="/prompts"');
+    expect(promptsLink).toContain("inline-flex");
+    expect(promptsLink).toContain("h-10");
+    expect(promptsLink).toContain("font-bold");
+    expect(promptsLink).not.toContain("rounded-[10px]");
+    expect(html.indexOf(">Prompts<")).toBeLessThan(html.indexOf(">CLI<"));
+  });
+
   test("uses a stable selected menu text state without background, underline, or scaling", () => {
     const modelsHtml = renderHeader(DOCS_URL, "/models");
     const pricingHtml = renderHeader(DOCS_URL, "/pricing");

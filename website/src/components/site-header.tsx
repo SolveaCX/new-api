@@ -615,7 +615,6 @@ export function SiteHeader(props: Props) {
     () => [
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
       { href: "/collections", label: legacyLabels.collections, publicPath: true },
-      { href: "/prompts", label: legacyLabels.prompts, publicPath: true },
       { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
       { href: "/compute", label: legacyLabels.compute, publicPath: true },
@@ -657,6 +656,7 @@ export function SiteHeader(props: Props) {
     ],
   );
   const topLevelItems = [
+    { href: "/prompts", label: legacyLabels.prompts, publicPath: true },
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
     { href: "/pricing", label: copy.nav.pricing, publicPath: true },
   ];
