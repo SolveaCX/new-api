@@ -96,7 +96,7 @@ const LOCALIZED_COLLECTION_TITLES: Record<string, Partial<Record<Locale, string>
   "Best AI Models for Coding": { id: "Model AI terbaik untuk coding" },
   "Best AI Models for Video Generation": { id: "Model AI terbaik untuk pembuatan video" },
   "AI Models with Tool Calling": { id: "Model AI dengan pemanggilan alat" },
-  "Free AI Models on Flatkey": { es: "Modelos de IA gratuitos en Flatkey", fr: "Modèles IA gratuits sur Flatkey", pt: "Modelos de IA gratuitos na Flatkey", ru: "Бесплатные ИИ-модели в Flatkey", ja: "Flatkey の無料 AI モデル", vi: "Mô hình AI miễn phí trên Flatkey", de: "Kostenlose KI-Modelle auf Flatkey", id: "Model AI gratis di Flatkey" },
+  "Best Free AI Models on Flatkey": { es: "Mejores modelos de IA gratuitos en Flatkey", fr: "Meilleurs modèles IA gratuits sur Flatkey", pt: "Melhores modelos de IA gratuitos na Flatkey", ru: "Лучшие бесплатные ИИ-модели в Flatkey", ja: "Flatkey で使えるおすすめの無料 AI モデル", vi: "Mô hình AI miễn phí tốt nhất trên Flatkey", de: "Beste kostenlose KI-Modelle bei Flatkey", id: "Model AI gratis terbaik di Flatkey" },
   "Discounted AI Models on Flatkey": { es: "Modelos de IA con descuento en Flatkey", fr: "Modèles IA remisés sur Flatkey", pt: "Modelos de IA com desconto na Flatkey", ru: "ИИ-модели со скидкой в Flatkey", ja: "Flatkey の割引 AI モデル", vi: "Mô hình AI giảm giá trên Flatkey", de: "Vergünstigte KI-Modelle auf Flatkey", id: "Model AI diskon di Flatkey" },
   "Best AI Models for Roleplay and Creative Writing": { es: "Mejores modelos de IA para roleplay y escritura creativa", fr: "Meilleurs modèles IA pour le roleplay et l’écriture créative", pt: "Melhores modelos de IA para roleplay e escrita criativa", ru: "Лучшие ИИ-модели для ролевых игр и творчества", ja: "ロールプレイと創作に最適な AI モデル", vi: "Mô hình AI tốt nhất cho nhập vai và sáng tác", de: "Beste KI-Modelle für Rollenspiel und kreatives Schreiben", id: "Model AI terbaik untuk roleplay dan penulisan kreatif" },
   "AI Models with Vision": { es: "Modelos de IA con visión", fr: "Modèles IA avec vision", pt: "Modelos de IA com visão", ru: "ИИ-модели с компьютерным зрением", ja: "画像理解に対応した AI モデル", vi: "Mô hình AI hỗ trợ thị giác", de: "KI-Modelle mit Bildverständnis", id: "Model AI dengan kemampuan vision" },
@@ -149,6 +149,32 @@ const textOf = (model: PricingModel) =>
 const hasModality = (model: PricingModel, modality: string) =>
   model.directory_metadata?.modalities?.includes(modality as never) ||
   (model.supported_endpoint_types ?? []).some((endpoint) => endpoint.toLowerCase().includes(modality));
+
+const hasActiveDiscount = (model: PricingModel) =>
+  Object.values(model.display_pricing?.prices ?? {}).some((price) => {
+    const configured = price?.configured;
+    const plg = price?.plg;
+    return (
+      typeof configured === "number" &&
+      Number.isFinite(configured) &&
+      configured >= 0 &&
+      typeof plg === "number" &&
+      Number.isFinite(plg) &&
+      plg >= 0 &&
+      plg < configured
+    );
+  });
+
+const hasZeroPublicPrice = (model: PricingModel) => {
+  const prices = Object.values(model.display_pricing?.prices ?? {})
+    .map((price) => {
+      if (typeof price?.plg === "number" && Number.isFinite(price.plg)) return price.plg;
+      if (typeof price?.configured === "number" && Number.isFinite(price.configured)) return price.configured;
+      return null;
+    })
+    .filter((price): price is number => price !== null);
+  return prices.length > 0 && prices.every((price) => price === 0);
+};
 
 export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
   {
@@ -234,10 +260,10 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
     slug: "free-models",
     icon: "◇",
     copy: copy({
-      en: { title: "Free AI Models on Flatkey", shortDescription: "Explore models with zero or near-zero token pricing through one API.", intro: "Compare free and zero-cost AI models available through Flatkey for experiments, prototypes, and everyday workloads.", criteria: "Models with a zero or promotional public price in the live catalog.", empty: "Free models are being added to the catalog." },
-      zh: { title: "Flatkey 上的免费 AI 模型", shortDescription: "通过统一 API 体验免费或接近免费的模型。", intro: "浏览适合实验、原型和日常任务的免费 AI 模型。", criteria: "实时目录中价格为零或处于免费促销状态的模型。", empty: "免费模型正在加入目录。" },
+      en: { title: "Best Free AI Models on Flatkey", shortDescription: "Explore AI models with zero token pricing through one API.", intro: "Compare free AI models available through Flatkey for experiments, prototypes, and everyday workloads.", criteria: "Models whose current input ratio or request price is zero in the live catalog.", empty: "Free models are being added to the catalog." },
+      zh: { title: "Flatkey 上的最佳免费 AI 模型", shortDescription: "通过统一 API 体验当前价格为零的 AI 模型。", intro: "浏览适合实验、原型和日常任务的免费 AI 模型。", criteria: "实时目录中输入倍率或请求价格当前为零的模型。", empty: "免费模型正在加入目录。" },
     }),
-    matches: (model) => model.model_ratio === 0 || model.model_price === 0,
+    matches: hasZeroPublicPrice,
   },
   {
     slug: "discounted-models",
@@ -246,7 +272,7 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
       en: { title: "Discounted AI Models on Flatkey", shortDescription: "Find models with promotional pricing and lower-cost access.", intro: "Discover models with an active discount or promotional rate in the public catalog.", criteria: "Models whose public rate is below the configured reference rate.", empty: "Discounted models are being added to the catalog." },
       zh: { title: "Flatkey 上的折扣 AI 模型", shortDescription: "查找有促销价格、调用成本更低的模型。", intro: "发现公开目录中正在提供折扣或促销价格的模型。", criteria: "公开价格低于配置参考价格的模型。", empty: "折扣模型正在加入目录。" },
     }),
-    matches: (model) => Boolean(model.display_pricing?.prices?.input?.from || model.display_pricing?.prices?.output?.from),
+    matches: hasActiveDiscount,
   },
   {
     slug: "roleplay-creative-writing",
@@ -326,8 +352,13 @@ export function getModelCollection(slug: string): ModelCollectionDefinition | nu
   return MODEL_COLLECTIONS.find((collection) => collection.slug === slug) ?? null;
 }
 
-export function getModelCollectionPathnames(): string[] {
-  return MODEL_COLLECTIONS.map((collection) => `/collections/${collection.slug}`);
+export function getAvailableModelCollections(models: PricingModel[]): ModelCollectionDefinition[] {
+  return MODEL_COLLECTIONS.filter((collection) => selectCollectionModels(collection, models, 1).length > 0);
+}
+
+export function getModelCollectionPathnames(models?: PricingModel[]): string[] {
+  const collections = models ? getAvailableModelCollections(models) : MODEL_COLLECTIONS;
+  return collections.map((collection) => `/collections/${collection.slug}`);
 }
 
 export function getModelCollectionCopy(collection: ModelCollectionDefinition, locale: Locale): ModelCollectionCopy {
