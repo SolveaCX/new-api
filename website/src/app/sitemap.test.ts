@@ -61,6 +61,20 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/5-credit-promo");
       expect(urls.some((url) => url.startsWith("https://flatkey.ai/cli/image/"))).toBe(true);
       expect(urls.some((url) => url.startsWith("https://flatkey.ai/cli/video/"))).toBe(true);
+      expect(urls).not.toContain("https://flatkey.ai/id/about");
+      expect(urls).not.toContain("https://flatkey.ai/id/docs");
+      expect(urls).not.toContain("https://flatkey.ai/id/playground");
+      expect(urls).not.toContain("https://flatkey.ai/pt/playground");
+      expect(urls).not.toContain("https://flatkey.ai/id/privacy");
+      expect(urls).not.toContain("https://flatkey.ai/id/refund-policy");
+      expect(urls).not.toContain("https://flatkey.ai/id/sla");
+      expect(urls).not.toContain("https://flatkey.ai/id/terms");
+      expect(urls).not.toContain("https://flatkey.ai/id/usecases");
+      const aboutEntry = entries.find((entry) => entry.url === "https://flatkey.ai/about");
+      expect(aboutEntry?.alternates?.languages).not.toHaveProperty("id-ID");
+      const playgroundEntry = entries.find((entry) => entry.url === "https://flatkey.ai/playground");
+      expect(playgroundEntry?.alternates?.languages).not.toHaveProperty("id-ID");
+      expect(playgroundEntry?.alternates?.languages).not.toHaveProperty("pt-BR");
       expect(promoEntry?.alternates?.languages).toMatchObject({
         "pt-BR": "https://flatkey.ai/pt/5-credit-promo",
       });

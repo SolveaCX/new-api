@@ -5,6 +5,7 @@ import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/loc
 import { getMarketPathnames } from "@/lib/market-landing";
 import { getModelLandingConfigForPricingModel, getModelLandingPathnames } from "@/lib/model-landing";
 import { seriesForModels } from "@/lib/model-directory-meta";
+import { seoIndexableLocales } from "@/lib/seo";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
 import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
@@ -30,13 +31,16 @@ function entry(
   changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"],
   locales: readonly Locale[] = LOCALES
 ) {
-  return locales.map((locale) => ({
+  const indexableLocales = seoIndexableLocales(pathname, locales);
+  return indexableLocales.map((locale) => ({
     url: `${base}${localizePath(pathname, locale)}`,
     lastModified: new Date(),
     changeFrequency,
     priority,
     alternates: {
-      languages: Object.fromEntries(locales.map((locale) => [localeLanguageTag(locale), `${base}${localizePath(pathname, locale)}`])),
+      languages: Object.fromEntries(
+        indexableLocales.map((locale) => [localeLanguageTag(locale), `${base}${localizePath(pathname, locale)}`])
+      ),
     },
   }));
 }

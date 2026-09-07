@@ -1,5 +1,5 @@
 import { StaticFeaturePage } from "@/components/static-feature-page";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, getSeoLocaleOptions } from "@/lib/seo";
 import { staticFeaturePages } from "@/lib/static-feature-pages";
 
 const page = staticFeaturePages.docs;
@@ -8,6 +8,7 @@ export const metadata = buildMetadata({
   title: page.metadataTitle,
   description: page.metadataDescription,
   pathname: page.pathname,
+  ...getSeoLocaleOptions(page.pathname, "en"),
 });
 
 export default function Page() {

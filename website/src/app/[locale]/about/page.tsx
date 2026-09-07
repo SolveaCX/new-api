@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { PublicPage } from "@/components/public-page";
 import { getPageContent } from "@/content/pages";
 import { isLocale, LOCALES } from "@/lib/locales";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, getSeoLocaleOptions } from "@/lib/seo";
 
 type Props = { params: Promise<{ locale: string }> };
 const pageKey = "about";
@@ -16,7 +16,13 @@ export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
   const content = getPageContent(pageKey, params.locale);
-  return buildMetadata({ title: content.title, description: content.description, pathname, locale: params.locale });
+  return buildMetadata({
+    title: content.title,
+    description: content.description,
+    pathname,
+    locale: params.locale,
+    ...getSeoLocaleOptions(pathname, params.locale),
+  });
 }
 
 export default async function Page(props: Props) {

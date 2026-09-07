@@ -8,6 +8,10 @@ import { isLocale } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
 
 const WEBSITE_PUBLIC_PRICING_GROUP = "plg";
+const PERMANENT_LEGACY_PATHS = new Map([
+  ["privacy-policy", "privacy"],
+  ["user-agreement", "terms"],
+]);
 const CANONICAL_MODEL_SLUG_OVERRIDES = new Map([
   ["minimax-h3", "minimax-h3"],
   ["seedance-2-5", "seedance-2.5"],
@@ -73,10 +77,17 @@ export function resolveModelAliasRedirectPath(pathname: string, modelNames: read
 }
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
-  const canonicalHost = new URL(SITE_ORIGIN).hostname;
-  if (request.nextUrl.hostname === `www.${canonicalHost}`) {
+  const canonicalOrigin = new URL(SITE_ORIGIN);
+  const redirectPath = resolvePermanentSeoRedirectPath(request.nextUrl.pathname);
+  const shouldCanonicalizeHost = requestHostname(request) === `www.${canonicalOrigin.hostname}`;
+  if (shouldCanonicalizeHost || redirectPath) {
     const url = request.nextUrl.clone();
-    url.hostname = canonicalHost;
+    if (shouldCanonicalizeHost) {
+      url.protocol = canonicalOrigin.protocol;
+      url.host = canonicalOrigin.host;
+      url.port = canonicalOrigin.port;
+    }
+    if (redirectPath) url.pathname = redirectPath;
     return NextResponse.redirect(url, 301);
   }
 
@@ -85,6 +96,41 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   return routeByLanguagePreference(request);
+}
+
+export function resolvePermanentSeoRedirectPath(pathname: string): string | null {
+  const segments = pathname.split("/").filter(Boolean);
+  const locale = isLocale(segments[0]) ? segments[0] : undefined;
+  const routeSegments = locale ? segments.slice(1) : segments;
+  const localePrefix = locale && locale !== "en" ? `/${locale}` : "";
+
+  if (routeSegments.length === 1) {
+    const destination = PERMANENT_LEGACY_PATHS.get(routeSegments[0]);
+    if (destination) return `${localePrefix}/${destination}`;
+  }
+
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[0] === "models" &&
+    routeSegments[1] !== "minimax-h3" &&
+    routeSegments[1].toLowerCase() === "minimax-h3"
+  ) {
+    return `${localePrefix}/models/minimax-h3`;
+  }
+
+  return null;
+}
+
+function requestHostname(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host");
+  if (!host) return request.nextUrl.hostname;
+
+  try {
+    return new URL(`https://${host}`).hostname;
+  } catch {
+    return request.nextUrl.hostname;
+  }
 }
 
 async function redirectModelAliasOrContinue(request: NextRequest): Promise<NextResponse> {

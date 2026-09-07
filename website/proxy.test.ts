@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NextRequest } from "next/server";
-import { proxy, resolveModelAliasRedirectPath } from "./src/proxy";
+import { proxy, resolveModelAliasRedirectPath, resolvePermanentSeoRedirectPath } from "./src/proxy";
 
 function request(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`https://flatkey.ai${path}`, { headers });
@@ -43,6 +43,40 @@ describe("website proxy language redirects", () => {
 
     expect(response?.status).toBe(301);
     expect(response?.headers.get("location")).toBe("https://flatkey.ai/pricing?vendor=OpenAI");
+  });
+
+  test("redirects a reverse-proxied www host to the canonical site origin", async () => {
+    const response = await proxy(
+      new NextRequest("http://127.0.0.1:4000/pricing?vendor=OpenAI", {
+        headers: { "x-forwarded-host": "www.flatkey.ai" },
+      })
+    );
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/pricing?vendor=OpenAI");
+  });
+
+  test("resolves legacy legal and model casing paths to permanent canonical paths", () => {
+    expect(resolvePermanentSeoRedirectPath("/privacy-policy")).toBe("/privacy");
+    expect(resolvePermanentSeoRedirectPath("/zh/privacy-policy")).toBe("/zh/privacy");
+    expect(resolvePermanentSeoRedirectPath("/zh/user-agreement")).toBe("/zh/terms");
+    expect(resolvePermanentSeoRedirectPath("/en/user-agreement")).toBe("/terms");
+    expect(resolvePermanentSeoRedirectPath("/id/models/MiniMax-H3")).toBe("/id/models/minimax-h3");
+    expect(resolvePermanentSeoRedirectPath("/id/models/minimax-h3")).toBeNull();
+  });
+
+  test("permanently redirects a legacy legal path and preserves its query string", async () => {
+    const response = await proxy(request("/zh/privacy-policy?source=gsc"));
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/zh/privacy?source=gsc");
+  });
+
+  test("permanently redirects a model casing alias", async () => {
+    const response = await proxy(request("/id/models/MiniMax-H3"));
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/id/models/minimax-h3");
   });
 
   test("redirects a live vendor-prefixed model and preserves its query string", async () => {
