@@ -1335,20 +1335,49 @@ async function fetchPromptLibraryApi(path: string): Promise<unknown> {
 }
 
 export async function fetchCliMediaPromptItems(category?: "image" | "video"): Promise<PromptItem[]> {
-  const path = `/api/prompt-library${category ? `?category=${encodeURIComponent(category)}` : ""}`;
   try {
-    const payload = await fetchPromptLibraryApi(path);
-    const data = isRecord(payload) ? payload.data : null;
-    const rawItems = isRecord(data) && Array.isArray(data.items) ? data.items : [];
+    const rawItems: unknown[] = [];
+    const pageSize = 100;
+    const maxPages = 20;
+    let page = 1;
+    let total = Number.POSITIVE_INFINITY;
+
+    while (page <= maxPages && rawItems.length < total) {
+      const params = new URLSearchParams({ page: String(page), size: String(pageSize) });
+      if (category) params.set("category", category);
+      const payload = await fetchPromptLibraryApi(`/api/prompt-library?${params}`);
+      const data = isRecord(payload) ? payload.data : null;
+      const pageItems = isRecord(data) && Array.isArray(data.items) ? data.items : [];
+      const responseTotal = isRecord(data) ? Number(data.total) : Number.NaN;
+      total = Number.isFinite(responseTotal) && responseTotal >= 0 ? responseTotal : rawItems.length + pageItems.length;
+      rawItems.push(...pageItems);
+      if (pageItems.length === 0 || pageItems.length < pageSize) break;
+      page += 1;
+    }
+
     const items = rawItems
       .map((item) => normalizeApiPromptItem(item as PromptLibraryApiItem))
       .filter((item): item is PromptItem => Boolean(item))
       .filter((item) => !category || item.category === category);
-    if (items.length > 0) {
-      return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+
+    if (category) return items.length > 0 ? sortPromptItems(items) : getCliMediaPromptItems(category);
+
+    // Treat each category as independently API-first. A populated image feed
+    // must not hide the checked-in video/text/agent fallback categories while
+    // those feeds are still empty in the database.
+    const apiCategories = new Set(items.map((item) => item.category));
+    const merged = new Map<string, PromptItem>();
+    for (const item of getCliMediaPromptItems()) {
+      if (!apiCategories.has(item.category)) merged.set(item.slug, item);
     }
+    for (const item of items) merged.set(item.slug, item);
+    return sortPromptItems(Array.from(merged.values()));
   } catch {}
   return getCliMediaPromptItems(category);
+}
+
+function sortPromptItems(items: PromptItem[]): PromptItem[] {
+  return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
 export async function fetchCliMediaPromptItem(category: "image" | "video", slug: string): Promise<PromptItem | undefined> {
@@ -1370,7 +1399,7 @@ export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem
     bySlug.set(item.slug, item);
   }
 
-  return Array.from(bySlug.values()).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  return sortPromptItems(Array.from(bySlug.values()));
 }
 
 export function getCliMediaPromptItem(category: "image" | "video", slug: string): PromptItem | undefined {
