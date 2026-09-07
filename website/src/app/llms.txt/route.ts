@@ -1,5 +1,5 @@
 import { getBlogCategories, getBlogPosts } from "@/lib/blog";
-import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
+import { CLI_LANDING_PATH, HIGGSFIELD_ALTERNATIVE_PATH, PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
 import { ROUTER_ORIGIN, SITE_ORIGIN } from "@/lib/origins";
 import { getDocsUrl } from "@/lib/public-site-settings";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
@@ -49,6 +49,9 @@ export async function GET() {
     `- Flatkey Tools: ${SITE_ORIGIN}${TOOLS_LANDING_PATH}`,
     `- Flatkey as an Apify alternative: ${SITE_ORIGIN}${APIFY_ALTERNATIVE_PATH}`,
     `- Flatkey CLI: ${SITE_ORIGIN}${CLI_LANDING_PATH}`,
+    `- Prompt directory: ${SITE_ORIGIN}/prompts`,
+    `- Image prompt library: ${SITE_ORIGIN}${PROMPT_IMAGE_PATH}`,
+    `- Video prompt library: ${SITE_ORIGIN}${PROMPT_VIDEO_PATH}`,
     `- Flatkey vs Higgsfield: ${SITE_ORIGIN}${HIGGSFIELD_ALTERNATIVE_PATH}`,
     `- Model pricing: ${SITE_ORIGIN}/pricing`,
     `- Rankings: ${SITE_ORIGIN}/rankings`,
