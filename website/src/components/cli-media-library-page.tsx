@@ -1,9 +1,10 @@
-import { ArrowLeft, ArrowRight, ChevronRight, ExternalLink, KeyRound, Play, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, ExternalLink, Play, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { CliPromptActionPanel } from "@/components/cli-prompt-action-panel";
+import { PromptFreeCta } from "@/components/prompt-free-cta";
 import { SiteShell } from "@/components/site-shell";
-import { CLI_LANDING_PATH, PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
+import { PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
 import { fetchCliMediaPromptItem, fetchCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
@@ -30,32 +31,32 @@ type CliMediaCopy = {
 const copyByLocale: Record<Locale, Record<MediaKind, CliMediaCopy>> = withIdFallback({
   en: {
     image: {
-      artifact: "Produced image",
-      back: "Back to CLI",
+      artifact: "Finished image",
+      back: "Back to prompt library",
       browseImage: "Image",
       browseVideo: "Video",
-      createKey: "Create API key",
-      empty: "No image prompts with paired artifacts yet.",
+      createKey: "Open Playground",
+      empty: "No image prompts with finished examples are available yet.",
       filters: ["Characters", "Product visuals", "Storyboards", "Campaign assets"],
-      heroBadge: "CLI image prompt library",
-      heroBody: "Image prompts collected from Flatkey projects and owned production assets. Every card includes the prompt, model, provenance, and finished image.",
-      heroTitle: "Image prompts with output already attached.",
+      heroBadge: "Image prompt library",
+      heroBody: "Explore image prompts with real finished examples. Each entry shows the prompt, model, source, and final image so you can judge the result before using it.",
+      heroTitle: "Image prompts with real results.",
       model: "Model",
       prompt: "Prompt",
       source: "Source",
       viewSource: "View source",
     },
     video: {
-      artifact: "Produced video artifact",
-      back: "Back to CLI",
+      artifact: "Finished video",
+      back: "Back to prompt library",
       browseImage: "Image",
       browseVideo: "Video",
-      createKey: "Create API key",
-      empty: "No video prompts with paired artifacts yet.",
+      createKey: "Open Playground",
+      empty: "No video prompts with finished examples are available yet.",
       filters: ["UGC ads", "Product reveal", "Localization", "Storyboard to motion"],
-      heroBadge: "CLI video prompt library",
-      heroBody: "Video prompts shaped for Flatkey CLI runs. Only entries with an existing clip, poster, or production storyboard are shown.",
-      heroTitle: "Video prompts paired with usable outputs.",
+      heroBadge: "Video prompt library",
+      heroBody: "Explore video prompts with real clips and production examples. Preview the result, review the model and source, then adapt the prompt for your own video.",
+      heroTitle: "Video prompts with real results.",
       model: "Model",
       prompt: "Prompt",
       source: "Source",
@@ -64,32 +65,32 @@ const copyByLocale: Record<Locale, Record<MediaKind, CliMediaCopy>> = withIdFall
   },
   zh: {
     image: {
-      artifact: "图像产物",
-      back: "返回 CLI",
+      artifact: "真实图片",
+      back: "返回提示词库",
       browseImage: "图像",
       browseVideo: "视频",
-      createKey: "创建 API key",
-      empty: "还没有已配对产物的图像提示词。",
+      createKey: "进入 Playground",
+      empty: "暂时还没有带真实示例的图片提示词。",
       filters: ["角色", "产品视觉", "分镜", "活动素材"],
-      heroBadge: "CLI 图像提示词库",
-      heroBody: "图像提示词来自 Flatkey 项目和自有生产素材迁移。每张卡都包含提示词、模型、归属和完成图。",
-      heroTitle: "图像提示词必须带着产物一起展示。",
+      heroBadge: "图片提示词库",
+      heroBody: "浏览带真实成片的图片提示词。每个案例都会展示提示词、所用模型、来源和最终效果，使用前就能判断是否适合。",
+      heroTitle: "看得到效果的图片提示词。",
       model: "模型",
       prompt: "提示词",
       source: "来源",
       viewSource: "查看来源",
     },
     video: {
-      artifact: "视频产物",
-      back: "返回 CLI",
+      artifact: "真实视频",
+      back: "返回提示词库",
       browseImage: "图像",
       browseVideo: "视频",
-      createKey: "创建 API key",
-      empty: "还没有已配对产物的视频提示词。",
+      createKey: "进入 Playground",
+      empty: "暂时还没有带真实示例的视频提示词。",
       filters: ["UGC 广告", "产品揭幕", "本地化", "分镜转视频"],
-      heroBadge: "CLI 视频提示词库",
-      heroBody: "视频提示词面向 Flatkey CLI 生产流程整理。这里只展示已经有短片、封面或生产分镜产物的条目。",
-      heroTitle: "视频提示词必须对应可用产物。",
+      heroBadge: "视频提示词库",
+      heroBody: "浏览带真实成片的视频提示词。先预览效果、查看模型与来源，再把提示词改成适合你项目的版本。",
+      heroTitle: "看得到效果的视频提示词。",
       model: "模型",
       prompt: "提示词",
       source: "来源",
@@ -99,31 +100,31 @@ const copyByLocale: Record<Locale, Record<MediaKind, CliMediaCopy>> = withIdFall
   es: {
     image: {
       artifact: "Imagen producida",
-      back: "Volver a CLI",
+      back: "Volver a la biblioteca de prompts",
       browseImage: "Imagen",
       browseVideo: "Video",
-      createKey: "Crear API key",
-      empty: "Aun no hay prompts de imagen con resultados.",
-      filters: ["Personajes", "Producto", "Storyboards", "Campanas"],
-      heroBadge: "Prompts de imagen para CLI",
-      heroBody: "Prompts de imagen de proyectos Flatkey y assets propios migrados. Cada tarjeta incluye prompt, modelo, procedencia e imagen.",
-      heroTitle: "Prompts de imagen con resultado incluido.",
+      createKey: "Abrir Playground",
+      empty: "Todavía no hay prompts de imagen con ejemplos terminados.",
+      filters: ["Personajes", "Visuales de producto", "Guiones gráficos", "Campañas"],
+      heroBadge: "Biblioteca de prompts de imagen",
+      heroBody: "Explora prompts de imagen con resultados reales. Cada ejemplo incluye el prompt, el modelo, la fuente y la imagen final para que puedas evaluarlo antes de usarlo.",
+      heroTitle: "Prompts de imagen con resultados reales.",
       model: "Modelo",
       prompt: "Prompt",
       source: "Fuente",
       viewSource: "Ver fuente",
     },
     video: {
-      artifact: "Artefacto de video",
-      back: "Volver a CLI",
+      artifact: "Vídeo terminado",
+      back: "Volver a la biblioteca de prompts",
       browseImage: "Imagen",
       browseVideo: "Video",
-      createKey: "Crear API key",
-      empty: "Aun no hay prompts de video con resultados.",
-      filters: ["UGC ads", "Reveal", "Localizacion", "Storyboard"],
-      heroBadge: "Prompts de video para CLI",
-      heroBody: "Prompts de video para flujos Flatkey CLI. Solo mostramos entradas con clip, poster o storyboard.",
-      heroTitle: "Prompts de video con salidas utilizables.",
+      createKey: "Abrir Playground",
+      empty: "Todavía no hay prompts de vídeo con ejemplos terminados.",
+      filters: ["Anuncios UGC", "Presentación de producto", "Localización", "Guion a vídeo"],
+      heroBadge: "Biblioteca de prompts de vídeo",
+      heroBody: "Explora prompts de vídeo con clips reales. Previsualiza el resultado, revisa el modelo y la fuente, y adapta el prompt a tu proyecto.",
+      heroTitle: "Prompts de vídeo con resultados reales.",
       model: "Modelo",
       prompt: "Prompt",
       source: "Fuente",
@@ -131,30 +132,47 @@ const copyByLocale: Record<Locale, Record<MediaKind, CliMediaCopy>> = withIdFall
     },
   },
   fr: {
-    image: { artifact: "Image produite", back: "Retour au CLI", browseImage: "Image", browseVideo: "Video", createKey: "Creer API key", empty: "Aucun prompt image avec resultat.", filters: ["Personnages", "Produit", "Storyboards", "Campagnes"], heroBadge: "Prompts image CLI", heroBody: "Prompts image issus de projets Flatkey et d'assets propres migres, avec prompt, modele, source et image.", heroTitle: "Prompts image avec resultat attache.", model: "Modele", prompt: "Prompt", source: "Source", viewSource: "Voir source" },
-    video: { artifact: "Artefact video", back: "Retour au CLI", browseImage: "Image", browseVideo: "Video", createKey: "Creer API key", empty: "Aucun prompt video avec resultat.", filters: ["UGC ads", "Reveal", "Localisation", "Storyboard"], heroBadge: "Prompts video CLI", heroBody: "Prompts video pour Flatkey CLI. Seules les entrees avec clip, poster ou storyboard sont affichees.", heroTitle: "Prompts video avec sorties utilisables.", model: "Modele", prompt: "Prompt", source: "Source", viewSource: "Voir source" },
+    image: { artifact: "Image finalisée", back: "Retour à la bibliothèque de prompts", browseImage: "Image", browseVideo: "Vidéo", createKey: "Ouvrir le Playground", empty: "Aucun prompt d’image avec exemple finalisé n’est encore disponible.", filters: ["Personnages", "Visuels produit", "Storyboards", "Campagnes"], heroBadge: "Bibliothèque de prompts d’image", heroBody: "Explorez des prompts d’image accompagnés de résultats réels. Chaque exemple présente le prompt, le modèle, la source et l’image finale pour vous aider à l’évaluer avant utilisation.", heroTitle: "Des prompts d’image avec de vrais résultats.", model: "Modèle", prompt: "Prompt", source: "Source", viewSource: "Voir la source" },
+    video: { artifact: "Vidéo finalisée", back: "Retour à la bibliothèque de prompts", browseImage: "Image", browseVideo: "Vidéo", createKey: "Ouvrir le Playground", empty: "Aucun prompt vidéo avec exemple finalisé n’est encore disponible.", filters: ["Publicités UGC", "Présentation produit", "Localisation", "Storyboard animé"], heroBadge: "Bibliothèque de prompts vidéo", heroBody: "Explorez des prompts vidéo accompagnés de clips réels. Prévisualisez le résultat, vérifiez le modèle et la source, puis adaptez le prompt à votre projet.", heroTitle: "Des prompts vidéo avec de vrais résultats.", model: "Modèle", prompt: "Prompt", source: "Source", viewSource: "Voir la source" },
   },
   pt: {
-    image: { artifact: "Imagem gerada", back: "Voltar ao CLI", browseImage: "Imagem", browseVideo: "Video", createKey: "Criar API key", empty: "Nenhum prompt de imagem com resultado.", filters: ["Personagens", "Produto", "Storyboards", "Campanhas"], heroBadge: "Prompts de imagem CLI", heroBody: "Prompts de imagem de projetos Flatkey e assets próprios migrados, com prompt, modelo, fonte e imagem.", heroTitle: "Prompts de imagem com resultado.", model: "Modelo", prompt: "Prompt", source: "Fonte", viewSource: "Ver fonte" },
-    video: { artifact: "Artefato de video", back: "Voltar ao CLI", browseImage: "Imagem", browseVideo: "Video", createKey: "Criar API key", empty: "Nenhum prompt de video com resultado.", filters: ["UGC ads", "Reveal", "Localizacao", "Storyboard"], heroBadge: "Prompts de video CLI", heroBody: "Prompts de video para Flatkey CLI. So entradas com clipe, poster ou storyboard aparecem.", heroTitle: "Prompts de video com saidas usaveis.", model: "Modelo", prompt: "Prompt", source: "Fonte", viewSource: "Ver fonte" },
+    image: { artifact: "Imagem finalizada", back: "Voltar à biblioteca de prompts", browseImage: "Imagem", browseVideo: "Vídeo", createKey: "Abrir o Playground", empty: "Ainda não há prompts de imagem com exemplos finalizados.", filters: ["Personagens", "Visuais de produto", "Storyboards", "Campanhas"], heroBadge: "Biblioteca de prompts de imagem", heroBody: "Explore prompts de imagem com resultados reais. Cada exemplo mostra o prompt, o modelo, a fonte e a imagem final para você avaliar antes de usar.", heroTitle: "Prompts de imagem com resultados reais.", model: "Modelo", prompt: "Prompt", source: "Fonte", viewSource: "Ver a fonte" },
+    video: { artifact: "Vídeo finalizado", back: "Voltar à biblioteca de prompts", browseImage: "Imagem", browseVideo: "Vídeo", createKey: "Abrir o Playground", empty: "Ainda não há prompts de vídeo com exemplos finalizados.", filters: ["Anúncios UGC", "Apresentação de produto", "Localização", "Storyboard em vídeo"], heroBadge: "Biblioteca de prompts de vídeo", heroBody: "Explore prompts de vídeo com clipes reais. Veja o resultado, confira o modelo e a fonte e adapte o prompt ao seu projeto.", heroTitle: "Prompts de vídeo com resultados reais.", model: "Modelo", prompt: "Prompt", source: "Fonte", viewSource: "Ver a fonte" },
   },
   ru: {
-    image: { artifact: "Готовое изображение", back: "Назад к CLI", browseImage: "Image", browseVideo: "Video", createKey: "Create API key", empty: "Нет image prompts с результатом.", filters: ["Characters", "Product", "Storyboards", "Campaigns"], heroBadge: "CLI image prompts", heroBody: "Image prompts из Flatkey проектов и owned assets, с prompt, model, source и готовым изображением.", heroTitle: "Image prompts с готовым output.", model: "Model", prompt: "Prompt", source: "Source", viewSource: "View source" },
-    video: { artifact: "Video artifact", back: "Назад к CLI", browseImage: "Image", browseVideo: "Video", createKey: "Create API key", empty: "Нет video prompts с результатом.", filters: ["UGC ads", "Reveal", "Localization", "Storyboard"], heroBadge: "CLI video prompts", heroBody: "Video prompts для Flatkey CLI. Показываем только записи с clip, poster или storyboard.", heroTitle: "Video prompts с usable outputs.", model: "Model", prompt: "Prompt", source: "Source", viewSource: "View source" },
+    image: { artifact: "Готовое изображение", back: "Назад к библиотеке промптов", browseImage: "Изображения", browseVideo: "Видео", createKey: "Открыть Playground", empty: "Промптов для изображений с готовыми примерами пока нет.", filters: ["Персонажи", "Товарная визуализация", "Раскадровки", "Рекламные материалы"], heroBadge: "Библиотека промптов для изображений", heroBody: "Изучайте промпты с реальными готовыми изображениями. В каждом примере указаны промпт, модель, источник и итоговый результат — всё необходимое для оценки до использования.", heroTitle: "Промпты для изображений с реальными результатами.", model: "Модель", prompt: "Промпт", source: "Источник", viewSource: "Открыть источник" },
+    video: { artifact: "Готовое видео", back: "Назад к библиотеке промптов", browseImage: "Изображения", browseVideo: "Видео", createKey: "Открыть Playground", empty: "Промптов для видео с готовыми примерами пока нет.", filters: ["UGC-реклама", "Презентация продукта", "Локализация", "Раскадровка в видео"], heroBadge: "Библиотека промптов для видео", heroBody: "Изучайте видеопромпты с реальными роликами. Просмотрите результат, проверьте модель и источник, затем адаптируйте промпт под свой проект.", heroTitle: "Видеопромпты с реальными результатами.", model: "Модель", prompt: "Промпт", source: "Источник", viewSource: "Открыть источник" },
   },
   ja: {
-    image: { artifact: "生成済み画像", back: "CLIへ戻る", browseImage: "画像", browseVideo: "動画", createKey: "API keyを作成", empty: "成果物付き画像プロンプトはまだありません。", filters: ["キャラクター", "商品画像", "Storyboard", "Campaign"], heroBadge: "CLI画像プロンプト", heroBody: "Flatkeyプロジェクトと自社制作素材から整理した画像プロンプト。prompt、model、source、画像を表示します。", heroTitle: "成果物付き画像プロンプト。", model: "Model", prompt: "Prompt", source: "Source", viewSource: "Sourceを見る" },
-    video: { artifact: "動画成果物", back: "CLIへ戻る", browseImage: "画像", browseVideo: "動画", createKey: "API keyを作成", empty: "成果物付き動画プロンプトはまだありません。", filters: ["UGC ads", "Reveal", "Localization", "Storyboard"], heroBadge: "CLI動画プロンプト", heroBody: "Flatkey CLI向け動画プロンプト。clip、poster、storyboardのあるものだけを表示します。", heroTitle: "使える出力付き動画プロンプト。", model: "Model", prompt: "Prompt", source: "Source", viewSource: "Sourceを見る" },
+    image: { artifact: "完成画像", back: "プロンプトライブラリに戻る", browseImage: "画像", browseVideo: "動画", createKey: "Playground を開く", empty: "完成例付きの画像プロンプトはまだありません。", filters: ["キャラクター", "商品ビジュアル", "絵コンテ", "キャンペーン素材"], heroBadge: "画像プロンプトライブラリ", heroBody: "実際の完成画像が付いたプロンプトを閲覧できます。各例にはプロンプト、使用モデル、出典、最終結果がまとまっているため、使う前に仕上がりを確認できます。", heroTitle: "実例で選べる画像プロンプト。", model: "モデル", prompt: "プロンプト", source: "出典", viewSource: "出典を見る" },
+    video: { artifact: "完成動画", back: "プロンプトライブラリに戻る", browseImage: "画像", browseVideo: "動画", createKey: "Playground を開く", empty: "完成例付きの動画プロンプトはまだありません。", filters: ["UGC 広告", "商品紹介", "ローカライズ", "絵コンテから動画"], heroBadge: "動画プロンプトライブラリ", heroBody: "実際の動画が付いたプロンプトを閲覧できます。結果をプレビューし、モデルと出典を確認してから、自分のプロジェクト向けに調整できます。", heroTitle: "実例で選べる動画プロンプト。", model: "モデル", prompt: "プロンプト", source: "出典", viewSource: "出典を見る" },
   },
   vi: {
-    image: { artifact: "Anh da tao", back: "Quay lai CLI", browseImage: "Hinh anh", browseVideo: "Video", createKey: "Tao API key", empty: "Chua co prompt anh kem ket qua.", filters: ["Nhan vat", "San pham", "Storyboard", "Campaign"], heroBadge: "Prompt anh CLI", heroBody: "Prompt anh tu du an Flatkey va owned assets, kem prompt, model, source va anh.", heroTitle: "Prompt anh co san output.", model: "Model", prompt: "Prompt", source: "Source", viewSource: "View source" },
-    video: { artifact: "Video artifact", back: "Quay lai CLI", browseImage: "Hinh anh", browseVideo: "Video", createKey: "Tao API key", empty: "Chua co prompt video kem ket qua.", filters: ["UGC ads", "Reveal", "Localization", "Storyboard"], heroBadge: "Prompt video CLI", heroBody: "Prompt video cho Flatkey CLI. Chi hien entry co clip, poster hoac storyboard.", heroTitle: "Prompt video kem output dung duoc.", model: "Model", prompt: "Prompt", source: "Source", viewSource: "View source" },
+    image: { artifact: "Ảnh hoàn chỉnh", back: "Quay lại thư viện prompt", browseImage: "Hình ảnh", browseVideo: "Video", createKey: "Mở Playground", empty: "Chưa có prompt hình ảnh kèm ví dụ hoàn chỉnh.", filters: ["Nhân vật", "Hình ảnh sản phẩm", "Bảng phân cảnh", "Nội dung chiến dịch"], heroBadge: "Thư viện prompt hình ảnh", heroBody: "Khám phá prompt hình ảnh kèm kết quả thực tế. Mỗi ví dụ hiển thị prompt, mô hình, nguồn và ảnh hoàn chỉnh để bạn đánh giá trước khi sử dụng.", heroTitle: "Prompt hình ảnh với kết quả thực tế.", model: "Mô hình", prompt: "Prompt", source: "Nguồn", viewSource: "Xem nguồn" },
+    video: { artifact: "Video hoàn chỉnh", back: "Quay lại thư viện prompt", browseImage: "Hình ảnh", browseVideo: "Video", createKey: "Mở Playground", empty: "Chưa có prompt video kèm ví dụ hoàn chỉnh.", filters: ["Quảng cáo UGC", "Giới thiệu sản phẩm", "Bản địa hóa", "Từ phân cảnh đến video"], heroBadge: "Thư viện prompt video", heroBody: "Khám phá prompt video kèm clip thực tế. Xem trước kết quả, kiểm tra mô hình và nguồn, sau đó điều chỉnh prompt cho dự án của bạn.", heroTitle: "Prompt video với kết quả thực tế.", model: "Mô hình", prompt: "Prompt", source: "Nguồn", viewSource: "Xem nguồn" },
   },
   de: {
-    image: { artifact: "Erzeugtes Bild", back: "Zuruck zur CLI", browseImage: "Bild", browseVideo: "Video", createKey: "API key erstellen", empty: "Keine Bild-Prompts mit Ergebnis.", filters: ["Characters", "Produkt", "Storyboards", "Campaigns"], heroBadge: "CLI Bild-Prompts", heroBody: "Bild-Prompts aus Flatkey-Projekten und eigenen Assets, mit Prompt, Modell, Quelle und Bild.", heroTitle: "Bild-Prompts mit Ergebnis.", model: "Modell", prompt: "Prompt", source: "Quelle", viewSource: "Quelle ansehen" },
-    video: { artifact: "Video-Artefakt", back: "Zuruck zur CLI", browseImage: "Bild", browseVideo: "Video", createKey: "API key erstellen", empty: "Keine Video-Prompts mit Ergebnis.", filters: ["UGC ads", "Reveal", "Localization", "Storyboard"], heroBadge: "CLI Video-Prompts", heroBody: "Video-Prompts fur Flatkey CLI. Nur Eintrage mit Clip, Poster oder Storyboard werden gezeigt.", heroTitle: "Video-Prompts mit nutzbaren Outputs.", model: "Modell", prompt: "Prompt", source: "Quelle", viewSource: "Quelle ansehen" },
+    image: { artifact: "Fertiges Bild", back: "Zurück zur Prompt-Bibliothek", browseImage: "Bild", browseVideo: "Video", createKey: "Playground öffnen", empty: "Noch sind keine Bild-Prompts mit fertigen Beispielen verfügbar.", filters: ["Charaktere", "Produktvisuals", "Storyboards", "Kampagnenmaterial"], heroBadge: "Bibliothek für Bild-Prompts", heroBody: "Entdecken Sie Bild-Prompts mit echten Ergebnissen. Jedes Beispiel zeigt Prompt, Modell, Quelle und fertiges Bild, damit Sie das Ergebnis vor der Nutzung einschätzen können.", heroTitle: "Bild-Prompts mit echten Ergebnissen.", model: "Modell", prompt: "Prompt", source: "Quelle", viewSource: "Quelle ansehen" },
+    video: { artifact: "Fertiges Video", back: "Zurück zur Prompt-Bibliothek", browseImage: "Bild", browseVideo: "Video", createKey: "Playground öffnen", empty: "Noch sind keine Video-Prompts mit fertigen Beispielen verfügbar.", filters: ["UGC-Anzeigen", "Produktpräsentation", "Lokalisierung", "Storyboard zu Video"], heroBadge: "Bibliothek für Video-Prompts", heroBody: "Entdecken Sie Video-Prompts mit echten Clips. Prüfen Sie Ergebnis, Modell und Quelle und passen Sie den Prompt anschließend an Ihr Projekt an.", heroTitle: "Video-Prompts mit echten Ergebnissen.", model: "Modell", prompt: "Prompt", source: "Quelle", viewSource: "Quelle ansehen" },
+  },
+  id: {
+    image: { artifact: "Gambar jadi", back: "Kembali ke pustaka prompt", browseImage: "Gambar", browseVideo: "Video", createKey: "Buka Playground", empty: "Belum ada prompt gambar dengan contoh hasil akhir.", filters: ["Karakter", "Visual produk", "Storyboard", "Materi kampanye"], heroBadge: "Pustaka prompt gambar", heroBody: "Jelajahi prompt gambar dengan hasil nyata. Setiap contoh menampilkan prompt, model, sumber, dan gambar akhir agar Anda dapat menilainya sebelum digunakan.", heroTitle: "Prompt gambar dengan hasil nyata.", model: "Model", prompt: "Prompt", source: "Sumber", viewSource: "Lihat sumber" },
+    video: { artifact: "Video jadi", back: "Kembali ke pustaka prompt", browseImage: "Gambar", browseVideo: "Video", createKey: "Buka Playground", empty: "Belum ada prompt video dengan contoh hasil akhir.", filters: ["Iklan UGC", "Peluncuran produk", "Lokalisasi", "Storyboard ke video"], heroBadge: "Pustaka prompt video", heroBody: "Jelajahi prompt video dengan klip nyata. Pratinjau hasil, periksa model dan sumber, lalu sesuaikan prompt untuk proyek Anda.", heroTitle: "Prompt video dengan hasil nyata.", model: "Model", prompt: "Prompt", source: "Sumber", viewSource: "Lihat sumber" },
   },
 });
+
+const uiCopyByLocale: Record<Locale, { promptLabel: string; countLabel: string; weekly: string; popular: Record<MediaKind, string>; curated: string; curatedTitle: Record<MediaKind, string>; more: string; related: string; backList: string; type: string; updated: string; owned: string }> = {
+  en: { promptLabel: "Prompts", countLabel: "prompts", weekly: "Popular this week", popular: { image: "Popular image prompts", video: "Popular video prompts" }, curated: "Curated examples", curatedTitle: { image: "Image prompts with production-ready results", video: "Video prompts with production-ready results" }, more: "Keep exploring", related: "Related prompt results", backList: "Back to list", type: "Type", updated: "Updated", owned: "Flatkey-owned example" },
+  zh: { promptLabel: "提示词", countLabel: "条提示词", weekly: "本周热门", popular: { image: "热门图片提示词", video: "热门视频提示词" }, curated: "精选案例", curatedTitle: { image: "带真实成片的图片提示词", video: "带真实成片的视频提示词" }, more: "继续浏览", related: "相关提示词案例", backList: "返回列表", type: "类型", updated: "更新", owned: "Flatkey 自有示例" },
+  es: { promptLabel: "Prompts", countLabel: "prompts", weekly: "Popular esta semana", popular: { image: "Prompts de imagen populares", video: "Prompts de vídeo populares" }, curated: "Ejemplos seleccionados", curatedTitle: { image: "Prompts de imagen con resultados listos para producción", video: "Prompts de vídeo con resultados listos para producción" }, more: "Seguir explorando", related: "Resultados de prompts relacionados", backList: "Volver a la lista", type: "Tipo", updated: "Actualizado", owned: "Ejemplo propio de Flatkey" },
+  fr: { promptLabel: "Prompts", countLabel: "prompts", weekly: "Populaires cette semaine", popular: { image: "Prompts d’image populaires", video: "Prompts vidéo populaires" }, curated: "Exemples sélectionnés", curatedTitle: { image: "Prompts d’image avec résultats prêts à produire", video: "Prompts vidéo avec résultats prêts à produire" }, more: "Continuer à explorer", related: "Résultats de prompts associés", backList: "Retour à la liste", type: "Type", updated: "Mise à jour", owned: "Exemple créé par Flatkey" },
+  pt: { promptLabel: "Prompts", countLabel: "prompts", weekly: "Populares nesta semana", popular: { image: "Prompts de imagem populares", video: "Prompts de vídeo populares" }, curated: "Exemplos selecionados", curatedTitle: { image: "Prompts de imagem com resultados prontos para produção", video: "Prompts de vídeo com resultados prontos para produção" }, more: "Continuar explorando", related: "Resultados de prompts relacionados", backList: "Voltar à lista", type: "Tipo", updated: "Atualizado", owned: "Exemplo próprio da Flatkey" },
+  ru: { promptLabel: "Промпты", countLabel: "промптов", weekly: "Популярное за неделю", popular: { image: "Популярные промпты для изображений", video: "Популярные промпты для видео" }, curated: "Подборка примеров", curatedTitle: { image: "Промпты для изображений с готовыми результатами", video: "Промпты для видео с готовыми результатами" }, more: "Продолжить просмотр", related: "Похожие примеры промптов", backList: "Назад к списку", type: "Тип", updated: "Обновлено", owned: "Пример, созданный Flatkey" },
+  ja: { promptLabel: "プロンプト", countLabel: "件のプロンプト", weekly: "今週の人気", popular: { image: "人気の画像プロンプト", video: "人気の動画プロンプト" }, curated: "厳選された実例", curatedTitle: { image: "制作に使える完成例付き画像プロンプト", video: "制作に使える完成例付き動画プロンプト" }, more: "さらに見る", related: "関連するプロンプト実例", backList: "一覧に戻る", type: "種類", updated: "更新日", owned: "Flatkey 制作の実例" },
+  vi: { promptLabel: "Prompt", countLabel: "prompt", weekly: "Phổ biến tuần này", popular: { image: "Prompt hình ảnh phổ biến", video: "Prompt video phổ biến" }, curated: "Ví dụ tuyển chọn", curatedTitle: { image: "Prompt hình ảnh với kết quả sẵn sàng sản xuất", video: "Prompt video với kết quả sẵn sàng sản xuất" }, more: "Khám phá thêm", related: "Kết quả prompt liên quan", backList: "Quay lại danh sách", type: "Loại", updated: "Cập nhật", owned: "Ví dụ do Flatkey tạo" },
+  de: { promptLabel: "Prompts", countLabel: "Prompts", weekly: "Diese Woche beliebt", popular: { image: "Beliebte Bild-Prompts", video: "Beliebte Video-Prompts" }, curated: "Ausgewählte Beispiele", curatedTitle: { image: "Bild-Prompts mit produktionsreifen Ergebnissen", video: "Video-Prompts mit produktionsreifen Ergebnissen" }, more: "Weiter entdecken", related: "Ähnliche Prompt-Ergebnisse", backList: "Zurück zur Liste", type: "Typ", updated: "Aktualisiert", owned: "Von Flatkey erstelltes Beispiel" },
+  id: { promptLabel: "Prompt", countLabel: "prompt", weekly: "Populer minggu ini", popular: { image: "Prompt gambar populer", video: "Prompt video populer" }, curated: "Contoh pilihan", curatedTitle: { image: "Prompt gambar dengan hasil siap produksi", video: "Prompt video dengan hasil siap produksi" }, more: "Jelajahi lainnya", related: "Hasil prompt terkait", backList: "Kembali ke daftar", type: "Jenis", updated: "Diperbarui", owned: "Contoh buatan Flatkey" },
+};
 
 export function cliMediaPath(kind: MediaKind) {
   return kind === "image" ? PROMPT_IMAGE_PATH : PROMPT_VIDEO_PATH;
@@ -166,9 +184,8 @@ export function cliMediaDetailPath(kind: MediaKind, slug: string) {
 
 export function getCliMediaMetadata(kind: MediaKind, locale: Locale) {
   const copy = copyByLocale[locale][kind];
-  const label = kind === "image" ? copy.browseImage : copy.browseVideo;
   return {
-    title: `Flatkey CLI ${label} prompts`,
+    title: `${copy.heroBadge} | Flatkey`,
     description: copy.heroBody,
     pathname: cliMediaPath(kind),
   };
@@ -179,8 +196,10 @@ export async function getCliMediaDetailMetadata(kind: MediaKind, slug: string, l
   if (!item) return undefined;
   const title = item.title[locale] ?? item.title.en;
   const summary = item.summary[locale] ?? item.summary.en;
+  const copy = copyByLocale[locale][kind];
+  const ui = uiCopyByLocale[locale];
   return {
-    title: `${title} - Flatkey CLI ${kind} prompt`,
+    title: `${title} — ${kind === "image" ? copy.browseImage : copy.browseVideo} ${ui.promptLabel} | Flatkey`,
     description: summary,
     pathname: cliMediaDetailPath(kind, slug),
   };
@@ -188,11 +207,12 @@ export async function getCliMediaDetailMetadata(kind: MediaKind, slug: string, l
 
 export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Locale }) {
   const copy = copyByLocale[props.locale][props.kind];
+  const ui = uiCopyByLocale[props.locale];
   const items = await fetchCliMediaPromptItems(props.kind);
   const featuredItem = items[0];
   const weeklyItems = items.slice(0, 4);
   const curatedItems = items.slice(0, 8);
-  const keyUrl = consoleUrl("/keys", `lng=${props.locale}`);
+  const keyUrl = consoleUrl("/playground", new URLSearchParams({ generate: props.kind, lng: props.locale, source: "prompt-library" }).toString());
   const currentPath = cliMediaPath(props.kind);
   const displayName = props.kind === "image" ? copy.browseImage : copy.browseVideo;
   const isVideo = props.kind === "video";
@@ -206,10 +226,10 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
               <PromptBreadcrumb locale={props.locale} kind={props.kind} />
               <div className="flex flex-wrap items-center gap-2">
                 <a href={keyUrl} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#7c3aed] px-4 text-sm font-extrabold text-white shadow-[0_16px_34px_-18px_rgba(124,58,237,.65)] hover:bg-[#6d28d9]" style={{ color: "#fff" }}>
-                  <KeyRound className="size-4" />
+                  <Sparkles className="size-4" />
                   {copy.createKey}
                 </a>
-                <Link href={localizePath(CLI_LANDING_PATH, props.locale)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]">
+                <Link href={localizePath("/prompts", props.locale)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]">
                   <ArrowLeft className="size-4" />
                   {copy.back}
                 </Link>
@@ -220,7 +240,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
                 <p className="mb-4 inline-flex rounded-full border border-[#ded6f4] bg-[#f4f0ff] px-3.5 py-1.5 text-[13px] font-extrabold text-[#4c1d95]">{copy.heroBadge}</p>
                 <h1 className={`max-w-xl font-extrabold tracking-tight ${isVideo ? "text-[clamp(2.15rem,4.4vw,3.7rem)] leading-none" : "text-[clamp(2.25rem,5vw,3.7rem)] leading-none"}`}>
                   {displayName}
-                  <span className="block text-[#7c3aed]">{props.locale === "zh" ? "提示词" : "Prompts"}</span>
+                  <span className="block text-[#7c3aed]">{ui.promptLabel}</span>
                 </h1>
                 <p className="mt-5 max-w-lg text-sm leading-6 text-[#62626D] md:text-base">{copy.heroBody}</p>
                 <div className="mt-6 flex flex-wrap gap-2">
@@ -230,7 +250,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
                 </div>
                 <div className="mt-7 flex items-center gap-3 text-xs font-semibold text-[#77727f]">
                   <span className="inline-flex size-2 rounded-full bg-emerald-500 shadow-[0_0_16px_rgba(16,185,129,0.4)]" />
-                  <span>{items.length} {displayName.toLowerCase()} prompts</span>
+                  <span>{items.length} {ui.countLabel}</span>
                   <span className="text-[#c8c3cf]">•</span>
                   <span>{copy.artifact}</span>
                 </div>
@@ -246,7 +266,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
               <div className="rounded-2xl border border-[#E7E4EC] bg-white p-8 text-sm text-[#62626D] shadow-sm">{copy.empty}</div>
             ) : (
               <>
-                <SectionHeading eyebrow={props.locale === "zh" ? "每周热门" : "Weekly Hot"} title={props.locale === "zh" ? `热门${displayName}提示词` : `Popular ${displayName.toLowerCase()} prompts`} />
+                <SectionHeading eyebrow={ui.weekly} title={ui.popular[props.kind]} />
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {weeklyItems.map((item) => (
                     <CompactPromptCard item={item} key={item.slug} kind={props.kind} locale={props.locale} />
@@ -254,7 +274,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
                 </div>
 
                 <div className="mt-14">
-                  <SectionHeading eyebrow={props.locale === "zh" ? "精选案例" : "Curated"} title={props.locale === "zh" ? `适合真实产物的${displayName}提示词` : `${displayName} prompts with production-ready outputs`} />
+                  <SectionHeading eyebrow={ui.curated} title={ui.curatedTitle[props.kind]} />
                   <div className={isVideo ? "grid gap-5 md:grid-cols-2 xl:grid-cols-3" : "columns-1 gap-5 md:columns-2 xl:columns-3"}>
                     {curatedItems.map((item) => (
                       <PromptCard copy={copy} item={item} key={item.slug} keyUrl={keyUrl} kind={props.kind} locale={props.locale} />
@@ -265,6 +285,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
             )}
           </div>
         </section>
+        <PromptFreeCta locale={props.locale} kind={props.kind} />
       </main>
     </SiteShell>
   );
@@ -272,8 +293,9 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
 
 export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale: Locale; slug: string }) {
   const copy = copyByLocale[props.locale][props.kind];
+  const ui = uiCopyByLocale[props.locale];
   const item = await fetchCliMediaPromptItem(props.kind, props.slug);
-  const keyUrl = consoleUrl("/keys", `lng=${props.locale}`);
+  const keyUrl = consoleUrl("/playground", new URLSearchParams({ generate: props.kind, lng: props.locale, source: "prompt-library" }).toString());
 
   if (!item) return null;
 
@@ -306,7 +328,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
                 </a>
                 <Link href={listPath} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#0B0B0F14] bg-white px-4 text-sm font-bold text-[#3d3845] shadow-sm hover:border-[#7c3aed]/35 hover:text-[#4c1d95]">
                   <ArrowLeft className="size-4" />
-                  {props.locale === "zh" ? "返回列表" : copy.back}
+                  {ui.backList}
                 </Link>
               </div>
             </div>
@@ -325,8 +347,8 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
               <aside className="space-y-4">
                 <div className="rounded-2xl border border-[#0B0B0F14] bg-white p-5 shadow-sm">
                   <div className="grid grid-cols-2 gap-3">
-                    <DetailMetric label={props.locale === "zh" ? "类型" : "Type"} value={props.kind === "image" ? copy.browseImage : copy.browseVideo} />
-                    <DetailMetric label={props.locale === "zh" ? "更新" : "Updated"} value={item.updatedAt} />
+                    <DetailMetric label={ui.type} value={props.kind === "image" ? copy.browseImage : copy.browseVideo} />
+                    <DetailMetric label={ui.updated} value={item.updatedAt} />
                     <div className="col-span-2"><DetailMetric label={copy.model} value={item.model} /></div>
                   </div>
                   <div className="mt-4 grid gap-4 border-t border-[#0B0B0F10] pt-4">
@@ -339,7 +361,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
                   </div>
                 </div>
                 <a className="flex items-center justify-between rounded-xl border border-violet-500/20 bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-[0_18px_38px_-26px_rgba(91,33,182,0.45)] hover:bg-violet-700" href={keyUrl} style={{ color: "#fff" }}>
-                  <span className="inline-flex items-center gap-2"><KeyRound className="size-4" />{copy.createKey}</span>
+                  <span className="inline-flex items-center gap-2"><Sparkles className="size-4" />{copy.createKey}</span>
                   <ArrowRight className="size-4" />
                 </a>
               </aside>
@@ -367,7 +389,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
         {relatedItems.length > 0 ? (
           <section className="px-6 py-12 sm:px-8 lg:px-10">
             <div className="mx-auto max-w-[1280px]">
-              <SectionHeading eyebrow={props.locale === "zh" ? "继续浏览" : "More"} title={props.locale === "zh" ? "相关提示词产物" : "Related prompt outputs"} />
+              <SectionHeading eyebrow={ui.more} title={ui.related} />
               <div className="grid gap-4 md:grid-cols-3">
                 {relatedItems.map((related) => (
                   <CompactPromptCard item={related} key={related.slug} kind={props.kind} locale={props.locale} />
@@ -376,6 +398,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
             </div>
           </section>
         ) : null}
+        <PromptFreeCta locale={props.locale} kind={props.kind} />
       </main>
     </SiteShell>
   );
@@ -471,7 +494,7 @@ function PromptCard(props: { copy: CliMediaCopy; item: PromptItem; keyUrl: strin
             </a>
           ) : null}
           <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-600 px-3 text-sm font-semibold text-white shadow-[0_12px_28px_-18px_rgba(91,33,182,0.55)] hover:bg-violet-700" href={props.keyUrl} style={{ color: "#fff" }}>
-            <KeyRound className="size-4" />
+            <Sparkles className="size-4" />
             {props.copy.createKey}
           </a>
         </div>
@@ -554,10 +577,10 @@ function SourcePanel(props: { copy: CliMediaCopy; item: PromptItem; locale: Loca
   const label = sourceDisplayLabel(props.item, props.locale);
   return (
     <div className="rounded-2xl border border-[#0B0B0F12] bg-white p-5 shadow-sm">
-      <p className="text-xs font-black tracking-[0.12em] text-violet-600 uppercase">{props.locale === "zh" ? "归属" : "Provenance"}</p>
+      <p className="text-xs font-black tracking-[0.12em] text-violet-600 uppercase">{props.copy.source}</p>
       <p className="mt-3 text-sm font-semibold text-[#0B0B0F]">{label}</p>
       {isOwnedSource(props.item) || !props.item.source.url ? (
-        <p className="mt-1 text-sm text-[#62626D]">{props.locale === "zh" ? "Flatkey 自有迁移产物" : "Flatkey owned migrated artifact"}</p>
+        <p className="mt-1 text-sm text-[#62626D]">{uiCopyByLocale[props.locale].owned}</p>
       ) : (
         <>
           <p className="mt-1 text-sm text-[#62626D]">{props.item.source.platform}</p>

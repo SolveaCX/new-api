@@ -9,8 +9,13 @@ function localized(en: string, zh: string) {
 }
 
 function promptItem(props: { category: PromptItem["category"]; model: string; slug: string; tag: string; title: string }): PromptItem {
+  const artifact: PromptItem["artifact"] = props.category === "image"
+    ? { kind: "image", alt: props.title, url: `https://example.com/${props.slug}.jpg` }
+    : props.category === "video"
+      ? { kind: "video", alt: props.title, poster: `https://example.com/${props.slug}.jpg`, url: `https://example.com/${props.slug}.mp4` }
+      : { kind: "text", title: props.title, body: "Produced output" };
   return {
-    artifact: { kind: "text", title: props.title, body: "Produced output" },
+    artifact,
     category: props.category,
     model: props.model,
     output: { label: localized("Output", "产物"), ratio: "16:9" },
@@ -41,10 +46,25 @@ describe("PromptDirectoryPage", () => {
     expect(html).toContain('href="/zh/prompts/video"');
     expect(html).toContain('href="/zh/prompts?model=gpt-image-2#prompt-collection"');
     expect(html).toContain('href="/zh/prompts?useCase=ads#prompt-collection"');
+    expect(html).toContain('/assets/logos/openai.svg');
+    expect(html).toContain("适合海报、商品图与成片级视觉创意的图像生成模型。");
+    expect(html).toContain("<video");
+    expect(html).toContain('muted=""');
+    expect(html).toContain('autoPlay=""');
+    expect(html).not.toContain("Launch copy");
+    expect(html).not.toContain('type=text');
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<select");
     expect(html).not.toContain(">筛选<");
     expect(html).not.toContain(">重置<");
+  });
+
+  test("shows fifteen featured prompts before the user expands the collection", () => {
+    const manyItems = Array.from({ length: 16 }, (_, index) => promptItem({ category: "image", model: "gpt-image-2", slug: `image-${index}`, tag: "ads", title: `Image ${index}` }));
+    const html = renderToStaticMarkup(<PromptDirectoryPage locale="zh" items={manyItems} />);
+
+    expect(html.match(/<article/g)?.length).toBe(15);
+    expect(html).toContain(">全部提示词<");
   });
 
   test("turns model query links into a dedicated content collection", () => {

@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowRight, Bot, Check, ChevronRight, Copy, ImageIcon, Sparkles, Type, Video, type LucideIcon } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, Copy, ImageIcon, Sparkles, Video, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
+import { PromptFreeCta } from "@/components/prompt-free-cta";
 import { SiteShell } from "@/components/site-shell";
 import { localizePath, type Locale } from "@/lib/locales";
 import type { PromptArtifact, PromptItem } from "@/lib/prompt-library";
@@ -46,14 +47,33 @@ const sectionCopy: Record<Locale, { media: string; models: string; topics: strin
   id: { media: "Jelajahi berdasarkan media", models: "Jelajahi berdasarkan model", topics: "Jelajahi berdasarkan penggunaan", latest: "Contoh prompt terbaru" },
 };
 
+const discoveryCopy: Record<Locale, { slogan: string; imageModel: string; videoModel: string }> = {
+  en: { slogan: "From idea to final frame, find prompts that already work.", imageModel: "An image model for posters, product visuals, and production-ready creative work.", videoModel: "A video model for ads, product stories, and motion-led creative work." },
+  zh: { slogan: "从灵感到成片，找到真正能用的提示词。", imageModel: "适合海报、商品图与成片级视觉创意的图像生成模型。", videoModel: "适合广告短片、产品叙事与动态创意的视频生成模型。" },
+  es: { slogan: "De la idea al resultado final: encuentra prompts que ya funcionan.", imageModel: "Un modelo de imagen para carteles, producto y piezas visuales listas para producción.", videoModel: "Un modelo de vídeo para anuncios, historias de producto y creatividad en movimiento." },
+  fr: { slogan: "De l’idée au rendu final, trouvez des prompts qui fonctionnent déjà.", imageModel: "Un modèle d’image pour les affiches, les visuels produit et les créations prêtes à produire.", videoModel: "Un modèle vidéo pour les publicités, les récits produit et les créations en mouvement." },
+  pt: { slogan: "Da ideia ao resultado final, encontre prompts que já funcionam.", imageModel: "Um modelo de imagem para pôsteres, produtos e peças visuais prontas para produção.", videoModel: "Um modelo de vídeo para anúncios, histórias de produto e criações em movimento." },
+  ru: { slogan: "От идеи до готового кадра — найдите промпты, которые уже работают.", imageModel: "Модель изображений для постеров, товарной визуализации и готовых к выпуску креативов.", videoModel: "Видеомодель для рекламы, историй о продукте и динамичных креативов." },
+  ja: { slogan: "アイデアから完成作品まで、実際に使えるプロンプトが見つかります。", imageModel: "ポスター、商品ビジュアル、制作向けクリエイティブに適した画像モデル。", videoModel: "広告、商品ストーリー、動きのあるクリエイティブに適した動画モデル。" },
+  vi: { slogan: "Từ ý tưởng đến thành phẩm, khám phá những prompt đã được chứng minh hiệu quả.", imageModel: "Mô hình ảnh dành cho áp phích, hình sản phẩm và nội dung sáng tạo sẵn sàng sản xuất.", videoModel: "Mô hình video dành cho quảng cáo, câu chuyện sản phẩm và nội dung chuyển động." },
+  de: { slogan: "Von der Idee bis zum fertigen Ergebnis: Finden Sie Prompts, die bereits funktionieren.", imageModel: "Ein Bildmodell für Poster, Produktvisuals und produktionsreife Kreativinhalte.", videoModel: "Ein Videomodell für Werbung, Produktgeschichten und bewegte Kreativinhalte." },
+  id: { slogan: "Dari ide hingga hasil akhir, temukan prompt yang sudah terbukti efektif.", imageModel: "Model gambar untuk poster, visual produk, dan materi kreatif siap produksi.", videoModel: "Model video untuk iklan, cerita produk, dan materi kreatif berbasis gerak." },
+};
+
 const categoryIcons: Partial<Record<PromptItem["category"], LucideIcon>> = {
   image: ImageIcon,
   video: Video,
-  text: Type,
-  agent: Bot,
 };
 
-type Collection = { key: string; count: number; sample: PromptItem };
+type Collection = { key: string; count: number; sample: PromptItem; items: PromptItem[] };
+
+const modelPresentation: Record<string, { title: string; logo: string }> = {
+  "gpt-image-2": { title: "GPT Image 2", logo: "/assets/logos/openai.svg" },
+  "jimeng-image-4.5": { title: "Jimeng Image 4.5", logo: "/assets/logos/bytedance.svg" },
+  "seedance-2.0": { title: "Seedance 2.0", logo: "/assets/logos/bytedance.svg" },
+  "seedance-2.5": { title: "Seedance 2.5", logo: "/assets/logos/bytedance.svg" },
+  "veo-3.1-fast-generate-preview": { title: "Veo 3.1 Fast", logo: "/assets/logos/googlegemini.svg" },
+};
 
 export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
   const text = copy[locale];
@@ -62,36 +82,42 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
   const selectedModel = firstSearchValue(initialSearch?.model);
   const selectedUseCase = firstSearchValue(initialSearch?.useCase);
   const [copied, setCopied] = useState("");
+  const [showAll, setShowAll] = useState(false);
 
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
     [items],
   );
+  const mediaItems = useMemo(
+    () => sortedItems.filter((item) => item.category === "image" || item.category === "video"),
+    [sortedItems],
+  );
   const mediaCollections = useMemo(() => {
-    const order: PromptItem["category"][] = ["image", "video", "text", "agent", "audio"];
+    const order: PromptItem["category"][] = ["image", "video"];
     return order.flatMap((category) => {
-      const categoryItems = sortedItems.filter((item) => item.category === category);
+      const categoryItems = mediaItems.filter((item) => item.category === category);
       const sample = categoryItems[0];
       return sample ? [{ category, count: categoryItems.length, sample }] : [];
     });
-  }, [sortedItems]);
-  const modelCollections = useMemo(() => buildModelCollections(sortedItems).slice(0, 8), [sortedItems]);
-  const topicCollections = useMemo(() => buildTopicCollections(sortedItems).slice(0, 9), [sortedItems]);
+  }, [mediaItems]);
+  const modelCollections = useMemo(() => buildModelCollections(mediaItems).slice(0, 8), [mediaItems]);
+  const topicCollections = useMemo(() => buildTopicCollections(mediaItems).slice(0, 9), [mediaItems]);
   const collectionItems = useMemo(
-    () => sortedItems.filter((item) => {
+    () => mediaItems.filter((item) => {
       if (selectedType && item.category !== selectedType) return false;
       if (selectedModel && item.model !== selectedModel) return false;
       if (selectedUseCase && !item.tags.includes(selectedUseCase)) return false;
       return true;
     }),
-    [selectedModel, selectedType, selectedUseCase, sortedItems],
+    [mediaItems, selectedModel, selectedType, selectedUseCase],
   );
   const collectionTitle = selectedModel
     || (selectedType ? categoryLabels[locale][selectedType] : "")
     || selectedUseCase
     || sections.latest;
   const hasSelectedCollection = Boolean(selectedType || selectedModel || selectedUseCase);
-  const featured = collectionItems[0] ?? sortedItems[0];
+  const featured = collectionItems[0] ?? mediaItems[0];
+  const displayedItems = hasSelectedCollection || showAll ? collectionItems : collectionItems.slice(0, 15);
   const copyPrompt = async (item: PromptItem) => {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(item.slug);
@@ -101,73 +127,58 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
   return (
     <SiteShell locale={locale} pathname="/prompts">
       <main className="min-h-screen bg-white text-[#171a21]">
-        <section className="border-b border-[#E7E4EC] bg-white px-6 pt-10 pb-10 sm:px-8 md:pt-14 lg:px-10">
+        <section className="border-b border-[#0B0B0F14] bg-[#F8F6FC] px-6 pt-10 pb-10 sm:px-8 md:pt-14 md:pb-14 lg:px-10">
           <div className="mx-auto max-w-[1280px]">
             <nav aria-label="Breadcrumb" className="mb-7 flex items-center gap-1 text-xs text-[#6B6475]">
               <Link href={localizePath("/", locale)} className="hover:text-violet-700">Flatkey</Link>
               <ChevronRight className="size-3" aria-hidden="true" />
               <span className="font-semibold text-[#0B0B0F]">{text.title}</span>
             </nav>
-            <div className="flex flex-wrap items-end justify-between gap-8">
-              <div>
-                <p className="mb-3 text-xs font-black tracking-[0.16em] text-violet-600 uppercase">{text.browse}</p>
-                <h1 className="text-[clamp(2.25rem,5vw,3.8rem)] leading-none font-extrabold tracking-tight">{text.title}</h1>
-                <p className="mt-4 max-w-2xl text-base leading-7 text-[#62626D]">{text.description}</p>
+            {featured ? (
+              <div className="grid overflow-hidden rounded-[24px] border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.22)] lg:grid-cols-[0.88fr_1.12fr]">
+                <div className="flex flex-col justify-center p-7 md:p-10 lg:p-12">
+                  <h1 className="max-w-2xl text-[clamp(2.35rem,5vw,4.4rem)] leading-[0.98] font-extrabold tracking-[-0.045em] text-[#0B0B0F]">{discoveryCopy[locale].slogan}</h1>
+                  <p className="mt-5 max-w-xl text-base leading-7 text-[#62626D]">{text.description}</p>
+                  <div className="mt-6 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#F1EAFE] px-3 py-1.5 text-xs font-bold text-[#5B21B6]">{categoryLabels[locale].image}</span>
+                    <span className="rounded-full bg-[#F1EAFE] px-3 py-1.5 text-xs font-bold text-[#5B21B6]">{categoryLabels[locale].video}</span>
+                    <span className="rounded-full border border-[#0B0B0F14] bg-white px-3 py-1.5 text-xs font-bold text-[#5D566A]">{mediaItems.length} {text.found}</span>
+                  </div>
+                  <Link href="#prompt-collection" className="mt-7 inline-flex h-11 w-fit items-center gap-2 rounded-full bg-[#070707] px-5 text-sm font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
+                    {text.featured}<ArrowRight className="size-4" aria-hidden="true" />
+                  </Link>
+                </div>
+                <Link href={promptHref(featured, locale)} className="group relative min-h-72 overflow-hidden border-t border-[#0B0B0F14] bg-[#211C2D] lg:min-h-[440px] lg:border-t-0 lg:border-l">
+                  <ArtifactPreview artifact={featured.artifact} title={featured.title[locale] ?? featured.title.en} variant="hero" />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 via-black/35 to-transparent px-6 pt-20 pb-6 text-white">
+                    <span className="rounded-full border border-white/20 bg-white/14 px-2.5 py-1 text-[11px] font-bold backdrop-blur">{featured.model}</span>
+                    <h2 className="mt-3 text-xl font-black tracking-tight text-white md:text-2xl">{featured.title[locale] ?? featured.title.en}</h2>
+                    <p className="mt-1 line-clamp-2 max-w-xl text-sm leading-6 text-white/72">{featured.summary[locale] ?? featured.summary.en}</p>
+                  </div>
+                </Link>
               </div>
-              <div className="min-w-32 rounded-2xl border border-[#E7E4EC] bg-[#F8F6FC] px-5 py-4 text-right shadow-[0_10px_30px_-24px_rgba(24,14,38,.24)]">
-                <p className="text-3xl font-black tabular-nums text-[#0B0B0F]">{items.length}</p>
-                <p className="mt-1 text-xs font-semibold text-[#6B7280]">{text.found}</p>
-              </div>
-            </div>
+            ) : null}
           </div>
         </section>
 
-        {featured ? (
-          <section className="bg-[#F8F6FC] px-6 py-10 sm:px-8 md:py-12 lg:px-10">
-            <div className="mx-auto grid max-w-[1280px] overflow-hidden rounded-[22px] border border-[#E7E4EC] bg-white shadow-[0_24px_70px_-50px_rgba(24,14,38,.35)] lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="flex flex-col justify-center p-7 md:p-10">
-                <p className="text-xs font-black tracking-[0.16em] text-violet-700 uppercase">{text.featured}</p>
-                <h2 className="mt-3 text-3xl font-black tracking-tight text-[#0B0B0F] md:text-4xl">{featured.title[locale] ?? featured.title.en}</h2>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-[#5D566A]">{featured.summary[locale] ?? featured.summary.en}</p>
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[#F1EAFE] px-3 py-1 text-xs font-bold text-[#5B21B6]">{featured.model || categoryLabels[locale][featured.category]}</span>
-                  {visibleTags(featured).slice(0, 2).map((tag) => <span key={tag} className="rounded-full border border-[#E7E4EC] bg-white px-3 py-1 text-xs font-semibold text-[#5D566A]">{tag}</span>)}
-                </div>
-                <Link href={promptHref(featured, locale)} className="mt-7 inline-flex h-11 w-fit items-center gap-2 rounded-full bg-[#070707] px-5 text-sm font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
-                  {text.view}<ArrowRight className="size-4" aria-hidden="true" />
-                </Link>
-              </div>
-              <Link href={promptHref(featured, locale)} className="relative min-h-64 border-t border-[#E7E4EC] bg-[#E9E1FF] lg:min-h-[320px] lg:border-t-0 lg:border-l">
-                <ArtifactPreview artifact={featured.artifact} title={featured.title[locale] ?? featured.title.en} variant="hero" />
-              </Link>
-            </div>
-          </section>
-        ) : null}
-
-        <DirectorySection eyebrow={text.browse} title={sections.media} tone="white">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DirectorySection eyebrow={text.type} title={sections.media} tone="white">
+          <div className="grid gap-4 md:grid-cols-2">
             {mediaCollections.map((collection) => <MediaCollectionCard key={collection.category} collection={collection} locale={locale} text={text} />)}
           </div>
         </DirectorySection>
 
         <DirectorySection eyebrow={text.model} title={sections.models} tone="tinted">
-          <div className="grid overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] md:grid-cols-2 xl:grid-cols-4">
-            {modelCollections.map((collection, index) => (
-              <Link key={collection.key} href={collectionHref(locale, "model", collection.key)} className="group flex min-h-36 flex-col justify-between border-[#0B0B0F14] p-5 transition-colors hover:bg-[#FAF9FC] md:border-r md:border-b xl:[&:nth-child(4n)]:border-r-0 xl:[&:nth-last-child(-n+4)]:border-b-0">
-                <div className="flex items-start justify-between gap-3"><span className="text-xs font-black tracking-[0.12em] text-[#A49EAA]">{String(index + 1).padStart(2, "0")}</span><ArrowRight className="size-4 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div>
-                <div><h3 className="mt-5 break-words text-base font-black text-[#0B0B0F]">{collection.key}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div>
-              </Link>
-            ))}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {modelCollections.map((collection) => <ModelCollectionCard key={collection.key} collection={collection} locale={locale} text={text} />)}
           </div>
         </DirectorySection>
 
         <DirectorySection eyebrow={text.useCase} title={sections.topics} tone="white">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {topicCollections.map((collection, index) => (
-              <Link key={collection.key} href={collectionHref(locale, "useCase", collection.key)} className="group flex min-h-24 items-center gap-4 rounded-2xl border border-[#0B0B0F14] bg-white p-4 shadow-[0_24px_70px_-54px_rgba(46,16,101,.18)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-48px_rgba(46,16,101,.24)]">
-                <span className="text-sm font-black tracking-[0.1em] text-[#B0AAB5]">{String(index + 1).padStart(2, "0")}</span>
-                <div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black text-[#0B0B0F]">{collection.key}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div>
-                <ArrowRight className="size-4 shrink-0 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" />
+            {topicCollections.map((collection) => (
+              <Link key={collection.key} href={collectionHref(locale, "useCase", collection.key)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
+                <div className="aspect-[16/9] overflow-hidden bg-[#211C2D]"><ArtifactPreview artifact={collection.sample.artifact} title={collection.sample.title[locale] ?? collection.sample.title.en} variant="hero" /></div>
+                <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black text-[#0B0B0F]">{collection.key}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 shrink-0 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div>
               </Link>
             ))}
           </div>
@@ -179,9 +190,10 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
               <div><p className="text-xs font-black tracking-[0.14em] text-violet-600 uppercase">{hasSelectedCollection ? text.browse : text.featured}</p><h2 className="mt-2 text-2xl font-black tracking-tight text-[#0B0B0F] md:text-3xl">{collectionTitle}</h2><p className="mt-1 text-sm text-[#6B7280]">{collectionItems.length} {text.found}</p></div>
               {hasSelectedCollection ? <Link href={`${localizePath("/prompts", locale)}#prompt-collection`} className="inline-flex h-9 items-center rounded-full border border-[#0B0B0F14] bg-white px-4 text-xs font-extrabold text-[#403A48] shadow-[0_12px_28px_-22px_rgba(11,11,15,.32)] transition-colors hover:border-[#7C3AED35] hover:text-[#4C1D95]">{text.all}</Link> : null}
             </div>
-            {collectionItems.length ? <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{collectionItems.slice(0, hasSelectedCollection ? 18 : 12).map((item) => <PromptDirectoryCard key={item.slug} item={item} locale={locale} text={text} copied={copied === item.slug} onCopy={() => copyPrompt(item)} />)}</div> : <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-[#0B0B0F14] bg-white px-6 py-14 text-center shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)]"><h3 className="text-lg font-bold text-[#0B0B0F]">{text.noResults}</h3><p className="mt-2 text-sm text-[#6B7280]">{text.noResultsHint}</p><Link href={localizePath("/prompts", locale)} className="mt-5 inline-flex h-10 items-center rounded-full bg-[#070707] px-5 text-xs font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] hover:bg-[#1a1a1d]">{text.all}</Link></div>}
+            {collectionItems.length ? <><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{displayedItems.map((item) => <PromptDirectoryCard key={item.slug} item={item} locale={locale} text={text} copied={copied === item.slug} onCopy={() => copyPrompt(item)} />)}</div>{!hasSelectedCollection && !showAll && collectionItems.length > 15 ? <div className="mt-8 flex justify-center"><button type="button" onClick={() => setShowAll(true)} className="inline-flex h-11 items-center gap-2 rounded-full border border-[#0B0B0F14] bg-white px-5 text-sm font-extrabold text-[#28232E] shadow-[0_16px_34px_-24px_rgba(11,11,15,.32)] transition-colors hover:border-[#7C3AED35] hover:text-[#4C1D95]">{text.all}<ArrowRight className="size-4" aria-hidden="true" /></button></div> : null}</> : <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-[#0B0B0F14] bg-white px-6 py-14 text-center shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)]"><h3 className="text-lg font-bold text-[#0B0B0F]">{text.noResults}</h3><p className="mt-2 text-sm text-[#6B7280]">{text.noResultsHint}</p><Link href={localizePath("/prompts", locale)} className="mt-5 inline-flex h-10 items-center rounded-full bg-[#070707] px-5 text-xs font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] hover:bg-[#1a1a1d]">{text.all}</Link></div>}
           </div>
         </section>
+        <PromptFreeCta locale={locale} />
       </main>
     </SiteShell>
   );
@@ -196,6 +208,27 @@ function MediaCollectionCard({ collection, locale, text }: { collection: { categ
   return <Link href={mediaCollectionHref(locale, collection.category)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]"><div className="relative aspect-[16/9] overflow-hidden bg-[#EEE8FF]"><ArtifactPreview artifact={collection.sample.artifact} title={collection.sample.title[locale] ?? collection.sample.title.en} variant="hero" /><span className="absolute top-3 left-3 flex size-9 items-center justify-center rounded-full border border-white/80 bg-white/92 text-[#5B21B6] shadow-[0_10px_24px_-16px_rgba(11,11,15,.4)] backdrop-blur"><Icon className="size-4" aria-hidden="true" /></span></div><div className="flex items-center justify-between gap-3 p-4"><div><h3 className="text-base font-black text-[#0B0B0F]">{categoryLabels[locale][collection.category]}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div></Link>;
 }
 
+function ModelCollectionCard({ collection, locale, text }: { collection: Collection; locale: Locale; text: Copy }) {
+  const presentation = modelPresentation[collection.key] ?? { title: humanizeModelName(collection.key), logo: modelLogo(collection.key) };
+  const description = collection.sample.category === "video" ? discoveryCopy[locale].videoModel : discoveryCopy[locale].imageModel;
+  const tags = [...new Set(collection.items.flatMap(visibleTags))].slice(0, 3);
+  return (
+    <Link href={collectionHref(locale, "model", collection.key)} className="group flex min-h-60 flex-col rounded-2xl border border-[#0B0B0F14] bg-white p-5 shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
+      <div className="flex items-start justify-between gap-4">
+        <span className="grid size-11 place-items-center rounded-full border border-[#0B0B0F12] bg-[#F8F6FC] shadow-[0_10px_26px_-20px_rgba(11,11,15,.35)]">
+          <Image src={presentation.logo} alt="" width={24} height={24} className="size-6 object-contain" aria-hidden="true" />
+        </span>
+        <span className="inline-flex items-center gap-2 text-xs font-bold text-[#77727F]">{collection.count} {text.found}<ArrowRight className="size-4 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></span>
+      </div>
+      <h3 className="mt-5 text-lg font-black tracking-tight text-[#0B0B0F]">{presentation.title}</h3>
+      <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#68616F]">{description}</p>
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-5">
+        {tags.map((tag) => <span key={tag} className="rounded-full bg-[#F1EAFE] px-2.5 py-1 text-[10px] font-bold text-[#5B21B6]">{tag}</span>)}
+      </div>
+    </Link>
+  );
+}
+
 function PromptDirectoryCard({ item, locale, text, copied, onCopy }: { item: PromptItem; locale: Locale; text: Copy; copied: boolean; onCopy: () => void }) {
   const title = item.title[locale] ?? item.title.en;
   const summary = item.summary[locale] ?? item.summary.en;
@@ -207,8 +240,10 @@ function buildModelCollections(items: PromptItem[]): Collection[] {
   for (const item of items) {
     if (!item.model) continue;
     const current = groups.get(item.model);
-    if (current) current.count += 1;
-    else groups.set(item.model, { key: item.model, count: 1, sample: item });
+    if (current) {
+      current.count += 1;
+      current.items.push(item);
+    } else groups.set(item.model, { key: item.model, count: 1, sample: item, items: [item] });
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
@@ -218,8 +253,10 @@ function buildTopicCollections(items: PromptItem[]): Collection[] {
   for (const item of items) {
     for (const tag of visibleTags(item)) {
       const current = groups.get(tag);
-      if (current) current.count += 1;
-      else groups.set(tag, { key: tag, count: 1, sample: item });
+      if (current) {
+        current.count += 1;
+        current.items.push(item);
+      } else groups.set(tag, { key: tag, count: 1, sample: item, items: [item] });
     }
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
@@ -251,9 +288,21 @@ function visibleTags(item: PromptItem) {
   return item.tags.filter(isUsefulFacetTag);
 }
 
+function humanizeModelName(value: string) {
+  return value.split(/[-_]+/).map((part) => part.length <= 3 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+}
+
+function modelLogo(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("gpt") || normalized.includes("openai")) return "/assets/logos/openai.svg";
+  if (normalized.includes("seedance") || normalized.includes("jimeng")) return "/assets/logos/bytedance.svg";
+  if (normalized.includes("veo") || normalized.includes("gemini")) return "/assets/logos/googlegemini.svg";
+  return "/assets/logos/flatkey-mark-dark.svg";
+}
+
 function ArtifactPreview({ artifact, title, variant = "card" }: { artifact: PromptArtifact; title: string; variant?: "card" | "hero" }) {
   const ratio = variant === "hero" ? "aspect-[16/9] h-full" : artifact.kind === "video" ? "aspect-[16/9]" : "aspect-[4/3]";
   if (artifact.kind === "image") return <div className={`relative overflow-hidden bg-[#EEE8FF] ${ratio}`}><Image src={artifact.url} alt={artifact.alt || title} fill sizes={variant === "hero" ? "(max-width: 1024px) 100vw, 640px" : "(max-width: 768px) 100vw, 33vw"} className="object-cover transition duration-500 group-hover:scale-[1.02]" unoptimized /></div>;
-  if (artifact.kind === "video") return <div className={`relative overflow-hidden bg-[#E4DDF5] ${ratio}`}><Image src={artifact.poster || artifact.url} alt={artifact.alt || title} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" unoptimized /><span className="absolute inset-0 m-auto flex size-11 items-center justify-center rounded-full bg-white/90 text-violet-700 shadow-lg"><Sparkles className="size-4" /></span></div>;
+  if (artifact.kind === "video") return <div className={`relative overflow-hidden bg-[#211C2D] ${ratio}`}><video src={artifact.url} poster={artifact.poster} aria-label={artifact.alt || title} autoPlay muted loop playsInline preload={variant === "hero" ? "auto" : "metadata"} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></div>;
   return <div className={`flex items-center justify-center bg-gradient-to-br from-[#F1EAFE] to-[#E8E4EE] p-6 text-center text-sm font-semibold text-[#5B21B6] ${ratio}`}><span>{title}</span></div>;
 }
