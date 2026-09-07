@@ -36,7 +36,8 @@ describe("OnlinePricingPage", () => {
     expect(enterpriseCta).toBeGreaterThanOrEqual(0);
     expect(enterpriseCustom).toBeGreaterThanOrEqual(0);
     expect(enterpriseCta).toBeGreaterThan(enterpriseCustom);
-    expect(html).toContain('<div class="tprice"><b class="tcustom">Custom</b></div><a class="btn black tcta"');
+    expect(html).toContain('<div class="tier enterprise">');
+    expect(html).toContain('<div class="tprice"><b class="tcustom">Custom</b></div><div class="bonus" aria-hidden="true"></div><a class="btn black tcta"');
     expect(html).toContain('data-payment-method="pix"');
     expect(html).toContain('<span class="pm" data-payment-method="card"');
     expect(html).not.toContain('aria-pressed="true"');
@@ -49,9 +50,11 @@ describe("OnlinePricingPage", () => {
     expect(html).toContain("All models");
     expect(html).toContain('<del class="toldprice">$90</del>');
     expect(html).toContain('<del class="toldprice">$300</del>');
-    expect(html.match(/class="tdiscount">80% off<\/div>/g)?.length).toBe(1);
-    expect(html.match(/class="tdiscount">70% off<\/div>/g)?.length).toBe(2);
-    expect(html).not.toContain('class="tdiscount">80% off</div><div class="tname">Enterprise');
+    expect(html).not.toContain("80% off");
+    expect(html).not.toContain("70% off");
+    expect(html).toContain('<div class="bonus">Top up $10, get $3 bonus</div>');
+    expect(html).toContain('<div class="bonus">Top up $30, get $15 bonus</div>');
+    expect(html).toContain('<div class="bonus">Top up $100, get $70 bonus</div>');
     expect(html).not.toContain("Text models");
     expect(html).not.toContain("B2B");
   });
@@ -89,11 +92,14 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(snippet);
       }
       expect(html).toContain(`<div class="badge limited">${item.limited}</div>`);
-      expect(html).toContain('class="tdiscount">80% off</div>');
-      expect(html.match(/class="tdiscount">70% off<\/div>/g)?.length).toBe(2);
+      expect(html).not.toContain("80% off");
+      expect(html).not.toContain("70% off");
       for (const referencePrice of ["$45", "$90", "$300"]) {
         expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
+      expect(html).toContain("$10");
+      expect(html).toContain("$30");
+      expect(html).toContain("$100");
       expect(html).not.toContain(item.legacyQuota);
       expect(html).not.toContain("For individuals & light daily use");
       expect(html).not.toContain("$450");
@@ -108,6 +114,31 @@ describe("OnlinePricingPage", () => {
     for (const locale of ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de", "id"] as const) {
       const html = renderToStaticMarkup(<OnlinePricingPage locale={locale} />);
       expect(html).not.toMatch(/media credits|media quota|media credit|crédit(?:s)? média|créditos multimedia|медиакредит|メディアクレジット|媒体额度/i);
+    }
+  });
+
+  test("localizes the top-up bonus shown on every plan card", async () => {
+    const { OnlinePricingPage } = await import("./online-pricing-page");
+    const cases = {
+      en: ["Top up $10, get $3 bonus", "Top up $30, get $15 bonus", "Top up $100, get $70 bonus"],
+      zh: ["充 $10 送 $3", "充 $30 送 $15", "充 $100 送 $70"],
+      es: ["Recarga $10 y recibe $3 de bono", "Recarga $30 y recibe $15 de bono", "Recarga $100 y recibe $70 de bono"],
+      fr: ["Rechargez 10 $ et recevez 3 $ de bonus", "Rechargez 30 $ et recevez 15 $ de bonus", "Rechargez 100 $ et recevez 70 $ de bonus"],
+      pt: ["Recarregue $10 e ganhe $3 de bônus", "Recarregue $30 e ganhe $15 de bônus", "Recarregue $100 e ganhe $70 de bônus"],
+      ru: ["Пополните на $10 и получите бонус $3", "Пополните на $30 и получите бонус $15", "Пополните на $100 и получите бонус $70"],
+      ja: ["$10 をチャージすると $3 ボーナス", "$30 をチャージすると $15 ボーナス", "$100 をチャージすると $70 ボーナス"],
+      vi: ["Nạp $10, nhận thêm $3", "Nạp $30, nhận thêm $15", "Nạp $100, nhận thêm $70"],
+      de: ["$10 aufladen und $3 Bonus erhalten", "$30 aufladen und $15 Bonus erhalten", "$100 aufladen und $70 Bonus erhalten"],
+      id: ["Top up $10, dapat bonus $3", "Top up $30, dapat bonus $15", "Top up $100, dapat bonus $70"],
+    } as const;
+
+    for (const [locale, bonuses] of Object.entries(cases)) {
+      const html = renderToStaticMarkup(
+        <OnlinePricingPage locale={locale as keyof typeof cases} />,
+      );
+      for (const bonus of bonuses) {
+        expect(html).toContain(`<div class="bonus">${bonus}</div>`);
+      }
     }
   });
 
