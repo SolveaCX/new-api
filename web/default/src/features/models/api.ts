@@ -37,6 +37,7 @@ import type {
   ListDeploymentsResponse,
   WebsiteFeaturedModelsResponse,
   WebsiteFeaturedModel,
+  WebsiteFeaturedMediaUploadResponse,
 } from './types'
 
 // ============================================================================
@@ -146,6 +147,21 @@ export async function updateWebsiteFeaturedModels(
       : { model_names: items as string[] }
   const res = await api.put('/api/models/website-featured', {
     ...payload,
+  })
+  return res.data
+}
+
+/**
+ * Upload an immutable banner image and return its same-origin public path.
+ */
+export async function uploadWebsiteFeaturedBackgroundImage(
+  file: File
+): Promise<WebsiteFeaturedMediaUploadResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post('/api/models/website-featured/media', form, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
   })
   return res.data
 }
