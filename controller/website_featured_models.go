@@ -8,12 +8,17 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	backendI18n "github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxLegacyWebsiteFeaturedInlineImageBytes = 64<<10 - 1
+
+var errWebsiteFeaturedInlineImageTooLarge = errors.New("website featured inline image is too large")
 
 type websiteFeaturedModelRequest struct {
 	ModelNames []string                          `json:"model_names"`
@@ -110,6 +115,10 @@ func UpdateWebsiteFeaturedModels(c *gin.Context) {
 
 	items, err := normalizeWebsiteFeaturedModelItems(request)
 	if err != nil {
+		if errors.Is(err, errWebsiteFeaturedInlineImageTooLarge) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": backendI18n.T(c, backendI18n.MsgWebsiteFeaturedInlineImageTooLarge)})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -190,8 +199,9 @@ func normalizeWebsiteFeaturedModelItems(request websiteFeaturedModelRequest) ([]
 		if err != nil {
 			return nil, errors.New("video URL must use http(s) or a relative path")
 		}
-		if len(raw.BackgroundImage) > 12<<20 {
-			return nil, errors.New("background image upload must be smaller than 8 MB")
+		backgroundImage := strings.TrimSpace(raw.BackgroundImage)
+		if len(backgroundImage) > maxLegacyWebsiteFeaturedInlineImageBytes {
+			return nil, errWebsiteFeaturedInlineImageTooLarge
 		}
 		items = append(items, model.WebsiteFeaturedModelInput{
 			ModelName:               modelName,
@@ -199,7 +209,7 @@ func normalizeWebsiteFeaturedModelItems(request websiteFeaturedModelRequest) ([]
 			Description:             strings.TrimSpace(raw.Description),
 			Tags:                    strings.TrimSpace(raw.Tags),
 			BackgroundImageURL:      backgroundURL,
-			BackgroundImage:         strings.TrimSpace(raw.BackgroundImage),
+			BackgroundImage:         backgroundImage,
 			FallbackBackgroundImage: fallbackURL,
 			Video:                   videoURL,
 		})
