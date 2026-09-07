@@ -1,4 +1,5 @@
 import { classifyPublicModel, modelPublicPath } from "@/lib/model-public";
+import { modelIconKey } from "@/lib/home-models";
 import {
   formatResolvedModelDisplayPrice,
   getVendorName,
@@ -345,7 +346,10 @@ export function modelCardData(model: PricingModel, pricing: PricingData) {
     href: modelPublicPath(model.model_name),
     name: model.featured_config?.display_name || model.model_name,
     vendor,
-    iconKey: model.icon || model.vendor_icon || model.model_name,
+    // The public pricing payload often leaves icon fields empty. Resolve the
+    // official vendor mark from the model family/vendor instead of passing the
+    // full model id to the logo component (which would fall back to initials).
+    iconKey: model.icon || model.vendor_icon || modelIconKey(model.model_name, vendor),
     description: model.description || "",
     context: model.directory_metadata?.context_tokens,
     price: price ? formatResolvedModelDisplayPrice(price) : null,
