@@ -1461,6 +1461,9 @@ function getLocalLogoUrl(iconKey?: string): string | null {
   const normalized = normalizeIconKey(iconKey);
   if (!normalized) return null;
   const localByIcon: Record<string, string> = {
+    flatkey: "flatkey-mark-dark",
+    "flatkey-catalog": "flatkey-mark-dark",
+    "flatkey-catalog-color": "flatkey-mark-dark",
     openai: "openai",
     anthropic: "claude",
     "claude-color": "claude",
