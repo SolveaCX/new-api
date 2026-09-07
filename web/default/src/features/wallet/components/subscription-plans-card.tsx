@@ -21,6 +21,7 @@ import { ArrowRight, CheckCircle2, Crown, Mail, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getGAMeasurementIdentifiers } from '@/lib/analytics/gtag'
+import { getCurrencyDisplay } from '@/lib/currency'
 import { getTallyEmbedUrl } from '@/lib/tally'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -284,25 +285,55 @@ function buildRenewalLifecyclePrecondition(
   }
 }
 
-function getPlanCampaignDiscountLabel(
-  preview: PlanCardDiscountPreview | null
-): string | null {
-  if (!preview) return null
-  const referenceAmount = preview.originalTotal
-  const payableAmount = preview.total
+/**
+ * Convert a plan's persisted quota value into its USD model-value reference.
+ * The backend stores `total_amount` in quota units, so the configured
+ * quota-per-dollar ratio is the only reliable conversion. Keep the result in
+ * USD even when checkout or the wallet display uses a localized currency.
+ */
+function getPlanCanonicalPriceUSD(plan: PlanRecord['plan']): number | null {
+  const configuredUSDPrice = Object.entries(plan.currency_prices ?? {}).find(
+    ([currency]) => currency.trim().toUpperCase() === 'USD'
+  )?.[1]
+  const configuredAmount = Number(configuredUSDPrice)
+  if (Number.isFinite(configuredAmount) && configuredAmount >= 0) {
+    return configuredAmount
+  }
 
+  const canonicalCurrency = plan.currency?.trim().toUpperCase() || 'USD'
+  if (canonicalCurrency !== 'USD') return null
+
+  const priceAmount = Number(plan.price_amount)
+  return Number.isFinite(priceAmount) && priceAmount >= 0 ? priceAmount : null
+}
+
+function getPlanReferencePrice(plan: PlanRecord['plan']): string | null {
+  // Only the published Go/Pro/Max tiers have a customer-facing model-value
+  // contract. Custom plans must continue to use the quote's own currency and
+  // original total when a discount preview is available.
+  if (!getPlanTier(plan.title)) return null
+
+  const totalAmount = Number(plan.total_amount)
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) return null
+
+  const { config } = getCurrencyDisplay()
+  const quotaPerUnit = config.quotaPerUnit
+  if (!Number.isFinite(quotaPerUnit) || quotaPerUnit <= 0) return null
+
+  const referenceAmountUSD = totalAmount / quotaPerUnit
+  const currentAmountUSD = getPlanCanonicalPriceUSD(plan)
+  // A quota value below the payable plan price is not an “old price”. This
+  // guard avoids a misleading crossed-out amount for custom/free plans while
+  // allowing standard plans whose included model value exceeds their price.
   if (
-    referenceAmount === null ||
-    payableAmount === null ||
-    referenceAmount <= payableAmount
+    currentAmountUSD !== null &&
+    (currentAmountUSD <= 0 || referenceAmountUSD <= currentAmountUSD)
   ) {
     return null
   }
 
-  const percentOff = Math.round(
-    ((referenceAmount - payableAmount) / referenceAmount) * 100
-  )
-  return percentOff > 0 ? `${percentOff}% off` : null
+  const formatted = formatPlanPrice(referenceAmountUSD, 'USD')
+  return formatted === '-' ? null : formatted
 }
 
 export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
@@ -883,14 +914,19 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 const displayPrice = discountPreview
                   ? formatPlanPrice(discountPreview.total, currency)
                   : formatPlanPrice(configuredDisplayPrice.amount, currency)
-                const originalPrice = discountPreview
-                  ? formatPlanPrice(discountPreview.originalTotal, currency)
-                  : null
+                const referencePrice = getPlanReferencePrice(plan)
+                const originalPrice =
+                  referencePrice ||
+                  (discountPreview
+                    ? formatPlanPrice(discountPreview.originalTotal, currency)
+                    : null)
+                // The campaign badge must be visible before a checkout quote is
+                // loaded. The configured plan/reference price pair is the
+                // source of truth for the static campaign presentation; a
+                // backend quote can still replace the payable total below.
                 const hasCampaignDiscount = Boolean(
                   originalPrice && originalPrice !== displayPrice
                 )
-                const campaignDiscountLabel =
-                  getPlanCampaignDiscountLabel(discountPreview)
                 const isMostPopular =
                   getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
                 const audience =
@@ -943,17 +979,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                             getPlanTier(plan.title) === 'go' && 'pt-6'
                           )}
                         >
-                          {hasCampaignDiscount && campaignDiscountLabel ? (
+                          {hasCampaignDiscount ? (
                             <span
                               data-discount-kind={
                                 discountPreview?.discountKind || 'campaign'
                               }
-                              data-subscription-discount-label={
-                                campaignDiscountLabel
-                              }
+                              data-subscription-discount-label='80% off'
                               className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
                             >
-                              {campaignDiscountLabel}
+                              {t('80% off')}
                             </span>
                           ) : null}
                           {isMostPopular ? (
@@ -989,7 +1023,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
                       <PlanLimitSummary
                         plan={plan}
-                        showMonthly
                         className='mt-3 min-h-[4.25rem] px-3 py-2'
                       />
 
@@ -1118,7 +1151,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overflow-y-auto overscroll-contain bg-white px-2 py-1 sm:px-4 sm:py-2'>
+          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overscroll-contain overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
             <iframe
               title={t('Talk to sales')}
               src={getTallyEmbedUrl(i18n.language, '/contact')}
