@@ -78,7 +78,9 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
   try {
     const response = await fetch(new URL("/api/status", APP_CONSOLE_ORIGIN), {
       headers: { accept: "application/json" },
-      next: { revalidate: DOCS_LINK_REVALIDATE_SECONDS },
+      // Console-managed homepage promotions must take effect immediately after
+      // an operator toggles them. Do not reuse a stale server-side response.
+      cache: "no-store",
       signal: AbortSignal.timeout(DOCS_LINK_TIMEOUT_MS),
     });
     if (!response.ok) return emptyPublicSiteSettings();
