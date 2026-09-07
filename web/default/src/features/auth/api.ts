@@ -221,6 +221,22 @@ export async function sendPhoneVerification(
   return res.data
 }
 
+// Bind a verified phone number to the current account.
+export async function bindPhone(
+  phoneNumber: string,
+  verificationCode: string
+): Promise<
+  ApiResponse & {
+    data?: { phone_number: string; phone_verified_at: number }
+  }
+> {
+  const res = await api.post('/api/user/self/phone', {
+    phone_number: phoneNumber,
+    phone_verification_code: verificationCode,
+  })
+  return res.data
+}
+
 // Bind email to OAuth account
 export async function bindEmail(
   email: string,

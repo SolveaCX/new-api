@@ -42,6 +42,63 @@ func SendPhoneVerification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }
 
+type bindPhoneRequest struct {
+	PhoneNumber           string `json:"phone_number"`
+	PhoneVerificationCode string `json:"phone_verification_code"`
+}
+
+// BindPhone verifies and binds a phone number for an authenticated user.
+func BindPhone(c *gin.Context) {
+	if !common.SMSVerificationEnabled {
+		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
+		return
+	}
+
+	var req bindPhoneRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	phone, err := common.NormalizePhoneNumber(req.PhoneNumber)
+	if err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
+		return
+	}
+	if model.IsPhoneAlreadyTaken(phone) {
+		common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
+		return
+	}
+	if strings.TrimSpace(req.PhoneVerificationCode) == "" ||
+		!common.VerifyCodeWithKey(phone, req.PhoneVerificationCode, common.SMSVerificationPurpose) {
+		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+		return
+	}
+	common.DeleteKey(phone, common.SMSVerificationPurpose)
+
+	user, err := model.GetUserById(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user.PhoneNumber = phone
+	user.PhoneVerifiedAt = common.GetTimestamp()
+	if err := user.Update(false); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Update(false) may refresh Redis from the pre-update user snapshot. Clear
+	// the cache so the API phone gate observes the newly verified phone on all
+	// nodes immediately.
+	if err := model.InvalidateUserCache(user.Id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"phone_number":      user.PhoneNumber,
+		"phone_verified_at": user.PhoneVerifiedAt,
+	})
+}
+
 func normalizeRegistrationPhone(user *model.User) error {
 	if !common.SMSVerificationEnabled {
 		return nil

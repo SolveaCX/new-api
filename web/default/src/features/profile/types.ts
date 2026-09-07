@@ -43,6 +43,8 @@ export interface UserProfile {
   role: number
   /** Email address */
   email?: string
+  phone_number?: string
+  phone_verified_at?: number
   /** User group */
   group: string
   /** Current quota balance */

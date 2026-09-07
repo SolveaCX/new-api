@@ -181,6 +181,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/model-access", controller.GetUserModelAccess)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.POST("/self/phone", controller.BindPhone)
 				selfRoute.GET("/self/invitations", controller.GetSelfInvitations)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", controller.UpdateSelf)

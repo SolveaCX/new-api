@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -128,4 +129,50 @@ func TestRegisterWithPhoneVerificationPersistsVerifiedPhone(t *testing.T) {
 	require.NoError(t, db.First(&user, "username = ?", "phone-verified-user").Error)
 	require.Equal(t, phone, user.PhoneNumber)
 	require.NotZero(t, user.PhoneVerifiedAt)
+}
+
+func TestBindPhonePersistsVerifiedPhone(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	user := &model.User{
+		Username: "phone-bind-user",
+		Password: "hashed-password",
+		Status:   common.UserStatusEnabled,
+	}
+	require.NoError(t, db.Create(user).Error)
+
+	originalEnabled := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = originalEnabled })
+	common.SMSVerificationEnabled = true
+
+	phone := "+14155550123"
+	common.RegisterVerificationCodeWithKey(phone, "654321", common.SMSVerificationPurpose)
+	body, err := common.Marshal(map[string]string{
+		"phone_number":            phone,
+		"phone_verification_code": "654321",
+	})
+	require.NoError(t, err)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/user/self/phone", func(c *gin.Context) {
+		c.Set("id", user.Id)
+		BindPhone(c)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/user/self/phone", strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+
+	var stored model.User
+	require.NoError(t, db.First(&stored, user.Id).Error)
+	require.Equal(t, phone, stored.PhoneNumber)
+	require.NotZero(t, stored.PhoneVerifiedAt)
 }

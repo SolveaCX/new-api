@@ -777,6 +777,8 @@ func GetSelf(c *gin.Context) {
 		"role":                 user.Role,
 		"status":               user.Status,
 		"email":                user.Email,
+		"phone_number":         user.PhoneNumber,
+		"phone_verified_at":    user.PhoneVerifiedAt,
 		"github_id":            user.GitHubId,
 		"discord_id":           user.DiscordId,
 		"oidc_id":              user.OidcId,
