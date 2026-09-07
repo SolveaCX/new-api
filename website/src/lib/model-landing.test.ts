@@ -769,10 +769,29 @@ describe("model landing configuration", () => {
   });
 
   test("keeps model landing plan-value copy aligned with the subscription contract", () => {
-    expect(modelLandingCopy("en", "Go — $10/mo, up to $45 usage")).toBe("Go — $10/mo, up to $45 usage");
-    expect(modelLandingCopy("en", "Pro — $30/mo, up to $90 usage")).toBe("Pro — $30/mo, up to $90 usage");
-    expect(modelLandingCopy("en", "Max — $100/mo, up to $300 usage")).toBe("Max — $100/mo, up to $300 usage");
-    expect(modelLandingCopy("zh", "Go — $10/mo, up to $45 usage")).toContain("$45");
-    expect(modelLandingCopy("zh", "Max — $100/mo, up to $300 usage")).toContain("$300");
+    expect(modelLandingCopy("en", "Go — $10/mo, up to $13 usage")).toBe(
+      "Go — $10/mo, up to $13 usage",
+    );
+    expect(modelLandingCopy("en", "Pro — $30/mo, up to $45 usage")).toBe(
+      "Pro — $30/mo, up to $45 usage",
+    );
+    expect(modelLandingCopy("en", "Max — $100/mo, up to $170 usage")).toBe(
+      "Max — $100/mo, up to $170 usage",
+    );
+    expect(modelLandingCopy("zh", "Go — $10/mo, up to $13 usage")).toContain(
+      "$13",
+    );
+    expect(modelLandingCopy("zh", "Max — $100/mo, up to $170 usage")).toContain(
+      "$170",
+    );
+
+    for (const locale of LOCALES) {
+      const planCopy = [
+        modelLandingCopy(locale, "Go — $10/mo, up to $13 usage"),
+        modelLandingCopy(locale, "Pro — $30/mo, up to $45 usage"),
+        modelLandingCopy(locale, "Max — $100/mo, up to $170 usage"),
+      ].join(" ");
+      expect(planCopy).not.toMatch(/\$(?:90|300)\b/);
+    }
   });
 });
