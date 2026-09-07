@@ -8,7 +8,8 @@ import { consoleUrl } from "@/lib/origins";
 type PlanCopy = {
   audience: string;
   cta: string;
-  monthlyQuota: string;
+  text: string;
+  window: string;
 };
 
 type PaymentMethodLabels = readonly [string, string, string, string, string];
@@ -304,17 +305,20 @@ const en: OnlineCopy = {
       Starter: {
         audience: "For individuals & light daily use",
         cta: "Subscribe",
-        monthlyQuota: "Monthly model usage: $13",
+        text: "Up to $45 model usage / mo",
+        window: "Short-term caps: $10 / 5h · $18 / 7d",
       },
       Pro: {
         audience: "For daily development & high-frequency requests",
         cta: "Subscribe",
-        monthlyQuota: "Monthly model usage: $45",
+        text: "Up to $90 model usage / mo",
+        window: "Short-term caps: $30 / 5h · $60 / 7d",
       },
       Max: {
         audience: "For teams & heavy workloads",
         cta: "Subscribe",
-        monthlyQuota: "Monthly model usage: $170",
+        text: "Up to $300 model usage / mo",
+        window: "Short-term caps: $80 / 5h · $240 / 7d",
       },
     },
     subscriptionNotRequired: "Credit package",
@@ -497,17 +501,20 @@ const zh: OnlineCopy = {
       Starter: {
         audience: "适合个人与轻量日常使用",
         cta: "立即订阅",
-        monthlyQuota: "每月模型用量：$13",
+        text: "每月最多 $45 模型用量",
+        window: "短期上限：每 5 小时 $10 · 每 7 天 $18",
       },
       Pro: {
         audience: "适合日常开发与高频请求",
         cta: "立即订阅",
-        monthlyQuota: "每月模型用量：$45",
+        text: "每月最多 $90 模型用量",
+        window: "短期上限：每 5 小时 $30 · 每 7 天 $60",
       },
       Max: {
         audience: "适合团队与高强度任务",
         cta: "立即订阅",
-        monthlyQuota: "每月模型用量：$170",
+        text: "每月最多 $300 模型用量",
+        window: "短期上限：每 5 小时 $80 · 每 7 天 $240",
       },
     },
     subscriptionNotRequired: "额度包",
@@ -549,17 +556,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Para uso individual y diario ligero",
         cta: "Suscribirse",
-        monthlyQuota: "Uso mensual de modelos: $13",
+        text: "Hasta $45 de uso de modelos / mes",
+        window: "Límites a corto plazo: $10 / 5 h · $18 / 7 d",
       },
       Pro: {
         audience: "Para desarrollo diario y solicitudes frecuentes",
         cta: "Suscribirse",
-        monthlyQuota: "Uso mensual de modelos: $45",
+        text: "Hasta $90 de uso de modelos / mes",
+        window: "Límites a corto plazo: $30 / 5 h · $60 / 7 d",
       },
       Max: {
         audience: "Para equipos y cargas intensivas",
         cta: "Suscribirse",
-        monthlyQuota: "Uso mensual de modelos: $170",
+        text: "Hasta $300 de uso de modelos / mes",
+        window: "Límites a corto plazo: $80 / 5 h · $240 / 7 d",
       },
     },
     subscriptionNotRequired: "Paquete de créditos",
@@ -588,17 +598,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Pour les particuliers et un usage quotidien léger",
         cta: "S'abonner",
-        monthlyQuota: "Utilisation mensuelle des modèles : $13",
+        text: "Jusqu'à $45 d'utilisation de modèles / mois",
+        window: "Limites court terme : $10 / 5 h · $18 / 7 j",
       },
       Pro: {
         audience: "Pour le développement quotidien et les requêtes fréquentes",
         cta: "S'abonner",
-        monthlyQuota: "Utilisation mensuelle des modèles : $45",
+        text: "Jusqu'à $90 d'utilisation de modèles / mois",
+        window: "Limites court terme : $30 / 5 h · $60 / 7 j",
       },
       Max: {
         audience: "Pour les équipes et les charges intensives",
         cta: "S'abonner",
-        monthlyQuota: "Utilisation mensuelle des modèles : $170",
+        text: "Jusqu'à $300 d'utilisation de modèles / mois",
+        window: "Limites court terme : $80 / 5 h · $240 / 7 j",
       },
     },
     subscriptionNotRequired: "Pack de crédits",
@@ -627,17 +640,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Para uso individual e diário leve",
         cta: "Assinar",
-        monthlyQuota: "Uso mensal de modelos: $13",
+        text: "Até $45 de uso de modelos / mês",
+        window: "Limites de curto prazo: $10 / 5 h · $18 / 7 d",
       },
       Pro: {
         audience: "Para desenvolvimento diário e solicitações frequentes",
         cta: "Assinar",
-        monthlyQuota: "Uso mensal de modelos: $45",
+        text: "Até $90 de uso de modelos / mês",
+        window: "Limites de curto prazo: $30 / 5 h · $60 / 7 d",
       },
       Max: {
         audience: "Para equipes e cargas intensas",
         cta: "Assinar",
-        monthlyQuota: "Uso mensal de modelos: $170",
+        text: "Até $300 de uso de modelos / mês",
+        window: "Limites de curto prazo: $80 / 5 h · $240 / 7 d",
       },
     },
     subscriptionNotRequired: "Pacote de créditos",
@@ -666,17 +682,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Для индивидуального и лёгкого ежедневного использования",
         cta: "Оформить",
-        monthlyQuota: "Месячный объём использования моделей: $13",
+        text: "До $45 использования моделей / мес.",
+        window: "Краткосрочные лимиты: $10 / 5 ч · $18 / 7 дн.",
       },
       Pro: {
         audience: "Для ежедневной разработки и частых запросов",
         cta: "Оформить",
-        monthlyQuota: "Месячный объём использования моделей: $45",
+        text: "До $90 использования моделей / мес.",
+        window: "Краткосрочные лимиты: $30 / 5 ч · $60 / 7 дн.",
       },
       Max: {
         audience: "Для команд и тяжёлых нагрузок",
         cta: "Оформить",
-        monthlyQuota: "Месячный объём использования моделей: $170",
+        text: "До $300 использования моделей / мес.",
+        window: "Краткосрочные лимиты: $80 / 5 ч · $240 / 7 дн.",
       },
     },
     subscriptionNotRequired: "Пакет кредитов",
@@ -705,17 +724,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "個人利用と軽い日常利用向け",
         cta: "登録する",
-        monthlyQuota: "月間モデル利用枠：$13",
+        text: "月あたり最大 $45 のモデル利用",
+        window: "短期上限: $10 / 5時間 · $18 / 7日",
       },
       Pro: {
         audience: "日常的な開発と高頻度リクエスト向け",
         cta: "登録する",
-        monthlyQuota: "月間モデル利用枠：$45",
+        text: "月あたり最大 $90 のモデル利用",
+        window: "短期上限: $30 / 5時間 · $60 / 7日",
       },
       Max: {
         audience: "チームと高負荷ワークロード向け",
         cta: "登録する",
-        monthlyQuota: "月間モデル利用枠：$170",
+        text: "月あたり最大 $300 のモデル利用",
+        window: "短期上限: $80 / 5時間 · $240 / 7日",
       },
     },
     subscriptionNotRequired: "クレジットパック",
@@ -744,17 +766,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Cho cá nhân và nhu cầu hằng ngày nhẹ",
         cta: "Đăng ký",
-        monthlyQuota: "Mức sử dụng model hằng tháng: $13",
+        text: "Tối đa $45 mức sử dụng model / tháng",
+        window: "Giới hạn ngắn hạn: $10 / 5 giờ · $18 / 7 ngày",
       },
       Pro: {
         audience: "Cho phát triển hằng ngày và yêu cầu tần suất cao",
         cta: "Đăng ký",
-        monthlyQuota: "Mức sử dụng model hằng tháng: $45",
+        text: "Tối đa $90 mức sử dụng model / tháng",
+        window: "Giới hạn ngắn hạn: $30 / 5 giờ · $60 / 7 ngày",
       },
       Max: {
         audience: "Cho đội nhóm và tải công việc nặng",
         cta: "Đăng ký",
-        monthlyQuota: "Mức sử dụng model hằng tháng: $170",
+        text: "Tối đa $300 mức sử dụng model / tháng",
+        window: "Giới hạn ngắn hạn: $80 / 5 giờ · $240 / 7 ngày",
       },
     },
     subscriptionNotRequired: "Gói credit",
@@ -783,17 +808,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Für Einzelpersonen und leichte tägliche Nutzung",
         cta: "Abonnieren",
-        monthlyQuota: "Monatliche Modellnutzung: $13",
+        text: "Bis zu $45 Modellnutzung / Monat",
+        window: "Kurzfristige Limits: $10 / 5 Std. · $18 / 7 Tage",
       },
       Pro: {
         audience: "Für tägliche Entwicklung und häufige Anfragen",
         cta: "Abonnieren",
-        monthlyQuota: "Monatliche Modellnutzung: $45",
+        text: "Bis zu $90 Modellnutzung / Monat",
+        window: "Kurzfristige Limits: $30 / 5 Std. · $60 / 7 Tage",
       },
       Max: {
         audience: "Für Teams und hohe Workloads",
         cta: "Abonnieren",
-        monthlyQuota: "Monatliche Modellnutzung: $170",
+        text: "Bis zu $300 Modellnutzung / Monat",
+        window: "Kurzfristige Limits: $80 / 5 Std. · $240 / 7 Tage",
       },
     },
     subscriptionNotRequired: "Guthabenpaket",
@@ -822,17 +850,20 @@ const localizedPricingCopy = {
       Starter: {
         audience: "Untuk individu dan penggunaan harian ringan",
         cta: "Berlangganan",
-        monthlyQuota: "Pemakaian model bulanan: $13",
+        text: "Hingga $45 penggunaan model / bulan",
+        window: "Batas jangka pendek: $10 / 5 jam · $18 / 7 hari",
       },
       Pro: {
         audience: "Untuk pengembangan harian dan permintaan frekuensi tinggi",
         cta: "Berlangganan",
-        monthlyQuota: "Pemakaian model bulanan: $45",
+        text: "Hingga $90 penggunaan model / bulan",
+        window: "Batas jangka pendek: $30 / 5 jam · $60 / 7 hari",
       },
       Max: {
         audience: "Untuk tim dan beban kerja berat",
         cta: "Berlangganan",
-        monthlyQuota: "Pemakaian model bulanan: $170",
+        text: "Hingga $300 penggunaan model / bulan",
+        window: "Batas jangka pendek: $80 / 5 jam · $240 / 7 hari",
       },
     },
     subscriptionNotRequired: "Paket kredit",

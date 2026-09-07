@@ -22,11 +22,7 @@ import { cn } from '@/lib/utils'
 import type { SubscriptionPlan } from '@/features/subscriptions/types'
 
 type PlanLimitSummaryProps = {
-  plan: Pick<
-    SubscriptionPlan,
-    'total_amount' | 'window_5h_amount' | 'window_week_amount'
-  >
-  showMonthly?: boolean
+  plan: Pick<SubscriptionPlan, 'window_5h_amount' | 'window_week_amount'>
   className?: string
 }
 
@@ -41,7 +37,6 @@ function formatUSDQuota(quota: number): string {
 
 export function PlanLimitSummary(props: PlanLimitSummaryProps) {
   const { t } = useTranslation()
-  const monthlyAmount = Number(props.plan.total_amount || 0)
 
   const windows = [
     { key: '5h' as const, amount: Number(props.plan.window_5h_amount || 0) },
@@ -51,22 +46,20 @@ export function PlanLimitSummary(props: PlanLimitSummaryProps) {
     },
   ].filter((window) => window.amount > 0)
 
-  if (!props.showMonthly && windows.length === 0) return null
-  if (props.showMonthly && monthlyAmount <= 0 && windows.length === 0)
-    return null
+  if (windows.length === 0) return null
 
-  let windowSummary = ''
+  let summary: string
   if (windows.length === 2) {
-    windowSummary = t('Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d', {
+    summary = t('Short-term caps: {{fiveHour}} / 5h · {{week}} / 7d', {
       fiveHour: formatUSDQuota(windows[0].amount),
       week: formatUSDQuota(windows[1].amount),
     })
-  } else if (windows[0]?.key === '5h') {
-    windowSummary = t('Short-term cap: {{value}} / 5h', {
+  } else if (windows[0].key === '5h') {
+    summary = t('Short-term cap: {{value}} / 5h', {
       value: formatUSDQuota(windows[0].amount),
     })
-  } else if (windows[0]?.key === '7d') {
-    windowSummary = t('Short-term cap: {{value}} / 7d', {
+  } else {
+    summary = t('Short-term cap: {{value}} / 7d', {
       value: formatUSDQuota(windows[0].amount),
     })
   }
@@ -85,18 +78,9 @@ export function PlanLimitSummary(props: PlanLimitSummaryProps) {
       >
         {t('All models')}
       </div>
-      {props.showMonthly && monthlyAmount > 0 ? (
-        <p className='text-foreground mt-2 text-sm leading-relaxed wrap-break-word'>
-          {t('Monthly model quota: {{value}}', {
-            value: formatUSDQuota(monthlyAmount),
-          })}
-        </p>
-      ) : null}
-      {windowSummary ? (
-        <p className='text-foreground mt-2 text-sm leading-relaxed wrap-break-word'>
-          {windowSummary}
-        </p>
-      ) : null}
+      <p className='text-foreground mt-2 text-sm leading-relaxed wrap-break-word'>
+        {summary}
+      </p>
     </div>
   )
 }
