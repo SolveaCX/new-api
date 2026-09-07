@@ -1261,8 +1261,19 @@ function promptSource(value: unknown, sourcePlatform = "", sourceUrl = ""): Prom
     capturedAt: String(record.captured_at || record.capturedAt || today),
     label: String(record.label || sourcePlatform || "External"),
     platform: ["GitHub", "Social", "Official docs", "Flatkey generated", "Local migration", "External"].includes(platform) ? platform : "External",
-    url: String(record.url || sourceUrl || ""),
+    url: safeHttpUrl(record.url || sourceUrl),
   };
+}
+
+function safeHttpUrl(value: unknown): string {
+  const rawUrl = String(value || "").trim();
+  if (!rawUrl) return "";
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 function isOwnedPromptSource(source: PromptSource): boolean {
@@ -1272,7 +1283,7 @@ function isOwnedPromptSource(source: PromptSource): boolean {
 
 function outputRatio(value: unknown, artifact: PromptArtifact): PromptItem["output"]["ratio"] {
   const ratio = isRecord(value) ? String(value.ratio || "") : "";
-  if (["1:1", "3:2", "4:3", "9:16", "16:9", "3x3"].includes(ratio)) return ratio as PromptItem["output"]["ratio"];
+  if (ratio) return ratio as PromptItem["output"]["ratio"];
   return artifact.kind === "video" ? "16:9" : "1:1";
 }
 
