@@ -70,7 +70,7 @@ describe("getDocsUrl", () => {
     await expect(getDocsUrl()).resolves.toBe("https://docs.example.com/start");
     expect(String(input)).toBe("https://console.flatkey.ai/api/status");
     expect(init?.headers).toEqual({ accept: "application/json" });
-    expect(init?.next?.revalidate).toBe(DOCS_LINK_REVALIDATE_SECONDS);
+    expect(init?.cache).toBe("no-store");
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     expect(DOCS_LINK_REVALIDATE_SECONDS).toBe(60);
     expect(DOCS_LINK_TIMEOUT_MS).toBe(3000);
