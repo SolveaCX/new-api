@@ -29,6 +29,37 @@ export type SeoInput = {
   unlocalized?: boolean;
 };
 
+// Keep localized routes with English fallback copy out of the index until
+// their content is genuinely localized. The pages remain accessible for
+// users, but should not compete with their English canonical counterparts.
+const FALLBACK_LOCALE_NOINDEX_PATHS: Partial<Record<Locale, readonly string[]>> = {
+  id: ["/about", "/docs", "/playground", "/privacy", "/refund-policy", "/sla", "/terms", "/usecases"],
+  pt: ["/playground"],
+};
+
+function normalizeSeoPathname(pathname: string): string {
+  const withoutQuery = pathname.split(/[?#]/, 1)[0] ?? pathname;
+  if (withoutQuery === "/") return "/";
+  return withoutQuery.replace(/\/+$/, "") || "/";
+}
+
+export function isFallbackLocaleNoIndex(pathname: string, locale: Locale): boolean {
+  return FALLBACK_LOCALE_NOINDEX_PATHS[locale]?.includes(normalizeSeoPathname(pathname)) ?? false;
+}
+
+export function seoIndexableLocales(pathname: string, locales: readonly Locale[] = LOCALES): Locale[] {
+  const normalized = normalizeSeoPathname(pathname);
+  return locales.filter((locale) => !FALLBACK_LOCALE_NOINDEX_PATHS[locale]?.includes(normalized));
+}
+
+export function getSeoLocaleOptions(pathname: string, locale: Locale): Pick<SeoInput, "locales" | "noIndex"> {
+  const noIndex = isFallbackLocaleNoIndex(pathname, locale);
+  return {
+    locales: noIndex ? [] : seoIndexableLocales(pathname),
+    noIndex,
+  };
+}
+
 export function buildMetadata(input: SeoInput): Metadata {
   const locale = input.locale ?? DEFAULT_LOCALE;
   const canonicalPath = input.unlocalized ? input.pathname : localizePath(input.pathname, locale);

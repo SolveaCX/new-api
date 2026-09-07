@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { StaticFeaturePage } from "@/components/static-feature-page";
 import { isLocale, LOCALES } from "@/lib/locales";
-import { buildMetadata } from "@/lib/seo";
+import { buildMetadata, getSeoLocaleOptions } from "@/lib/seo";
 import { staticFeaturePages } from "@/lib/static-feature-pages";
 
 type Props = {
@@ -17,7 +17,13 @@ export function generateStaticParams() {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
-  return buildMetadata({ title: page.metadataTitle, description: page.metadataDescription, pathname: page.pathname, locale: params.locale });
+  return buildMetadata({
+    title: page.metadataTitle,
+    description: page.metadataDescription,
+    pathname: page.pathname,
+    locale: params.locale,
+    ...getSeoLocaleOptions(page.pathname, params.locale),
+  });
 }
 
 export default async function Page(props: Props) {
