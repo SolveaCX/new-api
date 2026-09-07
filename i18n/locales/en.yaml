@@ -100,6 +100,7 @@ user.email_verification_required: "Email verification is enabled, please enter e
 user.email_verification_required_for_api: "Your account email has not been verified. Please log out and log back in (third-party accounts verify automatically), or sign in at {{.ConsoleOrigin}}/sign-in."
 user.verification_code_error: "Verification code is incorrect or has expired"
 user.phone_verification_required: "SMS verification is enabled, please enter your phone number and verification code"
+notify.phone_verification_required_for_api: "Please bind and verify your phone number before using the API."
 user.phone_invalid: "Please enter a valid phone number with country code"
 user.phone_already_registered: "This phone number is already registered"
 user.sms_verification_unavailable: "SMS verification is temporarily unavailable, please try again later"

@@ -101,6 +101,7 @@ user.email_verification_required: "A verificação de e-mail está habilitada; i
 user.email_verification_required_for_api: "O e-mail da sua conta não foi verificado. Faça logout e login novamente (contas de terceiros verificam automaticamente) ou entre em {{.ConsoleOrigin}}/sign-in."
 user.verification_code_error: "O código de verificação está incorreto ou expirou"
 user.phone_verification_required: "A verificação por SMS está ativada; informe seu telefone com o código do país e o código de verificação"
+notify.phone_verification_required_for_api: "Vincule e verifique seu número de telefone antes de usar a API."
 user.phone_invalid: "Informe um número de telefone válido com o código do país"
 user.phone_already_registered: "Este número de telefone já está registrado"
 user.sms_verification_unavailable: "A verificação por SMS está temporariamente indisponível; tente novamente mais tarde"

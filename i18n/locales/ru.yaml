@@ -21,6 +21,7 @@ notify.subscription_quota_warning_title: "Квота вашей подписки
 notify.quota_warning_email: "{{.Warning}}. Ваш текущий остаток квоты: {{.Quota}}. Чтобы избежать прерывания обслуживания, пополните вовремя.<br/>Ссылка для пополнения: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Остаток квоты: {{.Quota}}. Пополните вовремя."
 notify.quota_warning_gotify: "{{.Warning}}. Ваш текущий остаток квоты: {{.Quota}}. Пополните вовремя."
+notify.phone_verification_required_for_api: "Привяжите и подтвердите номер телефона перед использованием API."
 
 # CLI device authorization messages
 cli.device_id_missing: "Требуется ID устройства"

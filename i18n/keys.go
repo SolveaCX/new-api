@@ -430,11 +430,12 @@ const (
 // User notification messages (quota warnings sent via email/webhook/bark/gotify).
 // Content is fully rendered with template data: {{.Warning}} {{.Quota}} {{.Link}}.
 const (
-	MsgNotifyQuotaTitle             = "notify.quota_warning_title"
-	MsgNotifySubscriptionQuotaTitle = "notify.subscription_quota_warning_title"
-	MsgNotifyQuotaEmail             = "notify.quota_warning_email"
-	MsgNotifyQuotaBark              = "notify.quota_warning_bark"
-	MsgNotifyQuotaGotify            = "notify.quota_warning_gotify"
+	MsgNotifyQuotaTitle                      = "notify.quota_warning_title"
+	MsgNotifySubscriptionQuotaTitle          = "notify.subscription_quota_warning_title"
+	MsgNotifyQuotaEmail                      = "notify.quota_warning_email"
+	MsgNotifyQuotaBark                       = "notify.quota_warning_bark"
+	MsgNotifyQuotaGotify                     = "notify.quota_warning_gotify"
+	MsgNotifyPhoneVerificationRequiredForAPI = "notify.phone_verification_required_for_api"
 )
 
 // Custom OAuth provider related messages
