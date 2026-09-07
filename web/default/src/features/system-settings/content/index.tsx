@@ -23,15 +23,18 @@ import {
   getContentSectionContent,
   getContentSectionMeta,
 } from './section-registry.tsx'
+import { DEFAULT_WELCOME_PROMO_JSON } from './welcome-promo-config'
 
 const defaultContentSettings: ContentSettings = {
   PlaygroundDefaultModel: 'gpt-4o',
   'console_setting.api_info': '[]',
   'console_setting.announcements': '[]',
+  'console_setting.welcome_promo': DEFAULT_WELCOME_PROMO_JSON,
   'console_setting.faq': '[]',
   'console_setting.uptime_kuma_groups': '[]',
   'console_setting.api_info_enabled': true,
   'console_setting.announcements_enabled': true,
+  'console_setting.welcome_promo_enabled': true,
   'console_setting.faq_enabled': true,
   'console_setting.uptime_kuma_enabled': false,
   DataExportEnabled: false,

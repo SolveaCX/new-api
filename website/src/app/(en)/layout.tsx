@@ -23,6 +23,8 @@ export default async function RootLayout({
     <RootDocument
       docsUrl={publicSiteSettings.docsUrl}
       announcements={publicSiteSettings.announcements}
+      welcomePromo={publicSiteSettings.welcomePromo}
+      welcomePromoEnabled={publicSiteSettings.welcomePromoEnabled}
       hasConsoleSessionHint={hasConsoleSessionHint}
       googleOneTap={publicSiteSettings.googleOneTap}
       lang={DEFAULT_LOCALE}

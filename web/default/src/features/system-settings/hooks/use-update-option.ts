@@ -39,6 +39,8 @@ const STATUS_RELATED_KEYS = [
   'general_setting.custom_currency_exchange_rate',
   'console_setting.announcements',
   'console_setting.announcements_enabled',
+  'console_setting.welcome_promo',
+  'console_setting.welcome_promo_enabled',
 ]
 
 export function useUpdateOption() {

@@ -6906,6 +6906,12 @@
     "Complete the graphical verification before creating your account.": "创建账户前，请先完成图形验证。",
     "Voice": "音色",
     "Speed": "语速",
-    "Video URL": "视频 URL"
+    "Video URL": "视频 URL",
+    "Welcome Promo": "首屏弹窗",
+    "Configure the three model cards shown in the homepage welcome popup.": "配置官网首屏弹窗中展示的三个模型卡片。",
+    "Logo is mapped automatically from the model name.": "Logo 将根据模型名称自动匹配。",
+    "Please choose a model for each slot": "请为每个位置选择一个模型",
+    "Description and offer are required": "描述和优惠文案不能为空",
+    "Each slot must use a different model": "每个位置必须使用不同的模型"
   }
 }
