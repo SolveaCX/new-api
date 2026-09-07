@@ -201,6 +201,17 @@ export interface WebsiteFeaturedModelsResponse {
   }
 }
 
+export interface WebsiteFeaturedMediaUploadResponse {
+  success: boolean
+  message?: string
+  data?: {
+    url: string
+    sha256: string
+    content_type: string
+    size: number
+  }
+}
+
 /**
  * Sync diff data
  */

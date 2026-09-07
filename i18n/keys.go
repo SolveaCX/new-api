@@ -83,6 +83,11 @@ const (
 	MsgTempMediaUploadFailed     = "temp_media.upload_failed"
 )
 
+// Website featured model messages
+const (
+	MsgWebsiteFeaturedInlineImageTooLarge = "website_featured.inline_image_too_large"
+)
+
 // Redemption related messages
 const (
 	MsgRedemptionNameLength        = "redemption.name_length"
