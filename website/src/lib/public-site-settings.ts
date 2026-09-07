@@ -13,6 +13,8 @@ type StatusPayload = {
     google_oauth?: unknown;
     announcements_enabled?: unknown;
     announcements?: unknown;
+    welcome_promo_enabled?: unknown;
+    welcome_promo?: unknown;
   } | null;
 };
 
@@ -31,6 +33,12 @@ export type PublicAnnouncement = {
   type?: string;
 };
 
+export type WelcomePromoModel = {
+  model_name: string;
+  description: string;
+  offer: string;
+};
+
 /** Locale-keyed copy carried by the console announcement configuration. */
 export type AnnouncementLocaleMap = Partial<Record<Locale, string>>;
 
@@ -42,6 +50,10 @@ export type PublicSiteSettings = {
   };
   /** Undefined means the status endpoint was unavailable; an empty array means no ads are configured. */
   announcements?: PublicAnnouncement[];
+  /** Whether the homepage welcome popup is shown. Defaults to true for backwards compatibility. */
+  welcomePromoEnabled: boolean;
+  /** Configured cards for the homepage welcome popup. */
+  welcomePromo: WelcomePromoModel[];
 };
 
 export function normalizeDocsUrl(value: unknown): string | null {
@@ -66,7 +78,9 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
   try {
     const response = await fetch(new URL("/api/status", APP_CONSOLE_ORIGIN), {
       headers: { accept: "application/json" },
-      next: { revalidate: DOCS_LINK_REVALIDATE_SECONDS },
+      // Console-managed homepage promotions must take effect immediately after
+      // an operator toggles them. Do not reuse a stale server-side response.
+      cache: "no-store",
       signal: AbortSignal.timeout(DOCS_LINK_TIMEOUT_MS),
     });
     if (!response.ok) return emptyPublicSiteSettings();
@@ -88,6 +102,8 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
         clientId: googleClientId,
         enabled: payload.data.google_oauth === true && googleClientId !== null,
       },
+      welcomePromoEnabled: payload.data.welcome_promo_enabled !== false,
+      welcomePromo: normalizeWelcomePromo(payload.data.welcome_promo),
       announcements:
         payload.data.announcements_enabled === true &&
         Array.isArray(payload.data.announcements)
@@ -114,7 +130,25 @@ function emptyPublicSiteSettings(): PublicSiteSettings {
       clientId: null,
       enabled: false,
     },
+    welcomePromoEnabled: true,
+    welcomePromo: [],
   };
+}
+
+export function normalizeWelcomePromo(value: unknown): WelcomePromoModel[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const raw = item as Record<string, unknown>;
+      const modelName = typeof raw.model_name === "string" ? raw.model_name.trim() : "";
+      const description = typeof raw.description === "string" ? raw.description.trim() : "";
+      const offer = typeof raw.offer === "string" ? raw.offer.trim() : "";
+      if (!modelName || !description || !offer) return null;
+      return { model_name: modelName, description, offer };
+    })
+    .filter((item): item is WelcomePromoModel => item !== null)
+    .slice(0, 3);
 }
 
 /**

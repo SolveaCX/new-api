@@ -125,6 +125,7 @@ func GetStatus(c *gin.Context) {
 		"api_info_enabled":      cs.ApiInfoEnabled,
 		"uptime_kuma_enabled":   cs.UptimeKumaEnabled,
 		"announcements_enabled": cs.AnnouncementsEnabled,
+		"welcome_promo_enabled": cs.WelcomePromoEnabled,
 		"faq_enabled":           cs.FAQEnabled,
 
 		// 模块管理配置
@@ -162,6 +163,9 @@ func GetStatus(c *gin.Context) {
 			console_setting.GetAnnouncements(),
 			i18n.GetLangFromContext(c),
 		)
+	}
+	if cs.WelcomePromoEnabled {
+		data["welcome_promo"] = console_setting.GetWelcomePromo()
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()

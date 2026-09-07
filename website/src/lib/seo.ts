@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { DEFAULT_LOCALE, LOCALES, type Locale, localeAlternates, localeLanguageTag, localizePath } from "./locales";
+import { SITE_ORIGIN } from "./origins";
 
-export const SITE_ORIGIN = "https://flatkey.ai";
+// Keep the historic seo.ts export stable for schema and route consumers while
+// sourcing the value from the environment-aware origin module.
+export { SITE_ORIGIN } from "./origins";
+
 export const SITE_NAME = "flatkey.ai";
 export const DEFAULT_SOCIAL_IMAGE = `${SITE_ORIGIN}/flatkey-logo-light.png`;
 export const HOMEPAGE_SOCIAL_IMAGE = `${SITE_ORIGIN}/assets/og-image.png`;
@@ -50,7 +54,10 @@ export function buildMetadata(input: SeoInput): Metadata {
                     ])
                   )
                 : localeAlternates(input.pathname)),
-              "x-default": `${SITE_ORIGIN}${localizePath(input.pathname, DEFAULT_LOCALE)}`,
+              "x-default": `${SITE_ORIGIN}${localizePath(
+                input.pathname,
+                input.locales?.includes(DEFAULT_LOCALE) ? DEFAULT_LOCALE : (input.locales?.[0] ?? DEFAULT_LOCALE),
+              )}`,
             },
           }),
     },

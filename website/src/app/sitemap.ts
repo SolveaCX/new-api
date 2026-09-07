@@ -12,12 +12,13 @@ import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { getCliMediaPromptItems } from "@/lib/prompt-library";
+import { SITE_ORIGIN } from "@/lib/origins";
 
 // The model list comes from the live public catalog. Do not prerender this
 // route during a website build where the console API may be unavailable.
 export const dynamic = "force-dynamic";
 
-const base = "https://flatkey.ai";
+const base = SITE_ORIGIN;
 const REDIRECT_MODEL_LANDING_PATHS = new Set([
   "/models/gpt-api",
   "/models/claude-api",

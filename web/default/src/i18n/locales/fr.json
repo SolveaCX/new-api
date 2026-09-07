@@ -6906,6 +6906,12 @@
     "Complete the graphical verification before creating your account.": "Effectuez la vérification graphique avant de créer votre compte.",
     "Voice": "Voix",
     "Speed": "Vitesse",
-    "Video URL": "URL vidéo"
+    "Video URL": "URL vidéo",
+    "Welcome Promo": "Promotion d’accueil",
+    "Configure the three model cards shown in the homepage welcome popup.": "Configurez les trois cartes de modèles affichées dans la fenêtre d’accueil de la page d’accueil.",
+    "Logo is mapped automatically from the model name.": "Le logo est associé automatiquement au nom du modèle.",
+    "Please choose a model for each slot": "Choisissez un modèle pour chaque emplacement",
+    "Description and offer are required": "La description et l’offre sont obligatoires",
+    "Each slot must use a different model": "Chaque emplacement doit utiliser un modèle différent"
   }
 }
