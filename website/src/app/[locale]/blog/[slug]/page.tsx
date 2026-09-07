@@ -12,13 +12,21 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
-  const post = await getBlogPost(params.slug, params.locale);
+  const [post, englishPost] = await Promise.all([
+    getBlogPost(params.slug, params.locale),
+    params.locale === "en" ? Promise.resolve(null) : getBlogPost(params.slug, "en"),
+  ]);
   const copy = getCopy(params.locale).blog;
+  const availableLocales = [
+    ...(englishPost ? (["en"] as const) : []),
+    params.locale,
+  ];
   return buildMetadata({
     title: post?.title ?? copy.articleFallbackTitle,
     description: post?.summary ?? copy.articleFallbackDescription,
     pathname: `/blog/${params.slug}`,
     locale: params.locale,
+    locales: availableLocales,
     image: post?.cover,
   });
 }

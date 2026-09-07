@@ -15,6 +15,10 @@ export async function generateMetadata(props: Props) {
     title: post?.title ?? copy.articleFallbackTitle,
     description: post?.summary ?? copy.articleFallbackDescription,
     pathname: `/blog/${params.slug}`,
+    // Only advertise the English URL here. A translated post is optional and
+    // must be discovered from the localized route instead of emitting
+    // hreflang links that may resolve to 404s.
+    locales: ["en"],
     image: post?.cover,
   });
 }

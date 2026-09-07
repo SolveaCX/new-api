@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Gift, Search, X } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
 import { formatBlogCopy, type BlogCopy } from "@/lib/blog-copy";
@@ -361,7 +361,15 @@ export async function BlogIndexPage(props: Props & { search?: BlogSearchState })
 
 export async function BlogArticlePage(props: Props & { slug: string }) {
   const post = await getBlogPost(props.slug, props.locale);
-  if (!post) notFound();
+  if (!post) {
+    // A translated article can be unpublished independently of its English
+    // counterpart. Preserve link equity by sending that stale localized URL
+    // to the canonical English article when it still exists.
+    if (props.locale !== "en" && (await getBlogPost(props.slug, "en"))) {
+      permanentRedirect(`/blog/${encodeURIComponent(props.slug)}`);
+    }
+    notFound();
+  }
   const currentPost = post;
 
   const relatedPosts = await getBlogPosts(

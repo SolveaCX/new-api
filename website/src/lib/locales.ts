@@ -1,3 +1,5 @@
+import { SITE_ORIGIN } from "./origins";
+
 export const DEFAULT_LOCALE = "en";
 
 export const LOCALES = ["en", "zh", "es", "fr", "pt", "ru", "ja", "vi", "de", "id"] as const;
@@ -77,6 +79,6 @@ export function stripLocale(pathname: string): string {
 export function localeAlternates(pathname: string): Record<string, string> {
   const stripped = stripLocale(pathname);
   return Object.fromEntries(
-    LOCALES.map((locale) => [localeLanguageTag(locale), `https://flatkey.ai${localizePath(stripped, locale)}`])
+    LOCALES.map((locale) => [localeLanguageTag(locale), `${SITE_ORIGIN}${localizePath(stripped, locale)}`])
   );
 }

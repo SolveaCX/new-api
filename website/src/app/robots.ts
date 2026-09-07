@@ -23,7 +23,7 @@ export function buildRobots(siteOrigin: string): MetadataRoute.Robots {
         disallow: ["/cdn-cgi/", "/_next/", "/dashboard/", "/lp/"],
       },
     ],
-    sitemap: "https://flatkey.ai/sitemap.xml",
+    sitemap: `${siteOrigin}/sitemap.xml`,
   };
 }
 
