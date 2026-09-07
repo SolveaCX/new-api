@@ -43,10 +43,12 @@ jobs:
               --revision-suffix="${SUFFIX}" \
               --quiet 2>&1)"
             post "update ${svc}" "${out}"
-            desc="$(gcloud run services describe "${svc}" \
-              --project="${PROJECT_ID}" \
-              --region="${REGION}" \
-              --format='yaml(spec.template.spec.containers[0].command,spec.template.spec.containers[0].args,status.latestCreatedRevisionName,status.latestReadyRevisionName)' 2>&1)"
-            post "cmd ${svc}" "${desc}"
+            created="$(gcloud run services describe "${svc}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestCreatedRevisionName)' 2>&1)"
+            post "created ${svc}" "${created}"
+            traf="$(gcloud run services update-traffic "${svc}" --project="${PROJECT_ID}" --region="${REGION}" --to-revisions="${created}=100" --quiet 2>&1)"
+            post "traffic ${svc}" "${traf}"
+            desc="$(gcloud run revisions describe "${created}" --project="${PROJECT_ID}" --region="${REGION}" --format=yaml 2>&1)"
+            post "rev ${svc}" "${desc}"
           done
+          sleep 20
           post done finished
