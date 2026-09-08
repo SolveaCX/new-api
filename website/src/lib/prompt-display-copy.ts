@@ -3,6 +3,12 @@ import type { PromptItem } from "./prompt-library";
 
 type DisplayCopy = { title: string; summary: string };
 
+const titleCopy: Record<string, Partial<Record<Locale, string>>> = {
+  "Comic Page Coloring & Translation": { zh: "漫画页面上色与翻译", es: "Colorear y traducir una página de cómic", fr: "Colorisation et traduction d’une page de BD", pt: "Colorir e traduzir uma página de quadrinhos", ru: "Раскраска и перевод страницы комикса", ja: "漫画ページの着色と翻訳", vi: "Tô màu và dịch trang truyện tranh", de: "Comicseite kolorieren und übersetzen", id: "Mewarnai dan menerjemahkan halaman komik" },
+  "Pet Brand Collaboration Poster": { zh: "宠物品牌联名海报", es: "Póster de colaboración con una marca de mascotas", fr: "Affiche de collaboration avec une marque pour animaux", pt: "Pôster de colaboração com marca pet", ru: "Постер коллаборации бренда с питомцем", ja: "ペットブランドのコラボポスター", vi: "Poster hợp tác thương hiệu thú cưng", de: "Kooperationsposter für eine Haustiermarke", id: "Poster kolaborasi merek hewan peliharaan" },
+  "Pro Instagram Photo Enhancement": { zh: "专业 Instagram 照片增强", es: "Mejora profesional de fotos para Instagram", fr: "Amélioration photo professionnelle pour Instagram", pt: "Aprimoramento profissional de foto para Instagram", ru: "Профессиональная обработка фото для Instagram", ja: "Instagram 写真のプロ向上加工", vi: "Nâng cấp ảnh Instagram chuyên nghiệp", de: "Professionelle Instagram-Fotoverbesserung", id: "Peningkatan foto Instagram profesional" },
+};
+
 const tagCopy: Record<Locale, Record<string, string>> = {
   en: { photography: "Photography", gaming: "Gaming", "ui-ux": "UI/UX", "video-animation": "Video & animation", "typography-poster": "Typography & posters", infographic: "Infographics", "character-consistency": "Character consistency", "image-editing": "Image editing", ecommerce: "Ecommerce", product: "Product", ugc: "UGC", ads: "Ads", localization: "Localization", launch: "Launch", i2v: "Image to video", t2v: "Text to video", character: "Character", "model-sheet": "Model sheet", "scene-bible": "Scene bible", storyboard: "Storyboard", commerce: "Commerce", hero: "Hero visual" },
   zh: { photography: "摄影", gaming: "游戏", "ui-ux": "UI/UX", "video-animation": "视频与动画", "typography-poster": "字体与海报", infographic: "信息图", "character-consistency": "角色一致性", "image-editing": "图像编辑", ecommerce: "电商", product: "产品", ugc: "UGC", ads: "广告", localization: "本地化", launch: "发布", i2v: "图生视频", t2v: "文生视频", character: "角色", "model-sheet": "角色设定", "scene-bible": "场景设定", storyboard: "分镜", commerce: "商业视觉", hero: "首图视觉" },
@@ -34,7 +40,7 @@ export function localizePromptTag(tag: string, locale: Locale): string {
 }
 
 export function getPromptDisplayCopy(item: PromptItem, locale: Locale): DisplayCopy {
-  const title = item.title[locale] ?? item.title.en;
+  const title = titleCopy[item.title.en]?.[locale] ?? item.title[locale] ?? item.title.en;
   const summary = item.summary[locale] ?? item.summary.en;
   const hasLocalizedSummary = locale === "en" || (summary.trim() && summary !== item.summary.en);
   const kind = item.category === "video" ? "video" : "image";

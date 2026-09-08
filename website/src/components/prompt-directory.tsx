@@ -9,6 +9,7 @@ import { SiteShell } from "@/components/site-shell";
 import { localizePath, type Locale } from "@/lib/locales";
 import type { PromptArtifact, PromptItem } from "@/lib/prompt-library";
 import { getPromptDisplayCopy, localizePromptTag } from "@/lib/prompt-display-copy";
+import { consoleUrl } from "@/lib/origins";
 
 type Props = { locale: Locale; items: PromptItem[]; initialSearch?: Record<string, string | string[] | undefined> };
 
@@ -59,6 +60,19 @@ const discoveryCopy: Record<Locale, { slogan: string; imageModel: string; videoM
   vi: { slogan: "Từ ý tưởng đến thành phẩm, khám phá những prompt đã được chứng minh hiệu quả.", imageModel: "Mô hình ảnh dành cho áp phích, hình sản phẩm và nội dung sáng tạo sẵn sàng sản xuất.", videoModel: "Mô hình video dành cho quảng cáo, câu chuyện sản phẩm và nội dung chuyển động." },
   de: { slogan: "Von der Idee bis zum fertigen Ergebnis: Finden Sie Prompts, die bereits funktionieren.", imageModel: "Ein Bildmodell für Poster, Produktvisuals und produktionsreife Kreativinhalte.", videoModel: "Ein Videomodell für Werbung, Produktgeschichten und bewegte Kreativinhalte." },
   id: { slogan: "Dari ide hingga hasil akhir, temukan prompt yang sudah terbukti efektif.", imageModel: "Model gambar untuk poster, visual produk, dan materi kreatif siap produksi.", videoModel: "Model video untuk iklan, cerita produk, dan materi kreatif berbasis gerak." },
+};
+
+const heroCopy: Record<Locale, { eyebrow: string; title: string; body: string; primary: string; secondary: string; cards: [string, string, string, string, string, string] }> = {
+  en: { eyebrow: "PROMPT LIBRARY", title: "Test the prompt before production.", body: "Explore image and video prompts with real outputs, model context, and sources you can verify before you generate.", primary: "Browse featured prompts", secondary: "Open Playground", cards: ["Real outputs", "See the finished result", "Model context", "Know the model and source", "Free to try", "Take any prompt into Playground"] },
+  zh: { eyebrow: "提示词库", title: "接生产前，先用真实提示词试出结果。", body: "浏览带真实产物、模型信息和可追溯来源的图片与视频提示词，确认效果后再开始生成。", primary: "浏览精选提示词", secondary: "进入 Playground", cards: ["真实产物", "先看最终效果", "模型与来源", "知道用的是什么、从哪里来", "免费试用", "把任意提示词带入 Playground"] },
+  es: { eyebrow: "BIBLIOTECA DE PROMPTS", title: "Prueba el prompt antes de llevarlo a producción.", body: "Explora prompts de imagen y vídeo con resultados reales, contexto del modelo y fuentes verificables antes de generar.", primary: "Ver prompts destacados", secondary: "Abrir Playground", cards: ["Resultados reales", "Mira el resultado final", "Modelo y fuente", "Conoce el modelo y su origen", "Gratis para probar", "Lleva cualquier prompt al Playground"] },
+  fr: { eyebrow: "BIBLIOTHÈQUE DE PROMPTS", title: "Testez le prompt avant de passer en production.", body: "Explorez des prompts image et vidéo accompagnés de résultats réels, du contexte du modèle et de sources vérifiables.", primary: "Voir les prompts à la une", secondary: "Ouvrir le Playground", cards: ["Résultats réels", "Voyez le rendu final", "Modèle et source", "Connaissez le modèle et son origine", "Essai gratuit", "Envoyez n’importe quel prompt dans le Playground"] },
+  pt: { eyebrow: "BIBLIOTECA DE PROMPTS", title: "Teste o prompt antes de levar para produção.", body: "Explore prompts de imagem e vídeo com resultados reais, contexto do modelo e fontes verificáveis antes de gerar.", primary: "Ver prompts em destaque", secondary: "Abrir o Playground", cards: ["Resultados reais", "Veja o resultado final", "Modelo e fonte", "Saiba qual modelo foi usado e de onde veio", "Grátis para testar", "Leve qualquer prompt para o Playground"] },
+  ru: { eyebrow: "БИБЛИОТЕКА ПРОМПТОВ", title: "Проверьте промпт до запуска в продакшен.", body: "Изучайте промпты для изображений и видео с реальными результатами, данными о модели и проверяемыми источниками.", primary: "Смотреть избранные промпты", secondary: "Открыть Playground", cards: ["Реальные результаты", "Сначала оцените готовый кадр", "Модель и источник", "Знайте, какая модель использовалась и откуда пример", "Бесплатная проба", "Откройте любой промпт в Playground"] },
+  ja: { eyebrow: "プロンプトライブラリ", title: "本番投入の前に、プロンプトを試す。", body: "実際の成果物、モデル情報、確認できる出典付きの画像・動画プロンプトを見てから生成を始められます。", primary: "注目のプロンプトを見る", secondary: "Playground を開く", cards: ["実際の成果物", "完成結果を先に確認", "モデルと出典", "使われたモデルと出典が分かる", "無料で試せる", "どのプロンプトでも Playground へ送れる"] },
+  vi: { eyebrow: "THƯ VIỆN PROMPT", title: "Thử prompt trước khi đưa vào sản xuất.", body: "Khám phá prompt hình ảnh và video có kết quả thực tế, thông tin model và nguồn có thể kiểm tra trước khi tạo.", primary: "Xem prompt nổi bật", secondary: "Mở Playground", cards: ["Kết quả thực tế", "Xem thành phẩm trước", "Model và nguồn", "Biết model nào đã dùng và ví dụ đến từ đâu", "Dùng thử miễn phí", "Đưa mọi prompt vào Playground"] },
+  de: { eyebrow: "PROMPT-BIBLIOTHEK", title: "Teste den Prompt, bevor er in Produktion geht.", body: "Entdecken Sie Bild- und Video-Prompts mit echten Ergebnissen, Modellkontext und überprüfbaren Quellen vor der Generierung.", primary: "Ausgewählte Prompts ansehen", secondary: "Playground öffnen", cards: ["Echte Ergebnisse", "Das fertige Ergebnis zuerst sehen", "Modell und Quelle", "Modell und Herkunft des Beispiels kennen", "Kostenlos testen", "Jeden Prompt im Playground öffnen"] },
+  id: { eyebrow: "PUSTAKA PROMPT", title: "Uji prompt sebelum masuk produksi.", body: "Jelajahi prompt gambar dan video dengan hasil nyata, konteks model, dan sumber yang dapat diverifikasi sebelum membuat.", primary: "Lihat prompt pilihan", secondary: "Buka Playground", cards: ["Hasil nyata", "Lihat hasil akhir lebih dulu", "Model dan sumber", "Ketahui model dan asal contohnya", "Gratis untuk dicoba", "Bawa prompt apa pun ke Playground"] },
 };
 
 const categoryIcons: Partial<Record<PromptItem["category"], LucideIcon>> = {
@@ -117,8 +131,8 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
     || (selectedUseCase ? localizePromptTag(selectedUseCase, locale) : "")
     || sections.latest;
   const hasSelectedCollection = Boolean(selectedType || selectedModel || selectedUseCase);
-  const featured = collectionItems[0] ?? mediaItems[0];
   const displayedItems = hasSelectedCollection || showAll ? collectionItems : collectionItems.slice(0, 15);
+  const playgroundHref = consoleUrl("/playground", new URLSearchParams({ lng: locale, source: "prompt-library" }).toString());
   const copyPrompt = async (item: PromptItem) => {
     await navigator.clipboard.writeText(item.prompt);
     setCopied(item.slug);
@@ -135,30 +149,25 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
               <ChevronRight className="size-3" aria-hidden="true" />
               <span className="font-semibold text-[#0B0B0F]">{text.title}</span>
             </nav>
-            {featured ? (
-              <div className="grid overflow-hidden rounded-[24px] border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.22)] lg:grid-cols-[0.88fr_1.12fr]">
-                <div className="flex flex-col justify-center p-7 md:p-10 lg:p-12">
-                  <h1 className="max-w-2xl text-[clamp(2.35rem,5vw,4.4rem)] leading-[0.98] font-extrabold tracking-[-0.045em] text-[#0B0B0F]">{discoveryCopy[locale].slogan}</h1>
-                  <p className="mt-5 max-w-xl text-base leading-7 text-[#62626D]">{text.description}</p>
-                  <div className="mt-6 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[#F1EAFE] px-3 py-1.5 text-xs font-bold text-[#5B21B6]">{categoryLabels[locale].image}</span>
-                    <span className="rounded-full bg-[#F1EAFE] px-3 py-1.5 text-xs font-bold text-[#5B21B6]">{categoryLabels[locale].video}</span>
-                    <span className="rounded-full border border-[#0B0B0F14] bg-white px-3 py-1.5 text-xs font-bold text-[#5D566A]">{mediaItems.length} {text.found}</span>
-                  </div>
-                  <Link href="#prompt-collection" className="mt-7 inline-flex h-11 w-fit items-center gap-2 rounded-full bg-[#070707] px-5 text-sm font-extrabold !text-white shadow-[0_16px_34px_-22px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
-                    {text.featured}<ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                </div>
-                <Link href={promptHref(featured, locale)} className="group relative min-h-72 overflow-hidden border-t border-[#0B0B0F14] bg-[#211C2D] lg:min-h-[440px] lg:border-t-0 lg:border-l">
-                  <ArtifactPreview artifact={featured.artifact} title={featured.title[locale] ?? featured.title.en} variant="hero" />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 via-black/35 to-transparent px-6 pt-20 pb-6 text-white">
-                    <span className="rounded-full border border-white/20 bg-white/14 px-2.5 py-1 text-[11px] font-bold backdrop-blur">{featured.model}</span>
-                    <h2 className="mt-3 text-xl font-black tracking-tight text-white md:text-2xl">{featured.title[locale] ?? featured.title.en}</h2>
-                    <p className="mt-1 line-clamp-2 max-w-xl text-sm leading-6 text-white/72">{featured.summary[locale] ?? featured.summary.en}</p>
-                  </div>
+            <div className="mx-auto max-w-5xl px-2 py-10 text-center md:py-16">
+              <p className="text-xs font-black tracking-[0.18em] text-[#6D28D9] uppercase">{heroCopy[locale].eyebrow}</p>
+              <h1 className="mx-auto mt-6 max-w-5xl text-[clamp(2.8rem,7vw,6.8rem)] leading-[0.94] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
+              <p className="mx-auto mt-7 max-w-3xl text-base leading-7 text-[#5F5B66] md:text-xl md:leading-8">{heroCopy[locale].body}</p>
+              <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+                <Link href="#prompt-collection" className="inline-flex h-12 items-center gap-2 rounded-xl bg-[#070707] px-6 text-sm font-extrabold !text-white shadow-[0_18px_36px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
+                  {heroCopy[locale].primary}<ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
+                <a href={playgroundHref} className="inline-flex h-12 items-center gap-2 rounded-xl border border-[#0B0B0F16] bg-white px-6 text-sm font-extrabold text-[#242129] shadow-[0_14px_28px_-22px_rgba(11,11,15,.3)] transition-colors hover:border-[#7C3AED45] hover:text-[#4C1D95]">
+                  {heroCopy[locale].secondary}
+                </a>
               </div>
-            ) : null}
+            </div>
+            <div className="grid gap-4 border-t border-[#0B0B0F10] pt-7 md:grid-cols-3">
+              {[0, 1, 2].map((index) => {
+                const offset = index * 2;
+                return <div key={heroCopy[locale].cards[offset]} className="rounded-2xl border border-[#0B0B0F12] bg-white px-6 py-5 text-left shadow-[0_18px_48px_-38px_rgba(46,16,101,.28)]"><h2 className="text-xl font-black tracking-tight text-[#0B0B0F]">{heroCopy[locale].cards[offset]}</h2><p className="mt-2 text-sm font-semibold leading-6 text-[#77727F]">{heroCopy[locale].cards[offset + 1]}</p></div>;
+              })}
+            </div>
           </div>
         </section>
 
