@@ -116,6 +116,36 @@ func EnsureUsageReportRange(days int) error {
 	return nil
 }
 
+// usageReportFillGuard prevents duplicate background fills across admin reads.
+var (
+	usageReportFillMu  sync.Mutex
+	usageReportFilling bool
+)
+
+// EnsureUsageReportRangeAsync warms the trailing window in the background and
+// returns immediately. The report read path therefore never blocks on a full
+// historical backfill; each date becomes visible as soon as it is persisted,
+// and the API reports a "filling" flag until the whole window is ready.
+func EnsureUsageReportRangeAsync(days int) {
+	usageReportFillMu.Lock()
+	if usageReportFilling {
+		usageReportFillMu.Unlock()
+		return
+	}
+	usageReportFilling = true
+	usageReportFillMu.Unlock()
+	go func() {
+		defer func() {
+			usageReportFillMu.Lock()
+			usageReportFilling = false
+			usageReportFillMu.Unlock()
+		}()
+		if err := EnsureUsageReportRange(days); err != nil {
+			common.SysError("usage_report background fill failed: " + err.Error())
+		}
+	}()
+}
+
 // EnsureUsageReportDate guarantees the row for one UTC date exists and is
 // fresh enough for today. Past dates are computed once; today is refreshed at
 // most every usageReportTodayFresh seconds. Rows written by an older
