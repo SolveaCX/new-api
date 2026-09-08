@@ -9,6 +9,10 @@ type CdnFallbackImageProps = Omit<ComponentPropsWithoutRef<"img">, "src"> & {
 
 /** Render a CDN image first, then switch to the bundled source on load error. */
 export function CdnFallbackImage(props: CdnFallbackImageProps) {
+  return <CdnFallbackImageState key={`${props.src}:${props.fallbackSrc ?? ""}`} {...props} />;
+}
+
+function CdnFallbackImageState(props: CdnFallbackImageProps) {
   const { src, fallbackSrc, onError, ...imageProps } = props;
   const [source, setSource] = useState(src);
   const [fallbackTried, setFallbackTried] = useState(false);

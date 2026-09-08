@@ -1428,9 +1428,15 @@ function ModalityIcons(props: { modalities: Modality[]; className?: string }) {
 }
 
 export function ModelLogo(props: { iconKey?: string; fallback: string; size: number }) {
+  return <ModelLogoSource key={props.iconKey ?? ""} {...props} />;
+}
+
+function ModelLogoSource(props: { iconKey?: string; fallback: string; size: number }) {
   const [failed, setFailed] = useState(false);
-  const src = !failed ? getLobeStaticSvgUrl(props.iconKey) : null;
-  const fallbackSrc = getLocalLogoUrl(props.iconKey);
+  const localSrc = getLocalLogoUrl(props.iconKey);
+  const remoteSrc = getLobeStaticSvgUrl(props.iconKey);
+  const src = !failed ? localSrc ?? remoteSrc : null;
+  const fallbackSrc = localSrc ? remoteSrc : localSrc;
 
   if (src) {
     return (
@@ -1455,6 +1461,9 @@ function getLocalLogoUrl(iconKey?: string): string | null {
   const normalized = normalizeIconKey(iconKey);
   if (!normalized) return null;
   const localByIcon: Record<string, string> = {
+    flatkey: "flatkey-mark-dark",
+    "flatkey-catalog": "flatkey-mark-dark",
+    "flatkey-catalog-color": "flatkey-mark-dark",
     openai: "openai",
     anthropic: "claude",
     "claude-color": "claude",
@@ -1814,6 +1823,7 @@ function normalizeIconKey(iconKey: string): string | null {
     gemini: "gemini-color",
     deepseek: "deepseek-color",
     "deep-seek": "deepseek-color",
+    "deep-seek-color": "deepseek-color",
     qwen: "qwen-color",
     alibaba: "alibabacloud-color",
     "alibaba-cloud": "alibabacloud-color",

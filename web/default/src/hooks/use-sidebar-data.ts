@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { type TFunction } from 'i18next'
 import {
   Activity,
+  BarChart3,
   Box,
   CalendarRange,
   Cpu,
@@ -190,6 +191,11 @@ export function buildSidebarData(
             title: t('Ops Daily Report'),
             url: '/ops-report',
             icon: CalendarRange,
+          },
+          {
+            title: t('Usage Report'),
+            url: '/usage-report',
+            icon: BarChart3,
           },
           {
             title: t('Redemption Codes'),

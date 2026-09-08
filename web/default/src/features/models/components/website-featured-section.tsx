@@ -34,7 +34,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { getWebsiteFeaturedModels, updateWebsiteFeaturedModels } from '../api'
+import {
+  getWebsiteFeaturedModels,
+  updateWebsiteFeaturedModels,
+  uploadWebsiteFeaturedBackgroundImage,
+} from '../api'
 import { modelsQueryKeys, parseModelTags } from '../lib'
 import type { WebsiteFeaturedCandidate } from '../types'
 import {
@@ -83,6 +87,12 @@ export function WebsiteFeaturedSection() {
     WebsiteFeaturedListItem[] | null
   >(null)
   const [candidateQuery, setCandidateQuery] = useState('')
+  const [uploadingModelNames, setUploadingModelNames] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [pendingUploadedModelNames, setPendingUploadedModelNames] = useState<
+    Set<string>
+  >(() => new Set())
 
   const { data, isLoading, isError } = useQuery({
     queryKey: modelsQueryKeys.websiteFeatured(),
@@ -123,6 +133,7 @@ export function WebsiteFeaturedSection() {
     },
     onSuccess: () => {
       setDraftFeatured(null)
+      setPendingUploadedModelNames(new Set())
       toast.success(t('Featured models saved successfully'))
       void queryClient.invalidateQueries({
         queryKey: modelsQueryKeys.websiteFeatured(),
@@ -168,7 +179,7 @@ export function WebsiteFeaturedSection() {
     )
   }
 
-  const uploadBackgroundImage = (index: number, file?: File) => {
+  const uploadBackgroundImage = async (modelName: string, file?: File) => {
     if (!file) return
     if (
       !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(
@@ -182,13 +193,41 @@ export function WebsiteFeaturedSection() {
       toast.error(t('Background image must be smaller than 8 MB'))
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        updateFeaturedField(index, 'background_image', reader.result)
+
+    setUploadingModelNames((current) => new Set(current).add(modelName))
+    try {
+      const response = await uploadWebsiteFeaturedBackgroundImage(file)
+      const uploadedURL = response.data?.url
+      if (!response.success || !uploadedURL) {
+        throw new Error('upload failed')
       }
+
+      updateFeatured((current) =>
+        current.map((item) =>
+          item.model_name === modelName
+            ? {
+                ...item,
+                background_image_url: uploadedURL,
+                background_image: '',
+              }
+            : item
+        )
+      )
+      setPendingUploadedModelNames((current) => new Set(current).add(modelName))
+      toast.success(
+        t(
+          'Background image uploaded. Save the featured configuration to publish it.'
+        )
+      )
+    } catch {
+      toast.error(t('Failed to upload background image'))
+    } finally {
+      setUploadingModelNames((current) => {
+        const next = new Set(current)
+        next.delete(modelName)
+        return next
+      })
     }
-    reader.readAsDataURL(file)
   }
 
   if (isLoading) {
@@ -230,7 +269,9 @@ export function WebsiteFeaturedSection() {
           </div>
           <Button
             onClick={() => saveMutation.mutate()}
-            disabled={!isDirty || saveMutation.isPending}
+            disabled={
+              !isDirty || saveMutation.isPending || uploadingModelNames.size > 0
+            }
             size='sm'
           >
             {saveMutation.isPending && <Loader2 className='animate-spin' />}
@@ -275,7 +316,9 @@ export function WebsiteFeaturedSection() {
                         moveWebsiteFeaturedModel(current, index, -1)
                       )
                     }
-                    disabled={index === 0}
+                    disabled={
+                      index === 0 || uploadingModelNames.has(item.model_name)
+                    }
                     aria-label={t('Move featured model up')}
                   >
                     <ArrowUp />
@@ -288,7 +331,10 @@ export function WebsiteFeaturedSection() {
                         moveWebsiteFeaturedModel(current, index, 1)
                       )
                     }
-                    disabled={index === featured.length - 1}
+                    disabled={
+                      index === featured.length - 1 ||
+                      uploadingModelNames.has(item.model_name)
+                    }
                     aria-label={t('Move featured model down')}
                   >
                     <ArrowDown />
@@ -297,6 +343,7 @@ export function WebsiteFeaturedSection() {
                     variant='ghost'
                     size='icon-xs'
                     onClick={() => removeFeatured(index)}
+                    disabled={uploadingModelNames.has(item.model_name)}
                     aria-label={t('Remove featured model')}
                   >
                     <Trash2 />
@@ -397,10 +444,26 @@ export function WebsiteFeaturedSection() {
                     <Input
                       type='file'
                       accept='image/png,image/jpeg,image/webp,image/gif'
-                      onChange={(event) =>
-                        uploadBackgroundImage(index, event.target.files?.[0])
-                      }
+                      disabled={uploadingModelNames.has(item.model_name)}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        event.currentTarget.value = ''
+                        void uploadBackgroundImage(item.model_name, file)
+                      }}
                     />
+                    {uploadingModelNames.has(item.model_name) && (
+                      <span className='text-muted-foreground flex items-center gap-1 text-xs'>
+                        <Loader2 className='h-3 w-3 animate-spin' />
+                        {t('Uploading background image...')}
+                      </span>
+                    )}
+                    {pendingUploadedModelNames.has(item.model_name) && (
+                      <span className='text-muted-foreground text-xs'>
+                        {t(
+                          'Background image uploaded. Save the featured configuration to publish it.'
+                        )}
+                      </span>
+                    )}
                     {item.background_image && (
                       <span className='text-muted-foreground text-xs'>
                         {t(

@@ -15,6 +15,9 @@ func SetApiRouter(router *gin.Engine) {
 	// Mailbox image proxies may refetch the same pixel; keep this response
 	// neutral by bypassing the shared API group's global rate limiter.
 	router.GET("/api/recall/open.gif", controller.TrackRecallEmailOpen)
+	// Content-addressed featured images are immutable and public. The source
+	// bucket remains private; this endpoint is the only anonymous read path.
+	router.GET("/media/website-featured/:media_id", controller.GetWebsiteFeaturedMedia)
 
 	apiRouter := router.Group("/api")
 	apiRouter.Use(middleware.RouteTag("api"))
@@ -539,6 +542,7 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report_ads", middleware.AdminAuth(), controller.GetOpsAdsPilotReport)
 		dataRoute.GET("/ops_report_ads_daily", middleware.AdminAuth(), controller.GetOpsAdsDailyReport)
 		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
+		dataRoute.GET("/usage_report", middleware.AdminAuth(), controller.GetUsageReport)
 		dataRoute.GET("/model_health", middleware.AdminAuth(), controller.GetModelHealthOverview)
 		dataRoute.GET("/model_health/detail", middleware.AdminAuth(), controller.GetModelHealthDetail)
 
@@ -598,6 +602,7 @@ func SetApiRouter(router *gin.Engine) {
 			modelsRoute.GET("/catalog-readiness", controller.GetModelCatalogReadiness)
 			modelsRoute.GET("/website-featured", controller.GetWebsiteFeaturedModels)
 			modelsRoute.PUT("/website-featured", controller.UpdateWebsiteFeaturedModels)
+			modelsRoute.POST("/website-featured/media", controller.UploadWebsiteFeaturedMedia)
 			modelsRoute.GET("/", controller.GetAllModelsMeta)
 			modelsRoute.GET("/search", controller.SearchModelsMeta)
 			modelsRoute.GET("/:id", controller.GetModelMeta)

@@ -42,13 +42,20 @@ func TestWebsiteFeaturedModelRoutesAreAdminOnly(t *testing.T) {
 
 	registered := map[string]bool{}
 	for _, route := range engine.Routes() {
-		if route.Path != "/api/models/website-featured" {
-			continue
+		if route.Path == "/api/models/website-featured" {
+			registered[route.Method] = true
 		}
-		registered[route.Method] = true
+		if route.Path == "/api/models/website-featured/media" && route.Method == http.MethodPost {
+			registered["media-upload"] = true
+		}
+		if route.Path == "/media/website-featured/:media_id" && route.Method == http.MethodGet {
+			registered["media-read"] = true
+		}
 	}
 	require.True(t, registered[http.MethodGet])
 	require.True(t, registered[http.MethodPut])
+	require.True(t, registered["media-upload"])
+	require.True(t, registered["media-read"])
 
 	for _, method := range []string{http.MethodGet, http.MethodPut} {
 		recorder := httptest.NewRecorder()
@@ -56,4 +63,14 @@ func TestWebsiteFeaturedModelRoutesAreAdminOnly(t *testing.T) {
 		engine.ServeHTTP(recorder, request)
 		require.Equal(t, http.StatusUnauthorized, recorder.Code, method)
 	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/models/website-featured/media", nil)
+	engine.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/media/website-featured/not-valid.png", nil)
+	engine.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusNotFound, recorder.Code)
 }

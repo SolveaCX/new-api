@@ -112,7 +112,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const modelLandingPathnames = getModelLandingPathnames()
     .filter((pathname) => !REDIRECT_MODEL_LANDING_PATHS.has(pathname));
   const modelLandingEntries = modelLandingPathnames.flatMap((pathname) => entry(pathname, 0.82, "daily"));
-  const collectionEntries = getModelCollectionPathnames().flatMap((pathname) => entry(pathname, 0.8, "weekly"));
+  const collectionEntries = getModelCollectionPathnames(pricing.models).flatMap((pathname) => entry(pathname, 0.8, "weekly"));
   const skagLandingEntries = SKAG_LANDING_SLUGS.flatMap((slug) =>
     entry(skagLandingPath(slug), 0.8, "weekly", getSkagLandingLocales(slug))
   );

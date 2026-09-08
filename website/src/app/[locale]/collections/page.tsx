@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ModelCollectionsIndex } from "@/components/model-collections-page";
 import { getModelCollectionsSeoCopy } from "@/lib/model-collections";
 import { isLocale, type Locale, LOCALES } from "@/lib/locales";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { buildMetadata } from "@/lib/seo";
 
 type Props = { params: Promise<{ locale: string }> };
@@ -20,5 +21,6 @@ export async function generateMetadata(props: Props) {
 export default async function Page(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale) || params.locale === "en") notFound();
-  return <ModelCollectionsIndex locale={params.locale as Locale} />;
+  const pricing = await getPricingData(WEBSITE_PUBLIC_PRICING_GROUP);
+  return <ModelCollectionsIndex locale={params.locale as Locale} pricing={pricing} />;
 }
