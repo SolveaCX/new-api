@@ -29,7 +29,7 @@ const usageReportTodayFresh = 5 * time.Minute
 
 // usageReportSchemaV is bumped whenever the daily row gains new aggregated
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
-const usageReportSchemaV = 2
+const usageReportSchemaV = 3
 
 var usageReportMu sync.Mutex
 
@@ -184,12 +184,17 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	}
 	day.PaidUSD = math.Round(paidUSD*100) / 100
 
-	// 3b) Cohort funnel — people counted (1 user = 1), only completed windows
-	// are meaningful; the front-end hides the most recent 7/14 days.
-	//
-	// reg -> key(7d): users registered this UTC day whose FIRST key was
-	// created within 7 days after their registration. Subset of Registered,
-	// so the cohort rate can never exceed 100%.
+	// 3a) 当天口径（主口径，C 端快进快出）：该日注册的人中，注册当天即
+	// 首次建 Key / 首次付费的人数。天然 ⊆ Registered（同一天注册队列）。
+	actDay, payDay, sameDayErr := aggregateSameDay(start, end, paymentTime)
+	if sameDayErr != nil {
+		return nil, nil, sameDayErr
+	}
+	day.ActivatedDay = actDay
+	day.PaidDay = payDay
+
+	// 3b) 长窗辅助口径（保留，仅分析用；主界面不再用 7/14 日窗口）：
+	// reg -> key(7d)：该日注册者注册后 7 日内首次建 Key 人数。
 	var activatedC7 int
 	if err := model.DB.Raw(`
 		SELECT COUNT(*) FROM (
@@ -294,4 +299,49 @@ func aggregateUsageLogs(start, end int64) ([]usageModelRow, error) {
 		return nil, fmt.Errorf("usage_report usage logs: %w", err)
 	}
 	return rows, nil
+}
+
+// aggregateSameDay counts, among users registered in [start, end):
+//   - activated:  people who created their first key the SAME UTC day they
+//     registered (first token time >= registration time and < end).
+//   - paid:       people whose first successful top-up completed the SAME UTC
+//     day they registered (settlement time >= registration time and < end).
+//
+// Both numbers are subsets of that day's registrations (people counted), which
+// keeps the same-day funnel columns monotonically non-increasing.
+func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
+	var activated int
+	if err := model.DB.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT u.id AS uid, u.created_at AS ct
+			FROM users u
+			WHERE u.status = ? AND u.email_verified_at > 0
+			  AND u.created_at >= ? AND u.created_at < ?
+		) uu
+		WHERE EXISTS (
+			SELECT 1 FROM tokens t
+			WHERE t.user_id = uu.uid
+			  AND t.created_time >= uu.ct AND t.created_time < ?)`,
+		common.UserStatusEnabled, start, end, end).Scan(&activated).Error; err != nil {
+		return 0, 0, fmt.Errorf("usage_report same-day activated: %w", err)
+	}
+
+	var paid int
+	if err := model.DB.Raw(fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT u.id AS uid, u.created_at AS ct
+			FROM users u
+			WHERE u.status = ? AND u.email_verified_at > 0
+			  AND u.created_at >= ? AND u.created_at < ?
+		) uu
+		WHERE EXISTS (
+			SELECT 1 FROM top_ups p
+			WHERE p.user_id = uu.uid
+			  AND p.status = ?
+			  AND (p.money > 0 OR p.payment_amount_minor > 0)
+			  AND %s >= uu.ct AND %s < ?)`, paymentTime, paymentTime),
+		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess, end).Scan(&paid).Error; err != nil {
+		return 0, 0, fmt.Errorf("usage_report same-day paid: %w", err)
+	}
+	return activated, paid, nil
 }

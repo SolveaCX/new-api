@@ -79,7 +79,6 @@ const fmtBig = (v: number): string =>
     : Math.abs(v) >= 1e4
       ? `${(v / 1e4).toFixed(1)}万`
       : num(v)
-const fmtPct = (v: number | null): string => (v == null ? '-' : `${v.toFixed(v >= 10 ? 1 : 2)}%`)
 const tokensOf = (r: { prompt_tokens: number; completion_tokens: number }): number =>
   r.prompt_tokens + r.completion_tokens
 
@@ -106,16 +105,18 @@ function KpiGrid({ items }: { items: KpiDatum[] }) {
 }
 
 function SectionTitle({
+  id,
   no,
   title,
   hint,
 }: {
+  id: string
   no: number
   title: string
   hint: string
 }) {
   return (
-    <div id={`sec-${no === 1 ? 'funnel' : no === 2 ? 'overview' : 'models'}`} className='scroll-mt-28 pt-2'>
+    <div id={`sec-${id}`} className='scroll-mt-28 pt-2'>
       <div className='flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2'>
         <span className='bg-primary flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold text-white'>
           {no}
@@ -160,83 +161,63 @@ export function UsageReport() {
   const totalTokens = sumDays((r) => tokensOf(r))
   const totalCalls = sumDays((r) => r.calls)
   const totalRegistered = sumDays((r) => r.registered)
+  const totalActivatedDay = sumDays((r) => r.activated_day)
+  const totalPaidDay = sumDays((r) => r.paid_day)
 
-  // cohort 完成窗口：前 7/14 天内的行已到期（先算，供 KPI 与图表复用）
-  const completed7 = Math.max(0, dayRows.length - 7)
-  const completed14 = Math.max(0, dayRows.length - 14)
-  const completedRows7 = dayRows.slice(0, completed7)
-  const completedRows14 = dayRows.slice(0, completed14)
-  const regKeyRate =
-    completedRows7.reduce((a, r) => a + r.registered, 0) > 0
-      ? (completedRows7.reduce((a, r) => a + r.activated_c7, 0) /
-          completedRows7.reduce((a, r) => a + r.registered, 0)) *
-        100
-      : null
-  const regPayRate =
-    completedRows14.reduce((a, r) => a + r.registered, 0) > 0
-      ? (completedRows14.reduce((a, r) => a + r.paid_reg_c14, 0) /
-          completedRows14.reduce((a, r) => a + r.registered, 0)) *
-        100
-      : null
-  const funnelRates = {
-    regKey: fmtPct(regKeyRate),
-    regPay: fmtPct(regPayRate),
-  }
-
-  // ---- funnel KPI（人，注册队列口径，激活/首付列 ≤ 注册列）----
-  const cohortPending7 = today && completed7 < dayRows.length - 1
-  const cohortPending14 = today && completed14 < dayRows.length - 1
+  // ---------- ① 漏斗（当天口径，人） ----------
+  const dayRegKeyRate =
+    today && today.registered > 0 ? Math.round((today.activated_day / today.registered) * 1000) / 10 : null
+  const dayRegPayRate =
+    today && today.registered > 0 ? Math.round((today.paid_day / today.registered) * 10000) / 100 : null
   const kpiFunnel: KpiDatum[] = today
     ? [
-        { k: t('Registered (today cohort)'), v: num(today.registered), d: `环比 ${deltaPeople(today.registered, yesterday?.registered)}` },
-        { k: t('Activated (7d cohort)'), v: num(today.activated_c7), d: `注册后7日内建Key·${cohortPending7 ? '队列未完' : '已完成'}` },
-        { k: t('First Paid (14d cohort)'), v: num(today.paid_reg_c14), d: `注册后14日内首付·${cohortPending14 ? '队列未完' : '已完成'}` },
-        { k: t('Paid Amount (today)'), v: usd(today.paid_usd), d: `当日实收 环比 ${deltaUsd(today.paid_usd, yesterday?.paid_usd)}` },
-        {
-          k: t('Reg→Activate 7d cohort'),
-          v: funnelRates.regKey,
-          d: t('completed cohorts only'),
-        },
-        {
-          k: t('Reg→Pay 14d cohort'),
-          v: funnelRates.regPay,
-          d: t('completed cohorts only'),
-        },
+        { k: t('Registered (today)'), v: num(today.registered), d: `环比 ${deltaPeople(today.registered, yesterday?.registered)}` },
+        { k: t('Activated (same-day)'), v: num(today.activated_day), d: `当天注册者当天建Key·环比 ${deltaPeople(today.activated_day, yesterday?.activated_day)}` },
+        { k: t('First Paid (same-day)'), v: num(today.paid_day), d: `当天注册者当天首付·环比 ${deltaPeople(today.paid_day, yesterday?.paid_day)}` },
+        { k: t('Paid Amount (today)'), v: usd(today.paid_usd), d: `当日实收·环比 ${deltaUsd(today.paid_usd, yesterday?.paid_usd)}` },
+        { k: t('Reg→Activate rate (same-day)'), v: dayRegKeyRate == null ? '-' : `${dayRegKeyRate}%`, d: '激活÷注册（当天）' },
+        { k: t('Reg→Pay rate (same-day)'), v: dayRegPayRate == null ? '-' : `${dayRegPayRate}%`, d: '首付÷注册（当天）' },
       ]
     : []
 
-  // 每日明细表合计（漏斗人数列用注册队列口径的“到窗口”累计）
   const totals = {
     registered: totalRegistered,
-    activated: sumDays((r) => r.activated_c7),
-    firstPaid: sumDays((r) => r.paid_reg_c14),
+    activated_day: totalActivatedDay,
+    paid_day: totalPaidDay,
     paid_usd: sumDays((r) => r.paid_usd),
     calls: totalCalls,
     tokens: totalTokens,
   }
-  // 已完成队列的累计（用于 KPI/汇总口径）
-  const act7Sum = completedRows7.reduce((a, r) => a + r.activated_c7, 0)
-  const pay14RegSum = completedRows14.reduce((a, r) => a + r.paid_reg_c14, 0)
-  const reg7Sum = completedRows7.reduce((a, r) => a + r.registered, 0)
 
-  // 转化趋势（队列，人；未到期置 null）
-  const convSerie = dayRows.map((r, i) => ({
+  // 转化率趋势（当天口径柱状图；今天进行中，数值会随时间略涨）
+  const convSerie = dayRows.map((r) => ({
     date: r.date,
-    '注册→激活率(7日队列)':
-      i < completed7 && r.registered > 0 ? Math.round((r.activated_c7 / r.registered) * 1000) / 10 : null,
-    '激活→首付率(14日队列)':
-      i < completed14 && r.activated_key > 0 ? Math.round((r.paid_c14 / r.activated_key) * 10000) / 100 : null,
+    '注册→激活率(当天)': r.registered > 0 ? Math.round((r.activated_day / r.registered) * 1000) / 10 : 0,
+    '注册→首付率(当天)': r.registered > 0 ? Math.round((r.paid_day / r.registered) * 10000) / 100 : 0,
   }))
 
-  // ---- 用量总览派生 ----
+  const rangeRegKeyRate =
+    totalRegistered > 0 ? (totalActivatedDay / totalRegistered) * 100 : null
+  const rangeRegPayRate =
+    totalRegistered > 0 ? (totalPaidDay / totalRegistered) * 100 : null
+
+  // 区间汇总漏斗（当天口径，辅助）
+  const funnelSummary = [
+    { name: '注册(合计)', value: totals.registered, color: '#f5b942' },
+    { name: '激活(当天)', value: totals.activated_day, color: '#2f6bff' },
+    { name: '首付(当天)', value: totals.paid_day, color: '#0f9d58' },
+  ]
+  const maxStep = Math.max(1, funnelSummary[0]?.value ?? 1)
+
+  // ---------- ② 用量总览派生 ----------
   const combo = dayRows.map((r) => ({ date: r.date, calls: r.calls, tokens: tokensOf(r) }))
   const kpiOverview: KpiDatum[] = today
     ? [
         { k: t('Calls (today)'), v: num(today.calls), d: `区间合计 ${num(totalCalls)}` },
         { k: t('Tokens (today)'), v: fmtBig(tokensOf(today)), d: `区间合计 ${fmtBig(totalTokens)}` },
-        { k: t('Registered (today cohort)'), v: num(today.registered), d: `区间合计 ${num(totalRegistered)}` },
-        { k: t('Activated (7d cohort)'), v: num(today.activated_c7), d: `区间(已完成队列) ${num(act7Sum)} 人` },
-        { k: t('First Paid (14d reg cohort)'), v: num(today.paid_reg_c14), d: `区间(已完成队列) ${num(pay14RegSum)} 人` },
+        { k: t('Registered (today)'), v: num(today.registered), d: `区间合计 ${num(totalRegistered)}` },
+        { k: t('Activated (same-day, today)'), v: num(today.activated_day), d: `区间合计 ${num(totalActivatedDay)} 人` },
+        { k: t('First Paid (same-day, today)'), v: num(today.paid_day), d: `区间合计 ${num(totalPaidDay)} 人` },
       ]
     : []
 
@@ -257,7 +238,6 @@ export function UsageReport() {
     .slice(0, 8)
     .map(([name, v]) => ({ name, tokens: v.tokens, calls: v.calls }))
 
-  // 模型堆叠（tokens / calls 两套，按 modelMetric 切换）
   const modelDates = [...new Set(modelRows.map((m) => m.date))].sort()
   const stackedSerie = modelDates.map((date) => {
     const row: Record<string, number | string> = { date }
@@ -293,7 +273,6 @@ export function UsageReport() {
   const metricSuffix = modelMetric === 'tokens' ? '_t' : '_c'
   const metricLabel = modelMetric === 'tokens' ? t('Tokens') : t('Calls')
 
-  // Top5 趋势（按 tokens 选 Top4）
   const top4 = topRankData.slice(0, 4).map((x) => x.name)
   const top5Serie = modelDates.map((date) => {
     const row: Record<string, string | number> = { date }
@@ -304,7 +283,6 @@ export function UsageReport() {
     return row
   })
 
-  // 今日模型占比（donut）
   const lastDate = dayRows.length > 0 ? dayRows[dayRows.length - 1].date : ''
   const donutData = topRankData
     .filter(() => Boolean(lastDate))
@@ -313,14 +291,6 @@ export function UsageReport() {
       return { name: x.name, value: hit ? tokensOf(hit) : 0 }
     })
     .filter((x) => x.value > 0)
-
-  // 区间汇总漏斗（辅助；全部走注册队列已完成窗口，避免跨窗假高值）
-  const funnelSummary = [
-    { name: t('Registered (completed 7d cohorts)'), value: reg7Sum, color: '#f5b942', note: '' },
-    { name: t('Activated (7d cohort, people)'), value: act7Sum, color: '#2f6bff', note: `注册→激活(7日队列) ${funnelRates.regKey}` },
-    { name: t('First Paid (14d reg cohort, people)'), value: pay14RegSum, color: '#0f9d58', note: `注册→首付(14日队列) ${funnelRates.regPay}` },
-  ]
-  const maxStep = Math.max(1, funnelSummary[0]?.value ?? 1)
 
   // 滚动锚点高亮
   useEffect(() => {
@@ -371,7 +341,6 @@ export function UsageReport() {
           </div>
         ) : (
           <div className='space-y-8'>
-            {/* 顶部锚点导航（整屏滚动） */}
             <div className='bg-muted/60 flex flex-wrap gap-1 rounded-lg p-1'>
               {[
                 { id: 'funnel', label: '① 漏斗' },
@@ -389,18 +358,22 @@ export function UsageReport() {
               ))}
             </div>
 
-            {/* ================= ① 漏斗 ================= */}
+            {/* ============ ① 漏斗（当天口径） ============ */}
             <div className='space-y-4'>
-              <SectionTitle no={1} title={t('Funnel (Register → Key → First Paid)')} hint={t('注册=enabled+verified；激活=首次建Key(人)；单位=人')} />
+              <SectionTitle
+                id='funnel'
+                no={1}
+                title={t('Funnel (same-day, people)')}
+                hint={t('注册=enabled+verified；激活=当天注册者当天首建Key(人)；首付=当天注册者当天首付(人)——C端当天口径')}
+              />
               <KpiGrid items={kpiFunnel} />
 
-              {/* 每日明细表 */}
               <Card>
                 <CardHeader>
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Daily Detail')}
                     <span className='text-muted-foreground text-xs font-normal'>
-                      {t('漏斗三列=当日注册队列口径(人)：激活≤注册、首付≤注册；近 7/14 天队列未完显示⏳；金额为当日实收')}
+                      {t('激活/首付列 = 该日注册的人中当天转化的(人)，恒 ≤ 注册；金额为当日实收；今日为进行中数据')}
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -410,8 +383,8 @@ export function UsageReport() {
                       <TableRow>
                         <TableHead>{t('Date')}</TableHead>
                         <TableHead className='text-right'>{t('Registered')}</TableHead>
-                        <TableHead className='text-right'>{t('Activated (7d cohort)')}</TableHead>
-                        <TableHead className='text-right'>{t('First Paid (14d cohort)')}</TableHead>
+                        <TableHead className='text-right'>{t('Activated (same-day)')}</TableHead>
+                        <TableHead className='text-right'>{t('First Paid (same-day)')}</TableHead>
                         <TableHead className='text-right'>{t('Paid Amount $')}</TableHead>
                         <TableHead className='text-right'>{t('Calls')}</TableHead>
                         <TableHead className='text-right'>{t('Tokens')}</TableHead>
@@ -422,14 +395,8 @@ export function UsageReport() {
                         <TableRow key={r.date} className={idx === dayRows.length - 1 ? 'bg-accent/40 font-semibold' : ''}>
                           <TableCell>{r.date}</TableCell>
                           <TableCell className='text-right'>{num(r.registered)}</TableCell>
-                          <TableCell className='text-right'>
-                            {num(r.activated_c7)}
-                            {idx >= completed7 && <span className='text-muted-foreground ml-1 text-xs'>⏳</span>}
-                          </TableCell>
-                          <TableCell className='text-right'>
-                            {num(r.paid_reg_c14)}
-                            {idx >= completed14 && <span className='text-muted-foreground ml-1 text-xs'>⏳</span>}
-                          </TableCell>
+                          <TableCell className='text-right'>{num(r.activated_day)}</TableCell>
+                          <TableCell className='text-right'>{num(r.paid_day)}</TableCell>
                           <TableCell className='text-right'>{usd(r.paid_usd)}</TableCell>
                           <TableCell className='text-right'>{num(r.calls)}</TableCell>
                           <TableCell className='text-right'>{fmtBig(tokensOf(r))}</TableCell>
@@ -438,8 +405,8 @@ export function UsageReport() {
                       <TableRow className='border-t-2 font-bold'>
                         <TableCell>{t('Total')} ({dayRows.length}天)</TableCell>
                         <TableCell className='text-right'>{num(totals.registered)}</TableCell>
-                        <TableCell className='text-right'>{num(totals.activated)}</TableCell>
-                        <TableCell className='text-right'>{num(totals.firstPaid)}</TableCell>
+                        <TableCell className='text-right'>{num(totals.activated_day)}</TableCell>
+                        <TableCell className='text-right'>{num(totals.paid_day)}</TableCell>
                         <TableCell className='text-right'>{usd(totals.paid_usd)}</TableCell>
                         <TableCell className='text-right'>{num(totals.calls)}</TableCell>
                         <TableCell className='text-right'>{fmtBig(totals.tokens)}</TableCell>
@@ -449,10 +416,10 @@ export function UsageReport() {
                 </CardContent>
               </Card>
 
-              {/* 双Y轴：注册/激活/首付柱（注册队列口径）+ 付费金额线 */}
+              {/* 双 Y 轴：注册/激活/首付柱（当天，人）+ 付费金额线 */}
               <Card>
                 <CardHeader>
-                  <CardTitle>{t('Daily Funnel — cohort people bars (left) + paid amount line (right)')}</CardTitle>
+                  <CardTitle>{t('Daily Funnel — same-day people bars (left) + paid amount line (right)')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width='100%' height={330}>
@@ -463,24 +430,24 @@ export function UsageReport() {
                       <YAxis yAxisId='usd' orientation='right' tick={{ fontSize: 11 }} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
                       <Tooltip />
                       <Legend />
-                      <Bar yAxisId='people' dataKey='registered' name={t('Registered (cohort)')} fill='#f5b942' barSize={10} />
-                      <Bar yAxisId='people' dataKey='activated_c7' name={t('Activated (7d cohort)')} fill='#2f6bff' barSize={10} />
-                      <Bar yAxisId='people' dataKey='paid_reg_c14' name={t('First Paid (14d cohort)')} fill='#0f9d58' barSize={10} />
+                      <Bar yAxisId='people' dataKey='registered' name={t('Registered')} fill='#f5b942' barSize={10} />
+                      <Bar yAxisId='people' dataKey='activated_day' name={t('Activated (same-day)')} fill='#2f6bff' barSize={10} />
+                      <Bar yAxisId='people' dataKey='paid_day' name={t('First Paid (same-day)')} fill='#0f9d58' barSize={10} />
                       <Line yAxisId='usd' type='monotone' dataKey='paid_usd' name={t('Paid Amount $')} stroke='#9c36b5' strokeDasharray='6 3' dot={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
-              {/* 转化率趋势（队列）+ 区间汇总漏斗 */}
+              {/* 转化率趋势（当天口径，柱状图）+ 区间汇总漏斗 */}
               <div className='grid gap-6 xl:grid-cols-2'>
                 <Card>
                   <CardHeader>
-                    <CardTitle>{t('Conversion Trend (cohort, people)')}</CardTitle>
+                    <CardTitle>{t('Same-day Conversion Trend (bars)')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className='text-muted-foreground mb-2 text-xs'>
-                      {t('单位=人；注册→激活率(7日队列)与激活→首付率(14日队列)，近 7/14 天队列未到期，柱末段留空。')}
+                      {t('单位=人；注册→激活率(当天)=当天激活÷注册；注册→首付率(当天)=当天首付÷注册；今天为进行中。')}
                     </p>
                     <ResponsiveContainer width='100%' height={230}>
                       <BarChart data={convSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -489,8 +456,8 @@ export function UsageReport() {
                         <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
                         <Tooltip formatter={(value: unknown) => (value == null ? '' : `${String(value)}%`)} />
                         <Legend />
-                        <Bar dataKey='注册→激活率(7日队列)' name={t('注册→激活率(7日队列)')} fill='#2f6bff' radius={[3, 3, 0, 0]} />
-                        <Bar dataKey='激活→首付率(14日队列)' name={t('激活→首付率(14日队列)')} fill='#0f9d58' radius={[3, 3, 0, 0]} />
+                        <Bar dataKey='注册→激活率(当天)' name={t('注册→激活率(当天)')} fill='#2f6bff' radius={[3, 3, 0, 0]} />
+                        <Bar dataKey='注册→首付率(当天)' name={t('注册→首付率(当天)')} fill='#0f9d58' radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -498,16 +465,14 @@ export function UsageReport() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>{t('Range Funnel Summary (auxiliary)')}</CardTitle>
+                    <CardTitle>{t('Range Funnel Summary (same-day, auxiliary)')}</CardTitle>
                   </CardHeader>
                   <CardContent className='space-y-4'>
                     {funnelSummary.map((s) => (
                       <div key={s.name}>
                         <div className='mb-1 flex items-center justify-between text-xs'>
                           <span className='font-semibold'>{s.name}</span>
-                          <span className='text-muted-foreground'>
-                            {num(s.value)} {s.note ? `· ${s.note}` : ''}
-                          </span>
+                          <span className='text-muted-foreground'>{num(s.value)}</span>
                         </div>
                         <div className='bg-muted h-5 w-full overflow-hidden rounded'>
                           <div
@@ -520,19 +485,21 @@ export function UsageReport() {
                       </div>
                     ))}
                     <p className='text-muted-foreground text-xs'>
-                      {t('转化率取已完成队列口径（7/14日），恒 ≤100%；宽度按区间事件数示意。')}
+                      {t('区间(当天口径)：注册→激活率')} {rangeRegKeyRate == null ? '-' : rangeRegKeyRate.toFixed(2)}%
+                      {' · '}
+                      {t('注册→首付率')} {rangeRegPayRate == null ? '-' : rangeRegPayRate.toFixed(3)}%
                     </p>
                   </CardContent>
                 </Card>
               </div>
             </div>
 
-            {/* ================= ② 用量总览 ================= */}
+            {/* ============ ② 用量总览 ============ */}
             <div className='space-y-4'>
-              <SectionTitle no={2} title={t('Usage Overview')} hint={t('今日关键量 + 每日总量趋势 + 模型构成')} />
+              <SectionTitle id='overview' no={2} title={t('Usage Overview')} hint={t('今日关键量 + 每日总量趋势 + 模型构成')} />
               <KpiGrid items={kpiOverview} />
-              <div className='note-banner rounded-md bg-blue-50 px-3 py-2 text-xs leading-6 text-blue-900'>
-                📌 {t('纯用户侧口径：只统计用户实际调用（次数/Tokens）与转化漏斗；成本未落地，可用 CSV 导出按外部价目离线核算。')}
+              <div className='rounded-md bg-blue-50 px-3 py-2 text-xs leading-6 text-blue-900'>
+                📌 {t('纯用户侧口径：只统计用户实际调用（次数/Tokens）与当天漏斗转化；成本未落地，可用 CSV 导出按外部价目离线核算。')}
               </div>
 
               <Card>
@@ -598,9 +565,9 @@ export function UsageReport() {
               </div>
             </div>
 
-            {/* ================= ③ 模型用量 ================= */}
+            {/* ============ ③ 模型用量 ============ */}
             <div className='space-y-4'>
-              <SectionTitle no={3} title={t('Model Usage')} hint={t('各模型每日规模与消长 + 汇总 + CSV 导出')} />
+              <SectionTitle id='models' no={3} title={t('Model Usage')} hint={t('各模型每日规模与消长 + 汇总 + CSV 导出')} />
               <Card>
                 <CardHeader>
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
@@ -640,7 +607,6 @@ export function UsageReport() {
                 </CardContent>
               </Card>
 
-              {/* 区间模型汇总 + CSV */}
               <Card>
                 <CardHeader>
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
@@ -691,7 +657,6 @@ export function UsageReport() {
                 </CardContent>
               </Card>
 
-              {/* Top 模型日趋势 */}
               <Card>
                 <CardHeader>
                   <CardTitle>{t('Top Models Daily Trend (tokens)')}</CardTitle>

@@ -20,14 +20,16 @@ package model
 type UsageReportDay struct {
 	Date         string  `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
 	Registered   int     `json:"registered"`
-	ActivatedKey int     `json:"activated_key"` // 当日首次建 Key 的去重用户数（1 人多 Key 只算 1）
-	FirstPaid    int     `json:"first_paid"`    // 当日首次付费的去重用户数
+	ActivatedKey int     `json:"activated_key"` // 当日首次建 Key 的去重用户数（1 人多 Key 只算 1；事件口径）
+	FirstPaid    int     `json:"first_paid"`    // 当日首次付费的去重用户数（事件口径）
 	PaidUSD      float64 `json:"paid_usd" gorm:"type:decimal(14,2);default:0"`
-	// Cohort funnel fields, people-counted, subsets of their row denominators
-	// so a funnel column can never exceed its previous stage within a row:
-	//   ActivatedC7: 该日注册队列中注册后 7 日内首次建 Key 的人数（⊆ Registered）
-	//   PaidC14:     该日建 Key 队列中 14 日内首次付费的人数（⊆ ActivatedKey）
-	//   PaidRegC14:  该日注册队列中注册后 14 日内首次付费的人数（⊆ Registered）
+	// 当天口径（C 端快进快出，主口径；⊆ Registered）：
+	//   ActivatedDay: 该日注册的人中，注册当天即首次建 Key 的人数
+	//   PaidDay:      该日注册的人中，注册当天即首次付费的人数
+	ActivatedDay int `json:"activated_day"`
+	PaidDay      int `json:"paid_day"`
+	// 长窗辅助字段（人；未用于主表，保留作分析）：
+	//   ActivatedC7 / PaidRegC14 / PaidC14 …
 	ActivatedC7      int   `json:"activated_c7"`
 	PaidC14          int   `json:"paid_c14"`
 	PaidRegC14       int   `json:"paid_reg_c14"`
