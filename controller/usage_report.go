@@ -37,10 +37,6 @@ func GetUsageReport(c *gin.Context) {
 	if days > usageReportMaxDays {
 		days = usageReportMaxDays
 	}
-	if err := service.EnsureUsageReportRange(days); err != nil {
-		common.ApiError(c, err)
-		return
-	}
 
 	// Build [from..to] date range (inclusive) around today (UTC+0).
 	now := time.Now().UTC()
@@ -95,7 +91,7 @@ func GetUsageReport(c *gin.Context) {
 		"data": gin.H{
 			"days":    dayRows,
 			"models":  modelRows,
-			"filling": len(dayRows) < days,
+			"filling": service.UsageReportFillRunning(),
 		},
 	})
 }

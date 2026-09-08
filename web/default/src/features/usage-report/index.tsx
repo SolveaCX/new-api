@@ -144,7 +144,6 @@ export function UsageReport() {
   const [days, setDays] = useState(30)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
-  const [fillPoll, setFillPoll] = useState(0)
   const { data: res, isLoading, refetch } = useQuery({
     queryKey: usageReportQueryKeys.report(days),
     queryFn: () => getUsageReport(days),
@@ -325,15 +324,14 @@ export function UsageReport() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [dayRows.length])
 
-  // 后台回填期间每 4s 自动刷新一次（最多 ~2 分钟）；完成后自然停止。
+  // 后台回填期间每 4s 自动刷新，直到服务端返回 filling=false（无次数上限）。
   useEffect(() => {
-    if (!filling || fillPoll >= 30) return
+    if (!filling) return
     const id = setTimeout(() => {
-      setFillPoll((n) => n + 1)
       void refetch()
     }, 4000)
     return () => clearTimeout(id)
-  }, [filling, fillPoll, refetch])
+  }, [filling, refetch])
 
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
