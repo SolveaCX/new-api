@@ -23,13 +23,14 @@ type UsageReportDay struct {
 	ActivatedKey int     `json:"activated_key"` // 当日首次建 Key 的去重用户数（1 人多 Key 只算 1）
 	FirstPaid    int     `json:"first_paid"`    // 当日首次付费的去重用户数
 	PaidUSD      float64 `json:"paid_usd" gorm:"type:decimal(14,2);default:0"`
-	// Cohort funnel fields, people-counted, only meaningful once the cohort
-	// window has elapsed (front-end hides the most recent 7/14 days):
-	//   ActivatedC7: 该日注册用户中，注册后 7 日内首次建 Key 的人数（reg->key）。
-	//   PaidC14:     该日首次建 Key 的用户中，建 Key 后 14 日内首次付费的人数
-	//                 (key->pay)。分母 = ActivatedKey（同日 cohort）。
+	// Cohort funnel fields, people-counted, subsets of their row denominators
+	// so a funnel column can never exceed its previous stage within a row:
+	//   ActivatedC7: 该日注册队列中注册后 7 日内首次建 Key 的人数（⊆ Registered）
+	//   PaidC14:     该日建 Key 队列中 14 日内首次付费的人数（⊆ ActivatedKey）
+	//   PaidRegC14:  该日注册队列中注册后 14 日内首次付费的人数（⊆ Registered）
 	ActivatedC7      int   `json:"activated_c7"`
 	PaidC14          int   `json:"paid_c14"`
+	PaidRegC14       int   `json:"paid_reg_c14"`
 	Calls            int64 `json:"calls"`
 	PromptTokens     int64 `json:"prompt_tokens"`
 	CompletionTokens int64 `json:"completion_tokens"`

@@ -172,43 +172,52 @@ export function UsageReport() {
           completedRows7.reduce((a, r) => a + r.registered, 0)) *
         100
       : null
-  const keyPayRate =
-    completedRows14.reduce((a, r) => a + r.activated_key, 0) > 0
-      ? (completedRows14.reduce((a, r) => a + r.paid_c14, 0) /
-          completedRows14.reduce((a, r) => a + r.activated_key, 0)) *
+  const regPayRate =
+    completedRows14.reduce((a, r) => a + r.registered, 0) > 0
+      ? (completedRows14.reduce((a, r) => a + r.paid_reg_c14, 0) /
+          completedRows14.reduce((a, r) => a + r.registered, 0)) *
         100
       : null
-  const funnelRates = { regKey: fmtPct(regKeyRate), keyPay: fmtPct(keyPayRate) }
+  const funnelRates = {
+    regKey: fmtPct(regKeyRate),
+    regPay: fmtPct(regPayRate),
+  }
 
-  // ---- funnel KPI（人）----
+  // ---- funnel KPI（人，注册队列口径，激活/首付列 ≤ 注册列）----
+  const cohortPending7 = today && completed7 < dayRows.length - 1
+  const cohortPending14 = today && completed14 < dayRows.length - 1
   const kpiFunnel: KpiDatum[] = today
     ? [
-        { k: t('Registered'), v: num(today.registered), d: `环比 ${deltaPeople(today.registered, yesterday?.registered)}` },
-        { k: t('Activated (Key)'), v: num(today.activated_key), d: `环比 ${deltaPeople(today.activated_key, yesterday?.activated_key)}` },
-        { k: t('First Paid'), v: num(today.first_paid), d: `环比 ${deltaPeople(today.first_paid, yesterday?.first_paid)}` },
-        { k: t('Paid Amount (Today)'), v: usd(today.paid_usd), d: `环比 ${deltaUsd(today.paid_usd, yesterday?.paid_usd)}` },
+        { k: t('Registered (today cohort)'), v: num(today.registered), d: `环比 ${deltaPeople(today.registered, yesterday?.registered)}` },
+        { k: t('Activated (7d cohort)'), v: num(today.activated_c7), d: `注册后7日内建Key·${cohortPending7 ? '队列未完' : '已完成'}` },
+        { k: t('First Paid (14d cohort)'), v: num(today.paid_reg_c14), d: `注册后14日内首付·${cohortPending14 ? '队列未完' : '已完成'}` },
+        { k: t('Paid Amount (today)'), v: usd(today.paid_usd), d: `当日实收 环比 ${deltaUsd(today.paid_usd, yesterday?.paid_usd)}` },
         {
           k: t('Reg→Activate 7d cohort'),
           v: funnelRates.regKey,
           d: t('completed cohorts only'),
         },
         {
-          k: t('Act→Pay 14d cohort'),
-          v: funnelRates.keyPay,
+          k: t('Reg→Pay 14d cohort'),
+          v: funnelRates.regPay,
           d: t('completed cohorts only'),
         },
       ]
     : []
 
-  // 每日明细表合计
+  // 每日明细表合计（漏斗人数列用注册队列口径的“到窗口”累计）
   const totals = {
     registered: totalRegistered,
-    activated_key: sumDays((r) => r.activated_key),
-    first_paid: sumDays((r) => r.first_paid),
+    activated: sumDays((r) => r.activated_c7),
+    firstPaid: sumDays((r) => r.paid_reg_c14),
     paid_usd: sumDays((r) => r.paid_usd),
     calls: totalCalls,
     tokens: totalTokens,
   }
+  // 已完成队列的累计（用于 KPI/汇总口径）
+  const act7Sum = completedRows7.reduce((a, r) => a + r.activated_c7, 0)
+  const pay14RegSum = completedRows14.reduce((a, r) => a + r.paid_reg_c14, 0)
+  const reg7Sum = completedRows7.reduce((a, r) => a + r.registered, 0)
 
   // 转化趋势（队列，人；未到期置 null）
   const convSerie = dayRows.map((r, i) => ({
@@ -225,9 +234,9 @@ export function UsageReport() {
     ? [
         { k: t('Calls (today)'), v: num(today.calls), d: `区间合计 ${num(totalCalls)}` },
         { k: t('Tokens (today)'), v: fmtBig(tokensOf(today)), d: `区间合计 ${fmtBig(totalTokens)}` },
-        { k: t('Registered (today)'), v: num(today.registered), d: `区间合计 ${num(totalRegistered)}` },
-        { k: t('Activated Key (today)'), v: num(today.activated_key), d: `区间 ${num(sumDays((r) => r.activated_key))} 人` },
-        { k: t('First Paid (today)'), v: num(today.first_paid), d: `区间 ${num(sumDays((r) => r.first_paid))} 人` },
+        { k: t('Registered (today cohort)'), v: num(today.registered), d: `区间合计 ${num(totalRegistered)}` },
+        { k: t('Activated (7d cohort)'), v: num(today.activated_c7), d: `区间(已完成队列) ${num(act7Sum)} 人` },
+        { k: t('First Paid (14d reg cohort)'), v: num(today.paid_reg_c14), d: `区间(已完成队列) ${num(pay14RegSum)} 人` },
       ]
     : []
 
@@ -305,11 +314,11 @@ export function UsageReport() {
     })
     .filter((x) => x.value > 0)
 
-  // 区间汇总漏斗（辅助；转化率用队列口径，避免跨窗假高值）
+  // 区间汇总漏斗（辅助；全部走注册队列已完成窗口，避免跨窗假高值）
   const funnelSummary = [
-    { name: t('Registered'), value: totals.registered, color: '#f5b942', note: '' },
-    { name: t('Activated (Key)'), value: totals.activated_key, color: '#2f6bff', note: `注册→激活(7日队列) ${funnelRates.regKey}` },
-    { name: t('First Paid'), value: totals.first_paid, color: '#0f9d58', note: `激活→首付(14日队列) ${funnelRates.keyPay}` },
+    { name: t('Registered (completed 7d cohorts)'), value: reg7Sum, color: '#f5b942', note: '' },
+    { name: t('Activated (7d cohort, people)'), value: act7Sum, color: '#2f6bff', note: `注册→激活(7日队列) ${funnelRates.regKey}` },
+    { name: t('First Paid (14d reg cohort, people)'), value: pay14RegSum, color: '#0f9d58', note: `注册→首付(14日队列) ${funnelRates.regPay}` },
   ]
   const maxStep = Math.max(1, funnelSummary[0]?.value ?? 1)
 
@@ -391,7 +400,7 @@ export function UsageReport() {
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Daily Detail')}
                     <span className='text-muted-foreground text-xs font-normal'>
-                      {t('UTC+0，末行=今日；金额=当日订单实收')}
+                      {t('漏斗三列=当日注册队列口径(人)：激活≤注册、首付≤注册；近 7/14 天队列未完显示⏳；金额为当日实收')}
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -401,8 +410,8 @@ export function UsageReport() {
                       <TableRow>
                         <TableHead>{t('Date')}</TableHead>
                         <TableHead className='text-right'>{t('Registered')}</TableHead>
-                        <TableHead className='text-right'>{t('Activated (Key)')}</TableHead>
-                        <TableHead className='text-right'>{t('First Paid')}</TableHead>
+                        <TableHead className='text-right'>{t('Activated (7d cohort)')}</TableHead>
+                        <TableHead className='text-right'>{t('First Paid (14d cohort)')}</TableHead>
                         <TableHead className='text-right'>{t('Paid Amount $')}</TableHead>
                         <TableHead className='text-right'>{t('Calls')}</TableHead>
                         <TableHead className='text-right'>{t('Tokens')}</TableHead>
@@ -413,8 +422,14 @@ export function UsageReport() {
                         <TableRow key={r.date} className={idx === dayRows.length - 1 ? 'bg-accent/40 font-semibold' : ''}>
                           <TableCell>{r.date}</TableCell>
                           <TableCell className='text-right'>{num(r.registered)}</TableCell>
-                          <TableCell className='text-right'>{num(r.activated_key)}</TableCell>
-                          <TableCell className='text-right'>{num(r.first_paid)}</TableCell>
+                          <TableCell className='text-right'>
+                            {num(r.activated_c7)}
+                            {idx >= completed7 && <span className='text-muted-foreground ml-1 text-xs'>⏳</span>}
+                          </TableCell>
+                          <TableCell className='text-right'>
+                            {num(r.paid_reg_c14)}
+                            {idx >= completed14 && <span className='text-muted-foreground ml-1 text-xs'>⏳</span>}
+                          </TableCell>
                           <TableCell className='text-right'>{usd(r.paid_usd)}</TableCell>
                           <TableCell className='text-right'>{num(r.calls)}</TableCell>
                           <TableCell className='text-right'>{fmtBig(tokensOf(r))}</TableCell>
@@ -423,8 +438,8 @@ export function UsageReport() {
                       <TableRow className='border-t-2 font-bold'>
                         <TableCell>{t('Total')} ({dayRows.length}天)</TableCell>
                         <TableCell className='text-right'>{num(totals.registered)}</TableCell>
-                        <TableCell className='text-right'>{num(totals.activated_key)}</TableCell>
-                        <TableCell className='text-right'>{num(totals.first_paid)}</TableCell>
+                        <TableCell className='text-right'>{num(totals.activated)}</TableCell>
+                        <TableCell className='text-right'>{num(totals.firstPaid)}</TableCell>
                         <TableCell className='text-right'>{usd(totals.paid_usd)}</TableCell>
                         <TableCell className='text-right'>{num(totals.calls)}</TableCell>
                         <TableCell className='text-right'>{fmtBig(totals.tokens)}</TableCell>
@@ -434,10 +449,10 @@ export function UsageReport() {
                 </CardContent>
               </Card>
 
-              {/* 双Y轴：注册/激活/首付柱 + 付费金额线 */}
+              {/* 双Y轴：注册/激活/首付柱（注册队列口径）+ 付费金额线 */}
               <Card>
                 <CardHeader>
-                  <CardTitle>{t('Daily Funnel — bars (people, left) + paid amount line (right)')}</CardTitle>
+                  <CardTitle>{t('Daily Funnel — cohort people bars (left) + paid amount line (right)')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width='100%' height={330}>
@@ -448,9 +463,9 @@ export function UsageReport() {
                       <YAxis yAxisId='usd' orientation='right' tick={{ fontSize: 11 }} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
                       <Tooltip />
                       <Legend />
-                      <Bar yAxisId='people' dataKey='registered' name={t('Registered')} fill='#f5b942' barSize={10} />
-                      <Bar yAxisId='people' dataKey='activated_key' name={t('Activated (Key)')} fill='#2f6bff' barSize={10} />
-                      <Bar yAxisId='people' dataKey='first_paid' name={t('First Paid')} fill='#0f9d58' barSize={10} />
+                      <Bar yAxisId='people' dataKey='registered' name={t('Registered (cohort)')} fill='#f5b942' barSize={10} />
+                      <Bar yAxisId='people' dataKey='activated_c7' name={t('Activated (7d cohort)')} fill='#2f6bff' barSize={10} />
+                      <Bar yAxisId='people' dataKey='paid_reg_c14' name={t('First Paid (14d cohort)')} fill='#0f9d58' barSize={10} />
                       <Line yAxisId='usd' type='monotone' dataKey='paid_usd' name={t('Paid Amount $')} stroke='#9c36b5' strokeDasharray='6 3' dot={false} />
                     </ComposedChart>
                   </ResponsiveContainer>
