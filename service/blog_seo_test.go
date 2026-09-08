@@ -95,6 +95,25 @@ func TestBuildNonCanonicalRobotsTxtDisallowsAll(t *testing.T) {
 	}
 }
 
+func TestBuildConsoleRobotsTxtAllowsHTMLAndBlocksBackendPaths(t *testing.T) {
+	robots := BuildConsoleRobotsTxt()
+	for _, expected := range []string{
+		"User-agent: *",
+		"Allow: /",
+		"Disallow: /api/",
+		"Disallow: /v1/",
+		"Disallow: /assets/",
+		"Sitemap: https://flatkey.ai/sitemap.xml",
+	} {
+		if !strings.Contains(robots, expected) {
+			t.Fatalf("expected console robots.txt to contain %q, got:\n%s", expected, robots)
+		}
+	}
+	if strings.Contains(robots, "Disallow: /\n") {
+		t.Fatalf("expected console robots.txt to keep HTML routes crawlable, got:\n%s", robots)
+	}
+}
+
 func TestBuildLLMsTxtIncludesBlogResources(t *testing.T) {
 	llms := BuildLLMsTxt("https://flatkey.ai/", []BlogCategory{
 		{Name: "Gateway Comparisons", Slug: "gateway-comparisons"},
