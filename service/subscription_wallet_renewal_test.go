@@ -69,6 +69,35 @@ func seedWalletRenewalContract(t *testing.T, userID int, quota int, plan model.S
 	return contract, entitlement
 }
 
+func seedWalletRenewalSourceOrder(t *testing.T, contract model.UserSubscriptionContract, entitlement *model.UserSubscription, plan model.SubscriptionPlan) model.SubscriptionOrder {
+	t.Helper()
+	tradeNo := fmt.Sprintf("WALLETSOURCE%d", contract.Id)
+	grantKey := "prepaid:" + tradeNo
+	require.NoError(t, model.DB.Model(entitlement).Where("id = ?", entitlement.Id).Update("grant_key", grantKey).Error)
+	entitlement.GrantKey = &grantKey
+	planSnapshot, err := subscriptionPurchasePlanSnapshot(&plan)
+	require.NoError(t, err)
+	order := model.SubscriptionOrder{
+		UserId:          contract.UserId,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         tradeNo,
+		PaymentMethod:   model.PaymentMethodBalance,
+		PaymentProvider: model.PaymentProviderBalance,
+		Status:          common.TopUpStatusSuccess,
+		CreateTime:      entitlement.StartTime,
+		CompleteTime:    entitlement.StartTime,
+		PurchaseMonths:  1,
+		UnitPrice:       plan.PriceAmount,
+		PaymentCurrency: plan.Currency,
+		PlanSnapshot:    planSnapshot,
+		ProviderPayload: fmt.Sprintf("charged_quota=700;contract_id=%d", contract.Id),
+		RenewalSource:   model.SubscriptionRenewalSourceWallet,
+	}
+	require.NoError(t, model.DB.Create(&order).Error)
+	return order
+}
+
 func TestRenewWalletSubscriptionContractChargesCurrentOneMonthPlanAndExtendsOnce(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7801, 1, 7, 700)
@@ -180,11 +209,98 @@ func TestRenewWalletSubscriptionContractDoesNotPersistSuccessFactsWhenConditiona
 	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
 }
 
-func TestRenewWalletSubscriptionContractPausesWithoutExtendingWhenPlanUnavailable(t *testing.T) {
+func TestRenewWalletSubscriptionContractRenewsRetiredCurrentPlanWithEntitlementLimits(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
 	plan := insertPurchaseServicePlan(t, 7805, 1, 7, 700)
+	plan.UpgradeGroup = "legacy_group"
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("upgrade_group", plan.UpgradeGroup).Error)
 	periodEnd := common.GetTimestamp() - 15
-	contract, entitlement := seedWalletRenewalContract(t, 7905, 700, plan, periodEnd)
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7905, 700, plan, periodEnd)
+	seedWalletRenewalSourceOrder(t, contract, &oldEntitlement, plan)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", oldEntitlement.Id).Updates(map[string]interface{}{
+		"media_credits_total": plan.MediaCreditsMonthly,
+		"window_5h_amount":    plan.Window5hAmount,
+		"window_week_amount":  plan.WindowWeekAmount,
+		"upgrade_group":       plan.UpgradeGroup,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"enabled":               false,
+		"price_amount":          13,
+		"currency":              "EUR",
+		"allow_balance_pay":     false,
+		"total_amount":          1300,
+		"window_5h_amount":      0,
+		"window_week_amount":    0,
+		"media_credits_monthly": 99,
+		"upgrade_group":         "new_group",
+	}).Error)
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.True(t, result.Renewed)
+	require.Equal(t, int64(700), result.ChargedQuota)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionRenewalStatusEnabled, stored.RenewalStatus)
+	require.Equal(t, model.SubscriptionContractStatusActive, stored.Status)
+	require.NotEqual(t, oldEntitlement.Id, stored.CurrentEntitlementId)
+	var renewed model.UserSubscription
+	require.NoError(t, model.DB.First(&renewed, "id = ?", stored.CurrentEntitlementId).Error)
+	require.Equal(t, int64(700), renewed.AmountTotal)
+	require.Equal(t, int64(25), renewed.MediaCreditsTotal)
+	require.Equal(t, int64(50), *renewed.Window5hAmount)
+	require.Equal(t, int64(500), *renewed.WindowWeekAmount)
+	require.Equal(t, "legacy_group", renewed.UpgradeGroup)
+	var order model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&order, "id = ?", result.OrderID).Error)
+	require.Contains(t, order.PlanSnapshot, `"total_amount":700`)
+	require.Contains(t, order.PlanSnapshot, `"window_5h_amount":50`)
+	require.Contains(t, order.PlanSnapshot, `"window_week_amount":500`)
+	require.Contains(t, order.PlanSnapshot, `"media_credits_monthly":25`)
+	require.Contains(t, order.PlanSnapshot, `"upgrade_group":"legacy_group"`)
+	require.Contains(t, order.PlanSnapshot, `"price_amount":7`)
+	require.Contains(t, order.PlanSnapshot, `"currency":"USD"`)
+	require.Equal(t, float64(7), order.UnitPrice)
+	require.Equal(t, "USD", order.PaymentCurrency)
+	var ledger model.WalletLedgerEntry
+	require.NoError(t, model.DB.First(&ledger, "order_id = ?", result.OrderID).Error)
+	require.Equal(t, float64(7), ledger.MoneyAmount)
+}
+
+func TestRenewWalletSubscriptionContractRestoresLegacyNilWindowsFromSourceOrderSnapshot(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7821, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7921, 700, plan, periodEnd)
+	seedWalletRenewalSourceOrder(t, contract, &oldEntitlement, plan)
+	require.Nil(t, oldEntitlement.Window5hAmount)
+	require.Nil(t, oldEntitlement.WindowWeekAmount)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"enabled":            false,
+		"price_amount":       13,
+		"window_5h_amount":   0,
+		"window_week_amount": 0,
+	}).Error)
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.True(t, result.Renewed)
+	require.Equal(t, int64(700), result.ChargedQuota)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+	var renewed model.UserSubscription
+	require.NoError(t, model.DB.First(&renewed, "id = ?", stored.CurrentEntitlementId).Error)
+	require.Equal(t, int64(50), *renewed.Window5hAmount)
+	require.Equal(t, int64(500), *renewed.WindowWeekAmount)
+}
+
+func TestRenewWalletSubscriptionContractPausesRetiredPlanWithoutTrustedSourceOrder(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7822, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, entitlement := seedWalletRenewalContract(t, 7922, 700, plan, periodEnd)
 	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("enabled", false).Error)
 
 	result, err := RenewWalletSubscriptionContract(contract.Id)
@@ -194,10 +310,50 @@ func TestRenewWalletSubscriptionContractPausesWithoutExtendingWhenPlanUnavailabl
 	require.Equal(t, model.SubscriptionRenewalStatusPausedPlanUnavailable, result.PausedStatus)
 	var stored model.UserSubscriptionContract
 	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
-	require.Equal(t, model.SubscriptionRenewalStatusPausedPlanUnavailable, stored.RenewalStatus)
 	require.Equal(t, model.SubscriptionContractStatusEnded, stored.Status)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedPlanUnavailable, stored.RenewalStatus)
 	require.Equal(t, periodEnd, stored.CurrentPeriodEnd)
 	require.Equal(t, entitlement.Id, stored.CurrentEntitlementId)
+	var storedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&storedEntitlement, "id = ?", entitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
+}
+
+func TestRenewWalletSubscriptionContractRejectsRetiredPlanMismatchedWithCurrentEntitlement(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	currentPlan := insertPurchaseServicePlan(t, 7818, 1, 7, 700)
+	otherPlan := insertPurchaseServicePlan(t, 7819, 2, 9, 900)
+	periodEnd := common.GetTimestamp() - 15
+	contract, entitlement := seedWalletRenewalContract(t, 7918, 900, currentPlan, periodEnd)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", otherPlan.Id).Update("enabled", false).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Update("current_plan_id", otherPlan.Id).Error)
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.False(t, result.Renewed)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedPlanUnavailable, result.PausedStatus)
+	var orderCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", contract.UserId).Count(&orderCount).Error)
+	require.Zero(t, orderCount)
+	var ledgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ?", contract.UserId).Count(&ledgerCount).Error)
+	require.Zero(t, ledgerCount)
+	var storedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&storedEntitlement, "id = ?", entitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, storedEntitlement.Status)
+}
+
+func TestQuoteSubscriptionPurchaseStillRejectsRetiredPlan(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	plan := insertPurchaseServicePlan(t, 7820, 1, 7, 700)
+	insertPurchaseServiceUser(t, 7920, 700)
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("enabled", false).Error)
+
+	result, err := QuoteSubscriptionPurchase(purchaseBalanceCommand(7920, plan.Id, 1, "retired-plan-purchase"))
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "subscription plan is disabled")
 }
 
 func TestRunWalletSubscriptionRenewalOnceSkipsFuturePeriodsAndCatchesUpExpiredPeriods(t *testing.T) {

@@ -85,14 +85,15 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		if !walletContractIsRenewable(contract) {
 			return nil
 		}
-		plan, err := loadEnabledSubscriptionPlanTx(tx, contract.CurrentPlanId)
+		plan, err := loadWalletRenewalPlanTx(tx, &contract)
 		if err != nil {
+			common.SysLog(fmt.Sprintf("wallet renewal paused because plan facts are unavailable: contract_id=%d plan_id=%d error=%q", contract.Id, contract.CurrentPlanId, err.Error()))
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
 		}
 		if err := validateFlexiblePrepaidPlan(plan); err != nil {
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
 		}
-		if plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
+		if plan.Enabled && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
 		}
 		var user model.User
@@ -269,6 +270,155 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		}
 	}
 	return result, nil
+}
+
+func loadWalletRenewalPlanTx(tx *gorm.DB, contract *model.UserSubscriptionContract) (*model.SubscriptionPlan, error) {
+	if tx == nil || contract == nil || contract.CurrentPlanId <= 0 {
+		return nil, errors.New("wallet renewal contract facts are incomplete")
+	}
+	var plan model.SubscriptionPlan
+	if err := subscriptionCommandLock(tx).Where("id = ?", contract.CurrentPlanId).First(&plan).Error; err != nil {
+		return nil, err
+	}
+	plan.NormalizeDefaults()
+	if plan.Enabled {
+		if plan.PriceAmount < 0 {
+			return nil, errors.New("subscription plan price cannot be negative")
+		}
+		if plan.TierRank == nil || *plan.TierRank <= 0 {
+			return nil, errors.New("subscription plan tier rank is required")
+		}
+		return &plan, nil
+	}
+
+	var entitlement model.UserSubscription
+	if err := subscriptionCommandLock(tx).
+		Where("id = ? AND user_id = ? AND contract_id = ?", contract.CurrentEntitlementId, contract.UserId, contract.Id).
+		First(&entitlement).Error; err != nil {
+		return nil, err
+	}
+	if !walletRenewalCurrentEntitlementMatchesContract(&entitlement, contract) {
+		return nil, errors.New("disabled subscription plan is not the contract's current plan")
+	}
+
+	sourceSnapshot, err := loadWalletRenewalSourceSnapshotTx(tx, contract, &entitlement)
+	if err != nil {
+		return nil, err
+	}
+
+	// A retired plan is renewable only through its existing contract. Billing
+	// facts come from the exact order referenced by the current entitlement, while
+	// benefits come from the entitlement actually granted to the user. This keeps
+	// later catalog edits from changing either side of the existing contract.
+	plan.Title = sourceSnapshot.Title
+	plan.PriceAmount = sourceSnapshot.PriceAmount
+	plan.Currency = strings.ToUpper(strings.TrimSpace(sourceSnapshot.Currency))
+	plan.StripePriceId = strings.TrimSpace(sourceSnapshot.StripePriceID)
+	plan.DurationUnit = sourceSnapshot.DurationUnit
+	plan.DurationValue = sourceSnapshot.DurationValue
+	plan.QuotaResetPeriod = sourceSnapshot.QuotaResetPeriod
+	plan.TotalAmount = entitlement.AmountTotal
+	plan.MediaCreditsMonthly = entitlement.MediaCreditsTotal
+	if entitlement.Window5hAmount != nil {
+		plan.Window5hAmount = *entitlement.Window5hAmount
+	} else {
+		plan.Window5hAmount = sourceSnapshot.Window5hAmount
+	}
+	if entitlement.WindowWeekAmount != nil {
+		plan.WindowWeekAmount = *entitlement.WindowWeekAmount
+	} else {
+		plan.WindowWeekAmount = sourceSnapshot.WindowWeekAmount
+	}
+	plan.UpgradeGroup = entitlement.UpgradeGroup
+	return &plan, nil
+}
+
+func loadWalletRenewalSourceSnapshotTx(tx *gorm.DB, contract *model.UserSubscriptionContract, entitlement *model.UserSubscription) (purchasePlanSnapshot, error) {
+	if tx == nil || contract == nil || entitlement == nil || entitlement.GrantKey == nil {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source facts are incomplete")
+	}
+	grantKey := strings.TrimSpace(*entitlement.GrantKey)
+	tradeNo := ""
+	switch {
+	case strings.HasPrefix(grantKey, "prepaid:"):
+		tradeNo = strings.TrimSpace(strings.TrimPrefix(grantKey, "prepaid:"))
+	case grantKey == walletRenewalKey(contract.Id, entitlement.StartTime, entitlement.PlanId):
+		tradeNo = walletRenewalTradeNo(contract.Id, entitlement.StartTime, entitlement.PlanId)
+	}
+	if tradeNo == "" {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal entitlement does not identify a trusted source order")
+	}
+
+	var order model.SubscriptionOrder
+	if err := tx.Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	if order.UserId != contract.UserId || order.PlanId != contract.CurrentPlanId ||
+		order.PaymentMethod != model.PaymentMethodBalance || order.PaymentProvider != model.PaymentProviderBalance ||
+		order.RenewalSource != model.SubscriptionRenewalSourceWallet || order.Status != common.TopUpStatusSuccess ||
+		order.PurchaseMonths <= 0 || walletRenewalProviderPayloadValue(order.ProviderPayload, "contract_id") != fmt.Sprint(contract.Id) {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order facts do not match the current contract")
+	}
+	if strings.HasPrefix(grantKey, "subscription:renewal:") &&
+		walletRenewalProviderPayloadValue(order.ProviderPayload, "renewal_key") != grantKey {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order key does not match the current entitlement")
+	}
+
+	parsed, err := recurringPlanSnapshotFromOrder(&order)
+	if err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	if !parsed.Found {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order plan snapshot is missing")
+	}
+	var presence struct {
+		PriceAmount      *float64 `json:"price_amount"`
+		Currency         *string  `json:"currency"`
+		DurationUnit     *string  `json:"duration_unit"`
+		DurationValue    *int     `json:"duration_value"`
+		Window5hAmount   *int64   `json:"window_5h_amount"`
+		WindowWeekAmount *int64   `json:"window_week_amount"`
+	}
+	if err := common.Unmarshal([]byte(order.PlanSnapshot), &presence); err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	if presence.PriceAmount == nil || presence.Currency == nil || presence.DurationUnit == nil || presence.DurationValue == nil {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order billing snapshot is incomplete")
+	}
+	if entitlement.Window5hAmount == nil && presence.Window5hAmount == nil {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal 5h limit snapshot is missing")
+	}
+	if entitlement.WindowWeekAmount == nil && presence.WindowWeekAmount == nil {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal weekly limit snapshot is missing")
+	}
+
+	snapshotCurrency := strings.ToUpper(strings.TrimSpace(parsed.Snapshot.Currency))
+	orderCurrency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+	if snapshotCurrency == "" || snapshotCurrency != orderCurrency || order.UnitPrice < 0 {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order currency or price is invalid")
+	}
+	snapshotMinor, err := stripeMinorUnitAmountForSubscription(parsed.Snapshot.PriceAmount, snapshotCurrency)
+	if err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	orderMinor, err := stripeMinorUnitAmountForSubscription(order.UnitPrice, orderCurrency)
+	if err != nil {
+		return purchasePlanSnapshot{}, err
+	}
+	if snapshotMinor != orderMinor {
+		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order price does not match its plan snapshot")
+	}
+	return parsed.Snapshot, nil
+}
+
+func walletRenewalProviderPayloadValue(payload string, wantedKey string) string {
+	for _, part := range strings.Split(payload, ";") {
+		key, value, ok := strings.Cut(part, "=")
+		if ok && strings.TrimSpace(key) == wantedKey {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*WalletSubscriptionRenewalResult, error) {
