@@ -224,6 +224,19 @@ function getPlanAudience(title: string, t: Translate): string {
   }
 }
 
+function getPlanTopUpBonus(title: string, t: Translate): string {
+  switch (getPlanTier(title)) {
+    case 'go':
+      return t('Top up $10, get $3 bonus')
+    case 'pro':
+      return t('Top up $30, get $15 bonus')
+    case 'max':
+      return t('Top up $100, get $70 bonus')
+    default:
+      return ''
+  }
+}
+
 function getActionLabel(
   action: ReturnType<typeof getFlexiblePlanAction>,
   t: Translate
@@ -350,6 +363,11 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
   const [selfData, setSelfData] = useState<WalletSelfSubscriptionData>(
     () => props.initialSelfData ?? normalizeSelfSubscriptionData(undefined)
   )
+  const [subscriptionHistoryResolved, setSubscriptionHistoryResolved] =
+    useState(
+      () =>
+        props.initialLoading === false || props.initialSelfData !== undefined
+    )
   const [loading, setLoading] = useState(props.initialLoading ?? true)
   const [purchaseTarget, setPurchaseTarget] = useState<{
     plan: PlanRecord
@@ -407,6 +425,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
         if (res.success) {
           selfSubscriptionAppliedSequenceRef.current = requestSequence
           setSelfData(normalizeSelfSubscriptionData(res.data))
+          setSubscriptionHistoryResolved(true)
           return 'applied'
         }
         if (
@@ -496,6 +515,15 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
     (item) => item.plan.id === currentPlanId
   )?.plan
   const hasActivePlan = contract?.status === 'active' && !!currentPlan
+  const hasPurchasedSubscription =
+    selfData.all_subscriptions.length > 0 ||
+    selfData.subscriptions.length > 0 ||
+    Boolean(selfData.contract || selfData.current_entitlement)
+  // Keep legacy campaign presentation when history is unavailable. This
+  // prevents a failed self-subscription request from showing new-user terms
+  // to an existing customer.
+  const showLegacyPlanOffer =
+    !subscriptionHistoryResolved || hasPurchasedSubscription
   const isAvailable = loading || plans.length > 0 || hasActivePlan
   const paymentAvailability = useMemo(
     () => getPaymentAvailability(selfData, topupInfo),
@@ -925,12 +953,17 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 // source of truth for the static campaign presentation; a
                 // backend quote can still replace the payable total below.
                 const hasCampaignDiscount = Boolean(
-                  originalPrice && originalPrice !== displayPrice
+                  showLegacyPlanOffer &&
+                  originalPrice &&
+                  originalPrice !== displayPrice
                 )
                 const isMostPopular =
                   getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
                 const audience =
                   getPlanAudience(plan.title, t) || plan.subtitle || ''
+                const topUpBonus = showLegacyPlanOffer
+                  ? ''
+                  : getPlanTopUpBonus(plan.title, t)
                 const action = getFlexiblePlanAction({
                   planId: plan.id,
                   currentPlanId,
@@ -946,6 +979,9 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 return (
                   <Card
                     key={plan.id}
+                    data-subscription-offer-version={
+                      showLegacyPlanOffer ? 'legacy' : 'new'
+                    }
                     className={cn(
                       'border-border/80 relative rounded-lg border shadow-sm transition-[box-shadow,border-color]',
                       isMostPopular
@@ -1015,6 +1051,14 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                           {t('per month')}
                         </span>
                       </div>
+                      {topUpBonus ? (
+                        <p
+                          data-subscription-top-up-bonus
+                          className='text-primary mt-1 min-h-5 text-sm leading-5 font-semibold'
+                        >
+                          {topUpBonus}
+                        </p>
+                      ) : null}
                       {recallExpiryDate ? (
                         <div className='text-muted-foreground mt-1 text-xs font-medium'>
                           {t('Expires {{date}}', { date: recallExpiryDate })}
