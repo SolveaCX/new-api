@@ -465,18 +465,18 @@ export function UsageReport() {
                   </CardHeader>
                   <CardContent>
                     <p className='text-muted-foreground mb-2 text-xs'>
-                      {t('单位=人；注册→激活率(7日队列)与激活→首付率(14日队列)，近 7/14 天队列未到期，线末段留空。')}
+                      {t('单位=人；注册→激活率(7日队列)与激活→首付率(14日队列)，近 7/14 天队列未到期，柱末段留空。')}
                     </p>
                     <ResponsiveContainer width='100%' height={230}>
-                      <LineChart data={convSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
+                      <BarChart data={convSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' vertical={false} />
                         <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
                         <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
                         <Tooltip formatter={(value: unknown) => (value == null ? '' : `${String(value)}%`)} />
                         <Legend />
-                        <Line type='monotone' dataKey='注册→激活率(7日队列)' name={t('注册→激活率(7日队列)')} stroke='#2f6bff' dot={false} connectNulls={false} />
-                        <Line type='monotone' dataKey='激活→首付率(14日队列)' name={t('激活→首付率(14日队列)')} stroke='#0f9d58' dot={false} connectNulls={false} />
-                      </LineChart>
+                        <Bar dataKey='注册→激活率(7日队列)' name={t('注册→激活率(7日队列)')} fill='#2f6bff' radius={[3, 3, 0, 0]} />
+                        <Bar dataKey='激活→首付率(14日队列)' name={t('激活→首付率(14日队列)')} fill='#0f9d58' radius={[3, 3, 0, 0]} />
+                      </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
