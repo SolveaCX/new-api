@@ -47,6 +47,28 @@ func GetUsageReport(c *gin.Context) {
 	to := now.Format(usageReportDateLayout)
 	from := now.AddDate(0, 0, -(days - 1)).Format(usageReportDateLayout)
 
+	// CSV exports only need the requested dimension; fetch lazily so a single
+	// CSV never drags the other aggregate table along.
+	if strings.EqualFold(c.Query("format"), "csv") {
+		dim := strings.ToLower(c.Query("dim"))
+		if dim == "models" {
+			modelRows, err := model.GetUsageReportDayModels(from, to)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			writeUsageReportModelsCSV(c, modelRows)
+			return
+		}
+		dayRows, err := model.GetUsageReportDays(from, to)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		writeUsageReportDailyCSV(c, dayRows)
+		return
+	}
+
 	dayRows, err := model.GetUsageReportDays(from, to)
 	if err != nil {
 		common.ApiError(c, err)
@@ -55,16 +77,6 @@ func GetUsageReport(c *gin.Context) {
 	modelRows, err := model.GetUsageReportDayModels(from, to)
 	if err != nil {
 		common.ApiError(c, err)
-		return
-	}
-
-	if strings.EqualFold(c.Query("format"), "csv") {
-		dim := strings.ToLower(c.Query("dim"))
-		if dim == "models" {
-			writeUsageReportModelsCSV(c, modelRows)
-			return
-		}
-		writeUsageReportDailyCSV(c, dayRows)
 		return
 	}
 
@@ -81,13 +93,13 @@ func GetUsageReport(c *gin.Context) {
 func writeUsageReportDailyCSV(c *gin.Context, rows []*model.UsageReportDay) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	_ = w.Write([]string{"date", "registered", "activated_key", "first_paid", "paid_usd", "calls", "tokens"})
+	_ = w.Write([]string{"date", "registered", "activated_day", "paid_day", "paid_usd", "calls", "tokens"})
 	for _, r := range rows {
 		_ = w.Write([]string{
 			r.Date,
 			strconv.Itoa(r.Registered),
-			strconv.Itoa(r.ActivatedKey),
-			strconv.Itoa(r.FirstPaid),
+			strconv.Itoa(r.ActivatedDay),
+			strconv.Itoa(r.PaidDay),
 			strconv.FormatFloat(r.PaidUSD, 'f', 2, 64),
 			strconv.FormatInt(r.Calls, 10),
 			strconv.FormatInt(r.PromptTokens+r.CompletionTokens, 10),
@@ -96,7 +108,7 @@ func writeUsageReportDailyCSV(c *gin.Context, rows []*model.UsageReportDay) {
 	w.Flush()
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="usage_report_daily.csv"`)
-	c.String(http.StatusOK, buf.String())
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }
 
 func writeUsageReportModelsCSV(c *gin.Context, rows []*model.UsageReportDayModel) {
@@ -114,5 +126,5 @@ func writeUsageReportModelsCSV(c *gin.Context, rows []*model.UsageReportDayModel
 	w.Flush()
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="usage_report_models.csv"`)
-	c.String(http.StatusOK, buf.String())
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }

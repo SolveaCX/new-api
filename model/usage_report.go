@@ -19,25 +19,25 @@ package model
 //     (Log.Type = consume), totalled across the log DB.
 type UsageReportDay struct {
 	Date         string  `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
-	Registered   int     `json:"registered"`
-	ActivatedKey int     `json:"activated_key"` // 当日首次建 Key 的去重用户数（1 人多 Key 只算 1；事件口径）
-	FirstPaid    int     `json:"first_paid"`    // 当日首次付费的去重用户数（事件口径）
-	PaidUSD      float64 `json:"paid_usd" gorm:"type:decimal(14,2);default:0"`
+	Registered   int     `gorm:"not null;default:0" json:"registered"`
+	ActivatedKey int     `gorm:"not null;default:0" json:"activated_key"` // 当日首次建 Key 的去重用户数（事件口径）
+	FirstPaid    int     `gorm:"not null;default:0" json:"first_paid"`    // 当日首次付费的去重用户数（事件口径）
+	PaidUSD      float64 `gorm:"type:decimal(14,2);not null;default:0" json:"paid_usd"`
 	// 当天口径（C 端快进快出，主口径；⊆ Registered）：
 	//   ActivatedDay: 该日注册的人中，注册当天即首次建 Key 的人数
 	//   PaidDay:      该日注册的人中，注册当天即首次付费的人数
-	ActivatedDay int `json:"activated_day"`
-	PaidDay      int `json:"paid_day"`
+	ActivatedDay int `gorm:"not null;default:0" json:"activated_day"`
+	PaidDay      int `gorm:"not null;default:0" json:"paid_day"`
 	// 长窗辅助字段（人；未用于主表，保留作分析）：
 	//   ActivatedC7 / PaidRegC14 / PaidC14 …
-	ActivatedC7      int   `json:"activated_c7"`
-	PaidC14          int   `json:"paid_c14"`
-	PaidRegC14       int   `json:"paid_reg_c14"`
-	Calls            int64 `json:"calls"`
-	PromptTokens     int64 `json:"prompt_tokens"`
-	CompletionTokens int64 `json:"completion_tokens"`
-	BuiltAt          int64 `json:"built_at" gorm:"bigint;default:0"` // unix seconds of last compute
-	SchemaV          int   `json:"-" gorm:"default:0"`               // aggregation schema version, bump to force one-time recompute
+	ActivatedC7      int   `gorm:"not null;default:0" json:"activated_c7"`
+	PaidC14          int   `gorm:"not null;default:0" json:"paid_c14"`
+	PaidRegC14       int   `gorm:"not null;default:0" json:"paid_reg_c14"`
+	Calls            int64 `gorm:"not null;default:0" json:"calls"`
+	PromptTokens     int64 `gorm:"not null;default:0" json:"prompt_tokens"`
+	CompletionTokens int64 `gorm:"not null;default:0" json:"completion_tokens"`
+	BuiltAt          int64 `gorm:"bigint;not null;default:0" json:"built_at"` // unix seconds of last compute
+	SchemaV          int   `gorm:"not null;default:0" json:"-"`               // aggregation schema version, bump to force one-time recompute
 }
 
 func (UsageReportDay) TableName() string {

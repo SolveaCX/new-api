@@ -189,11 +189,14 @@ export function UsageReport() {
     tokens: totalTokens,
   }
 
-  // 转化率趋势（当天口径柱状图；今天进行中，数值会随时间略涨）
+  // 转化率趋势（当天口径柱状图；今天进行中，数值会随时间略涨；
+  // 注册=0 的日子返回 null，不渲染柱，避免把“无分母”当 0%）
   const convSerie = dayRows.map((r) => ({
     date: r.date,
-    '注册→激活率(当天)': r.registered > 0 ? Math.round((r.activated_day / r.registered) * 1000) / 10 : 0,
-    '注册→首付率(当天)': r.registered > 0 ? Math.round((r.paid_day / r.registered) * 10000) / 100 : 0,
+    '注册→激活率(当天)':
+      r.registered > 0 ? Math.round((r.activated_day / r.registered) * 1000) / 10 : null,
+    '注册→首付率(当天)':
+      r.registered > 0 ? Math.round((r.paid_day / r.registered) * 10000) / 100 : null,
   }))
 
   const rangeRegKeyRate =
@@ -239,23 +242,35 @@ export function UsageReport() {
     .map(([name, v]) => ({ name, tokens: v.tokens, calls: v.calls }))
 
   const modelDates = [...new Set(modelRows.map((m) => m.date))].sort()
+  // 模型名可能含 `.`/`/` 等字符，不能直接作为 Recharts dataKey（会被当路径解析），
+  // 统一映射成安全 key：topModels[i] -> s{i}，'other' -> other。一次遍历预聚合，
+  // 避免每个日期都 filter 一遍 modelRows。
+  const byDateModel = new Map<string, Map<string, { tok: number; calls: number }>>()
+  modelRows.forEach((m) => {
+    let byModel = byDateModel.get(m.date)
+    if (!byModel) {
+      byModel = new Map<string, { tok: number; calls: number }>()
+      byDateModel.set(m.date, byModel)
+    }
+    const cur = byModel.get(m.model_name) ?? { tok: 0, calls: 0 }
+    cur.tok += tokensOf(m)
+    cur.calls += m.calls
+    byModel.set(m.model_name, cur)
+  })
+  const topModelKeys = topModels.map((_, i) => `s${i}`)
+  const hasOther = [...byDateModel.values()].some((byModel) =>
+    [...byModel.keys()].some((name) => !topModels.includes(name))
+  )
+  const stackSafeKeys = [...topModelKeys, ...(hasOther ? ['other'] : [])]
   const stackedSerie = modelDates.map((date) => {
     const row: Record<string, number | string> = { date }
-    const byModel = new Map<string, { tok: number; calls: number }>()
-    modelRows
-      .filter((m) => m.date === date)
-      .forEach((m) => {
-        const cur = byModel.get(m.model_name) ?? { tok: 0, calls: 0 }
-        cur.tok += tokensOf(m)
-        cur.calls += m.calls
-        byModel.set(m.model_name, cur)
-      })
+    const byModel = byDateModel.get(date) ?? new Map()
     let otherTok = 0
     let otherCalls = 0
-    topModels.forEach((name) => {
+    topModels.forEach((name, i) => {
       const cur = byModel.get(name)
-      row[`${name}_t`] = cur ? cur.tok : 0
-      row[`${name}_c`] = cur ? cur.calls : 0
+      row[`s${i}_t`] = cur ? cur.tok : 0
+      row[`s${i}_c`] = cur ? cur.calls : 0
     })
     byModel.forEach((cur, name) => {
       if (!topModels.includes(name)) {
@@ -263,22 +278,22 @@ export function UsageReport() {
         otherCalls += cur.calls
       }
     })
-    if (otherTok > 0) {
+    if (hasOther) {
       row.other_t = otherTok
       row.other_c = otherCalls
     }
     return row
   })
-  const stackKeys = [...topModels, ...(stackedSerie.some((r) => r.other_t) ? ['other'] : [])]
   const metricSuffix = modelMetric === 'tokens' ? '_t' : '_c'
   const metricLabel = modelMetric === 'tokens' ? t('Tokens') : t('Calls')
+  const stackDisplayNames = [...topModels, ...(hasOther ? ['other'] : [])]
 
   const top4 = topRankData.slice(0, 4).map((x) => x.name)
   const top5Serie = modelDates.map((date) => {
     const row: Record<string, string | number> = { date }
-    top4.forEach((name) => {
+    top4.forEach((name, i) => {
       const hit = modelRows.find((m) => m.date === date && m.model_name === name)
-      row[name] = hit ? tokensOf(hit) : 0
+      row[`t${i}`] = hit ? tokensOf(hit) : 0
     })
     return row
   })
@@ -590,18 +605,21 @@ export function UsageReport() {
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => fmtBig(v)} />
                       <Tooltip />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
-                      {stackKeys.map((name, i) => (
-                        <Area
-                          key={name}
-                          type='monotone'
-                          dataKey={`${name}${metricSuffix}`}
-                          name={name === 'other' ? `${t('Other')} (${metricLabel})` : `${name} (${metricLabel})`}
-                          stackId='m'
-                          stroke={MODEL_PALETTE[i % MODEL_PALETTE.length]}
-                          fill={MODEL_PALETTE[i % MODEL_PALETTE.length]}
-                          fillOpacity={0.85}
-                        />
-                      ))}
+                      {stackSafeKeys.map((key, i) => {
+                        const label = stackDisplayNames[i]
+                        return (
+                          <Area
+                            key={key}
+                            type='monotone'
+                            dataKey={`${key}${metricSuffix}`}
+                            name={label === 'other' ? `${t('Other')} (${metricLabel})` : `${label} (${metricLabel})`}
+                            stackId='m'
+                            stroke={MODEL_PALETTE[i % MODEL_PALETTE.length]}
+                            fill={MODEL_PALETTE[i % MODEL_PALETTE.length]}
+                            fillOpacity={0.85}
+                          />
+                        )
+                      })}
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -671,9 +689,9 @@ export function UsageReport() {
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       {top4.map((name, i) => (
                         <Line
-                          key={name}
+                          key={`t${i}`}
                           type='monotone'
-                          dataKey={name}
+                          dataKey={`t${i}`}
                           name={name}
                           stroke={MODEL_PALETTE[i % MODEL_PALETTE.length]}
                           strokeWidth={2}
