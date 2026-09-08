@@ -936,6 +936,25 @@ export function Wallet(props: WalletProps) {
             ) : null}
 
             <div className='flex flex-col gap-4'>
+              <TitledCard
+                className='border-border/80 shadow-sm'
+                title={t('Top-ups')}
+                description={t(
+                  'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
+                )}
+                icon={<Wallet2 className='h-4 w-4' />}
+                iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+                action={
+                  <Button
+                    className='bg-[#0b0b0d] text-white hover:bg-[#26262a] dark:bg-[#0b0b0d] dark:hover:bg-[#26262a]'
+                    onClick={() => setTopupDialogOpen(true)}
+                  >
+                    {t('Top up')}
+                  </Button>
+                }
+                contentClassName='hidden'
+              />
+
               {showSubscriptionPlans ? (
                 <div className='min-w-0'>
                   <RecallClaimProvider
@@ -962,20 +981,8 @@ export function Wallet(props: WalletProps) {
 
               <TitledCard
                 className='border-border/80 shadow-sm'
-                title={t('Top-ups')}
-                description={t(
-                  'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
-                )}
-                icon={<Wallet2 className='h-4 w-4' />}
-                iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-                action={
-                  <Button
-                    className='bg-[#0b0b0d] text-white hover:bg-[#26262a] dark:bg-[#0b0b0d] dark:hover:bg-[#26262a]'
-                    onClick={() => setTopupDialogOpen(true)}
-                  >
-                    {t('Top up')}
-                  </Button>
-                }
+                title={t('Recharge History')}
+                description={t('View your top-up records and payment receipts.')}
                 contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
               >
                 <div
@@ -985,7 +992,6 @@ export function Wallet(props: WalletProps) {
                   {!mockPreview ? (
                     <BillingHistoryPanel
                       scrollAreaClassName='max-h-none pr-0 sm:pr-0'
-                      showInlineHeader
                       onAvailabilityChange={handleRechargeHistoryAvailability}
                       onResumeStripeCheckout={handleResumeStripeCheckout}
                       onRefundSuccess={fetchUser}
