@@ -6,6 +6,7 @@ import { PromptFreeCta } from "@/components/prompt-free-cta";
 import { SiteShell } from "@/components/site-shell";
 import { PROMPT_IMAGE_PATH, PROMPT_VIDEO_PATH } from "@/lib/cli-landing";
 import { fetchCliMediaPromptItem, fetchCliMediaPromptItems, type PromptArtifact, type PromptItem } from "@/lib/prompt-library";
+import { getPromptDisplayCopy, localizePromptTag } from "@/lib/prompt-display-copy";
 import { type Locale, localizePath, withIdFallback } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 
@@ -194,8 +195,7 @@ export function getCliMediaMetadata(kind: MediaKind, locale: Locale) {
 export async function getCliMediaDetailMetadata(kind: MediaKind, slug: string, locale: Locale) {
   const item = await fetchCliMediaPromptItem(kind, slug);
   if (!item) return undefined;
-  const title = item.title[locale] ?? item.title.en;
-  const summary = item.summary[locale] ?? item.summary.en;
+  const { title, summary } = getPromptDisplayCopy(item, locale);
   const copy = copyByLocale[locale][kind];
   const ui = uiCopyByLocale[locale];
   return {
@@ -299,8 +299,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
 
   if (!item) return null;
 
-  const title = item.title[props.locale] ?? item.title.en;
-  const summary = item.summary[props.locale] ?? item.summary.en;
+  const { title, summary } = getPromptDisplayCopy(item, props.locale);
   const currentPath = cliMediaDetailPath(props.kind, item.slug);
   const listPath = localizePath(cliMediaPath(props.kind), props.locale);
   const relatedItems = (await fetchCliMediaPromptItems(props.kind)).filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
@@ -356,7 +355,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2">
                     {visibleTags(item).map((tag) => (
-                      <span key={tag} className="rounded-full border border-[#0B0B0F12] bg-[#fbfaff] px-3 py-1 text-xs font-bold text-[#43434C]">{tag}</span>
+                      <span key={tag} className="rounded-full border border-[#0B0B0F12] bg-[#fbfaff] px-3 py-1 text-xs font-bold text-[#43434C]">{localizePromptTag(tag, props.locale)}</span>
                     ))}
                   </div>
                 </div>
@@ -444,7 +443,7 @@ function SectionHeading(props: { eyebrow: string; title: string }) {
 }
 
 function FeaturedPreview(props: { copy: CliMediaCopy; item: PromptItem; kind: MediaKind; locale: Locale }) {
-  const title = props.item.title[props.locale] ?? props.item.title.en;
+  const { title } = getPromptDisplayCopy(props.item, props.locale);
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
   return (
     <article className="overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.26)] lg:ml-auto lg:w-full">
@@ -463,8 +462,7 @@ function FeaturedPreview(props: { copy: CliMediaCopy; item: PromptItem; kind: Me
 }
 
 function PromptCard(props: { copy: CliMediaCopy; item: PromptItem; keyUrl: string; kind: MediaKind; locale: Locale }) {
-  const title = props.item.title[props.locale] ?? props.item.title.en;
-  const summary = props.item.summary[props.locale] ?? props.item.summary.en;
+  const { title, summary } = getPromptDisplayCopy(props.item, props.locale);
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
 
   return (
@@ -504,7 +502,7 @@ function PromptCard(props: { copy: CliMediaCopy; item: PromptItem; keyUrl: strin
 }
 
 function CompactPromptCard(props: { item: PromptItem; kind: MediaKind; locale: Locale }) {
-  const title = props.item.title[props.locale] ?? props.item.title.en;
+  const { title } = getPromptDisplayCopy(props.item, props.locale);
   const href = localizePath(cliMediaDetailPath(props.kind, props.item.slug), props.locale);
   return (
     <article className="overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_18px_50px_-42px_rgba(46,16,101,.3)] transition-transform hover:-translate-y-1 hover:border-violet-500/30">

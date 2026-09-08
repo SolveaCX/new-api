@@ -8,6 +8,7 @@ import { PromptFreeCta } from "@/components/prompt-free-cta";
 import { SiteShell } from "@/components/site-shell";
 import { localizePath, type Locale } from "@/lib/locales";
 import type { PromptArtifact, PromptItem } from "@/lib/prompt-library";
+import { getPromptDisplayCopy, localizePromptTag } from "@/lib/prompt-display-copy";
 
 type Props = { locale: Locale; items: PromptItem[]; initialSearch?: Record<string, string | string[] | undefined> };
 
@@ -113,7 +114,7 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
   );
   const collectionTitle = selectedModel
     || (selectedType ? categoryLabels[locale][selectedType] : "")
-    || selectedUseCase
+    || (selectedUseCase ? localizePromptTag(selectedUseCase, locale) : "")
     || sections.latest;
   const hasSelectedCollection = Boolean(selectedType || selectedModel || selectedUseCase);
   const featured = collectionItems[0] ?? mediaItems[0];
@@ -177,8 +178,8 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {topicCollections.map((collection) => (
               <Link key={collection.key} href={collectionHref(locale, "useCase", collection.key)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
-                <div className="aspect-[16/9] overflow-hidden bg-[#211C2D]"><ArtifactPreview artifact={collection.sample.artifact} title={collection.sample.title[locale] ?? collection.sample.title.en} variant="hero" /></div>
-                <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black text-[#0B0B0F]">{collection.key}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 shrink-0 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div>
+                <div className="aspect-[16/9] overflow-hidden bg-[#211C2D]"><ArtifactPreview artifact={collection.sample.artifact} title={getPromptDisplayCopy(collection.sample, locale).title} variant="hero" /></div>
+                <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black text-[#0B0B0F]">{localizePromptTag(collection.key, locale)}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 shrink-0 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div>
               </Link>
             ))}
           </div>
@@ -205,7 +206,7 @@ function DirectorySection({ eyebrow, title, tone, children }: { eyebrow: string;
 
 function MediaCollectionCard({ collection, locale, text }: { collection: { category: PromptItem["category"]; count: number; sample: PromptItem }; locale: Locale; text: Copy }) {
   const Icon = categoryIcons[collection.category] ?? Sparkles;
-  return <Link href={mediaCollectionHref(locale, collection.category)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]"><div className="relative aspect-[16/9] overflow-hidden bg-[#EEE8FF]"><ArtifactPreview artifact={collection.sample.artifact} title={collection.sample.title[locale] ?? collection.sample.title.en} variant="hero" /><span className="absolute top-3 left-3 flex size-9 items-center justify-center rounded-full border border-white/80 bg-white/92 text-[#5B21B6] shadow-[0_10px_24px_-16px_rgba(11,11,15,.4)] backdrop-blur"><Icon className="size-4" aria-hidden="true" /></span></div><div className="flex items-center justify-between gap-3 p-4"><div><h3 className="text-base font-black text-[#0B0B0F]">{categoryLabels[locale][collection.category]}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div></Link>;
+  return <Link href={mediaCollectionHref(locale, collection.category)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]"><div className="relative aspect-[16/9] overflow-hidden bg-[#EEE8FF]"><ArtifactPreview artifact={collection.sample.artifact} title={getPromptDisplayCopy(collection.sample, locale).title} variant="hero" /><span className="absolute top-3 left-3 flex size-9 items-center justify-center rounded-full border border-white/80 bg-white/92 text-[#5B21B6] shadow-[0_10px_24px_-16px_rgba(11,11,15,.4)] backdrop-blur"><Icon className="size-4" aria-hidden="true" /></span></div><div className="flex items-center justify-between gap-3 p-4"><div><h3 className="text-base font-black text-[#0B0B0F]">{categoryLabels[locale][collection.category]}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div></Link>;
 }
 
 function ModelCollectionCard({ collection, locale, text }: { collection: Collection; locale: Locale; text: Copy }) {
@@ -223,16 +224,26 @@ function ModelCollectionCard({ collection, locale, text }: { collection: Collect
       <h3 className="mt-5 text-lg font-black tracking-tight text-[#0B0B0F]">{presentation.title}</h3>
       <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#68616F]">{description}</p>
       <div className="mt-auto flex flex-wrap gap-1.5 pt-5">
-        {tags.map((tag) => <span key={tag} className="rounded-full bg-[#F1EAFE] px-2.5 py-1 text-[10px] font-bold text-[#5B21B6]">{tag}</span>)}
+        {tags.map((tag) => <span key={tag} className="rounded-full bg-[#F1EAFE] px-2.5 py-1 text-[10px] font-bold text-[#5B21B6]">{localizePromptTag(tag, locale)}</span>)}
       </div>
     </Link>
   );
 }
 
 function PromptDirectoryCard({ item, locale, text, copied, onCopy }: { item: PromptItem; locale: Locale; text: Copy; copied: boolean; onCopy: () => void }) {
-  const title = item.title[locale] ?? item.title.en;
-  const summary = item.summary[locale] ?? item.summary.en;
-  return <article className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]"><Link href={promptHref(item, locale)} className="block"><ArtifactPreview artifact={item.artifact} title={title} /></Link><div className="p-4"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#F1EAFE] px-2.5 py-1 text-[11px] font-bold text-[#5B21B6]">{item.model || categoryLabels[locale][item.category]}</span><span className="text-[11px] font-semibold text-[#8A8493]">{item.updatedAt}</span></div><Link href={promptHref(item, locale)}><h3 className="line-clamp-2 min-h-10 text-base font-black leading-5 text-[#0B0B0F] transition-colors group-hover:text-[#32145F]">{title}</h3></Link><p className="mt-2 line-clamp-2 text-sm leading-5 text-[#6B6475]">{summary}</p><div className="mt-3 flex flex-wrap gap-1.5">{visibleTags(item).slice(0, 3).map((tag) => <span key={tag} className="rounded-md bg-[#F8F7FA] px-2 py-1 text-[10px] font-semibold text-[#77727F]">{tag}</span>)}</div><div className="mt-4 flex items-center justify-between gap-3 border-t border-[#0B0B0F0F] pt-3"><Link href={promptHref(item, locale)} className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#070707] px-3.5 text-[11px] font-extrabold !text-white shadow-[0_14px_28px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">{text.view}<ArrowRight className="size-3.5" aria-hidden="true" /></Link><button type="button" onClick={onCopy} aria-label={copied ? text.copied : text.copy} title={copied ? text.copied : text.copy} aria-live="polite" className={`inline-flex size-8 items-center justify-center rounded-full border transition-colors ${copied ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-[#0B0B0F14] bg-white text-[#68616F] hover:border-[#7C3AED35] hover:bg-[#F8F6FC] hover:text-[#4C1D95]"}`}>{copied ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}</button></div></div></article>;
+  const { title, summary } = getPromptDisplayCopy(item, locale);
+  return (
+    <article className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
+      <Link href={promptHref(item, locale)} className="block"><ArtifactPreview artifact={item.artifact} title={title} /></Link>
+      <div className="p-4">
+        <div className="mb-2 flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#F1EAFE] px-2.5 py-1 text-[11px] font-bold text-[#5B21B6]">{item.model || categoryLabels[locale][item.category]}</span><span className="text-[11px] font-semibold text-[#8A8493]">{item.updatedAt}</span></div>
+        <Link href={promptHref(item, locale)}><h3 className="line-clamp-2 min-h-10 text-base font-black leading-5 text-[#0B0B0F] transition-colors group-hover:text-[#32145F]">{title}</h3></Link>
+        <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#6B6475]">{summary}</p>
+        <div className="mt-3 flex flex-wrap gap-1.5">{visibleTags(item).slice(0, 3).map((tag) => <span key={tag} className="rounded-md bg-[#F8F7FA] px-2 py-1 text-[10px] font-semibold text-[#77727F]">{localizePromptTag(tag, locale)}</span>)}</div>
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#0B0B0F0F] pt-3"><Link href={promptHref(item, locale)} className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#070707] px-3.5 text-[11px] font-extrabold !text-white shadow-[0_14px_28px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">{text.view}<ArrowRight className="size-3.5" aria-hidden="true" /></Link><button type="button" onClick={onCopy} aria-label={copied ? text.copied : text.copy} title={copied ? text.copied : text.copy} aria-live="polite" className={`inline-flex size-8 items-center justify-center rounded-full border transition-colors ${copied ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-[#0B0B0F14] bg-white text-[#68616F] hover:border-[#7C3AED35] hover:bg-[#F8F6FC] hover:text-[#4C1D95]"}`}>{copied ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}</button></div>
+      </div>
+    </article>
+  );
 }
 
 function buildModelCollections(items: PromptItem[]): Collection[] {
