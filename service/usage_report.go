@@ -49,27 +49,38 @@ func usageReportDateLock(date string) *sync.Mutex {
 	return m
 }
 
-// usageReportBackfillNullColumns fills NULL legacy rows that appear when
-// AutoMigrate adds columns without a default; Go int scanning would otherwise
-// fail on NULL. Runs per date right before the row is read.
-func usageReportBackfillNullColumns(date string) error {
-	return model.DB.Exec(`
-		UPDATE usage_report_daily SET
-			registered = COALESCE(registered, 0),
-			activated_key = COALESCE(activated_key, 0),
-			first_paid = COALESCE(first_paid, 0),
-			paid_usd = COALESCE(paid_usd, 0),
-			activated_day = COALESCE(activated_day, 0),
-			paid_day = COALESCE(paid_day, 0),
-			activated_c7 = COALESCE(activated_c7, 0),
-			paid_c14 = COALESCE(paid_c14, 0),
-			paid_reg_c14 = COALESCE(paid_reg_c14, 0),
-			calls = COALESCE(calls, 0),
-			prompt_tokens = COALESCE(prompt_tokens, 0),
-			completion_tokens = COALESCE(completion_tokens, 0),
-			built_at = COALESCE(built_at, 0),
-			schema_v = COALESCE(schema_v, 0)
-		WHERE date = ?`, date).Error
+// usageReportNullsOnce guards a single table-wide NULL backfill per process.
+// AutoMigrate can add columns without defaults, leaving historical rows NULL
+// which would break Go int scanning; we fill them once (only rows that contain
+// NULL are touched), so the report read path never becomes a per-request write.
+var usageReportNullsOnce sync.Once
+var usageReportNullsErr error
+
+func usageReportEnsureColumnDefaults() error {
+	usageReportNullsOnce.Do(func() {
+		usageReportNullsErr = model.DB.Exec(`
+			UPDATE usage_report_daily SET
+				registered = COALESCE(registered, 0),
+				activated_key = COALESCE(activated_key, 0),
+				first_paid = COALESCE(first_paid, 0),
+				paid_usd = COALESCE(paid_usd, 0),
+				activated_day = COALESCE(activated_day, 0),
+				paid_day = COALESCE(paid_day, 0),
+				activated_c7 = COALESCE(activated_c7, 0),
+				paid_c14 = COALESCE(paid_c14, 0),
+				paid_reg_c14 = COALESCE(paid_reg_c14, 0),
+				calls = COALESCE(calls, 0),
+				prompt_tokens = COALESCE(prompt_tokens, 0),
+				completion_tokens = COALESCE(completion_tokens, 0),
+				built_at = COALESCE(built_at, 0),
+				schema_v = COALESCE(schema_v, 0)
+			WHERE registered IS NULL OR activated_key IS NULL OR first_paid IS NULL
+			   OR paid_usd IS NULL OR activated_day IS NULL OR paid_day IS NULL
+			   OR activated_c7 IS NULL OR paid_c14 IS NULL OR paid_reg_c14 IS NULL
+			   OR calls IS NULL OR prompt_tokens IS NULL OR completion_tokens IS NULL
+			   OR built_at IS NULL OR schema_v IS NULL`).Error
+	})
+	return usageReportNullsErr
 }
 
 // utcDateBounds converts "2006-01-02" (UTC+0) to [start, end) unix seconds.
@@ -92,6 +103,9 @@ func utcToday(now time.Time) string {
 // All date math is done in UTC so a non-UTC server clock cannot shift the
 // trailing window by a day.
 func EnsureUsageReportRange(days int) error {
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	for i := days - 1; i >= 0; i-- {
 		d := now.AddDate(0, 0, -i)
@@ -110,10 +124,6 @@ func EnsureUsageReportDate(date string) error {
 	lock := usageReportDateLock(date)
 	lock.Lock()
 	defer lock.Unlock()
-
-	if err := usageReportBackfillNullColumns(date); err != nil {
-		return err
-	}
 
 	var row model.UsageReportDay
 	err := model.DB.Where("date = ?", date).First(&row).Error
@@ -190,32 +200,10 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	}
 	day.Registered = int(registered)
 
-	// 2) Activation: users whose FIRST API token was created that UTC day.
-	if err := model.DB.Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT user_id, MIN(created_time) AS ft
-			FROM tokens
-			WHERE created_time < ?
-			GROUP BY user_id
-		) AS t
-		WHERE t.ft >= ?`, end, start).Scan(&day.ActivatedKey).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report activated keys: %w", err)
-	}
-
-	// 3) First paid + 4) paid amount: successful top_ups, bucketed by the
-	// completion time (falling back to creation time when never completed).
+	// 2) 金额：当日成功 top_up 的实收合计（日历日口径；事件/长窗辅助口径
+	// 已从主计算中移除——主界面只展示当天口径，避免每日重算时对
+	// tokens/top_ups 做全历史 MIN 分组）。
 	paymentTime := "COALESCE(NULLIF(complete_time, 0), create_time)"
-	if err := model.DB.Raw(fmt.Sprintf(`
-		SELECT COUNT(*) FROM (
-			SELECT user_id, MIN(%s) AS ft
-			FROM top_ups
-			WHERE status = ? AND (money > 0 OR payment_amount_minor > 0)
-			GROUP BY user_id
-		) AS t
-		WHERE t.ft >= ? AND t.ft < ?`, paymentTime),
-		common.TopUpStatusSuccess, start, end).Scan(&day.FirstPaid).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report first paid: %w", err)
-	}
 
 	var paidUSD float64
 	if err := model.DB.Raw(fmt.Sprintf(`
@@ -228,7 +216,7 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	}
 	day.PaidUSD = math.Round(paidUSD*100) / 100
 
-	// 3a) 当天口径（主口径，C 端快进快出）：该日注册的人中，注册当天即
+	// 3) 当天口径（主口径，C 端快进快出）：该日注册的人中，注册当天即
 	// 首次建 Key / 首次付费的人数。天然 ⊆ Registered（同一天注册队列）。
 	actDay, payDay, sameDayErr := aggregateSameDay(start, end, paymentTime)
 	if sameDayErr != nil {
@@ -237,72 +225,9 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	day.ActivatedDay = actDay
 	day.PaidDay = payDay
 
-	// 3b) 长窗辅助口径（保留，仅分析用；主界面不再用 7/14 日窗口）：
-	// reg -> key(7d)：该日注册者注册后 7 日内首次建 Key 人数。
-	var activatedC7 int
-	if err := model.DB.Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT u.id AS uid, u.created_at AS ct, MIN(t.created_time) AS ft
-			FROM users u
-			JOIN tokens t ON t.user_id = u.id
-			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
-			  AND u.created_at >= ? AND u.created_at < ?
-			GROUP BY u.id
-		) x
-		WHERE x.ft >= x.ct AND x.ft <= x.ct + ?`,
-		common.UserStatusEnabled, start, end, 7*24*60*60).Scan(&activatedC7).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report cohort reg->key(7d): %w", err)
-	}
-	day.ActivatedC7 = activatedC7
-
-	// key -> pay(14d): users whose FIRST key fell in this UTC day and whose
-	// FIRST successful top-up happened within 14 days after that first key
-	// (first-payment time = MIN over successful top-ups, so repeat top-ups
-	// cannot inflate the cohort).
-	// Subset of ActivatedKey (same cohort), so the rate is <= 100%.
-	var paidC14 int
-	if err := model.DB.Raw(fmt.Sprintf(`
-		SELECT COUNT(*) FROM (
-			SELECT t.user_id AS uid, MIN(t.created_time) AS kt
-			FROM tokens t
-			GROUP BY t.user_id
-		) kk
-		JOIN (
-			SELECT p.user_id AS puid, MIN(%s) AS pt
-			FROM top_ups p
-			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
-			GROUP BY p.user_id
-		) fp ON fp.puid = kk.uid
-		WHERE kk.kt >= ? AND kk.kt < ?
-		  AND fp.pt >= kk.kt AND fp.pt <= kk.kt + ?`, paymentTime),
-		common.TopUpStatusSuccess, start, end, 14*24*60*60).Scan(&paidC14).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report cohort key->pay(14d): %w", err)
-	}
-	day.PaidC14 = paidC14
-
-	// key/reg -> pay(14d) on the REGISTRATION cohort (subset of Registered):
-	// users registered this UTC day whose FIRST successful top-up happened
-	// within 14 days after their registration.
-	var paidRegC14 int
-	if err := model.DB.Raw(fmt.Sprintf(`
-		SELECT COUNT(*) FROM (
-			SELECT u.id AS uid, u.created_at AS ct
-			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
-			  AND u.created_at >= ? AND u.created_at < ?
-		) uu
-		JOIN (
-			SELECT p.user_id AS puid, MIN(%s) AS pt
-			FROM top_ups p
-			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
-			GROUP BY p.user_id
-		) fp ON fp.puid = uu.uid
-		WHERE fp.pt >= uu.ct AND fp.pt <= uu.ct + ?`, paymentTime),
-		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess,
-		14*24*60*60).Scan(&paidRegC14).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report cohort reg->pay(14d): %w", err)
-	}
-	day.PaidRegC14 = paidRegC14
+	// (事件/长窗辅助字段 activated_key / first_paid / activated_c7 /
+	//  paid_c14 / paid_reg_c14 已从主计算移除：主界面只展示当天口径，
+	//  避免每日重算对 tokens / top_ups 做全历史 MIN 分组。)
 
 	// 5) Usage: consumption log rows of that day (Log.Type = consume),
 	// grouped by model. All queries are range-bounded by the log table's
@@ -371,6 +296,8 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 		return 0, 0, fmt.Errorf("usage_report same-day activated: %w", err)
 	}
 
+	// paid_day：该日注册的人中，注册当天完成首笔成功付费（EXISTS 当天有
+	// 成功付费 + NOT EXISTS 注册前已有付费，限定首笔；走 user_id 索引）。
 	var paid int
 	if err := model.DB.Raw(fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
@@ -379,14 +306,22 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
-		JOIN (
-			SELECT p.user_id AS puid, MIN(%s) AS pt
-			FROM top_ups p
-			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
-			GROUP BY p.user_id
-		) fp ON fp.puid = uu.uid
-		WHERE fp.pt >= uu.ct AND fp.pt < ?`, paymentTime),
-		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess, end).Scan(&paid).Error; err != nil {
+		WHERE EXISTS (
+			SELECT 1 FROM top_ups p
+			WHERE p.user_id = uu.uid
+			  AND p.status = ?
+			  AND (p.money > 0 OR p.payment_amount_minor > 0)
+			  AND %s >= uu.ct AND %s < ?
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM top_ups prev
+			WHERE prev.user_id = uu.uid
+			  AND prev.status = ?
+			  AND (prev.money > 0 OR prev.payment_amount_minor > 0)
+			  AND %s < uu.ct
+		)`, paymentTime, paymentTime, paymentTime),
+		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess,
+		end, common.TopUpStatusSuccess).Scan(&paid).Error; err != nil {
 		return 0, 0, fmt.Errorf("usage_report same-day paid: %w", err)
 	}
 	return activated, paid, nil
