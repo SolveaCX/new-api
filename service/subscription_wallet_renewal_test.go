@@ -216,7 +216,13 @@ func TestRenewWalletSubscriptionContractRenewsRetiredCurrentPlanWithEntitlementL
 	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Update("upgrade_group", plan.UpgradeGroup).Error)
 	periodEnd := common.GetTimestamp() - 15
 	contract, oldEntitlement := seedWalletRenewalContract(t, 7905, 700, plan, periodEnd)
-	seedWalletRenewalSourceOrder(t, contract, &oldEntitlement, plan)
+	sourceOrder := seedWalletRenewalSourceOrder(t, contract, &oldEntitlement, plan)
+	var sourceSnapshot purchasePlanSnapshot
+	require.NoError(t, common.Unmarshal([]byte(sourceOrder.PlanSnapshot), &sourceSnapshot))
+	sourceSnapshot.PriceAmount = 7.001
+	sourceSnapshotJSON, err := common.Marshal(sourceSnapshot)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("id = ?", sourceOrder.Id).Update("plan_snapshot", string(sourceSnapshotJSON)).Error)
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", oldEntitlement.Id).Updates(map[string]interface{}{
 		"media_credits_total": plan.MediaCreditsMonthly,
 		"window_5h_amount":    plan.Window5hAmount,

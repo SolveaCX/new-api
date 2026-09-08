@@ -408,6 +408,12 @@ func loadWalletRenewalSourceSnapshotTx(tx *gorm.DB, contract *model.UserSubscrip
 	if snapshotMinor != orderMinor {
 		return purchasePlanSnapshot{}, errors.New("retired wallet renewal source order price does not match its plan snapshot")
 	}
+	// The successful order's canonical unit price is the amount that was
+	// actually accepted for future wallet renewals. The snapshot remains a
+	// second consistency check, but its six-decimal value must not create a
+	// sub-minor-unit debit that the order itself never recorded.
+	parsed.Snapshot.PriceAmount = order.UnitPrice
+	parsed.Snapshot.Currency = orderCurrency
 	return parsed.Snapshot, nil
 }
 
