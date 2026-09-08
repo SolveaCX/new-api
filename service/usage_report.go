@@ -49,38 +49,46 @@ func usageReportDateLock(date string) *sync.Mutex {
 	return m
 }
 
-// usageReportNullsOnce guards a single table-wide NULL backfill per process.
+// usageReportNullsMu guards a table-wide NULL backfill that only marks itself
+// done after a successful run, so a transient failure is retried on the next
+// call instead of being cached forever (see review).
 // AutoMigrate can add columns without defaults, leaving historical rows NULL
 // which would break Go int scanning; we fill them once (only rows that contain
 // NULL are touched), so the report read path never becomes a per-request write.
-var usageReportNullsOnce sync.Once
-var usageReportNullsErr error
+var usageReportNullsMu sync.Mutex
+var usageReportNullsDone bool
 
 func usageReportEnsureColumnDefaults() error {
-	usageReportNullsOnce.Do(func() {
-		usageReportNullsErr = model.DB.Exec(`
-			UPDATE usage_report_daily SET
-				registered = COALESCE(registered, 0),
-				activated_key = COALESCE(activated_key, 0),
-				first_paid = COALESCE(first_paid, 0),
-				paid_usd = COALESCE(paid_usd, 0),
-				activated_day = COALESCE(activated_day, 0),
-				paid_day = COALESCE(paid_day, 0),
-				activated_c7 = COALESCE(activated_c7, 0),
-				paid_c14 = COALESCE(paid_c14, 0),
-				paid_reg_c14 = COALESCE(paid_reg_c14, 0),
-				calls = COALESCE(calls, 0),
-				prompt_tokens = COALESCE(prompt_tokens, 0),
-				completion_tokens = COALESCE(completion_tokens, 0),
-				built_at = COALESCE(built_at, 0),
-				schema_v = COALESCE(schema_v, 0)
-			WHERE registered IS NULL OR activated_key IS NULL OR first_paid IS NULL
-			   OR paid_usd IS NULL OR activated_day IS NULL OR paid_day IS NULL
-			   OR activated_c7 IS NULL OR paid_c14 IS NULL OR paid_reg_c14 IS NULL
-			   OR calls IS NULL OR prompt_tokens IS NULL OR completion_tokens IS NULL
-			   OR built_at IS NULL OR schema_v IS NULL`).Error
-	})
-	return usageReportNullsErr
+	usageReportNullsMu.Lock()
+	defer usageReportNullsMu.Unlock()
+	if usageReportNullsDone {
+		return nil
+	}
+	if err := model.DB.Exec(`
+		UPDATE usage_report_daily SET
+			registered = COALESCE(registered, 0),
+			activated_key = COALESCE(activated_key, 0),
+			first_paid = COALESCE(first_paid, 0),
+			paid_usd = COALESCE(paid_usd, 0),
+			activated_day = COALESCE(activated_day, 0),
+			paid_day = COALESCE(paid_day, 0),
+			activated_c7 = COALESCE(activated_c7, 0),
+			paid_c14 = COALESCE(paid_c14, 0),
+			paid_reg_c14 = COALESCE(paid_reg_c14, 0),
+			calls = COALESCE(calls, 0),
+			prompt_tokens = COALESCE(prompt_tokens, 0),
+			completion_tokens = COALESCE(completion_tokens, 0),
+			built_at = COALESCE(built_at, 0),
+			schema_v = COALESCE(schema_v, 0)
+		WHERE registered IS NULL OR activated_key IS NULL OR first_paid IS NULL
+		   OR paid_usd IS NULL OR activated_day IS NULL OR paid_day IS NULL
+		   OR activated_c7 IS NULL OR paid_c14 IS NULL OR paid_reg_c14 IS NULL
+		   OR calls IS NULL OR prompt_tokens IS NULL OR completion_tokens IS NULL
+		   OR built_at IS NULL OR schema_v IS NULL`).Error; err != nil {
+		return err // transient failure: do not mark done, next call retries
+	}
+	usageReportNullsDone = true
+	return nil
 }
 
 // utcDateBounds converts "2006-01-02" (UTC+0) to [start, end) unix seconds.
@@ -122,6 +130,14 @@ var (
 	usageReportFilling bool
 )
 
+// UsageReportFillRunning reports whether a background window fill is currently
+// in progress (the API uses it instead of inferring from row counts).
+func UsageReportFillRunning() bool {
+	usageReportFillMu.Lock()
+	defer usageReportFillMu.Unlock()
+	return usageReportFilling
+}
+
 // EnsureUsageReportRangeAsync warms the trailing window in the background and
 // returns immediately. The report read path therefore never blocks on a full
 // historical backfill; each date becomes visible as soon as it is persisted,
@@ -154,6 +170,12 @@ func EnsureUsageReportDate(date string) error {
 	lock := usageReportDateLock(date)
 	lock.Lock()
 	defer lock.Unlock()
+
+	// Ensure legacy NULL rows are backfilled before reading, so a single-date
+	// request can self-heal even if the range-level call was never hit.
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return err
+	}
 
 	var row model.UsageReportDay
 	err := model.DB.Where("date = ?", date).First(&row).Error
