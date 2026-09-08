@@ -47,9 +47,12 @@ func GetUsageReport(c *gin.Context) {
 	to := now.Format(usageReportDateLayout)
 	from := now.AddDate(0, 0, -(days - 1)).Format(usageReportDateLayout)
 
-	// CSV exports only need the requested dimension; fetch lazily so a single
-	// CSV never drags the other aggregate table along.
+	// CSV exports need a complete window: fill synchronously (rare, admin-only).
 	if strings.EqualFold(c.Query("format"), "csv") {
+		if err := service.EnsureUsageReportRange(days); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		dim := strings.ToLower(c.Query("dim"))
 		if dim == "models" {
 			modelRows, err := model.GetUsageReportDayModels(from, to)
@@ -69,6 +72,12 @@ func GetUsageReport(c *gin.Context) {
 		return
 	}
 
+	// Interactive view: never block the request on a historical backfill.
+	// Kick off the warm fill in the background and serve what is already
+	// persisted; the response carries a "filling" flag until the window is
+	// complete so the front-end can poll.
+	service.EnsureUsageReportRangeAsync(days)
+
 	dayRows, err := model.GetUsageReportDays(from, to)
 	if err != nil {
 		common.ApiError(c, err)
@@ -84,8 +93,9 @@ func GetUsageReport(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"days":   dayRows,
-			"models": modelRows,
+			"days":    dayRows,
+			"models":  modelRows,
+			"filling": len(dayRows) < days,
 		},
 	})
 }

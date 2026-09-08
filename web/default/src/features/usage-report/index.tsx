@@ -144,11 +144,13 @@ export function UsageReport() {
   const [days, setDays] = useState(30)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
-  const { data: res, isLoading } = useQuery({
+  const [fillPoll, setFillPoll] = useState(0)
+  const { data: res, isLoading, refetch } = useQuery({
     queryKey: usageReportQueryKeys.report(days),
     queryFn: () => getUsageReport(days),
   })
   const payload: UsageReportData | undefined = res?.data
+  const filling = Boolean(payload?.filling)
   const dayRows: UsageReportDayRow[] = payload
     ? [...payload.days].sort((a, b) => a.date.localeCompare(b.date))
     : []
@@ -323,6 +325,16 @@ export function UsageReport() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [dayRows.length])
 
+  // 后台回填期间每 4s 自动刷新一次（最多 ~2 分钟）；完成后自然停止。
+  useEffect(() => {
+    if (!filling || fillPoll >= 30) return
+    const id = setTimeout(() => {
+      setFillPoll((n) => n + 1)
+      void refetch()
+    }, 4000)
+    return () => clearTimeout(id)
+  }, [filling, fillPoll, refetch])
+
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setActiveSec(id)
@@ -356,6 +368,11 @@ export function UsageReport() {
           </div>
         ) : (
           <div className='space-y-8'>
+            {filling && (
+              <div className='rounded-md bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900'>
+                ⏳ {t('首次历史回填仍在后台进行（视数据量约数秒~1 分钟），本页每 4 秒自动刷新，已算好的日期先显示。')}
+              </div>
+            )}
             <div className='bg-muted/60 flex flex-wrap gap-1 rounded-lg p-1'>
               {[
                 { id: 'funnel', label: '① 漏斗' },
