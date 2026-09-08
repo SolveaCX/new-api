@@ -324,14 +324,16 @@ export function UsageReport() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [dayRows.length])
 
-  // 后台回填期间每 4s 自动刷新，直到服务端返回 filling=false（无次数上限）。
+  // 轮询条件 = 后台仍在回填 OR 本次窗口数据还不完整；满足则每 4s 刷新。
+  // 每次 GET 都会在需要时重新触发后台回填，直到窗口数据完整为止。
+  const shouldPoll = filling || dayRows.length < days
   useEffect(() => {
-    if (!filling) return
+    if (!shouldPoll) return
     const id = setTimeout(() => {
       void refetch()
     }, 4000)
     return () => clearTimeout(id)
-  }, [filling, refetch])
+  }, [shouldPoll, refetch])
 
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })

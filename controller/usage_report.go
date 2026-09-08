@@ -89,9 +89,12 @@ func GetUsageReport(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"days":    dayRows,
-			"models":  modelRows,
-			"filling": service.UsageReportFillRunning(),
+			"days":   dayRows,
+			"models": modelRows,
+			// Combine data completeness with the runner state: if the background
+			// fill finished right between query and response the rows may still be
+			// short, so the front-end keeps polling until the window is complete.
+			"filling": len(dayRows) < days || service.UsageReportFillRunning(),
 		},
 	})
 }
