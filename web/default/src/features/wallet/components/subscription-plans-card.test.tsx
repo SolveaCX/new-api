@@ -540,6 +540,70 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.match(/Most Popular/g)?.length).toBe(1)
   })
 
+  test('shows a disabled legacy current plan without making it purchasable', () => {
+    const purchasablePlans = [
+      plan(5, 'Go', 10),
+      plan(6, 'Pro', 30),
+      plan(7, 'Max', 100),
+    ]
+    const legacyPlan = {
+      ...plan(1, 'Legacy Go', 10).plan,
+      enabled: false,
+    }
+    const html = renderWalletCardWithPlans(
+      purchasablePlans,
+      normalizeSelfSubscriptionData({
+        contract: {
+          contract_id: 14,
+          id: 14,
+          status: 'active',
+          payment_mode: 'stripe_recurring',
+          current_plan_id: legacyPlan.id,
+          current_entitlement_id: 20,
+          current_provider_binding_id: 88,
+          latest_change_intent_id: 0,
+          pending_plan_id: 0,
+          pending_effective_at: 0,
+          current_period_start: 1717200000,
+          current_period_end: 1719792000,
+          grace_period_end: 0,
+          change_version: 1,
+        },
+        current_entitlement: {
+          entitlement_id: 20,
+          plan_id: legacyPlan.id,
+          status: 'active',
+          payment_mode: 'stripe_recurring',
+          start_time: 1717200000,
+          end_time: 1719792000,
+          access_end_time: 1719792000,
+        },
+        current_subscription: {
+          subscription: {
+            id: 20,
+            user_id: 151,
+            plan_id: legacyPlan.id,
+            status: 'active',
+            payment_mode: 'stripe_recurring',
+            start_time: 1717200000,
+            end_time: 1719792000,
+            amount_total: 22_500_000,
+            amount_used: 0,
+          },
+          plan: legacyPlan,
+        },
+      })
+    )
+
+    expect(html).toContain('data-subscription-current-plan-id="1"')
+    expect(html).toContain('Legacy Go')
+    expect(html).toContain('data-subscription-purchase-plan-id="5"')
+    expect(html).toContain('data-subscription-purchase-plan-id="6"')
+    expect(html).toContain('data-subscription-purchase-plan-id="7"')
+    expect(html).not.toContain('data-subscription-purchase-plan-id="1"')
+    expect(html.match(/data-subscription-purchase-plan-id=/g)?.length).toBe(3)
+  })
+
   test('does not render a refresh control in the subscription card header', () => {
     const html = renderWalletCard()
 

@@ -510,11 +510,25 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
   const contract = selfData.contract ?? null
   const currentPlanId =
-    contract?.current_plan_id || selfData.current_entitlement?.plan_id || 0
-  const currentPlan = orderedPlans.find(
+    contract?.current_plan_id ||
+    selfData.current_entitlement?.plan_id ||
+    selfData.current_subscription?.subscription.plan_id ||
+    0
+  const listedCurrentPlan = orderedPlans.find(
     (item) => item.plan.id === currentPlanId
   )?.plan
-  const hasActivePlan = contract?.status === 'active' && !!currentPlan
+  const currentSubscriptionSnapshot = selfData.current_subscription
+  const snapshotCurrentPlan =
+    currentSubscriptionSnapshot?.subscription.plan_id === currentPlanId &&
+    currentSubscriptionSnapshot.plan.id === currentPlanId
+      ? currentSubscriptionSnapshot.plan
+      : undefined
+  const currentPlan = listedCurrentPlan ?? snapshotCurrentPlan
+  const hasActivePlan =
+    !!currentPlan &&
+    (contract?.status === 'active' ||
+      (!contract &&
+        currentSubscriptionSnapshot?.subscription.status === 'active'))
   const hasPurchasedSubscription =
     selfData.all_subscriptions.length > 0 ||
     selfData.subscriptions.length > 0 ||
@@ -982,6 +996,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                     data-subscription-offer-version={
                       showLegacyPlanOffer ? 'legacy' : 'new'
                     }
+                    data-subscription-purchase-plan-id={plan.id}
                     className={cn(
                       'border-border/80 relative rounded-lg border shadow-sm transition-[box-shadow,border-color]',
                       isMostPopular
@@ -1195,7 +1210,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overscroll-contain overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
+          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overflow-y-auto overscroll-contain bg-white px-2 py-1 sm:px-4 sm:py-2'>
             <iframe
               title={t('Talk to sales')}
               src={getTallyEmbedUrl(i18n.language, '/contact')}
