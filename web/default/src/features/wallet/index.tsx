@@ -936,6 +936,30 @@ export function Wallet(props: WalletProps) {
             ) : null}
 
             <div className='flex flex-col gap-4'>
+              {showSubscriptionPlans ? (
+                <div className='min-w-0'>
+                  <RecallClaimProvider
+                    offers={recallOffers}
+                    loading={recallOffersLoading}
+                    view={
+                      recallClaimStatus === 'active'
+                        ? recallClaimView || undefined
+                        : undefined
+                    }
+                  >
+                    <SubscriptionPlansCard
+                      topupInfo={topupInfo}
+                      userQuota={user?.quota}
+                      onPurchaseSuccess={fetchUser}
+                      onOpenStripeCheckout={openStripeCheckout}
+                      initialPlans={mockPreview ? MOCK_PLANS : undefined}
+                      initialLoading={mockPreview ? false : undefined}
+                      mockPreview={mockPreview}
+                    />
+                  </RecallClaimProvider>
+                </div>
+              ) : null}
+
               <TitledCard
                 className='border-border/80 shadow-sm'
                 title={t('Top-ups')}
@@ -969,30 +993,6 @@ export function Wallet(props: WalletProps) {
                   ) : null}
                 </div>
               </TitledCard>
-
-              {showSubscriptionPlans ? (
-                <div className='min-w-0'>
-                  <RecallClaimProvider
-                    offers={recallOffers}
-                    loading={recallOffersLoading}
-                    view={
-                      recallClaimStatus === 'active'
-                        ? recallClaimView || undefined
-                        : undefined
-                    }
-                  >
-                    <SubscriptionPlansCard
-                      topupInfo={topupInfo}
-                      userQuota={user?.quota}
-                      onPurchaseSuccess={fetchUser}
-                      onOpenStripeCheckout={openStripeCheckout}
-                      initialPlans={mockPreview ? MOCK_PLANS : undefined}
-                      initialLoading={mockPreview ? false : undefined}
-                      mockPreview={mockPreview}
-                    />
-                  </RecallClaimProvider>
-                </div>
-              ) : null}
             </div>
           </div>
         </SectionPageLayout.Content>
