@@ -29,7 +29,7 @@ const usageReportTodayFresh = 5 * time.Minute
 
 // usageReportSchemaV is bumped whenever the daily row gains new aggregated
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
-const usageReportSchemaV = 1
+const usageReportSchemaV = 2
 
 var usageReportMu sync.Mutex
 
@@ -228,6 +228,31 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 		return nil, nil, fmt.Errorf("usage_report cohort key->pay(14d): %w", err)
 	}
 	day.PaidC14 = paidC14
+
+	// key/reg -> pay(14d) on the REGISTRATION cohort (subset of Registered):
+	// users registered this UTC day whose first successful top-up happened
+	// within 14 days after their registration. Powers the "首次付费" funnel
+	// column that must stay <= the row's Registered.
+	var paidRegC14 int
+	if err := model.DB.Raw(fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT u.id AS uid, u.created_at AS ct
+			FROM users u
+			WHERE u.status = ? AND u.email_verified_at > 0
+			  AND u.created_at >= ? AND u.created_at < ?
+		) uu
+		WHERE EXISTS (
+			SELECT 1 FROM top_ups p
+			WHERE p.user_id = uu.uid
+			  AND p.status = ?
+			  AND (p.money > 0 OR p.payment_amount_minor > 0)
+			  AND %s >= uu.ct AND %s <= uu.ct + ?)`,
+		paymentTime, paymentTime),
+		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess,
+		14*24*60*60).Scan(&paidRegC14).Error; err != nil {
+		return nil, nil, fmt.Errorf("usage_report cohort reg->pay(14d): %w", err)
+	}
+	day.PaidRegC14 = paidRegC14
 
 	// 5) Usage: consumption log rows of that day (Log.Type = consume),
 	// grouped by model. All queries are range-bounded by the log table's
