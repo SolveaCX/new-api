@@ -240,6 +240,7 @@ export function normalizeSelfSubscriptionData(
 
   return {
     billing_preference: data?.billing_preference || 'subscription_first',
+    current_subscription: data?.current_subscription ?? null,
     contract: normalizeContract(data?.contract, data?.current_period) ?? null,
     current_entitlement: data?.current_entitlement ?? null,
     current_period: data?.current_period ?? DEFAULT_CURRENT_PERIOD,

@@ -257,6 +257,35 @@ describe('normalizeSelfSubscriptionData', () => {
     expect(normalized.contract?.grace_period_end).toBe(2100)
   })
 
+  test('preserves the current subscription snapshot for a disabled legacy plan', () => {
+    const legacyPlan = {
+      ...basePlan,
+      title: 'Legacy Go',
+      enabled: false,
+    }
+    const currentSubscription = {
+      subscription: {
+        id: 11,
+        user_id: 7,
+        plan_id: legacyPlan.id,
+        status: 'active',
+        start_time: 1000,
+        end_time: 2000,
+        amount_total: 100,
+        amount_used: 25,
+      },
+      plan: legacyPlan,
+    }
+
+    const normalized = normalizeSelfSubscriptionData({
+      ...createBackendSelfData(false, false),
+      current_subscription: currentSubscription,
+    })
+
+    expect(normalized.current_subscription).toEqual(currentSubscription)
+    expect(normalized.current_subscription?.plan.enabled).toBe(false)
+  })
+
   test('normalizes monthly and short-window usage while dropping legacy media usage', () => {
     const normalized = normalizeSelfSubscriptionData({
       ...createBackendSelfData(false, false),

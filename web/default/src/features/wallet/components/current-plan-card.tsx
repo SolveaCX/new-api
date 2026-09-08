@@ -224,7 +224,10 @@ export function CurrentPlanCard(props: CurrentPlanCardProps) {
   }
 
   return (
-    <Card className='shadow-none'>
+    <Card
+      className='shadow-none'
+      data-subscription-current-plan-id={props.plan.id}
+    >
       <CardContent className='space-y-4 p-4 sm:p-5'>
         <div className='flex flex-wrap items-start justify-between gap-3'>
           <div className='min-w-0'>
