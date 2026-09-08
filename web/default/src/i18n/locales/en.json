@@ -5284,6 +5284,7 @@
     "Leave empty to keep current": "Leave empty to keep current",
     "Priority must be an integer": "Priority must be an integer",
     "Weight must be a non-negative integer": "Weight must be a non-negative integer",
+    "Usage Report": "Usage Report",
     "Ops Daily Report": "Ops Daily Report",
     "Registrations": "Registrations",
     "Activated": "Activated",
