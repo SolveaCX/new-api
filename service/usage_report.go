@@ -31,7 +31,46 @@ const usageReportTodayFresh = 5 * time.Minute
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
 const usageReportSchemaV = 4
 
-var usageReportMu sync.Mutex
+// usageReportDateLocks serialize per-date ensure/compute so a slow recompute
+// of one day never blocks other dates (and admin reads are not globally
+// serialized). Cross-node idempotency still relies on the delete+insert
+// transaction being safe under concurrent writers.
+var usageReportLocksMu sync.Mutex
+var usageReportLocks = make(map[string]*sync.Mutex)
+
+func usageReportDateLock(date string) *sync.Mutex {
+	usageReportLocksMu.Lock()
+	defer usageReportLocksMu.Unlock()
+	if m, ok := usageReportLocks[date]; ok {
+		return m
+	}
+	m := &sync.Mutex{}
+	usageReportLocks[date] = m
+	return m
+}
+
+// usageReportBackfillNullColumns fills NULL legacy rows that appear when
+// AutoMigrate adds columns without a default; Go int scanning would otherwise
+// fail on NULL. Runs per date right before the row is read.
+func usageReportBackfillNullColumns(date string) error {
+	return model.DB.Exec(`
+		UPDATE usage_report_daily SET
+			registered = COALESCE(registered, 0),
+			activated_key = COALESCE(activated_key, 0),
+			first_paid = COALESCE(first_paid, 0),
+			paid_usd = COALESCE(paid_usd, 0),
+			activated_day = COALESCE(activated_day, 0),
+			paid_day = COALESCE(paid_day, 0),
+			activated_c7 = COALESCE(activated_c7, 0),
+			paid_c14 = COALESCE(paid_c14, 0),
+			paid_reg_c14 = COALESCE(paid_reg_c14, 0),
+			calls = COALESCE(calls, 0),
+			prompt_tokens = COALESCE(prompt_tokens, 0),
+			completion_tokens = COALESCE(completion_tokens, 0),
+			built_at = COALESCE(built_at, 0),
+			schema_v = COALESCE(schema_v, 0)
+		WHERE date = ?`, date).Error
+}
 
 // utcDateBounds converts "2006-01-02" (UTC+0) to [start, end) unix seconds.
 func utcDateBounds(date string) (int64, int64, error) {
@@ -50,16 +89,16 @@ func utcToday(now time.Time) string {
 
 // EnsureUsageReportRange ensures every UTC day in the trailing window
 // [today-(days-1) .. today] has fresh daily rows. days is capped by the caller.
+// All date math is done in UTC so a non-UTC server clock cannot shift the
+// trailing window by a day.
 func EnsureUsageReportRange(days int) error {
-	now := time.Now()
-	today := utcToday(now)
+	now := time.Now().UTC()
 	for i := days - 1; i >= 0; i-- {
 		d := now.AddDate(0, 0, -i)
 		if err := EnsureUsageReportDate(utcToday(d)); err != nil {
 			return err
 		}
 	}
-	_ = today
 	return nil
 }
 
@@ -68,8 +107,13 @@ func EnsureUsageReportRange(days int) error {
 // most every usageReportTodayFresh seconds. Rows written by an older
 // aggregation schema (SchemaV < current) are recomputed once.
 func EnsureUsageReportDate(date string) error {
-	usageReportMu.Lock()
-	defer usageReportMu.Unlock()
+	lock := usageReportDateLock(date)
+	lock.Lock()
+	defer lock.Unlock()
+
+	if err := usageReportBackfillNullColumns(date); err != nil {
+		return err
+	}
 
 	var row model.UsageReportDay
 	err := model.DB.Where("date = ?", date).First(&row).Error
@@ -83,7 +127,7 @@ func EnsureUsageReportDate(date string) error {
 	if row.SchemaV < usageReportSchemaV {
 		return computeUsageReportDate(date)
 	}
-	if date == utcToday(time.Now()) {
+	if date == utcToday(time.Now().UTC()) {
 		if time.Since(time.Unix(row.BuiltAt, 0)) >= usageReportTodayFresh {
 			return computeUsageReportDate(date)
 		}
@@ -211,8 +255,10 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	}
 	day.ActivatedC7 = activatedC7
 
-	// key -> pay(14d): users whose FIRST key fell in this UTC day and who made
-	// their first successful top-up within 14 days after that first key.
+	// key -> pay(14d): users whose FIRST key fell in this UTC day and whose
+	// FIRST successful top-up happened within 14 days after that first key
+	// (first-payment time = MIN over successful top-ups, so repeat top-ups
+	// cannot inflate the cohort).
 	// Subset of ActivatedKey (same cohort), so the rate is <= 100%.
 	var paidC14 int
 	if err := model.DB.Raw(fmt.Sprintf(`
@@ -221,23 +267,22 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 			FROM tokens t
 			GROUP BY t.user_id
 		) kk
+		JOIN (
+			SELECT p.user_id AS puid, MIN(%s) AS pt
+			FROM top_ups p
+			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
+			GROUP BY p.user_id
+		) fp ON fp.puid = kk.uid
 		WHERE kk.kt >= ? AND kk.kt < ?
-		  AND EXISTS (
-			SELECT 1 FROM top_ups p
-			WHERE p.user_id = kk.uid
-			  AND p.status = ?
-			  AND (p.money > 0 OR p.payment_amount_minor > 0)
-			  AND %s >= kk.kt AND %s <= kk.kt + ?)`,
-		paymentTime, paymentTime),
-		start, end, common.TopUpStatusSuccess, 14*24*60*60).Scan(&paidC14).Error; err != nil {
+		  AND fp.pt >= kk.kt AND fp.pt <= kk.kt + ?`, paymentTime),
+		common.TopUpStatusSuccess, start, end, 14*24*60*60).Scan(&paidC14).Error; err != nil {
 		return nil, nil, fmt.Errorf("usage_report cohort key->pay(14d): %w", err)
 	}
 	day.PaidC14 = paidC14
 
 	// key/reg -> pay(14d) on the REGISTRATION cohort (subset of Registered):
-	// users registered this UTC day whose first successful top-up happened
-	// within 14 days after their registration. Powers the "首次付费" funnel
-	// column that must stay <= the row's Registered.
+	// users registered this UTC day whose FIRST successful top-up happened
+	// within 14 days after their registration.
 	var paidRegC14 int
 	if err := model.DB.Raw(fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
@@ -246,13 +291,13 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
-		WHERE EXISTS (
-			SELECT 1 FROM top_ups p
-			WHERE p.user_id = uu.uid
-			  AND p.status = ?
-			  AND (p.money > 0 OR p.payment_amount_minor > 0)
-			  AND %s >= uu.ct AND %s <= uu.ct + ?)`,
-		paymentTime, paymentTime),
+		JOIN (
+			SELECT p.user_id AS puid, MIN(%s) AS pt
+			FROM top_ups p
+			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
+			GROUP BY p.user_id
+		) fp ON fp.puid = uu.uid
+		WHERE fp.pt >= uu.ct AND fp.pt <= uu.ct + ?`, paymentTime),
 		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess,
 		14*24*60*60).Scan(&paidRegC14).Error; err != nil {
 		return nil, nil, fmt.Errorf("usage_report cohort reg->pay(14d): %w", err)
@@ -334,12 +379,13 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
-		WHERE EXISTS (
-			SELECT 1 FROM top_ups p
-			WHERE p.user_id = uu.uid
-			  AND p.status = ?
-			  AND (p.money > 0 OR p.payment_amount_minor > 0)
-			  AND %s >= uu.ct AND %s < ?)`, paymentTime, paymentTime),
+		JOIN (
+			SELECT p.user_id AS puid, MIN(%s) AS pt
+			FROM top_ups p
+			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
+			GROUP BY p.user_id
+		) fp ON fp.puid = uu.uid
+		WHERE fp.pt >= uu.ct AND fp.pt < ?`, paymentTime),
 		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess, end).Scan(&paid).Error; err != nil {
 		return 0, 0, fmt.Errorf("usage_report same-day paid: %w", err)
 	}
