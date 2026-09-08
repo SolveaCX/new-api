@@ -60,3 +60,32 @@ func TestGetRobotsTxtDisallowsNonCanonicalHost(t *testing.T) {
 		t.Fatalf("expected non-canonical robots.txt to disallow only canonical sitemap, got:\n%s", body)
 	}
 }
+
+func TestGetRobotsTxtAllowsConsoleHostToExposeNoindexHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.GET("/robots.txt", GetRobotsTxt)
+
+	req := httptest.NewRequest(http.MethodGet, "https://console.flatkey.ai/robots.txt", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, expected := range []string{
+		"User-agent: *",
+		"Allow: /",
+		"Disallow: /api/",
+		"Disallow: /v1/",
+		"Sitemap: https://flatkey.ai/sitemap.xml",
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected console robots.txt to contain %q, got:\n%s", expected, body)
+		}
+	}
+	if strings.Contains(body, "Disallow: /\n") {
+		t.Fatalf("expected console host not to block all HTML routes, got:\n%s", body)
+	}
+}
