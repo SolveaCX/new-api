@@ -18,15 +18,23 @@ package model
 //   - Calls/Tokens:   consumption log_requests rows of that UTC day
 //     (Log.Type = consume), totalled across the log DB.
 type UsageReportDay struct {
-	Date             string  `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
-	Registered       int     `json:"registered"`
-	ActivatedKey     int     `json:"activated_key"`
-	FirstPaid        int     `json:"first_paid"`
-	PaidUSD          float64 `json:"paid_usd" gorm:"type:decimal(14,2);default:0"`
-	Calls            int64   `json:"calls"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	BuiltAt          int64   `json:"built_at" gorm:"bigint;default:0"` // unix seconds of last compute
+	Date         string  `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
+	Registered   int     `json:"registered"`
+	ActivatedKey int     `json:"activated_key"` // 当日首次建 Key 的去重用户数（1 人多 Key 只算 1）
+	FirstPaid    int     `json:"first_paid"`    // 当日首次付费的去重用户数
+	PaidUSD      float64 `json:"paid_usd" gorm:"type:decimal(14,2);default:0"`
+	// Cohort funnel fields, people-counted, only meaningful once the cohort
+	// window has elapsed (front-end hides the most recent 7/14 days):
+	//   ActivatedC7: 该日注册用户中，注册后 7 日内首次建 Key 的人数（reg->key）。
+	//   PaidC14:     该日首次建 Key 的用户中，建 Key 后 14 日内首次付费的人数
+	//                 (key->pay)。分母 = ActivatedKey（同日 cohort）。
+	ActivatedC7      int   `json:"activated_c7"`
+	PaidC14          int   `json:"paid_c14"`
+	Calls            int64 `json:"calls"`
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	BuiltAt          int64 `json:"built_at" gorm:"bigint;default:0"` // unix seconds of last compute
+	SchemaV          int   `json:"-" gorm:"default:0"`               // aggregation schema version, bump to force one-time recompute
 }
 
 func (UsageReportDay) TableName() string {
