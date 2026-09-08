@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Check } from "lucide-react";
 import { type Locale, localizePath } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 import { consoleUrl } from "@/lib/origins";
@@ -120,8 +121,10 @@ export function OnlinePricingPlansSection(props: { locale: Locale }) {
               <div className="bonus">{planCopy.bonus}</div>
               <a className={`btn ${plan.hot ? "primary" : "white"} tcta`} href={plan.href}>{planCopy.cta}</a>
               <div className="tval">
-                <span className="tglabel">{copy.pricing.textModelsLabel}</span>
-                <div className="tgsub twindow">{planCopy.window}</div>
+                <div className="flex items-center gap-2 text-[15px] font-semibold leading-snug text-[var(--violet-deep)]">
+                  <Check aria-hidden="true" className="h-[18px] w-[18px] shrink-0" />
+                  {copy.pricing.textModelsLabel}
+                </div>
                 <div className="tdiv" />
                 <span className="tglabel">{copy.pricing.toolsLabel}</span>
                 <div className="tgmain">{copy.pricing.toolsMain}</div>
