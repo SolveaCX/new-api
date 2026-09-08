@@ -115,6 +115,7 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
       return sample ? [{ category, count: categoryItems.length, sample }] : [];
     });
   }, [mediaItems]);
+  const heroExamples = mediaItems.slice(0, 3);
   const modelCollections = useMemo(() => buildModelCollections(mediaItems).slice(0, 8), [mediaItems]);
   const topicCollections = useMemo(() => buildTopicCollections(mediaItems).slice(0, 9), [mediaItems]);
   const collectionItems = useMemo(
@@ -149,24 +150,36 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
               <ChevronRight className="size-3" aria-hidden="true" />
               <span className="font-semibold text-[#0B0B0F]">{text.title}</span>
             </nav>
-            <div className="mx-auto max-w-5xl px-2 py-10 text-center md:py-16">
-              <p className="text-xs font-black tracking-[0.18em] text-[#6D28D9] uppercase">{heroCopy[locale].eyebrow}</p>
-              <h1 className="mx-auto mt-6 max-w-5xl text-[clamp(2.8rem,7vw,6.8rem)] leading-[0.94] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
-              <p className="mx-auto mt-7 max-w-3xl text-base leading-7 text-[#5F5B66] md:text-xl md:leading-8">{heroCopy[locale].body}</p>
-              <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+            <div className="grid items-center gap-10 py-10 md:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] md:py-16 lg:gap-16">
+              <div className="max-w-2xl">
+                <p className="text-xs font-black tracking-[0.18em] text-[#6D28D9] uppercase">{heroCopy[locale].eyebrow}</p>
+                <h1 className="mt-6 max-w-2xl text-[clamp(2.8rem,6vw,5.9rem)] leading-[0.96] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
+                <p className="mt-7 max-w-xl text-base leading-7 text-[#5F5B66] md:text-xl md:leading-8">{heroCopy[locale].body}</p>
+                <div className="mt-9 flex flex-wrap items-center gap-3">
                 <Link href="#prompt-collection" className="inline-flex h-12 items-center gap-2 rounded-xl bg-[#070707] px-6 text-sm font-extrabold !text-white shadow-[0_18px_36px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
                   {heroCopy[locale].primary}<ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
                 <a href={playgroundHref} className="inline-flex h-12 items-center gap-2 rounded-xl border border-[#0B0B0F16] bg-white px-6 text-sm font-extrabold text-[#242129] shadow-[0_14px_28px_-22px_rgba(11,11,15,.3)] transition-colors hover:border-[#7C3AED45] hover:text-[#4C1D95]">
                   {heroCopy[locale].secondary}
                 </a>
+                </div>
               </div>
-            </div>
-            <div className="grid gap-4 border-t border-[#0B0B0F10] pt-7 md:grid-cols-3">
-              {[0, 1, 2].map((index) => {
-                const offset = index * 2;
-                return <div key={heroCopy[locale].cards[offset]} className="rounded-2xl border border-[#0B0B0F12] bg-white px-6 py-5 text-left shadow-[0_18px_48px_-38px_rgba(46,16,101,.28)]"><h2 className="text-xl font-black tracking-tight text-[#0B0B0F]">{heroCopy[locale].cards[offset]}</h2><p className="mt-2 text-sm font-semibold leading-6 text-[#77727F]">{heroCopy[locale].cards[offset + 1]}</p></div>;
-              })}
+              <div className="relative min-w-0">
+                <div className="absolute -inset-5 rounded-[2.25rem] bg-[radial-gradient(circle_at_50%_0%,rgba(167,139,250,.3),transparent_68%)] blur-2xl" aria-hidden="true" />
+                <div className="relative overflow-hidden rounded-[1.75rem] border border-[#0B0B0F18] bg-[#211C2D] p-3 shadow-[0_30px_80px_-38px_rgba(46,16,101,.52)]">
+                  <div className="flex items-center justify-between px-2 pb-3 text-[10px] font-black tracking-[0.16em] text-white/55 uppercase">
+                    <span>{heroCopy[locale].eyebrow}</span>
+                    <span className="inline-flex items-center gap-1.5 tracking-normal text-white/75 normal-case"><span className="size-1.5 rounded-full bg-emerald-400" />{text.featured}</span>
+                  </div>
+                  {heroExamples.length ? <div className="grid gap-3 sm:grid-cols-[1.35fr_0.65fr]">
+                    <div className="group relative min-h-[300px] overflow-hidden rounded-2xl bg-[#342C45] sm:min-h-[380px]"><ArtifactPreview artifact={heroExamples[0].artifact} title={getPromptDisplayCopy(heroExamples[0], locale).title} variant="hero" /><div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-4 pt-16"><p className="line-clamp-2 text-sm font-bold leading-5 text-white">{getPromptDisplayCopy(heroExamples[0], locale).title}</p></div></div>
+                    <div className="grid min-h-[300px] gap-3 sm:min-h-[380px]">
+                      {heroExamples.slice(1, 3).map((item) => <div key={item.slug} className="group relative min-h-0 overflow-hidden rounded-2xl bg-[#342C45]"><ArtifactPreview artifact={item.artifact} title={getPromptDisplayCopy(item, locale).title} variant="hero" /><div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3 pt-10"><p className="line-clamp-2 text-xs font-bold leading-4 text-white">{getPromptDisplayCopy(item, locale).title}</p></div></div>)}
+                    </div>
+                  </div> : <div className="flex min-h-[380px] items-center justify-center rounded-2xl bg-gradient-to-br from-[#453A5F] to-[#211C2D] px-8 text-center text-sm font-semibold text-white/75">{heroCopy[locale].body}</div>}
+                </div>
+                <p className="mt-3 px-1 text-xs font-semibold text-[#77727F]">{heroCopy[locale].cards[1]} · {heroCopy[locale].cards[3]}</p>
+              </div>
             </div>
           </div>
         </section>
