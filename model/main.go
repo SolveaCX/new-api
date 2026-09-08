@@ -456,6 +456,8 @@ func orderedMigrationModels() []migrationModel {
 		{&PromptLibraryItem{}, "PromptLibraryItem"},
 		{&GrokAuthFlow{}, "GrokAuthFlow"},
 		{&GrokChannelState{}, "GrokChannelState"},
+		{&UsageReportDay{}, "UsageReportDay"},
+		{&UsageReportDayModel{}, "UsageReportDayModel"},
 	}
 }
 
