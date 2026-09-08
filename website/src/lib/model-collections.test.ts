@@ -4,6 +4,7 @@ import {
   getModelCollectionCopy,
   getModelCollectionPathnames,
   getAvailableModelCollections,
+  selectCollectionModels,
   modelCardData,
   MODEL_COLLECTIONS,
 } from "@/lib/model-collections";
@@ -53,6 +54,26 @@ describe("model collections", () => {
       "/collections/text-embedding-models",
       "/collections/rerank-models",
     ]);
+  });
+
+  test("returns every matched model by default instead of truncating collections", () => {
+    const coding = MODEL_COLLECTIONS.find((collection) => collection.slug === "coding");
+    expect(coding).toBeDefined();
+    const models = Array.from({ length: 24 }, (_, index) => ({
+      model_name: `coding-model-${index}`,
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 1,
+      directory_metadata: { categories: ["Programming"], modalities: ["text"], author: "Test", providers: [], context_tokens: null, series: "Test", released_at: "2026-01-01", distillable: false },
+    }));
+    expect(coding ? selectCollectionModels(coding, models) : []).toHaveLength(24);
+  });
+
+  test("recognizes custom tool and audio model signals", () => {
+    const tools = MODEL_COLLECTIONS.find((collection) => collection.slug === "tool-calling");
+    const audio = MODEL_COLLECTIONS.find((collection) => collection.slug === "audio-generation-models");
+    expect(tools?.matches({ model_name: "gemini-custom-tools", quota_type: 0, model_ratio: 1, completion_ratio: 1 })).toBe(true);
+    expect(audio?.matches({ model_name: "sonilo-video-to-music", quota_type: 0, model_ratio: 1, completion_ratio: 1 })).toBe(true);
   });
 
   test("detects discounts from the public and configured prices", () => {

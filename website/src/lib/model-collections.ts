@@ -254,7 +254,7 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
       vi: { title: "Mô hình AI hỗ trợ gọi công cụ", shortDescription: "Tìm mô hình cho agent và function calling.", intro: "So sánh mô hình có thể gọi công cụ và hàm trong quy trình tự động.", criteria: "Dựa trên tag, tham số và mô tả về tool hoặc function calling.", empty: "Mô hình hỗ trợ công cụ sẽ sớm được bổ sung." },
       de: { title: "KI-Modelle mit Tool-Calling", shortDescription: "Finden Sie Modelle für Agenten und Funktionen.", intro: "Vergleichen Sie Modelle, die Tools und Funktionen in automatisierten Workflows aufrufen können.", criteria: "Die Auswahl basiert auf Tags, Parametern und Beschreibungen im Katalog.", empty: "Tool-fähige Modelle werden bald ergänzt." },
     }),
-    matches: (model) => /tool.?calling|function.?calling|function call|agentic|agent workflow/i.test(textOf(model)),
+    matches: (model) => /tool.?calling|function.?calling|function call|custom.?tools|agentic|agent workflow/i.test(textOf(model)),
   },
   {
     slug: "free-models",
@@ -317,7 +317,9 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
       en: { title: "Best Audio Generation Models", shortDescription: "Compare models for music, sound, and audio-output applications.", intro: "Explore models for music generation, sound effects, and other audio-output workflows.", criteria: "Models with audio output or audio-generation signals in the catalog.", empty: "Audio generation models are being added to the catalog." },
       zh: { title: "最佳音频生成模型", shortDescription: "比较适合音乐、声音和音频输出的模型。", intro: "浏览适合音乐生成、音效和其他音频输出工作流的模型。", criteria: "目录中具有音频输出或音频生成能力信号的模型。", empty: "音频生成模型正在加入目录。" },
     }),
-    matches: (model) => hasModality(model, "audio") && /audio|music|sound|tts|speech/i.test(textOf(model)),
+    matches: (model) =>
+      (hasModality(model, "audio") && /audio|music|sound|tts|speech|voice/i.test(textOf(model))) ||
+      /audio|music|sound|tts|speech|voice|sonilo/i.test(model.model_name),
   },
   {
     slug: "text-to-speech-models",
@@ -365,9 +367,9 @@ export function getModelCollectionCopy(collection: ModelCollectionDefinition, lo
   return collection.copy[locale] ?? collection.copy.en;
 }
 
-export function selectCollectionModels(collection: ModelCollectionDefinition, models: PricingModel[], limit = 18): PricingModel[] {
+export function selectCollectionModels(collection: ModelCollectionDefinition, models: PricingModel[], limit?: number): PricingModel[] {
   const matched = models.filter(collection.matches);
-  return matched.slice(0, limit);
+  return limit == null ? matched : matched.slice(0, limit);
 }
 
 export function modelCardData(model: PricingModel, pricing: PricingData, fallbackDescription = "") {

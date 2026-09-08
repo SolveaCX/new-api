@@ -15,7 +15,7 @@ import { type PricingData } from "@/lib/pricing";
 import { buildCollectionDetailSchema, buildCollectionsIndexSchema, stringifyJsonLd } from "@/lib/schema";
 
 const shellClass = "fk-site-frame";
-const detailShellClass = "mx-auto w-[calc(100%-2rem)] max-w-[900px] sm:w-[calc(100%-3rem)]";
+const detailShellClass = "fk-site-frame max-w-[1160px]";
 const COLLECTION_DISPLAY_ORDER = [
   "image-generation",
   "free-models",
