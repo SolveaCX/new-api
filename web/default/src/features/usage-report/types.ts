@@ -24,17 +24,13 @@ export interface ApiResponse<T> {
 
 export interface UsageReportDayRow {
   date: string // UTC+0 yyyy-mm-dd
-  registered: number
-  activated_key: number // 当日首次建 Key 的去重用户数（人）
-  first_paid: number
+  registered: number // 该日注册（enabled+verified，人）
+  activated_key: number // 当日首次建 Key 的去重用户数（事件口径，备用）
+  first_paid: number // 当日首次付费的去重用户数（事件口径，备用）
   paid_usd: number
-  // cohort 队列口径（人，⊆ 对应行分母，保证列间递减）：
-  //   activated_c7  = 该日注册者中注册后 7 日内建 Key 人数（⊆ registered）
-  //   paid_c14      = 该日建Key者中 14 日内首付人数（⊆ activated_key 事件口径）
-  //   paid_reg_c14  = 该日注册者中注册后 14 日内首付人数（⊆ registered）
-  activated_c7: number
-  paid_c14: number
-  paid_reg_c14: number
+  // 当天口径（主口径，C 端快进快出；⊆ registered）：
+  activated_day: number // 该日注册的人中当天首次建 Key 的人数
+  paid_day: number // 该日注册的人中当天首次付费的人数
   calls: number
   prompt_tokens: number
   completion_tokens: number
