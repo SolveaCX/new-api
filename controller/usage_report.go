@@ -37,19 +37,18 @@ func GetUsageReport(c *gin.Context) {
 	if days > usageReportMaxDays {
 		days = usageReportMaxDays
 	}
-	if err := service.EnsureUsageReportRange(days); err != nil {
-		common.ApiError(c, err)
-		return
-	}
 
 	// Build [from..to] date range (inclusive) around today (UTC+0).
 	now := time.Now().UTC()
 	to := now.Format(usageReportDateLayout)
 	from := now.AddDate(0, 0, -(days - 1)).Format(usageReportDateLayout)
 
-	// CSV exports only need the requested dimension; fetch lazily so a single
-	// CSV never drags the other aggregate table along.
+	// CSV exports need a complete window: fill synchronously (rare, admin-only).
 	if strings.EqualFold(c.Query("format"), "csv") {
+		if err := service.EnsureUsageReportRange(days); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		dim := strings.ToLower(c.Query("dim"))
 		if dim == "models" {
 			modelRows, err := model.GetUsageReportDayModels(from, to)
@@ -69,6 +68,12 @@ func GetUsageReport(c *gin.Context) {
 		return
 	}
 
+	// Interactive view: never block the request on a historical backfill.
+	// Kick off the warm fill in the background and serve what is already
+	// persisted; the response carries a "filling" flag until the window is
+	// complete so the front-end can poll.
+	service.EnsureUsageReportRangeAsync(days)
+
 	dayRows, err := model.GetUsageReportDays(from, to)
 	if err != nil {
 		common.ApiError(c, err)
@@ -86,6 +91,10 @@ func GetUsageReport(c *gin.Context) {
 		"data": gin.H{
 			"days":   dayRows,
 			"models": modelRows,
+			// Combine data completeness with the runner state: if the background
+			// fill finished right between query and response the rows may still be
+			// short, so the front-end keeps polling until the window is complete.
+			"filling": len(dayRows) < days || service.UsageReportFillRunning(),
 		},
 	})
 }

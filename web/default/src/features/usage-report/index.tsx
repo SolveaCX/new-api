@@ -144,7 +144,7 @@ export function UsageReport() {
   const [days, setDays] = useState(30)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
-  const { data: res, isLoading } = useQuery({
+  const { data: res, isLoading, refetch } = useQuery({
     queryKey: usageReportQueryKeys.report(days),
     queryFn: () => getUsageReport(days),
   })
@@ -152,6 +152,8 @@ export function UsageReport() {
   const dayRows: UsageReportDayRow[] = payload
     ? [...payload.days].sort((a, b) => a.date.localeCompare(b.date))
     : []
+  const filling = Boolean(payload?.filling)
+  const incomplete = dayRows.length < days
   const modelRows: UsageReportModelRow[] = payload ? [...payload.models] : []
   const today = dayRows.length > 0 ? dayRows[dayRows.length - 1] : undefined
   const yesterday = dayRows.length > 1 ? dayRows[dayRows.length - 2] : undefined
@@ -323,6 +325,29 @@ export function UsageReport() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [dayRows.length])
 
+  // 轮询策略：
+  // - 后台正在回填(filling)：每 4s 刷新，不设上限；
+  // - 数据未满但后台已停(失败/中断)：最多自动重试 staleRetryLimit 次后停止，
+  //   提示用户手动重试，避免无限打接口。
+  const staleRetryLimit = 6
+  const [staleTicks, setStaleTicks] = useState(0)
+  const staleStopped = incomplete && !filling && staleTicks >= staleRetryLimit
+  useEffect(() => {
+    if (!incomplete) return
+    if (filling) {
+      const id = setTimeout(() => {
+        void refetch()
+      }, 4000)
+      return () => clearTimeout(id)
+    }
+    if (staleTicks >= staleRetryLimit) return
+    const id = setTimeout(() => {
+      setStaleTicks((n) => n + 1)
+      void refetch()
+    }, 4000)
+    return () => clearTimeout(id)
+  }, [incomplete, filling, staleTicks, refetch])
+
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setActiveSec(id)
@@ -356,6 +381,26 @@ export function UsageReport() {
           </div>
         ) : (
           <div className='space-y-8'>
+            {filling && (
+              <div className='rounded-md bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900'>
+                ⏳ {t('首次历史回填仍在后台进行（视数据量约数秒~1 分钟），本页每 4 秒自动刷新，已算好的日期先显示。')}
+              </div>
+            )}
+            {staleStopped && (
+              <div className='flex flex-wrap items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs leading-6 text-red-900'>
+                <span>{t('历史回填多次未能完成（当前仅部分日期有数据）。请检查服务日志，或点击重试。')}</span>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  onClick={() => {
+                    setStaleTicks(0)
+                    void refetch()
+                  }}
+                >
+                  {t('重试')}
+                </Button>
+              </div>
+            )}
             <div className='bg-muted/60 flex flex-wrap gap-1 rounded-lg p-1'>
               {[
                 { id: 'funnel', label: '① 漏斗' },
