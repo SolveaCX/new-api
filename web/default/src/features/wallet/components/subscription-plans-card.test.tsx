@@ -104,6 +104,22 @@ function plan(id: number, title: string, price: number): PlanRecord {
 }
 
 const plans = [plan(1, 'Go', 10), plan(2, 'Pro', 20), plan(3, 'Max', 40)]
+const legacySelfData = normalizeSelfSubscriptionData({
+  all_subscriptions: [
+    {
+      subscription: {
+        id: 1,
+        user_id: 7,
+        plan_id: 1,
+        status: 'expired',
+        start_time: 1,
+        end_time: 2,
+        amount_total: 10,
+        amount_used: 0,
+      },
+    },
+  ],
+})
 const localizedPlans = plans.map((item, index) => ({
   ...item,
   plan: {
@@ -190,7 +206,7 @@ function matchLocalPaymentQuote(
 
 function renderWalletCardWithPlans(
   initialPlans: PlanRecord[],
-  selfData = normalizeSelfSubscriptionData(undefined)
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -216,20 +232,21 @@ function renderPlanLimitSummary(plan: {
   )
 }
 
-function renderWalletCard(selfData = normalizeSelfSubscriptionData(undefined)) {
+function renderWalletCard(selfData = legacySelfData) {
   return renderWalletCardWithPlans(plans, selfData)
 }
 
 function renderWalletCardWithPreviewQuote(
   quote: SubscriptionPaymentQuote,
-  previewPlan = plans[0]
+  previewPlan = plans[0],
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <SubscriptionPlansCard
         topupInfo={topupInfo}
         initialPlans={[previewPlan]}
-        initialSelfData={normalizeSelfSubscriptionData(undefined)}
+        initialSelfData={selfData}
         initialLoading={false}
         initialPlanPreviewQuotes={{ [previewPlan.plan.id]: quote }}
         userQuota={12345}
@@ -240,7 +257,8 @@ function renderWalletCardWithPreviewQuote(
 
 function renderWalletCardWithPreviewQuoteAndRecall(
   quote: SubscriptionPaymentQuote,
-  previewPlan = plans[0]
+  previewPlan = plans[0],
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -248,7 +266,7 @@ function renderWalletCardWithPreviewQuoteAndRecall(
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={[previewPlan]}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           initialPlanPreviewQuotes={{ [previewPlan.plan.id]: quote }}
           userQuota={12345}
@@ -288,7 +306,8 @@ const subscriptionRecallClaim: RecallClaimView = {
 }
 
 function renderWalletCardWithRecall(
-  recallView: RecallClaimView = subscriptionRecallClaim
+  recallView: RecallClaimView = subscriptionRecallClaim,
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -296,7 +315,7 @@ function renderWalletCardWithRecall(
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={plans}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           userQuota={12345}
         />
@@ -305,14 +324,17 @@ function renderWalletCardWithRecall(
   )
 }
 
-function renderWalletCardWithRecallOffers(recallOffers: RecallOfferView[]) {
+function renderWalletCardWithRecallOffers(
+  recallOffers: RecallOfferView[],
+  selfData = legacySelfData
+) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <RecallClaimProvider offers={recallOffers}>
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={plans}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           userQuota={12345}
         />
@@ -1357,6 +1379,32 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('Custom routing discounts')
     expect(html).toContain('from-[#f7f3ff]')
     expect(html).not.toContain('bg-[#0b0b0d]')
+  })
+
+  test('shows the new pricing copy only for users without subscription history', () => {
+    const html = renderWalletCardWithPlans(
+      plans,
+      normalizeSelfSubscriptionData(undefined)
+    )
+
+    expect(html.match(/data-subscription-offer-version="new"/g)?.length).toBe(3)
+    expect(html).toContain('Top up $10, get $3 bonus')
+    expect(html).toContain('Top up $30, get $15 bonus')
+    expect(html).toContain('Top up $100, get $70 bonus')
+    expect(html).not.toContain('80% off')
+    expect(html).not.toContain('data-subscription-discount-label=')
+  })
+
+  test('keeps legacy campaign copy for users with subscription history', () => {
+    const html = renderWalletCard()
+
+    expect(
+      html.match(/data-subscription-offer-version="legacy"/g)?.length
+    ).toBe(3)
+    expect(html).toContain('80% off')
+    expect(html).not.toContain('Top up $10, get $3 bonus')
+    expect(html).not.toContain('Top up $30, get $15 bonus')
+    expect(html).not.toContain('Top up $100, get $70 bonus')
   })
 
   test('shows the campaign badge before a backend checkout quote loads', () => {
