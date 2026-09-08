@@ -29,7 +29,7 @@ const usageReportTodayFresh = 5 * time.Minute
 
 // usageReportSchemaV is bumped whenever the daily row gains new aggregated
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
-const usageReportSchemaV = 3
+const usageReportSchemaV = 4
 
 var usageReportMu sync.Mutex
 
@@ -201,7 +201,7 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 			SELECT u.id AS uid, u.created_at AS ct, MIN(t.created_time) AS ft
 			FROM users u
 			JOIN tokens t ON t.user_id = u.id
-			WHERE u.status = ? AND u.email_verified_at > 0
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 			GROUP BY u.id
 		) x
@@ -243,7 +243,7 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 		SELECT COUNT(*) FROM (
 			SELECT u.id AS uid, u.created_at AS ct
 			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
 		WHERE EXISTS (
@@ -315,7 +315,7 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 		SELECT COUNT(*) FROM (
 			SELECT u.id AS uid, u.created_at AS ct
 			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
 		WHERE EXISTS (
@@ -331,7 +331,7 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 		SELECT COUNT(*) FROM (
 			SELECT u.id AS uid, u.created_at AS ct
 			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
 		WHERE EXISTS (
