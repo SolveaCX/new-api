@@ -145,21 +145,21 @@ export function UsageReport() {
     return row
   })
 
-  // 转化率：近 7 日滚动（Σ激活/Σ注册、Σ首付/Σ激活），避免注册量骤降日的假高值
-  const convSerie = dayRows.map((_, i) => {
-    const lo = Math.max(0, i - 6)
-    let regs = 0
-    let keys = 0
-    let paid = 0
-    for (let k = lo; k <= i; k++) {
-      regs += dayRows[k].registered
-      keys += dayRows[k].activated_key
-      paid += dayRows[k].first_paid
-    }
+  // 转化率：队列(cohort)口径，单位 = 人。
+  //   注册→激活率(7日队列) = 该日注册者中注册后 7 日内首次建 Key 的人数 / 该日注册人数
+  //   激活→首付率(14日队列) = 该日首次建 Key 者中其后 14 日内首次付费的人数 / 该日建 Key 人数
+  // 分子 ⊆ 分母，任何时点都不超过 100%。最近 7/14 天的队列尚未到期，置 null 不展示。
+  const completed7 = Math.max(0, dayRows.length - 7)
+  const completed14 = Math.max(0, dayRows.length - 14)
+  const convSerie = dayRows.map((r, i) => {
+    const regKey =
+      i < completed7 && r.registered > 0 ? Math.round((r.activated_c7 / r.registered) * 1000) / 10 : null
+    const keyPay =
+      i < completed14 && r.activated_key > 0 ? Math.round((r.paid_c14 / r.activated_key) * 10000) / 100 : null
     return {
-      date: dayRows[i].date,
-      '注册→激活率': regs > 0 ? Math.round((keys / regs) * 1000) / 10 : 0,
-      '激活→首付率': keys > 0 ? Math.round((paid / keys) * 10000) / 100 : 0,
+      date: r.date,
+      '注册→激活率(7日队列)': regKey,
+      '激活→首付率(14日队列)': keyPay,
     }
   })
 
@@ -279,18 +279,21 @@ export function UsageReport() {
               {/* 转化率趋势 */}
               <Card>
                 <CardHeader>
-                  <CardTitle>{t('Conversion Trend (7d rolling)')}</CardTitle>
+                  <CardTitle>{t('Conversion Trend (cohort, people)')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width='100%' height={260}>
+                  <p className='text-muted-foreground mb-2 text-xs'>
+                    {t('单位=人；注册→激活率 = 当日注册队列 7 日内建 Key 人数 / 当日注册人数；激活→首付率 = 当日建 Key 队列 14 日内首付人数 / 当日建 Key 人数。最近 7/14 天队列未到期，线末段留空。')}
+                  </p>
+                  <ResponsiveContainer width='100%' height={240}>
                     <LineChart data={convSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                       <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
                       <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
                       <Tooltip formatter={(value: unknown) => (value == null ? '' : `${String(value)}%`)} />
                       <Legend />
-                      <Line type='monotone' dataKey='注册→激活率' name={t('注册→激活率')} stroke='#2f6bff' dot={false} />
-                      <Line type='monotone' dataKey='激活→首付率' name={t('激活→首付率')} stroke='#0f9d58' dot={false} />
+                      <Line type='monotone' dataKey='注册→激活率(7日队列)' name={t('注册→激活率(7日队列)')} stroke='#2f6bff' dot={false} connectNulls={false} />
+                      <Line type='monotone' dataKey='激活→首付率(14日队列)' name={t('激活→首付率(14日队列)')} stroke='#0f9d58' dot={false} connectNulls={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>

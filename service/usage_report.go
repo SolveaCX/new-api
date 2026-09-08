@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -25,6 +26,10 @@ import (
 //     Redis minute-level counters (documented, not yet wired to the hot path).
 
 const usageReportTodayFresh = 5 * time.Minute
+
+// usageReportSchemaV is bumped whenever the daily row gains new aggregated
+// columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
+const usageReportSchemaV = 1
 
 var usageReportMu sync.Mutex
 
@@ -60,23 +65,25 @@ func EnsureUsageReportRange(days int) error {
 
 // EnsureUsageReportDate guarantees the row for one UTC date exists and is
 // fresh enough for today. Past dates are computed once; today is refreshed at
-// most every usageReportTodayFresh seconds.
+// most every usageReportTodayFresh seconds. Rows written by an older
+// aggregation schema (SchemaV < current) are recomputed once.
 func EnsureUsageReportDate(date string) error {
 	usageReportMu.Lock()
 	defer usageReportMu.Unlock()
 
-	exists, err := model.GetUsageReportDayExists(date)
+	var row model.UsageReportDay
+	err := model.DB.Where("date = ?", date).First(&row).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return computeUsageReportDate(date)
+		}
 		return err
 	}
-	if !exists {
+	// One-time recompute after schema additions (cohort fields etc).
+	if row.SchemaV < usageReportSchemaV {
 		return computeUsageReportDate(date)
 	}
 	if date == utcToday(time.Now()) {
-		var row model.UsageReportDay
-		if err := model.DB.Where("date = ?", date).First(&row).Error; err != nil {
-			return err
-		}
 		if time.Since(time.Unix(row.BuiltAt, 0)) >= usageReportTodayFresh {
 			return computeUsageReportDate(date)
 		}
@@ -97,6 +104,7 @@ func computeUsageReportDate(date string) error {
 		return err
 	}
 	day.BuiltAt = common.GetTimestamp()
+	day.SchemaV = usageReportSchemaV
 
 	return model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("date = ?", date).Delete(&model.UsageReportDay{}).Error; err != nil {
@@ -175,6 +183,51 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 		return nil, nil, fmt.Errorf("usage_report paid usd: %w", err)
 	}
 	day.PaidUSD = math.Round(paidUSD*100) / 100
+
+	// 3b) Cohort funnel — people counted (1 user = 1), only completed windows
+	// are meaningful; the front-end hides the most recent 7/14 days.
+	//
+	// reg -> key(7d): users registered this UTC day whose FIRST key was
+	// created within 7 days after their registration. Subset of Registered,
+	// so the cohort rate can never exceed 100%.
+	var activatedC7 int
+	if err := model.DB.Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT u.id AS uid, u.created_at AS ct, MIN(t.created_time) AS ft
+			FROM users u
+			JOIN tokens t ON t.user_id = u.id
+			WHERE u.status = ? AND u.email_verified_at > 0
+			  AND u.created_at >= ? AND u.created_at < ?
+			GROUP BY u.id
+		) x
+		WHERE x.ft >= x.ct AND x.ft <= x.ct + ?`,
+		common.UserStatusEnabled, start, end, 7*24*60*60).Scan(&activatedC7).Error; err != nil {
+		return nil, nil, fmt.Errorf("usage_report cohort reg->key(7d): %w", err)
+	}
+	day.ActivatedC7 = activatedC7
+
+	// key -> pay(14d): users whose FIRST key fell in this UTC day and who made
+	// their first successful top-up within 14 days after that first key.
+	// Subset of ActivatedKey (same cohort), so the rate is <= 100%.
+	var paidC14 int
+	if err := model.DB.Raw(fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT t.user_id AS uid, MIN(t.created_time) AS kt
+			FROM tokens t
+			GROUP BY t.user_id
+		) kk
+		WHERE kk.kt >= ? AND kk.kt < ?
+		  AND EXISTS (
+			SELECT 1 FROM top_ups p
+			WHERE p.user_id = kk.uid
+			  AND p.status = ?
+			  AND (p.money > 0 OR p.payment_amount_minor > 0)
+			  AND %s >= kk.kt AND %s <= kk.kt + ?)`,
+		paymentTime, paymentTime),
+		start, end, common.TopUpStatusSuccess, 14*24*60*60).Scan(&paidC14).Error; err != nil {
+		return nil, nil, fmt.Errorf("usage_report cohort key->pay(14d): %w", err)
+	}
+	day.PaidC14 = paidC14
 
 	// 5) Usage: consumption log rows of that day (Log.Type = consume),
 	// grouped by model. All queries are range-bounded by the log table's
