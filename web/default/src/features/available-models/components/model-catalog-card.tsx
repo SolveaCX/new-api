@@ -213,7 +213,7 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
   const category = getModelCategory(model)
   const categoryLabel = getModelCategoryLabel(category, t)
   const brand = resolveModelBrand(model)
-  const promotions = getModelPromotions(model.id, model.tags)
+  const promotions = getModelPromotions(model.id, model.tags ?? '')
   // "OpenAI Compatible" is true of nearly every model here, so as a badge it
   // costs a slot and tells the reader nothing. The category badge already
   // leads the row, so an endpoint resolving to the same word ("Video" for a
