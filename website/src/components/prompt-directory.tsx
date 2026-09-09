@@ -116,6 +116,7 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
     });
   }, [mediaItems]);
   const heroExamples = mediaItems.slice(0, 3);
+  const heroImage = heroExamples.find((item) => item.artifact.kind === "image") ?? heroExamples[0];
   const modelCollections = useMemo(() => buildModelCollections(mediaItems).slice(0, 8), [mediaItems]);
   const topicCollections = useMemo(() => buildTopicCollections(mediaItems).slice(0, 9), [mediaItems]);
   const collectionItems = useMemo(
@@ -145,11 +146,11 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
       <main className="model-detail-page model-prototype home-landing relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] text-[#171a21]">
         <section className="model-hero border-b border-[#0B0B0F14] bg-transparent px-6 pt-10 pb-10 sm:px-8 md:pt-14 md:pb-14 lg:px-10">
           <div className="mx-auto max-w-[1280px]">
-            <div className="grid items-center gap-10 py-10 md:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] md:py-16 lg:gap-16">
-              <div className="max-w-2xl">
-                <h1 className="mt-0 max-w-2xl text-[clamp(2.8rem,6vw,5.9rem)] leading-[0.96] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
-                <p className="mt-7 max-w-xl text-base leading-7 text-[#5F5B66] md:text-xl md:leading-8">{heroCopy[locale].body}</p>
-                <div className="mt-9 flex flex-wrap items-center gap-3">
+            <div className="grid items-center gap-8 py-8 md:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] md:py-12 lg:gap-12">
+              <div className="max-w-3xl">
+                <h1 className="mt-0 max-w-[15ch] text-[clamp(2.35rem,4.8vw,4.8rem)] leading-[1.04] font-extrabold tracking-[-0.06em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
+                <p className="mt-6 max-w-2xl text-base leading-7 text-[#5F5B66] md:text-lg md:leading-8">{heroCopy[locale].body}</p>
+                <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Link href="#prompt-collection" className="inline-flex h-12 items-center gap-2 rounded-xl bg-[#070707] px-6 text-sm font-extrabold !text-white shadow-[0_18px_36px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
                   {heroCopy[locale].primary}<ArrowRight className="size-4" aria-hidden="true" />
                 </Link>
@@ -158,21 +159,38 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
                 </a>
                 </div>
               </div>
-              <div className="relative min-w-0">
-                <div className="absolute -inset-5 rounded-[2.25rem] bg-[radial-gradient(circle_at_50%_0%,rgba(167,139,250,.3),transparent_68%)] blur-2xl" aria-hidden="true" />
-                <div className="relative overflow-hidden rounded-[1.75rem] border border-[#0B0B0F18] bg-[#211C2D] p-3 shadow-[0_30px_80px_-38px_rgba(46,16,101,.52)]">
-                  <div className="flex items-center justify-end px-2 pb-3 text-[10px] font-black tracking-normal text-white/75">
-                    <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" />{text.featured}</span>
-                  </div>
-                  {heroExamples.length ? <div className="grid gap-3 sm:grid-cols-[1.35fr_0.65fr]">
-                    <div className="group relative min-h-[300px] overflow-hidden rounded-2xl bg-[#342C45] sm:min-h-[380px]"><ArtifactPreview artifact={heroExamples[0].artifact} title={getPromptDisplayCopy(heroExamples[0], locale).title} variant="hero" /><div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-4 pt-16"><p className="line-clamp-2 text-sm font-bold leading-5 text-white">{getPromptDisplayCopy(heroExamples[0], locale).title}</p></div></div>
-                    <div className="grid min-h-[300px] gap-3 sm:min-h-[380px]">
-                      {heroExamples.slice(1, 3).map((item) => <div key={item.slug} className="group relative min-h-0 overflow-hidden rounded-2xl bg-[#342C45]"><ArtifactPreview artifact={item.artifact} title={getPromptDisplayCopy(item, locale).title} variant="hero" /><div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3 pt-10"><p className="line-clamp-2 text-xs font-bold leading-4 text-white">{getPromptDisplayCopy(item, locale).title}</p></div></div>)}
-                    </div>
-                  </div> : <div className="flex min-h-[380px] items-center justify-center rounded-2xl bg-gradient-to-br from-[#453A5F] to-[#211C2D] px-8 text-center text-sm font-semibold text-white/75">{heroCopy[locale].body}</div>}
+              <div className="relative min-w-0 md:pl-2">
+                <div className="absolute -inset-4 rounded-[2rem] bg-[radial-gradient(circle_at_50%_0%,rgba(167,139,250,.24),transparent_68%)] blur-2xl" aria-hidden="true" />
+                <div className="relative overflow-hidden rounded-[1.5rem] border border-[#0B0B0F18] bg-[#211C2D] p-2.5 shadow-[0_24px_64px_-36px_rgba(46,16,101,.48)]">
+                  {heroImage ? <div className="group relative overflow-hidden rounded-[1.15rem] bg-[#342C45]"><ArtifactPreview artifact={heroImage.artifact} title={getPromptDisplayCopy(heroImage, locale).title} variant="hero" /></div> : <div className="flex aspect-[4/3] items-center justify-center rounded-[1.15rem] bg-gradient-to-br from-[#453A5F] to-[#211C2D] px-8 text-center text-sm font-semibold text-white/75">{heroCopy[locale].body}</div>}
                 </div>
-                <p className="mt-3 px-1 text-xs font-semibold text-[#77727F]">{heroCopy[locale].cards[1]} · {heroCopy[locale].cards[3]}</p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-[#E7E4EC] bg-white px-6 py-12 sm:px-8 md:py-16 lg:px-10">
+          <div className="mx-auto grid max-w-[1280px] gap-8 md:grid-cols-[0.82fr_1.18fr] md:gap-16">
+            <h2 className="max-w-sm text-2xl font-black leading-tight tracking-[-0.04em] text-[#0B0B0F] md:text-3xl">{heroCopy[locale].title}</h2>
+            <div className="max-w-2xl border-l border-[#D8D2E0] pl-6 text-base leading-8 text-[#5F5B66] md:pl-8 md:text-lg">
+              <p>{heroCopy[locale].body}</p>
+              <p className="mt-5">{heroCopy[locale].cards[1]} · {heroCopy[locale].cards[3]} · {heroCopy[locale].cards[5]}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-[#E7E4EC] bg-[#FFF1DE] px-6 py-12 sm:px-8 md:py-16 lg:px-10">
+          <div className="mx-auto max-w-[1280px]">
+            <h2 className="mb-6 text-2xl font-black tracking-[-0.04em] text-[#0B0B0F] md:text-3xl">{text.featured}</h2>
+            <div className="grid gap-5 md:grid-cols-2">
+              <Link href={localizePath("/prompts/image", locale)} className="group grid items-center gap-6 overflow-hidden rounded-[1.5rem] border border-[#0B0B0F22] bg-[#FFFDF8] p-5 shadow-[5px_6px_0_#1E1B18] transition hover:-translate-y-0.5 md:grid-cols-[1fr_1.05fr] md:p-6">
+                <div><p className="text-xs font-black tracking-[0.14em] text-[#F06D5F] uppercase">{categoryLabels[locale].image}</p><h3 className="mt-2 text-2xl font-black tracking-tight text-[#0B0B0F]">{heroCopy[locale].cards[0]}</h3><p className="mt-2 text-sm leading-6 text-[#6B6475]">{discoveryCopy[locale].imageModel}</p><span className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg bg-[#070707] px-4 text-xs font-extrabold !text-white">{text.view}<ArrowRight className="size-3.5" aria-hidden="true" /></span></div>
+                <div className="aspect-[4/3] overflow-hidden rounded-xl bg-[#EEE8FF]"><ArtifactPreview artifact={mediaCollections.find((collection) => collection.category === "image")?.sample.artifact ?? { kind: "text", title: categoryLabels[locale].image, body: "" }} title={categoryLabels[locale].image} variant="hero" /></div>
+              </Link>
+              <Link href={localizePath("/prompts/video", locale)} className="group grid items-center gap-6 overflow-hidden rounded-[1.5rem] border border-[#0B0B0F22] bg-[#FFFDF8] p-5 shadow-[5px_6px_0_#1E1B18] transition hover:-translate-y-0.5 md:grid-cols-[1fr_1.05fr] md:p-6">
+                <div><p className="text-xs font-black tracking-[0.14em] text-[#F06D5F] uppercase">{categoryLabels[locale].video}</p><h3 className="mt-2 text-2xl font-black tracking-tight text-[#0B0B0F]">{heroCopy[locale].cards[2]}</h3><p className="mt-2 text-sm leading-6 text-[#6B6475]">{discoveryCopy[locale].videoModel}</p><span className="mt-5 inline-flex h-9 items-center gap-2 rounded-lg border border-[#0B0B0F22] bg-white px-4 text-xs font-extrabold text-[#28232E]">{text.view}<ArrowRight className="size-3.5" aria-hidden="true" /></span></div>
+                <div className="aspect-[4/3] overflow-hidden rounded-xl bg-[#211C2D]"><ArtifactPreview artifact={mediaCollections.find((collection) => collection.category === "video")?.sample.artifact ?? { kind: "text", title: categoryLabels[locale].video, body: "" }} title={categoryLabels[locale].video} variant="hero" /></div>
+              </Link>
             </div>
           </div>
         </section>
@@ -192,7 +210,7 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
         <DirectorySection eyebrow={text.useCase} title={sections.topics} tone="white">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {topicCollections.map((collection) => (
-              <Link key={collection.key} href={collectionHref(locale, "useCase", collection.key)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
+              <Link key={collection.key} href={promptUseCaseHref(locale, collection.key)} className="group overflow-hidden rounded-2xl border border-[#0B0B0F14] bg-white shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
                 <div className="aspect-[16/9] overflow-hidden bg-[#211C2D]"><ArtifactPreview artifact={collection.sample.artifact} title={getPromptDisplayCopy(collection.sample, locale).title} variant="hero" /></div>
                 <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black text-[#0B0B0F]">{localizePromptTag(collection.key, locale)}</h3><p className="mt-1 text-xs font-semibold text-[#77727F]">{collection.count} {text.found}</p></div><ArrowRight className="size-4 shrink-0 text-[#A29CAB] transition group-hover:translate-x-0.5 group-hover:text-[#5B21B6]" aria-hidden="true" /></div>
               </Link>
@@ -229,7 +247,7 @@ function ModelCollectionCard({ collection, locale, text }: { collection: Collect
   const description = collection.sample.category === "video" ? discoveryCopy[locale].videoModel : discoveryCopy[locale].imageModel;
   const tags = [...new Set(collection.items.flatMap(visibleTags))].slice(0, 3);
   return (
-    <Link href={collectionHref(locale, "model", collection.key)} className="group flex min-h-60 flex-col rounded-2xl border border-[#0B0B0F14] bg-white p-5 shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
+    <Link href={promptModelHref(locale, collection.key)} className="group flex min-h-60 flex-col rounded-2xl border border-[#0B0B0F14] bg-white p-5 shadow-[0_24px_70px_-46px_rgba(46,16,101,.16)] transition hover:-translate-y-px hover:border-[#7C3AED35] hover:shadow-[0_24px_70px_-42px_rgba(46,16,101,.24)]">
       <div className="flex items-start justify-between gap-4">
         <span className="grid size-11 place-items-center rounded-full border border-[#0B0B0F12] bg-[#F8F6FC] shadow-[0_10px_26px_-20px_rgba(11,11,15,.35)]">
           <Image src={presentation.logo} alt="" width={24} height={24} className="size-6 object-contain" aria-hidden="true" />
@@ -299,6 +317,14 @@ function collectionHref(locale: Locale, key: "model" | "useCase", value: string)
 function mediaCollectionHref(locale: Locale, category: PromptItem["category"]) {
   if (category === "image" || category === "video") return localizePath(`/prompts/${category}`, locale);
   return `${localizePath("/prompts", locale)}?type=${encodeURIComponent(category)}#prompt-collection`;
+}
+
+function promptUseCaseHref(locale: Locale, value: string) {
+  return localizePath(`/prompts/use-case/${encodeURIComponent(value)}`, locale);
+}
+
+function promptModelHref(locale: Locale, value: string) {
+  return localizePath(`/prompts/model/${encodeURIComponent(value)}`, locale);
 }
 
 function promptHref(item: PromptItem, locale: Locale) {
