@@ -32,11 +32,6 @@ const searchSchema = z
   .object({
     redirect: z.string().optional(),
     recall_redirect: z.string().min(1).max(128).optional(),
-    isFluere: z.string().optional(),
-    is_fluere: z.string().optional(),
-    invite: z.string().optional(),
-    lng: z.string().optional(),
-    aff: z.string().optional(),
   })
   .passthrough()
 
