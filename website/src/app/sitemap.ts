@@ -52,14 +52,15 @@ function queryEntry(
   priority: number,
   changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"]
 ) {
-  return LOCALES.map((locale) => ({
+  const indexableLocales = seoIndexableLocales(pathname);
+  return indexableLocales.map((locale) => ({
     url: `${base}${localizePath(pathname, locale)}?${query}`,
     lastModified: new Date(),
     changeFrequency,
     priority,
     alternates: {
       languages: Object.fromEntries(
-        LOCALES.map((alternate) => [localeLanguageTag(alternate), `${base}${localizePath(pathname, alternate)}?${query}`])
+        indexableLocales.map((alternate) => [localeLanguageTag(alternate), `${base}${localizePath(pathname, alternate)}?${query}`])
       ),
     },
   }));

@@ -65,6 +65,7 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/id/docs");
       expect(urls).not.toContain("https://flatkey.ai/id/playground");
       expect(urls).not.toContain("https://flatkey.ai/pt/playground");
+      expect(urls.some((url) => url.includes("/models?series=") && url.includes("/id/"))).toBe(false);
       expect(urls).not.toContain("https://flatkey.ai/id/privacy");
       expect(urls).not.toContain("https://flatkey.ai/id/refund-policy");
       expect(urls).not.toContain("https://flatkey.ai/id/sla");
@@ -75,6 +76,8 @@ describe("sitemap", () => {
       const playgroundEntry = entries.find((entry) => entry.url === "https://flatkey.ai/playground");
       expect(playgroundEntry?.alternates?.languages).not.toHaveProperty("id-ID");
       expect(playgroundEntry?.alternates?.languages).not.toHaveProperty("pt-BR");
+      const seriesEntry = entries.find((entry) => entry.url === "https://flatkey.ai/models?series=Claude");
+      expect(seriesEntry?.alternates?.languages).not.toHaveProperty("id-ID");
       expect(promoEntry?.alternates?.languages).toMatchObject({
         "pt-BR": "https://flatkey.ai/pt/5-credit-promo",
       });
