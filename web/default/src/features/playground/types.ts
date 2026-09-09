@@ -250,6 +250,7 @@ export interface ModelOption {
   releaseDate?: string
   featuredOrder?: number
   tags?: string
+  displayWeight?: number
 }
 
 export interface GroupOption {

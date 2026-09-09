@@ -319,10 +319,13 @@ export function Playground({
               pricing?.directory_metadata?.released_at ?? pricing?.release_date,
             featuredOrder: pricing?.featured_order,
             tags: pricing?.tags ?? '',
+            displayWeight: pricing?.display_weight ?? 0,
           }
         })
         .sort(
           (a, b) =>
+            Number(Boolean(b.tags?.trim())) - Number(Boolean(a.tags?.trim())) ||
+            (b.displayWeight ?? 0) - (a.displayWeight ?? 0) ||
             modelPromotionPriority(a.value, a.tags) -
             modelPromotionPriority(b.value, b.tags)
         ),

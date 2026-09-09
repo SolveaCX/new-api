@@ -47,6 +47,16 @@ export function sortModelsByPromotion(
       index,
       priority: modelPromotionPriority(model.id, model.tags ?? ''),
     }))
-    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .sort((a, b) => {
+      const aTagged = Boolean(a.model.tags?.trim())
+      const bTagged = Boolean(b.model.tags?.trim())
+      return (
+        Number(bTagged) - Number(aTagged) ||
+        (bTagged ? b.model.display_weight ?? 0 : 0) -
+          (aTagged ? a.model.display_weight ?? 0 : 0) ||
+        a.priority - b.priority ||
+        a.index - b.index
+      )
+    })
     .map(({ model }) => model)
 }
