@@ -63,6 +63,7 @@ type assetReferenceBinding struct {
 	ChannelID       int
 	BindingScope    string
 	UpstreamAssetID string
+	UpstreamGroupID string
 	Status          string
 }
 
@@ -271,7 +272,7 @@ func (s AssetReferenceSet) rewriteMapForChannel(channel *model.Channel, techMobi
 			binding, ok = activeAssetReferenceBindingForChannel(asset.Bindings, channel.Id)
 		}
 		if ok {
-			upstreamURI := assetBindingRewriteURI(binding.UpstreamAssetID)
+			upstreamURI := assetBindingRewriteURIForScope(binding.BindingScope, binding.UpstreamAssetID, binding.UpstreamGroupID)
 			if upstreamURI != "" {
 				rewriteMap["asset://"+reference.PublicID] = upstreamURI
 			}
@@ -452,6 +453,7 @@ func ResolveAssetReferences(c *gin.Context, userID int, req *dto.SeedanceVideoRe
 				ChannelID:       binding.ChannelId,
 				BindingScope:    binding.BindingScope,
 				UpstreamAssetID: binding.UpstreamAssetId,
+				UpstreamGroupID: binding.UpstreamGroupId,
 				Status:          binding.Status,
 			})
 		}
@@ -803,7 +805,7 @@ func legacyRealPersonAssetCanUseChannel(asset assetReferenceAsset, channel *mode
 }
 
 func isActiveAssetReferenceBinding(binding assetReferenceBinding) bool {
-	return binding.ChannelID > 0 && binding.Status == model.AssetStatusActive && strings.TrimSpace(binding.UpstreamAssetID) != ""
+	return binding.ChannelID > 0 && binding.Status == model.AssetStatusActive && assetBindingRewriteURIForScope(binding.BindingScope, binding.UpstreamAssetID, binding.UpstreamGroupID) != ""
 }
 
 func assetReferenceSourceRecoverable(asset assetReferenceAsset) bool {
@@ -842,7 +844,7 @@ func channelCanConsumeAssetType(channel *model.Channel, assetType string) bool {
 		switch config.Provider {
 		case assetMaterializationProviderSeedanceProxy:
 			return assetType == "Image" || assetType == "Video" || assetType == "Audio"
-		case assetMaterializationProviderTokenSpaceMaterial:
+		case assetMaterializationProviderTokenSpaceMaterial, assetMaterializationProviderVirtualCharacter:
 			return assetType == "Image" || assetType == "Video" || assetType == "Audio"
 		default:
 			return false

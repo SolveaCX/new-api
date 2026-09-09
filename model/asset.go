@@ -195,6 +195,7 @@ type AssetBindingProcessingRefresh struct {
 	ChannelID       int
 	BindingScope    string
 	UpstreamAssetID string
+	UpstreamGroupID *string
 	Status          string
 	ErrorCode       string
 	Now             int64
@@ -555,6 +556,9 @@ func RefreshProcessingAssetBindingCAS(refresh AssetBindingProcessingRefresh) (bo
 		updates["error_code"] = refresh.ErrorCode
 	} else {
 		updates["error_code"] = ""
+	}
+	if refresh.UpstreamGroupID != nil && refresh.Status == AssetStatusActive {
+		updates["upstream_group_id"] = *refresh.UpstreamGroupID
 	}
 	result := DB.Model(&AssetBinding{}).
 		Where("asset_id = ? AND channel_id = ? AND binding_scope = ?", refresh.AssetID, refresh.ChannelID, refresh.BindingScope).

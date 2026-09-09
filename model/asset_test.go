@@ -599,6 +599,131 @@ func TestReleaseAssetBindingForRetryCASDoesNotReleaseStaleStatus(t *testing.T) {
 	require.EqualValues(t, 100, stored.UpdatedAt)
 }
 
+func TestRefreshProcessingAssetBindingCASSavesActiveGroupAtomically(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_processing_refresh_group")
+	referenceID := "provider-generation-id"
+	binding := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       272,
+		BindingScope:    "virtual-character:v1:scope-a",
+		UpstreamGroupId: "old-reference-id",
+		UpstreamAssetId: "provider-management-id",
+		Status:          AssetStatusProcessing,
+		LeaseOwner:      "node-a",
+		LeaseExpiresAt:  200,
+		ErrorCode:       "old-error",
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&binding).Error)
+
+	updated, err := RefreshProcessingAssetBindingCAS(AssetBindingProcessingRefresh{
+		AssetID:         asset.Id,
+		ChannelID:       272,
+		BindingScope:    binding.BindingScope,
+		UpstreamAssetID: binding.UpstreamAssetId,
+		UpstreamGroupID: &referenceID,
+		Status:          AssetStatusActive,
+		Now:             160,
+	})
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	var stored AssetBinding
+	require.NoError(t, DB.First(&stored, binding.Id).Error)
+	require.Equal(t, AssetStatusActive, stored.Status)
+	require.Equal(t, referenceID, stored.UpstreamGroupId)
+	require.Equal(t, binding.UpstreamAssetId, stored.UpstreamAssetId)
+	require.Empty(t, stored.LeaseOwner)
+	require.Zero(t, stored.LeaseExpiresAt)
+	require.Empty(t, stored.ErrorCode)
+	require.EqualValues(t, 160, stored.UpdatedAt)
+}
+
+func TestRefreshProcessingAssetBindingCASNilGroupPreservesExistingValue(t *testing.T) {
+	newAssetTestDB(t, &Asset{}, &AssetBinding{})
+	asset := insertAssetForAssetTest(t, "asset_binding_processing_refresh_nil_group")
+	binding := AssetBinding{
+		AssetId:         asset.Id,
+		ChannelId:       272,
+		BindingScope:    "scope-a",
+		UpstreamGroupId: "existing-group",
+		UpstreamAssetId: "provider-management-id",
+		Status:          AssetStatusProcessing,
+		CreatedAt:       100,
+		UpdatedAt:       100,
+	}
+	require.NoError(t, DB.Create(&binding).Error)
+
+	updated, err := RefreshProcessingAssetBindingCAS(AssetBindingProcessingRefresh{
+		AssetID:         asset.Id,
+		ChannelID:       272,
+		BindingScope:    binding.BindingScope,
+		UpstreamAssetID: binding.UpstreamAssetId,
+		Status:          AssetStatusActive,
+		Now:             160,
+	})
+	require.NoError(t, err)
+	require.True(t, updated)
+
+	var stored AssetBinding
+	require.NoError(t, DB.First(&stored, binding.Id).Error)
+	require.Equal(t, AssetStatusActive, stored.Status)
+	require.Equal(t, "existing-group", stored.UpstreamGroupId)
+}
+
+func TestRefreshProcessingAssetBindingCASFencesStaleRefreshes(t *testing.T) {
+	tests := []struct {
+		name           string
+		bindingStatus  string
+		refreshScope   string
+		refreshAssetID string
+	}{
+		{name: "wrong scope", bindingStatus: AssetStatusProcessing, refreshScope: "scope-b", refreshAssetID: "provider-management-id"},
+		{name: "wrong management id", bindingStatus: AssetStatusProcessing, refreshScope: "scope-a", refreshAssetID: "stale-management-id"},
+		{name: "already active", bindingStatus: AssetStatusActive, refreshScope: "scope-a", refreshAssetID: "provider-management-id"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			newAssetTestDB(t, &Asset{}, &AssetBinding{})
+			asset := insertAssetForAssetTest(t, "asset_binding_processing_refresh_fence_"+strings.ReplaceAll(tt.name, " ", "_"))
+			binding := AssetBinding{
+				AssetId:         asset.Id,
+				ChannelId:       272,
+				BindingScope:    "scope-a",
+				UpstreamGroupId: "current-reference-id",
+				UpstreamAssetId: "provider-management-id",
+				Status:          tt.bindingStatus,
+				CreatedAt:       100,
+				UpdatedAt:       100,
+			}
+			require.NoError(t, DB.Create(&binding).Error)
+			staleReferenceID := "stale-reference-id"
+
+			updated, err := RefreshProcessingAssetBindingCAS(AssetBindingProcessingRefresh{
+				AssetID:         asset.Id,
+				ChannelID:       272,
+				BindingScope:    tt.refreshScope,
+				UpstreamAssetID: tt.refreshAssetID,
+				UpstreamGroupID: &staleReferenceID,
+				Status:          AssetStatusActive,
+				Now:             160,
+			})
+			require.NoError(t, err)
+			require.False(t, updated)
+
+			var stored AssetBinding
+			require.NoError(t, DB.First(&stored, binding.Id).Error)
+			require.Equal(t, tt.bindingStatus, stored.Status)
+			require.Equal(t, "current-reference-id", stored.UpstreamGroupId)
+			require.Equal(t, "provider-management-id", stored.UpstreamAssetId)
+			require.EqualValues(t, 100, stored.UpdatedAt)
+		})
+	}
+}
+
 func TestReleaseAssetBindingForRetryCASRejectsEmptyLeaseOwner(t *testing.T) {
 	newAssetTestDB(t, &Asset{}, &AssetBinding{})
 	asset := insertAssetForAssetTest(t, "asset_binding_retry_empty_owner")
