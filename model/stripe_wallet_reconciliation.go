@@ -31,8 +31,9 @@ type StripeWalletScanState struct {
 	LastSuccessAt        int64  `gorm:"not null;default:0"`
 }
 
-// StripeWalletPaymentCheck is an alert-only reconciliation work item. It does
-// not reference or mutate user balance state.
+// StripeWalletPaymentCheck is a durable reconciliation work item. Successful
+// automatic repairs are fenced by its lease and recorded on the same database
+// transaction as the wallet credit.
 type StripeWalletPaymentCheck struct {
 	Id                  int64  `gorm:"primaryKey"`
 	Scope               string `gorm:"type:varchar(120);not null;uniqueIndex:idx_stripe_wallet_check_scope_session,priority:1;index:idx_stripe_wallet_check_due,priority:1"`
@@ -59,6 +60,10 @@ type StripeWalletPaymentCheck struct {
 	ClosedAt            int64  `gorm:"not null;default:0;index:idx_stripe_wallet_check_due,priority:2"`
 	NextCheckAt         int64  `gorm:"not null;default:0;index:idx_stripe_wallet_check_due,priority:3"`
 	LocalStatus         string `gorm:"type:varchar(32);not null;default:''"`
+	RepairError         string `gorm:"type:text"`
+	AutoRepairedAt      int64  `gorm:"not null;default:0"`
+	RepairFromStatus    string `gorm:"type:varchar(32);not null;default:''"`
+	RepairCredit        int64  `gorm:"not null;default:0"`
 	LeaseToken          string `gorm:"type:varchar(128);not null;default:''"`
 	LeaseUntil          int64  `gorm:"not null;default:0"`
 }
@@ -285,6 +290,7 @@ func persistStripeWalletPaymentCheck(ctx context.Context, row *StripeWalletPayme
 		"closed_at":            row.ClosedAt,
 		"next_check_at":        row.NextCheckAt,
 		"local_status":         row.LocalStatus,
+		"repair_error":         row.RepairError,
 		"wallet_verified":      row.WalletVerified,
 	}
 	if release {

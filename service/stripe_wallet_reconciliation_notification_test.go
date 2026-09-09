@@ -37,10 +37,22 @@ func TestBuildStripeWalletReconciliationNotificationSanitizesAndUsesMinorAmount(
 	require.Contains(t, content, "Stripe 钱包对账异常提醒")
 	require.Contains(t, content, "支付金额（最小货币单位）：1234 JPY")
 	require.Contains(t, content, "通知次数：2")
-	require.Contains(t, content, "仅告警，请人工核查")
+	require.Contains(t, content, "未确认自动补账成功，请人工核查")
 	require.NotContains(t, content, "secret-token")
 	require.NotContains(t, content, "sk_live_secret")
 	require.NotContains(t, content, "rk_test_restricted_secret")
+}
+
+func TestBuildStripeWalletAutoRepairNotificationIncludesAuditAndNoDuplicateCreditWarning(t *testing.T) {
+	content := buildStripeWalletReconciliationNotification(stripeWalletNotification{
+		Kind: "auto_repaired", TradeNo: "ref_audit", UserID: 7, LocalStatus: "success",
+		RepairFromStatus: "failed", RepairCredit: 5500000, AutoRepairedAt: 1700000000,
+	})
+	require.Contains(t, content, "漏单已自动补账，请核查")
+	require.Contains(t, content, "补账前状态：failed")
+	require.Contains(t, content, "5500000")
+	require.Contains(t, content, "不要重复加款")
+	require.NotContains(t, content, "未确认自动补账成功")
 }
 
 func TestSendStripeWalletReconciliationNotificationDisabledIsError(t *testing.T) {

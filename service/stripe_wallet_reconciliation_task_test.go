@@ -27,6 +27,8 @@ type fakeStripeWalletGateway struct {
 	sessions    map[string]*stripe.CheckoutSession
 	sessionErr  error
 	sessionGets int
+	repairGets  int
+	repairErr   error
 }
 
 type stripeWalletListCall struct {
@@ -58,6 +60,11 @@ func (f *fakeStripeWalletGateway) GetSession(_ context.Context, id string) (*str
 		return nil, f.sessionErr
 	}
 	return f.sessions[id], nil
+}
+
+func (f *fakeStripeWalletGateway) GetRepairSession(_ context.Context, id string) (*stripe.CheckoutSession, error) {
+	f.repairGets++
+	return f.sessions[id], f.repairErr
 }
 
 type stripeWalletHarness struct {
@@ -182,7 +189,7 @@ func TestStripeWalletPaidLocalAnomaliesSendInitialAlert(t *testing.T) {
 			if status != "missing" {
 				h.createTopUp(trade, sessionID, status, 10)
 			}
-			h.insertCheck(model.StripeWalletPaymentCheck{SessionID: sessionID, TradeNo: trade, PriceID: "price_wallet", WalletVerified: true, PaidAt: h.now - stripeWalletGraceSeconds, NextCheckAt: h.now})
+			h.insertCheck(model.StripeWalletPaymentCheck{SessionID: sessionID, TradeNo: trade, PriceID: "price_wallet", WalletVerified: true, PaidAt: h.now, NextCheckAt: h.now})
 			check, token := h.claim(sessionID)
 			require.NoError(t, h.reconciler().processCheck(context.Background(), &check, token))
 			require.Len(t, h.notices, 1)
@@ -515,7 +522,7 @@ func TestStripeWalletRecoveredAccountLookupClearsConfigurationFailureChain(t *te
 	require.Equal(t, h.now, stored.LastSuccessAt)
 }
 
-func TestStripeWalletSuccessfulOrderInsideGracePeriodNeverAlerts(t *testing.T) {
+func TestStripeWalletSuccessfulOrderClosesImmediatelyWithoutAlert(t *testing.T) {
 	h := newStripeWalletHarness(t)
 	trade, sessionID := stripeWalletTrade(10), "cs_success_grace"
 	h.createTopUp(trade, sessionID, common.TopUpStatusSuccess, 10)
@@ -523,14 +530,14 @@ func TestStripeWalletSuccessfulOrderInsideGracePeriodNeverAlerts(t *testing.T) {
 	check, token := h.claim(sessionID)
 	require.NoError(t, h.reconciler().processCheck(context.Background(), &check, token))
 	require.Empty(t, h.notices)
-	require.Zero(t, h.loadCheck(sessionID).ClosedAt)
+	require.Equal(t, h.now, h.loadCheck(sessionID).ClosedAt)
 }
 
-func TestStripeWalletSuccessfulOrderAfterGraceClosesWithoutAlert(t *testing.T) {
+func TestStripeWalletOlderSuccessfulOrderClosesWithoutAlert(t *testing.T) {
 	h := newStripeWalletHarness(t)
 	trade, sessionID := stripeWalletTrade(11), "cs_success"
 	h.createTopUp(trade, sessionID, common.TopUpStatusSuccess, 10)
-	h.insertCheck(model.StripeWalletPaymentCheck{SessionID: sessionID, TradeNo: trade, PriceID: "price_wallet", WalletVerified: true, PaidAt: h.now - stripeWalletGraceSeconds, NextCheckAt: h.now})
+	h.insertCheck(model.StripeWalletPaymentCheck{SessionID: sessionID, TradeNo: trade, PriceID: "price_wallet", WalletVerified: true, PaidAt: h.now - 600, NextCheckAt: h.now})
 	check, token := h.claim(sessionID)
 	require.NoError(t, h.reconciler().processCheck(context.Background(), &check, token))
 	require.Empty(t, h.notices)

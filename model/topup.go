@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -386,6 +387,35 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 	if referenceId == "" {
 		return false, errors.New("未提供支付单号")
 	}
+	credited, _, err := rechargeStripeWallet(referenceId, customerId, callerIp, snapshot, stripeWalletRechargeOptions{ctx: context.Background(), sourceRef: "RechargeWithPaymentSnapshot"})
+	if err != nil {
+		common.SysError("topup failed: " + err.Error())
+		return false, errors.New("充值失败，请稍后重试")
+	}
+	return credited, nil
+}
+
+type stripeWalletRechargeOptions struct {
+	ctx          context.Context
+	sourceRef    string
+	strictDBTime bool
+	validate     func(tx *gorm.DB, topUp *TopUp, dbNow int64) error
+	winner       func(tx *gorm.DB, topUp *TopUp, transition *PurchaseLifecycleTransition, fromStatus string) error
+}
+
+type stripeWalletRechargeResult struct {
+	quotaToAdd       int
+	repairedAt       int64
+	repairFromStatus string
+}
+
+func rechargeStripeWallet(referenceId string, customerId string, callerIp string, snapshot PaymentSnapshot, options stripeWalletRechargeOptions) (bool, *stripeWalletRechargeResult, error) {
+	if referenceId == "" {
+		return false, nil, errors.New("未提供支付单号")
+	}
+	if options.ctx == nil {
+		options.ctx = context.Background()
+	}
 
 	var quotaToAdd int
 	var credited bool
@@ -397,7 +427,9 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 		refCol = `"trade_no"`
 	}
 
-	err := DB.Transaction(func(tx *gorm.DB) error {
+	var repairedAt int64
+	var repairFromStatus string
+	err := DB.WithContext(options.ctx).Transaction(func(tx *gorm.DB) error {
 		err := lockQuery(tx).Where(refCol+" = ?", referenceId).First(topUp).Error
 		if err != nil {
 			return errors.New("充值订单不存在")
@@ -410,6 +442,18 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 		if topUp.Status == common.TopUpStatusSuccess {
 			return nil
 		}
+		occurredAt := common.GetTimestamp()
+		if options.strictDBTime {
+			occurredAt, err = getDBTimestampTxStrict(tx)
+			if err != nil {
+				return err
+			}
+		}
+		if options.validate != nil {
+			if err := options.validate(tx, topUp, occurredAt); err != nil {
+				return err
+			}
+		}
 
 		if !purchaseLifecycleStatusAllowed(normalizePurchaseLifecycleStatus(topUp.Status), topUpSuccessFromStatuses()) {
 			return errors.New("充值订单状态错误")
@@ -420,6 +464,7 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 			return errors.New("无效的充值额度")
 		}
 
+		fromStatus := normalizePurchaseLifecycleStatus(topUp.Status)
 		applied, err := persistPurchaseLifecycleTransitionWithWinner(tx, PurchaseLifecycleTransition{
 			Kind:       PurchaseLifecycleKindTopUp,
 			SourceID:   int64(topUp.Id),
@@ -427,9 +472,9 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 			UserID:     topUp.UserId,
 			FromStatus: topUpSuccessFromStatuses(),
 			ToStatus:   common.TopUpStatusSuccess,
-			OccurredAt: common.GetTimestamp(),
+			OccurredAt: occurredAt,
 			Credit:     int64(quotaToAdd),
-			SourceRef:  "RechargeWithPaymentSnapshot",
+			SourceRef:  options.sourceRef,
 		}, func(tx *gorm.DB, locked *TopUp, transition *PurchaseLifecycleTransition) error {
 			defer func() { *topUp = *locked }()
 			bonusQuota, bonusErr := applyTopUpBonusInTx(tx, locked, topUpBonusLimitFor(locked.BonusTier))
@@ -458,6 +503,13 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 					return err
 				}
 			}
+			if options.winner != nil {
+				if err := options.winner(tx, locked, transition, fromStatus); err != nil {
+					return err
+				}
+				repairedAt = transition.OccurredAt
+				repairFromStatus = fromStatus
+			}
 			return nil
 		})
 		if err != nil {
@@ -481,8 +533,7 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 	})
 
 	if err != nil {
-		common.SysError("topup failed: " + err.Error())
-		return false, errors.New("充值失败，请稍后重试")
+		return false, nil, err
 	}
 
 	if topUp.Status == common.TopUpStatusSuccess {
@@ -498,7 +549,7 @@ func RechargeWithPaymentSnapshot(referenceId string, customerId string, callerIp
 		notifyPaymentSuccessBestEffort(topUp, true)
 	}
 
-	return credited, nil
+	return credited, &stripeWalletRechargeResult{quotaToAdd: quotaToAdd, repairedAt: repairedAt, repairFromStatus: repairFromStatus}, nil
 }
 
 func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {

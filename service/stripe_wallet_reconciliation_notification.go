@@ -31,6 +31,9 @@ type stripeWalletNotification struct {
 	FirstAnomalyAt    int64
 	Currency          string
 	NotificationCount int
+	AutoRepairedAt    int64
+	RepairFromStatus  string
+	RepairCredit      int64
 }
 
 func sendStripeWalletReconciliationNotification(ctx context.Context, notification stripeWalletNotification) error {
@@ -50,10 +53,11 @@ func sendStripeWalletReconciliationNotification(ctx context.Context, notificatio
 
 func buildStripeWalletReconciliationNotification(notification stripeWalletNotification) string {
 	title := map[string]string{
-		"initial":    "Stripe 钱包对账异常",
-		"reminder":   "Stripe 钱包对账异常提醒",
-		"recovered":  "Stripe 钱包对账已恢复",
-		"task_error": "Stripe 钱包对账任务错误",
+		"initial":       "Stripe 钱包对账异常",
+		"reminder":      "Stripe 钱包对账异常提醒",
+		"recovered":     "Stripe 钱包对账已恢复",
+		"task_error":    "Stripe 钱包对账任务错误",
+		"auto_repaired": "Stripe 钱包漏单已自动补账，请核查",
 	}[strings.ToLower(strings.TrimSpace(notification.Kind))]
 	if title == "" {
 		title = "Stripe 钱包对账通知"
@@ -94,7 +98,17 @@ func buildStripeWalletReconciliationNotification(notification stripeWalletNotifi
 	if detail := safeStripeWalletNotificationDetail(notification.Detail); detail != "" {
 		lines = append(lines, "详情："+detail)
 	}
-	lines = append(lines, "处理方式：仅告警，请人工核查；任务不会自动补账或修改订单状态。")
+	if notification.Kind == "auto_repaired" {
+		lines = append(lines,
+			"补账前状态："+safeStripeWalletNotificationField(notification.RepairFromStatus),
+			fmt.Sprintf("补入额度（quota，含实际获赠额度）：%d", notification.RepairCredit),
+			"自动补账时间："+time.Unix(notification.AutoRepairedAt, 0).UTC().Format(time.RFC3339),
+			"处理方式：已自动补入钱包并完成订单，请核查异常原因；不要重复加款。")
+	} else if notification.Kind == "recovered" {
+		lines = append(lines, "处理方式：本地订单已恢复成功，请核查之前的异常原因；不要重复加款。")
+	} else {
+		lines = append(lines, "处理方式：未确认自动补账成功，请人工核查；缺单、身份冲突、退款或争议不会自动加款。")
+	}
 	return strings.Join(lines, "\n")
 }
 

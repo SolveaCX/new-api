@@ -1,8 +1,10 @@
-# Stripe wallet payment reconciliation alerts
+# Stripe wallet payment reconciliation and automatic repair
 
 This background task detects a Stripe wallet payment that succeeded but whose
-local top-up is pending, failed, expired, or missing. It **does not recharge a
-wallet, fulfill a payment, refund money, or modify business order state**.
+local top-up is pending, failed, expired, or missing. A verified, matching local
+wallet order is now **automatically credited and completed**, followed by a
+DingTalk audit warning. Missing or conflicting orders remain alert-only. Stripe
+itself is read-only: the task never charges, refunds, or changes a Stripe object.
 
 ## Agreed behavior
 
@@ -10,16 +12,70 @@ wallet, fulfill a payment, refund money, or modify business order state**.
 | --- | --- |
 | Initial backfill | Successful payment events from the seven days before first activation |
 | Ongoing discovery | Stripe Checkout completed/async-success events, not a local pending-order scan |
-| Grace period | Five minutes after the successful event before checking for an anomaly |
-| Schedule | Every minute; target new-payment notification latency is five to ten minutes with healthy dependencies and sufficient throughput |
+| Grace period | None; a discovered paid event is immediately eligible for verification and repair |
+| Schedule | Every minute; normally next-cycle processing, subject to dependencies and backlog |
+| Automatic repair | Matching pending/failed/expired/cancelled/canceled wallet order: atomic credit, success state, optional local invoice update, durable repair audit |
+| Repair notification | One `auto_repaired` warning after commit, containing previous status, credited quota and repair time; retry delivery without re-crediting |
 | Unresolved anomaly | First notification, then another notification each hour |
 | Recovery | One recovery notification when the matching local order becomes successful, then stop |
 | Failed first notification | A later recovery still requires a recovery notification; cancel stale failure notices |
 
 Only paid, payment-mode wallet checkouts are candidates. Subscription checkout
 metadata and subscription mode are excluded, including one-time subscriptions.
-`no_payment_required`, refunds, disputes, double charges, and auditing a locally
-successful order's balance/ledger are outside this feature.
+`no_payment_required`, handling refunds/disputes, double-charge resolution, and
+auditing a locally successful order's balance/ledger are outside this feature.
+Refund/dispute evidence is checked to **prevent** unsafe repair, not to reverse
+an existing credit. Removing the grace means a slow normal webhook can lose the
+fulfillment race to this task; the resulting repair warning is intentional.
+
+## Automatic repair safety boundary
+
+Immediately before a new credit, retrieve the current Checkout Session with its
+line item, PaymentIntent and latest Charge, then check the Charge's refunds.
+Require complete/paid payment-mode checkout, succeeded PaymentIntent, a fully
+captured succeeded Charge, matching account mode, session/order/customer identity,
+and consistent actual amounts/currencies across the event, Session, Intent and
+Charge. Session, Intent and Charge must all carry the same non-empty customer;
+an existing local user/invoice customer must match it. Missing/null financial
+evidence, any refund record (including pending,
+failed or canceled), partial/full refund, or dispute blocks automatic repair.
+Historical `paid` evidence alone is never sufficient for a new balance mutation.
+
+The local contract is the exact stored Checkout Session, price ID, quantity one,
+user and checkout revision/discount selection (positive revisions must be active).
+Do not compare the local package's
+nominal money/currency with the actual Stripe charge: legitimate coupons, tax and
+Adaptive Pricing can change it. The credited wallet amount and eligible bonus
+come from the persisted local order and normal recharge rules, never from a
+currency-converted Stripe charge. Missing local session/price contracts or
+unsupported revision evidence require manual review; this task does not guess
+an order or activate a different checkout revision.
+Revision zero accepts older absent metadata or the current default `0`/`none`
+metadata without a revision row; unversioned non-`none` discount selections
+remain manual-review cases.
+
+The normal Stripe recharge implementation is shared with the webhook. Its order
+lock and conditional status transition select one winner across nodes. The
+winner's balance mutation, bonus/invite effects, lifecycle records, optional
+local invoice paid state and reconciliation repair marker commit in one database
+transaction. A previously recorded success lifecycle prevents re-crediting an
+order whose status was later corrupted. Audit fields cannot be overwritten by
+ordinary reconciliation checkpoints. An expired or replaced lease cannot credit.
+The audit write evaluates database time in its lease predicate, including when
+the lease expires after the transaction's initial validation.
+
+Normal model-level cache updates, logs, purchase analytics and payment-success
+notifications are retained; the dedicated repair warning is additional. This
+task does not create/finalize Stripe invoices or issue PDFs, bind saved cards, or
+replay controller-level card-country/recall attribution hooks. The original
+webhook's successful-order replay can repair saved-card binding, invoice sync
+and recall attribution without crediting twice. Card-country enrichment runs
+only on the original recharge winner, so it requires separate operator backfill
+if absent; webhook replay does not restore that field.
+
+Stripe reads and the local database transaction cannot be one atomic transaction.
+A refund initiated after the live check remains a normal refund-operations concern.
+Account lookup outages permit local alert/recovery follow-ups, but never new credit.
 
 ## Configuration and deployment
 
@@ -29,21 +85,24 @@ successful order's balance/ledger are outside this feature.
 - Uses the existing `StripeApiSecret` and the existing monitor's DingTalk alert
   enable flag, webhook URL and signing secret. A non-empty signing secret is
   required; unsigned delivery is rejected. No new robot is created.
-- The Stripe key needs read access to the current account, Events and Checkout
-  Sessions, including line items. No Stripe write operation is performed.
+- The Stripe key needs read access to the current account, Events, Checkout
+  Sessions/line items, PaymentIntents, Charges and Refunds. No Stripe write
+  operation is performed. Restricted-key read failures block repair safely.
 - DingTalk disabled, missing configuration, or a failed send is an error, not a
   successful delivery. Notification state remains retryable.
-- Two new reconciliation tables are migrated with the normal model migration
-  list. Deploy/migrate in the project's usual order before enabling the task.
-- The scan and notification tables are operational state only; top-ups and
-  balances are read-only to this task.
+- Existing reconciliation tables gain automatic-repair audit/error fields via
+  normal model migration. Pause this task on old master nodes, upgrade all
+  masters, then enable it. Although old/new workers cannot credit twice and old
+  checkpoints cannot erase the repair marker, an old alert-only worker could
+  close a pending repair warning as an ordinary recovery. Coordinated task
+  activation preserves the dedicated repair notification during rollout.
 
 Do not run this in a developer preview with production Stripe/DingTalk settings.
 Use an isolated test database and mocked endpoints for tests. The feature's
 master-only startup guard is not a distributed lock: database leases and fenced
 updates are required even when multiple master instances overlap.
 
-The startup entrypoint and shared migration list change, so production release
+The shared Stripe recharge implementation and schema change, so production release
 review must include both console and router targets. There is no website change.
 Deployment is separate from completing local implementation and tests.
 
@@ -77,6 +136,8 @@ one at a time, with a ten-second item timeout further capped by each lane, so a 
 hold an entire unprocessed batch. During an account-lookup outage, previously
 verified observations still receive local-order follow-ups; new session
 verification waits for a trustworthy account scope.
+Repair audit notices already committed with credit also remain deliverable during
+Stripe outages; they do not need another Stripe lookup or another recharge.
 
 Due processing reserves six seconds/up to 33 items for each of three lanes:
 post-activation first checks, existing anomalies/recoveries, and pre-activation
@@ -99,6 +160,9 @@ transport guarantee**. Messages carry stable identifiers for correlation.
 Failed sends have a durable five-minute retry cooldown separate from successful
 hourly reminders. Local recovery is still checked each minute, and switching
 from an initial/reminder notice to recovery bypasses that failed-send cooldown.
+Switching to `auto_repaired` also bypasses a failed anomaly-send cooldown. A
+successfully delivered repair warning closes the work item; a failed send leaves
+its durable repair marker pending for retry, even across restarts.
 
 Tracked unresolved anomalies remain eligible for hourly reminders and recovery
 checks even after their original event leaves the discovery/history window.
@@ -142,16 +206,20 @@ Official references (checked 2026-09-09):
 - [Checkout event types](https://docs.stripe.com/api/events/types)
 - [Event timestamps](https://docs.stripe.com/api/events/object)
 - [Checkout Session fields](https://docs.stripe.com/api/checkout/sessions/object)
+- [Charge capture/refund/dispute fields](https://docs.stripe.com/api/charges/object)
+- [Refund list](https://docs.stripe.com/api/refunds/list)
+- [Charge currency units](https://docs.stripe.com/currencies)
+- [Rate limits and rolling read allocation](https://docs.stripe.com/rate-limits)
 
 ## Verification
 
-Targeted tests cover read-only local state, the four anomaly statuses, normal
-callback grace, async payment timing, the initial history boundary, pagination
-failure/resume, retired-price ambiguity, hourly reminders/recovery, failed
-delivery, unique records and lease fencing. Run:
+Targeted tests cover zero-grace processing, atomic repair, webhook/worker races,
+rollback and stale leases, duplicate prevention, unsafe financial evidence,
+refund/dispute blocking, repair-warning retry, missing-order alerts, async payment
+timing, history/cursor resume, hourly reminders and recovery. Run:
 
 ```text
-go test ./model ./service -run StripeWallet -count=1
+go test ./model ./service -run 'StripeWallet|RechargeStripe' -count=1
 go vet ./model ./service
 ```
 
