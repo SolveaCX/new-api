@@ -17,11 +17,13 @@ export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
   const copy = getCopy(params.locale).blog;
+  const searchParams = await props.searchParams;
   return buildMetadata({
     title: copy.title,
     description: copy.description,
     pathname: "/blog",
     locale: params.locale,
+    noIndex: Object.keys(searchParams ?? {}).length > 0,
   });
 }
 

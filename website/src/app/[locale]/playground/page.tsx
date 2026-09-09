@@ -6,6 +6,7 @@ import { staticFeaturePages } from "@/lib/static-feature-pages";
 
 type Props = {
   params: Promise<{ locale: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const page = staticFeaturePages.playground;
@@ -17,12 +18,14 @@ export function generateStaticParams() {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
+  const searchParams = await props.searchParams;
   return buildMetadata({
     title: page.metadataTitle,
     description: page.metadataDescription,
     pathname: page.pathname,
     locale: params.locale,
     ...getSeoLocaleOptions(page.pathname, params.locale),
+    noIndex: Object.keys(searchParams ?? {}).length > 0,
   });
 }
 

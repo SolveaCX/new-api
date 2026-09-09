@@ -5,6 +5,7 @@ import { buildMetadata } from "@/lib/seo";
 
 type Props = {
   params: Promise<{ locale: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export function generateStaticParams() {
@@ -14,12 +15,14 @@ export function generateStaticParams() {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   if (!isLocale(params.locale)) return {};
+  const searchParams = await props.searchParams;
   return buildMetadata({
     title: "flatkey - Pricing",
     description:
       "flatkey pricing with Go, Pro, Max and Enterprise plans covering official models and production usage controls.",
     pathname: "/pricing",
     locale: params.locale,
+    noIndex: Object.keys(searchParams ?? {}).length > 0,
   });
 }
 
