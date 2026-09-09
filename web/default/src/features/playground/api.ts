@@ -388,6 +388,7 @@ export async function getUserModels(group?: string): Promise<string[]> {
 
 export type PlaygroundModelPricing = {
   model_name: string
+  tags?: string
   model_price?: number
   featured_order?: number
   release_date?: string

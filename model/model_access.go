@@ -19,6 +19,7 @@ type ModelAccessRow struct {
 type PublicModelMetadata struct {
 	ModelName   string
 	Description string
+	Tags        string
 	Endpoints   string
 	Vendor      *Vendor
 }
@@ -118,6 +119,7 @@ func GetPublicModelMetadataMap(modelNames []string) (map[string]PublicModelMetad
 		result[modelName] = PublicModelMetadata{
 			ModelName:   modelName,
 			Description: item.Description,
+			Tags:        item.Tags,
 			Endpoints:   item.Endpoints,
 			Vendor:      vendor,
 		}

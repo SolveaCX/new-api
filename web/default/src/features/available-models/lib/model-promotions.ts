@@ -10,7 +10,16 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
   new: 3,
 }
 
-export function getModelPromotions(modelId: string): ModelPromotion[] {
+export function getModelPromotions(modelId: string, tags?: string): ModelPromotion[] {
+  if (tags !== undefined) {
+    const normalized = tags.split(',').map((tag) => tag.trim().toLowerCase())
+    const promotions: ModelPromotion[] = []
+    if (normalized.includes('free')) promotions.push('free')
+    if (normalized.some((tag) => tag === 'limited' || tag === 'limited discount')) promotions.push('limited')
+    if (normalized.includes('hot')) promotions.push('hot')
+    if (normalized.some((tag) => tag === 'new' || tag === 'new release')) promotions.push('new')
+    return promotions
+  }
   const name = modelId.toLowerCase()
   const promotions: ModelPromotion[] = []
   if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) promotions.push('free')
@@ -47,8 +56,8 @@ export function getModelPromotionLabel(
   return t('New release')
 }
 
-export function modelPromotionPriority(modelId: string): number {
-  const promotions = getModelPromotions(modelId)
+export function modelPromotionPriority(modelId: string, tags?: string): number {
+  const promotions = getModelPromotions(modelId, tags)
   return promotions.length === 0
     ? Number.POSITIVE_INFINITY
     : Math.min(...promotions.map((promotion) => PROMOTION_PRIORITY[promotion]))
@@ -61,7 +70,7 @@ export function sortModelsByPromotion(
     .map((model, index) => ({
       model,
       index,
-      priority: modelPromotionPriority(model.id),
+      priority: modelPromotionPriority(model.id, model.tags),
     }))
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
     .map(({ model }) => model)
