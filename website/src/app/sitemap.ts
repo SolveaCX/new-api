@@ -148,7 +148,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const postEntries = Array.from(postsBySlug.entries()).flatMap(([slug, locales]) => {
-    const availableLocales = LOCALES.filter((locale) => locales[locale]);
+    // Keep the sitemap in sync with route-level robots metadata. In
+    // particular, fallback locales such as Indonesian are intentionally
+    // noindex until their copy is reviewed and must not be advertised in the
+    // sitemap or as hreflang alternates.
+    const availableLocales = seoIndexableLocales(
+      `/blog/${slug}`,
+      LOCALES.filter((locale) => locales[locale]),
+    );
     return availableLocales.map((locale) => {
       const localizedPost = locales[locale];
       return {
