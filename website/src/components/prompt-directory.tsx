@@ -142,18 +142,12 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
 
   return (
     <SiteShell locale={locale} pathname="/prompts">
-      <main className="min-h-screen bg-white text-[#171a21]">
-        <section className="border-b border-[#0B0B0F14] bg-[#F8F6FC] px-6 pt-10 pb-10 sm:px-8 md:pt-14 md:pb-14 lg:px-10">
+      <main className="model-detail-page model-prototype home-landing relative min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f4f0ff_0%,#fbfaff_32%,#ffffff_62%,#f4f1ff_100%)] text-[#171a21]">
+        <section className="model-hero border-b border-[#0B0B0F14] bg-transparent px-6 pt-10 pb-10 sm:px-8 md:pt-14 md:pb-14 lg:px-10">
           <div className="mx-auto max-w-[1280px]">
-            <nav aria-label="Breadcrumb" className="mb-7 flex items-center gap-1 text-xs text-[#6B6475]">
-              <Link href={localizePath("/", locale)} className="hover:text-violet-700">Flatkey</Link>
-              <ChevronRight className="size-3" aria-hidden="true" />
-              <span className="font-semibold text-[#0B0B0F]">{text.title}</span>
-            </nav>
             <div className="grid items-center gap-10 py-10 md:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] md:py-16 lg:gap-16">
               <div className="max-w-2xl">
-                <p className="text-xs font-black tracking-[0.18em] text-[#6D28D9] uppercase">{heroCopy[locale].eyebrow}</p>
-                <h1 className="mt-6 max-w-2xl text-[clamp(2.8rem,6vw,5.9rem)] leading-[0.96] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
+                <h1 className="mt-0 max-w-2xl text-[clamp(2.8rem,6vw,5.9rem)] leading-[0.96] font-extrabold tracking-[-0.065em] text-[#0B0B0F]">{heroCopy[locale].title}</h1>
                 <p className="mt-7 max-w-xl text-base leading-7 text-[#5F5B66] md:text-xl md:leading-8">{heroCopy[locale].body}</p>
                 <div className="mt-9 flex flex-wrap items-center gap-3">
                 <Link href="#prompt-collection" className="inline-flex h-12 items-center gap-2 rounded-xl bg-[#070707] px-6 text-sm font-extrabold !text-white shadow-[0_18px_36px_-20px_rgba(11,11,15,.55)] transition-colors hover:bg-[#1a1a1d]">
@@ -167,9 +161,8 @@ export function PromptDirectoryPage({ locale, items, initialSearch }: Props) {
               <div className="relative min-w-0">
                 <div className="absolute -inset-5 rounded-[2.25rem] bg-[radial-gradient(circle_at_50%_0%,rgba(167,139,250,.3),transparent_68%)] blur-2xl" aria-hidden="true" />
                 <div className="relative overflow-hidden rounded-[1.75rem] border border-[#0B0B0F18] bg-[#211C2D] p-3 shadow-[0_30px_80px_-38px_rgba(46,16,101,.52)]">
-                  <div className="flex items-center justify-between px-2 pb-3 text-[10px] font-black tracking-[0.16em] text-white/55 uppercase">
-                    <span>{heroCopy[locale].eyebrow}</span>
-                    <span className="inline-flex items-center gap-1.5 tracking-normal text-white/75 normal-case"><span className="size-1.5 rounded-full bg-emerald-400" />{text.featured}</span>
+                  <div className="flex items-center justify-end px-2 pb-3 text-[10px] font-black tracking-normal text-white/75">
+                    <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" />{text.featured}</span>
                   </div>
                   {heroExamples.length ? <div className="grid gap-3 sm:grid-cols-[1.35fr_0.65fr]">
                     <div className="group relative min-h-[300px] overflow-hidden rounded-2xl bg-[#342C45] sm:min-h-[380px]"><ArtifactPreview artifact={heroExamples[0].artifact} title={getPromptDisplayCopy(heroExamples[0], locale).title} variant="hero" /><div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-4 pt-16"><p className="line-clamp-2 text-sm font-bold leading-5 text-white">{getPromptDisplayCopy(heroExamples[0], locale).title}</p></div></div>
@@ -335,7 +328,7 @@ function modelLogo(value: string) {
 
 function ArtifactPreview({ artifact, title, variant = "card" }: { artifact: PromptArtifact; title: string; variant?: "card" | "hero" }) {
   const ratio = variant === "hero" ? "aspect-[16/9] h-full" : artifact.kind === "video" ? "aspect-[16/9]" : "aspect-[4/3]";
-  if (artifact.kind === "image") return <div className={`relative overflow-hidden bg-[#EEE8FF] ${ratio}`}><Image src={artifact.url} alt={artifact.alt || title} fill sizes={variant === "hero" ? "(max-width: 1024px) 100vw, 640px" : "(max-width: 768px) 100vw, 33vw"} className="object-cover transition duration-500 group-hover:scale-[1.02]" unoptimized /></div>;
-  if (artifact.kind === "video") return <div className={`relative overflow-hidden bg-[#211C2D] ${ratio}`}><video src={artifact.url} poster={artifact.poster} aria-label={artifact.alt || title} autoPlay muted loop playsInline preload={variant === "hero" ? "auto" : "metadata"} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></div>;
+  if (artifact.kind === "image") return <div className={`relative overflow-hidden bg-[#EEE8FF] ${ratio}`}><Image src={artifact.url} alt={artifact.alt || title} fill sizes={variant === "hero" ? "(max-width: 1024px) 100vw, 640px" : "(max-width: 768px) 100vw, 33vw"} className="object-contain transition duration-500 group-hover:scale-[1.02]" unoptimized /></div>;
+  if (artifact.kind === "video") return <div className={`relative overflow-hidden bg-[#211C2D] ${ratio}`}><video src={artifact.url} poster={artifact.poster} aria-label={artifact.alt || title} autoPlay muted loop playsInline preload={variant === "hero" ? "auto" : "metadata"} className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.02]" /></div>;
   return <div className={`flex items-center justify-center bg-gradient-to-br from-[#F1EAFE] to-[#E8E4EE] p-6 text-center text-sm font-semibold text-[#5B21B6] ${ratio}`}><span>{title}</span></div>;
 }

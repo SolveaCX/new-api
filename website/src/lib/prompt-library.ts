@@ -1391,6 +1391,43 @@ function sortPromptItems(items: PromptItem[]): PromptItem[] {
   return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
+const selectedPlaygroundAssets = [
+  ["book-cover", "Book cover editorial concept", "书籍封面编辑概念图"],
+  ["ximen-qing-100-panel-storyboard", "Ximen Qing 100-panel storyboard", "西门庆百格分镜板"],
+  ["gta-6-livestream-gameplay-screenshot", "Open-world game livestream screenshot", "开放世界游戏直播截图"],
+  ["silhouette-universe-narrative-poster", "Silhouette universe narrative poster", "剪影宇宙叙事海报"],
+  ["museum-catalog-style-chinese-disassembly-infographic", "Museum catalog product disassembly infographic", "博物馆图录风产品拆解信息图"],
+  ["three-day-travel-guide-card", "Three-day travel guide card", "三日旅行攻略卡片"],
+  ["pet-brand", "Pet brand campaign visual", "宠物品牌 campaign 视觉"],
+  ["real-estate-interior", "Real-estate interior visualization", "地产室内空间效果图"],
+  ["high-end-skincare-product-poster", "High-end skincare product poster", "高端护肤品产品海报"],
+] as const;
+
+function getSelectedPlaygroundPromptItems(): PromptItem[] {
+  return selectedPlaygroundAssets.map(([slug, titleEn, titleZh]) => ({
+    artifact: {
+      alt: titleEn,
+      kind: "image" as const,
+      url: `/assets/prompts/selected-playground/${slug}.${slug === "ximen-qing-100-panel-storyboard" || slug === "gta-6-livestream-gameplay-screenshot" || slug === "silhouette-universe-narrative-poster" || slug === "museum-catalog-style-chinese-disassembly-infographic" || slug === "three-day-travel-guide-card" ? "jpg" : "png"}`,
+    },
+    category: "image" as const,
+    model: "gpt-image-2",
+    output: outputLabel("Reviewed image output", "已审核图片产物", "16:9"),
+    prompt: `Create a production-ready image based on the ${titleEn.toLowerCase()} reference. Preserve the composition, hierarchy, material detail, and clean areas for editable copy; do not add watermarks or unreadable text.`,
+    slug: `selected-playground-${slug}`,
+    source: {
+      capturedAt: today,
+      label: "Flatkey Playground starter assets",
+      platform: "Local migration" as const,
+      url: "https://flatkey.ai/playground",
+    },
+    summary: promptText(`A reviewed local Playground asset paired with a reusable production prompt.`, `已审核的 Playground 本地素材，并配有可复用的生产提示词。`),
+    tags: ["selected-playground", "image", "reference"],
+    title: promptText(titleEn, titleZh),
+    updatedAt: today,
+  }));
+}
+
 export async function fetchCliMediaPromptItem(category: "image" | "video", slug: string): Promise<PromptItem | undefined> {
   try {
     const payload = await fetchPromptLibraryApi(`/api/prompt-library/${encodeURIComponent(slug)}`);
@@ -1405,7 +1442,7 @@ export async function fetchCliMediaPromptItem(category: "image" | "video", slug:
 export function getCliMediaPromptItems(category?: "image" | "video"): PromptItem[] {
   const bySlug = new Map<string, PromptItem>();
 
-  for (const item of staticPromptItems.filter(hasArtifact)) {
+  for (const item of [...staticPromptItems, ...getSelectedPlaygroundPromptItems()].filter(hasArtifact)) {
     if (category && item.category !== category) continue;
     bySlug.set(item.slug, item);
   }
