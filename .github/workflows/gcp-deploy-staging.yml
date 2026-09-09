@@ -201,6 +201,8 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${{ needs.build.outputs.image_uri }}" \
+            --command="" \
+            --args="" \
             --update-env-vars="${env_arg}" \
             --update-secrets="BYTEPLUS_REAL_PERSON_CIPHER_KEY=${STAGING_BYTEPLUS_REAL_PERSON_CIPHER_SECRET}:latest" \
             --revision-suffix="${revision_suffix}" \
