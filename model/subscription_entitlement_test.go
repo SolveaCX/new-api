@@ -188,6 +188,13 @@ func TestSubscriptionEntitlementGrantIdempotentAndConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, second.Applied)
 	require.Equal(t, first.Entitlement.Id, second.Entitlement.Id)
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, second.Entitlement.WindowScopeVersion)
+	firstInfo, err := GetSubscriptionWindowInfoBySubId(first.Entitlement.Id)
+	require.NoError(t, err)
+	secondInfo, err := GetSubscriptionWindowInfoBySubId(second.Entitlement.Id)
+	require.NoError(t, err)
+	require.Equal(t, -first.Entitlement.Id, firstInfo.WindowIdentity())
+	require.Equal(t, firstInfo.WindowIdentity(), secondInfo.WindowIdentity())
 
 	require.NoError(t, DB.Model(&UserSubscription{}).Where("id = ?", first.Entitlement.Id).
 		Update("access_end_time", input.PeriodEnd+100).Error)
@@ -1006,11 +1013,12 @@ func TestRotateCurrentEntitlementSnapshotsPlanWindowLimits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(125), info.Window5hAmount)
 	require.Equal(t, int64(900), info.WindowWeekAmount)
-	require.Equal(t, SubscriptionWindowScopeVersionLegacy, grant.Entitlement.WindowScopeVersion)
-	require.Equal(t, int(grant.Entitlement.ContractId), info.WindowIdentity())
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, grant.Entitlement.WindowScopeVersion)
+	require.Equal(t, -grant.Entitlement.Id, info.WindowIdentity())
+	require.Equal(t, grant.Entitlement.StartTime, info.SubscriptionStart)
 }
 
-func TestSubscriptionWindowInfoSupportsVersionedIdentityAndAnchor(t *testing.T) {
+func TestSubscriptionWindowInfoKeepsLegacyContractWindowUntilNextGrant(t *testing.T) {
 	setupSubscriptionEntitlementTestDB(t)
 	createEntitlementTestUser(t, 9120, "plg")
 	plan := createEntitlementTestPlan(t, 9220, 1000, "")
@@ -1023,38 +1031,35 @@ func TestSubscriptionWindowInfoSupportsVersionedIdentityAndAnchor(t *testing.T) 
 	require.NoError(t, DB.Model(&UserSubscriptionContract{}).
 		Where("id = ?", 9320).
 		Update("created_at", int64(100)).Error)
-	sub := UserSubscription{
-		UserId:        9120,
-		PlanId:        plan.Id,
-		ContractId:    9320,
-		AmountTotal:   1000,
-		StartTime:     200,
-		EndTime:       300,
-		AccessEndTime: 300,
-		Status:        SubscriptionEntitlementStatusActive,
-		Source:        "order",
+	legacy := UserSubscription{
+		UserId:             9120,
+		PlanId:             plan.Id,
+		ContractId:         9320,
+		AmountTotal:        1000,
+		WindowScopeVersion: SubscriptionWindowScopeVersionLegacy,
+		StartTime:          200,
+		EndTime:            300,
+		AccessEndTime:      300,
+		Status:             SubscriptionEntitlementStatusActive,
+		Source:             "order",
 	}
-	require.NoError(t, DB.Create(&sub).Error)
+	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("id = ?", legacy.Id).
+		Update("window_scope_version", SubscriptionWindowScopeVersionLegacy).Error)
 
-	legacyInfo, err := GetSubscriptionWindowInfoBySubId(sub.Id)
+	info, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
+
 	require.NoError(t, err)
-	require.Equal(t, int(sub.ContractId), legacyInfo.WindowIdentity())
-	require.Equal(t, int64(100), legacyInfo.SubscriptionStart)
+	require.Equal(t, int(legacy.ContractId), info.WindowIdentity())
+	require.Equal(t, int64(100), info.SubscriptionStart)
 
 	require.NoError(t, DB.Model(&UserSubscription{}).
-		Where("id = ?", sub.Id).
-		Update("window_scope_version", SubscriptionWindowScopeVersionEntitlement).Error)
-	entitlementInfo, err := GetSubscriptionWindowInfoBySubId(sub.Id)
-	require.NoError(t, err)
-	require.Equal(t, -sub.Id, entitlementInfo.WindowIdentity())
-	require.Equal(t, sub.StartTime, entitlementInfo.SubscriptionStart)
-
-	require.NoError(t, DB.Model(&UserSubscription{}).
-		Where("id = ?", sub.Id).
+		Where("id = ?", legacy.Id).
 		Update("window_scope_version", int16(99)).Error)
-	unknownInfo, err := GetSubscriptionWindowInfoBySubId(sub.Id)
+	unknownInfo, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
 	require.NoError(t, err)
-	require.Equal(t, int(sub.ContractId), unknownInfo.WindowIdentity())
+	require.Equal(t, int(legacy.ContractId), unknownInfo.WindowIdentity())
 	require.Equal(t, int64(100), unknownInfo.SubscriptionStart)
 }
 
@@ -1111,13 +1116,15 @@ func TestSubscriptionWindowInfoLegacyEntitlementFallsBackToLivePlan(t *testing.T
 		Source:        "order",
 	}
 	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("id = ?", legacy.Id).
+		Update("window_scope_version", SubscriptionWindowScopeVersionLegacy).Error)
 
 	info, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
 
 	require.NoError(t, err)
 	require.Equal(t, int64(75), info.Window5hAmount)
 	require.Equal(t, int64(525), info.WindowWeekAmount)
-	require.Equal(t, SubscriptionWindowScopeVersionLegacy, legacy.WindowScopeVersion)
 	require.Equal(t, legacy.Id, info.WindowIdentity())
 	require.Equal(t, legacy.StartTime, info.SubscriptionStart)
 }
@@ -1168,8 +1175,8 @@ func TestCreateUserSubscriptionFromPlanSnapshotsWindowLimits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(75), info.Window5hAmount)
 	require.Equal(t, int64(525), info.WindowWeekAmount)
-	require.Equal(t, SubscriptionWindowScopeVersionLegacy, sub.WindowScopeVersion)
-	require.Equal(t, sub.Id, info.WindowIdentity())
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, sub.WindowScopeVersion)
+	require.Equal(t, -sub.Id, info.WindowIdentity())
 	require.Equal(t, sub.StartTime, info.SubscriptionStart)
 }
 

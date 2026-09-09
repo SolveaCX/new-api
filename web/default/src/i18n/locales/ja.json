@@ -5966,6 +5966,7 @@
     "Total price": "合計金額",
     "Unit price": "単価",
     "Replacement charges the full target price. No prorating or credit is applied.": "切り替え時は変更先プランの全額が請求されます。日割り計算やクレジットの充当はありません。",
+    "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.": "開始済みの有効期間は返金されません。月間モデル枠と画像・動画クレジットはリセットされます。5時間および7日間の利用済み量はゼロに戻りますが、両方の上限は引き続き適用されます。",
     "Refundable not-started value: {{value}}": "未開始分の返金可能額: {{value}}",
     "Monthly model quota: {{value}}": "月間モデルクォータ: {{value}}",
     "{{count}} credits": "{{count}} クレジット",

@@ -64,6 +64,52 @@ func TestGetStripeInvoiceForReconcileExpandsDahliaInvoiceShape(t *testing.T) {
 	require.NotContains(t, expandValues, "subscription")
 }
 
+func TestGetStripeInvoiceForReconcileLoadsAllInvoiceLines(t *testing.T) {
+	originalBackend := stripe.GetBackend(stripe.APIBackend)
+	originalSecret := setting.StripeApiSecret
+	originalKey := stripe.Key
+	lineListCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/invoices/in_paginated_lines":
+			_, _ = w.Write([]byte(`{"id":"in_paginated_lines","object":"invoice","lines":{"object":"list","data":[],"has_more":true}}`))
+		case "/v1/invoices/in_paginated_lines/lines":
+			lineListCalled = true
+			var expands []string
+			for key, values := range r.URL.Query() {
+				if key == "expand" || strings.HasPrefix(key, "expand[") {
+					expands = append(expands, values...)
+				}
+			}
+			require.Contains(t, expands, "data.pricing.price_details.price")
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"il_full","object":"line_item","quantity":1,"pricing":{"price_details":{"price":{"id":"price_full","object":"price"}}}}],"has_more":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend, &stripe.BackendConfig{
+		URL: stripe.String(server.URL), HTTPClient: server.Client(), MaxNetworkRetries: stripe.Int64(0),
+		LeveledLogger: &stripe.LeveledLogger{Level: stripe.LevelNull},
+	}))
+	setting.StripeApiSecret = "sk_test_invoice_lines_v86"
+	t.Cleanup(func() {
+		server.Close()
+		stripe.SetBackend(stripe.APIBackend, originalBackend)
+		setting.StripeApiSecret = originalSecret
+		stripe.Key = originalKey
+	})
+
+	invoice, err := getStripeInvoiceForReconcile(context.Background(), "in_paginated_lines")
+
+	require.NoError(t, err)
+	require.True(t, lineListCalled)
+	require.NotNil(t, invoice.Lines)
+	require.False(t, invoice.Lines.HasMore)
+	require.Len(t, invoice.Lines.Data, 1)
+	require.Equal(t, "price_full", invoice.Lines.Data[0].Pricing.PriceDetails.Price.ID)
+}
+
 func TestCreateStripeSubscriptionCheckoutAppliesRecallDiscountAndMetadata(t *testing.T) {
 	originalBackend := stripe.GetBackend(stripe.APIBackend)
 	originalSecret := setting.StripeApiSecret
@@ -548,6 +594,10 @@ func stripeInvoiceFixture(invoiceID string, subscriptionID string) *stripe.Invoi
 			{
 				Amount:   1234,
 				Currency: stripe.CurrencyUSD,
+				Quantity: 1,
+				Parent: &stripe.InvoiceLineItemParent{SubscriptionItemDetails: &stripe.InvoiceLineItemParentSubscriptionItemDetails{
+					Subscription: subscriptionID, SubscriptionItem: "si_invoice",
+				}},
 				Pricing: &stripe.InvoiceLineItemPricing{
 					PriceDetails: &stripe.InvoiceLineItemPricingPriceDetails{
 						Price: &stripe.Price{ID: "price_invoice_plan"},
@@ -570,6 +620,7 @@ func stripeSubscriptionFixture(subscriptionID string, metadata map[string]string
 			{
 				ID:                 "si_invoice",
 				Price:              &stripe.Price{ID: "price_invoice_plan"},
+				Quantity:           1,
 				CurrentPeriodStart: 1700000000,
 				CurrentPeriodEnd:   1702592000,
 			},
@@ -613,6 +664,15 @@ func setStripeInvoiceLinePrice(line *stripe.InvoiceLineItem, priceID string) {
 			Price: &stripe.Price{ID: priceID},
 		},
 	}
+}
+
+func setStripeInvoiceSubscriptionItem(invoice *stripe.Invoice, subscriptionID string, itemID string) {
+	if invoice == nil || invoice.Lines == nil || len(invoice.Lines.Data) == 0 || invoice.Lines.Data[0] == nil {
+		return
+	}
+	invoice.Lines.Data[0].Parent = &stripe.InvoiceLineItemParent{SubscriptionItemDetails: &stripe.InvoiceLineItemParentSubscriptionItemDetails{
+		Subscription: subscriptionID, SubscriptionItem: itemID,
+	}}
 }
 
 func setStripeSubscriptionCurrentPeriod(sub *stripe.Subscription, start int64, end int64) {
@@ -776,6 +836,185 @@ func TestReconcilePaidInvoiceGrantsInvoiceFirstPurchase(t *testing.T) {
 	require.NoError(t, model.DB.First(&applied, "id = ?", intent.Id).Error)
 	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, applied.Status)
 	require.Equal(t, "in_first", applied.ProviderInvoiceId)
+}
+
+func TestReconcilePaidInvoiceAcceptsStripeCalculatedPayment(t *testing.T) {
+	tests := []struct {
+		name       string
+		amountPaid int64
+		currency   stripe.Currency
+	}{
+		{name: "adaptive pricing local currency", amountPaid: 4990, currency: stripe.CurrencyBRL},
+		{name: "same currency tax or discount adjustment", amountPaid: 1111, currency: stripe.CurrencyUSD},
+		{name: "fully discounted paid invoice", amountPaid: 0, currency: stripe.CurrencyUSD},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionInvoiceServiceTestDB(t)
+			userID := 8300 + index
+			planID := 8400 + index
+			tradeNo := fmt.Sprintf("sub_stripe_calculated_%d", index)
+			invoiceID := fmt.Sprintf("in_stripe_calculated_%d", index)
+			subscriptionID := fmt.Sprintf("sub_stripe_calculated_%d", index)
+			contract, intent := seedStripeInvoicePurchase(t, userID, planID, tradeNo)
+			invoice := stripeInvoiceFixture(invoiceID, subscriptionID)
+			subscription := stripeSubscriptionFixture(subscriptionID, map[string]string{
+				"trade_no":         tradeNo,
+				"user_id":          strconv.Itoa(userID),
+				"plan_id":          strconv.Itoa(planID),
+				"contract_id":      strconv.FormatInt(contract.Id, 10),
+				"change_intent_id": strconv.FormatInt(intent.Id, 10),
+			})
+			setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, test.amountPaid, test.currency, "price_invoice_plan")
+			restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+			defer restore()
+
+			first, err := ReconcilePaidInvoice(context.Background(), invoiceID)
+			require.NoError(t, err)
+			require.True(t, first.Applied)
+			require.NotNil(t, first.PaymentAnalyticsEvent)
+			require.Equal(t, strings.ToUpper(string(test.currency)), first.PaymentAnalyticsEvent.Currency)
+			require.InDelta(t, stripeMinorUnitValue(test.amountPaid, string(test.currency)), first.PaymentAnalyticsEvent.Value, 0.000001)
+			second, err := ReconcilePaidInvoice(context.Background(), invoiceID)
+			require.NoError(t, err)
+			require.False(t, second.Applied)
+
+			var grants int64
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("grant_key = ?", "stripe:"+invoiceID).Count(&grants).Error)
+			require.Equal(t, int64(1), grants)
+			var order model.SubscriptionOrder
+			require.NoError(t, model.DB.First(&order, "trade_no = ?", tradeNo).Error)
+			require.Contains(t, order.ProviderPayload, fmt.Sprintf("amount_paid=%d", test.amountPaid))
+			require.Contains(t, order.ProviderPayload, "currency="+strings.ToUpper(string(test.currency)))
+		})
+	}
+}
+
+func TestReconcilePaidInvoiceRejectsOpenPartiallyPaidInvoice(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, intent := seedStripeInvoicePurchase(t, 8305, 8406, "sub_open_partial")
+	invoice := stripeInvoiceFixture("in_open_partial", "sub_open_partial")
+	invoice.Status = stripe.InvoiceStatusOpen
+	invoice.AmountPaid = 500
+	subscription := stripeSubscriptionFixture("sub_open_partial", map[string]string{
+		"trade_no": "sub_open_partial", "user_id": "8305", "plan_id": "8406",
+		"contract_id": strconv.FormatInt(contract.Id, 10), "change_intent_id": strconv.FormatInt(intent.Id, 10),
+	})
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.ErrorContains(t, err, "Stripe invoice is not paid")
+	var grants int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", 8305).Count(&grants).Error)
+	require.Zero(t, grants)
+}
+
+func TestReconcilePaidInvoiceRejectsInvalidSubscriptionProductIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*stripe.Invoice, *stripe.Subscription)
+	}{
+		{name: "invoice and subscription price mismatch", mutate: func(inv *stripe.Invoice, _ *stripe.Subscription) {
+			setStripeInvoiceLinePrice(inv.Lines.Data[0], "price_other")
+		}},
+		{name: "wrong local price", mutate: func(inv *stripe.Invoice, sub *stripe.Subscription) {
+			setStripeInvoiceLinePrice(inv.Lines.Data[0], "price_other")
+			sub.Items.Data[0].Price = &stripe.Price{ID: "price_other"}
+		}},
+		{name: "wrong quantity", mutate: func(_ *stripe.Invoice, sub *stripe.Subscription) { sub.Items.Data[0].Quantity = 2 }},
+		{name: "proration line only", mutate: func(inv *stripe.Invoice, _ *stripe.Subscription) {
+			inv.Lines.Data[0].Parent.SubscriptionItemDetails.Proration = true
+		}},
+		{name: "invalid billed period", mutate: func(inv *stripe.Invoice, _ *stripe.Subscription) {
+			inv.Lines.Data[0].Period = nil
+		}},
+		{name: "multiple items", mutate: func(_ *stripe.Invoice, sub *stripe.Subscription) {
+			sub.Items.Data = append(sub.Items.Data, &stripe.SubscriptionItem{ID: "si_other", Price: &stripe.Price{ID: "price_other"}, Quantity: 1})
+		}},
+		{name: "incomplete item page", mutate: func(_ *stripe.Invoice, sub *stripe.Subscription) { sub.Items.HasMore = true }},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionInvoiceServiceTestDB(t)
+			userID := 8310 + index
+			planID := 8410 + index
+			tradeNo := fmt.Sprintf("sub_invalid_identity_%d", index)
+			invoiceID := fmt.Sprintf("in_invalid_identity_%d", index)
+			subscriptionID := fmt.Sprintf("sub_invalid_identity_%d", index)
+			contract, intent := seedStripeInvoicePurchase(t, userID, planID, tradeNo)
+			invoice := stripeInvoiceFixture(invoiceID, subscriptionID)
+			subscription := stripeSubscriptionFixture(subscriptionID, map[string]string{
+				"trade_no": tradeNo, "user_id": strconv.Itoa(userID), "plan_id": strconv.Itoa(planID),
+				"contract_id": strconv.FormatInt(contract.Id, 10), "change_intent_id": strconv.FormatInt(intent.Id, 10),
+			})
+			test.mutate(invoice, subscription)
+			restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+			defer restore()
+
+			_, err := ReconcilePaidInvoice(context.Background(), invoiceID)
+			require.Error(t, err)
+			var grants int64
+			require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("user_id = ?", userID).Count(&grants).Error)
+			require.Zero(t, grants)
+		})
+	}
+}
+
+func TestReconcilePaidInvoiceRenewalAcceptsAdaptivePricing(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, _, oldEntitlement := seedStripeRenewalContract(t, 8303, 8403, "sub_renewal_adaptive")
+	invoice := stripeInvoiceFixture("in_renewal_adaptive", "sub_renewal_adaptive")
+	setStripeInvoiceFixtureAmountAndPrice(invoice, stripeSubscriptionFixture("unused", nil), 4990, stripe.CurrencyBRL, "price_invoice_plan")
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	subscription := stripeSubscriptionFixture("sub_renewal_adaptive", map[string]string{})
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_renewal_adaptive")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, contract.Id, result.Entitlement.ContractId)
+	require.Equal(t, int64(1234), result.Entitlement.AmountTotal)
+}
+
+func TestReconcilePaidInvoicePendingPlanAcceptsAdaptivePricing(t *testing.T) {
+	setupSubscriptionInvoiceServiceTestDB(t)
+	contract, binding, oldEntitlement := seedStripeRenewalContract(t, 8304, 8404, "sub_pending_adaptive")
+	rank := 1
+	pendingPlan := model.SubscriptionPlan{
+		Id: 8405, Title: "Pending Adaptive Plan", PriceAmount: 9.99, Currency: "USD",
+		DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1, Enabled: true,
+		TierRank: &rank, AllowBalancePay: common.GetPointer(true), TotalAmount: 999,
+		StripePriceId: "price_pending_adaptive",
+	}
+	require.NoError(t, model.DB.Create(&pendingPlan).Error)
+	intent := model.SubscriptionChangeIntent{
+		ContractId: contract.Id, UserId: 8304, RequestId: "pending-adaptive",
+		Kind: model.SubscriptionChangeIntentKindDowngrade, PaymentMode: model.SubscriptionPaymentModeStripeRecurring,
+		Status: model.SubscriptionChangeIntentStatusScheduled, FromPlanId: 8404, ToPlanId: pendingPlan.Id,
+		ProviderBindingId: binding.Id, EffectiveAt: oldEntitlement.EndTime,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"pending_plan_id":         pendingPlan.Id,
+		"pending_effective_at":    oldEntitlement.EndTime,
+		"latest_change_intent_id": intent.Id,
+	}).Error)
+	invoice := stripeInvoiceFixture("in_pending_adaptive", "sub_pending_adaptive")
+	subscription := stripeSubscriptionFixture("sub_pending_adaptive", map[string]string{})
+	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, 4990, stripe.CurrencyBRL, pendingPlan.StripePriceId)
+	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
+	setStripeSubscriptionCurrentPeriod(subscription, oldEntitlement.EndTime, oldEntitlement.EndTime+2592000)
+	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
+	defer restore()
+
+	result, err := ReconcilePaidInvoice(context.Background(), "in_pending_adaptive")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, pendingPlan.Id, result.Entitlement.PlanId)
+	require.Equal(t, int64(999), result.Entitlement.AmountTotal)
 }
 
 func TestReconcilePaidInvoicePromotesPendingTopUpWithoutDuplicatingEntitlement(t *testing.T) {
@@ -1388,10 +1627,12 @@ func TestReconcilePaidInvoiceInitialPurchaseMatchesSnapshotPriceAndDiscountedAmo
 	restoreMismatch := replaceStripeInvoiceReconcilers(t, mismatchInvoice, mismatchSubscription)
 	defer restoreMismatch()
 
-	_, err = ReconcilePaidInvoice(context.Background(), "in_discounted_snapshot_price_mismatch")
-	require.Error(t, err)
-	require.True(t, IsPermanentPaidInvoiceError(err))
-	require.Contains(t, err.Error(), "amount mismatch")
+	replayed, err := ReconcilePaidInvoice(context.Background(), "in_discounted_snapshot_price_mismatch")
+	require.NoError(t, err)
+	require.False(t, replayed.Applied)
+	var grants int64
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grants).Error)
+	require.Equal(t, int64(1), grants)
 }
 
 func TestReconcilePaidInvoiceIsIdempotentForDuplicateAndCheckoutFirst(t *testing.T) {

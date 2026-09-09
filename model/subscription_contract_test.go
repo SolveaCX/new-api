@@ -55,7 +55,7 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_until"))
 }
 
-func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
+func TestSubscriptionWindowScopeMigrationKeepsExistingRowsAndSchemaDefaultLegacy(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -80,6 +80,8 @@ func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
 		Scan(&version).Error)
 	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
 
+	// A writer that does not know about the column must continue to create a
+	// legacy row. Activation is a creator decision, not a schema-default switch.
 	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
 		Id:         839,
 		UserId:     12463,
@@ -90,6 +92,27 @@ func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
 		Where("id = ?", 839).
 		Scan(&version).Error)
 	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
+
+	// Explicitly activated creators may write version 1. Re-running the migration
+	// must preserve both the existing legacy rows and the activated row.
+	require.NoError(t, db.Table("user_subscriptions").Create(map[string]interface{}{
+		"id":                   840,
+		"user_id":              12464,
+		"contract_id":          134,
+		"window_scope_version": SubscriptionWindowScopeVersionEntitlement,
+	}).Error)
+	require.NoError(t, db.AutoMigrate(&UserSubscription{}))
+
+	var versions []int16
+	require.NoError(t, db.Table("user_subscriptions").
+		Where("id IN ?", []int{838, 839, 840}).
+		Order("id ASC").
+		Pluck("window_scope_version", &versions).Error)
+	require.Equal(t, []int16{
+		SubscriptionWindowScopeVersionLegacy,
+		SubscriptionWindowScopeVersionLegacy,
+		SubscriptionWindowScopeVersionEntitlement,
+	}, versions)
 }
 
 func TestSubscriptionContractAllowsOnlyOneContractPerUser(t *testing.T) {

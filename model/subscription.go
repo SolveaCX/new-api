@@ -702,8 +702,9 @@ type UserSubscription struct {
 	// Nil means a legacy entitlement created before window limits were snapshotted.
 	Window5hAmount   *int64 `json:"window_5h_amount,omitempty" gorm:"column:window_5h_amount;type:bigint"`
 	WindowWeekAmount *int64 `json:"window_week_amount,omitempty" gorm:"column:window_week_amount;type:bigint"`
-	// The compatibility default preserves contract-scoped counters until a row is
-	// explicitly opted into entitlement-scoped windows.
+	// The schema default stays at version 0 so migrations and older writers cannot
+	// opt rows into a new Redis namespace implicitly. Grant creators set version 1
+	// explicitly when a purchase should start fresh entitlement-scoped windows.
 	WindowScopeVersion int16 `json:"-" gorm:"column:window_scope_version;type:smallint;not null;default:0"`
 
 	StartTime     int64  `json:"start_time" gorm:"bigint"`
@@ -1056,25 +1057,26 @@ func createUserSubscriptionFromPlanWithCycleTx(tx *gorm.DB, userId int, plan *Su
 	window5hAmount := plan.Window5hAmount
 	windowWeekAmount := plan.WindowWeekAmount
 	sub := &UserSubscription{
-		UserId:            userId,
-		PlanId:            plan.Id,
-		ProviderBindingId: providerBindingId,
-		AmountTotal:       plan.TotalAmount,
-		AmountUsed:        0,
-		MediaCreditsTotal: plan.MediaCreditsMonthly,
-		MediaCreditsUsed:  0,
-		Window5hAmount:    &window5hAmount,
-		WindowWeekAmount:  &windowWeekAmount,
-		StartTime:         now.Unix(),
-		EndTime:           endUnix,
-		Status:            "active",
-		Source:            source,
-		LastResetTime:     lastReset,
-		NextResetTime:     nextReset,
-		UpgradeGroup:      upgradeGroup,
-		PrevUserGroup:     prevGroup,
-		CreatedAt:         common.GetTimestamp(),
-		UpdatedAt:         common.GetTimestamp(),
+		UserId:             userId,
+		PlanId:             plan.Id,
+		ProviderBindingId:  providerBindingId,
+		AmountTotal:        plan.TotalAmount,
+		AmountUsed:         0,
+		MediaCreditsTotal:  plan.MediaCreditsMonthly,
+		MediaCreditsUsed:   0,
+		Window5hAmount:     &window5hAmount,
+		WindowWeekAmount:   &windowWeekAmount,
+		WindowScopeVersion: SubscriptionWindowScopeVersionEntitlement,
+		StartTime:          now.Unix(),
+		EndTime:            endUnix,
+		Status:             "active",
+		Source:             source,
+		LastResetTime:      lastReset,
+		NextResetTime:      nextReset,
+		UpgradeGroup:       upgradeGroup,
+		PrevUserGroup:      prevGroup,
+		CreatedAt:          common.GetTimestamp(),
+		UpdatedAt:          common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err

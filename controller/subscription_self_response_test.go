@@ -1175,6 +1175,9 @@ func TestGetSubscriptionSelfIncludesShortWindowUsageCounters(t *testing.T) {
 		Status:           model.SubscriptionEntitlementStatusActive,
 	}
 	require.NoError(t, model.DB.Create(&entitlement).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("id = ?", entitlement.Id).
+		Update("window_scope_version", model.SubscriptionWindowScopeVersionLegacy).Error)
 	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).
 		Where("id = ?", contract.Id).
 		Update("current_entitlement_id", entitlement.Id).Error)
