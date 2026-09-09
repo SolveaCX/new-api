@@ -409,7 +409,7 @@ export function PlanPurchaseDialogContent(
                 'Replacement charges the full target price. No prorating or credit is applied.'
               )}{' '}
               {t(
-                'The active started term is not refunded. Monthly and Image + video usage reset.'
+                'The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.'
               )}
             </AlertDescription>
           </Alert>

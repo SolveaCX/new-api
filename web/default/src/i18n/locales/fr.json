@@ -5969,6 +5969,7 @@
     "Total price": "Prix total",
     "Unit price": "Prix unitaire",
     "Replacement charges the full target price. No prorating or credit is applied.": "Le remplacement facture le prix complet du forfait cible. Aucun prorata ni crédit n'est appliqué.",
+    "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.": "La période active déjà commencée n’est pas remboursée. Le quota mensuel de modèles et les crédits Image + vidéo sont réinitialisés. Les montants utilisés dans les fenêtres de 5 heures et 7 jours sont remis à zéro, tandis que les deux limites restent en vigueur.",
     "Refundable not-started value: {{value}}": "Valeur remboursable non commencée : {{value}}",
     "Monthly model quota: {{value}}": "Quota mensuel de modèles : {{value}}",
     "{{count}} credits": "{{count}} crédits",

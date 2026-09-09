@@ -84,6 +84,46 @@ func TestAdjustSubscriptionWindowFromSnapshotOnceIsAtomicAndIdempotent(t *testin
 	}
 }
 
+func TestEntitlementWindowSnapshotSettlesOnlyNegativeIdentityKeys(t *testing.T) {
+	setupWindowTestRedis(t)
+	now := common.GetTimestamp()
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 77,
+		WindowScopeVersion: model.SubscriptionWindowScopeVersionEntitlement,
+		SubscriptionStart:  now - 60,
+		Window5hAmount:     100,
+		WindowWeekAmount:   200,
+	}
+
+	guard, err := reserveSubscriptionWindows(info, 40)
+	if err != nil || guard == nil {
+		t.Fatalf("reserve entitlement-scoped window: guard=%v err=%v", guard, err)
+	}
+	snap := guard.Snapshot()
+	if snap == nil || snap.SubId != -77 {
+		t.Fatalf("snapshot identity = %+v, want sub_id=-77", snap)
+	}
+	changed, err := AdjustSubscriptionWindowFromSnapshotOnce(snap, 10, "negative-window-identity")
+	if err != nil || !changed {
+		t.Fatalf("settle entitlement-scoped window: changed=%v err=%v", changed, err)
+	}
+
+	currentBucket := now / subscriptionWindowBucketSeconds * subscriptionWindowBucketSeconds
+	negativeBucketKey := subscriptionWindowBucketKey(-77, currentBucket)
+	negativeWeekKey := subscriptionWindowWeekKey(-77, subscriptionWindowWeekIndex(info.SubscriptionStart, now))
+	if got, _ := common.RDB.Get(context.Background(), negativeBucketKey).Int64(); got != 50 {
+		t.Fatalf("negative bucket usage = %d, want 50", got)
+	}
+	if got, _ := common.RDB.Get(context.Background(), negativeWeekKey).Int64(); got != 50 {
+		t.Fatalf("negative week usage = %d, want 50", got)
+	}
+	positiveBucketKey := subscriptionWindowBucketKey(77, currentBucket)
+	positiveWeekKey := subscriptionWindowWeekKey(77, subscriptionWindowWeekIndex(info.SubscriptionStart, now))
+	if exists, _ := common.RDB.Exists(context.Background(), positiveBucketKey, positiveWeekKey).Result(); exists != 0 {
+		t.Fatalf("positive legacy keys unexpectedly exist: %d", exists)
+	}
+}
+
 func TestSubscriptionWindowWeekIndex(t *testing.T) {
 	const week = int64(subscriptionWindowWeekSeconds)
 	cases := []struct {

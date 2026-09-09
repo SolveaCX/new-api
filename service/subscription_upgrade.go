@@ -773,7 +773,7 @@ func reconcilePaidInvoiceUpgradeTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		if grant != nil && grant.Entitlement != nil {
 			transition.SubscriptionScopeID = int64(grant.Entitlement.Id)
 		}
-		locked.ProviderPayload = fmt.Sprintf("invoice_id=%s;subscription_id=%s;change_intent_id=%d", facts.InvoiceID, facts.SubscriptionID, intent.Id)
+		locked.ProviderPayload = stripePaidInvoiceProviderPayload(facts)
 		return tx.Model(locked).Where("id = ?", locked.Id).Update("provider_payload", locked.ProviderPayload).Error
 	})
 	if err != nil {
@@ -990,23 +990,8 @@ func validateStripeUpgradePaidInvoiceFacts(facts paidInvoiceFacts, intent *model
 	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
 		return errors.New("Stripe price mismatch")
 	}
-	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
-	if planSnapshot.Found {
-		expectedCurrency = strings.ToUpper(strings.TrimSpace(planSnapshot.Snapshot.Currency))
-	}
-	if expectedCurrency != facts.Currency {
-		return errors.New("Stripe invoice currency mismatch")
-	}
-	expectedPrice := plan.PriceAmount
-	if planSnapshot.Found {
-		expectedPrice = planSnapshot.Snapshot.PriceAmount
-	}
-	expectedMinor, err := stripeMinorUnitAmountForSubscription(expectedPrice, facts.Currency)
-	if err != nil {
-		return err
-	}
-	if expectedMinor != facts.AmountPaid {
-		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedMinor, facts.AmountPaid)
+	if facts.Quantity != 1 {
+		return fmt.Errorf("Stripe subscription quantity mismatch: expected 1 got %d", facts.Quantity)
 	}
 	return nil
 }
