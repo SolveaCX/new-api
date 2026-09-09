@@ -20,7 +20,10 @@ export function buildRobots(siteOrigin: string): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/cdn-cgi/", "/_next/", "/dashboard/", "/lp/"],
+        // API routes are authenticated/service endpoints, not indexable pages.
+        // Keep them out of crawl discovery so expected 401 responses do not
+        // appear as coverage errors in Google Search Console.
+        disallow: ["/api/", "/cdn-cgi/", "/_next/", "/dashboard/", "/lp/"],
       },
     ],
     sitemap: `${siteOrigin}/sitemap.xml`,

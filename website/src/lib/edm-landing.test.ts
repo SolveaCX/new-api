@@ -118,4 +118,9 @@ describe("robots", () => {
     const route = robots();
     expect(route.rules[0].disallow).toContain("/lp/");
   });
+
+  test("disallows authenticated API routes", () => {
+    const route = robots();
+    expect(route.rules[0].disallow).toContain("/api/");
+  });
 });
