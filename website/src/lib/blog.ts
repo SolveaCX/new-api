@@ -120,7 +120,10 @@ async function fetchBloggerJson<T>(path: string): Promise<T | null> {
 
   try {
     const response = await fetch(`${BLOGGER_API_URL}${path}`, {
-      next: { revalidate: BLOG_REVALIDATE_SECONDS },
+      // Published post availability is the source of truth for sitemap and
+      // hreflang generation. Do not let a stale Next cache keep removed slugs
+      // discoverable after they have been unpublished or deleted in Blogger.
+      cache: "no-store",
       headers: {
         accept: "application/json",
         "x-access-key": BLOGGER_ACCESS_KEY,
