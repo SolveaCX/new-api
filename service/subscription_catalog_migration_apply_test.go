@@ -21,6 +21,14 @@ type catalogMigrationSchedulerStub struct {
 	failRestore   error
 }
 
+func TestCatalogMigrationOwnershipFingerprintFitsFixedWidthColumn(t *testing.T) {
+	first := catalogMigrationOwnershipFingerprint("batch", int64(16), int64(95), "sub_test", "si_test", "price_old", "price_new", int64(123))
+	second := catalogMigrationOwnershipFingerprint("batch", int64(16), int64(95), "sub_test", "si_test", "price_old", "price_new", int64(123))
+	require.Len(t, first, 64)
+	require.Equal(t, first, second)
+	require.NotEqual(t, first, stableCatalogMigrationKey("ownership", "batch", int64(16), int64(95)))
+}
+
 func (s *catalogMigrationSchedulerStub) ScheduleCatalogMigration(_ context.Context, request CatalogMigrationProviderScheduleRequest) (CatalogMigrationProviderScheduleResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
