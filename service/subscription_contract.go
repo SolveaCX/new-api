@@ -55,6 +55,9 @@ func ChangeSubscriptionPlan(cmd ChangePlanCommand) (*ChangePlanResult, error) {
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
+	if _, _, err := supersedeCatalogMigrationForUserAction(context.Background(), cmd.UserID, cmd.PlanID); err != nil {
+		return nil, err
+	}
 
 	var result *ChangePlanResult
 	var balanceEffects *balanceOnePeriodSideEffects

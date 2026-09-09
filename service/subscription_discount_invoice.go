@@ -28,11 +28,18 @@ type stripeSubscriptionDiscountInvoiceSnapshot struct {
 	FundingSource                     string `json:"funding_source"`
 	InvoiceID                         string `json:"invoice_id"`
 	SubscriptionID                    string `json:"subscription_id"`
+	SubscriptionItemID                string `json:"subscription_item_id"`
+	CustomerID                        string `json:"customer_id"`
 	BindingID                         int64  `json:"binding_id"`
 	ContractID                        int64  `json:"contract_id"`
 	PlanID                            int    `json:"plan_id"`
 	UserID                            int    `json:"user_id"`
 	Currency                          string `json:"currency"`
+	BasePriceMinor                    int64  `json:"base_price_minor"`
+	Quantity                          int64  `json:"quantity"`
+	PeriodStart                       int64  `json:"period_start"`
+	PeriodEnd                         int64  `json:"period_end"`
+	PlanSnapshotFingerprint           string `json:"plan_snapshot_fingerprint"`
 	CanonicalUSDMinor                 int64  `json:"canonical_usd_minor"`
 	OriginalSubtotalMinor             int64  `json:"original_subtotal_minor"`
 	ExistingDiscountMinor             int64  `json:"existing_discount_minor"`
@@ -136,6 +143,27 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 		// Lock order: local renewal binding facts first, then the discount account
 		// inside ReserveSubscriptionDiscountTx. Stripe invoice updates and item
 		// creation happen outside this transaction.
+		binding, contract, plan, user, err := lockRenewalBindingFactsTx(tx, facts)
+		if err != nil {
+			return err
+		}
+		plan, pendingDowngrade, err := resolveExpectedRenewalPlanTx(tx, facts, binding, contract, plan)
+		if err != nil {
+			return err
+		}
+		planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, facts, binding, contract, plan, pendingDowngrade)
+		if err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
+		if catalog != nil {
+			plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
+			if err != nil {
+				return PermanentPaidInvoiceError(err)
+			}
+		}
+		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot, true); err != nil {
+			return PermanentPaidInvoiceError(err)
+		}
 		existingPrepare, found, err := existingStripeSubscriptionDiscountInvoicePrepareTx(tx, facts)
 		if err != nil {
 			return err
@@ -144,16 +172,18 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 			prepare = existingPrepare
 			return nil
 		}
-		binding, contract, plan, user, err := lockRenewalBindingFactsTx(tx, facts)
-		if err != nil {
-			return err
-		}
-		planSnapshot, err := recurringPlanSnapshotFromBindingTx(tx, binding)
+		fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot)
 		if err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
-		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
-			return PermanentPaidInvoiceError(err)
+		baseMinor := facts.Amount
+		if planSnapshot.Typed != nil {
+			baseMinor = planSnapshot.Typed.BasePriceMinor
+		} else if planSnapshot.Found {
+			baseMinor, err = stripeMinorUnitAmountForSubscription(planSnapshot.Snapshot.PriceAmount, planSnapshot.Snapshot.Currency)
+			if err != nil {
+				return err
+			}
 		}
 		account, err := model.GetSubscriptionDiscountAccountTx(tx, binding.UserId)
 		if err != nil {
@@ -202,16 +232,23 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 			expectedFinal = 0
 		}
 		snapshotFacts := stripeSubscriptionDiscountInvoiceSnapshot{
-			Version:                           1,
+			Version:                           2,
 			Source:                            "stripe_renewal_invoice_discount",
 			FundingSource:                     fundingSource,
 			InvoiceID:                         facts.InvoiceID,
 			SubscriptionID:                    facts.SubscriptionID,
+			SubscriptionItemID:                facts.SubscriptionItemID,
+			CustomerID:                        facts.CustomerID,
 			BindingID:                         binding.Id,
 			ContractID:                        binding.ContractId,
 			PlanID:                            plan.Id,
 			UserID:                            binding.UserId,
 			Currency:                          facts.Currency,
+			BasePriceMinor:                    baseMinor,
+			Quantity:                          facts.Quantity,
+			PeriodStart:                       facts.PeriodStart,
+			PeriodEnd:                         facts.PeriodEnd,
+			PlanSnapshotFingerprint:           fingerprint,
 			CanonicalUSDMinor:                 canonicalUSDMinor,
 			OriginalSubtotalMinor:             facts.Amount,
 			ExistingDiscountMinor:             existingDiscount,
@@ -477,7 +514,7 @@ func parseStripeSubscriptionDiscountInvoiceSnapshot(raw string) (stripeSubscript
 		return stripeSubscriptionDiscountInvoiceSnapshot{}, fmt.Errorf("subscription discount invoice snapshot is invalid: %w", err)
 	}
 	snapshot.FundingSource = normalizeStripeSubscriptionDiscountFundingSource(snapshot.FundingSource)
-	if snapshot.Version != 1 ||
+	if (snapshot.Version != 1 && snapshot.Version != 2) ||
 		strings.TrimSpace(snapshot.Source) != "stripe_renewal_invoice_discount" ||
 		strings.TrimSpace(snapshot.InvoiceID) == "" ||
 		strings.TrimSpace(snapshot.SubscriptionID) == "" ||
@@ -495,6 +532,12 @@ func parseStripeSubscriptionDiscountInvoiceSnapshot(raw string) (stripeSubscript
 		snapshot.ExpectedFinalPaymentMinor < 0 ||
 		strings.TrimSpace(snapshot.ReservationKey) == "" ||
 		strings.TrimSpace(snapshot.ItemIdempotencyKey) == "" {
+		return stripeSubscriptionDiscountInvoiceSnapshot{}, errors.New("subscription discount invoice snapshot is incomplete")
+	}
+	if snapshot.Version == 2 && (strings.TrimSpace(snapshot.SubscriptionItemID) == "" ||
+		strings.TrimSpace(snapshot.CustomerID) == "" || snapshot.BasePriceMinor <= 0 || snapshot.Quantity != 1 ||
+		snapshot.PeriodStart <= 0 || snapshot.PeriodEnd <= snapshot.PeriodStart ||
+		strings.TrimSpace(snapshot.PlanSnapshotFingerprint) == "") {
 		return stripeSubscriptionDiscountInvoiceSnapshot{}, errors.New("subscription discount invoice snapshot is incomplete")
 	}
 	return snapshot, nil
@@ -538,6 +581,7 @@ func stripeSubscriptionDiscountInvoiceMetadata(snapshot stripeSubscriptionDiscou
 		"subscription_discount_contract_id":            strconv.FormatInt(snapshot.ContractID, 10),
 		"subscription_discount_plan_id":                strconv.Itoa(snapshot.PlanID),
 		"subscription_discount_user_id":                strconv.Itoa(snapshot.UserID),
+		"subscription_discount_plan_snapshot":          strings.TrimSpace(snapshot.PlanSnapshotFingerprint),
 	}
 }
 

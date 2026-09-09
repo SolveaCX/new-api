@@ -421,6 +421,7 @@ func orderedMigrationModels() []migrationModel {
 		{&FreePlanGrant{}, "FreePlanGrant"},
 		{&UserSubscriptionContract{}, "UserSubscriptionContract"},
 		{&SubscriptionChangeIntent{}, "SubscriptionChangeIntent"},
+		{&SubscriptionCatalogMigrationBatch{}, "SubscriptionCatalogMigrationBatch"},
 		{&SubscriptionTierRankReservation{}, "SubscriptionTierRankReservation"},
 		{&SubscriptionTermSegment{}, "SubscriptionTermSegment"},
 		{&WalletLedgerEntry{}, "WalletLedgerEntry"},

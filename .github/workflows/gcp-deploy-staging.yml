@@ -169,6 +169,9 @@ jobs:
             effective_cookie_domain=".flatkey.ai"
           fi
           env_vars=(
+            "FLATKEY_DEPLOYMENT_ENV=staging"
+            "SUBSCRIPTION_CATALOG_MIGRATION_ENABLED=false"
+            "SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST="
             "OFFICIAL_WEBSITE_ORIGIN=${STAGING_OFFICIAL_WEBSITE_ORIGIN}"
             "APP_CONSOLE_ORIGIN=${STAGING_APP_CONSOLE_ORIGIN}"
             "COOKIE_SESSION_DOMAIN=${effective_cookie_domain}"

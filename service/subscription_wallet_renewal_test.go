@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -96,6 +97,292 @@ func seedWalletRenewalSourceOrder(t *testing.T, contract model.UserSubscriptionC
 	}
 	require.NoError(t, model.DB.Create(&order).Error)
 	return order
+}
+
+func seedReachedWalletCatalogMigration(t *testing.T, contract *model.UserSubscriptionContract, targetPlanID int, rawSnapshot string) model.SubscriptionChangeIntent {
+	t.Helper()
+	require.NoError(t, model.DB.AutoMigrate(&model.SubscriptionCatalogMigrationBatch{}))
+	t.Setenv("FLATKEY_DEPLOYMENT_ENV", "staging")
+	t.Setenv("K_SERVICE", "newapi-staging")
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "true")
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST", fmt.Sprint(contract.Id))
+	batch := model.SubscriptionCatalogMigrationBatch{
+		Id: "catmig_wallet_test", RequestId: "wallet-test-batch", CohortDigest: fmt.Sprintf("%064d", 1),
+		Status: model.SubscriptionCatalogMigrationBatchStatusScheduled, ManifestSnapshot: "{}", RequestedBy: 1,
+		DeploymentEnvironment: "staging", ServiceName: "newapi-staging", SandboxOnly: true,
+	}
+	require.NoError(t, model.DB.Create(&batch).Error)
+	batchID := batch.Id
+	intent := model.SubscriptionChangeIntent{
+		ContractId: contract.Id, UserId: contract.UserId, RequestId: "wallet-catalog-intent", ChangeVersion: contract.ChangeVersion,
+		Kind: model.SubscriptionChangeIntentKindCatalogMigration, PaymentMode: contract.PaymentMode,
+		Status: model.SubscriptionChangeIntentStatusScheduled, FromPlanId: contract.CurrentPlanId, ToPlanId: targetPlanID,
+		CatalogMigrationBatchId: &batchID, TargetPlanSnapshot: rawSnapshot, EffectiveAt: contract.CurrentPeriodEnd,
+	}
+	require.NoError(t, model.DB.Create(&intent).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"latest_change_intent_id": intent.Id,
+		"pending_plan_id":         targetPlanID,
+		"pending_effective_at":    contract.CurrentPeriodEnd,
+	}).Error)
+	contract.LatestChangeIntentId = intent.Id
+	contract.PendingPlanId = targetPlanID
+	contract.PendingEffectiveAt = contract.CurrentPeriodEnd
+	return intent
+}
+
+func walletCatalogSnapshot(t *testing.T, planID int) string {
+	t.Helper()
+	raw, err := EncodeRecurringPlanSnapshotV1(RecurringPlanSnapshotV1{
+		Version: RecurringPlanSnapshotVersionV1, PlanID: planID, StripePriceID: "price_wallet_catalog",
+		Currency: "USD", BasePriceMinor: 1000, DurationUnit: model.SubscriptionDurationMonth, DurationValue: 1,
+		QuotaResetPeriod: model.SubscriptionResetNever, TotalAmount: 13, MediaCreditsMonthly: 7,
+		Window5hAmount: 0, WindowWeekAmount: 0, UpgradeGroup: "catalog_target",
+	})
+	require.NoError(t, err)
+	return raw
+}
+
+func configureWalletCatalogTarget(t *testing.T, plan *model.SubscriptionPlan) {
+	t.Helper()
+	plan.PriceAmount = 10
+	plan.Currency = "USD"
+	plan.StripePriceId = "price_wallet_catalog"
+	plan.DurationUnit = model.SubscriptionDurationMonth
+	plan.DurationValue = 1
+	plan.CustomSeconds = 0
+	plan.QuotaResetPeriod = model.SubscriptionResetNever
+	plan.QuotaResetCustomSeconds = 0
+	plan.TotalAmount = 13
+	plan.MediaCreditsMonthly = 7
+	plan.Window5hAmount = 0
+	plan.WindowWeekAmount = 0
+	plan.UpgradeGroup = "catalog_target"
+	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"price_amount": plan.PriceAmount, "currency": plan.Currency, "stripe_price_id": plan.StripePriceId,
+		"duration_unit": plan.DurationUnit, "duration_value": plan.DurationValue, "custom_seconds": plan.CustomSeconds,
+		"quota_reset_period": plan.QuotaResetPeriod, "quota_reset_custom_seconds": plan.QuotaResetCustomSeconds,
+		"total_amount": plan.TotalAmount, "media_credits_monthly": plan.MediaCreditsMonthly,
+		"window_5h_amount": plan.Window5hAmount, "window_week_amount": plan.WindowWeekAmount,
+		"upgrade_group": plan.UpgradeGroup,
+	}).Error)
+}
+
+func assertWalletCatalogRenewalUnchanged(t *testing.T, contract model.UserSubscriptionContract, entitlement model.UserSubscription, quota int) {
+	t.Helper()
+	var storedContract model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&storedContract, "id = ?", contract.Id).Error)
+	require.Equal(t, contract.CurrentPlanId, storedContract.CurrentPlanId)
+	require.Equal(t, contract.CurrentPeriodEnd, storedContract.CurrentPeriodEnd)
+	require.Equal(t, entitlement.Id, storedContract.CurrentEntitlementId)
+	var storedEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&storedEntitlement, "id = ?", entitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusActive, storedEntitlement.Status)
+	require.NotNil(t, storedEntitlement.CurrentSlot)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", contract.UserId).Error)
+	require.Equal(t, quota, user.Quota)
+	var count int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ? AND trade_no LIKE ?", contract.UserId, "SUBRENEW%").Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestRenewWalletSubscriptionContractAppliesReachedCatalogSnapshotAtomically(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7830, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7930, 1500, source, periodEnd)
+	sourceOrder := seedWalletRenewalSourceOrder(t, contract, &oldEntitlement, source)
+	target := insertPurchaseServicePlan(t, 7831, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+	assertWalletCatalogRenewalUnchanged(t, contract, oldEntitlement, 1500)
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+
+	require.NoError(t, err)
+	require.True(t, result.Renewed)
+	require.Equal(t, int64(1000), result.ChargedQuota)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, target.Id, stored.CurrentPlanId)
+	require.Equal(t, intent.Id, stored.LatestChangeIntentId)
+	require.Zero(t, stored.PendingPlanId)
+	require.Zero(t, stored.PendingEffectiveAt)
+	var renewed model.UserSubscription
+	require.NoError(t, model.DB.First(&renewed, "id = ?", stored.CurrentEntitlementId).Error)
+	require.Equal(t, int64(13), renewed.AmountTotal)
+	require.Equal(t, int64(7), renewed.MediaCreditsTotal)
+	require.Equal(t, int64(0), *renewed.Window5hAmount)
+	require.Equal(t, int64(0), *renewed.WindowWeekAmount)
+	var historical model.UserSubscription
+	require.NoError(t, model.DB.First(&historical, "id = ?", oldEntitlement.Id).Error)
+	require.Equal(t, model.SubscriptionEntitlementStatusHistorical, historical.Status)
+	var applied model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&applied, "id = ?", intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, applied.Status)
+	require.NotEmpty(t, applied.WalletDebitTradeNo)
+	var renewalOrder model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&renewalOrder, "id = ?", result.OrderID).Error)
+	require.Equal(t, target.Id, renewalOrder.PlanId)
+	require.Equal(t, float64(10), renewalOrder.Money)
+	require.Equal(t, float64(10), renewalOrder.UnitPrice)
+	require.Equal(t, "USD", renewalOrder.PaymentCurrency)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"plan_id":7831`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"price_amount":10`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"total_amount":13`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"media_credits_monthly":7`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"window_5h_amount":0`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"window_week_amount":0`)
+	require.Contains(t, renewalOrder.PlanSnapshot, `"upgrade_group":"catalog_target"`)
+	var unchangedSourceOrder model.SubscriptionOrder
+	require.NoError(t, model.DB.First(&unchangedSourceOrder, "id = ?", sourceOrder.Id).Error)
+	require.Equal(t, sourceOrder.Status, unchangedSourceOrder.Status)
+	require.Equal(t, sourceOrder.PlanSnapshot, unchangedSourceOrder.PlanSnapshot)
+	require.Equal(t, sourceOrder.TradeNo, unchangedSourceOrder.TradeNo)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", contract.UserId).Error)
+	require.Equal(t, 500, user.Quota)
+
+	replay, err := RenewWalletSubscriptionContract(contract.Id)
+	require.NoError(t, err)
+	require.False(t, replay.Renewed)
+	var ledgerCount, entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ?", contract.UserId).Count(&ledgerCount).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&entitlementCount).Error)
+	require.Equal(t, int64(1), ledgerCount)
+	require.Equal(t, int64(2), entitlementCount)
+}
+
+func TestRenewWalletSubscriptionContractCatalogFailuresNeverFallback(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(t *testing.T, intent model.SubscriptionChangeIntent)
+	}{
+		{name: "wrong snapshot", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("target_plan_snapshot", `{"version":1}`).Error)
+		}},
+		{name: "guard off", mutate: func(t *testing.T, _ model.SubscriptionChangeIntent) {
+			t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "false")
+		}},
+		{name: "sandbox drift", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NotNil(t, intent.CatalogMigrationBatchId)
+			require.NoError(t, model.DB.Exec("UPDATE subscription_catalog_migration_batches SET service_name = ? WHERE id = ?", "unexpected-service", *intent.CatalogMigrationBatchId).Error)
+		}},
+		{name: "plan drift", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", intent.ToPlanId).Update("price_amount", 11).Error)
+		}},
+		{name: "balance payment disabled", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", intent.ToPlanId).Update("allow_balance_pay", false).Error)
+		}},
+		{name: "provider binding present", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", intent.ContractId).Update("current_provider_binding_id", 99).Error)
+		}},
+		{name: "external payment mode", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", intent.ContractId).Update("payment_mode", model.SubscriptionPaymentModeExternalOnePeriod).Error)
+		}},
+		{name: "needs attention", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
+			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("status", model.SubscriptionChangeIntentStatusNeedsAttention).Error)
+		}},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setupSubscriptionPurchaseServiceTestDB(t)
+			source := insertPurchaseServicePlan(t, 7840+index*2, 1, 7, 700)
+			periodEnd := common.GetTimestamp() - 15
+			contract, entitlement := seedWalletRenewalContract(t, 7940+index, 1500, source, periodEnd)
+			target := insertPurchaseServicePlan(t, 7841+index*2, 2, 99, 999)
+			configureWalletCatalogTarget(t, &target)
+			intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+			test.mutate(t, intent)
+
+			result, err := RenewWalletSubscriptionContract(contract.Id)
+
+			require.Nil(t, result)
+			require.Error(t, err)
+			assertWalletCatalogRenewalUnchanged(t, contract, entitlement, 1500)
+		})
+	}
+}
+
+func TestRunWalletSubscriptionRenewalOnceRetriesCatalogAfterBalanceTopUp(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7850, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7950, 999, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7851, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+	require.NoError(t, err)
+	require.False(t, result.Renewed)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, result.PausedStatus)
+	assertWalletCatalogRenewalUnchanged(t, contract, oldEntitlement, 999)
+	var pending model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&pending, "id = ?", intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusScheduled, pending.Status)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", contract.UserId).Update("quota", 1000).Error)
+
+	renewed, err := RunWalletSubscriptionRenewalOnce(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, renewed)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", contract.UserId).Error)
+	require.Zero(t, user.Quota)
+	var ledgerCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ?", contract.UserId).Count(&ledgerCount).Error)
+	require.Equal(t, int64(1), ledgerCount)
+}
+
+func TestRenewWalletSubscriptionContractConcurrentCatalogReplayChargesAndGrantsOnce(t *testing.T) {
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7860, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7960, 1000, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7861, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+
+	results := make([]*WalletSubscriptionRenewalResult, 2)
+	errs := make([]error, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	start := make(chan struct{})
+	var calls sync.WaitGroup
+	calls.Add(2)
+	for index := range results {
+		go func(index int) {
+			defer calls.Done()
+			ready.Done()
+			<-start
+			results[index], errs[index] = RenewWalletSubscriptionContract(contract.Id)
+		}(index)
+	}
+	ready.Wait()
+	close(start)
+	calls.Wait()
+
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+	renewed := 0
+	for _, result := range results {
+		require.NotNil(t, result)
+		if result.Renewed {
+			renewed++
+		}
+	}
+	require.Equal(t, 1, renewed)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, "id = ?", contract.UserId).Error)
+	require.Zero(t, user.Quota)
+	var ledgerCount, orderCount, entitlementCount int64
+	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ?", contract.UserId).Count(&ledgerCount).Error)
+	require.NoError(t, model.DB.Model(&model.SubscriptionOrder{}).Where("user_id = ?", contract.UserId).Count(&orderCount).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&entitlementCount).Error)
+	require.Equal(t, int64(1), ledgerCount)
+	require.Equal(t, int64(1), orderCount)
+	require.Equal(t, int64(2), entitlementCount)
 }
 
 func TestRenewWalletSubscriptionContractChargesCurrentOneMonthPlanAndExtendsOnce(t *testing.T) {
@@ -389,13 +676,25 @@ func TestRenewWalletSubscriptionContractInvalidatesUserCacheAfterDebit(t *testin
 	plan := insertPurchaseServicePlan(t, 7806, 1, 3, 300)
 	periodEnd := common.GetTimestamp() - 15
 	contract, _ := seedWalletRenewalContract(t, 7907, 300, plan, periodEnd)
-	cacheUserQuota(t, 7907, 300)
-	require.True(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7907)))
+	cached, err := model.GetUserCache(7907)
+	require.NoError(t, err)
+	require.Equal(t, 300, cached.Quota)
+	require.Eventually(t, func() bool {
+		return len(mr.Keys()) == 1
+	}, time.Second, 10*time.Millisecond)
+	userCacheKey := mr.Keys()[0]
+	require.Contains(t, userCacheKey, "7907")
 
-	_, err := RenewWalletSubscriptionContract(contract.Id)
+	_, err = RenewWalletSubscriptionContract(contract.Id)
 
 	require.NoError(t, err)
-	require.False(t, mr.Exists(fmt.Sprintf("user:v2:%d", 7907)))
+	require.False(t, mr.Exists(userCacheKey))
+	refreshed, err := model.GetUserCache(7907)
+	require.NoError(t, err)
+	require.Zero(t, refreshed.Quota)
+	require.Eventually(t, func() bool {
+		return mr.Exists(userCacheKey)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestHandleExistingWalletRenewalDoesNotQueryAbortedPostgresTransaction(t *testing.T) {
