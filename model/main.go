@@ -385,6 +385,8 @@ func orderedMigrationModels() []migrationModel {
 		{&LogRequestSample{}, "LogRequestSample"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&StripeWalletScanState{}, "StripeWalletScanState"},
+		{&StripeWalletPaymentCheck{}, "StripeWalletPaymentCheck"},
 		{&AdsAttributionOutbox{}, "AdsAttributionOutbox"},
 		{&CustomerReferralOutbox{}, "CustomerReferralOutbox"},
 		{&PaymentAnalyticsOutbox{}, "PaymentAnalyticsOutbox"},

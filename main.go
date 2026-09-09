@@ -148,6 +148,7 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 	service.StartStripeSubscriptionReconciliationTask()
+	service.StartStripeWalletReconciliationTask()
 	service.StartInviteSubscriptionRewardReconciliationTask()
 
 	// Deliver paid-click signup, first-use, purchase, and refund events through
