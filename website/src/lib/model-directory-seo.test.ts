@@ -5,7 +5,7 @@ import { DIRECTORY_COPY } from "./model-directory-copy";
 
 // The directory writes filter state into the query string, so an unbounded set
 // of URLs describes subsets of one page. These tests pin the indexing policy:
-// only the bare directory and single series/vendor views are indexable, and
+// only the bare directory and single series views are indexable, and
 // everything else canonicalizes back to /models.
 
 describe("directory SEO policy", () => {
@@ -25,19 +25,16 @@ describe("directory SEO policy", () => {
     expect(seo.title).not.toContain("{{series}}");
   });
 
-  test("a single vendor stays indexable because the sitemap lists it", () => {
+  test("a single vendor filter is noindex and canonicalizes to the directory", () => {
     const seo = buildDirectorySeo("en", { vendor: "OpenAI" });
-    expect(seo.noIndex).toBe(false);
-    expect(seo.canonicalQuery).toBe("vendor=OpenAI");
-    expect(seo.title).toContain("OpenAI");
+    expect(seo.noIndex).toBe(true);
+    expect(seo.canonicalQuery).toBe("");
   });
 
-  test("one model author from the sidebar canonicalizes to the ?vendor= form", () => {
+  test("one model author from the sidebar is noindex like other filters", () => {
     const seo = buildDirectorySeo("en", { vendors: "Anthropic" });
-    expect(seo.noIndex).toBe(false);
-    // Same page as ?vendor=Anthropic, so it must not compete as a second URL.
-    expect(seo.canonicalQuery).toBe("vendor=Anthropic");
-    expect(seo.title).toContain("Anthropic");
+    expect(seo.noIndex).toBe(true);
+    expect(seo.canonicalQuery).toBe("");
   });
 
   test("several model authors are noindex like any multi-select", () => {
