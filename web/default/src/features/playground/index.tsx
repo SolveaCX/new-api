@@ -43,7 +43,10 @@ import {
 import { trackAdsFunnelEvent } from '@/lib/analytics/gtag'
 import { useCanUseGroups } from '@/hooks/use-enterprise'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { getModelPromotions } from '@/features/available-models/lib/model-promotions'
+import {
+  getModelPromotions,
+  modelPromotionPriority,
+} from '@/features/available-models/lib/model-promotions'
 import {
   getPlaygroundConversation,
   getPlaygroundModelPricing,
@@ -315,8 +318,14 @@ export function Playground({
             releaseDate:
               pricing?.directory_metadata?.released_at ?? pricing?.release_date,
             featuredOrder: pricing?.featured_order,
+            tags: pricing?.tags ?? '',
           }
-        }),
+        })
+        .sort(
+          (a, b) =>
+            modelPromotionPriority(a.value, a.tags) -
+            modelPromotionPriority(b.value, b.tags)
+        ),
     [availableModelsData, publicModelPricing]
   )
   const chatModelsData = useMemo(
