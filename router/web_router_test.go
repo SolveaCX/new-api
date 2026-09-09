@@ -103,6 +103,26 @@ func TestPublicWWWRedirectPolicyRedirectsToApex(t *testing.T) {
 	}
 }
 
+func TestPublicWWWRedirectPolicyRedirectsCompatibilityHostToApex(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(publicWWWRedirectPolicy())
+	engine.GET("/", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "https://one.flatkey.ai/?source=gsc", nil)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "https://flatkey.ai/?source=gsc" {
+		t.Fatalf("Location=%q, want https://flatkey.ai/?source=gsc", got)
+	}
+}
+
 func TestPublicWWWRedirectPolicyIgnoresOtherHosts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
