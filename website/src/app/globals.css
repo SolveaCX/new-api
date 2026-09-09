@@ -664,6 +664,11 @@ a {
   text-rendering: optimizeLegibility;
 }
 
+/* Collection index content is data-sized; don't stretch short catalogs to a viewport. */
+.fk-site-main[data-route="/collections"] {
+  min-height: auto;
+}
+
 .dark .fk-new-home {
   --fk-ink: #f6f3ea;
   --fk-paper: #050507;
