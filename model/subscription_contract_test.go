@@ -4,8 +4,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+type legacyUserSubscriptionWithoutWindowScope struct {
+	Id          int
+	UserId      int
+	ContractId  int64
+	GrantKey    *string `gorm:"type:varchar(255);uniqueIndex"`
+	CurrentSlot *int
+}
+
+func (legacyUserSubscriptionWithoutWindowScope) TableName() string {
+	return "user_subscriptions"
+}
 
 func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
@@ -32,12 +46,50 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "end_reason"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_5h_amount"))
 	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_week_amount"))
+	require.True(t, DB.Migrator().HasColumn(&UserSubscription{}, "window_scope_version"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "contract_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_subscription_item_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "provider_schedule_id"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_token"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_action"))
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_until"))
+}
+
+func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+
+	require.NoError(t, db.AutoMigrate(&legacyUserSubscriptionWithoutWindowScope{}))
+	currentSlot := 1
+	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
+		Id:          838,
+		UserId:      12462,
+		ContractId:  132,
+		CurrentSlot: &currentSlot,
+	}).Error)
+
+	require.NoError(t, db.AutoMigrate(&UserSubscription{}))
+
+	var version int16
+	require.NoError(t, db.Table("user_subscriptions").
+		Select("window_scope_version").
+		Where("id = ?", 838).
+		Scan(&version).Error)
+	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
+
+	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
+		Id:         839,
+		UserId:     12463,
+		ContractId: 133,
+	}).Error)
+	require.NoError(t, db.Table("user_subscriptions").
+		Select("window_scope_version").
+		Where("id = ?", 839).
+		Scan(&version).Error)
+	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
 }
 
 func TestSubscriptionContractAllowsOnlyOneContractPerUser(t *testing.T) {
