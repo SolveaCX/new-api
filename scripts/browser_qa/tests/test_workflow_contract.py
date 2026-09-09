@@ -1223,6 +1223,18 @@ class BrowserQaWorkflowContractTests(unittest.TestCase):
         self.assertIn('echo "image_uri=${AR_REPO_URL}/server:${DISPATCH_IMAGE_TAG}"', compute)
         self.assertIn('echo "image_uri=${AR_REPO_URL}/server:staging-sha-${short_sha}"', compute)
 
+    def test_staging_deploy_resets_container_entrypoint_to_image_defaults(self):
+        deploy = step_block(staging_deploy_workflow_text(), "Deploy new revision without traffic")
+        update = re.search(
+            r'(?ms)gcloud run services update "\$\{RUN_SERVICE\}" \\\n(?P<command>.*?)\n          service_json=',
+            deploy,
+        ).group("command")
+
+        self.assertEqual(update.count('--command=""'), 1)
+        self.assertEqual(update.count('--args=""'), 1)
+        self.assertLess(update.index('--image="'), update.index('--command=""'))
+        self.assertLess(update.index('--command=""'), update.index('--args=""'))
+
     def test_staging_browser_qa_failure_is_alert_only_without_rollback_or_secret_summary(self):
         text = staging_deploy_workflow_text()
         uncommented = strip_comments(text)
