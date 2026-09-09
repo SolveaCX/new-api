@@ -9,16 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type phaseAUserSubscription struct {
-	Id                 int
-	UserId             int
-	ContractId         int64
-	GrantKey           *string `gorm:"type:varchar(255);uniqueIndex"`
-	CurrentSlot        *int
-	WindowScopeVersion int16 `gorm:"column:window_scope_version;type:smallint;not null;default:0"`
+type legacyUserSubscriptionWithoutWindowScope struct {
+	Id          int
+	UserId      int
+	ContractId  int64
+	GrantKey    *string `gorm:"type:varchar(255);uniqueIndex"`
+	CurrentSlot *int
 }
 
-func (phaseAUserSubscription) TableName() string {
+func (legacyUserSubscriptionWithoutWindowScope) TableName() string {
 	return "user_subscriptions"
 }
 
@@ -56,16 +55,16 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_until"))
 }
 
-func TestSubscriptionWindowScopeMigrationKeepsExistingRowsLegacyAndDefaultsNewRowsToEntitlement(t *testing.T) {
+func TestSubscriptionWindowScopeMigrationKeepsExistingRowsAndSchemaDefaultLegacy(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 
-	require.NoError(t, db.AutoMigrate(&phaseAUserSubscription{}))
+	require.NoError(t, db.AutoMigrate(&legacyUserSubscriptionWithoutWindowScope{}))
 	currentSlot := 1
-	require.NoError(t, db.Create(&phaseAUserSubscription{
+	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
 		Id:          838,
 		UserId:      12462,
 		ContractId:  132,
@@ -81,7 +80,9 @@ func TestSubscriptionWindowScopeMigrationKeepsExistingRowsLegacyAndDefaultsNewRo
 		Scan(&version).Error)
 	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
 
-	require.NoError(t, db.Omit("window_scope_version").Create(&phaseAUserSubscription{
+	// A writer that does not know about the column must continue to create a
+	// legacy row. Activation is a creator decision, not a schema-default switch.
+	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
 		Id:         839,
 		UserId:     12463,
 		ContractId: 133,
@@ -90,7 +91,28 @@ func TestSubscriptionWindowScopeMigrationKeepsExistingRowsLegacyAndDefaultsNewRo
 		Select("window_scope_version").
 		Where("id = ?", 839).
 		Scan(&version).Error)
-	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, version)
+	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
+
+	// Explicitly activated creators may write version 1. Re-running the migration
+	// must preserve both the existing legacy rows and the activated row.
+	require.NoError(t, db.Table("user_subscriptions").Create(map[string]interface{}{
+		"id":                   840,
+		"user_id":              12464,
+		"contract_id":          134,
+		"window_scope_version": SubscriptionWindowScopeVersionEntitlement,
+	}).Error)
+	require.NoError(t, db.AutoMigrate(&UserSubscription{}))
+
+	var versions []int16
+	require.NoError(t, db.Table("user_subscriptions").
+		Where("id IN ?", []int{838, 839, 840}).
+		Order("id ASC").
+		Pluck("window_scope_version", &versions).Error)
+	require.Equal(t, []int16{
+		SubscriptionWindowScopeVersionLegacy,
+		SubscriptionWindowScopeVersionLegacy,
+		SubscriptionWindowScopeVersionEntitlement,
+	}, versions)
 }
 
 func TestSubscriptionContractAllowsOnlyOneContractPerUser(t *testing.T) {

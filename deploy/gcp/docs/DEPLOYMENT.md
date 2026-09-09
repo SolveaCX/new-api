@@ -79,23 +79,21 @@ This rollout changes new subscription grants from the legacy contract-scoped 5-h
 Prerequisites:
 
 - The compatibility release, merge commit `28b9e09b0`, must serve 100% of traffic on both `newapi-console` and `newapi-router` before activation begins.
-- Confirm the database default for `user_subscriptions.window_scope_version` is `0` and no row has version `1` before deploying the activation release.
+- Confirm the database default for `user_subscriptions.window_scope_version` is `0`. The activation release keeps this default at `0`; only audited grant-creation code writes version `1` explicitly.
 - Use the normal `production` Environment approvals. Do not bypass or remove an approval gate.
 
 Activation runbook:
 
-1. Immediately before approving the activation console deploy, record both the database timestamp and the current maximum `user_subscriptions.id`. Keep both values as the rollout boundary; an ID alone is insufficient because concurrent MySQL transactions can allocate IDs and commit out of order.
-2. Approve and deploy `newapi-console` first. The activation release changes the database default and all new grants to window scope version `1`. This order is safe because the compatibility router already understands version `1` rows.
-3. Verify the console revision is healthy and the database default is `1`.
-4. Audit a conservative overlap cohort using `window_scope_version = 0 AND (id > cutoff_id OR created_at >= rollout_started_at - 900)`. Review the matching contract, current-entitlement, payment, and creation-time facts, then promote each confirmed deploy-interval grant to version `1`. The 15-minute timestamp overlap protects against transactions that allocated a lower ID but committed after the cutoff snapshot.
-5. For the recovery case only, set entitlement `838` for user `12462` to version `1` conditionally: require the expected user, entitlement, contract/current-entitlement relationship, active/current state, and an existing version of `0`. Do this only after a compatible router revision serves 100% of router traffic.
-6. Confirm the 5-hour and 7-day limit values are unchanged. Only the used counters and their scope change.
-7. Approve and deploy `newapi-router`, shift it to 100%, wait for compatibility-revision requests to drain, and repeat the ID-plus-timestamp overlap audit. Confirm there are no unexplained deploy-interval version `0` rows and re-check that the database column default is still `1`.
+1. Approve and deploy the activation image to every runtime that can execute a subscription grant path, including checkout webhooks, balance purchases, renewals, and term advancement. Deploy `newapi-console` first, then `newapi-router`; the compatibility readers already understand version `1` rows.
+2. During the rolling interval, an older writer can still create a version `0` entitlement. Such a row keeps its legacy contract-scoped counters until its next grant. Do not relabel it or delete its Redis keys after creation, because requests admitted under that entitlement may still settle against the legacy identity.
+3. Shift both services to 100% activation revisions. Confirm no older revision serves traffic, then allow requests and grant transactions that began on older revisions to finish according to the application's configured request and transaction timeouts. Check revision logs for late grant completions. There is no application-level writer-pause switch, so do not declare the new repurchase behavior fully active until these conditions are verified.
+4. Verify newly completed grants created after that boundary have `window_scope_version = 1`, while pre-existing version `0` rows remain unchanged. Re-check that the database column default is still `0`.
+5. Confirm the 5-hour and 7-day limit values are unchanged. For each new version `1` grant, only the used counters begin in its new entitlement-scoped namespace.
 
 Rollback rules:
 
 - Merge commit `28b9e09b0` is the rollback floor. Never send traffic to a pre-compatibility revision for at least seven days after activation or while any version `1` row exists, whichever is longer.
-- Rolling the activation release back to the compatibility release is safe, but that release creates new grants as version `0`. Record the rollback interval and audit/promote those grants when the activation release moves forward again.
+- Rolling the activation release back to the compatibility release creates new grants as version `0`. Keep those rows on legacy counters permanently; after activation is restored, only later grants start version `1` windows. Never promote rollback-interval rows in place.
 
 ### Website 发布流程
 

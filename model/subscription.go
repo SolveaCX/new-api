@@ -702,9 +702,10 @@ type UserSubscription struct {
 	// Nil means a legacy entitlement created before window limits were snapshotted.
 	Window5hAmount   *int64 `json:"window_5h_amount,omitempty" gorm:"column:window_5h_amount;type:bigint"`
 	WindowWeekAmount *int64 `json:"window_week_amount,omitempty" gorm:"column:window_week_amount;type:bigint"`
-	// Version 0 preserves legacy contract-scoped Redis keys for existing rows.
-	// New grants use entitlement scope so every purchase starts with fresh windows.
-	WindowScopeVersion int16 `json:"-" gorm:"column:window_scope_version;type:smallint;not null;default:1"`
+	// The schema default stays at version 0 so migrations and older writers cannot
+	// opt rows into a new Redis namespace implicitly. Grant creators set version 1
+	// explicitly when a purchase should start fresh entitlement-scoped windows.
+	WindowScopeVersion int16 `json:"-" gorm:"column:window_scope_version;type:smallint;not null;default:0"`
 
 	StartTime     int64  `json:"start_time" gorm:"bigint"`
 	EndTime       int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
