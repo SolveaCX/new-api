@@ -80,6 +80,10 @@ type RefundableHistoryExports = {
   ) => boolean
   isSubscriptionRecord?: (record: TopupRecord) => boolean
   isPendingStripeRecord?: (record: TopupRecord) => boolean
+  getVisibleBillingRecords?: (
+    records: TopupRecord[],
+    isAdmin: boolean
+  ) => TopupRecord[]
 }
 
 const term: RefundableTerm = {
@@ -288,5 +292,25 @@ describe('BillingHistoryPanel subscription billing records', () => {
         gateway_trade_no: undefined,
       })
     ).toBe(true)
+  })
+})
+
+describe('BillingHistoryPanel visibility', () => {
+  test('hides expired records from non-admin history', () => {
+    const getVisibleBillingRecords = (
+      billingHistoryDialog as RefundableHistoryExports
+    ).getVisibleBillingRecords
+    expect(getVisibleBillingRecords).toBeDefined()
+    if (!getVisibleBillingRecords) return
+
+    const records: TopupRecord[] = [
+      { id: 1, user_id: 1, amount: 1, money: 1, trade_no: 'success', payment_method: 'stripe', create_time: 1, status: 'success' },
+      { id: 2, user_id: 1, amount: 1, money: 1, trade_no: 'expired', payment_method: 'stripe', create_time: 1, status: 'expired' },
+    ]
+
+    expect(getVisibleBillingRecords(records, false).map((record) => record.status)).toEqual([
+      'success',
+    ])
+    expect(getVisibleBillingRecords(records, true)).toHaveLength(2)
   })
 })

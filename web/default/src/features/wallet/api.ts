@@ -43,6 +43,7 @@ import type {
   RefundSubscriptionTermResponse,
   StripeCheckoutDiscountRequest,
   StripeCheckoutRevisionData,
+  TopupStatus,
 } from './types'
 
 // ============================================================================
@@ -337,7 +338,8 @@ export async function refundSubscriptionTerm(
 export async function getAllBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  keyword?: string,
+  status?: TopupStatus
 ): Promise<ApiResponse<BillingHistoryResponse>> {
   const params = new URLSearchParams({
     p: page.toString(),
@@ -345,6 +347,9 @@ export async function getAllBillingHistory(
   })
   if (keyword) {
     params.append('keyword', keyword)
+  }
+  if (status) {
+    params.append('status', status)
   }
   const res = await api.get(`/api/user/topup?${params.toString()}`)
   return res.data
