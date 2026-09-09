@@ -4,6 +4,7 @@ import {
   getModelCollectionCopy,
   getModelCollectionPathnames,
   getAvailableModelCollections,
+  MIN_COLLECTION_MODELS,
   selectCollectionModels,
   modelCardData,
   MODEL_COLLECTIONS,
@@ -26,6 +27,7 @@ describe("model collections", () => {
       "/collections/text-to-speech-models",
       "/collections/speech-to-text-models",
       "/collections/rerank-models",
+      "/collections/general-purpose-models",
     ]);
   });
 
@@ -42,18 +44,45 @@ describe("model collections", () => {
 
   test("only exposes collections backed by current catalog models", () => {
     const models = [
-      { model_name: "text-embedding-3-small", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
-      { model_name: "cohere-rerank-v3", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+      ...Array.from({ length: MIN_COLLECTION_MODELS }, (_, index) => ({ model_name: `text-embedding-${index}`, quota_type: 0, model_ratio: 1, completion_ratio: 1 })),
+      ...Array.from({ length: MIN_COLLECTION_MODELS }, (_, index) => ({ model_name: `cohere-rerank-v3-${index}`, quota_type: 0, model_ratio: 1, completion_ratio: 1 })),
     ];
 
     expect(getAvailableModelCollections(models).map((collection) => collection.slug)).toEqual([
       "text-embedding-models",
       "rerank-models",
+      "general-purpose-models",
     ]);
     expect(getModelCollectionPathnames(models)).toEqual([
       "/collections/text-embedding-models",
       "/collections/rerank-models",
+      "/collections/general-purpose-models",
     ]);
+  });
+
+  test("only exposes collections with at least five matched models", () => {
+    const coding = MODEL_COLLECTIONS.find((collection) => collection.slug === "coding");
+    const models = Array.from({ length: MIN_COLLECTION_MODELS - 1 }, (_, index) => ({
+      model_name: `coding-model-${index}`,
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 1,
+      directory_metadata: { categories: ["Programming"] },
+    }));
+    expect(coding ? selectCollectionModels(coding, models, MIN_COLLECTION_MODELS) : []).toHaveLength(MIN_COLLECTION_MODELS - 1);
+    expect(getAvailableModelCollections(models)).not.toContain(coding);
+  });
+
+  test("keeps every catalog model in at least one collection", () => {
+    const models = [
+      { model_name: "unclassified-provider-model", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+      { model_name: "another-unknown-model", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+      { model_name: "third-unknown-model", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+      { model_name: "fourth-unknown-model", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+      { model_name: "fifth-unknown-model", quota_type: 0, model_ratio: 1, completion_ratio: 1 },
+    ];
+    const memberships = models.map((model) => MODEL_COLLECTIONS.filter((collection) => collection.matches(model)).map((collection) => collection.slug));
+    expect(memberships.every((collections) => collections.includes("general-purpose-models"))).toBe(true);
   });
 
   test("returns every matched model by default instead of truncating collections", () => {
@@ -178,7 +207,18 @@ describe("model collections", () => {
           vendor_name: "Anthropic",
         },
         pricing,
-      ).iconKey,
+    ).iconKey,
     ).toBe("claude-color");
+    expect(
+      modelCardData(
+        {
+          model_name: "nano-banana-pro-preview",
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+        },
+        pricing,
+      ).iconKey,
+    ).toBe("gemini-color");
   });
 });

@@ -26,6 +26,8 @@ export type ModelCollectionDefinition = {
 
 export type ModelCollectionsSeoCopy = { title: string; description: string };
 
+export const MIN_COLLECTION_MODELS = 5;
+
 const MODEL_COLLECTIONS_SEO_COPY: Record<Locale, ModelCollectionsSeoCopy> = {
   en: {
     title: "AI Model Collections: Image, Video, Coding & More | Flatkey",
@@ -348,6 +350,23 @@ export const MODEL_COLLECTIONS: ModelCollectionDefinition[] = [
     }),
     matches: (model) => /rerank|reranker|re-rank/i.test(textOf(model)),
   },
+  {
+    slug: "general-purpose-models",
+    icon: "✧",
+    copy: copy({
+      en: { title: "General-Purpose AI Models", shortDescription: "Browse dependable models for everyday AI tasks through one API.", intro: "This broad collection keeps every live catalog model discoverable, including models that do not yet have a dedicated capability category.", criteria: "Every model in the live public catalog is included so no model detail page is isolated from the collection directory.", empty: "General-purpose models are being added to the catalog." },
+      zh: { title: "通用 AI 模型", shortDescription: "通过统一 API 浏览适合日常 AI 任务的模型。", intro: "这个通用集合确保实时目录中的每个模型都能被发现，即使它暂时没有专门的能力分类。", criteria: "收录实时公开目录中的全部模型，确保每个模型详情页都至少属于一个集合。", empty: "通用模型正在加入目录。" },
+      es: { title: "Modelos de IA de propósito general", shortDescription: "Explora modelos fiables para tareas habituales de IA mediante una API.", intro: "Esta colección mantiene visibles todos los modelos del catálogo, incluidos los que aún no tienen una categoría específica.", criteria: "Incluye todos los modelos del catálogo público para que ningún detalle quede aislado.", empty: "Los modelos generales se añadirán al catálogo." },
+      fr: { title: "Modèles IA généralistes", shortDescription: "Découvrez des modèles fiables pour les tâches IA courantes via une API.", intro: "Cette collection rend chaque modèle du catalogue visible, même sans catégorie spécialisée.", criteria: "Tous les modèles publics sont inclus afin qu’aucune fiche ne reste isolée.", empty: "Les modèles généralistes seront bientôt disponibles." },
+      pt: { title: "Modelos de IA de uso geral", shortDescription: "Explore modelos para tarefas comuns de IA em uma única API.", intro: "Esta coleção mantém visíveis todos os modelos do catálogo, inclusive os que ainda não têm categoria própria.", criteria: "Inclui todos os modelos públicos para que nenhuma página de detalhes fique isolada.", empty: "Os modelos gerais serão adicionados ao catálogo." },
+      ru: { title: "Универсальные ИИ-модели", shortDescription: "Изучайте надёжные модели для повседневных задач через единый API.", intro: "Эта подборка делает видимой каждую модель каталога, даже если для неё ещё нет отдельной категории.", criteria: "Включены все модели публичного каталога, чтобы ни одна страница модели не оставалась изолированной.", empty: "Универсальные модели скоро появятся в каталоге." },
+      ja: { title: "汎用 AI モデル", shortDescription: "日常的な AI タスクに使えるモデルを 1 つの API で探せます。", intro: "専用カテゴリがまだないモデルを含め、公開カタログのすべてのモデルを見つけられるコレクションです。", criteria: "モデル詳細ページが孤立しないよう、公開カタログの全モデルを掲載します。", empty: "汎用モデルは準備中です。" },
+      vi: { title: "Mô hình AI đa dụng", shortDescription: "Khám phá mô hình đáng tin cậy cho tác vụ AI hằng ngày qua một API.", intro: "Bộ sưu tập này giúp tìm thấy mọi mô hình trong catalog, kể cả mô hình chưa có danh mục chuyên biệt.", criteria: "Bao gồm toàn bộ mô hình công khai để không trang chi tiết nào bị bỏ riêng lẻ.", empty: "Mô hình đa dụng sẽ sớm được bổ sung." },
+      de: { title: "Allgemeine KI-Modelle", shortDescription: "Entdecken Sie zuverlässige Modelle für alltägliche KI-Aufgaben über eine API.", intro: "Diese Sammlung macht jedes Katalogmodell auffindbar, auch ohne eigene Spezialkategorie.", criteria: "Alle öffentlichen Katalogmodelle werden aufgenommen, damit keine Detailseite isoliert bleibt.", empty: "Allgemeine Modelle werden bald ergänzt." },
+      id: { title: "Model AI serbaguna", shortDescription: "Jelajahi model tepercaya untuk tugas AI sehari-hari melalui satu API.", intro: "Koleksi ini membuat semua model di katalog dapat ditemukan, termasuk model yang belum memiliki kategori khusus.", criteria: "Semua model publik disertakan agar tidak ada halaman detail yang berdiri sendiri.", empty: "Model serbaguna akan segera ditambahkan." },
+    }),
+    matches: () => true,
+  },
 ];
 
 export function getModelCollection(slug: string): ModelCollectionDefinition | null {
@@ -355,7 +374,7 @@ export function getModelCollection(slug: string): ModelCollectionDefinition | nu
 }
 
 export function getAvailableModelCollections(models: PricingModel[]): ModelCollectionDefinition[] {
-  return MODEL_COLLECTIONS.filter((collection) => selectCollectionModels(collection, models, 1).length > 0);
+  return MODEL_COLLECTIONS.filter((collection) => selectCollectionModels(collection, models, MIN_COLLECTION_MODELS).length >= MIN_COLLECTION_MODELS);
 }
 
 export function getModelCollectionPathnames(models?: PricingModel[]): string[] {

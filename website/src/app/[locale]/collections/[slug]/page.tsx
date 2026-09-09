@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ModelCollectionDetail } from "@/components/model-collections-page";
-import { getModelCollection, getModelCollectionSeoDescription, getModelCollectionCopy, MODEL_COLLECTIONS, selectCollectionModels } from "@/lib/model-collections";
+import { getModelCollection, getModelCollectionSeoDescription, getModelCollectionCopy, MIN_COLLECTION_MODELS, MODEL_COLLECTIONS, selectCollectionModels } from "@/lib/model-collections";
 import { isLocale, type Locale, LOCALES } from "@/lib/locales";
 import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { fetchRankingsData } from "@/lib/rankings-live";
@@ -27,6 +27,6 @@ export default async function Page(props: Props) {
   const collection = getModelCollection(params.slug);
   if (!collection) notFound();
   const [pricing, rankings] = await Promise.all([getPricingData(WEBSITE_PUBLIC_PRICING_GROUP), fetchRankingsData()]);
-  if (selectCollectionModels(collection, pricing.models, 1).length === 0) notFound();
+  if (selectCollectionModels(collection, pricing.models, MIN_COLLECTION_MODELS).length < MIN_COLLECTION_MODELS) notFound();
   return <ModelCollectionDetail locale={params.locale as Locale} collection={collection} pricing={pricing} rankings={rankings} />;
 }

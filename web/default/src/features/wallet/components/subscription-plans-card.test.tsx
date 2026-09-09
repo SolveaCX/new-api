@@ -1926,11 +1926,27 @@ describe('PlanPurchaseDialog payment choices', () => {
       expect(html).toContain('max="12"')
       expect(html).not.toContain('<select')
       expect(html).toContain('No prorating or credit is applied.')
-      expect(html).toContain('Monthly and Image + video usage reset.')
-      expect(html).not.toContain('5-hour')
-      expect(html).not.toContain('7-day')
+      expect(html).toContain(
+        'Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.'
+      )
       expect(html).not.toContain('rolling usage')
       expect(html).not.toContain('future months')
+    }
+  })
+
+  test('localizes the full replacement quota reset notice in every wallet locale', () => {
+    const noticeKey =
+      'The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.'
+
+    for (const localeCode of ['en', 'zh', 'fr', 'ru', 'ja', 'vi', 'es', 'pt']) {
+      const locale = JSON.parse(
+        readFileSync(
+          new URL(`../../../i18n/locales/${localeCode}.json`, import.meta.url),
+          'utf8'
+        )
+      ) as { translation: Record<string, string> }
+
+      expect(locale.translation[noticeKey]).toBeTruthy()
     }
   })
 
