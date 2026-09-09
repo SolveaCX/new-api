@@ -237,10 +237,29 @@ module "service_accounts" {
 }
 
 module "github_wif" {
-  source            = "../../modules/github-wif"
-  project_id        = var.project_id
-  github_repository = var.github_repository
-  deployer_sa_name  = module.service_accounts.deployer_name
+  source                     = "../../modules/github-wif"
+  project_id                 = var.project_id
+  github_repository          = var.github_repository
+  github_repository_id       = "1236600074"
+  github_repository_owner_id = "279667167"
+  deployer_sa_name           = module.service_accounts.deployer_name
+  allowed_workflows = [
+    {
+      ref = "refs/heads/staging"
+      workflow_paths = [
+        ".github/workflows/gcp-deploy-staging.yml",
+        ".github/workflows/gcp-deploy-website-staging.yml",
+      ]
+    },
+    {
+      ref = "refs/heads/main"
+      workflow_paths = [
+        ".github/workflows/gcp-deploy.yml",
+        ".github/workflows/gcp-deploy-website.yml",
+        ".github/workflows/gcp-rollback.yml",
+      ]
+    },
+  ]
 
   depends_on = [module.apis]
 }

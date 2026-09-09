@@ -1,6 +1,16 @@
 // Workload Identity Federation: lets GitHub Actions exchange OIDC tokens for
 // short-lived GCP credentials — no service account keys stored anywhere.
 
+locals {
+  allowed_workflow_conditions = [
+    for rule in var.allowed_workflows :
+    "(assertion.ref == '${rule.ref}' && assertion.workflow_ref in [${join(",", [
+      for workflow_path in rule.workflow_paths :
+      "'${var.github_repository}/${workflow_path}@${rule.ref}'"
+    ])}])"
+  ]
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "github-actions"
@@ -19,14 +29,17 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
-    "attribute.ref"        = "assertion.ref"
-    "attribute.actor"      = "assertion.actor"
+    "google.subject"                = "assertion.sub"
+    "attribute.repository"          = "assertion.repository"
+    "attribute.repository_id"       = "assertion.repository_id"
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+    "attribute.workflow_ref"        = "assertion.workflow_ref"
+    "attribute.ref"                 = "assertion.ref"
+    "attribute.actor"               = "assertion.actor"
   }
 
-  // Only this exact repository can mint tokens through this provider.
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  // Require immutable repository identity and an explicitly approved workflow/ref pair.
+  attribute_condition = "assertion.repository == '${var.github_repository}' && assertion.repository_id == '${var.github_repository_id}' && assertion.repository_owner_id == '${var.github_repository_owner_id}' && (${join(" || ", local.allowed_workflow_conditions)})"
 }
 
 // Bind the deployer SA so principals from the target repo can impersonate it.

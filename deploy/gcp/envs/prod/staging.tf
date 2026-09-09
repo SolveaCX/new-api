@@ -80,6 +80,11 @@ resource "google_sql_user" "staging_app" {
   name     = local.staging_db_user
   host     = "%"
   password = random_password.staging_db_password[0].result
+
+  lifecycle {
+    // Security rotations are applied out of band together with staging_sql_dsn.
+    ignore_changes = [password]
+  }
 }
 
 // ---------------------------------------------------------------------------
