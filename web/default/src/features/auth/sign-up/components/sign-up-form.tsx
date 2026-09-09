@@ -73,6 +73,8 @@ import {
   getCustomerInvite,
   clearCustomerInvite,
   saveAffiliateCode,
+  isFluereSource,
+  clearFluereSource,
 } from '@/features/auth/lib/storage'
 import {
   canApplyEmailVerificationStatus,
@@ -327,6 +329,7 @@ export function SignUpForm({
       const isPtFirstCallExperiment = isPtFirstCallTopupExperiment(
         parseAttributionPayload(adsAttribution)
       )
+      const fluereActive = isFluereSource()
       const res = await register({
         username: data.username,
         password: data.password,
@@ -334,6 +337,8 @@ export function SignUpForm({
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
         invite: getCustomerInvite() || undefined,
+        is_fluere: fluereActive || undefined,
+        source_platform: fluereActive ? 'fluere' : undefined,
         ads_attribution: adsAttribution || undefined,
         turnstile: turnstileToken,
         captcha_token: captchaToken,
@@ -342,6 +347,7 @@ export function SignUpForm({
 
       if (res?.success) {
         clearCustomerInvite()
+        clearFluereSource()
         // Fire Google Ads signup conversion (no-op unless configured via env).
         trackSignupConversion()
         // Fire TikTok / Meta / X signup conversions (no-op unless configured).

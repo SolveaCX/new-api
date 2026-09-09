@@ -116,6 +116,14 @@ type User struct {
 	// users table or API responses.
 	CustomerReferralInviteCode     string `json:"-" gorm:"-"`
 	CustomerReferralSourcePlatform string `json:"-" gorm:"-"`
+	IsFluere                       bool   `json:"-" gorm:"-"`
+}
+
+func (user *User) IsFluereChannel() bool {
+	if user == nil {
+		return false
+	}
+	return user.IsFluere || strings.EqualFold(strings.TrimSpace(user.CustomerReferralSourcePlatform), "fluere")
 }
 
 func NormalizeUserEmail(email string) string {
@@ -862,8 +870,11 @@ func (user *User) insertWithTx(tx *gorm.DB, inviterId int, registrationIP string
 	}
 	// New common users default into the PLG group (groups hidden, forced plg).
 	// Admin/root users keep group controls, so an empty admin group becomes default.
+	// Fluere channel users default into Enterprise group.
 	if user.Group == "" {
-		if user.Role >= common.RoleAdminUser {
+		if user.IsFluereChannel() {
+			user.Group = "Enterprise"
+		} else if user.Role >= common.RoleAdminUser {
 			user.Group = defaultUserGroup
 		} else {
 			user.Group = plgUserGroup
