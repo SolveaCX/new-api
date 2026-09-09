@@ -209,7 +209,13 @@ export async function getUserModels(group?: string): Promise<{
   data?: string[]
 }> {
   const res = await api.get('/api/user/models', {
-    params: group ? { group } : undefined,
+    // Keep every authenticated model picker aligned with the public model
+    // catalog's pricing-visibility policy. The backend only applies this
+    // opt-in filter to presentation; it does not change actual access.
+    params: {
+      ...(group ? { group } : {}),
+      exclude_hidden: true,
+    },
   })
   return res.data
 }

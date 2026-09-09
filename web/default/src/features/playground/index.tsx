@@ -310,7 +310,7 @@ export function Playground({
           return {
             label: model,
             value: model,
-            promotions: getModelPromotions(model),
+            promotions: getModelPromotions(model, pricing?.tags ?? ''),
             price: getPublicModelPrice(pricing),
             releaseDate:
               pricing?.directory_metadata?.released_at ?? pricing?.release_date,

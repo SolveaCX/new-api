@@ -177,7 +177,7 @@ export function ModelAccessList({
           {visibleModels.map((model) => {
             const officiallyUnsupported =
               model.availability_status === 'official_unsupported'
-            const promotions = getModelPromotions(model.id)
+            const promotions = getModelPromotions(model.id, model.tags)
             const availabilityConfig =
               availability[
                 normalizeModelAvailabilityStatus(model.availability_status)

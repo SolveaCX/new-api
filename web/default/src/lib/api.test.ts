@@ -16,12 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   protectRecallClaimRedirectForAuth,
   resolvePendingPostLoginRedirect,
 } from '@/features/auth/lib/storage'
-import { api } from './api'
+import { api, getUserModels } from './api'
 
 const originalWindow = globalThis.window
 
@@ -79,5 +79,22 @@ describe('API 401 auth reset lifecycle', () => {
         protectedRedirect?.nonce
       )
     ).toBe('/console/topup?recall_claim=signed-secret')
+  })
+})
+
+describe('user model visibility', () => {
+  test('requests the pricing-visible model set for authenticated pickers', async () => {
+    const getSpy = spyOn(api, 'get').mockResolvedValueOnce({
+      data: { success: true, data: ['gpt-4o'] },
+    } as never)
+
+    await expect(getUserModels('plg')).resolves.toEqual({
+      success: true,
+      data: ['gpt-4o'],
+    })
+    expect(getSpy).toHaveBeenCalledWith('/api/user/models', {
+      params: { group: 'plg', exclude_hidden: true },
+    })
+    getSpy.mockRestore()
   })
 })
