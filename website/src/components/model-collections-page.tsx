@@ -164,7 +164,7 @@ export function ModelCollectionsIndex(props: { locale: Locale; pricing: PricingD
   return (
     <SiteShell locale={props.locale} pathname="/collections">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyJsonLd(schema) }} />
-      <main className="model-square-page relative min-h-screen overflow-x-hidden bg-[#FAFAFC]">
+      <main className="model-square-page relative overflow-x-hidden bg-[#FAFAFC]">
       <section className="py-10 sm:py-14">
         <div className={`${shellClass} max-w-[1160px]`}>
           <div className="max-w-5xl">
