@@ -194,7 +194,9 @@ func BuildProxyURL(taskID string) string {
 // ShouldProxyResultURL reports whether a task result must use the public proxy
 // based on the concrete channel record and request group.
 func ShouldProxyResultURL(channelID int, group string) bool {
-	return channelID == 106 && group == "plg"
+	// Channel 272 serves authenticated task-content endpoints, so every group
+	// must receive a gateway URL instead of the unusable upstream download URL.
+	return channelID == 272 || (channelID == 106 && group == "plg")
 }
 
 // PublicResultURL returns the customer-facing result URL for a task.

@@ -77,6 +77,8 @@ func TestConvertToOpenAIVideoSelectsPublicURLByChannelAndGroup(t *testing.T) {
 		{name: "channel 106 plg uses proxy", channelID: 106, group: "plg", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
 		{name: "channel 106 other group uses upstream", channelID: 106, group: "default", wantURL: "https://cdn.volces.com/upstream.mp4"},
 		{name: "other Doubao channel uses upstream", channelID: 205, group: "plg", wantURL: "https://cdn.volces.com/upstream.mp4"},
+		{name: "protected channel domestic uses proxy", channelID: 272, group: "Seedance Domestic", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
+		{name: "protected channel official uses proxy", channelID: 272, group: "Seedance2.0 Official", wantURL: "https://router.flatkey.ai/v1/videos/task_public/content"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			task := &model.Task{
