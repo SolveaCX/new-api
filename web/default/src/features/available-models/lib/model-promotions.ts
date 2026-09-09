@@ -31,6 +31,7 @@ export function getModelPromotionLabel(
 }
 
 export function modelPromotionPriority(modelId: string, tags = ''): number {
+  if (!tags.trim()) return Number.POSITIVE_INFINITY
   const promotions = getModelPromotions(modelId, tags)
   return promotions.length === 0
     ? Number.POSITIVE_INFINITY
