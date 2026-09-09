@@ -391,3 +391,27 @@ describe('recall claim auth URL isolation', () => {
     )
   })
 })
+
+describe('fluere registration source storage', () => {
+  test('saves, detects, and clears fluere source via storage', () => {
+    const { localStorage, sessionStorage } = installWindowStorage()
+    expect(authStorage.isFluereSource()).toBe(false)
+
+    authStorage.saveFluereSource(true)
+    expect(authStorage.isFluereSource()).toBe(true)
+    expect(sessionStorage.getItem('flatkey_is_fluere')).toBe('true')
+    expect(localStorage.getItem('flatkey_is_fluere')).toBe('true')
+
+    authStorage.clearFluereSource()
+    expect(authStorage.isFluereSource()).toBe(false)
+    expect(sessionStorage.getItem('flatkey_is_fluere')).toBe(null)
+    expect(localStorage.getItem('flatkey_is_fluere')).toBe(null)
+  })
+
+  test('ignores save when false is passed', () => {
+    installWindowStorage()
+    authStorage.saveFluereSource(false)
+    expect(authStorage.isFluereSource()).toBe(false)
+  })
+})
+

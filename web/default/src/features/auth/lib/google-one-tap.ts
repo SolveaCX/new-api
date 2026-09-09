@@ -7,7 +7,7 @@ the Free Software Foundation, either version 3 of the License, or (at your
 option) any later version.
 */
 import { DEFAULT_POST_LOGIN_PATH } from '@/features/auth/constants'
-import { getCustomerInvite } from './storage'
+import { getCustomerInvite, isFluereSource } from './storage'
 
 export function buildGoogleOneTapLoginUri(returnTo?: string): string {
   const safeReturnTo =
@@ -17,5 +17,9 @@ export function buildGoogleOneTapLoginUri(returnTo?: string): string {
   const params = new URLSearchParams({ return_to: safeReturnTo })
   const invite = getCustomerInvite()
   if (invite) params.set('invite', invite)
+  if (isFluereSource()) {
+    params.set('is_fluere', 'true')
+    params.set('source_platform', 'fluere')
+  }
   return `/api/oauth/google/one-tap?${params}`
 }

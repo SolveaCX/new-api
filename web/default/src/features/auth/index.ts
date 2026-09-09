@@ -95,6 +95,9 @@ export {
   getCustomerInvite,
   saveCustomerInvite,
   clearCustomerInvite,
+  isFluereSource,
+  saveFluereSource,
+  clearFluereSource,
 } from './lib/storage'
 
 export { isRegistrationEmailVerified } from './lib/registration-email-verification'

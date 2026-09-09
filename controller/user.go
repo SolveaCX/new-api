@@ -350,7 +350,11 @@ func Register(c *gin.Context) {
 	}
 	var request struct {
 		model.User
-		Invite string `json:"invite"`
+		Invite              string `json:"invite"`
+		IsFluere            bool   `json:"is_fluere"`
+		IsFluereCamel       bool   `json:"isFluere"`
+		SourcePlatform      string `json:"source_platform"`
+		SourcePlatformCamel string `json:"sourcePlatform"`
 	}
 	err := common.DecodeJson(c.Request.Body, &request)
 	if err != nil {
@@ -367,6 +371,15 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
+	isFluereFromQuery := c.Query("isFluere") == "true" || c.Query("is_fluere") == "true"
+	cookieFluere, _ := c.Cookie("is_fluere")
+	cookieRegSource, _ := c.Cookie("registration_source")
+	isFluereFromCookie := cookieFluere == "true" || strings.EqualFold(cookieRegSource, "fluere")
+	isFluere := request.IsFluere || request.IsFluereCamel ||
+		strings.EqualFold(request.SourcePlatform, "fluere") ||
+		strings.EqualFold(request.SourcePlatformCamel, "fluere") ||
+		strings.EqualFold(customerInvite.Platform, "fluere") ||
+		isFluereFromQuery || isFluereFromCookie
 	// Honeypot: bots auto-fill the hidden "website" field. Instead of blocking
 	// the request (which would teach the bot about the trap), let the
 	// registration complete normally but immediately disable the account — the
@@ -417,17 +430,26 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
 	cleanUser := model.User{
-		Username:            user.Username,
-		Password:            user.Password,
-		DisplayName:         user.Username,
-		InviterId:           inviterId,
-		Role:                common.RoleCommonUser, // 明确设置角色为普通用户
-		Status:              common.UserStatusEnabled,
-		RegistrationCountry: registrationCountry,
-		AdsAttribution:      sanitizeAdsAttribution(user.AdsAttribution),
-		EmailVerifiedAt:     user.EmailVerifiedAt,
+		Username:                       user.Username,
+		Password:                       user.Password,
+		DisplayName:                    user.Username,
+		InviterId:                      inviterId,
+		Role:                           common.RoleCommonUser, // 明确设置角色为普通用户
+		Status:                         common.UserStatusEnabled,
+		RegistrationCountry:           registrationCountry,
+		AdsAttribution:                 sanitizeAdsAttribution(user.AdsAttribution),
+		EmailVerifiedAt:                user.EmailVerifiedAt,
 		CustomerReferralInviteCode:     customerInvite.Code,
 		CustomerReferralSourcePlatform: customerInvite.Platform,
+		IsFluere:                       isFluere,
+	}
+	if isFluere {
+		cleanUser.Group = "Enterprise"
+		if cleanUser.CustomerReferralSourcePlatform == "" {
+			cleanUser.CustomerReferralSourcePlatform = "fluere"
+		}
+	} else {
+		cleanUser.Group = plgGroup
 	}
 	// Honeypot accounts: the registration completes (so the bot sees success),
 	// but the account is created already disabled and can never be used. The
