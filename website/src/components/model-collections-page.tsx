@@ -31,6 +31,7 @@ const COLLECTION_DISPLAY_ORDER = [
   "text-to-speech-models",
   "speech-to-text-models",
   "rerank-models",
+  "general-purpose-models",
 ] as const;
 
 const uiCopy = {
