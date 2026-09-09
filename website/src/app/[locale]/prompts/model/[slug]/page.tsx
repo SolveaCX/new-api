@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PromptDirectoryPage } from "@/components/prompt-directory";
+import { PromptBrowseDetailPage } from "@/components/prompt-directory";
 import { fetchCliMediaPromptItems, promptLibraryCopy } from "@/lib/prompt-library";
 import { isLocale, LOCALES } from "@/lib/locales";
 import { buildMetadata } from "@/lib/seo";
@@ -20,5 +20,6 @@ export default async function Page(props: Props) {
   const model = decodeURIComponent(params.slug);
   const items = await fetchCliMediaPromptItems();
   if (!items.some((item) => item.model === model)) notFound();
-  return <PromptDirectoryPage locale={params.locale} items={items} initialSearch={{ model }} />;
+  const title = model.replace(/[-_]+/g, " ");
+  return <PromptBrowseDetailPage locale={params.locale} items={items.filter((item) => item.model === model)} title={title} description={promptLibraryCopy[params.locale].metaDescription} />;
 }

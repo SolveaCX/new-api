@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PromptDirectoryPage } from "@/components/prompt-directory";
+import { PromptBrowseDetailPage } from "@/components/prompt-directory";
 import { fetchCliMediaPromptItems, promptLibraryCopy } from "@/lib/prompt-library";
 import { buildMetadata } from "@/lib/seo";
 
@@ -19,5 +19,5 @@ export default async function Page(props: Props) {
   const useCase = decodeURIComponent(params.slug);
   const items = await fetchCliMediaPromptItems();
   if (!items.some((item) => item.tags.includes(useCase))) notFound();
-  return <PromptDirectoryPage locale="en" items={items} initialSearch={{ useCase }} />;
+  return <PromptBrowseDetailPage locale="en" items={items.filter((item) => item.tags.includes(useCase))} title={useCase} description={promptLibraryCopy.en.metaDescription} />;
 }

@@ -219,7 +219,7 @@ export async function CliMediaLibraryPage(props: { kind: MediaKind; locale: Loca
 
   return (
     <SiteShell locale={props.locale} pathname={currentPath}>
-      <main className="relative min-h-screen overflow-x-hidden bg-white text-[#171a21]">
+      <main className="relative min-h-screen overflow-x-hidden bg-white text-[#171a21] [&_*]:shadow-none">
         <section className="relative z-10 px-6 pt-10 pb-8 sm:px-8 md:pt-14 md:pb-10 lg:px-10">
           <div className="mx-auto max-w-[1280px]">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -315,7 +315,7 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
 
   return (
     <SiteShell locale={props.locale} pathname={currentPath}>
-      <main className="relative min-h-screen bg-white text-[#171a21]">
+      <main className="relative min-h-screen bg-white text-[#171a21] [&_*]:shadow-none">
         <section className="relative z-10 px-6 pt-10 pb-8 sm:px-8 md:pt-14 md:pb-10 lg:px-10">
           <div className="mx-auto max-w-[1280px]">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -406,8 +406,9 @@ export async function CliMediaPromptDetailPage(props: { kind: MediaKind; locale:
 function PromptBreadcrumb(props: { locale: Locale; kind: MediaKind; itemTitle?: string }) {
   const copy = copyByLocale[props.locale][props.kind];
   const mediaLabel = props.kind === "image" ? copy.browseImage : copy.browseVideo;
+  const libraryLabel = { en: "Prompt library", zh: "提示词库", es: "Biblioteca de prompts", fr: "Bibliothèque de prompts", pt: "Biblioteca de prompts", ru: "Библиотека промптов", ja: "プロンプトライブラリ", vi: "Thư viện prompt", de: "Prompt-Bibliothek", id: "Pustaka prompt" }[props.locale];
   const crumbs = [
-    { label: "Flatkey", href: localizePath("/", props.locale) },
+    { label: libraryLabel, href: localizePath("/prompts", props.locale) },
     { label: mediaLabel, href: localizePath(cliMediaPath(props.kind), props.locale) },
   ];
 
