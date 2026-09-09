@@ -37,6 +37,7 @@ type SubscriptionProviderBinding struct {
 	ProviderPriceId            string `json:"provider_price_id" gorm:"type:varchar(128);default:''"`
 	ProviderLatestInvoiceId    string `json:"provider_latest_invoice_id" gorm:"type:varchar(128);default:''"`
 	ProviderStatus             string `json:"provider_status" gorm:"type:varchar(64);default:'';index"`
+	CurrentPlanSnapshot        string `json:"-" gorm:"type:longtext"`
 
 	CancelAtPeriodEnd          bool   `json:"cancel_at_period_end" gorm:"default:false"`
 	CurrentPeriodStart         int64  `json:"current_period_start" gorm:"type:bigint;default:0"`

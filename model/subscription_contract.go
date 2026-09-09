@@ -30,13 +30,14 @@ const (
 	SubscriptionRenewalStatusPausedInsufficientBalance = "paused_insufficient_balance"
 	SubscriptionRenewalStatusPausedPlanUnavailable     = "paused_plan_unavailable"
 
-	SubscriptionChangeIntentKindPurchase   = "purchase"
-	SubscriptionChangeIntentKindRepurchase = "repurchase"
-	SubscriptionChangeIntentKindUpgrade    = "upgrade"
-	SubscriptionChangeIntentKindDowngrade  = "downgrade"
-	SubscriptionChangeIntentKindCancel     = "cancel"
-	SubscriptionChangeIntentKindResume     = "resume"
-	SubscriptionChangeIntentKindTerminate  = "terminate"
+	SubscriptionChangeIntentKindPurchase         = "purchase"
+	SubscriptionChangeIntentKindRepurchase       = "repurchase"
+	SubscriptionChangeIntentKindUpgrade          = "upgrade"
+	SubscriptionChangeIntentKindDowngrade        = "downgrade"
+	SubscriptionChangeIntentKindCancel           = "cancel"
+	SubscriptionChangeIntentKindResume           = "resume"
+	SubscriptionChangeIntentKindTerminate        = "terminate"
+	SubscriptionChangeIntentKindCatalogMigration = "catalog_migration"
 
 	SubscriptionChangeIntentStatusCreated              = "created"
 	SubscriptionChangeIntentStatusSyncing              = "syncing"
@@ -47,6 +48,7 @@ const (
 	SubscriptionChangeIntentStatusExpired              = "expired"
 	SubscriptionChangeIntentStatusSuperseded           = "superseded"
 	SubscriptionChangeIntentStatusCompensationRequired = "compensation_required"
+	SubscriptionChangeIntentStatusNeedsAttention       = "needs_attention"
 )
 
 type UserSubscriptionContract struct {
@@ -96,7 +98,7 @@ func (c *UserSubscriptionContract) BeforeUpdate(tx *gorm.DB) error {
 type SubscriptionChangeIntent struct {
 	Id int64 `json:"id"`
 
-	ContractId int64  `json:"contract_id" gorm:"type:bigint;not null;index"`
+	ContractId int64  `json:"contract_id" gorm:"type:bigint;not null;index;uniqueIndex:ux_catalog_migration_batch_contract,priority:2"`
 	UserId     int    `json:"user_id" gorm:"not null;uniqueIndex:idx_subscription_change_intent_request,priority:1"`
 	RequestId  string `json:"request_id" gorm:"type:varchar(128);not null;uniqueIndex:idx_subscription_change_intent_request,priority:2"`
 
@@ -109,9 +111,13 @@ type SubscriptionChangeIntent struct {
 	ToPlanId          int   `json:"to_plan_id" gorm:"default:0;index"`
 	ProviderBindingId int64 `json:"provider_binding_id" gorm:"type:bigint;default:0;index"`
 
-	ProviderInvoiceId      string `json:"provider_invoice_id" gorm:"type:varchar(128);default:''"`
-	ProviderScheduleId     string `json:"provider_schedule_id" gorm:"type:varchar(128);default:''"`
-	ProviderIdempotencyKey string `json:"provider_idempotency_key" gorm:"type:varchar(255);default:''"`
+	ProviderInvoiceId           string  `json:"provider_invoice_id" gorm:"type:varchar(128);default:''"`
+	ProviderScheduleId          string  `json:"provider_schedule_id" gorm:"type:varchar(128);default:''"`
+	ProviderIdempotencyKey      string  `json:"provider_idempotency_key" gorm:"type:varchar(255);default:''"`
+	CatalogMigrationBatchId     *string `json:"catalog_migration_batch_id,omitempty" gorm:"type:varchar(64);uniqueIndex:ux_catalog_migration_batch_contract,priority:1"`
+	TargetPlanSnapshot          string  `json:"target_plan_snapshot" gorm:"type:longtext"`
+	ProviderScheduleFingerprint string  `json:"provider_schedule_fingerprint" gorm:"type:char(64);default:''"`
+	PreviousChangeIntentId      int64   `json:"previous_change_intent_id" gorm:"type:bigint;default:0;index"`
 
 	PreviousScheduleSnapshot string `json:"previous_schedule_snapshot" gorm:"type:text"`
 	WalletDebitTradeNo       string `json:"wallet_debit_trade_no" gorm:"type:varchar(255);default:''"`
@@ -145,6 +151,15 @@ func (i *SubscriptionChangeIntent) normalize() {
 	i.ProviderInvoiceId = strings.TrimSpace(i.ProviderInvoiceId)
 	i.ProviderScheduleId = strings.TrimSpace(i.ProviderScheduleId)
 	i.ProviderIdempotencyKey = strings.TrimSpace(i.ProviderIdempotencyKey)
+	if i.CatalogMigrationBatchId != nil {
+		trimmed := strings.TrimSpace(*i.CatalogMigrationBatchId)
+		if trimmed == "" {
+			i.CatalogMigrationBatchId = nil
+		} else {
+			i.CatalogMigrationBatchId = &trimmed
+		}
+	}
+	i.ProviderScheduleFingerprint = strings.ToLower(strings.TrimSpace(i.ProviderScheduleFingerprint))
 	i.WalletDebitTradeNo = strings.TrimSpace(i.WalletDebitTradeNo)
 	i.LastError = strings.TrimSpace(i.LastError)
 }
@@ -174,7 +189,7 @@ func normalizeSubscriptionPaymentMode(mode string) string {
 
 func normalizeSubscriptionChangeIntentKind(kind string) string {
 	switch strings.TrimSpace(kind) {
-	case SubscriptionChangeIntentKindRepurchase, SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate:
+	case SubscriptionChangeIntentKindRepurchase, SubscriptionChangeIntentKindUpgrade, SubscriptionChangeIntentKindDowngrade, SubscriptionChangeIntentKindCancel, SubscriptionChangeIntentKindResume, SubscriptionChangeIntentKindTerminate, SubscriptionChangeIntentKindCatalogMigration:
 		return strings.TrimSpace(kind)
 	default:
 		return SubscriptionChangeIntentKindPurchase
@@ -183,7 +198,7 @@ func normalizeSubscriptionChangeIntentKind(kind string) string {
 
 func normalizeSubscriptionChangeIntentStatus(status string) string {
 	switch strings.TrimSpace(status) {
-	case SubscriptionChangeIntentStatusSyncing, SubscriptionChangeIntentStatusAwaitingPayment, SubscriptionChangeIntentStatusScheduled, SubscriptionChangeIntentStatusApplied, SubscriptionChangeIntentStatusFailed, SubscriptionChangeIntentStatusExpired, SubscriptionChangeIntentStatusSuperseded, SubscriptionChangeIntentStatusCompensationRequired:
+	case SubscriptionChangeIntentStatusSyncing, SubscriptionChangeIntentStatusAwaitingPayment, SubscriptionChangeIntentStatusScheduled, SubscriptionChangeIntentStatusApplied, SubscriptionChangeIntentStatusFailed, SubscriptionChangeIntentStatusExpired, SubscriptionChangeIntentStatusSuperseded, SubscriptionChangeIntentStatusCompensationRequired, SubscriptionChangeIntentStatusNeedsAttention:
 		return strings.TrimSpace(status)
 	default:
 		return SubscriptionChangeIntentStatusCreated
