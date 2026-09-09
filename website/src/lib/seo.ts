@@ -37,6 +37,11 @@ const FALLBACK_LOCALE_NOINDEX_PATHS: Partial<Record<Locale, readonly string[]>> 
   pt: ["/playground"],
 };
 
+// Indonesian copy is still English fallback across the public site. Keep all
+// `/id/*` variants out of the index until each page has reviewed Indonesian
+// content; otherwise Google may select the English URL as the canonical.
+const FALLBACK_LOCALE_NOINDEX_LOCALES: readonly Locale[] = ["id"];
+
 function normalizeSeoPathname(pathname: string): string {
   const withoutQuery = pathname.split(/[?#]/, 1)[0] ?? pathname;
   if (withoutQuery === "/") return "/";
@@ -44,12 +49,15 @@ function normalizeSeoPathname(pathname: string): string {
 }
 
 export function isFallbackLocaleNoIndex(pathname: string, locale: Locale): boolean {
-  return FALLBACK_LOCALE_NOINDEX_PATHS[locale]?.includes(normalizeSeoPathname(pathname)) ?? false;
+  return (
+    FALLBACK_LOCALE_NOINDEX_LOCALES.includes(locale) ||
+    FALLBACK_LOCALE_NOINDEX_PATHS[locale]?.includes(normalizeSeoPathname(pathname)) === true
+  );
 }
 
 export function seoIndexableLocales(pathname: string, locales: readonly Locale[] = LOCALES): Locale[] {
   const normalized = normalizeSeoPathname(pathname);
-  return locales.filter((locale) => !FALLBACK_LOCALE_NOINDEX_PATHS[locale]?.includes(normalized));
+  return locales.filter((locale) => !isFallbackLocaleNoIndex(normalized, locale));
 }
 
 export function getSeoLocaleOptions(pathname: string, locale: Locale): Pick<SeoInput, "locales" | "noIndex"> {
@@ -62,6 +70,9 @@ export function getSeoLocaleOptions(pathname: string, locale: Locale): Pick<SeoI
 
 export function buildMetadata(input: SeoInput): Metadata {
   const locale = input.locale ?? DEFAULT_LOCALE;
+  const fallbackLocaleNoIndex = isFallbackLocaleNoIndex(input.pathname, locale);
+  const noIndex = input.noIndex === true || fallbackLocaleNoIndex;
+  const locales = input.locales ?? (fallbackLocaleNoIndex ? [] : seoIndexableLocales(input.pathname));
   const canonicalPath = input.unlocalized ? input.pathname : localizePath(input.pathname, locale);
   const canonical = `${SITE_ORIGIN}${canonicalPath}`;
   const title = input.title;
@@ -73,13 +84,13 @@ export function buildMetadata(input: SeoInput): Metadata {
     metadataBase: new URL(SITE_ORIGIN),
     alternates: {
       canonical,
-      ...(input.unlocalized
+      ...(input.unlocalized || fallbackLocaleNoIndex
         ? {}
         : {
             languages: {
-              ...(input.locales && input.locales.length < LOCALES.length
+              ...(locales && locales.length < LOCALES.length
                 ? Object.fromEntries(
-                    input.locales.map((altLocale) => [
+                    locales.map((altLocale) => [
                       localeLanguageTag(altLocale),
                       `${SITE_ORIGIN}${localizePath(input.pathname, altLocale)}`,
                     ])
@@ -87,12 +98,12 @@ export function buildMetadata(input: SeoInput): Metadata {
                 : localeAlternates(input.pathname)),
               "x-default": `${SITE_ORIGIN}${localizePath(
                 input.pathname,
-                input.locales?.includes(DEFAULT_LOCALE) ? DEFAULT_LOCALE : (input.locales?.[0] ?? DEFAULT_LOCALE),
+                locales?.includes(DEFAULT_LOCALE) ? DEFAULT_LOCALE : (locales?.[0] ?? DEFAULT_LOCALE),
               )}`,
             },
           }),
     },
-    robots: input.noIndex
+    robots: noIndex
       ? { index: false, follow: false }
       : { index: true, follow: true },
     openGraph: {

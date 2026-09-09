@@ -106,4 +106,16 @@ describe("buildMetadata", () => {
       noIndex: false,
     });
   });
+
+  test("automatically noindexes Indonesian fallback pages and removes hreflang", () => {
+    const metadata = buildMetadata({
+      title: "Models",
+      description: "Browse models.",
+      pathname: "/models",
+      locale: "id",
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(metadata.alternates).toEqual({ canonical: "https://flatkey.ai/id/models" });
+  });
 });
