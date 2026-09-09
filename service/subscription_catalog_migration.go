@@ -475,7 +475,11 @@ func (s CatalogMigrationService) prepareStripeContract(ctx context.Context, batc
 		if err := tx.Where("id = ?", item.TargetPlanID).First(&target).Error; err != nil {
 			return err
 		}
-		fingerprint := stableCatalogMigrationKey("ownership", batch.Id, contract.Id, intent.Id, contract.ChangeVersion, binding.ProviderSubscriptionId, binding.ProviderSubscriptionItemId, binding.ProviderPriceId, target.StripePriceId, item.EffectiveAt)
+		// ProviderScheduleFingerprint is persisted in a CHAR(64) column. Keep
+		// the ownership digest as the raw SHA-256 hex value (64 chars); the
+		// stable key helper intentionally adds a `catmig_` prefix for IDs and
+		// idempotency tokens, which would overflow this column on MySQL.
+		fingerprint := catalogMigrationOwnershipFingerprint(batch.Id, contract.Id, intent.Id, contract.ChangeVersion, binding.ProviderSubscriptionId, binding.ProviderSubscriptionItemId, binding.ProviderPriceId, target.StripePriceId, item.EffectiveAt)
 		providerKey := stableCatalogMigrationKey("provider", batch.RequestId, contract.Id, item.SourcePlanID, item.TargetPlanID, contract.ChangeVersion)
 		if err := tx.Model(intent).Updates(map[string]any{
 			"provider_idempotency_key":      providerKey,
@@ -1029,6 +1033,19 @@ func stableCatalogMigrationKey(parts ...any) string {
 	}
 	digest := sha256.Sum256([]byte(strings.Join(values, "\x00")))
 	return "catmig_" + hex.EncodeToString(digest[:])
+}
+
+// catalogMigrationOwnershipFingerprint returns the fixed-width digest used to
+// prove that a provider schedule belongs to this exact migration intent. It
+// deliberately omits the stable-key prefix because the database column is
+// CHAR(64), not VARCHAR(71).
+func catalogMigrationOwnershipFingerprint(parts ...any) string {
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		values = append(values, fmt.Sprint(part))
+	}
+	digest := sha256.Sum256([]byte(strings.Join(values, "\x00")))
+	return hex.EncodeToString(digest[:])
 }
 
 func firstError(actual error, fallback error) error {
