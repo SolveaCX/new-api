@@ -2161,7 +2161,14 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	if plan.Id != binding.PlanId && !pendingPlanAllowed {
 		return errors.New("local plan mismatch")
 	}
-	if strings.TrimSpace(plan.StripePriceId) == "" || strings.TrimSpace(plan.StripePriceId) != facts.PriceID {
+	// Provider sync can change the observed binding price without authorizing a
+	// different local plan. Only a frozen purchase price can replace the catalog
+	// check; legacy bindings and pending plan changes retain that check.
+	expectedPriceID := strings.TrimSpace(plan.StripePriceId)
+	if !pendingPlanAllowed && planSnapshot.Found && strings.TrimSpace(planSnapshot.Snapshot.StripePriceID) != "" {
+		expectedPriceID = strings.TrimSpace(planSnapshot.Snapshot.StripePriceID)
+	}
+	if expectedPriceID == "" || expectedPriceID != facts.PriceID {
 		return errors.New("Stripe price mismatch")
 	}
 	if strings.TrimSpace(binding.ProviderPriceId) != facts.PriceID && !pendingPlanAllowed {
