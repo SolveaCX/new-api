@@ -12,12 +12,9 @@ import type { Locale } from "./locales";
 //     (/models?series=Claude). These are real landing pages people search for
 //     ("Claude API pricing"), each gets its own title/description, and each
 //     self-canonicalizes.
-//   · noindex, canonical → /models — every other combination: multi-select,
-//     price bands, context, age, free-text search, sort order. They are useful
-//     to a visitor mid-session but have no independent search demand.
-//
-// Vendor views keep their existing behaviour: the sitemap already lists
-// ?vendor=<name>, so those stay indexable and self-canonical.
+//   · noindex, canonical → /models — every other combination, including vendor
+//     filters. Filter state is useful to visitors but creates a large set of
+//     near-duplicate URLs without a stable landing-page intent.
 
 export type DirectorySeo = {
   title: string;
@@ -27,7 +24,7 @@ export type DirectorySeo = {
   noIndex: boolean;
 };
 
-const INDEXABLE_SINGLE_KEYS = ["series", "vendor"] as const;
+const INDEXABLE_SINGLE_KEYS = ["series"] as const;
 
 export function buildDirectorySeo(locale: Locale, params?: DirectorySearchParams): DirectorySeo {
   const copy = getDirectoryCopy(locale);
@@ -49,28 +46,6 @@ export function buildDirectorySeo(locale: Locale, params?: DirectorySearchParams
       title: copy.seoSeriesTitle.replace("{{series}}", series),
       description: copy.seoSeriesDescription.replace("{{series}}", series),
       canonicalQuery: `series=${encodeURIComponent(series)}`,
-      noIndex: false,
-    };
-  }
-
-  // Exactly one vendor, nothing else — already in the sitemap, keep indexable.
-  if (!hasQuery && activeGroups === 0 && hasVendor && parsed.vendor) {
-    return {
-      title: copy.seoSeriesTitle.replace("{{series}}", parsed.vendor),
-      description: copy.seoSeriesDescription.replace("{{series}}", parsed.vendor),
-      canonicalQuery: `vendor=${encodeURIComponent(parsed.vendor)}`,
-      noIndex: false,
-    };
-  }
-
-  // One model author picked in the sidebar. Same page as ?vendor=<name>, so it
-  // canonicalizes to that form rather than competing with it as a second URL.
-  if (!hasQuery && !hasVendor && activeGroups === 1 && parsed.vendors.length === 1) {
-    const vendor = parsed.vendors[0];
-    return {
-      title: copy.seoSeriesTitle.replace("{{series}}", vendor),
-      description: copy.seoSeriesDescription.replace("{{series}}", vendor),
-      canonicalQuery: `vendor=${encodeURIComponent(vendor)}`,
       noIndex: false,
     };
   }
