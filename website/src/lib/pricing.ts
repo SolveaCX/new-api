@@ -291,7 +291,7 @@ export function sortPricingModelsBySeries(models: PricingModel[]): PricingModel[
 const VENDOR_BY_MODEL_NAME: Array<[RegExp, string]> = [
   [/^(gpt|o[1-9]|dall-e|sora|codex|text-embedding|whisper|tts)/i, "OpenAI"],
   [/^claude/i, "Anthropic"],
-  [/^(gemini|imagen|veo|gemma)/i, "Google"],
+  [/^(gemini|imagen|veo|gemma|nano-banana)/i, "Google"],
   [/^(seedance|seedream|doubao|bytedance)/i, "ByteDance"],
   [/^deepseek/i, "DeepSeek"],
   [/^(qwen|qwq)/i, "Qwen"],

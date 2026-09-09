@@ -54,7 +54,7 @@ export type HomePricedModel = {
 const ICON_KEY_PATTERNS: Array<[RegExp, string]> = [
   [/^(gpt|o\d|dall-e|sora|codex)/i, "openai"],
   [/^claude/i, "claude-color"],
-  [/^(gemini|imagen|veo)/i, "gemini-color"],
+  [/^(gemini|imagen|veo|nano-banana)/i, "gemini-color"],
   [/^deepseek/i, "deepseek-color"],
   [/^qwen/i, "qwen-color"],
   [/^glm|^chatglm/i, "chatglm-color"],

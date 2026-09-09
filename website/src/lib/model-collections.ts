@@ -26,6 +26,8 @@ export type ModelCollectionDefinition = {
 
 export type ModelCollectionsSeoCopy = { title: string; description: string };
 
+export const MIN_COLLECTION_MODELS = 5;
+
 const MODEL_COLLECTIONS_SEO_COPY: Record<Locale, ModelCollectionsSeoCopy> = {
   en: {
     title: "AI Model Collections: Image, Video, Coding & More | Flatkey",
@@ -355,7 +357,7 @@ export function getModelCollection(slug: string): ModelCollectionDefinition | nu
 }
 
 export function getAvailableModelCollections(models: PricingModel[]): ModelCollectionDefinition[] {
-  return MODEL_COLLECTIONS.filter((collection) => selectCollectionModels(collection, models, 1).length > 0);
+  return MODEL_COLLECTIONS.filter((collection) => selectCollectionModels(collection, models, MIN_COLLECTION_MODELS).length >= MIN_COLLECTION_MODELS);
 }
 
 export function getModelCollectionPathnames(models?: PricingModel[]): string[] {
