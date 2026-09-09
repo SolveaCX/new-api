@@ -95,6 +95,21 @@ func TestBuildNonCanonicalRobotsTxtDisallowsAll(t *testing.T) {
 	}
 }
 
+func TestBuildConsoleRobotsTxtAllowsHTMLCrawlForNoindex(t *testing.T) {
+	robots := BuildConsoleRobotsTxt()
+	for _, expected := range []string{
+		"User-agent: *", "Allow: /", "Disallow: /api", "Disallow: /v1",
+		"Disallow: /v1beta", "Disallow: /assets", "Sitemap: https://flatkey.ai/sitemap.xml",
+	} {
+		if !strings.Contains(robots, expected) {
+			t.Fatalf("expected console robots.txt to contain %q, got:\n%s", expected, robots)
+		}
+	}
+	if strings.Contains(robots, "Disallow: /\n") {
+		t.Fatalf("expected console HTML routes to remain crawlable, got:\n%s", robots)
+	}
+}
+
 func TestBuildLLMsTxtIncludesBlogResources(t *testing.T) {
 	llms := BuildLLMsTxt("https://flatkey.ai/", []BlogCategory{
 		{Name: "Gateway Comparisons", Slug: "gateway-comparisons"},
@@ -145,6 +160,27 @@ func TestIsCanonicalPublicHost(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := IsCanonicalPublicHost(tc.host); got != tc.want {
 				t.Fatalf("IsCanonicalPublicHost(%q)=%v, want %v", tc.host, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsConsolePublicHost(t *testing.T) {
+	cases := []struct {
+		name, host string
+		want       bool
+	}{
+		{name: "console", host: "console.flatkey.ai", want: true},
+		{name: "console with port", host: "console.flatkey.ai:443", want: true},
+		{name: "forwarded host list", host: "console.flatkey.ai, proxy.internal", want: true},
+		{name: "canonical", host: "flatkey.ai", want: false},
+		{name: "router", host: "router.flatkey.ai", want: false},
+		{name: "empty", host: "", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsConsolePublicHost(tc.host); got != tc.want {
+				t.Fatalf("IsConsolePublicHost(%q)=%v, want %v", tc.host, got, tc.want)
 			}
 		})
 	}

@@ -78,6 +78,25 @@ func BuildRobotsTxt(baseURL string) string {
 	}, "\n")
 }
 
+// BuildConsoleRobotsTxt leaves console HTML routes crawlable so crawlers can
+// observe the X-Robots-Tag: noindex header and remove stale indexed URLs.
+// Backend and asset paths remain disallowed because they are not search content.
+func BuildConsoleRobotsTxt() string {
+	return strings.Join([]string{
+		"User-agent: *",
+		"Allow: /",
+		"Disallow: /api",
+		"Disallow: /v1",
+		"Disallow: /v1beta",
+		"Disallow: /assets",
+		"Disallow: /_next/",
+		"Disallow: /cdn-cgi/",
+		"",
+		"Sitemap: " + joinPublicURL(canonicalPublicBaseURL, "/sitemap.xml"),
+		"",
+	}, "\n")
+}
+
 func BuildNonCanonicalRobotsTxt() string {
 	return strings.Join([]string{
 		"User-agent: *",
@@ -189,6 +208,20 @@ func IsCanonicalPublicHost(host string) bool {
 		host = parsedHost
 	}
 	return strings.EqualFold(host, "flatkey.ai")
+}
+
+func IsConsolePublicHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if strings.Contains(host, ",") {
+		host = strings.TrimSpace(strings.Split(host, ",")[0])
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	return strings.EqualFold(host, "console.flatkey.ai")
 }
 
 func normalizePublicBaseURL(baseURL string) string {
