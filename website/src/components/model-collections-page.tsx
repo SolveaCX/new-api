@@ -99,16 +99,16 @@ const modelFallbackCopy: Record<Locale, (name: string, vendor: string, collectio
 };
 
 const topModelsSummaryCopy: Record<Locale, (names: string) => string> = {
-  en: (names) => `Current leading models in this collection include ${names}. The list uses live weekly usage when available, with public pricing, context, and model details kept together for evaluation.`,
-  zh: (names) => `当前集合中的热门模型包括 ${names}。列表优先参考实时周调用量排序，并集中展示公开价格、上下文和模型详情，方便接入前评估。`,
-  es: (names) => `Los modelos destacados actuales de esta colección incluyen ${names}. La lista usa el uso semanal en vivo cuando está disponible y reúne precios públicos, contexto y detalles para evaluarlos.`,
-  fr: (names) => `Les modèles actuellement en tête de cette collection comprennent ${names}. La liste utilise l’usage hebdomadaire en direct lorsqu’il est disponible et réunit tarifs publics, contexte et détails pour les évaluer.`,
-  pt: (names) => `Os modelos em destaque nesta coleção incluem ${names}. A lista usa o uso semanal em tempo real quando disponível e reúne preços públicos, contexto e detalhes para avaliação.`,
-  ru: (names) => `Среди ведущих моделей этой подборки сейчас представлены ${names}. При наличии данных порядок учитывает использование за неделю, а публичные цены, контекст и сведения о моделях собраны для оценки перед подключением.`,
-  ja: (names) => `このコレクションで現在注目されているモデルは ${names} です。利用可能な場合は最新の週間利用量を基準に並べ、公開料金、コンテキスト、モデル詳細をまとめて比較できます。`,
-  vi: (names) => `Các mô hình nổi bật hiện tại trong bộ sưu tập gồm ${names}. Danh sách ưu tiên dữ liệu sử dụng hằng tuần khi có và tập hợp giá công khai, ngữ cảnh cùng thông tin mô hình để đánh giá.`,
-  de: (names) => `Zu den aktuell führenden Modellen dieser Sammlung gehören ${names}. Soweit verfügbar, basiert die Reihenfolge auf der wöchentlichen Live-Nutzung und bündelt öffentliche Preise, Kontext und Modelldetails zur Bewertung.`,
-  id: (names) => `Model unggulan saat ini dalam koleksi ini mencakup ${names}. Daftar menggunakan penggunaan mingguan langsung bila tersedia serta menyatukan harga publik, konteks, dan detail model untuk evaluasi.`,
+  en: (names) => `Featured models include ${names}, ranked by live weekly usage when available.`,
+  zh: (names) => `当前热门模型包括 ${names}；有数据时按实时周调用量排序。`,
+  es: (names) => `Los modelos destacados incluyen ${names}, ordenados por uso semanal en vivo cuando está disponible.`,
+  fr: (names) => `Les modèles mis en avant sont ${names}, classés selon l’usage hebdomadaire lorsqu’il est disponible.`,
+  pt: (names) => `Os modelos em destaque incluem ${names}, ordenados pelo uso semanal quando disponível.`,
+  ru: (names) => `В подборку входят ${names}; при наличии данных порядок учитывает использование за неделю.`,
+  ja: (names) => `注目モデルは ${names} です。利用可能な場合は週間利用量で並べています。`,
+  vi: (names) => `Các mô hình nổi bật gồm ${names}, được xếp theo lượt dùng hằng tuần khi có dữ liệu.`,
+  de: (names) => `Zu den hervorgehobenen Modellen gehören ${names}; sofern verfügbar, werden sie nach der wöchentlichen Nutzung sortiert.`,
+  id: (names) => `Model unggulan mencakup ${names}, diurutkan berdasarkan penggunaan mingguan bila tersedia.`,
 };
 
 function buildDetailedModelDescription(base: string | undefined, supplemental: string, locale: Locale): string {
@@ -260,7 +260,7 @@ export function ModelCollectionDetail(props: { locale: Locale; collection: Model
           <div className="mt-4">
             <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[#16151B] sm:text-4xl">{copy.title}</h1>
             <p className="mt-2 text-sm font-medium text-[#777180]">{ui.updated} · {updatedMonth}</p>
-            <p className="mt-5 text-base leading-7 text-[#5F5A68]">{copy.shortDescription} {copy.intro}</p>
+            <p className="mt-5 text-base leading-7 text-[#5F5A68]">{copy.intro}</p>
             <p className="mt-3 text-base leading-7 text-[#5F5A68]">{topModelsSummaryCopy[props.locale](topModelNames)}</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href={localizePath("/models", props.locale)} className="inline-flex items-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold !text-white transition hover:-translate-y-0.5 hover:!bg-[#5B21B6] hover:shadow-[0_10px_20px_-14px_rgba(76,29,149,.8)]">{ui.allModels}<ArrowRight className="size-4" /></Link>
