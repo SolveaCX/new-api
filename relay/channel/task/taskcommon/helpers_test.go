@@ -19,6 +19,9 @@ func TestShouldProxyResultURL(t *testing.T) {
 		{name: "channel 106 other group", channelID: 106, group: "default", want: false},
 		{name: "channel 106 group is case sensitive", channelID: 106, group: "PLG", want: false},
 		{name: "other channel plg", channelID: 105, group: "plg", want: false},
+		{name: "protected channel domestic", channelID: 272, group: "Seedance Domestic", want: true},
+		{name: "protected channel official", channelID: 272, group: "Seedance2.0 Official", want: true},
+		{name: "protected channel test group", channelID: 272, group: "lxytest", want: true},
 	}
 
 	for _, tt := range tests {
