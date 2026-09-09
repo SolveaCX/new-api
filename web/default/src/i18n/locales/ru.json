@@ -5966,6 +5966,7 @@
     "Total price": "Итоговая цена",
     "Unit price": "Цена за единицу",
     "Replacement charges the full target price. No prorating or credit is applied.": "При замене взимается полная стоимость целевого плана. Перерасчёт и зачисление кредита не применяются.",
+    "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.": "Начавшийся активный период не подлежит возврату. Месячная квота моделей и кредиты на изображения и видео сбрасываются. Использованные объёмы в 5-часовом и 7-дневном окнах обнуляются, но оба лимита продолжают действовать.",
     "Refundable not-started value: {{value}}": "Возмещаемая стоимость не начавшегося периода: {{value}}",
     "Monthly model quota: {{value}}": "Месячная квота моделей: {{value}}",
     "{{count}} credits": "{{count}} кредитов",

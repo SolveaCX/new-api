@@ -5967,6 +5967,7 @@
     "Total price": "Total price",
     "Unit price": "Unit price",
     "Replacement charges the full target price. No prorating or credit is applied.": "Replacement charges the full target price. No prorating or credit is applied.",
+    "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.": "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.",
     "Refundable not-started value: {{value}}": "Refundable not-started value: {{value}}",
     "Monthly model quota: {{value}}": "Monthly model quota: {{value}}",
     "{{count}} credits": "{{count}} credits",

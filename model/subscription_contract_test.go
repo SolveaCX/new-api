@@ -9,15 +9,16 @@ import (
 	"gorm.io/gorm"
 )
 
-type legacyUserSubscriptionWithoutWindowScope struct {
-	Id          int
-	UserId      int
-	ContractId  int64
-	GrantKey    *string `gorm:"type:varchar(255);uniqueIndex"`
-	CurrentSlot *int
+type phaseAUserSubscription struct {
+	Id                 int
+	UserId             int
+	ContractId         int64
+	GrantKey           *string `gorm:"type:varchar(255);uniqueIndex"`
+	CurrentSlot        *int
+	WindowScopeVersion int16 `gorm:"column:window_scope_version;type:smallint;not null;default:0"`
 }
 
-func (legacyUserSubscriptionWithoutWindowScope) TableName() string {
+func (phaseAUserSubscription) TableName() string {
 	return "user_subscriptions"
 }
 
@@ -55,16 +56,16 @@ func TestSubscriptionContractMigrationCreatesLifecycleTablesAndColumns(t *testin
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "lifecycle_reservation_until"))
 }
 
-func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
+func TestSubscriptionWindowScopeMigrationKeepsExistingRowsLegacyAndDefaultsNewRowsToEntitlement(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 
-	require.NoError(t, db.AutoMigrate(&legacyUserSubscriptionWithoutWindowScope{}))
+	require.NoError(t, db.AutoMigrate(&phaseAUserSubscription{}))
 	currentSlot := 1
-	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
+	require.NoError(t, db.Create(&phaseAUserSubscription{
 		Id:          838,
 		UserId:      12462,
 		ContractId:  132,
@@ -80,7 +81,7 @@ func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
 		Scan(&version).Error)
 	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
 
-	require.NoError(t, db.Create(&legacyUserSubscriptionWithoutWindowScope{
+	require.NoError(t, db.Omit("window_scope_version").Create(&phaseAUserSubscription{
 		Id:         839,
 		UserId:     12463,
 		ContractId: 133,
@@ -89,7 +90,7 @@ func TestSubscriptionWindowScopeMigrationDefaultsToLegacy(t *testing.T) {
 		Select("window_scope_version").
 		Where("id = ?", 839).
 		Scan(&version).Error)
-	require.Equal(t, SubscriptionWindowScopeVersionLegacy, version)
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, version)
 }
 
 func TestSubscriptionContractAllowsOnlyOneContractPerUser(t *testing.T) {

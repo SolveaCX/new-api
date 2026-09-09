@@ -5966,6 +5966,7 @@
     "Total price": "Tổng giá",
     "Unit price": "Đơn giá",
     "Replacement charges the full target price. No prorating or credit is applied.": "Việc thay thế tính toàn bộ giá của gói đích. Không áp dụng phân bổ theo thời gian hoặc tín dụng.",
+    "The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.": "Kỳ đang hoạt động đã bắt đầu sẽ không được hoàn tiền. Hạn mức mô hình hàng tháng và tín dụng Hình ảnh + video được đặt lại. Mức đã dùng trong cửa sổ 5 giờ và 7 ngày được đưa về 0, còn cả hai giới hạn vẫn tiếp tục áp dụng.",
     "Refundable not-started value: {{value}}": "Giá trị chưa bắt đầu có thể hoàn lại: {{value}}",
     "Monthly model quota: {{value}}": "Hạn mức mô hình hàng tháng: {{value}}",
     "{{count}} credits": "{{count}} tín dụng",
