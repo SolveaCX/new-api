@@ -188,6 +188,13 @@ func TestSubscriptionEntitlementGrantIdempotentAndConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, second.Applied)
 	require.Equal(t, first.Entitlement.Id, second.Entitlement.Id)
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, second.Entitlement.WindowScopeVersion)
+	firstInfo, err := GetSubscriptionWindowInfoBySubId(first.Entitlement.Id)
+	require.NoError(t, err)
+	secondInfo, err := GetSubscriptionWindowInfoBySubId(second.Entitlement.Id)
+	require.NoError(t, err)
+	require.Equal(t, -first.Entitlement.Id, firstInfo.WindowIdentity())
+	require.Equal(t, firstInfo.WindowIdentity(), secondInfo.WindowIdentity())
 
 	require.NoError(t, DB.Model(&UserSubscription{}).Where("id = ?", first.Entitlement.Id).
 		Update("access_end_time", input.PeriodEnd+100).Error)
@@ -1006,6 +1013,54 @@ func TestRotateCurrentEntitlementSnapshotsPlanWindowLimits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(125), info.Window5hAmount)
 	require.Equal(t, int64(900), info.WindowWeekAmount)
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, grant.Entitlement.WindowScopeVersion)
+	require.Equal(t, -grant.Entitlement.Id, info.WindowIdentity())
+	require.Equal(t, grant.Entitlement.StartTime, info.SubscriptionStart)
+}
+
+func TestSubscriptionWindowInfoKeepsLegacyContractWindowUntilNextGrant(t *testing.T) {
+	setupSubscriptionEntitlementTestDB(t)
+	createEntitlementTestUser(t, 9120, "plg")
+	plan := createEntitlementTestPlan(t, 9220, 1000, "")
+	require.NoError(t, DB.Create(&UserSubscriptionContract{
+		Id:          9320,
+		UserId:      9120,
+		Status:      SubscriptionContractStatusActive,
+		PaymentMode: SubscriptionPaymentModePrepaid,
+	}).Error)
+	require.NoError(t, DB.Model(&UserSubscriptionContract{}).
+		Where("id = ?", 9320).
+		Update("created_at", int64(100)).Error)
+	legacy := UserSubscription{
+		UserId:             9120,
+		PlanId:             plan.Id,
+		ContractId:         9320,
+		AmountTotal:        1000,
+		WindowScopeVersion: SubscriptionWindowScopeVersionLegacy,
+		StartTime:          200,
+		EndTime:            300,
+		AccessEndTime:      300,
+		Status:             SubscriptionEntitlementStatusActive,
+		Source:             "order",
+	}
+	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("id = ?", legacy.Id).
+		Update("window_scope_version", SubscriptionWindowScopeVersionLegacy).Error)
+
+	info, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
+
+	require.NoError(t, err)
+	require.Equal(t, int(legacy.ContractId), info.WindowIdentity())
+	require.Equal(t, int64(100), info.SubscriptionStart)
+
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("id = ?", legacy.Id).
+		Update("window_scope_version", int16(99)).Error)
+	unknownInfo, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
+	require.NoError(t, err)
+	require.Equal(t, int(legacy.ContractId), unknownInfo.WindowIdentity())
+	require.Equal(t, int64(100), unknownInfo.SubscriptionStart)
 }
 
 func TestRotateCurrentEntitlementPreservesExplicitZeroWindowLimits(t *testing.T) {
@@ -1061,12 +1116,17 @@ func TestSubscriptionWindowInfoLegacyEntitlementFallsBackToLivePlan(t *testing.T
 		Source:        "order",
 	}
 	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, DB.Model(&UserSubscription{}).
+		Where("id = ?", legacy.Id).
+		Update("window_scope_version", SubscriptionWindowScopeVersionLegacy).Error)
 
 	info, err := GetSubscriptionWindowInfoBySubId(legacy.Id)
 
 	require.NoError(t, err)
 	require.Equal(t, int64(75), info.Window5hAmount)
 	require.Equal(t, int64(525), info.WindowWeekAmount)
+	require.Equal(t, legacy.Id, info.WindowIdentity())
+	require.Equal(t, legacy.StartTime, info.SubscriptionStart)
 }
 
 func TestRotateCurrentEntitlementUsesExplicitUpgradeGroupSnapshot(t *testing.T) {
@@ -1115,6 +1175,9 @@ func TestCreateUserSubscriptionFromPlanSnapshotsWindowLimits(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(75), info.Window5hAmount)
 	require.Equal(t, int64(525), info.WindowWeekAmount)
+	require.Equal(t, SubscriptionWindowScopeVersionEntitlement, sub.WindowScopeVersion)
+	require.Equal(t, -sub.Id, info.WindowIdentity())
+	require.Equal(t, sub.StartTime, info.SubscriptionStart)
 }
 
 func TestSubscriptionPreConsumeContractCurrentEntitlement(t *testing.T) {

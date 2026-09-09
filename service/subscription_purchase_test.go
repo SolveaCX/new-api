@@ -3549,24 +3549,73 @@ func TestQuoteSubscriptionPurchaseReturnsDisplayQuoteAndRequotesMonths(t *testin
 	require.Equal(t, int64(3300), threeMonths.PaymentAmountMinor)
 }
 
-func TestReplacementKeepsFiveHourAndSevenDayWindowKeys(t *testing.T) {
+func TestReplacementResetsFiveHourAndSevenDayWindowKeys(t *testing.T) {
 	setupSubscriptionPurchaseServiceTestDB(t)
+	setupWindowTestRedis(t)
 	insertPurchaseServiceUser(t, 7309, 1000)
 	plan := insertPurchaseServicePlan(t, 7412, 1, 2, 200)
 	first, err := PurchaseSubscription(purchaseBalanceCommand(7309, plan.Id, 1, "window-first"))
 	require.NoError(t, err)
+	// Model a pre-activation entitlement. Existing version 0 rows keep consuming
+	// their contract-scoped window until a later grant creates a version 1 row.
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).
+		Where("id = ?", first.Entitlement.Id).
+		Update("window_scope_version", model.SubscriptionWindowScopeVersionLegacy).Error)
 	before, err := model.GetChargeableSubscriptionWindowInfo(7309, 1)
 	require.NoError(t, err)
+	beforeWeekKey, beforeBucketKeys, _ := subscriptionWindowKeys(before, common.GetTimestamp())
+	require.NoError(t, common.RDB.Set(context.Background(), beforeWeekKey, before.WindowWeekAmount, time.Hour).Err())
+	require.NoError(t, common.RDB.Set(context.Background(), beforeBucketKeys[len(beforeBucketKeys)-1], before.Window5hAmount, time.Hour).Err())
+	beforeUsage := GetSubscriptionWindowUsage(before)
+	require.Equal(t, before.Window5hAmount, beforeUsage.Window5hUsed)
+	require.Equal(t, before.WindowWeekAmount, beforeUsage.WindowWeekUsed)
 
 	second, err := PurchaseSubscription(purchaseBalanceCommand(7309, plan.Id, 1, "window-second"))
 	require.NoError(t, err)
 	after, err := model.GetChargeableSubscriptionWindowInfo(7309, 1)
 	require.NoError(t, err)
+	afterUsage := GetSubscriptionWindowUsage(after)
 
 	require.NotEqual(t, first.Entitlement.Id, second.Entitlement.Id)
 	require.Equal(t, first.Contract.Id, second.Contract.Id)
 	require.Equal(t, first.Contract.Id, before.ContractId)
 	require.Equal(t, first.Contract.Id, after.ContractId)
-	require.Equal(t, before.SubscriptionStart, after.SubscriptionStart)
-	require.Equal(t, subscriptionWindowWeekKey(int(first.Contract.Id), 0), subscriptionWindowWeekKey(after.WindowIdentity(), 0))
+	require.Equal(t, before.Window5hAmount, after.Window5hAmount)
+	require.Equal(t, before.WindowWeekAmount, after.WindowWeekAmount)
+	require.Positive(t, after.Window5hAmount)
+	require.Positive(t, after.WindowWeekAmount)
+	require.Equal(t, int(first.Contract.Id), before.WindowIdentity())
+	require.Equal(t, second.Entitlement.StartTime, after.SubscriptionStart)
+	require.Equal(t, -second.Entitlement.Id, after.WindowIdentity())
+	require.NotEqual(t, before.WindowIdentity(), after.WindowIdentity())
+	require.NotEqual(t,
+		subscriptionWindowWeekKey(before.WindowIdentity(), 0),
+		subscriptionWindowWeekKey(after.WindowIdentity(), 0),
+	)
+	require.NotEqual(t,
+		subscriptionWindowBucketKey(before.WindowIdentity(), 0),
+		subscriptionWindowBucketKey(after.WindowIdentity(), 0),
+	)
+	require.Zero(t, afterUsage.Window5hUsed)
+	require.Zero(t, afterUsage.WindowWeekUsed)
+
+	// A request admitted under the old entitlement may settle after the
+	// replacement. Its positive legacy identity must not charge the new negative
+	// entitlement identity.
+	lateSnapshot := &model.TaskSubscriptionWindow{
+		SubId:     before.WindowIdentity(),
+		SubStart:  before.SubscriptionStart,
+		Limit5h:   before.Window5hAmount,
+		LimitWeek: before.WindowWeekAmount,
+	}
+	changed, err := AdjustSubscriptionWindowFromSnapshotOnce(lateSnapshot, 17, "legacy-window-late-settlement")
+	require.NoError(t, err)
+	require.True(t, changed)
+	afterLateUsage := GetSubscriptionWindowUsage(after)
+	require.Zero(t, afterLateUsage.Window5hUsed)
+	require.Zero(t, afterLateUsage.WindowWeekUsed)
+
+	guard, err := reserveSubscriptionWindows(after, 1)
+	require.NoError(t, err)
+	require.NotNil(t, guard)
 }

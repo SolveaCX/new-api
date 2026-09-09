@@ -13,6 +13,7 @@ type SiteFooterProps = {
 };
 
 type FooterLink = {
+  badge?: string;
   external?: boolean;
   href: string;
   label: string;
@@ -181,6 +182,7 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
               className="text-[15px] font-semibold text-[#0B0B0F] no-underline hover:text-[#4C1D95]"
             >
               {link.label}
+              {link.badge ? <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{link.badge}</span> : null}
             </a>
           ) : (
             <Link
@@ -189,6 +191,7 @@ function FooterColumn(props: { links: FooterLink[]; locale: Locale; title: strin
               className="text-[15px] font-semibold text-[#0B0B0F] no-underline hover:text-[#4C1D95]"
             >
               {link.label}
+              {link.badge ? <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{link.badge}</span> : null}
             </Link>
           )
         )}
@@ -223,7 +226,7 @@ export function SiteFooter(props: SiteFooterProps) {
     { href: "/blog", label: `${siteCopy.nav.blog} ↗` },
   ];
   const companyLinks: FooterLink[] = [
-    { href: "/careers", label: labels.careers, localize: props.locale === "zh" },
+    { href: "/careers", label: labels.careers, badge: "Hiring", localize: props.locale === "zh" },
     { href: "/contact", label: labels.contact },
     { href: "/about", label: labels.about },
     { href: "/terms", label: copy.termsOfService },

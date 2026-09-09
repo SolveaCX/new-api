@@ -531,7 +531,7 @@ func TestStripeUpgradeSnapshotOrderCreatesPendingLifecycleEventOnce(t *testing.T
 	requireStripeUpgradeLifecycleEventCount(t, order.TradeNo, model.RecallLifecycleTriggerPaymentPending, 1)
 }
 
-func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
+func TestStripeUpgradePaidInvoiceWithAdaptivePricingRotatesTargetEntitlement(t *testing.T) {
 	setupSubscriptionContractServiceTestDB(t)
 	insertContractServiceUser(t, 7132, 0)
 	currentPlan := insertStripeUpgradePlan(t, 7233, 1, 10, 1000, "price_current_paid")
@@ -556,9 +556,10 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	require.NoError(t, model.DB.Create(intent).Error)
 	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
 	invoice := stripeInvoiceFixture("in_upgrade_paid", "sub_upgrade")
-	invoice.AmountPaid = 2500
-	invoice.AmountDue = 2500
-	invoice.Total = 2500
+	invoice.AmountPaid = 4990
+	invoice.AmountDue = 4990
+	invoice.Total = 4990
+	invoice.Currency = stripe.CurrencyBRL
 	setStripeInvoiceLinePrice(invoice.Lines.Data[0], "price_target_paid")
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: 3000, End: 4000}
 	subscription := stripeSubscriptionFixture("sub_upgrade", map[string]string{
@@ -572,6 +573,15 @@ func TestStripeUpgradePaidInvoiceRotatesTargetEntitlement(t *testing.T) {
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid"}
+	setStripeInvoiceSubscriptionItem(invoice, "sub_upgrade", "si_current_item")
+	invoice.Lines.Data = append([]*stripe.InvoiceLineItem{{
+		Amount: -500, Currency: stripe.CurrencyBRL, Quantity: 1,
+		Parent: &stripe.InvoiceLineItemParent{SubscriptionItemDetails: &stripe.InvoiceLineItemParentSubscriptionItemDetails{
+			Subscription: "sub_upgrade", SubscriptionItem: "si_current_item", Proration: true,
+		}},
+		Pricing: &stripe.InvoiceLineItemPricing{PriceDetails: &stripe.InvoiceLineItemPricingPriceDetails{Price: &stripe.Price{ID: "price_current_paid"}}},
+		Period:  &stripe.Period{Start: 2000, End: 3000},
+	}}, invoice.Lines.Data...)
 	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	subscription.CancelAtPeriodEnd = true
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
@@ -672,6 +682,7 @@ func TestStripeUpgradePaidInvoiceLifecycleClosesOrderRotatesQuotaAndReplaysOnce(
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_paid_lifecycle"}
+	setStripeInvoiceSubscriptionItem(invoice, "sub_upgrade", "si_current_item")
 	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
@@ -767,6 +778,7 @@ func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit
 	subscription.Customer = &stripe.Customer{ID: "cus_upgrade"}
 	subscription.Items.Data[0].ID = "si_current_item"
 	subscription.Items.Data[0].Price = &stripe.Price{ID: "price_target_snapshot"}
+	setStripeInvoiceSubscriptionItem(invoice, "sub_upgrade", "si_current_item")
 	setStripeSubscriptionCurrentPeriod(subscription, 3000, 4000)
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()

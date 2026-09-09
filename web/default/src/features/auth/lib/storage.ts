@@ -39,6 +39,7 @@ const STORAGE_KEYS = {
   USER_ID: 'uid',
   AFFILIATE: 'aff',
   CUSTOMER_INVITE: 'flatkey_customer_invite',
+  FLUERE_SOURCE: 'flatkey_is_fluere',
   STATUS: 'status',
   PENDING_ONBOARDING: 'pending_onboarding',
   LEGACY_PENDING_PLAYGROUND_FIRST_RUN: 'pending_playground_first_run',
@@ -529,3 +530,74 @@ export function clearCustomerInvite(): void {
     /* storage can be unavailable in privacy mode */
   }
 }
+
+// Fluere channel registration marker. Persisted across tab/window scopes via
+// sessionStorage, localStorage, and cookie so user navigation (login/register toggle,
+// email verification wait, OAuth redirect round-trip) preserves the attribution.
+export function isFluereSource(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    if (window.sessionStorage.getItem(STORAGE_KEYS.FLUERE_SOURCE) === 'true') {
+      return true
+    }
+    if (window.localStorage.getItem(STORAGE_KEYS.FLUERE_SOURCE) === 'true') {
+      return true
+    }
+  } catch {
+    /* storage can be unavailable in privacy mode */
+  }
+  try {
+    if (typeof document !== 'undefined' && document.cookie) {
+      if (/(?:^|;\s*)is_fluere=true(?:;|$)/i.test(document.cookie)) {
+        return true
+      }
+      if (/(?:^|;\s*)registration_source=fluere(?:;|$)/i.test(document.cookie)) {
+        return true
+      }
+    }
+  } catch {
+    /* ignore cookie access errors */
+  }
+  return false
+}
+
+export function saveFluereSource(isFluere: boolean): void {
+  if (typeof window === 'undefined') return
+  if (!isFluere) return
+  try {
+    window.sessionStorage.setItem(STORAGE_KEYS.FLUERE_SOURCE, 'true')
+    window.localStorage.setItem(STORAGE_KEYS.FLUERE_SOURCE, 'true')
+  } catch {
+    /* storage can be unavailable in privacy mode */
+  }
+  try {
+    if (typeof document !== 'undefined') {
+      document.cookie = 'is_fluere=true; path=/; max-age=86400; SameSite=Lax'
+      document.cookie =
+        'registration_source=fluere; path=/; max-age=86400; SameSite=Lax'
+    }
+  } catch {
+    /* ignore cookie access errors */
+  }
+}
+
+export function clearFluereSource(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEYS.FLUERE_SOURCE)
+    window.localStorage.removeItem(STORAGE_KEYS.FLUERE_SOURCE)
+  } catch {
+    /* storage can be unavailable in privacy mode */
+  }
+  try {
+    if (typeof document !== 'undefined') {
+      document.cookie =
+        'is_fluere=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'
+      document.cookie =
+        'registration_source=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'
+    }
+  } catch {
+    /* ignore cookie access errors */
+  }
+}
+

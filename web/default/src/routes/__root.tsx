@@ -50,6 +50,7 @@ import { NavigationProgress } from '@/components/navigation-progress'
 import {
   saveAffiliateCode,
   saveCustomerInvite,
+  saveFluereSource,
 } from '@/features/auth/lib/storage'
 import { GeneralError } from '@/features/errors/general-error'
 import { NotFoundError } from '@/features/errors/not-found-error'
@@ -130,13 +131,18 @@ function RootComponent() {
   useSystemConfig({ autoLoad: true })
 
   useEffect(() => {
-    const aff = new URLSearchParams(window.location.search).get('aff')?.trim()
+    const searchParams = new URLSearchParams(window.location.search)
+    const isFluere =
+      searchParams.get('isFluere')?.trim() ||
+      searchParams.get('is_fluere')?.trim()
+    if (isFluere?.toLowerCase() === 'true' || isFluere === '1') {
+      saveFluereSource(true)
+    }
+    const aff = searchParams.get('aff')?.trim()
     if (aff) {
       saveAffiliateCode(aff)
     }
-    const invite = new URLSearchParams(window.location.search)
-      .get('invite')
-      ?.trim()
+    const invite = searchParams.get('invite')?.trim()
     if (invite) {
       saveCustomerInvite(invite)
       const sanitizedURL = new URL(window.location.href)

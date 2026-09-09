@@ -385,6 +385,8 @@ func orderedMigrationModels() []migrationModel {
 		{&LogRequestSample{}, "LogRequestSample"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&StripeWalletScanState{}, "StripeWalletScanState"},
+		{&StripeWalletPaymentCheck{}, "StripeWalletPaymentCheck"},
 		{&AdsAttributionOutbox{}, "AdsAttributionOutbox"},
 		{&CustomerReferralOutbox{}, "CustomerReferralOutbox"},
 		{&PaymentAnalyticsOutbox{}, "PaymentAnalyticsOutbox"},
@@ -456,6 +458,8 @@ func orderedMigrationModels() []migrationModel {
 		{&PromptLibraryItem{}, "PromptLibraryItem"},
 		{&GrokAuthFlow{}, "GrokAuthFlow"},
 		{&GrokChannelState{}, "GrokChannelState"},
+		{&UsageReportDay{}, "UsageReportDay"},
+		{&UsageReportDayModel{}, "UsageReportDayModel"},
 	}
 }
 

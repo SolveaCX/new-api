@@ -669,6 +669,19 @@ func StripeCheckoutSessionIDFromProviderPayload(providerPayload string) string {
 	return strings.TrimSpace(payload.LegacySessionId)
 }
 
+const (
+	// SubscriptionWindowScopeVersionLegacy keeps the historical contract-scoped
+	// short-window keys and remains the compatibility default for unmarked rows.
+	SubscriptionWindowScopeVersionLegacy int16 = iota
+	// SubscriptionWindowScopeVersionEntitlement isolates an explicitly migrated
+	// entitlement's 5-hour and 7-day counters from its contract predecessors.
+	SubscriptionWindowScopeVersionEntitlement
+)
+
+func usesEntitlementWindowScope(version int16) bool {
+	return version == SubscriptionWindowScopeVersionEntitlement
+}
+
 // User subscription instance
 type UserSubscription struct {
 	Id                int     `json:"id"`
@@ -689,6 +702,10 @@ type UserSubscription struct {
 	// Nil means a legacy entitlement created before window limits were snapshotted.
 	Window5hAmount   *int64 `json:"window_5h_amount,omitempty" gorm:"column:window_5h_amount;type:bigint"`
 	WindowWeekAmount *int64 `json:"window_week_amount,omitempty" gorm:"column:window_week_amount;type:bigint"`
+	// The schema default stays at version 0 so migrations and older writers cannot
+	// opt rows into a new Redis namespace implicitly. Grant creators set version 1
+	// explicitly when a purchase should start fresh entitlement-scoped windows.
+	WindowScopeVersion int16 `json:"-" gorm:"column:window_scope_version;type:smallint;not null;default:0"`
 
 	StartTime     int64  `json:"start_time" gorm:"bigint"`
 	EndTime       int64  `json:"end_time" gorm:"bigint;index;index:idx_user_sub_active,priority:3"`
@@ -1040,25 +1057,26 @@ func createUserSubscriptionFromPlanWithCycleTx(tx *gorm.DB, userId int, plan *Su
 	window5hAmount := plan.Window5hAmount
 	windowWeekAmount := plan.WindowWeekAmount
 	sub := &UserSubscription{
-		UserId:            userId,
-		PlanId:            plan.Id,
-		ProviderBindingId: providerBindingId,
-		AmountTotal:       plan.TotalAmount,
-		AmountUsed:        0,
-		MediaCreditsTotal: plan.MediaCreditsMonthly,
-		MediaCreditsUsed:  0,
-		Window5hAmount:    &window5hAmount,
-		WindowWeekAmount:  &windowWeekAmount,
-		StartTime:         now.Unix(),
-		EndTime:           endUnix,
-		Status:            "active",
-		Source:            source,
-		LastResetTime:     lastReset,
-		NextResetTime:     nextReset,
-		UpgradeGroup:      upgradeGroup,
-		PrevUserGroup:     prevGroup,
-		CreatedAt:         common.GetTimestamp(),
-		UpdatedAt:         common.GetTimestamp(),
+		UserId:             userId,
+		PlanId:             plan.Id,
+		ProviderBindingId:  providerBindingId,
+		AmountTotal:        plan.TotalAmount,
+		AmountUsed:         0,
+		MediaCreditsTotal:  plan.MediaCreditsMonthly,
+		MediaCreditsUsed:   0,
+		Window5hAmount:     &window5hAmount,
+		WindowWeekAmount:   &windowWeekAmount,
+		WindowScopeVersion: SubscriptionWindowScopeVersionEntitlement,
+		StartTime:          now.Unix(),
+		EndTime:            endUnix,
+		Status:             "active",
+		Source:             source,
+		LastResetTime:      lastReset,
+		NextResetTime:      nextReset,
+		UpgradeGroup:       upgradeGroup,
+		PrevUserGroup:      prevGroup,
+		CreatedAt:          common.GetTimestamp(),
+		UpdatedAt:          common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
@@ -1623,6 +1641,7 @@ func GetHighestActiveSubscriptionTierRank(userId int) (int, error) {
 type SubscriptionWindowInfo struct {
 	UserSubscriptionId int
 	ContractId         int64
+	WindowScopeVersion int16
 	SubscriptionStart  int64
 	Window5hAmount     int64
 	WindowWeekAmount   int64
@@ -1631,6 +1650,11 @@ type SubscriptionWindowInfo struct {
 func (i *SubscriptionWindowInfo) WindowIdentity() int {
 	if i == nil {
 		return 0
+	}
+	if usesEntitlementWindowScope(i.WindowScopeVersion) && i.UserSubscriptionId > 0 {
+		// Contract IDs and entitlement IDs use independent sequences. Negative IDs
+		// keep manually enabled v1 keys disjoint from every legacy contract key.
+		return -i.UserSubscriptionId
 	}
 	if i.ContractId > 0 {
 		return int(i.ContractId)
@@ -1747,7 +1771,7 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 		}
 	}
 	anchor := sub.StartTime
-	if sub.ContractId > 0 {
+	if !usesEntitlementWindowScope(sub.WindowScopeVersion) && sub.ContractId > 0 {
 		var contract UserSubscriptionContract
 		query := DB.Where("id = ? AND user_id = ?", sub.ContractId, sub.UserId).Limit(1).Find(&contract)
 		if query.Error != nil {
@@ -1760,6 +1784,7 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 	return &SubscriptionWindowInfo{
 		UserSubscriptionId: sub.Id,
 		ContractId:         sub.ContractId,
+		WindowScopeVersion: sub.WindowScopeVersion,
 		SubscriptionStart:  anchor,
 		Window5hAmount:     window5hAmount,
 		WindowWeekAmount:   windowWeekAmount,

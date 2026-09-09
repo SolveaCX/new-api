@@ -620,7 +620,7 @@ func TestSubscriptionDiscountInvoicePaidValidationUsesSnapshotFinalPayment(t *te
 	require.Equal(t, int64(1), commitCount)
 }
 
-func TestSubscriptionDiscountInvoicePaidValidationRejectsMismatchedSnapshotFinalPayment(t *testing.T) {
+func TestSubscriptionDiscountInvoicePaidValidationAcceptsStripeAdjustedFinalPayment(t *testing.T) {
 	setupSubscriptionInvoiceServiceTestDB(t)
 	_, binding, entitlement := seedStripeRenewalContract(t, 9212, 9312, "sub_discount_paid_mismatch")
 	require.NoError(t, model.DB.Model(&model.SubscriptionProviderBinding{}).Where("id = ?", binding.Id).Update("initial_order_id", seedInitialOrderSnapshotForRenewal(t, 9212, 9312, "sub_discount_paid_mismatch_initial")).Error)
@@ -647,11 +647,12 @@ func TestSubscriptionDiscountInvoicePaidValidationRejectsMismatchedSnapshotFinal
 	restore := replaceStripeInvoiceReconcilers(t, inv, sub)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), "in_discount_paid_mismatch")
-	require.ErrorContains(t, err, "Stripe invoice amount mismatch: expected 734 got 735")
+	result, err := ReconcilePaidInvoice(context.Background(), "in_discount_paid_mismatch")
+	require.NoError(t, err)
+	require.True(t, result.Applied)
 	var commitCount int64
-	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ?", "stripe-invoice:in_discount_paid_mismatch:reserve").Count(&commitCount).Error)
-	require.Zero(t, commitCount)
+	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ? AND entry_type = ?", "stripe-invoice:in_discount_paid_mismatch:reserve", model.SubscriptionDiscountEntryTypeCommit).Count(&commitCount).Error)
+	require.Equal(t, int64(1), commitCount)
 }
 
 func TestSubscriptionDiscountInvoicePaidValidationRejectsMalformedSnapshot(t *testing.T) {

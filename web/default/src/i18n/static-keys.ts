@@ -198,6 +198,7 @@ export const STATIC_I18N_KEYS = [
   'Total price',
   'Unit price',
   'Replacement charges the full target price. No prorating or credit is applied.',
+  'The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.',
   'Refundable not-started value: {{value}}',
   'Monthly model quota: {{value}}',
   '{{count}} credits',

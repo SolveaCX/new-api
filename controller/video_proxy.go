@@ -21,6 +21,7 @@ import (
 	taskdoubao "github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	taskjimengzhizinan "github.com/QuantumNous/new-api/relay/channel/task/jimengzhizinan"
 	tasksonilo "github.com/QuantumNous/new-api/relay/channel/task/sonilo"
+	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	tasktechmobi "github.com/QuantumNous/new-api/relay/channel/task/techmobi"
 	taskxaigrok "github.com/QuantumNous/new-api/relay/channel/task/xaigrok"
 	"github.com/QuantumNous/new-api/service"
@@ -152,7 +153,7 @@ func VideoProxy(c *gin.Context) {
 	case constant.ChannelTypeBlockRunSeedance:
 		videoURL = taskblockrunseedance.ExtractUpstreamVideoURL(task.Data)
 	case constant.ChannelTypeDoubaoVideo:
-		if channel.Id == 106 {
+		if channel.Id == 106 || taskcommon.ShouldProxyResultURL(channel.Id, task.Group) {
 			videoURL = taskdoubao.ExtractUpstreamVideoURL(task.Data)
 		} else {
 			videoURL = task.GetResultURL()
@@ -209,6 +210,22 @@ func VideoProxy(c *gin.Context) {
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy request")
 		return
 	}
+	protectedDoubaoContent := false
+	if apiKey, ok := doubaoVideoContentAuthorization(channel, task, req.URL); ok {
+		protectedDoubaoContent = true
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		if rangeValue := strings.TrimSpace(c.Request.Header.Get("Range")); rangeValue != "" {
+			req.Header.Set("Range", rangeValue)
+		}
+		if ifRangeValue := strings.TrimSpace(c.Request.Header.Get("If-Range")); ifRangeValue != "" {
+			req.Header.Set("If-Range", ifRangeValue)
+		}
+		clientCopy := *client
+		clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &clientCopy
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -218,7 +235,7 @@ func VideoProxy(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && !(protectedDoubaoContent && resp.StatusCode == http.StatusPartialContent) {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, videoURL))
 		videoProxyError(c, http.StatusBadGateway, "server_error",
 			fmt.Sprintf("Upstream service returned status %d", resp.StatusCode))

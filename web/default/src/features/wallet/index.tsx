@@ -952,23 +952,8 @@ export function Wallet(props: WalletProps) {
                     {t('Top up')}
                   </Button>
                 }
-                contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
-              >
-                <div
-                  id='wallet-billing-history'
-                  className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
-                >
-                  {!mockPreview ? (
-                    <BillingHistoryPanel
-                      scrollAreaClassName='max-h-none pr-0 sm:pr-0'
-                      showInlineHeader
-                      onAvailabilityChange={handleRechargeHistoryAvailability}
-                      onResumeStripeCheckout={handleResumeStripeCheckout}
-                      onRefundSuccess={fetchUser}
-                    />
-                  ) : null}
-                </div>
-              </TitledCard>
+                contentClassName='hidden'
+              />
 
               {showSubscriptionPlans ? (
                 <div className='min-w-0'>
@@ -993,6 +978,27 @@ export function Wallet(props: WalletProps) {
                   </RecallClaimProvider>
                 </div>
               ) : null}
+
+              <TitledCard
+                className='border-border/80 shadow-sm'
+                title={t('Recharge History')}
+                description={t('View your top-up records and payment receipts.')}
+                contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
+              >
+                <div
+                  id='wallet-billing-history'
+                  className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
+                >
+                  {!mockPreview ? (
+                    <BillingHistoryPanel
+                      scrollAreaClassName='max-h-none pr-0 sm:pr-0'
+                      onAvailabilityChange={handleRechargeHistoryAvailability}
+                      onResumeStripeCheckout={handleResumeStripeCheckout}
+                      onRefundSuccess={fetchUser}
+                    />
+                  ) : null}
+                </div>
+              </TitledCard>
             </div>
           </div>
         </SectionPageLayout.Content>
