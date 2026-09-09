@@ -11,6 +11,8 @@ const WEBSITE_PUBLIC_PRICING_GROUP = "plg";
 const PERMANENT_LEGACY_PATHS = new Map([
   ["privacy-policy", "privacy"],
   ["user-agreement", "terms"],
+  ["careers.html", "careers"],
+  ["legal-sla", "sla"],
 ]);
 const CANONICAL_MODEL_SLUG_OVERRIDES = new Map([
   ["minimax-h3", "minimax-h3"],
@@ -79,15 +81,21 @@ export function resolveModelAliasRedirectPath(pathname: string, modelNames: read
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const canonicalOrigin = new URL(SITE_ORIGIN);
   const redirectPath = resolvePermanentSeoRedirectPath(request.nextUrl.pathname);
-  const shouldCanonicalizeHost = requestHostname(request) === `www.${canonicalOrigin.hostname}`;
-  if (shouldCanonicalizeHost || redirectPath) {
-    const url = request.nextUrl.clone();
-    if (shouldCanonicalizeHost) {
+  const shouldCanonicalizeHost = isKnownCanonicalHostAlias(requestHostname(request), canonicalOrigin.hostname);
+  const shouldCanonicalizeProtocol = requestProtocol(request) !== canonicalOrigin.protocol;
+  const canonicalPath = normalizeCanonicalPath(request.nextUrl.pathname);
+  const shouldCanonicalizeTrailingSlash = canonicalPath !== request.nextUrl.pathname;
+  if (shouldCanonicalizeHost || shouldCanonicalizeProtocol || redirectPath || shouldCanonicalizeTrailingSlash) {
+    // Use a standard URL here instead of NextURL.clone(): NextURL can retain
+    // the original trailing-slash serialization even after pathname changes.
+    const url = new URL(request.nextUrl.toString());
+    if (shouldCanonicalizeHost || shouldCanonicalizeProtocol) {
       url.protocol = canonicalOrigin.protocol;
       url.host = canonicalOrigin.host;
       url.port = canonicalOrigin.port;
     }
     if (redirectPath) url.pathname = redirectPath;
+    else if (shouldCanonicalizeTrailingSlash) url.pathname = canonicalPath;
     return NextResponse.redirect(url, 301);
   }
 
@@ -96,6 +104,26 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   return routeByLanguagePreference(request);
+}
+
+/**
+ * Keep historical public website hostnames out of Google's index. The
+ * console/router hosts are intentionally not included: they are separate
+ * applications and must never be redirected to the marketing site.
+ */
+function isKnownCanonicalHostAlias(hostname: string, canonicalHostname: string): boolean {
+  return new Set([`www.${canonicalHostname}`, "tokenex.flatkey.ai"]).has(hostname);
+}
+
+function requestProtocol(request: NextRequest): string {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwardedProto === "http" || forwardedProto === "https") return `${forwardedProto}:`;
+  return request.nextUrl.protocol;
+}
+
+function normalizeCanonicalPath(pathname: string): string {
+  if (pathname === "/") return "/";
+  return pathname.replace(/\/+$/, "") || "/";
 }
 
 export function resolvePermanentSeoRedirectPath(pathname: string): string | null {
