@@ -748,7 +748,7 @@ func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit
 		PaymentProvider: model.PaymentProviderStripe,
 		Status:          common.TopUpStatusPending,
 		CreateTime:      common.GetTimestamp(),
-		PlanSnapshot:    `{"plan_id":7249,"title":"Entitlement Plan","price_amount":25,"currency":"USD","duration_unit":"month","duration_value":1,"total_amount":2500,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
+		PlanSnapshot:    `{"plan_id":7249,"title":"Entitlement Plan","price_amount":25,"currency":"USD","stripe_price_id":"price_target_snapshot","duration_unit":"month","duration_value":1,"total_amount":2500,"window_5h_amount":125,"window_week_amount":900,"media_credits_monthly":55,"upgrade_group":"snapshot_group"}`,
 		PurchaseIntent:  model.SubscriptionChangeIntentKindUpgrade,
 		ChangeIntentId:  intent.Id,
 	}
@@ -756,6 +756,7 @@ func TestStripeUpgradePaidInvoiceUsesFrozenUpgradeOrderPlanSnapshotAfterPlanEdit
 	require.NoError(t, model.DB.Model(contract).Update("latest_change_intent_id", intent.Id).Error)
 	require.NoError(t, model.DB.Model(&model.SubscriptionPlan{}).Where("id = ?", targetPlan.Id).Updates(map[string]interface{}{
 		"price_amount":          99.99,
+		"stripe_price_id":       "price_new_catalog",
 		"total_amount":          int64(999999),
 		"media_credits_monthly": int64(999),
 		"window_5h_amount":      int64(999),
