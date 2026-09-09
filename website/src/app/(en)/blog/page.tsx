@@ -4,13 +4,17 @@ import { buildMetadata } from "@/lib/seo";
 
 const copy = getCopy("en").blog;
 
-export const metadata = buildMetadata({
-  title: copy.title,
-  description: copy.description,
-  pathname: "/blog",
-});
-
 type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
+
+export async function generateMetadata(props: Props) {
+  const searchParams = await props.searchParams;
+  return buildMetadata({
+    title: copy.title,
+    description: copy.description,
+    pathname: "/blog",
+    noIndex: Object.keys(searchParams ?? {}).length > 0,
+  });
+}
 
 export default async function Page(props: Props) {
   const searchParams = await props.searchParams;
