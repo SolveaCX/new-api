@@ -10,39 +10,13 @@ const PROMOTION_PRIORITY: Record<ModelPromotion, number> = {
   new: 3,
 }
 
-export function getModelPromotions(modelId: string, tags?: string): ModelPromotion[] {
-  if (tags !== undefined) {
-    const normalized = tags.split(',').map((tag) => tag.trim().toLowerCase())
-    const promotions: ModelPromotion[] = []
-    if (normalized.includes('free')) promotions.push('free')
-    if (normalized.some((tag) => tag === 'limited' || tag === 'limited discount')) promotions.push('limited')
-    if (normalized.includes('hot')) promotions.push('hot')
-    if (normalized.some((tag) => tag === 'new' || tag === 'new release')) promotions.push('new')
-    return promotions
-  }
-  const name = modelId.toLowerCase()
+export function getModelPromotions(_modelId: string, tags = ''): ModelPromotion[] {
+  const normalized = tags.split(',').map((tag) => tag.trim().toLowerCase())
   const promotions: ModelPromotion[] = []
-  if (/(^|[/])deepseek[-_.]?v4[-_.]?flash$/.test(name)) promotions.push('free')
-  if (
-    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name) ||
-    /(^|[/])deepseek[-_.]?v4[-_.]?pro$/.test(name)
-  ) {
-    promotions.push('limited')
-  }
-  if (
-    /(^|[/_-])seedance[-_.]?2[-_.]?5(?:[-_.]|$)/.test(name) ||
-    /(^|[/])gpt[-_.]?5[-_.]?6[-_.]?sol(?:[-_.]|$)/.test(name) ||
-    /(^|[/])claude[-_.]?(?:opus[-_.]?(?:4[-_.]?8|5)|sonnet[-_.]?(?:4[-_.]?6|5)|haiku[-_.]?4[-_.]?5(?:[-_.]?20251001)?)(?:[-_.]|$)/.test(
-      name
-    )
-  )
-    promotions.push('hot')
-  if (
-    /(^|[/])glm[-_.]?5[-_.]?3(?:[-_.]?flash)?$/.test(name) ||
-    /(^|[/])claude[-_.]?fable[-_.]?5[-_.]?1(?:[-_.]|$)/.test(name)
-  ) {
-    promotions.push('new')
-  }
+  if (normalized.includes('free')) promotions.push('free')
+  if (normalized.some((tag) => tag === 'limited' || tag === 'limited discount')) promotions.push('limited')
+  if (normalized.includes('hot')) promotions.push('hot')
+  if (normalized.some((tag) => tag === 'new' || tag === 'new release')) promotions.push('new')
   return promotions
 }
 
@@ -56,7 +30,7 @@ export function getModelPromotionLabel(
   return t('New release')
 }
 
-export function modelPromotionPriority(modelId: string, tags?: string): number {
+export function modelPromotionPriority(modelId: string, tags = ''): number {
   const promotions = getModelPromotions(modelId, tags)
   return promotions.length === 0
     ? Number.POSITIVE_INFINITY
@@ -70,7 +44,7 @@ export function sortModelsByPromotion(
     .map((model, index) => ({
       model,
       index,
-      priority: modelPromotionPriority(model.id, model.tags),
+      priority: modelPromotionPriority(model.id, model.tags ?? ''),
     }))
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
     .map(({ model }) => model)
