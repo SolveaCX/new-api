@@ -333,6 +333,10 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.PUT("/plans/:id", controller.AdminUpdateSubscriptionPlan)
 			subscriptionAdminRoute.PATCH("/plans/:id", controller.AdminUpdateSubscriptionPlanStatus)
 			subscriptionAdminRoute.POST("/bind", controller.AdminBindSubscription)
+			subscriptionAdminRoute.POST("/catalog-migrations/preview", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.AdminPreviewSubscriptionCatalogMigration)
+			subscriptionAdminRoute.POST("/catalog-migrations/apply", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.AdminApplySubscriptionCatalogMigration)
+			subscriptionAdminRoute.GET("/catalog-migrations/:id", middleware.RootAuth(), controller.AdminGetSubscriptionCatalogMigration)
+			subscriptionAdminRoute.POST("/catalog-migrations/:id/cancel", middleware.RootAuth(), middleware.CriticalRateLimit(), controller.AdminCancelSubscriptionCatalogMigration)
 
 			// User subscription management (admin)
 			subscriptionAdminRoute.GET("/users/:id/subscriptions", controller.AdminListUserSubscriptions)

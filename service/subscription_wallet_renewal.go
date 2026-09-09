@@ -36,6 +36,12 @@ type walletRenewalAttempt struct {
 	PaymentCurrency string
 	PlanSnapshot    string
 	GrantInput      model.GrantEntitlementInput
+	CatalogIntentID int64
+}
+
+type walletCatalogRenewal struct {
+	Intent model.SubscriptionChangeIntent
+	Plan   model.SubscriptionPlan
 }
 
 func RunWalletSubscriptionRenewalOnce(limit int) (int, error) {
@@ -45,10 +51,12 @@ func RunWalletSubscriptionRenewalOnce(limit int) (int, error) {
 	now := common.GetTimestamp()
 	var contracts []model.UserSubscriptionContract
 	if err := model.DB.
-		Where("status = ? AND renewal_source = ? AND renewal_status = ? AND current_period_end > ? AND current_period_end <= ?",
+		Where("status = ? AND renewal_source = ? AND (renewal_status = ? OR (renewal_status = ? AND latest_change_intent_id > ?)) AND current_period_end > ? AND current_period_end <= ?",
 			model.SubscriptionContractStatusActive,
 			model.SubscriptionRenewalSourceWallet,
 			model.SubscriptionRenewalStatusEnabled,
+			model.SubscriptionRenewalStatusPausedInsufficientBalance,
+			0,
 			0,
 			now).
 		Order("current_period_end asc, id asc").
@@ -85,13 +93,28 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		if !walletContractIsRenewable(contract) {
 			return nil
 		}
-		plan, err := loadWalletRenewalPlanTx(tx, &contract)
+		catalogRenewal, err := loadReachedWalletCatalogRenewalTx(tx, &contract)
+		if err != nil {
+			return err
+		}
+		if contract.RenewalStatus != model.SubscriptionRenewalStatusEnabled &&
+			!(contract.RenewalStatus == model.SubscriptionRenewalStatusPausedInsufficientBalance && catalogRenewal != nil) {
+			return nil
+		}
+		var plan *model.SubscriptionPlan
+		if catalogRenewal != nil {
+			plan = &catalogRenewal.Plan
+		} else {
+			plan, err = loadWalletRenewalPlanTx(tx, &contract)
+		}
 		if err != nil {
 			common.SysLog(fmt.Sprintf("wallet renewal paused because plan facts are unavailable: contract_id=%d plan_id=%d error=%q", contract.Id, contract.CurrentPlanId, err.Error()))
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
 		}
-		if err := validateFlexiblePrepaidPlan(plan); err != nil {
-			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
+		if catalogRenewal == nil {
+			if err := validateFlexiblePrepaidPlan(plan); err != nil {
+				return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
+			}
 		}
 		if plan.Enabled && plan.AllowBalancePay != nil && !*plan.AllowBalancePay {
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedPlanUnavailable, result)
@@ -105,6 +128,9 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 			return err
 		}
 		if requiredQuota > 0 && user.Quota < requiredQuota {
+			if catalogRenewal != nil {
+				return pauseWalletCatalogRenewalForBalanceTx(tx, &contract, result)
+			}
 			return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedInsufficientBalance, result)
 		}
 
@@ -148,6 +174,13 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 			PlanSnapshot:    planSnapshot,
 			GrantInput:      grantInput,
 		}
+		if catalogRenewal != nil {
+			attempt.CatalogIntentID = catalogRenewal.Intent.Id
+		}
+		providerPayload := fmt.Sprintf("charged_quota=%d;contract_id=%d;renewal_key=%s", requiredQuota, contract.Id, renewalKey)
+		if catalogRenewal != nil {
+			providerPayload += fmt.Sprintf(";change_intent_id=%d", catalogRenewal.Intent.Id)
+		}
 		order := &model.SubscriptionOrder{
 			UserId:          user.Id,
 			PlanId:          plan.Id,
@@ -161,7 +194,7 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 			UnitPrice:       plan.PriceAmount,
 			PaymentCurrency: plan.Currency,
 			PlanSnapshot:    planSnapshot,
-			ProviderPayload: fmt.Sprintf("charged_quota=%d;contract_id=%d;renewal_key=%s", requiredQuota, contract.Id, renewalKey),
+			ProviderPayload: providerPayload,
 			RenewalSource:   model.SubscriptionRenewalSourceWallet,
 		}
 		if err := tx.Create(order).Error; err != nil {
@@ -183,6 +216,9 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 					if deleted.RowsAffected != 1 {
 						return errors.New("wallet renewal success order cleanup failed")
 					}
+					if catalogRenewal != nil {
+						return pauseWalletCatalogRenewalForBalanceTx(tx, &contract, result)
+					}
 					return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedInsufficientBalance, result)
 				}
 				return err
@@ -194,6 +230,9 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 				}
 				if deleted.RowsAffected != 1 {
 					return errors.New("wallet renewal success order cleanup failed")
+				}
+				if catalogRenewal != nil {
+					return pauseWalletCatalogRenewalForBalanceTx(tx, &contract, result)
 				}
 				return pauseWalletRenewalTx(tx, &contract, model.SubscriptionRenewalStatusPausedInsufficientBalance, result)
 			}
@@ -229,13 +268,38 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 			}, periodStart, 1); err != nil {
 				return err
 			}
-			if err := tx.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+			contractUpdates := map[string]interface{}{
 				"renewal_status":       model.SubscriptionRenewalStatusEnabled,
 				"current_period_start": periodStart,
 				"current_period_end":   periodEnd,
 				"updated_at":           now,
-			}).Error; err != nil {
-				return err
+			}
+			if catalogRenewal != nil {
+				intentUpdate := tx.Model(&model.SubscriptionChangeIntent{}).
+					Where("id = ? AND contract_id = ? AND status = ?", catalogRenewal.Intent.Id, contract.Id, model.SubscriptionChangeIntentStatusScheduled).
+					Updates(map[string]interface{}{
+						"status":                model.SubscriptionChangeIntentStatusApplied,
+						"wallet_debit_trade_no": order.TradeNo,
+						"last_error":            "",
+						"updated_at":            now,
+					})
+				if intentUpdate.Error != nil || intentUpdate.RowsAffected != 1 {
+					return firstError(intentUpdate.Error, ErrSubscriptionChangeInProgress)
+				}
+				contractUpdates["current_plan_id"] = plan.Id
+				contractUpdates["pending_plan_id"] = 0
+				contractUpdates["pending_effective_at"] = 0
+			}
+			contractUpdate := tx.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id)
+			if catalogRenewal != nil {
+				contractUpdate = contractUpdate.Where(
+					"latest_change_intent_id = ? AND pending_plan_id = ? AND pending_effective_at = ?",
+					catalogRenewal.Intent.Id, catalogRenewal.Intent.ToPlanId, catalogRenewal.Intent.EffectiveAt,
+				)
+			}
+			contractUpdate = contractUpdate.Updates(contractUpdates)
+			if contractUpdate.Error != nil || contractUpdate.RowsAffected != 1 {
+				return firstError(contractUpdate.Error, ErrSubscriptionChangeInProgress)
 			}
 			if grant != nil && grant.Entitlement != nil {
 				result.EntitlementID = grant.Entitlement.Id
@@ -270,6 +334,77 @@ func RenewWalletSubscriptionContract(contractID int64) (*WalletSubscriptionRenew
 		}
 	}
 	return result, nil
+}
+
+func loadReachedWalletCatalogRenewalTx(tx *gorm.DB, contract *model.UserSubscriptionContract) (*walletCatalogRenewal, error) {
+	if tx == nil || contract == nil || contract.LatestChangeIntentId <= 0 {
+		return nil, nil
+	}
+	var intent model.SubscriptionChangeIntent
+	if err := subscriptionCommandLock(tx).Where("id = ?", contract.LatestChangeIntentId).First(&intent).Error; err != nil {
+		return nil, err
+	}
+	if intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration {
+		return nil, nil
+	}
+	if contract.CurrentProviderBindingId != 0 ||
+		(contract.PaymentMode != model.SubscriptionPaymentModePrepaid && contract.PaymentMode != model.SubscriptionPaymentModeBalanceOnePeriod) {
+		return nil, errors.New("wallet catalog migration contract payment facts drifted")
+	}
+	var currentEntitlement model.UserSubscription
+	if err := subscriptionCommandLock(tx).
+		Where("id = ? AND contract_id = ? AND user_id = ?", contract.CurrentEntitlementId, contract.Id, contract.UserId).
+		First(&currentEntitlement).Error; err != nil {
+		return nil, err
+	}
+	if !walletRenewalCurrentEntitlementMatchesContract(&currentEntitlement, contract) {
+		return nil, errors.New("wallet catalog migration current entitlement drifted")
+	}
+	if intent.Status != model.SubscriptionChangeIntentStatusScheduled || intent.ContractId != contract.Id || intent.UserId != contract.UserId ||
+		intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId <= 0 || intent.ToPlanId != contract.PendingPlanId ||
+		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd ||
+		intent.EffectiveAt > common.GetTimestamp() || intent.PaymentMode != contract.PaymentMode || intent.ProviderBindingId != 0 || intent.CatalogMigrationBatchId == nil {
+		return nil, errors.New("wallet catalog migration intent facts drifted")
+	}
+	sandbox := catalogMigrationRuntimeSandboxConfig()
+	if err := ValidateCatalogMigrationCommonSandbox(sandbox, contract.Id); err != nil {
+		return nil, err
+	}
+	var batch model.SubscriptionCatalogMigrationBatch
+	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
+		return nil, err
+	}
+	if !batch.SandboxOnly || batch.Livemode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
+		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) {
+		return nil, errors.New("wallet catalog migration sandbox facts drifted")
+	}
+	snapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.PlanID != intent.ToPlanId {
+		return nil, errors.New("wallet catalog migration target snapshot plan drifted")
+	}
+	var target model.SubscriptionPlan
+	if err := subscriptionCommandLock(tx).Where("id = ? AND enabled = ?", snapshot.PlanID, true).First(&target).Error; err != nil {
+		return nil, err
+	}
+	target.NormalizeDefaults()
+	if err := ValidateRecurringPlanSnapshotV1AgainstPlan(snapshot, &target); err != nil {
+		return nil, err
+	}
+	if target.AllowBalancePay != nil && !*target.AllowBalancePay {
+		return nil, errors.New("wallet catalog migration target plan does not allow balance payment")
+	}
+	plan := model.SubscriptionPlan{
+		Id: snapshot.PlanID, PriceAmount: stripeMinorUnitValue(snapshot.BasePriceMinor, snapshot.Currency), Currency: snapshot.Currency,
+		StripePriceId: snapshot.StripePriceID, DurationUnit: snapshot.DurationUnit, DurationValue: snapshot.DurationValue,
+		CustomSeconds: snapshot.DurationCustomSeconds, QuotaResetPeriod: snapshot.QuotaResetPeriod,
+		QuotaResetCustomSeconds: snapshot.QuotaResetCustomSeconds, TotalAmount: snapshot.TotalAmount,
+		MediaCreditsMonthly: snapshot.MediaCreditsMonthly, Window5hAmount: snapshot.Window5hAmount,
+		WindowWeekAmount: snapshot.WindowWeekAmount, UpgradeGroup: snapshot.UpgradeGroup, Enabled: true,
+	}
+	return &walletCatalogRenewal{Intent: intent, Plan: plan}, nil
 }
 
 func loadWalletRenewalPlanTx(tx *gorm.DB, contract *model.UserSubscriptionContract) (*model.SubscriptionPlan, error) {
@@ -447,6 +582,9 @@ func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*Walle
 			return fmt.Errorf("read wallet renewal duplicate order: %w", err)
 		}
 		expectedPayload := fmt.Sprintf("charged_quota=%d;contract_id=%d;renewal_key=%s", attempt.RequiredQuota, attempt.ContractID, attempt.RenewalKey)
+		if attempt.CatalogIntentID > 0 {
+			expectedPayload += fmt.Sprintf(";change_intent_id=%d", attempt.CatalogIntentID)
+		}
 		if order.UserId != attempt.UserID || order.PlanId != attempt.PlanID || order.TradeNo != attempt.TradeNo ||
 			order.PaymentMethod != model.PaymentMethodBalance || order.PaymentProvider != model.PaymentProviderBalance ||
 			order.Status != common.TopUpStatusSuccess || order.PurchaseMonths != 1 || order.Money != attempt.PriceAmount ||
@@ -509,6 +647,16 @@ func recoverPostgresWalletRenewalDuplicate(attempt walletRenewalAttempt) (*Walle
 		}
 		if !walletRenewalContractMatchesRecoveredGrant(&contract, &entitlement, &currentEntitlement, attempt) {
 			return walletRenewalDuplicateFactsError("contract %d is inconsistent", attempt.ContractID)
+		}
+		if attempt.CatalogIntentID > 0 {
+			var intent model.SubscriptionChangeIntent
+			if err := tx.Where("id = ? AND contract_id = ?", attempt.CatalogIntentID, attempt.ContractID).First(&intent).Error; err != nil {
+				return walletRenewalDuplicateFactsError("catalog intent %d is missing", attempt.CatalogIntentID)
+			}
+			if intent.Status != model.SubscriptionChangeIntentStatusApplied || intent.WalletDebitTradeNo != attempt.TradeNo ||
+				contract.LatestChangeIntentId != attempt.CatalogIntentID || contract.PendingPlanId != 0 || contract.PendingEffectiveAt != 0 {
+				return walletRenewalDuplicateFactsError("catalog intent %d is inconsistent", attempt.CatalogIntentID)
+			}
 		}
 
 		recovered.OrderID = order.Id
@@ -625,10 +773,28 @@ func walletRenewalDuplicateFactsError(format string, args ...interface{}) error 
 func walletContractIsRenewable(contract model.UserSubscriptionContract) bool {
 	return contract.Status == model.SubscriptionContractStatusActive &&
 		contract.RenewalSource == model.SubscriptionRenewalSourceWallet &&
-		contract.RenewalStatus == model.SubscriptionRenewalStatusEnabled &&
 		contract.CurrentPlanId > 0 &&
 		contract.CurrentPeriodEnd > 0 &&
 		contract.CurrentPeriodEnd <= common.GetTimestamp()
+}
+
+func pauseWalletCatalogRenewalForBalanceTx(tx *gorm.DB, contract *model.UserSubscriptionContract, result *WalletSubscriptionRenewalResult) error {
+	if tx == nil || contract == nil {
+		return errors.New("subscription renewal facts are incomplete")
+	}
+	update := tx.Model(&model.UserSubscriptionContract{}).
+		Where("id = ? AND status = ?", contract.Id, model.SubscriptionContractStatusActive).
+		Updates(map[string]interface{}{
+			"renewal_status": model.SubscriptionRenewalStatusPausedInsufficientBalance,
+			"updated_at":     common.GetTimestamp(),
+		})
+	if update.Error != nil || update.RowsAffected != 1 {
+		return firstError(update.Error, ErrSubscriptionChangeInProgress)
+	}
+	if result != nil {
+		result.PausedStatus = model.SubscriptionRenewalStatusPausedInsufficientBalance
+	}
+	return nil
 }
 
 func pauseWalletRenewalTx(tx *gorm.DB, contract *model.UserSubscriptionContract, status string, result *WalletSubscriptionRenewalResult) error {
