@@ -56,6 +56,8 @@ const (
 	seedanceProxyBindingScopePrefix                = "seedance-proxy:v1:"
 	assetMaterializationProviderTokenSpaceMaterial = "tokenspace_material"
 	tokenSpaceMaterialBindingScopePrefix           = "tokenspace-material:v1:"
+	assetMaterializationProviderVirtualCharacter   = "virtual_character"
+	virtualCharacterBindingScopePrefix             = "virtual-character:v1:"
 )
 
 type assetMaterializationChannelConfig struct {
@@ -73,6 +75,20 @@ type assetMaterializationProviderDescriptor struct {
 }
 
 var assetMaterializationProviderDescriptors = map[string]assetMaterializationProviderDescriptor{
+	assetMaterializationProviderVirtualCharacter: {
+		MaterializerFactory: func(config assetMaterializationChannelConfig) AssetMaterializer {
+			return virtualCharacterAssetBindingMaterializer{}
+		},
+		BindingScope: func(config assetMaterializationChannelConfig, options AssetMaterializeOptions) (string, error) {
+			scope := virtualCharacterBindingScope(config.GatewayOrigin, options.APIKey)
+			if scope == "" {
+				return "", ErrAssetBindingUnavailable
+			}
+			return scope, nil
+		},
+		ValidateConfig:   validateVirtualCharacterAssetMaterializationConfig,
+		CredentialScoped: true,
+	},
 	assetMaterializationProviderSeedanceProxy: {
 		MaterializerFactory: func(config assetMaterializationChannelConfig) AssetMaterializer {
 			return seedanceProxyAssetBindingMaterializer{config: config}
@@ -353,7 +369,7 @@ func MaterializeAssetBindingsForChannel(ctx context.Context, userID int, set Ass
 	for _, reference := range set.references {
 		asset := set.assets[reference.PublicID]
 		if binding, ok := activeAssetReferenceBindingForScope(asset.Bindings, channel.Id, bindingScope); ok {
-			rewriteMap["asset://"+reference.PublicID] = assetBindingRewriteURI(binding.UpstreamAssetID)
+			rewriteMap["asset://"+reference.PublicID] = assetBindingRewriteURIForScope(binding.BindingScope, binding.UpstreamAssetID, binding.UpstreamGroupID)
 			continue
 		}
 		if legacyRealPersonAssetCanUseChannel(asset, channel) {
@@ -1058,11 +1074,22 @@ func refreshProcessingAssetBinding(ctx context.Context, asset *model.Asset, chan
 		}
 		switch status {
 		case model.AssetStatusActive:
+			// This provider has no asset groups: the private group field stores
+			// the generation reference, while UpstreamAssetID remains the stable
+			// management ID used for polling and the CAS fence.
+			var referenceID *string
+			if strings.HasPrefix(bindingScope, virtualCharacterBindingScopePrefix) {
+				if assetBindingRewriteURIForScope(bindingScope, upstreamAssetID, result.UpstreamGroupID) == "" {
+					return AssetBindingResult{}, ErrAssetBindingInitializing
+				}
+				referenceID = &result.UpstreamGroupID
+			}
 			updated, err := model.RefreshProcessingAssetBindingCAS(model.AssetBindingProcessingRefresh{
 				AssetID:         asset.Id,
 				ChannelID:       channel.Id,
 				BindingScope:    bindingScope,
 				UpstreamAssetID: upstreamAssetID,
+				UpstreamGroupID: referenceID,
 				Status:          model.AssetStatusActive,
 				Now:             assetBindingNow().Unix(),
 			})
@@ -1118,7 +1145,7 @@ func signAssetBindingSourceURL(ctx context.Context, asset model.Asset) (string, 
 }
 
 func activeAssetBinding(binding *model.AssetBinding) bool {
-	return binding != nil && binding.Status == model.AssetStatusActive && strings.TrimSpace(binding.UpstreamAssetId) != ""
+	return binding != nil && binding.Status == model.AssetStatusActive && assetBindingRewriteURIForScope(binding.BindingScope, binding.UpstreamAssetId, binding.UpstreamGroupId) != ""
 }
 
 func processingAssetBinding(binding *model.AssetBinding) bool {
@@ -1128,9 +1155,22 @@ func processingAssetBinding(binding *model.AssetBinding) bool {
 func assetBindingResult(publicID string, binding model.AssetBinding) AssetBindingResult {
 	return AssetBindingResult{
 		PublicURI:  "asset://" + publicID,
-		RewriteURI: assetBindingRewriteURI(binding.UpstreamAssetId),
+		RewriteURI: assetBindingRewriteURIForScope(binding.BindingScope, binding.UpstreamAssetId, binding.UpstreamGroupId),
 		Binding:    binding,
 	}
+}
+
+// Virtual-character bindings keep the stable management ID in UpstreamAssetId
+// and the generation ID in the otherwise unused private UpstreamGroupId field.
+// Never send the management ID to a video model, even for incomplete Active rows.
+func assetBindingRewriteURIForScope(scope, upstreamAssetID, upstreamGroupID string) string {
+	if strings.HasPrefix(scope, virtualCharacterBindingScopePrefix) {
+		if strings.TrimSpace(upstreamAssetID) == "" || !virtualCharacterValidProviderAssetID(upstreamGroupID) {
+			return ""
+		}
+		return "asset://" + upstreamGroupID
+	}
+	return assetBindingRewriteURI(upstreamAssetID)
 }
 
 func assetBindingRewriteURI(upstreamAssetID string) string {
