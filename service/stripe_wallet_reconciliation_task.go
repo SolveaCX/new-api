@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	stripeWalletGraceSeconds       = int64(5 * 60)
 	stripeWalletHistorySeconds     = int64(7 * 24 * 60 * 60)
 	stripeWalletOverlapSeconds     = int64(10 * 60)
 	stripeWalletRetention          = int64(30 * 24 * 60 * 60)
@@ -36,8 +35,8 @@ var (
 	errStripeWalletIdentity = errors.New("Stripe wallet identity conflict")
 )
 
-// This task observes payments. It deliberately never calls payment fulfillment,
-// wallet recharge, invoice mutation or business order status update functions.
+// Stripe remains read-only. Verified paid wallet orders are fulfilled locally
+// through the same atomic, idempotent recharge path as the payment webhook.
 func StartStripeWalletReconciliationTask() {
 	if !common.IsMasterNode || strings.EqualFold(strings.TrimSpace(os.Getenv("STRIPE_WALLET_RECONCILIATION_ENABLED")), "false") {
 		return
@@ -81,6 +80,7 @@ type stripeWalletReconciler struct {
 	notify    func(context.Context, stripeWalletNotification) error
 	now       func(context.Context) (int64, error)
 	prices    func() map[string]int64
+	repair    func(context.Context, *model.StripeWalletPaymentCheck, model.StripeWalletRepairPayment) (bool, error)
 	localOnly bool
 }
 
@@ -322,7 +322,7 @@ func (r *stripeWalletReconciler) ingest(ctx context.Context, scope string, live 
 		Scope: scope, SessionID: snapshot.ID, EventID: event.ID, TradeNo: tradeNo,
 		PaidAt: event.Created, Amount: snapshot.AmountTotal, Currency: strings.ToUpper(string(snapshot.Currency)),
 		Historical:  historical,
-		NextCheckAt: event.Created + stripeWalletGraceSeconds,
+		NextCheckAt: event.Created,
 	}
 	return model.InsertStripeWalletPaymentCheck(ctx, &check)
 }
@@ -332,7 +332,7 @@ func (r *stripeWalletReconciler) quarantineEvent(ctx context.Context, scope stri
 	// reparsing a poison event. No untrusted order association can mark it recovered.
 	return model.InsertStripeWalletPaymentCheck(ctx, &model.StripeWalletPaymentCheck{
 		Scope: scope, SessionID: "event:" + event.ID, EventID: event.ID,
-		PaidAt: event.Created, NextCheckAt: event.Created + stripeWalletGraceSeconds,
+		PaidAt: event.Created, NextCheckAt: event.Created,
 		Historical:     historical,
 		DiscoveryError: detail,
 	})
@@ -456,7 +456,12 @@ func (r *stripeWalletReconciler) processCheck(ctx context.Context, check *model.
 	if err != nil {
 		return err
 	}
-	check.NextCheckAt = max(now+60, check.PaidAt+stripeWalletGraceSeconds)
+	check.NextCheckAt = now + 60
+	// This marker commits atomically with the wallet credit. A restart or failed
+	// notification must deliver its audit notice without attempting another credit.
+	if check.AutoRepairedAt > 0 {
+		return r.deliverCheck(ctx, check, "auto_repaired")
+	}
 	if r.localOnly && !check.SessionVerified && !check.WalletVerified && check.DiscoveryError == "" {
 		return model.SaveStripeWalletPaymentCheck(ctx, check, token)
 	}
@@ -478,15 +483,38 @@ func (r *stripeWalletReconciler) processCheck(ctx context.Context, check *model.
 		return errors.Join(statusErr, model.SaveStripeWalletPaymentCheck(ctx, check, token))
 	}
 	check.LocalStatus = status
-	if now < check.PaidAt+stripeWalletGraceSeconds {
-		return model.SaveStripeWalletPaymentCheck(ctx, check, token)
-	}
 	if status == common.TopUpStatusSuccess && check.FirstAnomalyAt == 0 {
 		check.ClosedAt = now // Normal payment, never an observed anomaly.
 		return model.SaveStripeWalletPaymentCheck(ctx, check, token)
 	}
+	if stripeWalletRepairableStatus(status) && !r.localOnly {
+		if check.FirstAnomalyAt == 0 {
+			check.FirstAnomalyAt = now
+		}
+		if err := model.CheckpointStripeWalletPaymentCheck(ctx, check, token); err != nil {
+			return err
+		}
+		if err := r.repairPaidOrder(ctx, check); err != nil {
+			if errors.Is(err, model.ErrStripeWalletReconciliationLeaseLost) {
+				return err
+			}
+			check.RepairError = sanitizeDingTalkAlertText(err.Error())
+		} else {
+			check.RepairError = ""
+		}
+		status, statusErr = r.localStatus(ctx, check)
+		if statusErr != nil {
+			return errors.Join(statusErr, model.SaveStripeWalletPaymentCheck(ctx, check, token))
+		}
+		check.LocalStatus = status
+		if check.AutoRepairedAt > 0 {
+			return r.deliverCheck(ctx, check, "auto_repaired")
+		}
+	}
 	kind := ""
-	if status == common.TopUpStatusSuccess || check.RecoveredAt != 0 {
+	if check.AutoRepairedAt > 0 {
+		kind = "auto_repaired"
+	} else if status == common.TopUpStatusSuccess || check.RecoveredAt != 0 {
 		if check.RecoveredAt == 0 {
 			check.RecoveredAt = now
 		}
@@ -514,6 +542,12 @@ func (r *stripeWalletReconciler) processCheck(ctx context.Context, check *model.
 
 func (r *stripeWalletReconciler) deliverCheck(ctx context.Context, check *model.StripeWalletPaymentCheck, kind string) error {
 	token := check.LeaseToken
+	if err := model.RefreshStripeWalletRepairAudit(ctx, check, token); err != nil {
+		return err // Never close a payment notice using a stale financial outcome.
+	}
+	if check.AutoRepairedAt > 0 {
+		check.RepairError = ""
+	}
 	// Re-read immediately before sending so a callback that completed after the
 	// initial observation cancels the stale failure message.
 	status, err := r.localStatus(ctx, check)
@@ -525,7 +559,9 @@ func (r *stripeWalletReconciler) deliverCheck(ctx context.Context, check *model.
 		return err
 	}
 	check.LocalStatus = status
-	if status == common.TopUpStatusSuccess || check.RecoveredAt != 0 {
+	if check.AutoRepairedAt > 0 {
+		kind = "auto_repaired"
+	} else if status == common.TopUpStatusSuccess || check.RecoveredAt != 0 {
 		kind = "recovered"
 		if check.RecoveredAt == 0 {
 			check.RecoveredAt = now
@@ -543,7 +579,8 @@ func (r *stripeWalletReconciler) deliverCheck(ctx context.Context, check *model.
 		TradeNo: check.TradeNo, UserID: check.UserID, Amount: check.Amount, Currency: check.Currency,
 		PaidAt: check.PaidAt, FirstAnomalyAt: check.FirstAnomalyAt, LocalStatus: check.LocalStatus,
 		NotificationCount: check.NotificationCount,
-		Detail:            strings.TrimSpace(check.DiscoveryError + " " + check.VerificationError),
+		AutoRepairedAt:    check.AutoRepairedAt, RepairFromStatus: check.RepairFromStatus, RepairCredit: check.RepairCredit,
+		Detail: strings.TrimSpace(check.DiscoveryError + " " + check.VerificationError + " " + check.RepairError),
 	})
 	if sendErr == nil {
 		// Use the successful send time, not when the batch was first claimed.
@@ -553,7 +590,7 @@ func (r *stripeWalletReconciler) deliverCheck(ctx context.Context, check *model.
 		}
 		check.LastNotifiedAt = sentAt
 		check.NotificationCount++
-		if kind == "recovered" {
+		if kind == "recovered" || kind == "auto_repaired" {
 			check.ClosedAt = sentAt
 		}
 	}
