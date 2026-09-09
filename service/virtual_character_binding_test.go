@@ -146,15 +146,15 @@ func TestVirtualCharacterBindingScopesAndMediaCapability(t *testing.T) {
 
 func TestVirtualCharacterStrictReadinessPreparesAndRewritesReference(t *testing.T) {
 	db, _ := setupServiceModelAccessDB(t)
-	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.AssetModelCoverageTarget{}, &model.AssetModelReadiness{}))
+	require.NoError(t, db.AutoMigrate(&model.Asset{}, &model.AssetBinding{}, &model.BytePlusAsset{}, &model.AssetModelCoverageTarget{}, &model.AssetModelReadiness{}))
 	installAssetServiceTestDeps(t)
 	oldStrict := AssetModelCoverageStrictEnabled
 	AssetModelCoverageStrictEnabled = true
 	t.Cleanup(func() { AssetModelCoverageStrictEnabled = oldStrict })
 	seedModelAccessScope(t, db, 272, "default", constant.ChannelTypeDoubaoVideo, "seedance-2.0")
 	channel := virtualCharacterBindingTestChannel()
-	require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
-		"key": channel.Key, "other_settings": channel.OtherSettings,
+	require.NoError(t, db.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(model.Channel{
+		Key: channel.Key, OtherSettings: channel.OtherSettings,
 	}).Error)
 	setModelAccessBilling(t, map[string]float64{"seedance-2.0": 1}, nil, nil)
 	recorder := &virtualCharacterBindingRecorder{}
