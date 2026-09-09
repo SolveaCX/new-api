@@ -78,19 +78,17 @@ func BuildRobotsTxt(baseURL string) string {
 	}, "\n")
 }
 
-// Console HTML routes must remain crawlable long enough for search engines to
-// observe the X-Robots-Tag: noindex header applied by the web router. Blocking
-// the whole host in robots.txt prevents that header from being discovered and
-// leaves previously indexed console URLs in the "blocked by robots.txt" state.
-// Backend and asset paths stay disallowed because they are not search content.
+// BuildConsoleRobotsTxt leaves console HTML routes crawlable so crawlers can
+// observe the X-Robots-Tag: noindex header and remove stale indexed URLs.
+// Backend and asset paths remain disallowed because they are not search content.
 func BuildConsoleRobotsTxt() string {
 	return strings.Join([]string{
 		"User-agent: *",
 		"Allow: /",
-		"Disallow: /api/",
-		"Disallow: /v1/",
-		"Disallow: /v1beta/",
-		"Disallow: /assets/",
+		"Disallow: /api",
+		"Disallow: /v1",
+		"Disallow: /v1beta",
+		"Disallow: /assets",
 		"Disallow: /_next/",
 		"Disallow: /cdn-cgi/",
 		"",

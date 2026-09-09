@@ -56,11 +56,47 @@ describe("website proxy language redirects", () => {
     expect(response?.headers.get("location")).toBe("https://flatkey.ai/pricing?vendor=OpenAI");
   });
 
+  test("redirects a reverse-proxied HTTP request to HTTPS", async () => {
+    const response = await proxy(
+      new NextRequest("http://flatkey.ai/models", {
+        headers: { "x-forwarded-proto": "http" },
+      })
+    );
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/models");
+  });
+
+  test("removes a trailing slash from non-root canonical paths", async () => {
+    const response = await proxy(request("/models/?utm_source=gsc"));
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/models?utm_source=gsc");
+  });
+
+  test("redirects the legacy tokenex host to the canonical site origin", async () => {
+    const response = await proxy(new NextRequest("https://tokenex.flatkey.ai/?source=gsc"));
+
+    expect(response?.status).toBe(301);
+    expect(response?.headers.get("location")).toBe("https://flatkey.ai/?source=gsc");
+  });
+
+  test("does not redirect the separate console or router hosts", async () => {
+    const consoleResponse = await proxy(new NextRequest("https://console.flatkey.ai/pricing"));
+    const routerResponse = await proxy(new NextRequest("https://router.flatkey.ai/pricing"));
+
+    expect(consoleResponse?.headers.get("location")).toBeNull();
+    expect(routerResponse?.headers.get("location")).toBeNull();
+  });
+
   test("resolves legacy legal and model casing paths to permanent canonical paths", () => {
     expect(resolvePermanentSeoRedirectPath("/privacy-policy")).toBe("/privacy");
     expect(resolvePermanentSeoRedirectPath("/zh/privacy-policy")).toBe("/zh/privacy");
     expect(resolvePermanentSeoRedirectPath("/zh/user-agreement")).toBe("/zh/terms");
     expect(resolvePermanentSeoRedirectPath("/en/user-agreement")).toBe("/terms");
+    expect(resolvePermanentSeoRedirectPath("/careers.html")).toBe("/careers");
+    expect(resolvePermanentSeoRedirectPath("/ja/careers.html")).toBe("/ja/careers");
+    expect(resolvePermanentSeoRedirectPath("/zh/legal-sla")).toBe("/zh/sla");
     expect(resolvePermanentSeoRedirectPath("/id/models/MiniMax-H3")).toBe("/id/models/minimax-h3");
     expect(resolvePermanentSeoRedirectPath("/id/models/minimax-h3")).toBeNull();
   });

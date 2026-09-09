@@ -44,9 +44,11 @@ const walletRechargeKeys = [
   'Top up {{price}}',
   'Lowest entry to get started',
   'Pay $10, get $13 in credit',
+  'Top up $10, get $3 bonus',
   'Prepaid balance, no surprise bill',
   'No contract required. Add balance, create a key, copy the base_url, and test your first request.',
   'Pay $20, get $28 in credit',
+  'Top up $30, get $15 bonus',
   'Best for trying real API workloads.',
   'Most Popular',
   'Bonus credit on every top-up',
@@ -54,6 +56,7 @@ const walletRechargeKeys = [
   'Enterprise-grade privacy',
   'One invoice across providers',
   'Pay $200, get $300 in credit',
+  'Top up $100, get $70 bonus',
   'Best value for production testing, team workflows, and sustained model traffic.',
   'Highest prepaid value',
   'Custom',
@@ -123,6 +126,9 @@ describe('wallet recharge i18n', () => {
       'Models are priced at 60–90% of the official list. Top up $200 and get $100 free — both discounts stack, as low as 50% of the official price.',
       'Custom usage, routing, and invoicing',
       'For higher monthly usage, invoicing, team procurement, or custom routing discounts.',
+      'Top up $10, get $3 bonus',
+      'Top up $30, get $15 bonus',
+      'Top up $100, get $70 bonus',
     ] as const
 
     for (const [locale, translations] of Object.entries(localeTranslations)) {

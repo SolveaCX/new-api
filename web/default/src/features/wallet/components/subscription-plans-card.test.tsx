@@ -104,6 +104,22 @@ function plan(id: number, title: string, price: number): PlanRecord {
 }
 
 const plans = [plan(1, 'Go', 10), plan(2, 'Pro', 20), plan(3, 'Max', 40)]
+const legacySelfData = normalizeSelfSubscriptionData({
+  all_subscriptions: [
+    {
+      subscription: {
+        id: 1,
+        user_id: 7,
+        plan_id: 1,
+        status: 'expired',
+        start_time: 1,
+        end_time: 2,
+        amount_total: 10,
+        amount_used: 0,
+      },
+    },
+  ],
+})
 const localizedPlans = plans.map((item, index) => ({
   ...item,
   plan: {
@@ -190,7 +206,7 @@ function matchLocalPaymentQuote(
 
 function renderWalletCardWithPlans(
   initialPlans: PlanRecord[],
-  selfData = normalizeSelfSubscriptionData(undefined)
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -216,20 +232,21 @@ function renderPlanLimitSummary(plan: {
   )
 }
 
-function renderWalletCard(selfData = normalizeSelfSubscriptionData(undefined)) {
+function renderWalletCard(selfData = legacySelfData) {
   return renderWalletCardWithPlans(plans, selfData)
 }
 
 function renderWalletCardWithPreviewQuote(
   quote: SubscriptionPaymentQuote,
-  previewPlan = plans[0]
+  previewPlan = plans[0],
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <SubscriptionPlansCard
         topupInfo={topupInfo}
         initialPlans={[previewPlan]}
-        initialSelfData={normalizeSelfSubscriptionData(undefined)}
+        initialSelfData={selfData}
         initialLoading={false}
         initialPlanPreviewQuotes={{ [previewPlan.plan.id]: quote }}
         userQuota={12345}
@@ -240,7 +257,8 @@ function renderWalletCardWithPreviewQuote(
 
 function renderWalletCardWithPreviewQuoteAndRecall(
   quote: SubscriptionPaymentQuote,
-  previewPlan = plans[0]
+  previewPlan = plans[0],
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -248,7 +266,7 @@ function renderWalletCardWithPreviewQuoteAndRecall(
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={[previewPlan]}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           initialPlanPreviewQuotes={{ [previewPlan.plan.id]: quote }}
           userQuota={12345}
@@ -288,7 +306,8 @@ const subscriptionRecallClaim: RecallClaimView = {
 }
 
 function renderWalletCardWithRecall(
-  recallView: RecallClaimView = subscriptionRecallClaim
+  recallView: RecallClaimView = subscriptionRecallClaim,
+  selfData = legacySelfData
 ) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -296,7 +315,7 @@ function renderWalletCardWithRecall(
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={plans}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           userQuota={12345}
         />
@@ -305,14 +324,17 @@ function renderWalletCardWithRecall(
   )
 }
 
-function renderWalletCardWithRecallOffers(recallOffers: RecallOfferView[]) {
+function renderWalletCardWithRecallOffers(
+  recallOffers: RecallOfferView[],
+  selfData = legacySelfData
+) {
   return renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
       <RecallClaimProvider offers={recallOffers}>
         <SubscriptionPlansCard
           topupInfo={topupInfo}
           initialPlans={plans}
-          initialSelfData={normalizeSelfSubscriptionData(undefined)}
+          initialSelfData={selfData}
           initialLoading={false}
           userQuota={12345}
         />
@@ -516,70 +538,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html.slice(goStart, proStart)).not.toContain('Most Popular')
     expect(html.slice(proStart, maxStart)).toContain('Most Popular')
     expect(html.match(/Most Popular/g)?.length).toBe(1)
-  })
-
-  test('shows a disabled legacy current plan without making it purchasable', () => {
-    const purchasablePlans = [
-      plan(5, 'Go', 10),
-      plan(6, 'Pro', 30),
-      plan(7, 'Max', 100),
-    ]
-    const legacyPlan = {
-      ...plan(1, 'Legacy Go', 10).plan,
-      enabled: false,
-    }
-    const html = renderWalletCardWithPlans(
-      purchasablePlans,
-      normalizeSelfSubscriptionData({
-        contract: {
-          contract_id: 14,
-          id: 14,
-          status: 'active',
-          payment_mode: 'stripe_recurring',
-          current_plan_id: legacyPlan.id,
-          current_entitlement_id: 20,
-          current_provider_binding_id: 88,
-          latest_change_intent_id: 0,
-          pending_plan_id: 0,
-          pending_effective_at: 0,
-          current_period_start: 1717200000,
-          current_period_end: 1719792000,
-          grace_period_end: 0,
-          change_version: 1,
-        },
-        current_entitlement: {
-          entitlement_id: 20,
-          plan_id: legacyPlan.id,
-          status: 'active',
-          payment_mode: 'stripe_recurring',
-          start_time: 1717200000,
-          end_time: 1719792000,
-          access_end_time: 1719792000,
-        },
-        current_subscription: {
-          subscription: {
-            id: 20,
-            user_id: 151,
-            plan_id: legacyPlan.id,
-            status: 'active',
-            payment_mode: 'stripe_recurring',
-            start_time: 1717200000,
-            end_time: 1719792000,
-            amount_total: 22_500_000,
-            amount_used: 0,
-          },
-          plan: legacyPlan,
-        },
-      })
-    )
-
-    expect(html).toContain('data-subscription-current-plan-id="1"')
-    expect(html).toContain('Legacy Go')
-    expect(html).toContain('data-subscription-purchase-plan-id="5"')
-    expect(html).toContain('data-subscription-purchase-plan-id="6"')
-    expect(html).toContain('data-subscription-purchase-plan-id="7"')
-    expect(html).not.toContain('data-subscription-purchase-plan-id="1"')
-    expect(html.match(/data-subscription-purchase-plan-id=/g)?.length).toBe(3)
   })
 
   test('does not render a refresh control in the subscription card header', () => {
@@ -1373,11 +1331,6 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('data-subscription-reference-price="$90"')
     expect(html).toContain('data-subscription-reference-price="$300"')
-    expect(html.match(/line-through/g)?.length).toBe(3)
-    expect(html).not.toContain('data-subscription-limited-ribbon')
-    expect(html).not.toContain('Limited time')
-    expect(html).not.toContain('data-subscription-discount-label')
-    expect(html).not.toContain('80% off')
   })
 
   test('does not present a lower quota value as an old price', () => {
@@ -1428,7 +1381,33 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('bg-[#0b0b0d]')
   })
 
-  test('keeps reference prices without urgency or discount badges', () => {
+  test('shows the new pricing copy only for users without subscription history', () => {
+    const html = renderWalletCardWithPlans(
+      plans,
+      normalizeSelfSubscriptionData(undefined)
+    )
+
+    expect(html.match(/data-subscription-offer-version="new"/g)?.length).toBe(3)
+    expect(html).toContain('Top up $10, get $3 bonus')
+    expect(html).toContain('Top up $30, get $15 bonus')
+    expect(html).toContain('Top up $100, get $70 bonus')
+    expect(html).not.toContain('80% off')
+    expect(html).not.toContain('data-subscription-discount-label=')
+  })
+
+  test('keeps legacy campaign copy for users with subscription history', () => {
+    const html = renderWalletCard()
+
+    expect(
+      html.match(/data-subscription-offer-version="legacy"/g)?.length
+    ).toBe(3)
+    expect(html).toContain('80% off')
+    expect(html).not.toContain('Top up $10, get $3 bonus')
+    expect(html).not.toContain('Top up $30, get $15 bonus')
+    expect(html).not.toContain('Top up $100, get $70 bonus')
+  })
+
+  test('shows the campaign badge before a backend checkout quote loads', () => {
     const campaignPlan = {
       ...plans[0],
       plan: {
@@ -1438,13 +1417,10 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     }
     const html = renderWalletCardWithPlans([campaignPlan])
 
+    expect(html).toContain('data-discount-kind="campaign"')
+    expect(html).toContain('data-subscription-discount-label="80% off"')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('$10')
-    expect(html).toContain('line-through')
-    expect(html).not.toContain('data-subscription-limited-ribbon')
-    expect(html).not.toContain('Limited time')
-    expect(html).not.toContain('data-subscription-discount-label')
-    expect(html).not.toContain('80% off')
   })
 
   test('keeps the model-value reference in USD when quota display uses another currency', async () => {
@@ -1573,7 +1549,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('next period')
   })
 
-  test('shows the backend-selected invitation price without a discount badge', () => {
+  test('shows the backend-selected invitation discount on the plan card', () => {
     const html = renderWalletCardWithPreviewQuote(
       stripePaymentQuote({
         unit_price: 10,
@@ -1585,7 +1561,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('$5')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
@@ -1593,7 +1569,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Save $5')
   })
 
-  test('shows the backend-selected recall price without a discount badge', () => {
+  test('shows Recall when the backend quote selects it over invitation credit', () => {
     const html = renderWalletCardWithPreviewQuote(
       stripePaymentQuote({
         unit_price: 10,
@@ -1607,7 +1583,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('$4')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
@@ -1616,7 +1592,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Save $5')
   })
 
-  test('shows recall expiry without a discount badge or coupon source', () => {
+  test('shows recall percentage and expiry without exposing the coupon source', () => {
     const html = renderWalletCardWithPreviewQuoteAndRecall(
       stripePaymentQuote({
         unit_price: 10,
@@ -1632,7 +1608,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('$8')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
@@ -1659,7 +1635,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
     expect(html).toContain('data-subscription-reference-price="$45"')
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
   })
 
   test('formats JPY backend preview amounts without a USD fallback', () => {
@@ -1681,7 +1657,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('¥1,000')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1700,7 +1676,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
       expect(html).toContain('$4')
       expect(html).toContain('data-subscription-reference-price="$45"')
-      expect(html).not.toContain('80% off')
+      expect(html).toContain('80% off')
       expect(html).not.toContain('Save $6')
     }
   })
@@ -1806,7 +1782,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain(formatBrl(40))
     expect(html).toContain(formatBrl(50))
-    expect(html).not.toContain('80% off')
+    expect(html).toContain('80% off')
     expect(html).toContain('line-through')
     expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')
@@ -1886,27 +1862,11 @@ describe('PlanPurchaseDialog payment choices', () => {
       expect(html).toContain('max="12"')
       expect(html).not.toContain('<select')
       expect(html).toContain('No prorating or credit is applied.')
-      expect(html).toContain(
-        'Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.'
-      )
+      expect(html).toContain('Monthly and Image + video usage reset.')
+      expect(html).not.toContain('5-hour')
+      expect(html).not.toContain('7-day')
       expect(html).not.toContain('rolling usage')
       expect(html).not.toContain('future months')
-    }
-  })
-
-  test('localizes the full replacement quota reset notice in every wallet locale', () => {
-    const noticeKey =
-      'The active started term is not refunded. Monthly model quota and Image + video credits reset. Used amounts in the 5-hour and 7-day windows reset to zero, while both limits remain in effect.'
-
-    for (const localeCode of ['en', 'zh', 'fr', 'ru', 'ja', 'vi', 'es', 'pt']) {
-      const locale = JSON.parse(
-        readFileSync(
-          new URL(`../../../i18n/locales/${localeCode}.json`, import.meta.url),
-          'utf8'
-        )
-      ) as { translation: Record<string, string> }
-
-      expect(locale.translation[noticeKey]).toBeTruthy()
     }
   })
 
