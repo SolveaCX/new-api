@@ -10,7 +10,16 @@ export async function generateMetadata({ params }: Props) {
   const { locale } = await params;
   if (!isLocale(locale) || !CAREERS_LOCALES.includes(locale)) return {};
   const isZh = locale === "zh";
-  return buildMetadata({ title: isZh ? "商务拓展代表 — 招聘" : "Business Development Representative — Careers", description: isZh ? "加入 Flatkey San Jose 团队，在湾区推动 AI 基础设施落地。" : "Own Bay Area growth for Flatkey's unified AI API gateway.", pathname: "/careers/business-development-representative", locale, locales: ["en", "zh"] });
+  // Match the careers index: only Chinese has localized content here.
+  // Other language routes remain accessible, but are English-copy fallbacks.
+  return buildMetadata({
+    title: isZh ? "商务拓展代表 — 招聘" : "Business Development Representative — Careers",
+    description: isZh ? "加入 Flatkey San Jose 团队，在湾区推动 AI 基础设施落地。" : "Own Bay Area growth for Flatkey's unified AI API gateway.",
+    pathname: "/careers/business-development-representative",
+    locale,
+    locales: isZh ? ["en", "zh"] : [],
+    noIndex: !isZh,
+  });
 }
 
 export default async function Page({ params }: Props) {

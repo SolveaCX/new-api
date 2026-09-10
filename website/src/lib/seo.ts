@@ -84,7 +84,7 @@ export function buildMetadata(input: SeoInput): Metadata {
     metadataBase: new URL(SITE_ORIGIN),
     alternates: {
       canonical,
-      ...(input.unlocalized || fallbackLocaleNoIndex
+      ...(input.unlocalized || fallbackLocaleNoIndex || locales.length === 0
         ? {}
         : {
             languages: {
