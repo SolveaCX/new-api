@@ -120,10 +120,7 @@ async function fetchBloggerJson<T>(path: string): Promise<T | null> {
 
   try {
     const response = await fetch(`${BLOGGER_API_URL}${path}`, {
-      // Published post availability is the source of truth for sitemap and
-      // hreflang generation. Do not let a stale Next cache keep removed slugs
-      // discoverable after they have been unpublished or deleted in Blogger.
-      cache: "no-store",
+      next: { revalidate: BLOG_REVALIDATE_SECONDS },
       headers: {
         accept: "application/json",
         "x-access-key": BLOGGER_ACCESS_KEY,
@@ -273,10 +270,15 @@ export async function getBlogCategories(): Promise<BlogCategory[]> {
 }
 
 export async function getBlogPost(slug: string, locale: Locale = DEFAULT_LOCALE): Promise<BlogPost | null> {
-  // The Blogger detail endpoint can return a redirect or a stale 404 while
-  // the published list endpoint still contains the article. Treat the list
-  // as the source of truth so article pages, sitemap entries, and hreflang
-  // annotations all use the same published set.
+  // Use the detail endpoint as the authoritative existence check. The list
+  // endpoint can retain stale rows after an article is unpublished/deleted,
+  // which otherwise leaks dead slugs into pages, sitemap and hreflang.
+  const detail = await fetchBloggerJson<BloggerPost>(
+    `/api/integration/sites/${encodeURIComponent(BLOGGER_SITE_SLUG)}/posts/${encodeURIComponent(slug)}?language=${encodeURIComponent(locale)}`,
+  );
+  if (detail !== null) return mapBloggerPost(detail);
+
+  // Keep a list fallback for providers that do not implement the detail route.
   const bloggerPosts = await getAllBloggerPosts(locale);
   if (bloggerPosts !== null) {
     return bloggerPosts.find((post) => post.slug === slug) ?? null;
