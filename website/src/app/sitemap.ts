@@ -16,7 +16,10 @@ import { SITE_ORIGIN } from "@/lib/origins";
 
 // The model list comes from the live public catalog. Do not prerender this
 // route during a website build where the console API may be unavailable.
-export const dynamic = "force-dynamic";
+// Refresh periodically instead of rebuilding the full multi-language sitemap
+// on every crawler request. This keeps the route responsive while still
+// picking up published content and pricing changes within a few minutes.
+export const revalidate = 300;
 
 const base = SITE_ORIGIN;
 const REDIRECT_MODEL_LANDING_PATHS = new Set([
