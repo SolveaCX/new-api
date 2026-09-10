@@ -1,6 +1,7 @@
 import sanitizeHtml from "sanitize-html";
-import { DEFAULT_LOCALE, LOCALES, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
+import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, consoleUrl } from "@/lib/origins";
+import { seoIndexableLocales } from "@/lib/seo";
 
 const API_BASE_URL = APP_CONSOLE_ORIGIN;
 const BLOGGER_API_URL =
@@ -8,7 +9,10 @@ const BLOGGER_API_URL =
 const BLOGGER_SITE_SLUG = process.env.BLOGGER_SITE_SLUG?.trim() || "flatkey";
 const BLOGGER_ACCESS_KEY = process.env.BLOGGER_ACCESS_KEY?.trim() ?? "";
 const BLOG_REVALIDATE_SECONDS = 300;
-const BLOGGER_PAGE_SIZE = 100;
+// Lists contain full article HTML. Production batches of 100 exceeded Next's
+// 2 MB fetch-cache entry limit (including base64 overhead), disabling caching.
+// Keep batches small without truncating the catalog: paginate until exhausted.
+const BLOGGER_PAGE_SIZE = 20;
 const SITE_ORIGIN = "https://flatkey.ai";
 const INTERNAL_PUBLIC_PATH_PREFIXES = [
   "/about",
@@ -289,10 +293,20 @@ export async function getBlogPost(slug: string, locale: Locale = DEFAULT_LOCALE)
 }
 
 export async function getBlogPostLocales(slug: string): Promise<Locale[]> {
+  if (!isBloggerEnabled()) {
+    const posts = await getAllBlogPosts(DEFAULT_LOCALE);
+    return posts.some((post) => post.slug === slug) ? [DEFAULT_LOCALE] : [];
+  }
+
+  // Hreflang needs this article's existence, not every article's HTML in every
+  // language. Use the same cached detail URL as the article renderer. Do not
+  // advertise a translation from a list fallback when its detail is unavailable.
   const localizedPosts = await Promise.all(
-    LOCALES.map(async (locale) => {
-      const posts = await getAllBlogPosts(locale);
-      return posts.some((post) => post.slug === slug) ? locale : null;
+    seoIndexableLocales(`/blog/${slug}`).map(async (locale) => {
+      const post = await fetchBloggerJson<BloggerPost>(
+        `/api/integration/sites/${encodeURIComponent(BLOGGER_SITE_SLUG)}/posts/${encodeURIComponent(slug)}?language=${encodeURIComponent(locale)}`,
+      );
+      return post !== null && post.slug === slug && post.language === locale ? locale : null;
     })
   );
 
