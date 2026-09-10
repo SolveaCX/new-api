@@ -202,8 +202,7 @@ func buildStripeTopUpCurrencyPrices(amountOptions []int) map[string]map[int]int6
 				continue
 			}
 			for currency, amountMinor := range stripePrices {
-				expectedAmountMinor, ok := expectedStripeTopUpAmountMinor(currency, int64(amount))
-				if !ok || amountMinor != expectedAmountMinor {
+				if !stripeTopUpCurrencySupported(currency) || amountMinor <= 0 {
 					continue
 				}
 				if currencyPrices[currency] == nil {
@@ -663,6 +662,7 @@ func GetUserTopUps(c *gin.Context) {
 func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	keyword := c.Query("keyword")
+	status := c.Query("status")
 
 	var (
 		topups []*model.TopUp
@@ -670,9 +670,9 @@ func GetAllTopUps(c *gin.Context) {
 		err    error
 	)
 	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
+		topups, total, err = model.SearchAllTopUps(keyword, pageInfo, status)
 	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo)
+		topups, total, err = model.GetAllTopUps(pageInfo, status)
 	}
 	if err != nil {
 		common.ApiError(c, err)

@@ -81,8 +81,16 @@ export function resolveModelAliasRedirectPath(pathname: string, modelNames: read
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const canonicalOrigin = new URL(SITE_ORIGIN);
   const redirectPath = resolvePermanentSeoRedirectPath(request.nextUrl.pathname);
-  const shouldCanonicalizeHost = isKnownCanonicalHostAlias(requestHostname(request), canonicalOrigin.hostname);
-  const shouldCanonicalizeProtocol = requestProtocol(request) !== canonicalOrigin.protocol;
+  // Local development is often reached through a desktop reverse proxy that
+  // adds `x-forwarded-proto: https`. Do not turn that into a redirect to the
+  // production site; only canonicalize real public hosts (or an explicitly
+  // forwarded public host used by the production proxy).
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(request.nextUrl.hostname);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const hasPublicForwardedHost = Boolean(forwardedHost && !["localhost", "127.0.0.1", "[::1]"].includes(forwardedHost));
+  const isLocalDevelopment = process.env.NODE_ENV === "development";
+  const shouldCanonicalizeHost = !isLocalDevelopment && !isLocalHost && isKnownCanonicalHostAlias(requestHostname(request), canonicalOrigin.hostname);
+  const shouldCanonicalizeProtocol = !isLocalDevelopment && (!isLocalHost || hasPublicForwardedHost) && requestProtocol(request) !== canonicalOrigin.protocol;
   const canonicalPath = normalizeCanonicalPath(request.nextUrl.pathname);
   const shouldCanonicalizeTrailingSlash = canonicalPath !== request.nextUrl.pathname;
   if (shouldCanonicalizeHost || shouldCanonicalizeProtocol || redirectPath || shouldCanonicalizeTrailingSlash) {

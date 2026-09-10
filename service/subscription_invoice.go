@@ -2217,7 +2217,10 @@ func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*mo
 	return &binding, &contract, &plan, &user, nil
 }
 
-func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot, amountIsSubtotal bool) error {
+func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot, amountIsSubtotalOption ...bool) error {
+	// Keep the legacy test/helper call shape source-compatible while allowing
+	// discount-invoice callers to identify subtotal validation explicitly.
+	amountIsSubtotal := len(amountIsSubtotalOption) > 0 && amountIsSubtotalOption[0]
 	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
 		return errors.New("local contract ownership mismatch")
 	}
@@ -2247,10 +2250,15 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	expectedCurrency := strings.ToUpper(strings.TrimSpace(plan.Currency))
 	expectedBaseMinor, err := stripeMinorUnitAmountForSubscription(plan.PriceAmount, expectedCurrency)
 	if planSnapshot.Typed != nil {
-		expectedPriceID = planSnapshot.Typed.StripePriceID
+		// A frozen purchase snapshot is authoritative for an ordinary renewal,
+		// while a reached pending plan must validate against that target plan's
+		// catalog price.
+		if !pendingPlanAllowed {
+			expectedPriceID = planSnapshot.Typed.StripePriceID
+		}
 		expectedCurrency = planSnapshot.Typed.Currency
 		expectedBaseMinor = planSnapshot.Typed.BasePriceMinor
-	} else if planSnapshot.Found {
+	} else if !pendingPlanAllowed && planSnapshot.Found {
 		if frozenPriceID := strings.TrimSpace(planSnapshot.Snapshot.StripePriceID); frozenPriceID != "" {
 			expectedPriceID = frozenPriceID
 		}

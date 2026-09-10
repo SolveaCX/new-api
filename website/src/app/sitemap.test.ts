@@ -71,6 +71,7 @@ describe("sitemap", () => {
       expect(urls).not.toContain("https://flatkey.ai/id/sla");
       expect(urls).not.toContain("https://flatkey.ai/id/terms");
       expect(urls).not.toContain("https://flatkey.ai/id/usecases");
+      expect(urls).not.toContain("https://flatkey.ai/id/blog/claude-api-proxy-vs-router");
       const aboutEntry = entries.find((entry) => entry.url === "https://flatkey.ai/about");
       expect(aboutEntry?.alternates?.languages).not.toHaveProperty("id-ID");
       const playgroundEntry = entries.find((entry) => entry.url === "https://flatkey.ai/playground");

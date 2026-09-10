@@ -99,6 +99,38 @@ func TestBuildStripeTopUpCurrencyPricesFiltersUnsupportedStripeCurrencies(t *tes
 	require.Equal(t, 2, getterCalls)
 }
 
+func TestBuildStripeTopUpCurrencyPricesUsesConfiguredStripeAmounts(t *testing.T) {
+	originalPriceIDs := setting.StripeTopUpPriceIds
+	originalSecret := setting.StripeApiSecret
+	originalGetter := stripePriceGetter
+	t.Cleanup(func() {
+		setting.StripeTopUpPriceIds = originalPriceIDs
+		setting.StripeApiSecret = originalSecret
+		stripePriceGetter = originalGetter
+		resetStripeTopUpCurrencyPriceCacheForTest()
+	})
+	resetStripeTopUpCurrencyPriceCacheForTest()
+	setting.StripeTopUpPriceIds = `{"30":"price_custom_30"}`
+	setting.StripeApiSecret = "sk_test_custom_topup"
+	stripePriceGetter = func(priceID string, params *stripe.PriceParams) (*stripe.Price, error) {
+		require.Equal(t, "price_custom_30", priceID)
+		require.NotNil(t, params)
+		return &stripe.Price{
+			Currency:   stripe.CurrencyUSD,
+			UnitAmount: 2750,
+			CurrencyOptions: map[string]*stripe.PriceCurrencyOptions{
+				"brl": {UnitAmount: 13490},
+				"eur": {UnitAmount: 2490},
+			},
+		}, nil
+	}
+
+	require.Equal(t, map[string]map[int]int64{
+		"USD": {30: 2750},
+		"BRL": {30: 13490},
+	}, buildStripeTopUpCurrencyPrices([]int{30}))
+}
+
 func TestGetTopUpInfoExposesStripePriceIDsByAmount(t *testing.T) {
 	paymentSetting := operation_setting.GetPaymentSetting()
 	originalAmountOptions := paymentSetting.AmountOptions

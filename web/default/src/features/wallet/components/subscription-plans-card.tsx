@@ -948,15 +948,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                   (discountPreview
                     ? formatPlanPrice(discountPreview.originalTotal, currency)
                     : null)
-                // The campaign badge must be visible before a checkout quote is
-                // loaded. The configured plan/reference price pair is the
-                // source of truth for the static campaign presentation; a
-                // backend quote can still replace the payable total below.
-                const hasCampaignDiscount = Boolean(
-                  showLegacyPlanOffer &&
-                  originalPrice &&
-                  originalPrice !== displayPrice
-                )
                 const isMostPopular =
                   getPlanTier(plan.title) === 'pro' && orderedPlans.length > 1
                 const audience =
@@ -989,14 +980,6 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                         : 'hover:border-primary/50 hover:shadow-lg'
                     )}
                   >
-                    {getPlanTier(plan.title) === 'go' ? (
-                      <div
-                        data-subscription-limited-ribbon
-                        className='pointer-events-none absolute top-3 -right-7 z-10 w-24 rotate-45 border-y border-rose-200 bg-rose-50 py-1 text-center text-[10px] font-semibold tracking-wide text-rose-600 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
-                      >
-                        {t('Limited time')}
-                      </div>
-                    ) : null}
                     <CardContent className='flex h-full flex-col p-4'>
                       <div className='flex min-h-[3.75rem] items-start justify-between gap-3'>
                         <div className='min-w-0'>
@@ -1009,23 +992,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                             </p>
                           ) : null}
                         </div>
-                        <div
-                          className={cn(
-                            'flex shrink-0 flex-col items-end gap-1',
-                            getPlanTier(plan.title) === 'go' && 'pt-6'
-                          )}
-                        >
-                          {hasCampaignDiscount ? (
-                            <span
-                              data-discount-kind={
-                                discountPreview?.discountKind || 'campaign'
-                              }
-                              data-subscription-discount-label='80% off'
-                              className='inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-300'
-                            >
-                              {t('80% off')}
-                            </span>
-                          ) : null}
+                        <div className='flex shrink-0 flex-col items-end gap-1'>
                           {isMostPopular ? (
                             <span className='border-primary/20 inline-flex items-center gap-1 rounded-full border bg-[#f0ebfa] px-2 py-1 text-[11px] font-semibold text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'>
                               <Sparkles className='h-3 w-3' />
@@ -1195,7 +1162,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overscroll-contain overflow-y-auto bg-white px-2 py-1 sm:px-4 sm:py-2'>
+          <div className='h-[min(620px,calc(100vh-8rem))] min-h-0 overflow-y-auto overscroll-contain bg-white px-2 py-1 sm:px-4 sm:py-2'>
             <iframe
               title={t('Talk to sales')}
               src={getTallyEmbedUrl(i18n.language, '/contact')}

@@ -1331,6 +1331,11 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('data-subscription-reference-price="$90"')
     expect(html).toContain('data-subscription-reference-price="$300"')
+    expect(html.match(/line-through/g)?.length).toBe(3)
+    expect(html).not.toContain('data-subscription-limited-ribbon')
+    expect(html).not.toContain('Limited time')
+    expect(html).not.toContain('data-subscription-discount-label')
+    expect(html).not.toContain('80% off')
   })
 
   test('does not present a lower quota value as an old price', () => {
@@ -1395,19 +1400,22 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('data-subscription-discount-label=')
   })
 
-  test('keeps legacy campaign copy for users with subscription history', () => {
+  test('keeps legacy pricing copy without urgency badges', () => {
     const html = renderWalletCard()
 
     expect(
       html.match(/data-subscription-offer-version="legacy"/g)?.length
     ).toBe(3)
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
+    expect(html).not.toContain('Limited time')
+    expect(html).not.toContain('data-subscription-discount-label')
+    expect(html).not.toContain('data-subscription-limited-ribbon')
     expect(html).not.toContain('Top up $10, get $3 bonus')
     expect(html).not.toContain('Top up $30, get $15 bonus')
     expect(html).not.toContain('Top up $100, get $70 bonus')
   })
 
-  test('shows the campaign badge before a backend checkout quote loads', () => {
+  test('keeps reference prices without urgency or discount badges', () => {
     const campaignPlan = {
       ...plans[0],
       plan: {
@@ -1417,10 +1425,13 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     }
     const html = renderWalletCardWithPlans([campaignPlan])
 
-    expect(html).toContain('data-discount-kind="campaign"')
-    expect(html).toContain('data-subscription-discount-label="80% off"')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('$10')
+    expect(html).toContain('line-through')
+    expect(html).not.toContain('data-subscription-limited-ribbon')
+    expect(html).not.toContain('Limited time')
+    expect(html).not.toContain('data-subscription-discount-label')
+    expect(html).not.toContain('80% off')
   })
 
   test('keeps the model-value reference in USD when quota display uses another currency', async () => {
@@ -1549,7 +1560,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('next period')
   })
 
-  test('shows the backend-selected invitation discount on the plan card', () => {
+  test('shows the backend-selected invitation price without a discount badge', () => {
     const html = renderWalletCardWithPreviewQuote(
       stripePaymentQuote({
         unit_price: 10,
@@ -1561,7 +1572,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).toContain('$5')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
@@ -1569,7 +1580,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Save $5')
   })
 
-  test('shows Recall when the backend quote selects it over invitation credit', () => {
+  test('shows the backend-selected recall price without a discount badge', () => {
     const html = renderWalletCardWithPreviewQuote(
       stripePaymentQuote({
         unit_price: 10,
@@ -1583,7 +1594,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
       })
     )
 
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).toContain('$4')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
@@ -1592,7 +1603,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).not.toContain('Save $5')
   })
 
-  test('shows recall percentage and expiry without exposing the coupon source', () => {
+  test('shows recall expiry without a discount badge or coupon source', () => {
     const html = renderWalletCardWithPreviewQuoteAndRecall(
       stripePaymentQuote({
         unit_price: 10,
@@ -1608,7 +1619,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('$8')
     expect(html).toContain('data-subscription-reference-price="$45"')
     expect(html).toContain('line-through')
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).toContain('Expires ')
     expect(html).not.toContain('Coupon Applied from')
     expect(html).not.toContain('Come back offer')
@@ -1635,7 +1646,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
     expect(html).toContain('R$')
     expect(html).toContain('50,00')
     expect(html).toContain('data-subscription-reference-price="$45"')
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
   })
 
   test('formats JPY backend preview amounts without a USD fallback', () => {
@@ -1657,7 +1668,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain('¥1,000')
     expect(html).toContain('data-subscription-reference-price="$90"')
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).not.toContain('$1000')
   })
 
@@ -1676,7 +1687,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
       expect(html).toContain('$4')
       expect(html).toContain('data-subscription-reference-price="$45"')
-      expect(html).toContain('80% off')
+      expect(html).not.toContain('80% off')
       expect(html).not.toContain('Save $6')
     }
   })
@@ -1782,7 +1793,7 @@ describe('SubscriptionPlansCard flexible wallet plan UI', () => {
 
     expect(html).toContain(formatBrl(40))
     expect(html).toContain(formatBrl(50))
-    expect(html).toContain('80% off')
+    expect(html).not.toContain('80% off')
     expect(html).toContain('line-through')
     expect(html).not.toContain(`Save ${formatBrl(10)}`)
     expect(html).not.toContain('$50')

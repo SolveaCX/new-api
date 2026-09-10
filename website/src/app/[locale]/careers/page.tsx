@@ -12,12 +12,14 @@ export async function generateMetadata({ params }: Props) {
   const { locale } = await params;
   if (!isLocale(locale) || !CAREERS_LOCALES.includes(locale)) return {};
   const isZh = locale === "zh";
+  const indexable = locale === "zh";
   return buildMetadata({
     title: isZh ? "加入我们 — Flatkey" : "Careers — Flatkey",
     description: isZh ? "加入 Flatkey San Jose 团队，在湾区推动 AI 基础设施落地。" : "Join Flatkey in San Jose and help bring AI infrastructure to the Bay Area.",
     pathname: "/careers",
     locale,
-    locales: ["en", "zh"],
+    locales: indexable ? ["en", "zh"] : [],
+    noIndex: !indexable,
   });
 }
 

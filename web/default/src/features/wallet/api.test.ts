@@ -81,6 +81,34 @@ describe('refundable subscription term API', () => {
   })
 })
 
+describe('billing history API', () => {
+  test('sends the admin status filter to the billing history endpoint', async () => {
+    const getAllBillingHistory = (walletApi as {
+      getAllBillingHistory?: (
+        page: number,
+        pageSize: number,
+        keyword?: string,
+        status?: string
+      ) => Promise<unknown>
+    }).getAllBillingHistory
+    expect(getAllBillingHistory).toBeFunction()
+    if (!getAllBillingHistory) return
+
+    const response = {
+      success: true,
+      data: { items: [], total: 0 },
+    }
+    const get = spyOn(api, 'get').mockResolvedValue({ data: response } as never)
+
+    await expect(getAllBillingHistory(1, 10, 'order', 'expired')).resolves.toEqual(
+      response
+    )
+    expect(get).toHaveBeenCalledWith(
+      '/api/user/topup?p=1&page_size=10&keyword=order&status=expired'
+    )
+  })
+})
+
 describe('stripe checkout discount API', () => {
   test('posts discount mutations through the locked checkout route', async () => {
     const updateStripeCheckoutDiscount = (walletApi as {

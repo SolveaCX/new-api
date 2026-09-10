@@ -33,10 +33,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { trackSuccessfulTopups } from '@/lib/analytics/topup-tracking'
-import {
-  formatBillingCurrencyFromUSD,
-  formatCurrencyFromUSD,
-} from '@/lib/currency'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -63,8 +60,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Dialog } from '@/components/dialog'
-import { StatusBadge, type StatusVariant } from '@/components/status-badge'
+import { StatusBadge } from '@/components/status-badge'
 import { getInvoiceProfile, isApiSuccess } from '../../api'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import { useRefundableTerms } from '../../hooks/use-refundable-terms'
@@ -88,6 +93,7 @@ import type {
   RefundableSubscriptionTerm,
   RefundableSubscriptionTermsData,
   TopupRecord,
+  TopupStatus,
 } from '../../types'
 
 interface BillingHistoryDialogProps {
@@ -239,6 +245,18 @@ export function isPendingStripeRecord(record: TopupRecord): boolean {
   )
 }
 
+// Keep the user-facing history safe if an older backend returns expired rows.
+// The server also excludes them for non-admin users.
+// eslint-disable-next-line react-refresh/only-export-components
+export function getVisibleBillingRecords(
+  records: TopupRecord[],
+  isAdmin: boolean
+): TopupRecord[] {
+  return isAdmin
+    ? records
+    : records.filter((record) => record.status !== 'expired')
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function isSubscriptionRecord(record: TopupRecord): boolean {
   return (
@@ -287,31 +305,6 @@ function canRetryInvoice(record: TopupRecord): boolean {
 
 function getPaddleGatewayTradeNo(record: TopupRecord): string {
   return record.gateway_trade_no?.trim() || ''
-}
-
-function getInvoiceStatusLabel(status?: string): string {
-  switch (status) {
-    case 'paid':
-      return 'Invoiced'
-    case 'failed':
-      return 'Invoice failed'
-    case 'expired':
-      return 'Invoice expired'
-    case 'pending':
-      return 'Invoice pending'
-    default:
-      return 'Invoice requested'
-  }
-}
-
-function getInvoiceStatusVariant(status?: string): StatusVariant {
-  if (status === 'paid') {
-    return 'success'
-  }
-  if (status === 'failed' || status === 'expired') {
-    return 'danger'
-  }
-  return 'neutral'
 }
 
 export function RefundableTermsContent({
@@ -524,6 +517,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
     page,
     pageSize,
     keyword,
+    status,
     loading,
     completing,
     requestingInvoice,
@@ -531,6 +525,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
     handlePageChange,
     handlePageSizeChange,
     handleSearch,
+    handleStatusChange,
     handleCompleteOrder,
     handleRequestInvoice,
     refreshLatest,
@@ -580,6 +575,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
 
   const totalPages = Math.ceil(total / pageSize)
+  const visibleRecords = getVisibleBillingRecords(records, isAdmin)
 
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
@@ -734,7 +730,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
         )}
 
         {/* Search and Filter Bar */}
-        <div className='flex items-center gap-2'>
+        <div className='flex flex-col gap-2 sm:flex-row'>
           <div className='relative flex-1'>
             <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
             <Input
@@ -744,6 +740,34 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
               className='h-9 pl-10'
             />
           </div>
+          {isAdmin && (
+            <Select
+              items={[
+                { value: 'all', label: t('Status') },
+                { value: 'success', label: t('Success') },
+                { value: 'pending', label: t('Pending') },
+                { value: 'failed', label: t('Failed') },
+                { value: 'expired', label: t('Expired') },
+              ]}
+              value={status}
+              onValueChange={(value) =>
+                value && handleStatusChange(value as TopupStatus | 'all')
+              }
+            >
+              <SelectTrigger className='h-9 w-full sm:w-32'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  <SelectItem value='all'>{t('Status')}</SelectItem>
+                  <SelectItem value='success'>{t('Success')}</SelectItem>
+                  <SelectItem value='pending'>{t('Pending')}</SelectItem>
+                  <SelectItem value='failed'>{t('Failed')}</SelectItem>
+                  <SelectItem value='expired'>{t('Expired')}</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
           <Select
             items={[
               { value: '10', label: t('10 / page') },
@@ -796,7 +820,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 </div>
               ))}
             </div>
-          ) : records.length === 0 ? (
+          ) : visibleRecords.length === 0 ? (
             <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
               <p className='text-sm font-medium'>
                 {t('No billing records found')}
@@ -808,8 +832,24 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
               </p>
             </div>
           ) : (
-            <div className='space-y-3'>
-              {records.map((record) => {
+            <div className='overflow-hidden rounded-lg border'>
+              <Table className='min-w-[760px]'>
+                <TableHeader className='bg-muted/40'>
+                  <TableRow>
+                    <TableHead className='w-[30%] pl-4'>
+                      {t('Trade number')}
+                    </TableHead>
+                    <TableHead>{t('Date')}</TableHead>
+                    <TableHead>{t('Payment Method')}</TableHead>
+                    <TableHead className='text-right'>{t('Amount')}</TableHead>
+                    <TableHead>{t('Status')}</TableHead>
+                    <TableHead className='pr-4 text-right'>
+                      {t('Action')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleRecords.map((record) => {
                 const statusConfig = getStatusConfig(record.status)
                 const canReopenPaddleCheckout =
                   isPendingPaddleRecord(record) &&
@@ -818,7 +858,6 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                   !!props.onResumeStripeCheckout &&
                   isPendingStripeRecord(record)
                 const invoice = record.invoice
-                const hasInvoice = invoice?.invoice_requested === true
                 const invoiceUrl = invoice?.stripe_invoice_url?.trim()
                 const invoicePdf = invoice?.stripe_invoice_pdf?.trim()
                 const canRequestInvoice =
@@ -835,28 +874,26 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 // Subscription purchases are mirrored into top-up history with
                 // amount=0. Render them with a friendly title and no $0 column.
                 const subscriptionRecord = isSubscriptionRecord(record)
+                const paymentCurrency =
+                  record.payment_currency?.trim() || 'USD'
                 return (
-                  <div
-                    key={record.id}
-                    className='hover:bg-muted/50 rounded-lg border p-3 transition-colors sm:p-4'
-                  >
-                    {/* Header Row */}
-                    <div className='flex items-start justify-between gap-2'>
-                      <div className='flex-1 space-y-1'>
-                        <div className='flex min-w-0 items-center gap-2'>
+                  <TableRow key={record.id} className='h-14'>
+                    <TableCell className='max-w-0 pl-4'>
+                      <div className='flex min-w-0 items-center gap-1.5'>
                           {subscriptionRecord ? (
-                            <span className='text-foreground truncate text-sm font-semibold'>
+                            <span className='text-foreground truncate font-medium'>
                               {t('Plan subscription')}
                             </span>
                           ) : (
-                            <code className='text-foreground truncate font-mono text-sm'>
+                            <code className='text-foreground truncate font-mono text-xs'>
                               {record.trade_no}
                             </code>
                           )}
                           <Button
                             variant='ghost'
-                            size='sm'
-                            className='h-5 w-5 p-0'
+                            size='icon-xs'
+                            aria-label={t('Copy')}
+                            title={t('Copy')}
                             onClick={() => copyToClipboard(record.trade_no)}
                           >
                             {copiedText === record.trade_no ? (
@@ -865,122 +902,39 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                               <Copy className='h-3 w-3' />
                             )}
                           </Button>
-                          {isAdmin && record.user_id != null && (
-                            <StatusBadge
-                              label={`${t('User ID')}: ${record.user_id}`}
-                              variant='neutral'
-                              size='sm'
-                              copyText={String(record.user_id)}
-                            />
-                          )}
-                        </div>
-                        <div className='text-muted-foreground text-xs'>
-                          {formatTimestamp(record.create_time)}
-                        </div>
                       </div>
+                      {isAdmin && record.user_id != null && (
+                        <div className='text-muted-foreground mt-0.5 text-xs'>
+                          {t('User ID')}: {record.user_id}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className='text-muted-foreground text-xs'>
+                      {formatTimestamp(record.create_time)}
+                    </TableCell>
+                    <TableCell className='font-medium'>
+                      {getPaymentMethodName(record.payment_method, t)}
+                    </TableCell>
+                    <TableCell className='text-right font-semibold tabular-nums'>
+                      {formatNumber(record.money)} {paymentCurrency}
+                    </TableCell>
+                    <TableCell>
                       <StatusBadge
                         label={t(statusConfig.label)}
                         variant={statusConfig.variant}
                         showDot
                         copyable={false}
                       />
-                    </div>
-
-                    {/* Details Grid */}
-                    <div
-                      className={`mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:gap-4 ${
-                        record.bonus_amount && record.bonus_amount > 0
-                          ? 'sm:grid-cols-4'
-                          : 'sm:grid-cols-3'
-                      }`}
-                    >
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('Payment Method')}
-                        </Label>
-                        <div className='text-sm font-medium'>
-                          {getPaymentMethodName(record.payment_method, t)}
-                        </div>
-                      </div>
-                      {!subscriptionRecord && (
-                        <div className='space-y-1'>
-                          <Label className='text-muted-foreground text-xs'>
-                            {t('Amount')}
-                          </Label>
-                          <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      <div className='space-y-1'>
-                        <Label className='text-muted-foreground text-xs'>
-                          {t('Payment')}
-                        </Label>
-                        <div className='text-sm font-semibold'>
-                          {formatNumber(record.money)}{' '}
-                          {record.payment_currency?.trim() || 'USD'}
-                        </div>
-                      </div>
-                      {record.bonus_amount && record.bonus_amount > 0 ? (
-                        <div className='space-y-1'>
-                          <Label className='text-muted-foreground text-xs'>
-                            {t('Bonus Credit')}
-                          </Label>
-                          <div className='text-sm font-semibold text-[#FF2D78]'>
-                            +
-                            {formatCurrencyFromUSD(record.bonus_amount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {hasInvoice && (
-                      <div className='bg-muted/20 mt-3 rounded-md border p-3'>
-                        <div className='flex flex-wrap items-center gap-2'>
-                          <StatusBadge
-                            label={t(
-                              getInvoiceStatusLabel(invoice?.invoice_status)
-                            )}
-                            variant={getInvoiceStatusVariant(
-                              invoice?.invoice_status
-                            )}
-                            size='sm'
-                            copyable={false}
-                          />
-                          {invoice?.stripe_invoice_number && (
-                            <span className='text-muted-foreground text-xs'>
-                              {invoice.stripe_invoice_number}
-                            </span>
-                          )}
-                        </div>
-                        <div className='mt-2 grid gap-2 text-xs'>
-                          <div>
-                            <span className='text-muted-foreground'>
-                              {t('Company name')}:
-                            </span>{' '}
-                            <span className='font-medium'>
-                              {invoice?.company_name || '-'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    {showActions && (
-                      <div className='mt-4 flex flex-wrap justify-end gap-2'>
+                    </TableCell>
+                    <TableCell className='pr-4 text-right'>
+                      {showActions ? (
+                        <div className='flex justify-end gap-1'>
                         {invoiceUrl && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('View invoice')}
+                            title={t('View invoice')}
                             render={
                               <a
                                 href={invoiceUrl}
@@ -989,14 +943,15 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                               />
                             }
                           >
-                            <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
-                            {t('View invoice')}
+                            <ExternalLink className='h-3.5 w-3.5' />
                           </Button>
                         )}
                         {invoicePdf && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('Invoice PDF')}
+                            title={t('Invoice PDF')}
                             render={
                               <a
                                 href={invoicePdf}
@@ -1005,68 +960,75 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                               />
                             }
                           >
-                            <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
-                            {t('Invoice PDF')}
+                            <ExternalLink className='h-3.5 w-3.5' />
                           </Button>
                         )}
                         {canRequestInvoice && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('Request invoice')}
+                            title={t('Request invoice')}
                             onClick={() => handleOpenInvoiceRequest(record)}
                           >
-                            <FileText className='mr-1.5 h-3.5 w-3.5' />
-                            {t('Request invoice')}
+                            <FileText className='h-3.5 w-3.5' />
                           </Button>
                         )}
                         {canReopenPaddleCheckout && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('Reopen Checkout')}
+                            title={t('Reopen Checkout')}
                             onClick={() => handleReopenPaddleCheckout(record)}
                           >
-                            <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
-                            {t('Reopen Checkout')}
+                            <ExternalLink className='h-3.5 w-3.5' />
                           </Button>
                         )}
                         {canReopenStripeCheckout && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('Reopen Checkout')}
+                            title={t('Reopen Checkout')}
                             onClick={() =>
                               void handleReopenStripeCheckout(record)
                             }
                             disabled={resumingTradeNo === record.trade_no}
                           >
                             {resumingTradeNo === record.trade_no ? (
-                              <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                              <Loader2 className='h-3.5 w-3.5 animate-spin' />
                             ) : (
-                              <ExternalLink className='mr-1.5 h-3.5 w-3.5' />
+                              <ExternalLink className='h-3.5 w-3.5' />
                             )}
-                            {t('Reopen Checkout')}
                           </Button>
                         )}
                         {isAdmin && record.status === 'pending' && (
                           <Button
-                            size='sm'
+                            size='icon-sm'
                             variant='outline'
+                            aria-label={t('Complete Order')}
+                            title={t('Complete Order')}
                             onClick={() => setConfirmTradeNo(record.trade_no)}
                             disabled={completing}
                           >
-                            {t('Complete Order')}
+                            <Check className='h-3.5 w-3.5' />
                           </Button>
                         )}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
                 )
               })}
+                </TableBody>
+              </Table>
             </div>
           )}
         </ScrollArea>
 
         {/* Pagination */}
-        {!loading && records.length > 0 && (
+        {!loading && visibleRecords.length > 0 && (
           <div className='flex flex-col items-center gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between'>
             <div className='text-muted-foreground text-xs sm:text-sm'>
               {t('Showing')} {(page - 1) * pageSize + 1}-
