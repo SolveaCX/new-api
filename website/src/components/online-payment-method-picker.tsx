@@ -41,5 +41,5 @@ export function OnlinePaymentMethodPicker(props: {
 function PaymentMethodLogo(props: { method: OnlinePaymentMethod }) {
   if (props.method.kind === "card") return <CreditCard className="size-4" />;
   if (!props.method.src || !props.method.width || !props.method.height) return null;
-  return <Image alt="" height={props.method.height} src={props.method.src} width={props.method.width} />;
+  return <Image unoptimized alt="" height={props.method.height} src={props.method.src} width={props.method.width} />;
 }
