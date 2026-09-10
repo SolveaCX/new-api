@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
+import { PublicGuideLinks } from "@/components/public-guide-links";
 import { type Locale, localizePath } from "@/lib/locales";
 import { consoleUrl } from "@/lib/origins";
 import { getStaticFeaturePage, type StaticFeaturePageKey } from "@/lib/static-feature-pages";
@@ -82,6 +83,7 @@ export function StaticFeaturePage(props: Props) {
             ))}
           </div>
         </section>
+        {props.pageKey === "usecases" ? <PublicGuideLinks locale={props.locale} /> : null}
       </main>
     </SiteShell>
   );

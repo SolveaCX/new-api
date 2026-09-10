@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { ModelLandingPage } from "@/components/model-landing-page";
 import { isLocale, LOCALES, localizePath } from "@/lib/locales";
 import {
@@ -157,6 +157,9 @@ export default async function Page(props: Props) {
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
   const localizedConfig = getLocalizedModelLandingConfig(modelSpecificConfig, params.locale);
+  if (encodeURIComponent(params.slug) !== modelSpecificConfig.slug) {
+    permanentRedirect(localizePath(`/models/${modelSpecificConfig.slug}`, params.locale));
+  }
   const initialHealth = await fetchModelHealthData(modelWithVendor.model_name);
   return (
     <ModelLandingPage

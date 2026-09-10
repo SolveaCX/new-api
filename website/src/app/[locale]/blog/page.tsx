@@ -3,6 +3,7 @@ import { BlogIndexPage, parseBlogSearch } from "@/components/blog-pages";
 import { getCopy } from "@/lib/copy";
 import { isLocale, LOCALES } from "@/lib/locales";
 import { buildMetadata } from "@/lib/seo";
+import { blogListingSeoOptions } from "@/lib/blog-listing-seo";
 
 type Props = {
   params: Promise<{ locale: string }>;
@@ -21,7 +22,7 @@ export async function generateMetadata(props: Props) {
   return buildMetadata({
     title: copy.title,
     description: copy.description,
-    pathname: "/blog",
+    ...blogListingSeoOptions("/blog", searchParams),
     locale: params.locale,
     noIndex: Object.keys(searchParams ?? {}).length > 0,
   });

@@ -4,6 +4,17 @@ import { ModelsDirectoryTable, attributionLabel, buildDirectoryHealthTrend } fro
 import { getModelsDirectoryTableCopy } from "./pricing-explorer";
 
 describe("ModelsDirectoryTable", () => {
+  test("links the canonical MiniMax page while keeping the displayed catalog ID", () => {
+    for (const locale of ["en", "de"] as const) {
+      const html = renderToStaticMarkup(<ModelsDirectoryTable
+        locale={locale} copy={getModelsDirectoryTableCopy(locale)}
+        rows={[{ name: "MiniMax-H3", vendor: "MiniMax", official: "$0.1", discounted: "$0.09", officialUsd: 0.1, discountedUsd: 0.09, iconKey: "minimax" }]}
+      />);
+      expect(html).toContain(`href="${locale === "en" ? "" : "/de"}/models/minimax-h3"`);
+      expect(html).not.toContain("/models/MiniMax-H3");
+      expect(html).toContain("MiniMax-H3");
+    }
+  });
   test("uses default latency and a full healthy bar wall when health data is missing", () => {
     const html = renderToStaticMarkup(
       <ModelsDirectoryTable
