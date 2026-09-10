@@ -38,3 +38,8 @@ describe("model icon assets", () => {
     }
   );
 });
+
+test("Kuaishou uses its bundled logo instead of a missing CDN file", () => {
+  expect(getLobeStaticSvgUrl("Kuaishou")).toBe("/assets/logos/kuaishou.svg");
+  expect(getLobeStaticSvgUrl("Kuaishou.Color")).toBe("/assets/logos/kuaishou.svg");
+});
