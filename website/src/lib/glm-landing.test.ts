@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import sitemap from "@/app/sitemap";
 import { LOCALES } from "@/lib/locales";
 import {
@@ -7,6 +7,9 @@ import {
   getGlmLandingMetadataInput,
   getGlmLandingPageCopy,
 } from "./glm-landing";
+
+mock.module("next/server", () => ({ connection: async () => {} }));
+mock.module("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
 
 describe("GLM 5.2 landing page", () => {
   test("uses the approved route and conversion CTA", () => {
@@ -52,9 +55,17 @@ describe("GLM 5.2 landing page", () => {
   });
 
   test("adds the GLM page to the sitemap", async () => {
-    const entries = await sitemap();
-
-    expect(entries.some((entry) => entry.url === "https://flatkey.ai/glm-5-2")).toBe(true);
-    expect(entries.some((entry) => entry.url === "https://flatkey.ai/pt/glm-5-2")).toBe(true);
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (input) => Response.json({ success: true, data:
+        String(input).includes("/api/website/pricing") ? [{ model_name: "glm-5.2", quota_type: 0, model_ratio: 1 }]
+          : String(input).endsWith("/categories") ? [] : { list: [], total: 0 },
+      })) as typeof fetch;
+      const entries = await sitemap();
+      expect(entries.some((entry) => entry.url === "https://flatkey.ai/glm-5-2")).toBe(true);
+      expect(entries.some((entry) => entry.url === "https://flatkey.ai/pt/glm-5-2")).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

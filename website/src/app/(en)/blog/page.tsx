@@ -1,6 +1,7 @@
 import { BlogIndexPage, parseBlogSearch } from "@/components/blog-pages";
 import { getCopy } from "@/lib/copy";
 import { buildMetadata } from "@/lib/seo";
+import { blogListingSeoOptions } from "@/lib/blog-listing-seo";
 
 const copy = getCopy("en").blog;
 
@@ -11,7 +12,7 @@ export async function generateMetadata(props: Props) {
   return buildMetadata({
     title: copy.title,
     description: copy.description,
-    pathname: "/blog",
+    ...blogListingSeoOptions("/blog", searchParams),
     noIndex: Object.keys(searchParams ?? {}).length > 0,
   });
 }

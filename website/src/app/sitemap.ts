@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
-import { getAllBlogPosts, getBlogCategories } from "@/lib/blog";
+import { connection } from "next/server";
+import { getCachedSitemapData } from "./sitemap-data";
 import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
@@ -10,13 +11,11 @@ import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/li
 import { getToolsAdLandingPathnames } from "@/lib/tools-ad-landing";
 import { TOOLS_LANDING_PATH } from "@/lib/tools-landing";
 import { APIFY_ALTERNATIVE_PATH } from "@/lib/tools-conquest-landing";
-import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { getCliMediaPromptItems } from "@/lib/prompt-library";
 import { SITE_ORIGIN } from "@/lib/origins";
 
-// The model list comes from the live public catalog. Do not prerender this
-// route during a website build where the console API may be unavailable.
-export const dynamic = "force-dynamic";
+// connection() below defers discovery until request time without force-dynamic
+// disabling the explicitly cached, complete public data snapshot.
 
 const base = SITE_ORIGIN;
 const REDIRECT_MODEL_LANDING_PATHS = new Set([
@@ -67,20 +66,8 @@ function queryEntry(
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [localizedPosts, categories, pricing] = await Promise.all([
-    Promise.all(LOCALES.map(async (locale) => ({ locale, posts: await getAllBlogPosts(locale) }))),
-    getBlogCategories(),
-    // Keep the sitemap model set identical to the model detail pages and the
-    // public directory. The unscoped endpoint can expose models from groups
-    // that are not available on the public (PLG) detail route.
-    getPricingData(WEBSITE_PUBLIC_PRICING_GROUP),
-  ]);
-  // A transient pricing outage must not produce a successful but incomplete
-  // sitemap. Google will retry a 5xx response; serving only static entries
-  // would make the entire live model catalog disappear from discovery.
-  if (pricing.models.length === 0) {
-    throw new Error("Sitemap pricing catalog is unavailable");
-  }
+  await connection();
+  const { localizedPosts, categories, pricing } = await getCachedSitemapData();
   const staticEntries = [
     ...entry("/", 1, "daily"),
     ...entry("/pricing", 0.8, "daily"),

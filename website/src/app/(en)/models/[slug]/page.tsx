@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { ModelLandingPage } from "@/components/model-landing-page";
 import {
   getModelLandingConfig,
@@ -136,6 +136,11 @@ export default async function Page(props: Props) {
   };
   const modelSpecificConfig = getModelLandingConfigForPricingModel(modelWithVendor);
   const localizedConfig = getLocalizedModelLandingConfig(modelSpecificConfig, "en");
+  // Resolver aliases must lead to the canonical model page, not publish a
+  // duplicate 200 page whose hreflang cluster cannot link back to that alias.
+  if (encodeURIComponent(params.slug) !== modelSpecificConfig.slug) {
+    permanentRedirect(`/models/${modelSpecificConfig.slug}`);
+  }
   const initialHealth = await fetchModelHealthData(modelWithVendor.model_name);
   return (
     <ModelLandingPage

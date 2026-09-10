@@ -61,7 +61,10 @@ export function resolvePublicModel(models: PricingModel[], slug: string): Pricin
 }
 
 export function modelPublicPath(modelName: string): string {
-  return `/models/${encodeURIComponent(modelName)}`;
+  // This catalog ID has a lowercase canonical page. Preserve the actual model
+  // identifier everywhere else (notably API requests and pricing lookups).
+  const slug = modelName.toLowerCase() === "minimax-h3" ? "minimax-h3" : encodeURIComponent(modelName);
+  return `/models/${slug}`;
 }
 
 // Which request example the page shows. Image-generation models demo

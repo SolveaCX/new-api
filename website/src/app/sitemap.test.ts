@@ -1,4 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+
+// Exercise generation without a Next request context. Actual cache behavior is
+// covered by the production-mode HTTP regression, not by these unit doubles.
+mock.module("next/server", () => ({ connection: async () => {} }));
+mock.module("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
 
 describe("sitemap", () => {
   test("omits non-canonical query pages and redirect-only model aliases", async () => {
@@ -39,7 +44,7 @@ describe("sitemap", () => {
             )
           );
         }
-        return Promise.resolve(new Response("not found", { status: 404 }));
+        return Promise.resolve(Response.json({ success: true, data: String(input).includes("/categories") ? [] : { list: [], total: 0 } }));
       }) as typeof fetch;
 
       const { default: sitemap } = await import("./sitemap");

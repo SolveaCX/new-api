@@ -240,6 +240,58 @@ export async function getAllBlogPosts(locale: Locale = DEFAULT_LOCALE): Promise<
   return result?.list ?? [];
 }
 
+export type BlogSitemapData = {
+  localizedPosts: { locale: Locale; posts: Pick<BlogPost, "slug" | "date">[] }[];
+  categories: Pick<BlogCategory, "slug">[];
+};
+
+/** Unlike UI fallbacks, discovery must distinguish an empty catalog from an outage. */
+export async function getBlogSitemapData(): Promise<BlogSitemapData | null> {
+  try {
+    if (!isBloggerEnabled()) {
+      const [posts, categories] = await Promise.all([
+        fetchLegacyJson<BlogListResult>("/api/blog/list?page=1&pageSize=200"),
+        fetchLegacyJson<BlogCategory[]>("/api/blog/categories"),
+      ]);
+      if (posts === null || categories === null || posts.total > posts.list.length) return null;
+      return {
+        localizedPosts: [{ locale: DEFAULT_LOCALE, posts: posts.list.map(({ slug, date }) => ({ slug, date })) }],
+        categories: categories.map(({ slug }) => ({ slug })),
+      };
+    }
+
+    // Do not query globally noindex locales or cache multi-megabyte article HTML.
+    // A failed page in ANY advertised language invalidates the whole snapshot.
+    const [localizedPosts, categories] = await Promise.all([
+      Promise.all(seoIndexableLocales("/blog").map(async (locale) => {
+        const posts: Pick<BlogPost, "slug" | "date">[] = [];
+        let offset = 0;
+        while (true) {
+          const params = new URLSearchParams({ language: locale, limit: String(BLOGGER_PAGE_SIZE), offset: String(offset) });
+          const batch = await fetchBloggerJson<BloggerPost[]>(
+            `/api/integration/sites/${encodeURIComponent(BLOGGER_SITE_SLUG)}/posts?${params}`,
+          );
+          // The UI's permissive empty-list fallback must not turn an invalid
+          // integration response into a successful, incomplete sitemap.
+          if (!Array.isArray(batch) || batch.some((post) => !post || typeof post.slug !== "string" || !post.slug || post.language !== locale)) return null;
+          posts.push(...batch.map((post) => ({ slug: post.slug, date: post.published_at ?? post.updated_at ?? undefined })));
+          if (batch.length < BLOGGER_PAGE_SIZE) break;
+          offset += batch.length;
+        }
+        return { locale, posts };
+      })),
+      fetchBloggerJson<BloggerCategory[]>(`/api/integration/sites/${encodeURIComponent(BLOGGER_SITE_SLUG)}/categories`),
+    ]);
+    if (categories === null || localizedPosts.some((result) => result === null)) return null;
+    return {
+      localizedPosts: localizedPosts.filter((result): result is NonNullable<typeof result> => result !== null),
+      categories: categories.map(({ slug }) => ({ slug })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getBlogPosts(query: BlogListQuery = {}, locale: Locale = DEFAULT_LOCALE): Promise<BlogListResult> {
   const posts = await getAllBlogPosts(locale);
   if (posts.length > 0 || locale !== DEFAULT_LOCALE) return applyBlogFilters(posts, query);

@@ -55,6 +55,9 @@ describe("model slug resolution", () => {
   test("model page paths encode the model name", () => {
     expect(modelPublicPath("claude-sonnet-4.5")).toBe("/models/claude-sonnet-4.5");
     expect(modelPublicPath("a/b")).toBe("/models/a%2Fb");
+    expect(modelPublicPath("MiniMax-H3")).toBe("/models/minimax-h3");
+    expect(modelPublicPath("minimax-h3")).toBe("/models/minimax-h3");
+    expect(modelPublicPath("MiniMax-H3-Pro")).toBe("/models/MiniMax-H3-Pro");
   });
 });
 

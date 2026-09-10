@@ -26,6 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import Image from "next/image";
+import { optimizedPreviewSrc } from "@/lib/optimized-preview";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
 import { getLobeStaticSvgUrl } from "@/lib/model-icons";
@@ -78,6 +79,7 @@ import {
   type ModelVideoModeOption,
 } from "@/lib/model-landing";
 import { navigateToHref } from "@/lib/link-navigation";
+import { modelPublicPath } from "@/lib/model-public";
 import { consoleUrl } from "@/lib/origins";
 import {
   formatModelPrice,
@@ -2174,7 +2176,7 @@ function OutputPreview(props: {
           />
         ) : imageExample ? (
           <Image
-            src={imageExample.poster}
+            src={optimizedPreviewSrc(imageExample.poster)}
             alt={props.t("Image preview")}
             fill
             sizes="(min-width: 1024px) 40vw, 100vw"
@@ -2380,7 +2382,7 @@ function buildRelatedModelCards(
       return true;
     })
     .map((modelId) => ({
-      href: localizePath(`/models/${encodeURIComponent(modelId)}`, locale),
+      href: localizePath(modelPublicPath(modelId), locale),
       name: modelId,
       vendor: config.officialName,
       kind,
@@ -4297,7 +4299,7 @@ function buildCatalogRelatedModels(
     .sort((a, b) => a.score - b.score || a.model.model_name.localeCompare(b.model.model_name, "en", { numeric: true }))
     .slice(0, 8)
     .map(({ model }): CatalogRelatedModel => ({
-      href: localizePath(`/models/${encodeURIComponent(model.model_name)}`, locale),
+      href: localizePath(modelPublicPath(model.model_name), locale),
       name: model.model_name,
       // Catalog descriptions are provider-supplied and currently English.
       // Keep them on the English page, while localized pages use a stable,
