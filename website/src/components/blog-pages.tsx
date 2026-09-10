@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Gift, Search, X } from "lucide-react";
 import { SiteShell } from "@/components/site-shell";
+import { BlogCover } from "@/components/blog-cover";
 import { formatBlogCopy, type BlogCopy } from "@/lib/blog-copy";
 import {
   BLOG_PAGE_SIZE,
@@ -177,20 +178,7 @@ function BlogCard(props: { post: BlogPost; locale: Locale; compact?: boolean }) 
       href={localizePath(`/blog/${props.post.slug}`, props.locale)}
       className="border-border/70 bg-card group flex min-h-full flex-col overflow-hidden rounded-lg border transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
     >
-      {props.post.cover ? (
-        <div className="bg-muted aspect-[16/9] overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={props.post.cover}
-            alt={props.post.title}
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-          />
-        </div>
-      ) : (
-        <div className="from-primary/15 via-muted to-secondary/20 aspect-[16/9] bg-linear-to-br" />
-      )}
+      <BlogCover cover={props.post.cover} title={props.post.title} />
       <div className={cn("flex flex-1 flex-col p-5", props.compact && "p-4")}>
         {props.post.categoryName ? <Badge className="mb-3 max-w-fit">{props.post.categoryName}</Badge> : null}
         <h2

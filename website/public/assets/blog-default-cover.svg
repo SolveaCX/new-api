@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f7f2ff"/><stop offset="1" stop-color="#e3d5ff"/></linearGradient>
+    <linearGradient id="key" x2="1" y2="1"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#702ee8"/></linearGradient>
+  </defs>
+  <path fill="url(#bg)" d="M0 0h1200v675H0z"/>
+  <g fill="none" stroke="#b59ae7" opacity=".3">
+    <circle cx="1100" cy="50" r="290"/><circle cx="1100" cy="50" r="230"/>
+    <circle cx="80" cy="690" r="270"/><circle cx="80" cy="690" r="210"/>
+    <path d="M0 160h255l90 90h510l90-90h255M0 515h255l90-90h510l90 90h255"/>
+  </g>
+  <g transform="translate(370 270)">
+    <path fill="url(#key)" d="M0 18 60 0l60 18v59c0 39-28 62-60 77C28 139 0 116 0 77Z"/>
+    <g fill="none" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="60" cy="48" r="13"/><path d="M60 61v48h15M60 89h12"/>
+    </g>
+    <text x="148" y="98" fill="#211333" font-family="Arial,Helvetica,sans-serif" font-size="88" font-weight="700" letter-spacing="-4">flatkey</text>
+  </g>
+</svg>
