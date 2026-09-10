@@ -8,7 +8,7 @@ import { formatCallCount } from "@/lib/home-live";
 import { modelIconKey } from "@/lib/home-models";
 import { ModelLogo } from "@/components/pricing-model-browser";
 import { modelPublicPath, resolvePublicModel } from "@/lib/model-public";
-import { getPricingData } from "@/lib/pricing";
+import { getPricingData, WEBSITE_PUBLIC_PRICING_GROUP } from "@/lib/pricing";
 import { displayTokens, fetchRankingsData } from "@/lib/rankings-live";
 import { buildRankingsSchema, stringifyJsonLd } from "@/lib/schema";
 import { seriesColor } from "@/lib/vchart-palette";
@@ -89,7 +89,9 @@ export async function RankingsPage(props: Props) {
   const content = getPageContent("rankings", props.locale);
   const usageCopy = getHomeCopy(props.locale).usage;
   const ui = RANKINGS_UI[props.locale] ?? RANKINGS_UI.en;
-  const [data, pricing] = await Promise.all([fetchRankingsData(), getPricingData()]);
+  // Match the detail route's public catalog. Usage can contain models from
+  // other groups: retain those rows, but do not link them to unavailable pages.
+  const [data, pricing] = await Promise.all([fetchRankingsData(), getPricingData(WEBSITE_PUBLIC_PRICING_GROUP)]);
   const usage = data?.usage ?? null;
 
   // Resolve each ranked name to its public model page, so rows become internal
