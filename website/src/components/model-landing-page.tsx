@@ -28,6 +28,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
+import { getLobeStaticSvgUrl } from "@/lib/model-icons";
 import { HomeModelLogo } from "@/components/home-model-logo";
 import { CdnFallbackImage, CdnFallbackVideo } from "@/components/cdn-media";
 import {
@@ -4376,50 +4377,7 @@ function relatedModelAsset(model: PricingModel, modality: string) {
   // a full URL. Resolve that key to the same public CDN used by the pricing
   // browser so related cards never depend on local placeholder photography.
   const iconKey = model.icon || model.vendor_icon || modelIconKey(model.model_name, model.vendor_name ?? "");
-  const normalizedIconKey = normalizeRelatedIconKey(iconKey);
-  return normalizedIconKey
-    ? `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/${normalizedIconKey}.svg`
-    : relatedModelAssetFromName(model.model_name, model.vendor_name, modality);
-}
-
-function normalizeRelatedIconKey(iconKey: string) {
-  const known: Record<string, string> = {
-    openai: "openai",
-    "open-ai": "openai",
-    anthropic: "anthropic",
-    claude: "claude-color",
-    google: "google-color",
-    gemini: "gemini-color",
-    deepseek: "deepseek-color",
-    "deep-seek": "deepseek-color",
-    qwen: "qwen-color",
-    alibaba: "alibabacloud-color",
-    "alibaba-cloud": "alibabacloud-color",
-    mistral: "mistral-color",
-    xai: "xai",
-    grok: "grok",
-    meta: "meta-color",
-    llama: "meta-color",
-    moonshot: "moonshot",
-    kimi: "kimi-color",
-    bytedance: "bytedance-color",
-    seedance: "bytedance-color",
-    minimax: "minimax-color",
-    kuaishou: "kuaishou-color",
-  };
-  const normalized = iconKey
-    .split(".")
-    .filter((segment) => segment && !segment.includes("="))
-    .join("-")
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  // Only use keys that are known to exist in the CDN icon set. Generic values
-  // such as `ai` are often metadata, not an actual icon asset, and would
-  // otherwise render as a broken image instead of using the local cover.
-  return normalized ? known[normalized] ?? null : null;
+  return getLobeStaticSvgUrl(iconKey) ?? relatedModelAssetFromName(model.model_name, model.vendor_name, modality);
 }
 
 function relatedModelAssetFromName(name: string, vendor: string | undefined, modality: string) {
@@ -4444,7 +4402,6 @@ function relatedModelAssetFromName(name: string, vendor: string | undefined, mod
   if (modality === "audio") return "/assets/prompts/awesome-images/ai-agent-poster.png";
   return "/assets/prompts/awesome-images/saas-hero-phone.png";
 }
-
 
 function buildModalityLabels(
   config: ModelConfig,

@@ -79,6 +79,17 @@ export function resolveModelAliasRedirectPath(pathname: string, modelNames: read
 }
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
+  // next/image fetches local assets through an internal HTTP request without
+  // forwarded headers. Redirecting that request produces text instead of image
+  // bytes. Keep asset handling ahead of all page canonicalization and cookies.
+  const pathname = request.nextUrl.pathname;
+  if (
+    pathname.startsWith("/_next/") ||
+    /\.(?:avif|gif|ico|jpe?g|png|svg|webp|woff2?|ttf|otf|eot|css|js|mjs|map|mp4|webm|mp3|wav|ogg)$/i.test(pathname)
+  ) {
+    return NextResponse.next();
+  }
+
   const canonicalOrigin = new URL(SITE_ORIGIN);
   const redirectPath = resolvePermanentSeoRedirectPath(request.nextUrl.pathname);
   // Local development is often reached through a desktop reverse proxy that

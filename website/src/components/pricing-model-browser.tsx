@@ -49,6 +49,7 @@ import { localizePath, type Locale } from "@/lib/locales";
 import { getModelLandingConfigForPricingModel } from "@/lib/model-landing";
 import { ROUTER_ORIGIN } from "@/lib/origins";
 import { cn } from "@/lib/utils";
+import { getLobeStaticSvgUrl, getLocalLogoUrl } from "@/lib/model-icons";
 import { CdnFallbackImage } from "@/components/cdn-media";
 import {
   CartesianGrid,
@@ -1450,37 +1451,6 @@ export function ModelLogo(props: { iconKey?: string; fallback: string; size: num
   return <span className="text-sm font-black text-violet-700">{props.fallback || "?"}</span>;
 }
 
-function getLocalLogoUrl(iconKey?: string): string | null {
-  if (!iconKey) return null;
-  const normalized = normalizeIconKey(iconKey);
-  if (!normalized) return null;
-  const localByIcon: Record<string, string> = {
-    openai: "openai",
-    anthropic: "claude",
-    "claude-color": "claude",
-    "google-color": "googlegemini",
-    "gemini-color": "googlegemini",
-    "deepseek-color": "deepseek",
-    qwen: "qwen",
-    "qwen-color": "qwen",
-    alibabacloud: "alibabacloud",
-    "alibabacloud-color": "alibabacloud",
-    mistral: "mistralai",
-    xai: "xai",
-    grok: "xai",
-    "meta-color": "meta",
-    moonshot: "moonshotai",
-    "kimi-color": "moonshotai",
-    "bytedance-color": "bytedance",
-    minimax: "minimax",
-    "minimax-color": "minimax",
-    kuaishou: "kuaishou",
-    "kuaishou-color": "kuaishou",
-  };
-  const localName = localByIcon[normalized];
-  return localName ? `/assets/logos/${localName}.svg` : null;
-}
-
 function InfoLine(props: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; mono?: boolean }) {
   const Icon = props.icon;
   return (
@@ -1781,46 +1751,4 @@ function formatCompactNumber(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 1_000_000)}M`;
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
   return String(value);
-}
-
-function getLobeStaticSvgUrl(iconKey?: string): string | null {
-  if (!iconKey) return null;
-  const directKey = normalizeIconKey(iconKey);
-  if (directKey) return `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@latest/icons/${directKey}.svg`;
-  return null;
-}
-
-function normalizeIconKey(iconKey: string): string | null {
-  const known: Record<string, string> = {
-    openai: "openai",
-    "open-ai": "openai",
-    anthropic: "anthropic",
-    claude: "claude-color",
-    google: "google-color",
-    gemini: "gemini-color",
-    deepseek: "deepseek-color",
-    "deep-seek": "deepseek-color",
-    qwen: "qwen-color",
-    alibaba: "alibabacloud-color",
-    "alibaba-cloud": "alibabacloud-color",
-    mistral: "mistral-color",
-    xai: "xai",
-    grok: "grok",
-    meta: "meta-color",
-    llama: "meta-color",
-    moonshot: "moonshot",
-    kimi: "kimi-color",
-  };
-  const normalized = iconKey
-    .split(".")
-    .filter((segment) => segment && !segment.includes("="))
-    .join("-")
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (!normalized) return null;
-  return known[normalized] ?? normalized;
 }
