@@ -257,3 +257,31 @@ describe("website proxy language redirects", () => {
     expect(response?.headers.get("set-cookie")).toBeNull();
   });
 });
+
+
+describe("website asset requests behind a TLS-terminating proxy", () => {
+  test.each([
+    "/logos/seedance.png",
+    "/assets/prompts/awesome-images/ai-agent-poster.png",
+    "/team/amazon-accelerate-team.jpg",
+    "/use-case/image-buddy/marketplace-main-image.jpg",
+    "/flatkey-mark.svg",
+    "/_next/image?url=%2Flogos%2Fseedance.png&w=96&q=75",
+    "/_next/static/chunks/site.css",
+  ])("does not canonicalize an internal image/asset request: %s", async (path) => {
+    const response = await proxy(new NextRequest(`http://0.0.0.0:4000${path}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  test("still canonicalizes dotted model pages and legacy HTML pages", async () => {
+    const model = await proxy(new NextRequest("http://flatkey.ai/models/seedance-2.5"));
+    expect(model.status).toBe(301);
+    expect(model.headers.get("location")).toBe("https://flatkey.ai/models/seedance-2.5");
+    const legacy = await proxy(new NextRequest("http://flatkey.ai/careers.html?source=legacy"));
+    expect(legacy.status).toBe(301);
+    expect(legacy.headers.get("location")).toBe("https://flatkey.ai/careers?source=legacy");
+  });
+});

@@ -56,8 +56,7 @@ export const FEATURED_SLIDES: FeaturedSlide[] = [
     modelName: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     vendor: "Zhipu AI",
-    image: "https://cdn.shulex-voc.com/flatkey/models-featured/glm-5.3-flash.png",
-    fallbackImage: "/assets/models-featured/glm-5.3-flash.png",
+    image: "/assets/models-featured/glm-5.3-flash.png",
     tags: {
       en: ["Coding", "Multimodal", "Long Context"],
       zh: ["编程", "多模态", "长上下文"],
