@@ -40,6 +40,8 @@ const VERIFIED_ICON_NAMES = new Set([
 export function getLobeStaticSvgUrl(iconKey?: string): string | null {
   if (!iconKey) return null;
   const directKey = normalizeIconKey(iconKey);
+  // Kuaishou has a bundled logo but no file in this upstream icon package.
+  if (directKey === "kuaishou-color") return "/assets/logos/kuaishou.svg";
   if (directKey) return `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.95.0/icons/${directKey}.svg`;
   return null;
 }
