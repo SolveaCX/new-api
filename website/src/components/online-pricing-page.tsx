@@ -3,7 +3,6 @@ import { Check, Wallet2 } from "lucide-react";
 import { type Locale, localizePath } from "@/lib/locales";
 import { getOnlineStaticCopy } from "@/lib/online-static-copy";
 import { consoleUrl } from "@/lib/origins";
-import { formatUsd, STANDARD_SUBSCRIPTION_LIMITS } from "@/lib/subscription-pricing";
 import { OnlinePaymentMethodPicker } from "./online-payment-method-picker";
 import { OnlineStaticShell } from "./online-static-shell";
 
@@ -25,7 +24,6 @@ const plans = [
     limitedOffer: true,
     hot: false,
     name: "Starter",
-    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.go.monthlyUsd),
     prices: { BRL: 49.9, JPY: 1_500, USD: 10 },
   },
   {
@@ -33,7 +31,6 @@ const plans = [
     limitedOffer: false,
     hot: true,
     name: "Pro",
-    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.pro.monthlyUsd),
     prices: { BRL: 149.9, JPY: 4_500, USD: 30 },
   },
   {
@@ -41,7 +38,6 @@ const plans = [
     limitedOffer: false,
     hot: false,
     name: "Max",
-    referencePrice: formatUsd(STANDARD_SUBSCRIPTION_LIMITS.max.monthlyUsd),
     prices: { BRL: 499, JPY: 15_000, USD: 100 },
   },
 ] as const;
@@ -93,16 +89,16 @@ export function OnlinePricingPlansSection(props: { locale: Locale }) {
   }));
   const proPrice = displayedPlans.find((plan) => plan.name === "Pro")!.price;
   const directTopUpCopy: Record<Locale, { title: string; body: string; cta: string }> = {
-    en: { title: "Top-ups", body: "Plan usage is used first. Wallet balance is used automatically after the plan runs out.", cta: "Top up" },
-    zh: { title: "充值", body: "优先使用套餐额度。套餐用完后会自动使用钱包余额。", cta: "充值" },
-    es: { title: "Recargas", body: "Primero se usa el plan. El saldo de la cartera se usa automáticamente cuando se agota.", cta: "Recargar" },
-    fr: { title: "Recharges", body: "Le forfait est utilisé en premier. Le solde du portefeuille prend automatiquement le relais une fois épuisé.", cta: "Recharger" },
-    pt: { title: "Recargas", body: "O uso do plano vem primeiro. O saldo da carteira é usado automaticamente quando o plano termina.", cta: "Recarregar" },
-    ru: { title: "Пополнения", body: "Сначала используется тарифный план. После его исчерпания автоматически используется баланс кошелька.", cta: "Пополнить" },
-    ja: { title: "チャージ", body: "まずプランの利用枠が使われます。プラン終了後はウォレット残高が自動的に使用されます。", cta: "チャージ" },
-    vi: { title: "Nạp tiền", body: "Hạn mức gói được dùng trước. Số dư ví sẽ tự động được dùng sau khi gói hết.", cta: "Nạp tiền" },
-    de: { title: "Aufladen", body: "Zuerst wird das Paketguthaben verwendet. Danach wird das Wallet-Guthaben automatisch genutzt.", cta: "Aufladen" },
-    id: { title: "Isi saldo", body: "Kuota paket digunakan terlebih dahulu. Saldo dompet otomatis digunakan setelah paket habis.", cta: "Isi saldo" },
+    en: { title: "Top-ups", body: "Plan credits never expire and are used first. Wallet balance is used automatically after the plan credits run out.", cta: "Top up" },
+    zh: { title: "充值", body: "套餐内额度永久有效，使用时优先扣除；额度耗尽后，自动使用钱包余额。", cta: "充值" },
+    es: { title: "Recargas", body: "Los créditos del plan no caducan y se usan primero. El saldo de la cartera se usa automáticamente cuando se agotan.", cta: "Recargar" },
+    fr: { title: "Recharges", body: "Les crédits du forfait n'expirent jamais et sont utilisés en priorité. Le solde du portefeuille prend automatiquement le relais lorsqu'ils sont épuisés.", cta: "Recharger" },
+    pt: { title: "Recargas", body: "Os créditos do plano nunca expiram e são usados primeiro. O saldo da carteira é usado automaticamente quando eles acabam.", cta: "Recarregar" },
+    ru: { title: "Пополнения", body: "Кредиты тарифного плана не сгорают и используются в первую очередь. После их исчерпания автоматически используется баланс кошелька.", cta: "Пополнить" },
+    ja: { title: "チャージ", body: "プランの利用枠は無期限で、優先的に使用されます。プラン枠を使い切ると、ウォレット残高が自動的に使用されます。", cta: "チャージ" },
+    vi: { title: "Nạp tiền", body: "Tín dụng gói không hết hạn và được dùng trước. Số dư ví sẽ tự động được dùng sau khi tín dụng gói hết.", cta: "Nạp tiền" },
+    de: { title: "Aufladen", body: "Das Paketguthaben verfällt nicht und wird zuerst verwendet. Danach wird das Wallet-Guthaben automatisch genutzt.", cta: "Aufladen" },
+    id: { title: "Isi saldo", body: "Kredit paket tidak pernah kedaluwarsa dan digunakan terlebih dahulu. Saldo dompet otomatis digunakan setelah kredit paket habis.", cta: "Isi saldo" },
   };
   const directTopUp = directTopUpCopy[props.locale] ?? directTopUpCopy.en;
   return (
@@ -134,7 +130,6 @@ export function OnlinePricingPlansSection(props: { locale: Locale }) {
               <div className="tname">{plan.name}</div>
               <div className="taud">{planCopy.audience}</div>
               <div className="tprice">
-                <del className="toldprice">{plan.referencePrice}</del>
                 <b>{plan.price}</b>
                 <span className="per">{copy.pricing.perMonth}</span>
               </div>

@@ -10,7 +10,6 @@ describe("OnlinePricingPage", () => {
     const { OnlinePricingPage } = await import("./online-pricing-page");
     const html = renderToStaticMarkup(<OnlinePricingPage locale="en" />);
 
-    const starterReferencePrice = html.indexOf('<del class="toldprice">$45</del>');
     const starterPrice = html.indexOf("<b>$10</b>");
     const proBadge = html.indexOf('<div class="tier hot"><div class="badge">MOST POPULAR</div>');
     const enterpriseCustom = html.indexOf(">Custom<");
@@ -18,9 +17,7 @@ describe("OnlinePricingPage", () => {
     const enterpriseCta = html.indexOf("Contact sales", enterpriseCustom);
 
     expect(starterCta).toBeGreaterThanOrEqual(0);
-    expect(starterReferencePrice).toBeGreaterThanOrEqual(0);
     expect(starterPrice).toBeGreaterThanOrEqual(0);
-    expect(starterReferencePrice).toBeLessThan(starterPrice);
     expect(starterCta).toBeGreaterThan(starterPrice);
     expect(html).not.toMatch(/Short-term caps|短期上限|Límites a corto plazo|Limites court terme|Limites de curto prazo|Краткосрочные лимиты|Giới hạn ngắn hạn|Kurzfristige Limits|Batas jangka pendek/);
     expect(proBadge).toBeGreaterThanOrEqual(0);
@@ -42,12 +39,12 @@ describe("OnlinePricingPage", () => {
     expect(html).not.toContain('class="pm on"');
     expect(html).not.toContain('<button class="pm"');
     expect(html).toContain('payment_method%3Dstripe_recurring');
-    expect(html).toContain("%2Fassets%2Flogos%2Fpayment%2Fpix.jpg");
-    expect(html).toContain("%2Fassets%2Flogos%2Fpayment%2Fupi.jpg");
+    expect(html).toContain("/assets/logos/payment/pix.jpg");
+    expect(html).toContain("/assets/logos/payment/upi.jpg");
     expect(html).toContain('src="/assets/logos/payment/alipay.svg"');
     expect(html).toContain("All models");
-    expect(html).toContain('<del class="toldprice">$90</del>');
-    expect(html).toContain('<del class="toldprice">$300</del>');
+    expect(html).not.toContain('<del class="toldprice">$90</del>');
+    expect(html).not.toContain('<del class="toldprice">$300</del>');
     expect(html).not.toContain("80% off");
     expect(html).not.toContain("70% off");
     expect(html).toContain('<div class="bonus">Top up $10, get $3 bonus</div>');
@@ -93,7 +90,7 @@ describe("OnlinePricingPage", () => {
       expect(html).not.toContain("80% off");
       expect(html).not.toContain("70% off");
       for (const referencePrice of ["$45", "$90", "$300"]) {
-        expect(html).toContain(`<del class="toldprice">${referencePrice}</del>`);
+        expect(html).not.toContain(`<del class="toldprice">${referencePrice}</del>`);
       }
       expect(html).toContain("$10");
       expect(html).toContain("$30");
@@ -173,9 +170,9 @@ describe("OnlinePricingPage", () => {
         expect(html).toContain(`<b>${price}</b>`);
       }
       expect(html).toContain(item.cta);
-      expect(html).toContain('<del class="toldprice">$45</del>');
-      expect(html).toContain('<del class="toldprice">$90</del>');
-      expect(html).toContain('<del class="toldprice">$300</del>');
+      expect(html).not.toContain('<del class="toldprice">$45</del>');
+      expect(html).not.toContain('<del class="toldprice">$90</del>');
+      expect(html).not.toContain('<del class="toldprice">$300</del>');
       if (item.locale === "pt") expect(html).not.toContain("<b>R$ 499,90</b>");
       expect(html).not.toContain("<b>$10</b>");
       expect(html).not.toContain("<b>$30</b>");
