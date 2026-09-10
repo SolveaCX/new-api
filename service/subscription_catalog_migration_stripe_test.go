@@ -17,6 +17,7 @@ type fakeCatalogMigrationStripeProvider struct {
 	schedule      *stripe.SubscriptionSchedule
 	createErr     error
 	createCommits bool
+	createErrOnce bool
 	updateErr     error
 	releaseErr    error
 	createCalls   int
@@ -44,15 +45,36 @@ func (f *fakeCatalogMigrationStripeProvider) GetSchedule(context.Context, string
 	}
 	return f.schedule, nil
 }
-func (f *fakeCatalogMigrationStripeProvider) CreateSchedule(_ context.Context, subscriptionID string, metadata map[string]string, key string) (*stripe.SubscriptionSchedule, error) {
+func (f *fakeCatalogMigrationStripeProvider) CreateSchedule(_ context.Context, subscriptionID string, _ map[string]string, key string) (*stripe.SubscriptionSchedule, error) {
 	f.createCalls++
 	f.createKeys = append(f.createKeys, key)
+	if f.createErr == nil && f.schedule != nil && f.subscription.Schedule != nil && f.subscription.Schedule.ID == f.schedule.ID {
+		// Stripe returns the original object when the same idempotency key is
+		// replayed after a response loss.
+		return f.schedule, nil
+	}
 	if f.createErr == nil || f.createCommits {
-		f.schedule = &stripe.SubscriptionSchedule{ID: "sched_catalog", Subscription: &stripe.Subscription{ID: subscriptionID}, Metadata: metadata}
+		// A real from_subscription create starts with one current phase and no
+		// metadata; the scheduler adds the migration marker and target phase in
+		// UpdateSchedule.
+		f.schedule = &stripe.SubscriptionSchedule{
+			ID:           "sched_catalog",
+			Subscription: &stripe.Subscription{ID: subscriptionID},
+			Phases: []*stripe.SubscriptionSchedulePhase{{
+				StartDate:         f.subscription.Items.Data[0].CurrentPeriodStart,
+				EndDate:           f.subscription.Items.Data[0].CurrentPeriodEnd,
+				ProrationBehavior: stripe.SubscriptionSchedulePhaseProrationBehaviorCreateProrations,
+				Items:             []*stripe.SubscriptionSchedulePhaseItem{{Price: &stripe.Price{ID: f.subscription.Items.Data[0].Price.ID}, Quantity: 1}},
+			}},
+		}
 		f.subscription.Schedule = &stripe.SubscriptionSchedule{ID: f.schedule.ID}
 	}
 	if f.createErr != nil {
-		return nil, f.createErr
+		err := f.createErr
+		if f.createErrOnce {
+			f.createErr = nil
+		}
+		return nil, err
 	}
 	return f.schedule, nil
 }
@@ -111,27 +133,28 @@ func TestStripeCatalogMigrationSchedulerAdoptsCommittedCreateAfterResponseLoss(t
 	scheduler, provider, request := setupStripeCatalogMigrationSchedulerTest(t)
 	provider.createErr = errors.New("response lost")
 	provider.createCommits = true
+	provider.createErrOnce = true
 
 	result, err := scheduler.ScheduleCatalogMigration(context.Background(), request)
 	require.NoError(t, err)
 	require.Equal(t, "sched_catalog", result.ScheduleID)
 	require.Equal(t, request.ExpectedOwnershipFingerprint, result.OwnershipFingerprint)
-	require.Equal(t, 1, provider.createCalls)
+	require.Equal(t, 2, provider.createCalls, "the same idempotency key must be replayed after a response loss")
 	require.Equal(t, 1, provider.updateCalls)
-	require.Equal(t, []string{request.IdempotencyKey + ":create"}, provider.createKeys)
+	require.Equal(t, []string{request.IdempotencyKey + ":create", request.IdempotencyKey + ":create"}, provider.createKeys)
 	require.Equal(t, []string{request.IdempotencyKey + ":configure"}, provider.updateKeys)
 
 	replayed, err := scheduler.ScheduleCatalogMigration(context.Background(), request)
 	require.NoError(t, err)
 	require.Equal(t, result, replayed)
-	require.Equal(t, 1, provider.createCalls, "replay must not create a duplicate schedule")
+	require.Equal(t, 2, provider.createCalls, "replay must not create a duplicate schedule")
 	require.Equal(t, 1, provider.updateCalls, "an exact replay must not rewrite the schedule")
 }
 
 func TestStripeCatalogMigrationSchedulerRejectsTamperedOwnedSchedule(t *testing.T) {
 	tests := map[string]func(*stripe.SubscriptionSchedule){
 		"phase count": func(schedule *stripe.SubscriptionSchedule) {
-			schedule.Phases = schedule.Phases[:1]
+			schedule.Phases = nil
 		},
 		"current price": func(schedule *stripe.SubscriptionSchedule) {
 			schedule.Phases[0].Items[0].Price.ID = "price_tampered"
@@ -177,7 +200,7 @@ func TestStripeCatalogMigrationSchedulerUpdateFailureIsFailClosedAndRetryable(t 
 	result, err = scheduler.ScheduleCatalogMigration(context.Background(), request)
 	require.NoError(t, err)
 	require.Equal(t, "sched_catalog", result.ScheduleID)
-	require.Equal(t, 1, provider.createCalls, "retry must adopt the metadata-owned unconfigured schedule")
+	require.Equal(t, 2, provider.createCalls, "retry must replay the idempotent from_subscription create")
 	require.Equal(t, 2, provider.updateCalls)
 	require.Equal(t, []string{request.IdempotencyKey + ":configure", request.IdempotencyKey + ":configure"}, provider.updateKeys)
 }
