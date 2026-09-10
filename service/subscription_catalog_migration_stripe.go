@@ -256,13 +256,28 @@ func (s *stripeCatalogMigrationScheduler) ScheduleCatalogMigration(ctx context.C
 	scheduleID := stripeSubscriptionScheduleID(sub)
 	if scheduleID != "" {
 		schedule, getErr := s.provider.GetSchedule(ctx, scheduleID)
-		if getErr != nil || !catalogMigrationScheduleMetadataMatches(schedule, request, metadata) {
+		if getErr != nil {
 			return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe subscription has an unrelated schedule")
 		}
 		if catalogMigrationScheduleExactlyOwned(schedule, request, metadata) {
 			return CatalogMigrationProviderScheduleResult{ScheduleID: scheduleID, OwnershipFingerprint: request.ExpectedOwnershipFingerprint}, nil
 		}
-		if !catalogMigrationScheduleIsUnconfigured(schedule) {
+		if !catalogMigrationScheduleMetadataMatches(schedule, request, metadata) {
+			// A schedule created with from_subscription cannot carry metadata in
+			// the same request.  If a process lost the response after that create
+			// and before the configure update, replay the exact create idempotency
+			// key to prove that this is the schedule we just created.  Never adopt
+			// an unmarked schedule based only on its phase shape.
+			if !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) || len(schedule.Metadata) != 0 {
+				return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe subscription has an unrelated schedule")
+			}
+			replayed, replayErr := s.provider.CreateSchedule(ctx, request.ProviderSubscriptionID, metadata, request.IdempotencyKey+":create")
+			if replayErr != nil || !catalogMigrationScheduleCreateOutcomeMatches(replayed, request, metadata) || strings.TrimSpace(replayed.ID) != scheduleID {
+				return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule create outcome is not safely reclaimable")
+			}
+			schedule = replayed
+		}
+		if !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
 			return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe subscription has an unrelated schedule")
 		}
 		params := catalogMigrationScheduleParams(request, metadata, target)
@@ -279,38 +294,24 @@ func (s *stripeCatalogMigrationScheduler) ScheduleCatalogMigration(ctx context.C
 		return CatalogMigrationProviderScheduleResult{ScheduleID: scheduleID, OwnershipFingerprint: request.ExpectedOwnershipFingerprint}, nil
 	}
 
-	created, createErr := s.provider.CreateSchedule(ctx, request.ProviderSubscriptionID, metadata, request.IdempotencyKey+":create")
+	createKey := request.IdempotencyKey + ":create"
+	created, createErr := s.provider.CreateSchedule(ctx, request.ProviderSubscriptionID, metadata, createKey)
 	if createErr != nil {
-		// Stripe may have committed while the response was lost. Reclaim only an
-		// attached schedule whose immutable ownership metadata already matches,
-		// then finish configuring it with the same stable idempotency key. A prior
-		// retry may already have configured it, in which case exact ownership is
-		// sufficient to converge without another update.
-		refetched, _, _, refetchErr := s.freshAndValidate(ctx, request)
-		if refetchErr != nil {
-			return CatalogMigrationProviderScheduleResult{}, fmt.Errorf("Stripe schedule create failed: %v; refetch failed: %w", createErr, refetchErr)
+		// A network/response failure can happen after Stripe commits the create.
+		// Replaying the same idempotency key is the provider-supported way to
+		// recover that response.  A fresh key could create a duplicate schedule.
+		retried, retryErr := s.provider.CreateSchedule(ctx, request.ProviderSubscriptionID, metadata, createKey)
+		if retryErr != nil {
+			return CatalogMigrationProviderScheduleResult{}, fmt.Errorf("Stripe schedule create failed: %v; idempotent retry failed: %w", createErr, retryErr)
 		}
-		scheduleID = stripeSubscriptionScheduleID(refetched)
-		if scheduleID == "" {
-			return CatalogMigrationProviderScheduleResult{}, createErr
-		}
-		created, err = s.provider.GetSchedule(ctx, scheduleID)
-		if err != nil || !catalogMigrationScheduleMetadataMatches(created, request, metadata) {
-			return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule create outcome is not safely reclaimable")
-		}
-		if catalogMigrationScheduleExactlyOwned(created, request, metadata) {
-			return CatalogMigrationProviderScheduleResult{ScheduleID: scheduleID, OwnershipFingerprint: request.ExpectedOwnershipFingerprint}, nil
-		}
-		if !catalogMigrationScheduleIsUnconfigured(created) {
-			return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule create outcome is not safely reclaimable")
-		}
+		created = retried
 	} else if created == nil || strings.TrimSpace(created.ID) == "" {
 		return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule create could not be confirmed")
 	}
-	scheduleID = strings.TrimSpace(created.ID)
-	if !catalogMigrationScheduleMetadataMatches(created, request, metadata) {
-		return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule ownership metadata mismatch")
+	if !catalogMigrationScheduleCreateOutcomeMatches(created, request, metadata) {
+		return CatalogMigrationProviderScheduleResult{}, errors.New("Stripe schedule create outcome is not safely reclaimable")
 	}
+	scheduleID = strings.TrimSpace(created.ID)
 
 	params := catalogMigrationScheduleParams(request, metadata, target)
 	updated, err := s.provider.UpdateSchedule(ctx, scheduleID, params, request.IdempotencyKey+":configure")
@@ -524,11 +525,28 @@ func catalogMigrationScheduleExactlyOwned(schedule *stripe.SubscriptionSchedule,
 }
 
 func catalogMigrationScheduleIsUnconfigured(schedule *stripe.SubscriptionSchedule) bool {
-	// CreateSchedule uses from_subscription plus immutable ownership metadata.
-	// Before our configure call Stripe has not accepted any catalog phases yet.
-	// Only that empty state is reclaimable; any partial or modified phase shape
-	// must be treated as unrelated rather than repaired speculatively.
-	return schedule != nil && len(schedule.Phases) == 0
+	// Stripe's from_subscription create returns one phase representing the
+	// subscription's current billing period.  The target phase and ownership
+	// metadata are added by the subsequent update call.
+	return schedule != nil && len(schedule.Phases) == 1
+}
+
+func catalogMigrationScheduleIsUnconfiguredForRequest(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest) bool {
+	return catalogMigrationScheduleIsUnconfigured(schedule) && catalogMigrationScheduleCurrentPhaseMatches(schedule.Phases[0], request.CurrentPeriodStart, request.CurrentPeriodEnd, request.CurrentPriceID)
+}
+
+func catalogMigrationScheduleCreateOutcomeMatches(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest, metadata map[string]string) bool {
+	if schedule == nil || schedule.Livemode || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
+		return false
+	}
+	// The create call intentionally sends no metadata because Stripe rejects
+	// metadata together with from_subscription.  If a provider returns
+	// metadata anyway, only the exact migration marker is acceptable.
+	return len(schedule.Metadata) == 0 || catalogMigrationScheduleMetadataMatches(schedule, request, metadata)
+}
+
+func catalogMigrationScheduleCurrentPhaseMatches(phase *stripe.SubscriptionSchedulePhase, start, end int64, priceID string) bool {
+	return phase != nil && phase.StartDate == start && phase.EndDate == end && len(phase.Items) == 1 && phase.Items[0] != nil && phase.Items[0].Price != nil && phase.Items[0].Price.ID == priceID && phase.Items[0].Quantity == 1
 }
 
 func catalogMigrationSchedulePhaseMatches(phase *stripe.SubscriptionSchedulePhase, start, end int64, priceID string) bool {
@@ -561,9 +579,12 @@ func (stripeCatalogMigrationAPI) GetSchedule(ctx context.Context, id string) (*s
 	return stripeschedule.Get(strings.TrimSpace(id), params)
 }
 
-func (stripeCatalogMigrationAPI) CreateSchedule(ctx context.Context, subscriptionID string, metadata map[string]string, key string) (*stripe.SubscriptionSchedule, error) {
+func (stripeCatalogMigrationAPI) CreateSchedule(ctx context.Context, subscriptionID string, _ map[string]string, key string) (*stripe.SubscriptionSchedule, error) {
 	stripe.Key = setting.StripeApiSecret
-	params := &stripe.SubscriptionScheduleParams{FromSubscription: stripe.String(strings.TrimSpace(subscriptionID)), Metadata: metadata}
+	// Stripe rejects metadata (and phase fields) when from_subscription is
+	// supplied.  Ownership metadata and the target phase are applied by the
+	// immediately-following UpdateSchedule call.
+	params := &stripe.SubscriptionScheduleParams{FromSubscription: stripe.String(strings.TrimSpace(subscriptionID))}
 	params.Context = ctx
 	params.SetIdempotencyKey(key)
 	return stripeschedule.New(params)
