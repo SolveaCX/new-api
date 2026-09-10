@@ -26,7 +26,7 @@ import { getModelAvailabilityConfig } from '@/lib/model-availability'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
@@ -323,11 +323,13 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
 
       <ModelPricePanel price={price} />
 
-      <div className='flex border-t pt-4'>
-        <Button
-          size='lg'
-          className='min-w-0 flex-1'
-          render={<Link {...getModelQuickstartLink(model.id)} />}
+      <div className='grid grid-cols-2 gap-2 border-t pt-4'>
+        <Link
+          {...getModelQuickstartLink(model.id)}
+          className={cn(
+            buttonVariants({ size: 'lg' }),
+            'h-auto min-h-9 min-w-0 py-2 whitespace-normal'
+          )}
         >
           <HugeiconsIcon
             icon={FlashIcon}
@@ -336,7 +338,18 @@ export function ModelCatalogCard({ model, price }: ModelCatalogCardProps) {
             aria-hidden='true'
           />
           {t('Quick start')}
-        </Button>
+        </Link>
+        <Link
+          to='/pricing/$modelId'
+          params={{ modelId: model.id }}
+          preload={false}
+          className={cn(
+            buttonVariants({ variant: 'outline', size: 'lg' }),
+            'h-auto min-h-9 min-w-0 py-2 whitespace-normal'
+          )}
+        >
+          {t('View details')}
+        </Link>
       </div>
     </article>
   )
