@@ -55,7 +55,21 @@ Route susciyuan real-person **assets** through the **generalized `AssetBinding` 
 
 This is preferred over Approach B (store `provider_asset_id` in the single legacy `UpstreamAssetId` and have `GetAsset`/`DeleteAsset` operate by `provider_asset_id`) because susciyuan's query/delete endpoints are keyed by the integer management id, not by `provider_asset_id` — Approach B depends on an upstream capability that was never verified and that the observed character schema contradicts.
 
-> Open implementation detail carried into the plan: exactly where the real-person → generalized-binding bridge is anchored (either the profile's ready material is registered as a scoped `AssetBinding`, or `legacyRealPersonAssetCanUseChannel` + the synthesized binding are taught the scope). The plan step must pick the minimal anchor that keeps verification on the real-person state machine while material rewrite uses the two-field scoped path. Both candidate anchors are code-only, no schema.
+### Phasing: what ships now vs. what is deferred (resolved)
+
+The open implementation detail — where the real-person → generalized-binding bridge is anchored — resolves to a **phase boundary**, because the two legs of the flow have unequal buildability under the chosen acceptance ("unit tests + the H5 pre-live path"):
+
+**Phase A (this plan, fully verifiable now):** the verification/routing leg plus a complete provider.
+- The `virtualCharacterRealPersonProvider` implements all 8 `realPersonProvider` methods with real susciyuan REST calls. `CreateAsset`/`GetAsset`/`DeleteAsset` are keyed by the integer **management id**, which is the correct contract for the provider's own poll/delete responsibilities and for the `BytePlusAsset` single upstream field.
+- susciyuan enters automatic group routing; sessions are created, polled to `character_id`, and the profile lifecycle runs on the existing state machine.
+- Verified by unit tests + the live `create session → query session → query character → cancel` path. No human, no generation cost.
+
+**Phase B (deferred, its own follow-up):** the material → `asset://<provider_asset_id>` wire bridge.
+- The legacy real-person rewrite `ResolveLegacyBytePlusAssetBindingReferences` emits `"asset://" + asset.UpstreamAssetId` from the single-column `BytePlusAsset`. Susciyuan's wire requires `asset://<provider_asset_id>`, a **second** upstream value distinct from the management id used for poll/delete. Representing both requires the two-field scoped `AssetBinding` path, i.e. registering the ready character as a `virtual-character:v1:` scoped binding (`UpstreamAssetId`=management id, `UpstreamGroupId`=provider_asset_id) and teaching the video-submit resolver to prefer that scoped binding over the synthesized single-field legacy binding.
+- This is deferred for two independent reasons: (1) its payoff (`provider_asset_id`) appears **only after a live human completes H5 verification + portrait upload**, which the agreed acceptance explicitly excludes — the round-trip cannot be verified now without burning a real human flow; (2) bridging the `BytePlus`-table-wired real-person asset subsystem to the generalized `AssetBinding` pipeline is a separate design with dual-write correctness hazards that conflicts with the "no state-machine-body change" non-goal, and deserves its own spec.
+- **Safety of shipping Phase A without Phase B:** the channel is enabled in **staging only** (per Deployment) and acceptance is the pre-live path, so no production user reaches a wire that would emit `asset://<management_id>`. The PR description must state that production real-person **generation** is not complete until Phase B lands.
+
+The plan below is Phase A only.
 
 ## Provider implementation
 
@@ -131,11 +145,14 @@ New:
 - `service/virtual_character_real_person.go`
 - `service/virtual_character_real_person_test.go`
 
-Modified:
+Modified (Phase A):
 - `service/real_person_provider.go` (provider switch; automatic-candidate admission; generalize `TokenSpaceRealPersonChannelIsUsable`)
 - `service/byteplus_real_person.go` (relax `validateRealPersonCreateCallbackRequirement`; confirm native-only wrappers)
 - `service/byteplus_real_person_asset.go` (multipart temp-store allowlist)
-- `service/asset_reference.go` (call-site of the generalized usability check; real-person material → scoped-binding bridge anchor)
+- `service/asset_reference.go` (call-site of the generalized usability check only — `legacyRealPersonAssetCanUseChannel`)
 - `service/real_person_provider_test.go` (revise the exclusion test)
 - possibly `controller/relay.go` (defensive dormant-gate widening)
 - i18n message files (8 languages) for any new error string
+
+Deferred to Phase B (not in this plan):
+- `service/asset_reference.go` real-person material → scoped-binding rewrite bridge (the `asset://<provider_asset_id>` wire leg)
