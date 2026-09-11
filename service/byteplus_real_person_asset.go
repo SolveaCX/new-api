@@ -382,10 +382,12 @@ func realPersonAssetMultipartStore(binding *realPersonProviderBinding) (BytePlus
 		return nil, errors.New("real person channel unavailable")
 	}
 	if binding.StorageCredentials == nil {
-		if _, ok := binding.Provider.(tokenSpaceRealPersonProvider); !ok {
+		switch binding.Provider.(type) {
+		case tokenSpaceRealPersonProvider, virtualCharacterRealPersonProvider:
+			return newBytePlusGCSTempObjectStore()
+		default:
 			return nil, errors.New("real person storage credentials unavailable")
 		}
-		return newBytePlusGCSTempObjectStore()
 	}
 	creds := *binding.StorageCredentials
 	if !bytePlusRealPersonMultipartStorageAvailable(creds) {

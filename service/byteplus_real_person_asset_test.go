@@ -1459,3 +1459,22 @@ func TestDefaultRealPersonAssetNameSanitizesSlashStylesAndTruncates(t *testing.T
 	require.NotContains(t, name, "/")
 	require.NotContains(t, name, "\\")
 }
+
+// The multipart temp-store gate falls back to GCS storage (when the channel
+// carries no explicit StorageCredentials) only for allow-listed explicit
+// providers. virtual_character (susciyuan) must be admitted the same way
+// tokenspace_material is, or portrait upload fails closed with a 503 before it
+// ever reaches the upstream. We assert the provider is not rejected by the
+// allowlist; the GCS store itself may still fail to construct without a bucket
+// configured in the test environment, which is a different, acceptable error.
+func TestRealPersonAssetMultipartStoreAdmitsVirtualCharacter(t *testing.T) {
+	binding := &realPersonProviderBinding{
+		Channel:  &model.Channel{},
+		Provider: virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: "https://susciyuan.com"},
+	}
+
+	_, err := realPersonAssetMultipartStore(binding)
+	if err != nil {
+		require.NotContains(t, err.Error(), "storage credentials unavailable")
+	}
+}
