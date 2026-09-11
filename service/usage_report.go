@@ -43,6 +43,17 @@ const (
 
 var usageReportGroups = []string{UsageReportGroupPLG, UsageReportGroupAll}
 
+// usageReportAggregationSlot bounds all source-table aggregations in this
+// process to one at a time. It also prevents a manual backfill from
+// overlapping the scheduled task.
+var usageReportAggregationSlot = make(chan struct{}, 1)
+
+func withUsageReportAggregationSlot(fn func() error) error {
+	usageReportAggregationSlot <- struct{}{}
+	defer func() { <-usageReportAggregationSlot }()
+	return fn()
+}
+
 // usageReportGroupColumn returns the dialect-quoted `group` column name for
 // raw SQL (logs.group / users.group are reserved words in MySQL/PostgreSQL).
 func usageReportGroupColumn() string {
@@ -158,6 +169,54 @@ func EnsureUsageReportRange(days int) error {
 			}
 			if cost := time.Since(started); cost > 5*time.Second {
 				common.SysLog(fmt.Sprintf("usage_report fill slow: date=%s group=%s cost=%s", date, group, cost))
+			}
+		}
+	}
+	return firstErr
+}
+
+// EnsureUsageReportMissingRange fills only absent rows in the recent window.
+// Existing snapshots are never re-aggregated by this path. The window is
+// capped at seven days because this function is used by the automatic task;
+// older historical backfills must be explicitly requested.
+func EnsureUsageReportMissingRange(days int) error {
+	if days <= 0 {
+		return nil
+	}
+	if days > 7 {
+		days = 7
+	}
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	today := utcToday(now)
+	from := utcToday(now.AddDate(0, 0, -(days - 1)))
+	var rows []model.UsageReportDay
+	if err := model.DB.
+		Select(fmt.Sprintf("date, %s", model.UsageReportGroupColumn())).
+		Where("date >= ? AND date <= ?", from, today).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		existing[row.Date+"|"+row.Group] = struct{}{}
+	}
+
+	var firstErr error
+	for i := 0; i < days; i++ {
+		date := utcToday(now.AddDate(0, 0, -i))
+		for _, group := range usageReportGroups {
+			if _, ok := existing[date+"|"+group]; ok {
+				continue
+			}
+			if err := EnsureUsageReportDate(date, group); err != nil {
+				common.SysError(fmt.Sprintf("usage_report missing fill failed: date=%s group=%s: %s", date, group, err.Error()))
+				if firstErr == nil {
+					firstErr = err
+				}
 			}
 		}
 	}
@@ -348,32 +407,34 @@ func RecomputeUsageReportDateAllGroups(date string) error {
 // computeUsageReportDate aggregates one UTC day from the source tables and
 // stores it (idempotent delete + insert).
 func computeUsageReportDate(date string, group string) error {
-	start, end, err := utcDateBounds(date)
-	if err != nil {
-		return err
-	}
+	return withUsageReportAggregationSlot(func() error {
+		start, end, err := utcDateBounds(date)
+		if err != nil {
+			return err
+		}
 
-	day, modelStats, err := aggregateUsageReportDate(date, group, start, end)
-	if err != nil {
-		return err
-	}
-	day.BuiltAt = common.GetTimestamp()
-	day.SchemaV = usageReportSchemaV
+		day, modelStats, err := aggregateUsageReportDate(date, group, start, end)
+		if err != nil {
+			return err
+		}
+		day.BuiltAt = common.GetTimestamp()
+		day.SchemaV = usageReportSchemaV
 
-	return model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDay{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(day).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDayModel{}).Error; err != nil {
-			return err
-		}
-		if len(modelStats) == 0 {
-			return nil
-		}
-		return tx.Create(modelStats).Error
+		return model.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDay{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(day).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDayModel{}).Error; err != nil {
+				return err
+			}
+			if len(modelStats) == 0 {
+				return nil
+			}
+			return tx.Create(modelStats).Error
+		})
 	})
 }
 
