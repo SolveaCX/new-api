@@ -6,6 +6,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+// UsageReportGroupColumn exposes the dialect-quoted `group` column name for
+// callers outside this package (group is reserved in MySQL/PostgreSQL).
+func UsageReportGroupColumn() string { return usageReportGroupCol() }
+
 // usageReportGroupCol returns the dialect-quoted `group` column (group is a
 // reserved word in MySQL and PostgreSQL).
 func usageReportGroupCol() string {

@@ -170,6 +170,86 @@ var (
 	usageReportFilling bool
 )
 
+// usageReportPair is one (date, group) aggregation unit.
+type usageReportPair struct {
+	Date  string
+	Group string
+}
+
+// FillUsageReportMissing computes up to `batch` still-missing (or stale) day
+// rows, newest-first, and reports how many units remain.
+//
+// Why this exists: on Cloud Run, background goroutines get CPU-throttled once
+// no request is in flight, so a long background backfill can stall and leave
+// holes (observed in production). Calling this from the report page keeps the
+// work inside a request, where CPU is guaranteed, and bounds each call so it
+// stays well under the request timeout.
+func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return nil, 0, err
+	}
+	if days <= 0 {
+		days = 30
+	}
+	if batch <= 0 {
+		batch = 2
+	}
+	now := time.Now().UTC()
+	today := utcToday(now)
+	from := utcToday(now.AddDate(0, 0, -(days - 1)))
+
+	type rowState struct {
+		SchemaV int
+		BuiltAt int64
+	}
+	existing := map[string]rowState{}
+	var rows []model.UsageReportDay
+	if err := model.DB.
+		Select(fmt.Sprintf("date, %s, schema_v, built_at", model.UsageReportGroupColumn())).
+		Where("date >= ? AND date <= ?", from, today).
+		Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, r := range rows {
+		existing[r.Date+"|"+r.Group] = rowState{SchemaV: r.SchemaV, BuiltAt: r.BuiltAt}
+	}
+
+	needed := make([]usageReportPair, 0, days*len(usageReportGroups))
+	for i := 0; i < days; i++ {
+		date := utcToday(now.AddDate(0, 0, -i))
+		for _, group := range usageReportGroups {
+			st, ok := existing[date+"|"+group]
+			if !ok || st.SchemaV < usageReportSchemaV {
+				needed = append(needed, usageReportPair{Date: date, Group: group})
+				continue
+			}
+			if date == today && time.Since(time.Unix(st.BuiltAt, 0)) >= usageReportTodayFresh {
+				needed = append(needed, usageReportPair{Date: date, Group: group})
+			}
+		}
+	}
+
+	filled := make([]string, 0, batch)
+	var firstErr error
+	for _, pair := range needed {
+		if len(filled) >= batch {
+			break
+		}
+		if err := RecomputeUsageReportDate(pair.Date, pair.Group); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		filled = append(filled, pair.Date+"|"+pair.Group)
+	}
+	remaining := len(needed) - len(filled)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return filled, remaining, firstErr
+}
+
 // UsageReportFillRunning reports whether a background window fill is currently
 // in progress (the API uses it instead of inferring from row counts).
 func UsageReportFillRunning() bool {
