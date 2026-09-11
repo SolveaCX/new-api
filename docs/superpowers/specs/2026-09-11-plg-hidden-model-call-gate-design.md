@@ -40,7 +40,7 @@ The gate is stateless and reads the option that every node already syncs from th
 
 ## Rollout
 
-The gate has no feature flag: it takes effect for every model already on the hidden list the moment the router deploys. Before merging, the operator must confirm that no PLG account is currently calling a listed model, or accept that those calls start returning 404.
+The gate has no feature flag: it takes effect for every model already on the hidden list the moment the router deploys. No usage check precedes the merge and affected users are not notified; hidden means not callable, by product decision.
 
 ## Tests
 
