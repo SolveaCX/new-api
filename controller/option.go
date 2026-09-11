@@ -260,6 +260,9 @@ func isBulkOptionUpdateKey(key string) bool {
 	if strings.HasPrefix(key, "payment_notify_setting.") {
 		return true
 	}
+	if strings.HasPrefix(key, "plg_catalog_notify_setting.") {
+		return true
+	}
 	switch key {
 	case "SidebarModulesAdmin",
 		"LogConsumeEnabled",

@@ -359,6 +359,10 @@ export type OperationsSettings = {
   'payment_notify_setting.dingtalk_alert_enabled': boolean
   'payment_notify_setting.dingtalk_alert_webhook_url': string
   'payment_notify_setting.dingtalk_alert_secret': string
+  'plg_catalog_notify_setting.dingtalk_alert_enabled': boolean
+  'plg_catalog_notify_setting.dingtalk_alert_webhook_url': string
+  'plg_catalog_notify_setting.dingtalk_alert_secret': string
+  'plg_catalog_notify_setting.check_interval_minutes': number
   'codex_model_governance_setting.enabled': boolean
   'codex_model_governance_setting.probe_enabled': boolean
   'codex_model_governance_setting.probe_interval_minutes': number
