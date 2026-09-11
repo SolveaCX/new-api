@@ -21,12 +21,10 @@ var usageReportTaskOnce sync.Once
 // are pure table lookups instead of on-demand aggregation:
 //   - at startup: warm the trailing window in the background (catch-up after a
 //     deploy/restart), without blocking boot;
-//   - every day at 00:00 UTC: force-recompute the last few days (so yesterday
-//     is finalised and late events land) and then self-heal any missing day in
-//     the trailing window.
+//   - every day at 00:00 UTC: fill only missing dates in the trailing window.
 //
-// Runs on the master node only; each recompute is an idempotent delete+insert,
-// so a duplicate run from another node or a retry is harmless.
+// Runs on the master node only; the distributed lock and one-slot query gate
+// keep duplicate workers from stressing the source tables.
 func StartUsageReportDailyTask() {
 	usageReportTaskOnce.Do(func() {
 		if !common.IsMasterNode {

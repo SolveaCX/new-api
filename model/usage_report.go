@@ -59,7 +59,7 @@ type UsageReportDay struct {
 	PromptTokens     int64 `gorm:"not null;default:0" json:"prompt_tokens"`
 	CompletionTokens int64 `gorm:"not null;default:0" json:"completion_tokens"`
 	BuiltAt          int64 `gorm:"bigint;not null;default:0" json:"built_at"` // unix seconds of last compute
-	SchemaV          int   `gorm:"not null;default:0" json:"-"`               // aggregation schema version, bump to force one-time recompute
+	SchemaV          int   `gorm:"not null;default:0" json:"-"`               // aggregation schema version recorded when the snapshot was built
 }
 
 func (UsageReportDay) TableName() string {
