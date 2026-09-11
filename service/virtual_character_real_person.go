@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,4 +150,65 @@ func virtualCharacterRealPersonDo(ctx context.Context, channel *model.Channel, a
 		return nil, virtualCharacterProcessingFailure(response.StatusCode, errVirtualCharacterProtocol)
 	}
 	return raw, nil
+}
+
+type virtualCharacterRealPersonCreateSessionRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Language    string   `json:"language"`
+}
+
+const virtualCharacterRealPersonValidationSessionPath = "/v1/virtual-characters/validation-sessions"
+
+func (p virtualCharacterRealPersonProvider) CreateVisualValidateSession(ctx context.Context, _ string) (BytePlusVisualValidationSession, error) {
+	// Upstream stores non-ASCII name/description as U+FFFD, so send ASCII only.
+	payload, err := common.Marshal(virtualCharacterRealPersonCreateSessionRequest{
+		Name:     "flatkey-real-person",
+		Language: "en",
+	})
+	if err != nil {
+		return BytePlusVisualValidationSession{}, virtualCharacterProcessingFailure(0, err)
+	}
+	raw, err := virtualCharacterRealPersonDo(ctx, p.channel, p.apiKey, p.gatewayOrigin, http.MethodPost, virtualCharacterRealPersonValidationSessionPath, payload, http.StatusOK)
+	if err != nil {
+		return BytePlusVisualValidationSession{}, err
+	}
+	var envelope virtualCharacterRealPersonSessionResponse
+	if err := common.Unmarshal(raw, &envelope); err != nil {
+		return BytePlusVisualValidationSession{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	sessionID := strings.TrimSpace(envelope.Data.ID)
+	h5 := strings.TrimSpace(envelope.Data.LaunchURL)
+	if !envelope.Success || sessionID == "" || h5 == "" {
+		return BytePlusVisualValidationSession{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	return BytePlusVisualValidationSession{BytedToken: sessionID, H5Link: h5}, nil
+}
+
+func (p virtualCharacterRealPersonProvider) GetVisualValidateResult(ctx context.Context, bytedToken string) (BytePlusVisualValidationResult, error) {
+	bytedToken = strings.TrimSpace(bytedToken)
+	if bytedToken == "" {
+		return BytePlusVisualValidationResult{}, virtualCharacterProcessingFailure(0, errVirtualCharacterProtocol)
+	}
+	raw, err := virtualCharacterRealPersonDo(ctx, p.channel, p.apiKey, p.gatewayOrigin, http.MethodGet, virtualCharacterRealPersonValidationSessionPath+"/"+bytedToken, nil, http.StatusOK)
+	if err != nil {
+		return BytePlusVisualValidationResult{}, err
+	}
+	var envelope virtualCharacterRealPersonSessionResponse
+	if err := common.Unmarshal(raw, &envelope); err != nil {
+		return BytePlusVisualValidationResult{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	switch strings.ToLower(strings.TrimSpace(envelope.Data.Status)) {
+	case "succeeded":
+		if envelope.Data.CharacterID <= 0 {
+			return BytePlusVisualValidationResult{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+		}
+		return BytePlusVisualValidationResult{GroupID: strconv.FormatInt(envelope.Data.CharacterID, 10)}, nil
+	case "pending", "processing", "":
+		// Human has not finished H5 yet -- retryable, drives the poll backoff.
+		return BytePlusVisualValidationResult{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	default: // failed, expired, cancelled, blocked
+		return BytePlusVisualValidationResult{}, virtualCharacterDefinitiveFailure(errVirtualCharacterProtocol)
+	}
 }

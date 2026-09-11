@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -81,4 +82,85 @@ func TestVirtualCharacterRealPersonDoReturnsBodyOn2xx(t *testing.T) {
 	body, err := virtualCharacterRealPersonDo(context.Background(), &model.Channel{}, "secret-key", server.URL, http.MethodGet, "/v1/virtual-characters/validation-sessions/abc", nil, http.StatusOK)
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"id":"abc"`)
+}
+
+func TestVirtualCharacterCreateVisualValidateSession(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/v1/virtual-characters/validation-sessions", r.URL.Path)
+		body, _ := io.ReadAll(r.Body)
+		require.NotContains(t, string(body), "�")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":"sess-hash","character_id":2558,"launch_url":"https://susciyuan.com/api/virtual-characters/validation/launch/sess-hash","status":"pending"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	session, err := p.CreateVisualValidateSession(context.Background(), "")
+	require.NoError(t, err)
+	require.Equal(t, "sess-hash", session.BytedToken)
+	require.Contains(t, session.H5Link, "launch/sess-hash")
+}
+
+func TestVirtualCharacterGetVisualValidateResultSucceeded(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/virtual-characters/validation-sessions/sess-hash", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":"sess-hash","character_id":2558,"status":"succeeded"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	result, err := p.GetVisualValidateResult(context.Background(), "sess-hash")
+	require.NoError(t, err)
+	require.Equal(t, "2558", result.GroupID)
+}
+
+func TestVirtualCharacterGetVisualValidateResultPendingIsProcessing(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":"sess-hash","character_id":2558,"status":"pending"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	_, err := p.GetVisualValidateResult(context.Background(), "sess-hash")
+	require.Error(t, err)
+	require.Equal(t, AssetMaterializeErrorProcessing, AssetMaterializeErrorClass(err))
+	require.False(t, isRealPersonDefinitiveResponse(err))
+}
+
+func TestVirtualCharacterGetVisualValidateResultFailedIsDefinitive(t *testing.T) {
+	for _, status := range []string{"failed", "expired", "cancelled"} {
+		t.Run(status, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"success":true,"data":{"id":"sess-hash","status":"` + status + `","last_error":"liveness rejected"}}`))
+			}))
+			defer server.Close()
+			withVirtualCharacterTestClients(t, server.Client(), nil)
+			p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+			_, err := p.GetVisualValidateResult(context.Background(), "sess-hash")
+			require.Error(t, err)
+			require.True(t, isRealPersonDefinitiveResponse(err))
+		})
+	}
+}
+
+func TestVirtualCharacterProviderErrorsNeverLeakKey(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"success":false,"error":{"code":"upstream"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "super-secret-key", gatewayOrigin: server.URL}
+
+	_, err := p.GetVisualValidateResult(context.Background(), "sess-hash")
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "super-secret-key")
 }
