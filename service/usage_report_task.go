@@ -11,7 +11,12 @@ import (
 )
 
 const (
-	// trailing window warmed at startup and kept warm by the nightly job
+	// Startup no longer warms the whole window: 30 days x 2 groups is ~300 SQL
+	// statements and, multiplied by replicas, flooded production. The report
+	// page now drives the historical fill in small request-bound batches; the
+	// nightly job keeps the recent days warm.
+	usageReportStartupWarmDays = 2
+	// trailing window kept warm by the nightly job
 	usageReportWindowDays = 30
 	// days force-recomputed at 00:00 UTC (yesterday finalises; late-arriving
 	// key/payment events from the previous days are picked up)
@@ -38,8 +43,8 @@ func StartUsageReportDailyTask() {
 		gopool.Go(func() {
 			common.SysLog("usage report daily task started (UTC 00:00)")
 			go func() {
-				if err := EnsureUsageReportRange(usageReportWindowDays); err != nil {
-					common.SysError("usage_report startup backfill failed: " + err.Error())
+				if err := EnsureUsageReportRange(usageReportStartupWarmDays); err != nil {
+					common.SysError("usage_report startup warm failed: " + err.Error())
 				}
 			}()
 			for {
@@ -62,8 +67,12 @@ func runUsageReportDailyJob() {
 			common.SysError("usage_report nightly recompute failed for " + date + ": " + err.Error())
 		}
 	}
-	if err := EnsureUsageReportRange(usageReportWindowDays); err != nil {
-		common.SysError("usage_report nightly window fill failed: " + err.Error())
+	// Self-heal at most a couple of missing days per night instead of walking
+	// the whole 30-day window (each day = ~5 SQL statements per group).
+	if filled, remaining, err := FillUsageReportMissing(usageReportWindowDays, 2); err != nil {
+		common.SysError("usage_report nightly self-heal failed: " + err.Error())
+	} else if remaining > 0 {
+		common.SysLog(fmt.Sprintf("usage_report nightly self-heal: filled=%d remaining=%d", len(filled), remaining))
 	}
 	common.SysLog(fmt.Sprintf("usage report daily job finished in %s", time.Since(started)))
 }

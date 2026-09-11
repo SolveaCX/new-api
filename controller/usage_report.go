@@ -75,11 +75,11 @@ func GetUsageReport(c *gin.Context) {
 		return
 	}
 
-	// Interactive view: never block the request on a historical backfill.
-	// Kick off the warm fill in the background and serve what is already
-	// persisted; the response carries a "filling" flag until the window is
-	// complete so the front-end can poll.
-	service.EnsureUsageReportRangeAsync(days)
+	// Interactive view serves only what is already persisted. Historical
+	// backfill is driven by the front-end through /usage_report_fill (inside a
+	// request, where Cloud Run grants CPU) — we deliberately do NOT kick a
+	// background fill here: it silently ran on every read, on every replica,
+	// and multiplied the SQL load.
 
 	dayRows, err := model.GetUsageReportDays(from, to, group)
 	if err != nil {
