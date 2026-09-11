@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 // ops daily report.
 //
 // Design (see docs/usage-report.md):
-//   - One compute per UTC+0 day, stored into usage_report_daily(_model).
+//   - One compute per (UTC+0 day, group), stored into
+//     usage_report_daily_v2 / usage_report_daily_model_v2.
 //   - Past dates are computed once, lazily, on first read (idempotent).
 //   - The current UTC day is recomputed at most every usageReportTodayFresh
 //     seconds from the (indexed) day slice of the log/users tables, so admin
@@ -29,7 +31,26 @@ const usageReportTodayFresh = 5 * time.Minute
 
 // usageReportSchemaV is bumped whenever the daily row gains new aggregated
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
-const usageReportSchemaV = 4
+const (
+	usageReportSchemaV = 5
+
+	// UsageReportGroupPLG / UsageReportGroupAll are the stored group
+	// dimensions: "plg" = only users whose users.group = 'plg';
+	// "all" = no group filter.
+	UsageReportGroupPLG = "plg"
+	UsageReportGroupAll = "all"
+)
+
+var usageReportGroups = []string{UsageReportGroupPLG, UsageReportGroupAll}
+
+// usageReportGroupColumn returns the dialect-quoted `group` column name for
+// raw SQL (logs.group / users.group are reserved words in MySQL/PostgreSQL).
+func usageReportGroupColumn() string {
+	if common.UsingPostgreSQL {
+		return `"group"`
+	}
+	return "`group`"
+}
 
 // usageReportDateLocks serialize per-date ensure/compute so a slow recompute
 // of one day never blocks other dates (and admin reads are not globally
@@ -64,8 +85,11 @@ func usageReportEnsureColumnDefaults() error {
 	if usageReportNullsDone {
 		return nil
 	}
-	if err := model.DB.Exec(`
-		UPDATE usage_report_daily SET
+	// Table name is taken from the model so it always follows TableName()
+	// (currently usage_report_daily_v2) and can never drift to a legacy table.
+	table := model.UsageReportDay{}.TableName()
+	if err := model.DB.Exec(fmt.Sprintf(`
+		UPDATE %s SET
 			registered = COALESCE(registered, 0),
 			activated_key = COALESCE(activated_key, 0),
 			first_paid = COALESCE(first_paid, 0),
@@ -84,7 +108,7 @@ func usageReportEnsureColumnDefaults() error {
 		   OR paid_usd IS NULL OR activated_day IS NULL OR paid_day IS NULL
 		   OR activated_c7 IS NULL OR paid_c14 IS NULL OR paid_reg_c14 IS NULL
 		   OR calls IS NULL OR prompt_tokens IS NULL OR completion_tokens IS NULL
-		   OR built_at IS NULL OR schema_v IS NULL`).Error; err != nil {
+		   OR built_at IS NULL OR schema_v IS NULL`, table)).Error; err != nil {
 		return err // transient failure: do not mark done, next call retries
 	}
 	usageReportNullsDone = true
@@ -123,16 +147,18 @@ func EnsureUsageReportRange(days int) error {
 	var firstErr error
 	for i := 0; i < days; i++ {
 		date := utcToday(now.AddDate(0, 0, -i))
-		started := time.Now()
-		if err := EnsureUsageReportDate(date); err != nil {
-			common.SysError("usage_report fill failed for " + date + ": " + err.Error())
-			if firstErr == nil {
-				firstErr = err
+		for _, group := range usageReportGroups {
+			started := time.Now()
+			if err := EnsureUsageReportDate(date, group); err != nil {
+				common.SysError(fmt.Sprintf("usage_report fill failed: date=%s group=%s: %s", date, group, err.Error()))
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
 			}
-			continue
-		}
-		if cost := time.Since(started); cost > 5*time.Second {
-			common.SysLog(fmt.Sprintf("usage_report fill slow: date=%s cost=%s", date, cost))
+			if cost := time.Since(started); cost > 5*time.Second {
+				common.SysLog(fmt.Sprintf("usage_report fill slow: date=%s group=%s cost=%s", date, group, cost))
+			}
 		}
 	}
 	return firstErr
@@ -180,8 +206,8 @@ func EnsureUsageReportRangeAsync(days int) {
 // fresh enough for today. Past dates are computed once; today is refreshed at
 // most every usageReportTodayFresh seconds. Rows written by an older
 // aggregation schema (SchemaV < current) are recomputed once.
-func EnsureUsageReportDate(date string) error {
-	lock := usageReportDateLock(date)
+func EnsureUsageReportDate(date string, group string) error {
+	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -192,20 +218,20 @@ func EnsureUsageReportDate(date string) error {
 	}
 
 	var row model.UsageReportDay
-	err := model.DB.Where("date = ?", date).First(&row).Error
+	err := model.DB.Where("date = ? AND `group` = ?", date, group).First(&row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return computeUsageReportDate(date)
+			return computeUsageReportDate(date, group)
 		}
 		return err
 	}
 	// One-time recompute after schema additions (cohort fields etc).
 	if row.SchemaV < usageReportSchemaV {
-		return computeUsageReportDate(date)
+		return computeUsageReportDate(date, group)
 	}
 	if date == utcToday(time.Now().UTC()) {
 		if time.Since(time.Unix(row.BuiltAt, 0)) >= usageReportTodayFresh {
-			return computeUsageReportDate(date)
+			return computeUsageReportDate(date, group)
 		}
 	}
 	return nil
@@ -214,25 +240,40 @@ func EnsureUsageReportDate(date string) error {
 // RecomputeUsageReportDate force-recomputes one UTC day regardless of its
 // stored state. Used by the nightly task so yesterday is finalised and
 // late-arriving key/payment events are folded in.
-func RecomputeUsageReportDate(date string) error {
+func RecomputeUsageReportDate(date string, group string) error {
 	if err := usageReportEnsureColumnDefaults(); err != nil {
 		return err
 	}
-	lock := usageReportDateLock(date)
+	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
 	defer lock.Unlock()
-	return computeUsageReportDate(date)
+	return computeUsageReportDate(date, group)
+}
+
+// RecomputeUsageReportDateAllGroups recomputes every stored group for a date
+// (used by the nightly task and the manual backfill endpoint).
+func RecomputeUsageReportDateAllGroups(date string) error {
+	var firstErr error
+	for _, group := range usageReportGroups {
+		if err := RecomputeUsageReportDate(date, group); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			common.SysError(fmt.Sprintf("usage_report recompute failed: date=%s group=%s: %s", date, group, err.Error()))
+		}
+	}
+	return firstErr
 }
 
 // computeUsageReportDate aggregates one UTC day from the source tables and
 // stores it (idempotent delete + insert).
-func computeUsageReportDate(date string) error {
+func computeUsageReportDate(date string, group string) error {
 	start, end, err := utcDateBounds(date)
 	if err != nil {
 		return err
 	}
 
-	day, modelStats, err := aggregateUsageReportDate(date, start, end)
+	day, modelStats, err := aggregateUsageReportDate(date, group, start, end)
 	if err != nil {
 		return err
 	}
@@ -240,13 +281,13 @@ func computeUsageReportDate(date string) error {
 	day.SchemaV = usageReportSchemaV
 
 	return model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("date = ?", date).Delete(&model.UsageReportDay{}).Error; err != nil {
+		if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDay{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(day).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("date = ?", date).Delete(&model.UsageReportDayModel{}).Error; err != nil {
+		if err := tx.Where("date = ? AND `group` = ?", date, group).Delete(&model.UsageReportDayModel{}).Error; err != nil {
 			return err
 		}
 		if len(modelStats) == 0 {
@@ -265,16 +306,24 @@ type usageModelRow struct {
 
 // aggregateUsageReportDate reads one UTC day of facts from the source tables.
 // It never scans history: every query is bounded to [start, end).
-func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReportDay, []*model.UsageReportDayModel, error) {
-	day := &model.UsageReportDay{Date: date}
+func aggregateUsageReportDate(date string, group string, start, end int64) (*model.UsageReportDay, []*model.UsageReportDayModel, error) {
+	day := &model.UsageReportDay{Date: date, Group: group}
+	groupFilter := ""
+	if group != UsageReportGroupAll {
+		groupFilter = fmt.Sprintf(" AND %s = ?", usageReportGroupColumn())
+	}
 
-	// 1) Registrations: created that UTC day, enabled + email verified.
-	var registered int64
-	if err := model.DB.Model(&model.User{}).
+	// 1) Registrations: created that UTC day, enabled + email verified,
+	//    restricted to the requested group (default: PLG only).
+	regQuery := model.DB.Model(&model.User{}).
 		Where("status = ?", common.UserStatusEnabled).
 		Where("email_verified_at > 0").
-		Where("created_at >= ? AND created_at < ?", start, end).
-		Count(&registered).Error; err != nil {
+		Where("created_at >= ? AND created_at < ?", start, end)
+	if group != UsageReportGroupAll {
+		regQuery = regQuery.Where("`group` = ?", group)
+	}
+	var registered int64
+	if err := regQuery.Count(&registered).Error; err != nil {
 		return nil, nil, fmt.Errorf("usage_report registrations: %w", err)
 	}
 	day.Registered = int(registered)
@@ -285,19 +334,31 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	paymentTime := "COALESCE(NULLIF(complete_time, 0), create_time)"
 
 	var paidUSD float64
-	if err := model.DB.Raw(fmt.Sprintf(`
-		SELECT COALESCE(SUM(money), 0)
-		FROM top_ups
-		WHERE status = ? AND (money > 0 OR payment_amount_minor > 0)
-		  AND %s >= ? AND %s < ?`, paymentTime, paymentTime),
-		common.TopUpStatusSuccess, start, end).Scan(&paidUSD).Error; err != nil {
-		return nil, nil, fmt.Errorf("usage_report paid usd: %w", err)
+	if group == UsageReportGroupAll {
+		if err := model.DB.Raw(fmt.Sprintf(`
+			SELECT COALESCE(SUM(money), 0)
+			FROM top_ups
+			WHERE status = ? AND (money > 0 OR payment_amount_minor > 0)
+			  AND %s >= ? AND %s < ?`, paymentTime, paymentTime),
+			common.TopUpStatusSuccess, start, end).Scan(&paidUSD).Error; err != nil {
+			return nil, nil, fmt.Errorf("usage_report paid usd: %w", err)
+		}
+	} else {
+		if err := model.DB.Raw(fmt.Sprintf(`
+			SELECT COALESCE(SUM(p.money), 0)
+			FROM top_ups p
+			JOIN users u ON u.id = p.user_id AND u.deleted_at IS NULL AND %s = ?
+			WHERE p.status = ? AND (p.money > 0 OR p.payment_amount_minor > 0)
+			  AND %s >= ? AND %s < ?`, usageReportGroupColumn(), paymentTime, paymentTime),
+			group, common.TopUpStatusSuccess, start, end).Scan(&paidUSD).Error; err != nil {
+			return nil, nil, fmt.Errorf("usage_report paid usd: %w", err)
+		}
 	}
 	day.PaidUSD = math.Round(paidUSD*100) / 100
 
 	// 3) 当天口径（主口径，C 端快进快出）：该日注册的人中，注册当天即
 	// 首次建 Key / 首次付费的人数。天然 ⊆ Registered（同一天注册队列）。
-	actDay, payDay, sameDayErr := aggregateSameDay(start, end, paymentTime)
+	actDay, payDay, sameDayErr := aggregateSameDay(start, end, paymentTime, groupFilter, group)
 	if sameDayErr != nil {
 		return nil, nil, sameDayErr
 	}
@@ -311,7 +372,7 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	// 5) Usage: consumption log rows of that day (Log.Type = consume),
 	// grouped by model. All queries are range-bounded by the log table's
 	// created_at index.
-	rows, err := aggregateUsageLogs(start, end)
+	rows, err := aggregateUsageLogs(start, end, groupFilter, group)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -325,6 +386,7 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 		day.CompletionTokens += r.CompletionTokens
 		modelStats = append(modelStats, &model.UsageReportDayModel{
 			Date:             date,
+			Group:            group,
 			ModelName:        r.ModelName,
 			Calls:            r.Calls,
 			PromptTokens:     r.PromptTokens,
@@ -334,16 +396,20 @@ func aggregateUsageReportDate(date string, start, end int64) (*model.UsageReport
 	return day, modelStats, nil
 }
 
-func aggregateUsageLogs(start, end int64) ([]usageModelRow, error) {
+func aggregateUsageLogs(start, end int64, groupFilter string, group string) ([]usageModelRow, error) {
 	var rows []usageModelRow
-	err := model.LOG_DB.Raw(`
+	sql := `
 		SELECT model_name, COUNT(*) AS calls,
 		       COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
 		       COALESCE(SUM(completion_tokens), 0) AS completion_tokens
 		FROM logs
-		WHERE type = ? AND created_at >= ? AND created_at < ?
-		GROUP BY model_name`,
-		model.LogTypeConsume, start, end).Scan(&rows).Error
+		WHERE type = ? AND created_at >= ? AND created_at < ?` + strings.ReplaceAll(groupFilter, "u.", "") + `
+		GROUP BY model_name`
+	args := []interface{}{model.LogTypeConsume, start, end}
+	if group != UsageReportGroupAll {
+		args = append(args, group)
+	}
+	err := model.LOG_DB.Raw(sql, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("usage_report usage logs: %w", err)
 	}
@@ -358,31 +424,36 @@ func aggregateUsageLogs(start, end int64) ([]usageModelRow, error) {
 //
 // Both numbers are subsets of that day's registrations (people counted), which
 // keeps the same-day funnel columns monotonically non-increasing.
-func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
+func aggregateSameDay(start, end int64, paymentTime string, groupFilter string, group string) (int, int, error) {
 	var activated int
-	if err := model.DB.Raw(`
+	sql := `
 		SELECT COUNT(*) FROM (
 			SELECT u.id AS uid, u.created_at AS ct
 			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL` + groupFilter + `
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
 		WHERE EXISTS (
 			SELECT 1 FROM tokens t
 			WHERE t.user_id = uu.uid
-			  AND t.created_time >= uu.ct AND t.created_time < ?)`,
-		common.UserStatusEnabled, start, end, end).Scan(&activated).Error; err != nil {
+			  AND t.created_time >= uu.ct AND t.created_time < ?)`
+	args := []interface{}{common.UserStatusEnabled}
+	if group != UsageReportGroupAll {
+		args = append(args, group)
+	}
+	args = append(args, start, end, end)
+	if err := model.DB.Raw(sql, args...).Scan(&activated).Error; err != nil {
 		return 0, 0, fmt.Errorf("usage_report same-day activated: %w", err)
 	}
 
 	// paid_day：该日注册的人中，注册当天完成首笔成功付费（EXISTS 当天有
 	// 成功付费 + NOT EXISTS 注册前已有付费，限定首笔；走 user_id 索引）。
 	var paid int
-	if err := model.DB.Raw(fmt.Sprintf(`
+	sql = fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
 			SELECT u.id AS uid, u.created_at AS ct
 			FROM users u
-			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL
+			WHERE u.status = ? AND u.email_verified_at > 0 AND u.deleted_at IS NULL`+groupFilter+`
 			  AND u.created_at >= ? AND u.created_at < ?
 		) uu
 		WHERE EXISTS (
@@ -398,9 +469,13 @@ func aggregateSameDay(start, end int64, paymentTime string) (int, int, error) {
 			  AND prev.status = ?
 			  AND (prev.money > 0 OR prev.payment_amount_minor > 0)
 			  AND %s < uu.ct
-		)`, paymentTime, paymentTime, paymentTime),
-		common.UserStatusEnabled, start, end, common.TopUpStatusSuccess,
-		end, common.TopUpStatusSuccess).Scan(&paid).Error; err != nil {
+		)`, paymentTime, paymentTime, paymentTime)
+	args = []interface{}{common.UserStatusEnabled}
+	if group != UsageReportGroupAll {
+		args = append(args, group)
+	}
+	args = append(args, start, end, common.TopUpStatusSuccess, end, common.TopUpStatusSuccess)
+	if err := model.DB.Raw(sql, args...).Scan(&paid).Error; err != nil {
 		return 0, 0, fmt.Errorf("usage_report same-day paid: %w", err)
 	}
 	return activated, paid, nil

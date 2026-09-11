@@ -16,7 +16,7 @@
 
 | 指标 | 口径 |
 | --- | --- |
-| 注册 | 当日 UTC+0 新增，`users.status = enabled(1)` **且** `email_verified_at > 0`（人） |
+| 注册 | 当日 UTC+0 新增，`users.status = enabled(1)` **且** `email_verified_at > 0`（人）；**按分组过滤**（默认 `group=plg`） |
 | 激活(建 Key) | 用户**首次**创建 API Key 落在当日；**按人去重**（1 人多 Key 只算 1 人） |
 | 首次付费 | 用户**首次**成功 top-up 落在当日（人） |
 | 付费金额 | 当日全部成功 top-up 的 `money` 合计（含老客复购；一次性套餐已由订阅同步管线镜像进 top_up） |
@@ -38,8 +38,10 @@
 ## 表结构（AutoMigrate 注册于 model/main.go orderedMigrationModels）
 
 ```sql
-CREATE TABLE usage_report_daily (
-  date             CHAR(10) PRIMARY KEY,          -- UTC+0 yyyy-mm-dd
+CREATE TABLE usage_report_daily_v2 (
+  date             CHAR(10) NOT NULL,             -- UTC+0 yyyy-mm-dd
+  `group`          VARCHAR(32) NOT NULL DEFAULT 'plg',  -- plg | all
+  PRIMARY KEY (date, `group`),
   registered       INT NOT NULL DEFAULT 0,
   activated_key    INT NOT NULL DEFAULT 0,
   first_paid       INT NOT NULL DEFAULT 0,
@@ -49,21 +51,28 @@ CREATE TABLE usage_report_daily (
   completion_tokens BIGINT NOT NULL DEFAULT 0,
   built_at         BIGINT NOT NULL DEFAULT 0      -- 最近一次计算时间(unix)
 );
-CREATE TABLE usage_report_daily_model (
+CREATE TABLE usage_report_daily_model_v2 (
   date       CHAR(10) NOT NULL,
+  `group`    VARCHAR(32) NOT NULL DEFAULT 'plg',
   model_name VARCHAR(191) NOT NULL,
   calls      BIGINT NOT NULL DEFAULT 0,
   prompt_tokens BIGINT NOT NULL DEFAULT 0,
   completion_tokens BIGINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (date, model_name)
+  PRIMARY KEY (date, `group`, model_name)
 );
+
+> 说明：加入 `group` 维度后主键从 `(date)` 变为 `(date, group)`，为了**对线上零破坏**，
+> 新版本写入**新表** `usage_report_daily_v2` / `usage_report_daily_model_v2`。
+> 迁移只做 `CREATE TABLE IF NOT EXISTS`，**不会 ALTER / DROP 任何既有表**；
+> 旧的 `usage_report_daily(_model)` 原样保留（可后续由运维清理）。
+> 新表为空时，由启动预热 / 每日 00:00 UTC 任务 / 页面读取自动回填，无需人工干预。
 ```
 
 ## 计算策略（对线上零影响）
 
 1. **历史日**：首次被读到时一次性按 UTC 日窗口查询（SQL 全部带
    `created_at >= start AND created_at < end` 的索引范围，不扫全表），结果幂等
-   delete+insert 落 `usage_report_daily(_model)`。
+   delete+insert 落 `usage_report_daily_v2(_model_v2)`。
 2. **今日**：以 `built_at` 判断，距上次计算 ≥ 5 分钟才重算一次；管理端并发由
    进程内 mutex 串行化。即使运营 1 分钟点一次，也只有 ~1 次/5min 的当日窗口查询。
 3. 请求热路径**零改动**：本版不修改 `RecordConsumeLog` 与计费链路。
@@ -75,12 +84,14 @@ CREATE TABLE usage_report_daily_model (
 
 - **启动时**：后台预热最近 30 天（不阻塞启动，用于部署/重启后的补齐）；
 - **每天 00:00 UTC**：强制重算最近 3 天（昨日定稿 + 迟到事件回补），随后自愈窗口内缺失日期；
-- 结果：管理端读取只查 `usage_report_daily(_model)`；接口里的懒加载/后台回填仅作兜底；
+- 结果：管理端读取只查 `usage_report_daily_v2(_model_v2)`；接口里的懒加载/后台回填仅作兜底；
 - 多节点幂等（delete+insert），任务只在 master 节点运行。
 
 ## 接口
 
-- `GET /api/data/usage_report?days=30[&format=csv[&dim=daily|models]]`
+- `GET /api/data/usage_report?days=30[&group=plg|all][&format=csv[&dim=daily|models]]`
+  - `group`：**默认 `plg`**，只统计 `users.group = 'plg'` 的用户（注册/激活/首付/金额）
+    以及 `logs.group = 'plg'` 的调用；`group=all` 为不限分组（两组数据都会预聚合落表）
   - 管理员鉴权（`middleware.AdminAuth`），与 ops_report 同组。
   - JSON：`{success, data:{ days:[{date,registered,activated_key,first_paid,paid_usd,calls,prompt_tokens,completion_tokens}], models:[{date,model_name,calls,prompt_tokens,completion_tokens}]}}`
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，

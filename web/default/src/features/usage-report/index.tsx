@@ -19,24 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import type { EChartsOption } from 'echarts'
+import { EChart } from '@/components/charts/echart'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -53,6 +37,7 @@ import {
   downloadUsageReportCSV,
   getUsageReport,
   usageReportQueryKeys,
+  type UsageReportGroup,
 } from './api'
 import type { UsageReportData, UsageReportDayRow, UsageReportModelRow } from './types'
 
@@ -141,12 +126,19 @@ function deltaUsd(cur: number | undefined, prev: number | undefined): string {
 
 export function UsageReport() {
   const { t } = useTranslation()
-  const [days, setDays] = useState(30)
+  // 初始状态从 URL 读取（刷新/分享链接后保持分组与天数）
+  const initialParams =
+    typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+  const initialGroup: UsageReportGroup = initialParams.get('group') === 'all' ? 'all' : 'plg'
+  const initialDaysRaw = Number(initialParams.get('days'))
+  const initialDays = DAY_OPTIONS.includes(initialDaysRaw) ? initialDaysRaw : 30
+  const [days, setDays] = useState(initialDays)
+  const [group, setGroup] = useState<UsageReportGroup>(initialGroup)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
   const { data: res, isLoading, refetch } = useQuery({
-    queryKey: usageReportQueryKeys.report(days),
-    queryFn: () => getUsageReport(days),
+    queryKey: usageReportQueryKeys.report(days, group),
+    queryFn: () => getUsageReport(days, group),
   })
   const payload: UsageReportData | undefined = res?.data
   const dayRows: UsageReportDayRow[] = payload
@@ -157,6 +149,7 @@ export function UsageReport() {
   const modelRows: UsageReportModelRow[] = payload ? [...payload.models] : []
   const today = dayRows.length > 0 ? dayRows[dayRows.length - 1] : undefined
   const yesterday = dayRows.length > 1 ? dayRows[dayRows.length - 2] : undefined
+  const latestDate = today ? today.date : '-'
 
   const sumDays = (pick: (r: UsageReportDayRow) => number): number =>
     dayRows.reduce((acc, r) => acc + pick(r), 0)
@@ -348,9 +341,200 @@ export function UsageReport() {
     return () => clearTimeout(id)
   }, [incomplete, filling, staleTicks, refetch])
 
+  // 分组/天数写回 URL：刷新或把链接发给同事时保持一致
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    params.set('group', group)
+    params.set('days', String(days))
+    const query = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+    )
+  }, [group, days])
+
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setActiveSec(id)
+  }
+
+  // ---------- ECharts options（图例默认可点击开关系列） ----------
+  const dates = dayRows.map((r) => r.date)
+  const dateLabel = (v: string): string => v.slice(5)
+  const peopleFmt = (v: number): string => (v >= 10000 ? `${Math.round(v / 10000)}万` : String(v))
+  const moneyFmt = (v: number): string => (v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`)
+
+  const funnelOption: EChartsOption = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 56, right: 64, top: 40, bottom: 28 },
+    xAxis: { type: 'category', data: dates, axisLabel: { formatter: dateLabel } },
+    yAxis: [
+      { type: 'value', name: t('人'), axisLabel: { formatter: peopleFmt } },
+      { type: 'value', name: '$', splitLine: { show: false }, axisLabel: { formatter: moneyFmt } },
+    ],
+    series: [
+      {
+        name: t('Registered'),
+        type: 'bar',
+        barMaxWidth: 12,
+        itemStyle: { color: '#f5b942' },
+        data: dayRows.map((r) => r.registered),
+      },
+      {
+        name: t('Activated (same-day)'),
+        type: 'bar',
+        barMaxWidth: 12,
+        itemStyle: { color: '#2f6bff' },
+        data: dayRows.map((r) => r.activated_day),
+      },
+      {
+        name: t('First Paid (same-day)'),
+        type: 'bar',
+        barMaxWidth: 12,
+        itemStyle: { color: '#0f9d58' },
+        data: dayRows.map((r) => r.paid_day),
+      },
+      {
+        name: t('Paid Amount $'),
+        type: 'line',
+        yAxisIndex: 1,
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#9c36b5', type: 'dashed', width: 2 },
+        itemStyle: { color: '#9c36b5' },
+        data: dayRows.map((r) => r.paid_usd),
+      },
+    ],
+  }
+
+  const convOption: EChartsOption = {
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v) => (v == null ? '-' : `${Number(v).toFixed(2)}%`),
+    },
+    legend: { top: 0 },
+    grid: { left: 46, right: 20, top: 34, bottom: 28 },
+    xAxis: { type: 'category', data: dates, axisLabel: { formatter: dateLabel } },
+    yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+    series: [
+      {
+        name: t('注册→激活率(当天)'),
+        type: 'bar',
+        itemStyle: { color: '#2f6bff' },
+        data: convSerie.map((c) => c['注册→激活率(当天)']),
+      },
+      {
+        name: t('注册→首付率(当天)'),
+        type: 'bar',
+        itemStyle: { color: '#0f9d58' },
+        data: convSerie.map((c) => c['注册→首付率(当天)']),
+      },
+    ],
+  }
+
+  const usageComboOption: EChartsOption = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 58, right: 62, top: 40, bottom: 28 },
+    xAxis: { type: 'category', data: dates, axisLabel: { formatter: dateLabel } },
+    yAxis: [
+      { type: 'value', name: t('Calls'), axisLabel: { formatter: peopleFmt } },
+      { type: 'value', name: t('Tokens'), splitLine: { show: false }, axisLabel: { formatter: (v: number) => fmtBig(v) } },
+    ],
+    series: [
+      { name: t('Calls'), type: 'bar', barMaxWidth: 14, itemStyle: { color: '#7c8cf8' }, data: combo.map((c) => c.calls) },
+      {
+        name: t('Tokens'),
+        type: 'line',
+        yAxisIndex: 1,
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#2f6bff', width: 2 },
+        itemStyle: { color: '#2f6bff' },
+        data: combo.map((c) => c.tokens),
+      },
+    ],
+  }
+
+  const donutOption: EChartsOption = {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { type: 'scroll', orient: 'vertical', right: 8, top: 'middle' },
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '68%'],
+        center: ['38%', '50%'],
+        label: { show: false },
+        emphasis: { label: { show: true, formatter: '{b}\n{d}%' } },
+        data: donutData.map((d, i) => ({
+          name: d.name,
+          value: d.value,
+          itemStyle: { color: MODEL_PALETTE[i % MODEL_PALETTE.length] },
+        })),
+      },
+    ],
+  }
+
+  const rankReversed = [...topRankData].reverse()
+  const topRankOption: EChartsOption = {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 140, right: 48, top: 16, bottom: 28 },
+    xAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtBig(v) } },
+    yAxis: { type: 'category', data: rankReversed.map((x) => x.name), axisLabel: { fontSize: 11 } },
+    series: [
+      {
+        type: 'bar',
+        barMaxWidth: 16,
+        data: rankReversed.map((x, i) => ({
+          value: x.tokens,
+          itemStyle: {
+            color: MODEL_PALETTE[(topRankData.length - 1 - i) % MODEL_PALETTE.length],
+          },
+        })),
+      },
+    ],
+  }
+
+  const stackOption: EChartsOption = {
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 62, right: 24, top: 42, bottom: 28 },
+    xAxis: { type: 'category', boundaryGap: false, data: dates, axisLabel: { formatter: dateLabel } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtBig(v) } },
+    series: stackSafeKeys.map((key, i) => {
+      const label = stackDisplayNames[i]
+      const color = MODEL_PALETTE[i % MODEL_PALETTE.length]
+      return {
+        name: label === 'other' ? `${t('Other')} (${metricLabel})` : `${label} (${metricLabel})`,
+        type: 'line',
+        stack: 'm',
+        symbol: 'none',
+        lineStyle: { width: 0 },
+        areaStyle: { opacity: 0.85, color },
+        itemStyle: { color },
+        data: stackedSerie.map((r) => Number(r[`${key}${metricSuffix}`] ?? 0)),
+      }
+    }),
+  }
+
+  const topTrendOption: EChartsOption = {
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 62, right: 24, top: 34, bottom: 28 },
+    xAxis: { type: 'category', boundaryGap: false, data: dates, axisLabel: { formatter: dateLabel } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v: number) => fmtBig(v) } },
+    series: top4.map((name, i) => ({
+      name,
+      type: 'line',
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { width: 2, color: MODEL_PALETTE[i % MODEL_PALETTE.length] },
+      itemStyle: { color: MODEL_PALETTE[i % MODEL_PALETTE.length] },
+      data: top5Serie.map((r) => Number(r[`t${i}`] ?? 0)),
+    })),
   }
 
   return (
@@ -358,16 +542,32 @@ export function UsageReport() {
       <SectionPageLayout.Title>{t('Usage Report')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-1'>
+          <Button
+            size='sm'
+            variant={group === 'plg' ? 'default' : 'outline'}
+            onClick={() => setGroup('plg')}
+          >
+            {t('PLG 分组')}
+          </Button>
+          <Button
+            size='sm'
+            variant={group === 'all' ? 'default' : 'outline'}
+            onClick={() => setGroup('all')}
+          >
+            {t('全部分组')}
+          </Button>
+        </div>
+        <div className='flex flex-wrap items-center gap-1'>
           {DAY_OPTIONS.map((d) => (
             <Button key={d} size='sm' variant={days === d ? 'default' : 'outline'} onClick={() => setDays(d)}>
               {d}天
             </Button>
           ))}
         </div>
-        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily')}>
+        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily', group)}>
           ⬇ CSV(日漏斗)
         </Button>
-        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models')}>
+        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models', group)}>
           ⬇ CSV(日×模型)
         </Button>
       </SectionPageLayout.Actions>
@@ -424,7 +624,7 @@ export function UsageReport() {
                 id='funnel'
                 no={1}
                 title={t('Funnel (same-day, people)')}
-                hint={t('注册=enabled+verified；激活=当天注册者当天首建Key(人)；首付=当天注册者当天首付(人)——C端当天口径')}
+                hint={`${t('注册=enabled+verified；激活=当天注册者当天首建Key(人)；首付=当天注册者当天首付(人)——C端当天口径')} · ${group === 'plg' ? t('PLG 分组') : t('全部分组')}`}
               />
               <KpiGrid items={kpiFunnel} />
 
@@ -433,6 +633,7 @@ export function UsageReport() {
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Daily Detail')}
                     <span className='text-muted-foreground text-xs font-normal'>
+                      {group === 'plg' ? t('PLG 分组') : t('全部分组')} · {t('数据截至')} {latestDate} (UTC+0) ·{' '}
                       {t('激活/首付列 = 该日注册的人中当天转化的(人)，恒 ≤ 注册；金额为当日实收；今日为进行中数据')}
                     </span>
                   </CardTitle>
@@ -482,20 +683,7 @@ export function UsageReport() {
                   <CardTitle>{t('Daily Funnel — same-day people bars (left) + paid amount line (right)')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width='100%' height={330}>
-                    <ComposedChart data={dayRows} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
-                      <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
-                      <YAxis yAxisId='people' tick={{ fontSize: 11 }} />
-                      <YAxis yAxisId='usd' orientation='right' tick={{ fontSize: 11 }} tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar yAxisId='people' dataKey='registered' name={t('Registered')} fill='#f5b942' barSize={10} />
-                      <Bar yAxisId='people' dataKey='activated_day' name={t('Activated (same-day)')} fill='#2f6bff' barSize={10} />
-                      <Bar yAxisId='people' dataKey='paid_day' name={t('First Paid (same-day)')} fill='#0f9d58' barSize={10} />
-                      <Line yAxisId='usd' type='monotone' dataKey='paid_usd' name={t('Paid Amount $')} stroke='#9c36b5' strokeDasharray='6 3' dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <EChart option={funnelOption} height={330} />
                 </CardContent>
               </Card>
 
@@ -509,17 +697,7 @@ export function UsageReport() {
                     <p className='text-muted-foreground mb-2 text-xs'>
                       {t('单位=人；注册→激活率(当天)=当天激活÷注册；注册→首付率(当天)=当天首付÷注册；今天为进行中。')}
                     </p>
-                    <ResponsiveContainer width='100%' height={230}>
-                      <BarChart data={convSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' vertical={false} />
-                        <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
-                        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
-                        <Tooltip formatter={(value: unknown) => (value == null ? '' : `${String(value)}%`)} />
-                        <Legend />
-                        <Bar dataKey='注册→激活率(当天)' name={t('注册→激活率(当天)')} fill='#2f6bff' radius={[3, 3, 0, 0]} />
-                        <Bar dataKey='注册→首付率(当天)' name={t('注册→首付率(当天)')} fill='#0f9d58' radius={[3, 3, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <EChart option={convOption} height={230} />
                   </CardContent>
                 </Card>
 
@@ -567,18 +745,7 @@ export function UsageReport() {
                   <CardTitle>{t('Daily Calls & Tokens')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width='100%' height={320}>
-                    <ComposedChart data={combo} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
-                      <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
-                      <YAxis yAxisId='l' tick={{ fontSize: 11 }} />
-                      <YAxis yAxisId='r' orientation='right' tick={{ fontSize: 11 }} tickFormatter={(v: number) => fmtBig(v)} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar yAxisId='l' dataKey='calls' name={t('Calls')} fill='#7c8cf8' barSize={14} />
-                      <Line yAxisId='r' type='monotone' dataKey='tokens' name={t('Tokens')} stroke='#2f6bff' strokeWidth={2} dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <EChart option={usageComboOption} height={320} />
                 </CardContent>
               </Card>
 
@@ -588,17 +755,7 @@ export function UsageReport() {
                     <CardTitle>{t('Today Model Tokens Share')}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width='100%' height={280}>
-                      <PieChart>
-                        <Pie data={donutData} dataKey='value' nameKey='name' innerRadius={60} outerRadius={95} paddingAngle={2}>
-                          {donutData.map((_, i) => (
-                            <Cell key={i} fill={MODEL_PALETTE[i % MODEL_PALETTE.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <EChart option={donutOption} height={280} />
                   </CardContent>
                 </Card>
 
@@ -607,19 +764,7 @@ export function UsageReport() {
                     <CardTitle>{t('Range Top Models (tokens)')}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width='100%' height={280}>
-                      <BarChart data={topRankData} layout='vertical' margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' horizontal={false} />
-                        <XAxis type='number' tick={{ fontSize: 11 }} tickFormatter={(v: number) => fmtBig(v)} />
-                        <YAxis type='category' dataKey='name' width={140} tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey='tokens' name={t('Tokens')} radius={[0, 4, 4, 0]}>
-                          {topRankData.map((_, i) => (
-                            <Cell key={i} fill={MODEL_PALETTE[i % MODEL_PALETTE.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <EChart option={topRankOption} height={280} />
                   </CardContent>
                 </Card>
               </div>
@@ -643,30 +788,7 @@ export function UsageReport() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width='100%' height={360}>
-                    <AreaChart data={stackedSerie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
-                      <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
-                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => fmtBig(v)} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      {stackSafeKeys.map((key, i) => {
-                        const label = stackDisplayNames[i]
-                        return (
-                          <Area
-                            key={key}
-                            type='monotone'
-                            dataKey={`${key}${metricSuffix}`}
-                            name={label === 'other' ? `${t('Other')} (${metricLabel})` : `${label} (${metricLabel})`}
-                            stackId='m'
-                            stroke={MODEL_PALETTE[i % MODEL_PALETTE.length]}
-                            fill={MODEL_PALETTE[i % MODEL_PALETTE.length]}
-                            fillOpacity={0.85}
-                          />
-                        )
-                      })}
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <EChart option={stackOption} height={360} />
                 </CardContent>
               </Card>
 
@@ -675,10 +797,10 @@ export function UsageReport() {
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Range Model Summary')}
                     <div className='flex gap-1'>
-                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily')}>
+                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily', group)}>
                         ⬇ CSV(日漏斗)
                       </Button>
-                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models')}>
+                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models', group)}>
                         ⬇ CSV(日×模型)
                       </Button>
                     </div>
@@ -725,26 +847,7 @@ export function UsageReport() {
                   <CardTitle>{t('Top Models Daily Trend (tokens)')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width='100%' height={260}>
-                    <LineChart data={top5Serie} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray='3 3' stroke='var(--border)' />
-                      <XAxis dataKey='date' tick={{ fontSize: 11 }} tickFormatter={(d: string) => d.slice(5)} />
-                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => fmtBig(v)} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      {top4.map((name, i) => (
-                        <Line
-                          key={`t${i}`}
-                          type='monotone'
-                          dataKey={`t${i}`}
-                          name={name}
-                          stroke={MODEL_PALETTE[i % MODEL_PALETTE.length]}
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <EChart option={topTrendOption} height={260} />
                 </CardContent>
               </Card>
             </div>

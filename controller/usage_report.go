@@ -28,6 +28,7 @@ const (
 //
 // Params:
 //   - days: trailing window length (default 30, cap 180)
+//   - group: "plg" (default, only users whose users.group = 'plg') or "all"
 //   - format: "csv" for CSV output, otherwise JSON
 //   - dim:    CSV dimension — "daily" (default) or "models"
 func GetUsageReport(c *gin.Context) {
@@ -37,6 +38,11 @@ func GetUsageReport(c *gin.Context) {
 	}
 	if days > usageReportMaxDays {
 		days = usageReportMaxDays
+	}
+	group, err := usageReportGroupParam(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 
 	// Build [from..to] date range (inclusive) around today (UTC+0).
@@ -52,7 +58,7 @@ func GetUsageReport(c *gin.Context) {
 		}
 		dim := strings.ToLower(c.Query("dim"))
 		if dim == "models" {
-			modelRows, err := model.GetUsageReportDayModels(from, to)
+			modelRows, err := model.GetUsageReportDayModels(from, to, group)
 			if err != nil {
 				common.ApiError(c, err)
 				return
@@ -60,7 +66,7 @@ func GetUsageReport(c *gin.Context) {
 			writeUsageReportModelsCSV(c, modelRows)
 			return
 		}
-		dayRows, err := model.GetUsageReportDays(from, to)
+		dayRows, err := model.GetUsageReportDays(from, to, group)
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -75,12 +81,12 @@ func GetUsageReport(c *gin.Context) {
 	// complete so the front-end can poll.
 	service.EnsureUsageReportRangeAsync(days)
 
-	dayRows, err := model.GetUsageReportDays(from, to)
+	dayRows, err := model.GetUsageReportDays(from, to, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	modelRows, err := model.GetUsageReportDayModels(from, to)
+	modelRows, err := model.GetUsageReportDayModels(from, to, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -90,6 +96,7 @@ func GetUsageReport(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
+			"group":  group,
 			"days":   dayRows,
 			"models": modelRows,
 			// Combine data completeness with the runner state: if the background
@@ -166,7 +173,7 @@ func BackfillUsageReport(c *gin.Context) {
 	results := make([]usageReportBackfillResult, 0, len(dates))
 	okCount := 0
 	for _, d := range dates {
-		if err := service.RecomputeUsageReportDate(d); err != nil {
+		if err := service.RecomputeUsageReportDateAllGroups(d); err != nil {
 			results = append(results, usageReportBackfillResult{Date: d, OK: false, Error: err.Error()})
 			continue
 		}
@@ -183,6 +190,18 @@ func BackfillUsageReport(c *gin.Context) {
 			"failed":  len(dates) - okCount,
 		},
 	})
+}
+
+// usageReportGroupParam validates ?group= (plg | all); default plg.
+func usageReportGroupParam(c *gin.Context) (string, error) {
+	group := strings.ToLower(strings.TrimSpace(c.Query("group")))
+	if group == "" {
+		return service.UsageReportGroupPLG, nil
+	}
+	if group != service.UsageReportGroupPLG && group != service.UsageReportGroupAll {
+		return "", fmt.Errorf("invalid group %q, expected plg or all", group)
+	}
+	return group, nil
 }
 
 // usageReportBackfillDates parses and validates the backfill query params.
