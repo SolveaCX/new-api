@@ -8,7 +8,10 @@ import (
 )
 
 // PricingVisibilitySetting 控制面向用户的模型展示入口对外暴露哪些模型。
-// 影响官网定价/模型/排行页与 Console 可用模型页，不影响模型可用性与实际调用。
+// 影响官网定价/模型/排行页与 Console 可用模型页。
+// 对 PLG 身份（非企业用户）同时是调用闸门：命中名单的模型在 relay 入口按
+// model_not_found 拒绝，并从 /v1/models、/v1/available_models 剔除
+// （见 service.HiddenModelBlockedForIdentity）。企业身份不受影响。
 type PricingVisibilitySetting struct {
 	// HiddenModels 逗号分隔的模型名，支持 * 通配符，例如 "gpt-4o,claude-*,*-internal"
 	HiddenModels string `json:"hidden_models"`

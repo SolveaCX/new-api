@@ -111,7 +111,7 @@ export function HiddenModelsSettings({
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.'
+                    'Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). PLG users cannot call hidden models through the API; enterprise users are not affected.'
                   )}
                 </FormDescription>
                 <FormMessage />

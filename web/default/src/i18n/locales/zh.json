@@ -6629,7 +6629,7 @@
     "Unknown lifecycle event": "未知生命周期事件",
     "Unknown lifecycle outcome": "未知生命周期结果",
     "Hidden models": "隐藏模型",
-    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.": "以逗号分隔的模型名，这些模型不会出现在定价页面。支持 * 通配符（前缀、后缀或包含）。被隐藏的模型仍可通过 API 正常调用。",
+    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). PLG users cannot call hidden models through the API; enterprise users are not affected.": "以逗号分隔的模型名，这些模型不会出现在定价页面。支持 * 通配符（前缀、后缀或包含）。PLG 用户无法通过 API 调用被隐藏的模型，企业用户不受影响。",
     "Website Featured": "官网精选模型",
     "Loading featured models": "正在加载精选模型",
     "Unable to load featured models": "无法加载精选模型",

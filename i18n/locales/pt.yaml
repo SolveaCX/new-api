@@ -325,6 +325,7 @@ distributor.unsupported_web_tools: "O canal selecionado não oferece suporte a f
 distributor.affinity_channel_disabled: "O canal selecionado pela afinidade de canal foi desabilitado, e a nova tentativa foi interrompida pela regra. Entre em contato com o administrador"
 distributor.token_no_model_access: "Este token não tem acesso a nenhum modelo"
 distributor.token_model_forbidden: "Este token não tem acesso ao modelo {{.Model}}"
+distributor.model_not_found: "O modelo {{.Model}} não existe ou você não tem acesso a ele"
 distributor.model_name_required: "Nome do modelo não especificado; o nome do modelo não pode ficar vazio"
 distributor.invalid_playground_request: "Solicitação do playground inválida: {{.Error}}"
 distributor.group_access_denied: "Sem permissão para acessar este grupo"
