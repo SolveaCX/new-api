@@ -16,7 +16,7 @@
 
 | 指标 | 口径 |
 | --- | --- |
-| 注册 | 当日 UTC+0 新增，`users.status = enabled(1)` **且** `email_verified_at > 0`（人） |
+| 注册 | 当日 UTC+0 新增，`users.status = enabled(1)` **且** `email_verified_at > 0`（人）；**按分组过滤**（默认 `group=plg`） |
 | 激活(建 Key) | 用户**首次**创建 API Key 落在当日；**按人去重**（1 人多 Key 只算 1 人） |
 | 首次付费 | 用户**首次**成功 top-up 落在当日（人） |
 | 付费金额 | 当日全部成功 top-up 的 `money` 合计（含老客复购；一次性套餐已由订阅同步管线镜像进 top_up） |
@@ -39,7 +39,9 @@
 
 ```sql
 CREATE TABLE usage_report_daily (
-  date             CHAR(10) PRIMARY KEY,          -- UTC+0 yyyy-mm-dd
+  date             CHAR(10) NOT NULL,             -- UTC+0 yyyy-mm-dd
+  `group`          VARCHAR(32) NOT NULL DEFAULT 'plg',  -- plg | all
+  PRIMARY KEY (date, `group`),
   registered       INT NOT NULL DEFAULT 0,
   activated_key    INT NOT NULL DEFAULT 0,
   first_paid       INT NOT NULL DEFAULT 0,
@@ -51,12 +53,17 @@ CREATE TABLE usage_report_daily (
 );
 CREATE TABLE usage_report_daily_model (
   date       CHAR(10) NOT NULL,
+  `group`    VARCHAR(32) NOT NULL DEFAULT 'plg',
   model_name VARCHAR(191) NOT NULL,
   calls      BIGINT NOT NULL DEFAULT 0,
   prompt_tokens BIGINT NOT NULL DEFAULT 0,
   completion_tokens BIGINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (date, model_name)
+  PRIMARY KEY (date, `group`, model_name)
 );
+
+> 说明：分组维度是后加的，主键从 `(date)` 变为 `(date, group)`；这两张表是派生缓存，
+> 迁移时会直接 **DROP + 重建**（`HasUsageReportGroupColumn()` 检测旧结构），随后由
+> 启动预热/每日任务/读取自动回填，不需要人工干预。
 ```
 
 ## 计算策略（对线上零影响）
@@ -80,7 +87,9 @@ CREATE TABLE usage_report_daily_model (
 
 ## 接口
 
-- `GET /api/data/usage_report?days=30[&format=csv[&dim=daily|models]]`
+- `GET /api/data/usage_report?days=30[&group=plg|all][&format=csv[&dim=daily|models]]`
+  - `group`：**默认 `plg`**，只统计 `users.group = 'plg'` 的用户（注册/激活/首付/金额）
+    以及 `logs.group = 'plg'` 的调用；`group=all` 为不限分组（两组数据都会预聚合落表）
   - 管理员鉴权（`middleware.AdminAuth`），与 ops_report 同组。
   - JSON：`{success, data:{ days:[{date,registered,activated_key,first_paid,paid_usd,calls,prompt_tokens,completion_tokens}], models:[{date,model_name,calls,prompt_tokens,completion_tokens}]}}`
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，

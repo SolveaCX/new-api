@@ -1,5 +1,20 @@
 package model
 
+import (
+	"fmt"
+
+	"github.com/QuantumNous/new-api/common"
+)
+
+// usageReportGroupCol returns the dialect-quoted `group` column (group is a
+// reserved word in MySQL and PostgreSQL).
+func usageReportGroupCol() string {
+	if common.UsingPostgreSQL {
+		return `"group"`
+	}
+	return "`group`"
+}
+
 // UsageReportDay is one UTC+0 calendar day of user-side reporting metrics.
 // This is a NEW reporting board, intentionally separate from the existing
 // ops daily report (controller/ops_report.go). It never replaces it.
@@ -18,7 +33,10 @@ package model
 //   - Calls/Tokens:   consumption log_requests rows of that UTC day
 //     (Log.Type = consume), totalled across the log DB.
 type UsageReportDay struct {
-	Date         string  `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
+	Date string `gorm:"primaryKey;type:char(10)" json:"date"` // UTC+0 "2006-01-02"
+	// Group: 分组维度（users.group / logs.group）。"plg" = 仅 PLG 分组用户，
+	// "all" = 不限分组。主键 = (date, group)。
+	Group        string  `gorm:"primaryKey;type:varchar(32);default:'plg'" json:"group"`
 	Registered   int     `gorm:"not null;default:0" json:"registered"`
 	ActivatedKey int     `gorm:"not null;default:0" json:"activated_key"` // 当日首次建 Key 的去重用户数（事件口径）
 	FirstPaid    int     `gorm:"not null;default:0" json:"first_paid"`    // 当日首次付费的去重用户数（事件口径）
@@ -49,6 +67,7 @@ func (UsageReportDay) TableName() string {
 // views of the usage report board.
 type UsageReportDayModel struct {
 	Date             string `gorm:"primaryKey;type:char(10)" json:"date"`
+	Group            string `gorm:"primaryKey;type:varchar(32);default:'plg'" json:"group"`
 	ModelName        string `gorm:"primaryKey;type:varchar(191)" json:"model_name"`
 	Calls            int64  `json:"calls"`
 	PromptTokens     int64  `json:"prompt_tokens"`
@@ -59,27 +78,52 @@ func (UsageReportDayModel) TableName() string {
 	return "usage_report_daily_model"
 }
 
-// GetUsageReportDays returns stored daily rows within [from, to] (inclusive),
-// ordered by date ascending. Missing dates simply do not appear.
-func GetUsageReportDays(from string, to string) ([]*UsageReportDay, error) {
+// GetUsageReportDays returns stored daily rows of one group within [from, to]
+// (inclusive), ordered by date ascending. Missing dates simply do not appear.
+func GetUsageReportDays(from string, to string, group string) ([]*UsageReportDay, error) {
 	var rows []*UsageReportDay
-	err := DB.Where("date >= ? AND date <= ?", from, to).Order("date ASC").Find(&rows).Error
+	err := DB.Where(fmt.Sprintf("date >= ? AND date <= ? AND %s = ?", usageReportGroupCol()), from, to, group).
+		Order("date ASC").Find(&rows).Error
 	return rows, err
 }
 
-// GetUsageReportDayModels returns stored per-model rows within [from, to]
-// (inclusive), ordered by date then by tokens desc so the stacked-area series
-// has a stable order.
-func GetUsageReportDayModels(from string, to string) ([]*UsageReportDayModel, error) {
+// GetUsageReportDayModels returns stored per-model rows of one group within
+// [from, to] (inclusive), ordered by date then by tokens desc so the
+// stacked-area series has a stable order.
+func GetUsageReportDayModels(from string, to string, group string) ([]*UsageReportDayModel, error) {
 	var rows []*UsageReportDayModel
-	err := DB.Where("date >= ? AND date <= ?", from, to).
+	err := DB.Where(fmt.Sprintf("date >= ? AND date <= ? AND %s = ?", usageReportGroupCol()), from, to, group).
 		Order("date ASC, (prompt_tokens + completion_tokens) DESC, model_name ASC").Find(&rows).Error
 	return rows, err
 }
 
-// GetUsageReportDayExists reports whether a daily row is already stored.
-func GetUsageReportDayExists(date string) (bool, error) {
+// GetUsageReportDayExists reports whether a daily row for (date, group) exists.
+func GetUsageReportDayExists(date string, group string) (bool, error) {
 	var count int64
-	err := DB.Model(&UsageReportDay{}).Where("date = ?", date).Count(&count).Error
+	err := DB.Model(&UsageReportDay{}).
+		Where(fmt.Sprintf("date = ? AND %s = ?", usageReportGroupCol()), date, group).Count(&count).Error
 	return count > 0, err
+}
+
+// HasUsageReportGroupColumn reports whether usage_report_daily already has the
+// group dimension (legacy tables written before it must be rebuilt because the
+// primary key changes from date to (date, group)).
+func HasUsageReportGroupColumn() bool {
+	if !DB.Migrator().HasTable(&UsageReportDay{}) {
+		return true // nothing stored yet; AutoMigrate will create it correctly
+	}
+	return DB.Migrator().HasColumn(&UsageReportDay{}, "group")
+}
+
+// DropLegacyUsageReportTables removes the pre-group tables; the data is a
+// derived cache and is rebuilt by the aggregation task/reads.
+func DropLegacyUsageReportTables() error {
+	for _, table := range []interface{}{&UsageReportDay{}, &UsageReportDayModel{}} {
+		if DB.Migrator().HasTable(table) {
+			if err := DB.Migrator().DropTable(table); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
