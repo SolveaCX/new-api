@@ -42,3 +42,26 @@ func TestUsageReportBackfillDaysCapsToRecentWindow(t *testing.T) {
 		t.Fatalf("got %d days, want 3", got)
 	}
 }
+
+func TestUsageReportLogChunkBounds(t *testing.T) {
+	start := int64(100)
+	end := start + 24*60*60 + 17
+	got := usageReportLogChunkBounds(start, end)
+	if len(got) != 5 {
+		t.Fatalf("got %d chunks, want 5", len(got))
+	}
+	if got[0] != [2]int64{start, start + usageReportLogChunkSeconds} {
+		t.Fatalf("first chunk = %v", got[0])
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1][1] != got[i][0] {
+			t.Fatalf("chunks have gap/overlap: %v then %v", got[i-1], got[i])
+		}
+	}
+	if got[len(got)-1][1] != end {
+		t.Fatalf("last chunk ends at %d, want %d", got[len(got)-1][1], end)
+	}
+	if got := usageReportLogChunkBounds(10, 10); got != nil {
+		t.Fatalf("empty interval = %v, want nil", got)
+	}
+}
