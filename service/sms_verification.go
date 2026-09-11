@@ -18,7 +18,7 @@ import (
 
 var ErrSMSProviderNotConfigured = errors.New("sms provider is not configured")
 
-// SendSMSVerification sends a one-time code through TeleSign's messaging API.
+// SendSMSVerification sends a one-time code through the configured SMS provider.
 // The mock mode is intentionally explicit and is only useful for local UI
 // verification when no provider credentials are available.
 func SendSMSVerification(ctx context.Context, phone, code string) error {
@@ -31,7 +31,7 @@ func SendSMSVerification(ctx context.Context, phone, code string) error {
 		common.SysLog("SMS verification mock")
 		return nil
 	}
-	if !strings.HasPrefix(strings.TrimSpace(phone), "+86") {
+	if !strings.HasPrefix(phone, "+86") && !strings.HasPrefix(phone, "+886") {
 		return sendITNIOSMSVerification(ctx, phone, code)
 	}
 	if strings.TrimSpace(common.TeleSignCustomerID) == "" || strings.TrimSpace(common.TeleSignAPIKey) == "" {

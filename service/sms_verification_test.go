@@ -53,6 +53,50 @@ func TestSendSMSVerificationUsesTeleSignMessagingAPI(t *testing.T) {
 	require.False(t, strings.Contains(gotForm.Get("message"), "<"))
 }
 
+func TestSendSMSVerificationUsesTeleSignForTaiwanPhone(t *testing.T) {
+	var gotForm url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		gotForm = r.PostForm
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	originalMock := common.TeleSignMockEnabled
+	originalURL := common.TeleSignAPIURL
+	originalCustomerID := common.TeleSignCustomerID
+	originalAPIKey := common.TeleSignAPIKey
+	originalOriginator := common.TeleSignOriginator
+	originalITNIOURL := common.ITNIOAPIURL
+	originalITNIOKey := common.ITNIOAPIKey
+	originalITNIOSecret := common.ITNIOAPISecret
+	originalITNIOAppID := common.ITNIOAppID
+	t.Cleanup(func() {
+		common.TeleSignMockEnabled = originalMock
+		common.TeleSignAPIURL = originalURL
+		common.TeleSignCustomerID = originalCustomerID
+		common.TeleSignAPIKey = originalAPIKey
+		common.TeleSignOriginator = originalOriginator
+		common.ITNIOAPIURL = originalITNIOURL
+		common.ITNIOAPIKey = originalITNIOKey
+		common.ITNIOAPISecret = originalITNIOSecret
+		common.ITNIOAppID = originalITNIOAppID
+	})
+	common.TeleSignMockEnabled = false
+	common.TeleSignAPIURL = server.URL
+	common.TeleSignCustomerID = "customer"
+	common.TeleSignAPIKey = "secret"
+	common.TeleSignOriginator = "Flatkey"
+	common.ITNIOAPIURL = ""
+	common.ITNIOAPIKey = ""
+	common.ITNIOAPISecret = ""
+	common.ITNIOAppID = ""
+
+	require.NoError(t, SendSMSVerification(context.Background(), "+886912345678", "123456"))
+	require.Equal(t, "+886912345678", gotForm.Get("phone_number"))
+	require.Equal(t, "Your Flatkey verification code is 123456.", gotForm.Get("message"))
+}
+
 func TestSendSMSVerificationUsesITNIOForInternationalPhone(t *testing.T) {
 	var gotBody map[string]any
 	var gotSign, gotTimestamp, gotAPIKey string
