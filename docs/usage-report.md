@@ -38,7 +38,7 @@
 ## 表结构（AutoMigrate 注册于 model/main.go orderedMigrationModels）
 
 ```sql
-CREATE TABLE usage_report_daily (
+CREATE TABLE usage_report_daily_v2 (
   date             CHAR(10) NOT NULL,             -- UTC+0 yyyy-mm-dd
   `group`          VARCHAR(32) NOT NULL DEFAULT 'plg',  -- plg | all
   PRIMARY KEY (date, `group`),
@@ -51,7 +51,7 @@ CREATE TABLE usage_report_daily (
   completion_tokens BIGINT NOT NULL DEFAULT 0,
   built_at         BIGINT NOT NULL DEFAULT 0      -- 最近一次计算时间(unix)
 );
-CREATE TABLE usage_report_daily_model (
+CREATE TABLE usage_report_daily_model_v2 (
   date       CHAR(10) NOT NULL,
   `group`    VARCHAR(32) NOT NULL DEFAULT 'plg',
   model_name VARCHAR(191) NOT NULL,
@@ -61,9 +61,11 @@ CREATE TABLE usage_report_daily_model (
   PRIMARY KEY (date, `group`, model_name)
 );
 
-> 说明：分组维度是后加的，主键从 `(date)` 变为 `(date, group)`；这两张表是派生缓存，
-> 迁移时会直接 **DROP + 重建**（`HasUsageReportGroupColumn()` 检测旧结构），随后由
-> 启动预热/每日任务/读取自动回填，不需要人工干预。
+> 说明：加入 `group` 维度后主键从 `(date)` 变为 `(date, group)`，为了**对线上零破坏**，
+> 新版本写入**新表** `usage_report_daily_v2` / `usage_report_daily_model_v2`。
+> 迁移只做 `CREATE TABLE IF NOT EXISTS`，**不会 ALTER / DROP 任何既有表**；
+> 旧的 `usage_report_daily(_model)` 原样保留（可后续由运维清理）。
+> 新表为空时，由启动预热 / 每日 00:00 UTC 任务 / 页面读取自动回填，无需人工干预。
 ```
 
 ## 计算策略（对线上零影响）

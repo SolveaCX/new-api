@@ -59,7 +59,12 @@ type UsageReportDay struct {
 }
 
 func (UsageReportDay) TableName() string {
-	return "usage_report_daily"
+	// v2 table name: the group dimension changed the primary key, so this
+	// version writes to a NEW table instead of altering/dropping the existing
+	// one. Migration is therefore purely "CREATE TABLE IF NOT EXISTS" and can
+	// never break the running service; the old usage_report_daily(_model)
+	// tables are left untouched (ops can drop them later).
+	return "usage_report_daily_v2"
 }
 
 // UsageReportDayModel is the per-model slice of a UTC+0 usage day. Together
@@ -75,7 +80,7 @@ type UsageReportDayModel struct {
 }
 
 func (UsageReportDayModel) TableName() string {
-	return "usage_report_daily_model"
+	return "usage_report_daily_model_v2"
 }
 
 // GetUsageReportDays returns stored daily rows of one group within [from, to]
@@ -103,27 +108,4 @@ func GetUsageReportDayExists(date string, group string) (bool, error) {
 	err := DB.Model(&UsageReportDay{}).
 		Where(fmt.Sprintf("date = ? AND %s = ?", usageReportGroupCol()), date, group).Count(&count).Error
 	return count > 0, err
-}
-
-// HasUsageReportGroupColumn reports whether usage_report_daily already has the
-// group dimension (legacy tables written before it must be rebuilt because the
-// primary key changes from date to (date, group)).
-func HasUsageReportGroupColumn() bool {
-	if !DB.Migrator().HasTable(&UsageReportDay{}) {
-		return true // nothing stored yet; AutoMigrate will create it correctly
-	}
-	return DB.Migrator().HasColumn(&UsageReportDay{}, "group")
-}
-
-// DropLegacyUsageReportTables removes the pre-group tables; the data is a
-// derived cache and is rebuilt by the aggregation task/reads.
-func DropLegacyUsageReportTables() error {
-	for _, table := range []interface{}{&UsageReportDay{}, &UsageReportDayModel{}} {
-		if DB.Migrator().HasTable(table) {
-			if err := DB.Migrator().DropTable(table); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
