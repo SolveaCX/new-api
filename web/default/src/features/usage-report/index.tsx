@@ -37,6 +37,7 @@ import {
   downloadUsageReportCSV,
   getUsageReport,
   usageReportQueryKeys,
+  type UsageReportGroup,
 } from './api'
 import type { UsageReportData, UsageReportDayRow, UsageReportModelRow } from './types'
 
@@ -126,11 +127,12 @@ function deltaUsd(cur: number | undefined, prev: number | undefined): string {
 export function UsageReport() {
   const { t } = useTranslation()
   const [days, setDays] = useState(30)
+  const [group, setGroup] = useState<UsageReportGroup>('plg')
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
   const { data: res, isLoading, refetch } = useQuery({
-    queryKey: usageReportQueryKeys.report(days),
-    queryFn: () => getUsageReport(days),
+    queryKey: usageReportQueryKeys.report(days, group),
+    queryFn: () => getUsageReport(days, group),
   })
   const payload: UsageReportData | undefined = res?.data
   const dayRows: UsageReportDayRow[] = payload
@@ -519,16 +521,32 @@ export function UsageReport() {
       <SectionPageLayout.Title>{t('Usage Report')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <div className='flex flex-wrap items-center gap-1'>
+          <Button
+            size='sm'
+            variant={group === 'plg' ? 'default' : 'outline'}
+            onClick={() => setGroup('plg')}
+          >
+            {t('PLG 分组')}
+          </Button>
+          <Button
+            size='sm'
+            variant={group === 'all' ? 'default' : 'outline'}
+            onClick={() => setGroup('all')}
+          >
+            {t('全部分组')}
+          </Button>
+        </div>
+        <div className='flex flex-wrap items-center gap-1'>
           {DAY_OPTIONS.map((d) => (
             <Button key={d} size='sm' variant={days === d ? 'default' : 'outline'} onClick={() => setDays(d)}>
               {d}天
             </Button>
           ))}
         </div>
-        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily')}>
+        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily', group)}>
           ⬇ CSV(日漏斗)
         </Button>
-        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models')}>
+        <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models', group)}>
           ⬇ CSV(日×模型)
         </Button>
       </SectionPageLayout.Actions>
@@ -585,7 +603,7 @@ export function UsageReport() {
                 id='funnel'
                 no={1}
                 title={t('Funnel (same-day, people)')}
-                hint={t('注册=enabled+verified；激活=当天注册者当天首建Key(人)；首付=当天注册者当天首付(人)——C端当天口径')}
+                hint={`${t('注册=enabled+verified；激活=当天注册者当天首建Key(人)；首付=当天注册者当天首付(人)——C端当天口径')} · ${group === 'plg' ? t('PLG 分组') : t('全部分组')}`}
               />
               <KpiGrid items={kpiFunnel} />
 
@@ -757,10 +775,10 @@ export function UsageReport() {
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Range Model Summary')}
                     <div className='flex gap-1'>
-                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily')}>
+                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'daily', group)}>
                         ⬇ CSV(日漏斗)
                       </Button>
-                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models')}>
+                      <Button size='sm' variant='outline' onClick={() => void downloadUsageReportCSV(days, 'models', group)}>
                         ⬇ CSV(日×模型)
                       </Button>
                     </div>

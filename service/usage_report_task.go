@@ -58,7 +58,7 @@ func runUsageReportDailyJob() {
 	now := time.Now().UTC()
 	for i := 1; i <= usageReportNightlyRecomputeDays; i++ {
 		date := utcToday(now.AddDate(0, 0, -i))
-		if err := RecomputeUsageReportDate(date); err != nil {
+		if err := RecomputeUsageReportDateAllGroups(date); err != nil {
 			common.SysError("usage_report nightly recompute failed for " + date + ": " + err.Error())
 		}
 	}

@@ -45,6 +45,7 @@ export interface UsageReportModelRow {
 }
 
 export interface UsageReportData {
+  group?: 'plg' | 'all' // 数据分组：plg = 仅 PLG 分组用户
   days: UsageReportDayRow[]
   models: UsageReportModelRow[]
   filling?: boolean // 历史窗口仍在后台回填中，前端应轮询直到消失

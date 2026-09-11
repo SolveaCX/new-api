@@ -19,22 +19,29 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 import type { ApiResponse, UsageReportData } from './types'
 
+export type UsageReportGroup = 'plg' | 'all'
+
 export const usageReportQueryKeys = {
   all: ['usage-report'] as const,
-  report: (days: number) => [...usageReportQueryKeys.all, days] as const,
+  report: (days: number, group: UsageReportGroup) =>
+    [...usageReportQueryKeys.all, days, group] as const,
 }
 
-export async function getUsageReport(days: number): Promise<ApiResponse<UsageReportData>> {
-  const res = await api.get('/api/data/usage_report', { params: { days } })
+export async function getUsageReport(
+  days: number,
+  group: UsageReportGroup
+): Promise<ApiResponse<UsageReportData>> {
+  const res = await api.get('/api/data/usage_report', { params: { days, group } })
   return res.data
 }
 
 export async function downloadUsageReportCSV(
   days: number,
-  dim: 'daily' | 'models'
+  dim: 'daily' | 'models',
+  group: UsageReportGroup
 ): Promise<void> {
   const res = await api.get('/api/data/usage_report', {
-    params: { days, format: 'csv', dim },
+    params: { days, format: 'csv', dim, group },
     responseType: 'blob',
   })
   const url = URL.createObjectURL(res.data as Blob)

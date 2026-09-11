@@ -287,6 +287,15 @@ func migrateDB() error {
 		return err
 	}
 
+	// Usage report gained a group dimension: its tables are a derived cache
+	// whose primary key changed from date to (date, group), so rebuild them
+	// instead of trying to alter a primary key in place.
+	if !HasUsageReportGroupColumn() {
+		if err := DropLegacyUsageReportTables(); err != nil {
+			return err
+		}
+	}
+
 	err := DB.AutoMigrate(migrationModelValues(orderedMigrationModels())...)
 	if err != nil {
 		return err
@@ -480,6 +489,15 @@ func migrateDBFast() error {
 	}
 	if err := backfillTaskIDsBeforeUniqueIndex(); err != nil {
 		return err
+	}
+
+	// Usage report gained a group dimension: its tables are a derived cache
+	// whose primary key changed from date to (date, group), so rebuild them
+	// instead of trying to alter a primary key in place.
+	if !HasUsageReportGroupColumn() {
+		if err := DropLegacyUsageReportTables(); err != nil {
+			return err
+		}
 	}
 
 	migrations := orderedMigrationModels()

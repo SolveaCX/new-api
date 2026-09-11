@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/service"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -79,5 +81,34 @@ func TestUsageReportBackfillDatesRejectsFuture(t *testing.T) {
 	c.Request = httptest.NewRequest("GET", "/api/data/usage_report_backfill?date="+future, nil)
 	if _, err := usageReportBackfillDates(c); err == nil {
 		t.Fatalf("future date %s: expected error, got nil", future)
+	}
+}
+
+func TestUsageReportGroupParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{"", service.UsageReportGroupPLG},
+		{"group=plg", service.UsageReportGroupPLG},
+		{"group=PLG", service.UsageReportGroupPLG},
+		{"group=all", service.UsageReportGroupAll},
+	}
+	for _, tc := range cases {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/api/data/usage_report?"+tc.query, nil)
+		got, err := usageReportGroupParam(c)
+		if err != nil {
+			t.Fatalf("query %q: unexpected error %v", tc.query, err)
+		}
+		if got != tc.want {
+			t.Errorf("query %q: got %q want %q", tc.query, got, tc.want)
+		}
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/api/data/usage_report?group=team", nil)
+	if _, err := usageReportGroupParam(c); err == nil {
+		t.Error("group=team: expected error, got nil")
 	}
 }
