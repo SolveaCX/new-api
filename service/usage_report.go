@@ -19,7 +19,8 @@ import (
 // ops daily report.
 //
 // Design (see docs/usage-report.md):
-//   - One compute per UTC+0 day, stored into usage_report_daily(_model).
+//   - One compute per (UTC+0 day, group), stored into
+//     usage_report_daily_v2 / usage_report_daily_model_v2.
 //   - Past dates are computed once, lazily, on first read (idempotent).
 //   - The current UTC day is recomputed at most every usageReportTodayFresh
 //     seconds from the (indexed) day slice of the log/users tables, so admin
@@ -84,8 +85,11 @@ func usageReportEnsureColumnDefaults() error {
 	if usageReportNullsDone {
 		return nil
 	}
-	if err := model.DB.Exec(`
-		UPDATE usage_report_daily SET
+	// Table name is taken from the model so it always follows TableName()
+	// (currently usage_report_daily_v2) and can never drift to a legacy table.
+	table := model.UsageReportDay{}.TableName()
+	if err := model.DB.Exec(fmt.Sprintf(`
+		UPDATE %s SET
 			registered = COALESCE(registered, 0),
 			activated_key = COALESCE(activated_key, 0),
 			first_paid = COALESCE(first_paid, 0),
@@ -104,7 +108,7 @@ func usageReportEnsureColumnDefaults() error {
 		   OR paid_usd IS NULL OR activated_day IS NULL OR paid_day IS NULL
 		   OR activated_c7 IS NULL OR paid_c14 IS NULL OR paid_reg_c14 IS NULL
 		   OR calls IS NULL OR prompt_tokens IS NULL OR completion_tokens IS NULL
-		   OR built_at IS NULL OR schema_v IS NULL`).Error; err != nil {
+		   OR built_at IS NULL OR schema_v IS NULL`, table)).Error; err != nil {
 		return err // transient failure: do not mark done, next call retries
 	}
 	usageReportNullsDone = true
