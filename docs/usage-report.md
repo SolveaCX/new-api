@@ -85,7 +85,11 @@ CREATE TABLE usage_report_daily_model (
   - JSON：`{success, data:{ days:[{date,registered,activated_key,first_paid,paid_usd,calls,prompt_tokens,completion_tokens}], models:[{date,model_name,calls,prompt_tokens,completion_tokens}]}}`
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，
     供“用量 × 外部价目”离线核算成本）。
-- days 上限 180、默认 30。日期按 UTC+0 今天往前取 N 天。
+- days 上限 180、默认 30。
+- `GET /api/data/usage_report_backfill?date=YYYY-MM-DD`（或 `?from=&to=`、`?days=N`）
+  - 管理员手动补数：强制重算指定 UTC 日期（幂等），返回逐日 `ok/error`；
+  - 范围上限 180 天、不允许未来日期；用于线上某天缺失/口径变更后立即补齐，
+    与每天 00:00 UTC 的自动任务互补。日期按 UTC+0 今天往前取 N 天。
 
 ## 前端（评审稿 v3 布局）
 
