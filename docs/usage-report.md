@@ -99,8 +99,8 @@ CREATE TABLE usage_report_daily_model_v2 (
   - 显式小批量补数入口；最多处理最近 7 天，和后台任务共用锁及单日期查询闸门，
     返回 `{filled, remaining, last_error}`；页面不会自动调用
 - `GET /api/data/usage_report_backfill?date=YYYY-MM-DD`（或 `?from=&to=`、`?days=N`）
-  - 管理员手动补数：强制重算指定 UTC 日期（幂等），返回逐日 `ok/error`；
-  - 范围上限 7 天、不允许未来日期；用于线上某天缺失或明确要求重算时，
+  - 管理员手动补数：只补缺失的日期+组，已有离线行保持不变，返回逐日 `ok/error`；
+  - 范围上限 7 天、不允许未来日期；历史长区间请按单日请求顺序执行，
     与每天 00:00 UTC 的自动任务互补。日期按 UTC+0 今天往前取 N 天。
 
 ## 前端（评审稿 v3 布局）

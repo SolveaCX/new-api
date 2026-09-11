@@ -342,7 +342,7 @@ func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
 			return filled, len(needed) - len(filled), ErrUsageReportLockLost
 		default:
 		}
-		if err := RecomputeUsageReportDate(pair.Date, pair.Group); err != nil {
+		if err := EnsureUsageReportDate(pair.Date, pair.Group); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -355,6 +355,37 @@ func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
 		remaining = 0
 	}
 	return filled, remaining, firstErr
+}
+
+// EnsureUsageReportDateAllGroups fills one date in group order while holding
+// the distributed lease for the whole date. Existing rows are skipped by
+// EnsureUsageReportDate, so a retry cannot re-run a completed group.
+func EnsureUsageReportDateAllGroups(date string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	distributedLock, acquired, err := acquireUsageReportDistributedLock(ctx)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return ErrUsageReportFillInProgress
+	}
+	defer distributedLock.Release()
+
+	leaseCtx, leaseCancel := context.WithCancel(context.Background())
+	defer leaseCancel()
+	leaseLost := distributedLock.Renew(leaseCtx)
+	for _, group := range usageReportGroups {
+		select {
+		case <-leaseLost:
+			return ErrUsageReportLockLost
+		default:
+		}
+		if err := EnsureUsageReportDate(date, group); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UsageReportFillRunning reports whether a background window fill is currently

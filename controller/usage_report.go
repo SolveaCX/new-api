@@ -144,9 +144,9 @@ type usageReportBackfillResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// BackfillUsageReport force-recomputes stored days from the source tables.
-// Admin-only escape hatch for "a date is missing / looks stale" on production,
-// complementing the automatic 00:00 UTC job.
+// BackfillUsageReport fills missing groups for requested dates from source
+// tables. Existing offline rows are left untouched. It complements the
+// automatic 00:00 UTC job and is safe to retry one date at a time.
 //
 // Params (UTC+0 dates, exactly one form):
 //   - date=YYYY-MM-DD        single day
@@ -164,7 +164,7 @@ func BackfillUsageReport(c *gin.Context) {
 	results := make([]usageReportBackfillResult, 0, len(dates))
 	okCount := 0
 	for _, d := range dates {
-		if err := service.RecomputeUsageReportDateAllGroups(d); err != nil {
+		if err := service.EnsureUsageReportDateAllGroups(d); err != nil {
 			results = append(results, usageReportBackfillResult{Date: d, OK: false, Error: err.Error()})
 			continue
 		}
