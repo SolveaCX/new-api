@@ -5294,7 +5294,6 @@
     "Leave empty to keep current": "現在の値を維持する場合は空欄のまま",
     "Priority must be an integer": "優先度は整数で入力してください",
     "Weight must be a non-negative integer": "重みは 0 以上の整数で入力してください",
-    "Usage Report": "Usage Report",
     "Ops Daily Report": "運営日報",
     "Registrations": "登録",
     "Activated": "アクティベート",

@@ -5294,7 +5294,6 @@
     "Leave empty to keep current": "Laisser vide pour conserver la valeur actuelle",
     "Priority must be an integer": "La priorité doit être un nombre entier",
     "Weight must be a non-negative integer": "Le poids doit être un nombre entier non négatif",
-    "Usage Report": "Usage Report",
     "Ops Daily Report": "Rapport quotidien d'exploitation",
     "Registrations": "Inscriptions",
     "Activated": "Activés",

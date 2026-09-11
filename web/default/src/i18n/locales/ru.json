@@ -5294,7 +5294,6 @@
     "Leave empty to keep current": "Оставьте пустым, чтобы сохранить текущее значение",
     "Priority must be an integer": "Приоритет должен быть целым числом",
     "Weight must be a non-negative integer": "Вес должен быть неотрицательным целым числом",
-    "Usage Report": "Usage Report",
     "Ops Daily Report": "Ежедневный операционный отчёт",
     "Registrations": "Регистрации",
     "Activated": "Активированы",

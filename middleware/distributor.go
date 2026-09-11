@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -332,8 +333,8 @@ func Distribute() func(c *gin.Context) {
 
 // enforceHiddenModelAccess rejects PLG identities that call a model on the
 // pricing hidden-model list. Enterprise identities are never affected. The
-// response is indistinguishable from an unknown model so the hidden entry is
-// not disclosed. Returns false after aborting the request.
+// message says only that the model does not exist or is not accessible, so it
+// does not disclose that the model is hidden. Returns false after aborting.
 func enforceHiddenModelAccess(c *gin.Context, requestedModel string) bool {
 	if !operation_setting.IsPricingHiddenModel(requestedModel) {
 		return true
@@ -356,6 +357,7 @@ func resolveIdentityGroupForHiddenModelGate(c *gin.Context) string {
 		if userID := c.GetInt("id"); userID > 0 {
 			userGroup, err := model.GetUserGroup(userID, true)
 			if err != nil {
+				logger.LogWarn(c.Request.Context(), fmt.Sprintf("hidden model gate: user %d group lookup failed, treating as plg: %s", userID, err.Error()))
 				return ""
 			}
 			return userGroup

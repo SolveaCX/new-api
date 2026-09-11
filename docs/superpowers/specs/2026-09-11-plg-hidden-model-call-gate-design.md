@@ -10,12 +10,14 @@ Make the pricing "hidden models" list (`pricing_visibility_setting.hidden_models
 
 ## Call gate
 
-`middleware.Distribute()` calls the gate after the token allow/deny-list checks and before channel selection. Distribute is the single channel-selection entry for `/v1/*`, `/pg/*`, `/mj`, `/suno` and `/v1beta`, so one hook covers every relay format including the Playground.
+`middleware.Distribute()` calls the gate after the token allow/deny-list checks and before channel selection. Distribute is the single channel-selection entry for `/v1/*`, `/pg/*`, `/mj`, `/suno`, `/v1beta`, `/kling/v1` and `/jimeng`, so one hook covers every relay format including the Playground. The only invocation Distribute cannot see is the video remix, handled below.
+
+The gate matches the model name the request carries after the normalisation the rest of the pipeline uses. `/v1/responses/compact` appends the compact suffix before the gate runs, so an exact entry such as `gpt-5.4` does not cover `gpt-5.4-openai-compact`; use a wildcard (`gpt-5.4*`) when the compact variant must be hidden too. This mirrors how the display filters already behave.
 
 - Only requests that will select a channel are gated. Task fetches (`GET /v1/videos/{id}` etc.) resolve the model name from an already-accepted task and keep working even if the model is hidden afterwards.
 - Video remix (`POST /v1/videos/{id}/remix`) is a new upstream invocation whose model is only known after the origin task is loaded, so the distributor cannot gate it. `relay.ResolveOriginTask` applies the same rule right after deriving the model and before locking the origin channel, returning a request-local 404 `model_not_found` task error (no channel penalty, no retry).
 - The identity group comes from the request context, which `TokenAuth` already forces to `plg` for non-enterprise users. Playground requests carry only a session copy that can be stale, so on `/pg/` the gate reads the group from the database (same source as `resolvePlaygroundUsingGroup`). A lookup failure yields an empty group and is treated as PLG: unknown identity fails closed.
-- Rejection is HTTP 404 with error code `model_not_found` and the i18n message `distributor.model_not_found` ("The model X does not exist or you do not have access to it"). The wording never reveals that the model exists and is hidden.
+- Rejection is HTTP 404 with error code `model_not_found` and the i18n message `distributor.model_not_found` ("The model X does not exist or you do not have access to it"). The wording never reveals that the model exists and is hidden. A model that truly has no channel still fails later in channel selection with the existing 503, so the two cases differ by status code; that is accepted because the hidden list is the same filter the public pricing page applies, not a secret.
 - Queued video-task workers are not gated. Submission already went through the gate and pre-charged the account; blocking mid-flight would require refund handling for no security gain.
 
 ## Listing endpoints

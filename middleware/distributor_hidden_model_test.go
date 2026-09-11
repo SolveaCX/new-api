@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -98,7 +97,7 @@ func decodeOpenAIErrorEnvelope(t *testing.T, recorder *httptest.ResponseRecorder
 			Code    string `json:"code"`
 		} `json:"error"`
 	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload), recorder.Body.String())
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload), recorder.Body.String())
 	return payload.Error.Message, payload.Error.Code
 }
 
@@ -210,7 +209,6 @@ func doHiddenModelGatePlaygroundRequest(t *testing.T, router *gin.Engine, body s
 
 func TestDistributePlaygroundBlocksPLGUserOnHiddenModel(t *testing.T) {
 	useMiddlewareHiddenPricingModelsForTest(t, hiddenModelGateModel)
-	common.RedisEnabled = false
 	// Session group claims enterprise but the database says plg: the database wins.
 	router := newHiddenModelGatePlaygroundRouter(t, 9101, "default")
 	require.NoError(t, model.DB.Create(&model.User{
@@ -227,7 +225,6 @@ func TestDistributePlaygroundBlocksPLGUserOnHiddenModel(t *testing.T) {
 
 func TestDistributePlaygroundAllowsEnterpriseUserOnHiddenModel(t *testing.T) {
 	useMiddlewareHiddenPricingModelsForTest(t, hiddenModelGateModel)
-	common.RedisEnabled = false
 	// Session group is stale (plg) but the database says enterprise: allowed.
 	router := newHiddenModelGatePlaygroundRouter(t, 9102, plgGroup)
 	require.NoError(t, model.DB.Create(&model.User{
@@ -240,14 +237,56 @@ func TestDistributePlaygroundAllowsEnterpriseUserOnHiddenModel(t *testing.T) {
 	require.Equal(t, "9871", recorder.Header().Get("X-Selected-Channel"))
 }
 
-func TestDistributePlaygroundFailsClosedWhenUserGroupLookupFails(t *testing.T) {
+func TestDistributePlaygroundFailsClosedWhenUserGroupIsEmpty(t *testing.T) {
 	useMiddlewareHiddenPricingModelsForTest(t, hiddenModelGateModel)
-	common.RedisEnabled = false
-	// No user row for the session id: the gate must treat the identity as plg.
+	// No user row for the session id, so the database group resolves to "":
+	// the gate must treat that identity as plg.
 	router := newHiddenModelGatePlaygroundRouter(t, 9103, "default")
 
 	recorder := doHiddenModelGatePlaygroundRequest(t, router, fmt.Sprintf(`{"model":%q,"group":"default"}`, hiddenModelGateModel))
 
 	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
 	require.Empty(t, recorder.Header().Get("X-Selected-Channel"))
+}
+
+// newHiddenModelGateTaskFetchRouter mirrors a token with a model allowlist
+// polling a video task: the distributor resolves the task's model to enforce
+// the allowlist, which is exactly where a gate on fetches would wrongly fire.
+func newHiddenModelGateTaskFetchRouter(t *testing.T) *gin.Engine {
+	t.Helper()
+	require.NoError(t, i18n.Init())
+	t.Cleanup(useMiddlewareMemoryChannelConcurrencyForTest(t))
+	t.Cleanup(useMiddlewareChannelSelectionDBForTest(t))
+	require.NoError(t, model.DB.AutoMigrate(&model.Task{}))
+	require.NoError(t, model.DB.Create(&model.Task{
+		TaskID: "task_gate_fetch", UserId: 9104, ChannelId: 9872, Status: model.TaskStatusSuccess,
+		Properties: model.Properties{OriginModelName: hiddenModelGateModel},
+	}).Error)
+
+	router := gin.New()
+	router.Use(BodyStorageCleanup())
+	router.Use(func(c *gin.Context) {
+		c.Set("id", 9104)
+		common.SetContextKey(c, constant.ContextKeyUserGroup, plgGroup)
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, plgGroup)
+		common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
+		common.SetContextKey(c, constant.ContextKeyTokenModelLimit, map[string]bool{hiddenModelGateModel: true})
+		c.Next()
+	})
+	router.Use(Distribute())
+	router.GET("/v1/videos/:task_id", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	return router
+}
+
+func TestDistributeDoesNotGateTaskFetchOfHiddenModel(t *testing.T) {
+	useMiddlewareHiddenPricingModelsForTest(t, hiddenModelGateModel)
+	router := newHiddenModelGateTaskFetchRouter(t)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/videos/task_gate_fetch", nil)
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }

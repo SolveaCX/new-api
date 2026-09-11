@@ -8,8 +8,9 @@ import (
 )
 
 // FilterHiddenModelsFromUserAccess applies the pricing visibility setting to a
-// resolved model access view. It changes what the Console catalog shows; it
-// does not change the user's actual access.
+// resolved model access view. It only changes what the Console catalog shows;
+// whether a PLG identity may call a hidden model is decided separately by
+// HiddenModelBlockedForIdentity.
 func FilterHiddenModelsFromUserAccess(access *UserModelAccess) {
 	if access == nil || len(operation_setting.GetPricingHiddenModelPatterns()) == 0 {
 		return
