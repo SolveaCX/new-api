@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ const (
 	usageReportBackfillMaxDays    = 7
 	usageReportDistributedLockKey = "new-api:usage-report:fill-lock"
 	usageReportDistributedLockTTL = 30 * time.Minute
+	// Keep each source-table aggregation short enough to avoid holding one
+	// MySQL connection for an entire high-volume day. Chunks are queried
+	// serially and merged in memory, so this does not increase concurrency.
+	usageReportLogChunkSeconds int64 = 6 * 60 * 60
 )
 
 func usageReportBackfillDays(days int) int {
@@ -595,7 +600,6 @@ func aggregateUsageReportDate(date string, group string, start, end int64) (*mod
 }
 
 func aggregateUsageLogs(start, end int64, groupFilter string, group string) ([]usageModelRow, error) {
-	var rows []usageModelRow
 	sql := `
 		SELECT model_name, COUNT(*) AS calls,
 		       COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
@@ -603,15 +607,48 @@ func aggregateUsageLogs(start, end int64, groupFilter string, group string) ([]u
 		FROM logs
 		WHERE type = ? AND created_at >= ? AND created_at < ?` + strings.ReplaceAll(groupFilter, "u.", "") + `
 		GROUP BY model_name`
-	args := []interface{}{model.LogTypeConsume, start, end}
-	if group != UsageReportGroupAll {
-		args = append(args, group)
+	totals := make(map[string]usageModelRow)
+	for _, bounds := range usageReportLogChunkBounds(start, end) {
+		chunkStart, chunkEnd := bounds[0], bounds[1]
+		args := []interface{}{model.LogTypeConsume, chunkStart, chunkEnd}
+		if group != UsageReportGroupAll {
+			args = append(args, group)
+		}
+		var rows []usageModelRow
+		if err := model.LOG_DB.Raw(sql, args...).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("usage_report usage logs [%d,%d): %w", chunkStart, chunkEnd, err)
+		}
+		for _, row := range rows {
+			total := totals[row.ModelName]
+			total.ModelName = row.ModelName
+			total.Calls += row.Calls
+			total.PromptTokens += row.PromptTokens
+			total.CompletionTokens += row.CompletionTokens
+			totals[row.ModelName] = total
+		}
 	}
-	err := model.LOG_DB.Raw(sql, args...).Scan(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("usage_report usage logs: %w", err)
+	rows := make([]usageModelRow, 0, len(totals))
+	for _, row := range totals {
+		rows = append(rows, row)
 	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ModelName < rows[j].ModelName })
 	return rows, nil
+}
+
+func usageReportLogChunkBounds(start, end int64) [][2]int64 {
+	if end <= start {
+		return nil
+	}
+	chunks := make([][2]int64, 0, (end-start+usageReportLogChunkSeconds-1)/usageReportLogChunkSeconds)
+	for chunkStart := start; chunkStart < end; {
+		chunkEnd := chunkStart + usageReportLogChunkSeconds
+		if chunkEnd > end {
+			chunkEnd = end
+		}
+		chunks = append(chunks, [2]int64{chunkStart, chunkEnd})
+		chunkStart = chunkEnd
+	}
+	return chunks
 }
 
 // aggregateSameDay counts, among users registered in [start, end):
