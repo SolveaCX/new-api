@@ -6920,6 +6920,19 @@
     "Logo is mapped automatically from the model name.": "Logo is mapped automatically from the model name.",
     "Please choose a model for each slot": "Please choose a model for each slot",
     "Description and offer are required": "Description and offer are required",
-    "Each slot must use a different model": "Each slot must use a different model"
+    "Each slot must use a different model": "Each slot must use a different model",
+    "Country code": "Country code",
+    "Enter phone number": "Enter phone number",
+    "Failed to send SMS verification code": "Failed to send SMS verification code",
+    "Phone number": "Phone number",
+    "Phone number verification required": "Phone number verification required",
+    "Please bind and verify your phone number before using the console and API.": "Please bind and verify your phone number before using the console and API.",
+    "Bind phone number": "Bind phone number",
+    "Phone number bound successfully": "Phone number bound successfully",
+    "Failed to bind phone number": "Failed to bind phone number",
+    "Please enter a valid phone number": "Please enter a valid phone number",
+    "Please enter the SMS verification code": "Please enter the SMS verification code",
+    "SMS verification code": "SMS verification code",
+    "SMS verification code sent": "SMS verification code sent"
   }
 }

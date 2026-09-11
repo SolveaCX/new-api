@@ -26,6 +26,9 @@ import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
+import { PhoneBindingDialog } from '@/features/auth/components/phone-binding-dialog'
+import { shouldRequirePhoneBinding } from '@/features/auth/lib/phone-binding'
+import { useStatus } from '@/hooks/use-status'
 import { Onboarding } from '@/features/onboarding'
 import { exitImpersonation as exitImpersonationRequest } from '@/features/users/api'
 import { AppHeader } from './app-header'
@@ -40,6 +43,9 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const user = useAuthStore((state) => state.auth.user)
   const setUser = useAuthStore((state) => state.auth.setUser)
+  const { status } = useStatus()
+  const phoneBindingRequired =
+    shouldRequirePhoneBinding(user, status?.sms_verification === true)
   const exitImpersonation = async () => {
     const result = await exitImpersonationRequest()
     if (!result.success || !result.data) return
@@ -95,6 +101,22 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
         </div>
       </SidebarProvider>
       <Onboarding />
+      <PhoneBindingDialog
+        open={phoneBindingRequired}
+        required
+        onOpenChange={() => undefined}
+        onSuccess={(phoneNumber, phoneVerifiedAt) => {
+          setUser((currentUser) =>
+            currentUser
+              ? {
+                  ...currentUser,
+                  phone_number: phoneNumber,
+                  phone_verified_at: phoneVerifiedAt,
+                }
+              : currentUser
+          )
+        }}
+      />
     </LayoutProvider>
   )
 }

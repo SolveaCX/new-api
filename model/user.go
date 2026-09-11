@@ -38,6 +38,8 @@ type User struct {
 	NormalizedEmail         string         `json:"-" gorm:"type:varchar(50);column:normalized_email;index"`
 	EmailVerifiedAt         int64          `json:"email_verified_at" gorm:"default:0;column:email_verified_at;index"`
 	EmailDomain             string         `json:"-" gorm:"type:varchar(253);column:email_domain;index"`
+	PhoneNumber             string         `json:"phone_number,omitempty" gorm:"type:varchar(32);column:phone_number;index"`
+	PhoneVerifiedAt         int64          `json:"phone_verified_at,omitempty" gorm:"default:0;column:phone_verified_at;index"`
 	GitHubId                string         `json:"github_id" gorm:"column:github_id;index"`
 	DiscordId               string         `json:"discord_id" gorm:"column:discord_id;index"`
 	OidcId                  string         `json:"oidc_id" gorm:"column:oidc_id;index"`
@@ -45,6 +47,7 @@ type User struct {
 	WeChatId                string         `json:"wechat_id" gorm:"column:wechat_id;index"`
 	TelegramId              string         `json:"telegram_id" gorm:"column:telegram_id;index"`
 	VerificationCode        string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	PhoneVerificationCode   string         `json:"phone_verification_code" gorm:"-:all"`                   // this field is only for SMS verification, don't save it to database!
 	AccessToken             *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	Quota                   int            `json:"quota" gorm:"type:int;default:0"`
 	UsedQuota               int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
@@ -124,6 +127,11 @@ func NormalizeUserEmail(email string) string {
 
 func (user *User) BeforeCreate(_ *gorm.DB) error {
 	user.NormalizedEmail = NormalizeUserEmail(user.Email)
+	if user.PhoneNumber != "" {
+		if normalized, err := common.NormalizePhoneNumber(user.PhoneNumber); err == nil {
+			user.PhoneNumber = normalized
+		}
+	}
 	return nil
 }
 
@@ -182,6 +190,8 @@ func (user *User) ToBaseUser() *UserBase {
 		Username:        user.Username,
 		Setting:         user.Setting,
 		Email:           user.Email,
+		PhoneNumber:     user.PhoneNumber,
+		PhoneVerifiedAt: user.PhoneVerifiedAt,
 		IsEnterprise:    user.IsEnterprise,
 		EmailVerifiedAt: user.EmailVerifiedAt,
 		Role:            user.Role,
@@ -889,6 +899,11 @@ func (user *User) insertWithTx(tx *gorm.DB, inviterId int, registrationIP string
 	result := tx.Create(user)
 	if result.Error != nil {
 		return result.Error
+	}
+	if user.PhoneNumber != "" {
+		if err := reserveUserPhoneTx(tx, user.PhoneNumber, user.Id, user.PhoneVerifiedAt); err != nil {
+			return err
+		}
 	}
 
 	if err := grantInviteeRegistrationSubscriptionDiscountInTx(tx, user); err != nil {

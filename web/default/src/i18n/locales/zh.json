@@ -6920,6 +6920,19 @@
     "Logo is mapped automatically from the model name.": "Logo 将根据模型名称自动匹配。",
     "Please choose a model for each slot": "请为每个位置选择一个模型",
     "Description and offer are required": "描述和优惠文案不能为空",
-    "Each slot must use a different model": "每个位置必须使用不同的模型"
+    "Each slot must use a different model": "每个位置必须使用不同的模型",
+    "Country code": "国家/地区区号",
+    "Enter phone number": "请输入手机号",
+    "Failed to send SMS verification code": "短信验证码发送失败",
+    "Phone number": "手机号",
+    "Phone number verification required": "需要验证手机号",
+    "Please bind and verify your phone number before using the console and API.": "使用控制台和 API 前，请先绑定并验证手机号。",
+    "Bind phone number": "绑定手机号",
+    "Phone number bound successfully": "手机号绑定成功",
+    "Failed to bind phone number": "手机号绑定失败",
+    "Please enter a valid phone number": "请输入有效的手机号",
+    "Please enter the SMS verification code": "请输入短信验证码",
+    "SMS verification code": "短信验证码",
+    "SMS verification code sent": "短信验证码已发送"
   }
 }

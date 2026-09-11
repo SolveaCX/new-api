@@ -210,6 +210,37 @@ export async function getRegistrationEmailVerificationStatus(
   return res.data
 }
 
+// Send SMS verification code for password registration.
+export async function sendPhoneVerification(
+  phoneNumber: string,
+  turnstile?: string
+): Promise<ApiResponse> {
+  const res = await api.post(
+    '/api/phone-verification',
+    { phone_number: phoneNumber },
+    {
+      headers: turnstile ? { 'X-Turnstile-Token': turnstile } : undefined,
+    }
+  )
+  return res.data
+}
+
+// Bind a verified phone number to the current account.
+export async function bindPhone(
+  phoneNumber: string,
+  verificationCode: string
+): Promise<
+  ApiResponse & {
+    data?: { phone_number: string; phone_verified_at: number }
+  }
+> {
+  const res = await api.post('/api/user/self/phone', {
+    phone_number: phoneNumber,
+    phone_verification_code: verificationCode,
+  })
+  return res.data
+}
+
 // Bind email to OAuth account
 export async function bindEmail(
   email: string,

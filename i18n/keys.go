@@ -124,6 +124,10 @@ const (
 	// self-heal) or verifying the email in profile settings.
 	MsgUserEmailVerificationRequiredForAPI = "user.email_verification_required_for_api"
 	MsgUserVerificationCodeError           = "user.verification_code_error"
+	MsgUserPhoneVerificationRequired       = "user.phone_verification_required"
+	MsgUserPhoneInvalid                    = "user.phone_invalid"
+	MsgUserPhoneAlreadyRegistered          = "user.phone_already_registered"
+	MsgUserSMSVerificationUnavailable      = "user.sms_verification_unavailable"
 	MsgUserInputInvalid                    = "user.input_invalid"
 	MsgUserNoPermissionSameLevel           = "user.no_permission_same_level"
 	MsgUserNoPermissionHigherLevel         = "user.no_permission_higher_level"
@@ -431,11 +435,12 @@ const (
 // User notification messages (quota warnings sent via email/webhook/bark/gotify).
 // Content is fully rendered with template data: {{.Warning}} {{.Quota}} {{.Link}}.
 const (
-	MsgNotifyQuotaTitle             = "notify.quota_warning_title"
-	MsgNotifySubscriptionQuotaTitle = "notify.subscription_quota_warning_title"
-	MsgNotifyQuotaEmail             = "notify.quota_warning_email"
-	MsgNotifyQuotaBark              = "notify.quota_warning_bark"
-	MsgNotifyQuotaGotify            = "notify.quota_warning_gotify"
+	MsgNotifyQuotaTitle                      = "notify.quota_warning_title"
+	MsgNotifySubscriptionQuotaTitle          = "notify.subscription_quota_warning_title"
+	MsgNotifyQuotaEmail                      = "notify.quota_warning_email"
+	MsgNotifyQuotaBark                       = "notify.quota_warning_bark"
+	MsgNotifyQuotaGotify                     = "notify.quota_warning_gotify"
+	MsgNotifyPhoneVerificationRequiredForAPI = "notify.phone_verification_required_for_api"
 )
 
 // Custom OAuth provider related messages

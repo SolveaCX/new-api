@@ -111,6 +111,18 @@ func InitEnv() {
 	// Initialize string variables with GetEnvOrDefaultString
 	GeminiSafetySetting = GetEnvOrDefaultString("GEMINI_SAFETY_SETTING", "BLOCK_NONE")
 	CohereSafetySetting = GetEnvOrDefaultString("COHERE_SAFETY_SETTING", "NONE")
+	SMSVerificationEnabled = GetEnvOrDefaultBool("SMS_VERIFICATION_ENABLED", false)
+	TeleSignMockEnabled = GetEnvOrDefaultBool("TELESIGN_MOCK", false)
+	TeleSignAPIURL = GetEnvOrDefaultString("TELESIGN_API_URL", TeleSignAPIURL)
+	TeleSignCustomerID = GetEnvOrDefaultString("TELESIGN_CUSTOMER_ID", "")
+	TeleSignAPIKey = GetEnvOrDefaultString("TELESIGN_API_KEY", "")
+	TeleSignOriginator = GetEnvOrDefaultString("TELESIGN_ORIGINATOR", "Flatkey")
+	ITNIOAPIURL = GetEnvOrDefaultString("ITNIO_API_URL", ITNIOAPIURL)
+	ITNIOAPIKey = GetEnvOrDefaultString("ITNIO_API_KEY", "")
+	ITNIOAPISecret = GetEnvOrDefaultString("ITNIO_API_SECRET", "")
+	ITNIOAppID = GetEnvOrDefaultString("ITNIO_APP_ID", "")
+	ITNIOSenderID = GetEnvOrDefaultString("ITNIO_SENDER_ID", "Flatkey")
+	SMSVerificationValidMinutes = GetEnvOrDefault("SMS_VERIFICATION_VALID_MINUTES", 10)
 
 	// Initialize rate limit variables
 	GlobalApiRateLimitEnable = GetEnvOrDefaultBool("GLOBAL_API_RATE_LIMIT_ENABLE", true)

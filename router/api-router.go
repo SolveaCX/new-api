@@ -92,6 +92,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		apiRouter.GET("/rankings", middleware.HeaderNavModuleAuth("rankings"), controller.GetRankings)
 		apiRouter.GET("/verification", middleware.EmailVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendEmailVerification)
+		apiRouter.POST("/phone-verification", middleware.SMSVerificationRateLimit(), middleware.TurnstileCheck(), controller.SendPhoneVerification)
 		apiRouter.GET("/registration/captcha", middleware.CriticalRateLimit(), controller.GetRegistrationCaptcha)
 		apiRouter.POST("/registration/captcha/verify", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.VerifyRegistrationCaptcha)
 		apiRouter.POST("/registration/email-verification/exchange", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ExchangeRegistrationEmailVerification)
@@ -183,6 +184,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/model-access", controller.GetUserModelAccess)
 				selfRoute.GET("/self", controller.GetSelf)
+				selfRoute.POST("/self/phone", controller.BindPhone)
 				selfRoute.GET("/self/invitations", controller.GetSelfInvitations)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", controller.UpdateSelf)

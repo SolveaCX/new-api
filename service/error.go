@@ -62,6 +62,28 @@ var safeBusinessErrorPattern = regexp.MustCompile("^messages\\.[0-9]+\\.content\
 // whitelabelGenericErrorMessage is the sanitized client-facing replacement.
 const whitelabelGenericErrorMessage = "The upstream provider returned an error. Please retry; if it persists, contact support with your request id."
 
+const copilotModelUnavailableMarker = `the requested model is not available for integrator "opencode"`
+
+// IsCopilotModelUnavailableError identifies the noisy model-availability
+// response returned by GitHub Copilot's opencode integrator. It is scoped to
+// Copilot and HTTP 400 so unrelated upstream validation errors are unaffected.
+func IsCopilotModelUnavailableError(newApiErr *types.NewAPIError, channelType int) bool {
+	if newApiErr == nil || channelType != constant.ChannelTypeCopilot || newApiErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(strings.ToLower(newApiErr.SanitizationSurface()), copilotModelUnavailableMarker)
+}
+
+// SanitizeCopilotModelUnavailableError replaces the upstream model list with
+// the standard whitelabel message. Callers decide whether the current user is
+// allowed to retain the original detail.
+func SanitizeCopilotModelUnavailableError(newApiErr *types.NewAPIError) {
+	if newApiErr == nil {
+		return
+	}
+	newApiErr.OverrideMessage(whitelabelGenericErrorMessage)
+}
+
 func looksLikeInternalLeak(msg string) bool {
 	if internalSymbolPattern.MatchString(msg) {
 		return true

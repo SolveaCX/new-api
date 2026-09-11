@@ -69,6 +69,22 @@ func TestResetStatusCode(t *testing.T) {
 	}
 }
 
+func TestCopilotModelUnavailableError(t *testing.T) {
+	err := types.NewOpenAIError(errors.New(`The requested model is not available for integrator "opencode". Available models: [gpt-5.5]`), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+
+	require.True(t, IsCopilotModelUnavailableError(err, constant.ChannelTypeCopilot))
+	require.False(t, IsCopilotModelUnavailableError(err, constant.ChannelTypeOpenAI))
+	require.False(t, IsCopilotModelUnavailableError(types.NewOpenAIError(errors.New(`The requested model is not available for integrator "other"`), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest), constant.ChannelTypeCopilot))
+}
+
+func TestSanitizeCopilotModelUnavailableError(t *testing.T) {
+	err := types.NewOpenAIError(errors.New(`The requested model is not available for integrator "opencode". Available models: [gpt-5.5]`), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+
+	SanitizeCopilotModelUnavailableError(err)
+
+	require.Equal(t, whitelabelGenericErrorMessage, err.ToOpenAIError().Message)
+}
+
 func TestRelayErrorHandlerTruncatesInvalidJSONBodyInLog(t *testing.T) {
 	withDebugEnabled(t, false)
 

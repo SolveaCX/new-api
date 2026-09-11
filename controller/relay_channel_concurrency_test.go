@@ -200,6 +200,63 @@ func TestProcessChannelErrorLogsActualChannelSnapshot(t *testing.T) {
 	require.EqualValues(t, actualChannel.ChannelType, other["channel_type"])
 }
 
+func TestCopilotModelUnavailableErrorIsHiddenFromNonRootUsers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("role", common.RoleAdminUser)
+	err := types.NewOpenAIError(errors.New(`The requested model is not available for integrator "opencode". Available models: [gpt-5.5]`), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+
+	sanitizeCopilotRelayErrorForUser(c, err, constant.ChannelTypeCopilot)
+
+	require.Equal(t, "The upstream provider returned an error. Please retry; if it persists, contact support with your request id.", err.ToOpenAIError().Message)
+}
+
+func TestCopilotModelUnavailableErrorRemainsVisibleToRootUsers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("role", common.RoleRootUser)
+	message := `The requested model is not available for integrator "opencode". Available models: [gpt-5.5]`
+	err := types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+
+	sanitizeCopilotRelayErrorForUser(c, err, constant.ChannelTypeCopilot)
+
+	require.Equal(t, message, err.ToOpenAIError().Message)
+}
+
+func TestProcessChannelErrorSkipsCopilotModelUnavailableErrorLog(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/copilot-error-log.db"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Log{}, &model.CompanyLogSchema{}, &model.Option{}))
+
+	previousDB := model.DB
+	previousLogDB := model.LOG_DB
+	previousRedisEnabled := common.RedisEnabled
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	model.DB = db
+	model.LOG_DB = db
+	common.RedisEnabled = false
+	constant.ErrorLogEnabled = true
+	t.Cleanup(func() {
+		model.DB = previousDB
+		model.LOG_DB = previousLogDB
+		common.RedisEnabled = previousRedisEnabled
+		constant.ErrorLogEnabled = previousErrorLogEnabled
+	})
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set("id", 42)
+	c.Set("token_id", 7)
+	c.Set("original_model", "gpt-5.5")
+	apiErr := types.NewOpenAIError(errors.New(`The requested model is not available for integrator "opencode". Available models: [gpt-5.5]`), types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+
+	processChannelError(c, *types.NewChannelError(123, constant.ChannelTypeCopilot, "github", false, "", false), apiErr)
+
+	var count int64
+	require.NoError(t, db.Model(&model.Log{}).Count(&count).Error)
+	require.Zero(t, count)
+}
+
 func TestProcessChannelErrorMarksRedisCooldownWithCanceledRequestContext(t *testing.T) {
 	mr := miniredis.RunT(t)
 	prevRDB := common.RDB

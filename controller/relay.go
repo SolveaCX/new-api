@@ -91,14 +91,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
-			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
+			copilotModelUnavailable := service.IsCopilotModelUnavailableError(newAPIError, channelType)
+			if !copilotModelUnavailable {
+				logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			}
 			// Whitelabel channels: sanitize upstream error text that leaks the
 			// provider identity or internal implementation details before it
-			// reaches the client. No-op for non-whitelabel channels and for
-			// ordinary upstream errors. Runs after the log above so operators
-			// still see the original text server-side.
+			// reaches the client. The Copilot model-availability case is handled
+			// separately so its noisy upstream detail is not logged at all.
 			originalErr, _ := common.GetContextKeyType[*types.NewAPIError](c, constant.ContextKeyBlockRunOriginalError)
-			service.ScrubWhitelabelErrorWithOriginal(c, newAPIError, originalErr, common.GetContextKeyInt(c, constant.ContextKeyChannelType))
+			if copilotModelUnavailable {
+				sanitizeCopilotRelayErrorForUser(c, newAPIError, channelType)
+			} else {
+				service.ScrubWhitelabelErrorWithOriginal(c, newAPIError, originalErr, channelType)
+			}
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			writeRelayError(c, relayFormat, ws, newAPIError)
 		}
@@ -444,7 +451,10 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	suppressErrorLog := service.IsCopilotModelUnavailableError(err, channelError.ChannelType)
+	if !suppressErrorLog {
+		logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	}
 	applyPenalty := shouldApplyChannelPenalty(err)
 	if applyPenalty && shouldMarkChannelConcurrencyCooldown(err) {
 		cooldownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -461,7 +471,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		})
 	}
 
-	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
+	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) && !suppressErrorLog {
 		logErr := err
 		if isBlockRunPaidError(err) {
 			if originalErr, ok := common.GetContextKeyType[*types.NewAPIError](c, constant.ContextKeyBlockRunOriginalError); ok && originalErr != nil {
@@ -506,6 +516,13 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		model.RecordErrorLog(c, userId, channelId, channelType, modelName, tokenName, logErr.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
+}
+
+func sanitizeCopilotRelayErrorForUser(c *gin.Context, err *types.NewAPIError, channelType int) {
+	if c == nil || c.GetInt("role") == common.RoleRootUser || !service.IsCopilotModelUnavailableError(err, channelType) {
+		return
+	}
+	service.SanitizeCopilotModelUnavailableError(err)
 }
 
 func normalizeBlockRunPaymentError(c *gin.Context, err *types.NewAPIError) *types.NewAPIError {

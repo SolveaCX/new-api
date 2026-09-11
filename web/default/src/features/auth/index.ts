@@ -27,6 +27,8 @@ export {
   register,
   sendPasswordResetEmail,
   sendEmailVerification,
+  sendPhoneVerification,
+  bindPhone,
   getRegistrationEmailVerificationStatus,
   bindEmail,
   getOAuthState,
@@ -98,6 +100,7 @@ export {
 } from './lib/storage'
 
 export { isRegistrationEmailVerified } from './lib/registration-email-verification'
+export { shouldRequirePhoneBinding } from './lib/phone-binding'
 
 export {
   isValidOTP,
@@ -122,6 +125,7 @@ export { useEmailVerification } from './hooks/use-email-verification'
 
 export { AuthLayout } from './auth-layout'
 export { OAuthProviders } from './components/oauth-providers'
+export { PhoneBindingDialog } from './components/phone-binding-dialog'
 export { TermsFooter } from './components/terms-footer'
 export { SignIn } from './sign-in'
 export { SignUp } from './sign-up'

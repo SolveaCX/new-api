@@ -495,16 +495,18 @@ func testChannelWithOptions(channel *model.Channel, testUserID int, testModel st
 		httpResp = resp.(*http.Response)
 		if httpResp.StatusCode != http.StatusOK {
 			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
-			common.SysError(fmt.Sprintf(
-				"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
-				channel.Id,
-				channel.Name,
-				channel.Type,
-				testModel,
-				endpointType,
-				httpResp.StatusCode,
-				err,
-			))
+			if !service.IsCopilotModelUnavailableError(err, channel.Type) {
+				common.SysError(fmt.Sprintf(
+					"channel test bad response: channel_id=%d name=%s type=%d model=%s endpoint_type=%s status=%d err=%v",
+					channel.Id,
+					channel.Name,
+					channel.Type,
+					testModel,
+					endpointType,
+					httpResp.StatusCode,
+					err,
+				))
+			}
 			return testResult{
 				context:     c,
 				localErr:    err,
@@ -1085,6 +1087,7 @@ func TestChannel(c *gin.Context) {
 	tik := time.Now()
 	result := testChannel(channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
+		sanitizeCopilotRelayErrorForUser(c, result.newAPIError, channel.Type)
 		resp := gin.H{
 			"success": false,
 			"message": result.localErr.Error(),
@@ -1101,6 +1104,7 @@ func TestChannel(c *gin.Context) {
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
+		sanitizeCopilotRelayErrorForUser(c, result.newAPIError, channel.Type)
 		c.JSON(http.StatusOK, gin.H{
 			"success":    false,
 			"message":    result.newAPIError.Error(),

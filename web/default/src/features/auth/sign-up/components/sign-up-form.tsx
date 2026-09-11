@@ -57,6 +57,7 @@ import { Turnstile } from '@/components/turnstile'
 import {
   getRegistrationEmailVerificationStatus,
   register,
+  sendPhoneVerification,
   wechatLoginByCode,
 } from '@/features/auth/api'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
@@ -89,6 +90,11 @@ import {
 } from '@/features/auth/sign-up/lib/email-verification-status'
 import { subscribeRegistrationEmailVerified } from '@/features/auth/sign-up/lib/registration-email-verification-channel'
 import { RegistrationCaptcha } from './registration-captcha'
+import {
+  buildPhoneNumber,
+  PHONE_COUNTRIES,
+  SMS_VERIFICATION_COUNTDOWN,
+} from '../lib/phone-verification'
 
 export function SignUpForm({
   className,
@@ -98,6 +104,9 @@ export function SignUpForm({
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+86')
+  const [phoneSecondsLeft, setPhoneSecondsLeft] = useState(0)
+  const [isSendingPhoneCode, setIsSendingPhoneCode] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
@@ -137,13 +146,19 @@ export function SignUpForm({
       password: '',
       confirmPassword: '',
       website: '',
+      phone_number: '',
+      phone_verification_code: '',
     },
   })
 
   const emailValue = form.watch('email')
+  const phoneValue = form.watch('phone_number')
   const normalizedEmailValue = emailValue?.trim() || ''
   currentEmailRef.current = normalizedEmailValue
   const emailVerificationRequired = !!status?.email_verification
+  const smsVerificationRequired = Boolean(
+    status?.sms_verification ?? status?.data?.sms_verification
+  )
   const emailVerified = isVerifiedEmail(
     emailVerificationState,
     normalizedEmailValue
@@ -158,6 +173,14 @@ export function SignUpForm({
     true
   const hasWeChatLogin = Boolean(status?.wechat_login)
   const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
+
+  useEffect(() => {
+    if (phoneSecondsLeft <= 0) return
+    const timer = window.setInterval(() => {
+      setPhoneSecondsLeft((seconds) => Math.max(0, seconds - 1))
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [phoneSecondsLeft])
 
   const wechatQrCodeUrl = useMemo(() => {
     return (
@@ -291,6 +314,22 @@ export function SignUpForm({
       }
     }
 
+    if (smsVerificationRequired) {
+      try {
+        data.phone_number = buildPhoneNumber(
+          phoneCountryCode,
+          data.phone_number || ''
+        )
+      } catch (_error) {
+        toast.error(t('Please enter a valid phone number'))
+        return
+      }
+      if (!data.phone_verification_code?.trim()) {
+        toast.error(t('Please enter the SMS verification code'))
+        return
+      }
+    }
+
     if (!validateTurnstile()) {
       setIsLoading(false)
       trackAdsFunnelEvent('flatkey_signup_validation_error', {
@@ -332,6 +371,8 @@ export function SignUpForm({
         password: data.password,
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
+        phone_number: data.phone_number || undefined,
+        phone_verification_code: data.phone_verification_code || undefined,
         aff_code: getAffiliateCode(),
         invite: getCustomerInvite() || undefined,
         ads_attribution: adsAttribution || undefined,
@@ -404,6 +445,36 @@ export function SignUpForm({
     setEmailVerificationState((current) => markEmailSent(current, email))
   }
 
+  async function handleSendPhoneVerificationCode() {
+    let phone: string
+    try {
+      phone = buildPhoneNumber(
+        phoneCountryCode,
+        form.getValues('phone_number') || ''
+      )
+    } catch (_error) {
+      toast.error(t('Please enter a valid phone number'))
+      return
+    }
+
+    setIsSendingPhoneCode(true)
+    try {
+      const response = await sendPhoneVerification(phone, turnstileToken)
+      if (response.success) {
+        setPhoneSecondsLeft(SMS_VERIFICATION_COUNTDOWN)
+        toast.success(t('SMS verification code sent'))
+      } else {
+        toast.error(
+          response.message || t('Failed to send SMS verification code')
+        )
+      }
+    } catch (_error) {
+      // Errors are handled by the global interceptor.
+    } finally {
+      setIsSendingPhoneCode(false)
+    }
+  }
+
   const handleOpenWeChatDialog = () => {
     setIsWeChatDialogOpen(true)
   }
@@ -437,6 +508,16 @@ export function SignUpForm({
     } finally {
       setIsWeChatSubmitting(false)
     }
+  }
+
+  function renderPhoneCodeButtonContent() {
+    if (phoneSecondsLeft > 0) {
+      return t('Resend ({{seconds}}s)', { seconds: phoneSecondsLeft })
+    }
+    if (isSendingPhoneCode) {
+      return <Loader2 className='h-4 w-4 animate-spin' />
+    }
+    return t('Send code')
   }
 
   return (
@@ -608,6 +689,79 @@ export function SignUpForm({
                 </Button>
               </div>
             )}
+          </>
+        )}
+
+        {smsVerificationRequired && (
+          <>
+            <FormField
+              control={form.control}
+              name='phone_number'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Phone number')}</FormLabel>
+                  <div className='flex gap-2'>
+                    <select
+                      aria-label={t('Country code')}
+                      className='h-10 w-28 rounded-md border border-input bg-background px-2 text-sm'
+                      value={phoneCountryCode}
+                      onChange={(event) => setPhoneCountryCode(event.target.value)}
+                    >
+                      {PHONE_COUNTRIES.map(([country, code, flag]) => (
+                        <option key={`${country}-${code}`} value={code}>
+                          {flag} {code}
+                        </option>
+                      ))}
+                    </select>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type='tel'
+                        inputMode='tel'
+                        autoComplete='tel-national'
+                        placeholder={t('Enter phone number')}
+                      />
+                    </FormControl>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='phone_verification_code'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('SMS verification code')}</FormLabel>
+                  <div className='flex items-end gap-2'>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        inputMode='numeric'
+                        autoComplete='one-time-code'
+                        maxLength={6}
+                        placeholder={t('Verification code')}
+                      />
+                    </FormControl>
+                    <Button
+                      variant='outline'
+                      type='button'
+                      disabled={
+                        isLoading ||
+                        isSendingPhoneCode ||
+                        phoneSecondsLeft > 0 ||
+                        !phoneValue ||
+                        !turnstileReady
+                      }
+                      onClick={handleSendPhoneVerificationCode}
+                    >
+                      {renderPhoneCodeButtonContent()}
+                    </Button>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </>
         )}
 

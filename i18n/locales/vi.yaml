@@ -21,6 +21,7 @@ notify.subscription_quota_warning_title: "Hạn mức gói đăng ký của bạ
 notify.quota_warning_email: "{{.Warning}}. Hạn mức còn lại hiện tại của bạn là {{.Quota}}. Để tránh gián đoạn dịch vụ, vui lòng nạp thêm kịp thời.<br/>Liên kết nạp: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Hạn mức còn lại: {{.Quota}}. Vui lòng nạp thêm kịp thời."
 notify.quota_warning_gotify: "{{.Warning}}. Hạn mức còn lại hiện tại của bạn là {{.Quota}}. Vui lòng nạp thêm kịp thời."
+notify.phone_verification_required_for_api: "Vui lòng liên kết và xác minh số điện thoại trước khi sử dụng API."
 
 # CLI device authorization messages
 cli.device_id_missing: "Bắt buộc có ID thiết bị"

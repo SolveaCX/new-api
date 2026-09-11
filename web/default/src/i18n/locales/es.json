@@ -5284,6 +5284,7 @@
     "Leave empty to keep current": "Dejar vacío para mantener el valor actual",
     "Priority must be an integer": "La prioridad debe ser un número entero",
     "Weight must be a non-negative integer": "El peso debe ser un número entero no negativo",
+    "Usage Report": "Usage Report",
     "Ops Daily Report": "Informe diario de operaciones",
     "Registrations": "Registros",
     "Activated": "Activados",
@@ -6919,6 +6920,19 @@
     "Logo is mapped automatically from the model name.": "El logotipo se asigna automáticamente según el nombre del modelo.",
     "Please choose a model for each slot": "Elige un modelo para cada espacio",
     "Description and offer are required": "La descripción y la oferta son obligatorias",
-    "Each slot must use a different model": "Cada espacio debe usar un modelo diferente"
+    "Each slot must use a different model": "Cada espacio debe usar un modelo diferente",
+    "Country code": "Código de país",
+    "Enter phone number": "Introduce tu número de teléfono",
+    "Failed to send SMS verification code": "No se pudo enviar el código de verificación por SMS",
+    "Phone number": "Número de teléfono",
+    "Phone number verification required": "Se requiere verificar el número de teléfono",
+    "Please bind and verify your phone number before using the console and API.": "Vincula y verifica tu número de teléfono antes de usar la consola y la API.",
+    "Bind phone number": "Vincular número de teléfono",
+    "Phone number bound successfully": "Número de teléfono vinculado",
+    "Failed to bind phone number": "No se pudo vincular el número de teléfono",
+    "Please enter a valid phone number": "Introduce un número de teléfono válido",
+    "Please enter the SMS verification code": "Introduce el código de verificación por SMS",
+    "SMS verification code": "Código de verificación por SMS",
+    "SMS verification code sent": "Código de verificación por SMS enviado"
   }
 }

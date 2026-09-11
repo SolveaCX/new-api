@@ -5284,6 +5284,7 @@
     "Leave empty to keep current": "Để trống để giữ giá trị hiện tại",
     "Priority must be an integer": "Độ ưu tiên phải là số nguyên",
     "Weight must be a non-negative integer": "Trọng số phải là số nguyên không âm",
+    "Usage Report": "Usage Report",
     "Ops Daily Report": "Báo cáo vận hành hằng ngày",
     "Registrations": "Đăng ký",
     "Activated": "Đã kích hoạt",
@@ -6919,6 +6920,19 @@
     "Logo is mapped automatically from the model name.": "Logo được tự động ánh xạ theo tên mô hình.",
     "Please choose a model for each slot": "Vui lòng chọn một mô hình cho mỗi vị trí",
     "Description and offer are required": "Mô tả và nội dung ưu đãi là bắt buộc",
-    "Each slot must use a different model": "Mỗi vị trí phải sử dụng một mô hình khác nhau"
+    "Each slot must use a different model": "Mỗi vị trí phải sử dụng một mô hình khác nhau",
+    "Country code": "Mã quốc gia",
+    "Enter phone number": "Nhập số điện thoại",
+    "Failed to send SMS verification code": "Không thể gửi mã xác minh SMS",
+    "Phone number": "Số điện thoại",
+    "Phone number verification required": "Cần xác minh số điện thoại",
+    "Please bind and verify your phone number before using the console and API.": "Vui lòng liên kết và xác minh số điện thoại trước khi sử dụng bảng điều khiển và API.",
+    "Bind phone number": "Liên kết số điện thoại",
+    "Phone number bound successfully": "Đã liên kết số điện thoại",
+    "Failed to bind phone number": "Không thể liên kết số điện thoại",
+    "Please enter a valid phone number": "Vui lòng nhập số điện thoại hợp lệ",
+    "Please enter the SMS verification code": "Vui lòng nhập mã xác minh SMS",
+    "SMS verification code": "Mã xác minh SMS",
+    "SMS verification code sent": "Đã gửi mã xác minh SMS"
   }
 }
