@@ -71,6 +71,13 @@ CREATE TABLE usage_report_daily_model (
    `HINCRBY usage:today:<UTC日期>:model <model> <delta>` 与计数 key，
    “今日”改为 Redis + 已落库 T-1 拼接；含开关，失败静默。先出本版再评估加。
 
+### 定时预热（master 节点）
+
+- **启动时**：后台预热最近 30 天（不阻塞启动，用于部署/重启后的补齐）；
+- **每天 00:00 UTC**：强制重算最近 3 天（昨日定稿 + 迟到事件回补），随后自愈窗口内缺失日期；
+- 结果：管理端读取只查 `usage_report_daily(_model)`；接口里的懒加载/后台回填仅作兜底；
+- 多节点幂等（delete+insert），任务只在 master 节点运行。
+
 ## 接口
 
 - `GET /api/data/usage_report?days=30[&format=csv[&dim=daily|models]]`
@@ -78,7 +85,11 @@ CREATE TABLE usage_report_daily_model (
   - JSON：`{success, data:{ days:[{date,registered,activated_key,first_paid,paid_usd,calls,prompt_tokens,completion_tokens}], models:[{date,model_name,calls,prompt_tokens,completion_tokens}]}}`
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，
     供“用量 × 外部价目”离线核算成本）。
-- days 上限 180、默认 30。日期按 UTC+0 今天往前取 N 天。
+- days 上限 180、默认 30。
+- `GET /api/data/usage_report_backfill?date=YYYY-MM-DD`（或 `?from=&to=`、`?days=N`）
+  - 管理员手动补数：强制重算指定 UTC 日期（幂等），返回逐日 `ok/error`；
+  - 范围上限 180 天、不允许未来日期；用于线上某天缺失/口径变更后立即补齐，
+    与每天 00:00 UTC 的自动任务互补。日期按 UTC+0 今天往前取 N 天。
 
 ## 前端（评审稿 v3 布局）
 

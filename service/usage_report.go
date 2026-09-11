@@ -108,20 +108,34 @@ func utcToday(now time.Time) string {
 
 // EnsureUsageReportRange ensures every UTC day in the trailing window
 // [today-(days-1) .. today] has fresh daily rows. days is capped by the caller.
-// All date math is done in UTC so a non-UTC server clock cannot shift the
-// trailing window by a day.
+//
+// Two deliberate properties (learned from production: rows stopped at an old
+// date while newer days stayed empty):
+//   - newest first: today/yesterday land first, so a long or interrupted fill
+//     still leaves the most relevant days visible;
+//   - one failing day never aborts the rest: errors are logged and skipped, and
+//     the first error is returned for the caller (CSV) to surface.
 func EnsureUsageReportRange(days int) error {
 	if err := usageReportEnsureColumnDefaults(); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	for i := days - 1; i >= 0; i-- {
-		d := now.AddDate(0, 0, -i)
-		if err := EnsureUsageReportDate(utcToday(d)); err != nil {
-			return err
+	var firstErr error
+	for i := 0; i < days; i++ {
+		date := utcToday(now.AddDate(0, 0, -i))
+		started := time.Now()
+		if err := EnsureUsageReportDate(date); err != nil {
+			common.SysError("usage_report fill failed for " + date + ": " + err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if cost := time.Since(started); cost > 5*time.Second {
+			common.SysLog(fmt.Sprintf("usage_report fill slow: date=%s cost=%s", date, cost))
 		}
 	}
-	return nil
+	return firstErr
 }
 
 // usageReportFillGuard prevents duplicate background fills across admin reads.
@@ -195,6 +209,19 @@ func EnsureUsageReportDate(date string) error {
 		}
 	}
 	return nil
+}
+
+// RecomputeUsageReportDate force-recomputes one UTC day regardless of its
+// stored state. Used by the nightly task so yesterday is finalised and
+// late-arriving key/payment events are folded in.
+func RecomputeUsageReportDate(date string) error {
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return err
+	}
+	lock := usageReportDateLock(date)
+	lock.Lock()
+	defer lock.Unlock()
+	return computeUsageReportDate(date)
 }
 
 // computeUsageReportDate aggregates one UTC day from the source tables and
