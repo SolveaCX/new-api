@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,8 @@ type virtualCharacterRealPersonProvider struct {
 	apiKey        string
 	gatewayOrigin string
 }
+
+var _ realPersonProvider = virtualCharacterRealPersonProvider{}
 
 func (virtualCharacterRealPersonProvider) RequiresCallback() bool {
 	return false
@@ -211,4 +214,147 @@ func (p virtualCharacterRealPersonProvider) GetVisualValidateResult(ctx context.
 	default: // failed, expired, cancelled, blocked
 		return BytePlusVisualValidationResult{}, virtualCharacterDefinitiveFailure(errVirtualCharacterProtocol)
 	}
+}
+
+const virtualCharacterRealPersonCharacterPath = "/v1/virtual-characters/"
+
+func (p virtualCharacterRealPersonProvider) GetAsset(ctx context.Context, upstreamAssetID string) (BytePlusAssetStatus, error) {
+	managementID, err := virtualCharacterManagementID(upstreamAssetID)
+	if err != nil {
+		return BytePlusAssetStatus{}, virtualCharacterDefinitiveFailure(err)
+	}
+	raw, err := virtualCharacterRealPersonDo(ctx, p.channel, p.apiKey, p.gatewayOrigin, http.MethodGet, virtualCharacterRealPersonCharacterPath+managementID, nil, http.StatusOK)
+	if err != nil {
+		return BytePlusAssetStatus{}, err
+	}
+	var envelope virtualCharacterRealPersonCharacterResponse
+	if err := common.Unmarshal(raw, &envelope); err != nil {
+		return BytePlusAssetStatus{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	if !envelope.Success || strconv.FormatInt(envelope.Data.ID, 10) != managementID || envelope.Data.SourceType != "volc_real_person" {
+		return BytePlusAssetStatus{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	status, ok := virtualCharacterRealPersonAssetStatus(envelope.Data.Status)
+	if !ok {
+		return BytePlusAssetStatus{}, virtualCharacterProcessingFailure(http.StatusOK, errVirtualCharacterProtocol)
+	}
+	return BytePlusAssetStatus{
+		UpstreamAssetID: managementID,
+		Status:          status,
+		ErrorMessage:    strings.TrimSpace(envelope.Data.LastError),
+	}, nil
+}
+
+func (p virtualCharacterRealPersonProvider) DeleteAsset(ctx context.Context, upstreamAssetID string) (string, error) {
+	managementID, err := virtualCharacterManagementID(upstreamAssetID)
+	if err != nil {
+		return "", virtualCharacterDefinitiveFailure(err)
+	}
+	if _, err := virtualCharacterRealPersonDo(ctx, p.channel, p.apiKey, p.gatewayOrigin, http.MethodDelete, virtualCharacterRealPersonCharacterPath+managementID, nil, http.StatusOK); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (p virtualCharacterRealPersonProvider) ListAssets(ctx context.Context, request BytePlusListAssetsRequest) (BytePlusListAssetsResult, error) {
+	// No production caller: ListBytePlusRealPersonAssets reads the local table.
+	// Return an empty result rather than a fabricated one.
+	return BytePlusListAssetsResult{}, nil
+}
+
+func (p virtualCharacterRealPersonProvider) CreateAsset(ctx context.Context, request BytePlusCreateAssetRequest) (string, string, error) {
+	managementID, err := virtualCharacterManagementID(strings.TrimSpace(request.GroupID))
+	if err != nil {
+		return "", "", virtualCharacterDefinitiveFailure(err)
+	}
+	assetType, maxSize, err := virtualCharacterAssetType(request.AssetType)
+	if err != nil {
+		return "", "", virtualCharacterDefinitiveFailure(err)
+	}
+	sourceURL := strings.TrimSpace(request.URL)
+	if sourceURL == "" {
+		return "", "", virtualCharacterDefinitiveFailure(errVirtualCharacterProtocol)
+	}
+	source, err := virtualCharacterAssetFetchSource(ctx, sourceURL)
+	if err != nil || source == nil || source.Body == nil {
+		if source != nil && source.Body != nil {
+			_ = source.Body.Close()
+		}
+		if errors.Is(err, context.DeadlineExceeded) || isNetTimeout(err) {
+			return "", "", newAssetMaterializeFailure(AssetMaterializeErrorTimeout, 0, "", 0, "", nil)
+		}
+		return "", "", virtualCharacterProcessingFailure(0, nil)
+	}
+	if source.StatusCode < 200 || source.StatusCode >= 300 {
+		_ = source.Body.Close()
+		return "", "", virtualCharacterProcessingFailure(0, nil)
+	}
+	if source.ContentLength > maxSize {
+		_ = source.Body.Close()
+		return "", "", virtualCharacterDefinitiveFailure(errVirtualCharacterTooLarge)
+	}
+	contentType, filename, err := virtualCharacterSourceMetadata(source, model.Asset{}, assetType)
+	if err != nil {
+		_ = source.Body.Close()
+		return "", "", virtualCharacterDefinitiveFailure(err)
+	}
+
+	baseClient, err := virtualCharacterAssetHTTPClientFactory(p.channel)
+	if err != nil || baseClient == nil {
+		_ = source.Body.Close()
+		return "", "", ErrAssetBindingUnavailable
+	}
+	client := *baseClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return errVirtualCharacterRedirect }
+	pipeReader, pipeWriter := io.Pipe()
+	writer := multipart.NewWriter(pipeWriter)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.gatewayOrigin, "/")+virtualCharacterRealPersonCharacterPath+managementID+"/asset", pipeReader)
+	if err != nil {
+		_ = source.Body.Close()
+		_ = pipeReader.Close()
+		_ = pipeWriter.Close()
+		return "", "", ErrAssetBindingUnavailable
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(p.apiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	writeDone := make(chan error, 1)
+	go func() {
+		defer source.Body.Close()
+		writeDone <- writeVirtualCharacterMultipart(pipeWriter, writer, opaqueBytePlusAssetName(), assetType, filename, contentType, source.Body, maxSize)
+	}()
+	response, requestErr := client.Do(req)
+	_ = pipeReader.Close()
+	writeErr := <-writeDone
+	if response != nil && response.Body != nil {
+		defer response.Body.Close()
+	}
+	if errors.Is(writeErr, errVirtualCharacterTooLarge) {
+		return "", "", virtualCharacterDefinitiveFailure(writeErr)
+	}
+	if requestErr != nil {
+		if errors.Is(requestErr, context.DeadlineExceeded) || isNetTimeout(requestErr) {
+			return "", "", newAssetMaterializeFailure(AssetMaterializeErrorTimeout, 0, "", 0, "", nil)
+		}
+		if errors.Is(requestErr, errVirtualCharacterRedirect) {
+			return "", "", virtualCharacterDefinitiveFailure(errVirtualCharacterRedirect)
+		}
+		return "", "", virtualCharacterProcessingFailure(0, nil)
+	}
+	if response == nil {
+		return "", "", virtualCharacterProcessingFailure(0, nil)
+	}
+	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(response.Body, virtualCharacterRealPersonResponseMaxSize+1))
+		var envelope virtualCharacterRealPersonCharacterResponse
+		_ = common.Unmarshal(raw, &envelope)
+		return "", "", newAssetMaterializeFailure(
+			assetMaterializeClassForHTTPStatus(response.StatusCode, strings.TrimSpace(envelope.Error.Code)),
+			response.StatusCode, strings.TrimSpace(envelope.Error.Code), 0, "", nil)
+	}
+	if writeErr != nil {
+		return "", "", virtualCharacterProcessingFailure(response.StatusCode, nil)
+	}
+	return managementID, "", nil
 }

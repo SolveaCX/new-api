@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -163,4 +164,80 @@ func TestVirtualCharacterProviderErrorsNeverLeakKey(t *testing.T) {
 	_, err := p.GetVisualValidateResult(context.Background(), "sess-hash")
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "super-secret-key")
+}
+
+func TestVirtualCharacterGetAssetMapsCharacterStatus(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/virtual-characters/2558", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":2558,"source_type":"volc_real_person","status":"active","validation_status":"accepted","provider_asset_id":"pa_xyz","authorization":{"status":"active"}}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	status, err := p.GetAsset(context.Background(), "2558")
+	require.NoError(t, err)
+	require.Equal(t, "2558", status.UpstreamAssetID)
+	require.Equal(t, model.BytePlusAssetStatusActive, status.Status)
+}
+
+func TestVirtualCharacterGetAssetRejectsIDMismatch(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":9999,"source_type":"volc_real_person","status":"creating"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	_, err := p.GetAsset(context.Background(), "2558")
+	require.Error(t, err)
+}
+
+func TestVirtualCharacterDeleteAsset(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodDelete, r.Method)
+		require.Equal(t, "/v1/virtual-characters/2558", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":2558}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	_, err := p.DeleteAsset(context.Background(), "2558")
+	require.NoError(t, err)
+}
+
+func TestVirtualCharacterCreateAssetUploadsPortrait(t *testing.T) {
+	portrait := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("fake-portrait-bytes"))
+	}))
+	defer portrait.Close()
+	var gotMultipart bool
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/virtual-characters/2558/asset", r.URL.Path)
+		gotMultipart = strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":2558,"source_type":"volc_real_person","status":"creating"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), func(ctx context.Context, url string) (*http.Response, error) {
+		return portrait.Client().Get(url)
+	})
+	p := virtualCharacterRealPersonProvider{channel: &model.Channel{}, apiKey: "k", gatewayOrigin: server.URL}
+
+	upstreamID, providerAssetID, err := p.CreateAsset(context.Background(), BytePlusCreateAssetRequest{
+		GroupID:   "2558",
+		URL:       portrait.URL + "/portrait.png",
+		AssetType: "image",
+		Name:      "portrait",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "2558", upstreamID)
+	require.Empty(t, providerAssetID)
+	require.True(t, gotMultipart)
 }
