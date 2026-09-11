@@ -13,6 +13,7 @@ Make the pricing "hidden models" list (`pricing_visibility_setting.hidden_models
 `middleware.Distribute()` calls the gate after the token allow/deny-list checks and before channel selection. Distribute is the single channel-selection entry for `/v1/*`, `/pg/*`, `/mj`, `/suno` and `/v1beta`, so one hook covers every relay format including the Playground.
 
 - Only requests that will select a channel are gated. Task fetches (`GET /v1/videos/{id}` etc.) resolve the model name from an already-accepted task and keep working even if the model is hidden afterwards.
+- Video remix (`POST /v1/videos/{id}/remix`) is a new upstream invocation whose model is only known after the origin task is loaded, so the distributor cannot gate it. `relay.ResolveOriginTask` applies the same rule right after deriving the model and before locking the origin channel, returning a request-local 404 `model_not_found` task error (no channel penalty, no retry).
 - The identity group comes from the request context, which `TokenAuth` already forces to `plg` for non-enterprise users. Playground requests carry only a session copy that can be stale, so on `/pg/` the gate reads the group from the database (same source as `resolvePlaygroundUsingGroup`). A lookup failure yields an empty group and is treated as PLG: unknown identity fails closed.
 - Rejection is HTTP 404 with error code `model_not_found` and the i18n message `distributor.model_not_found` ("The model X does not exist or you do not have access to it"). The wording never reveals that the model exists and is hidden.
 - Queued video-task workers are not gated. Submission already went through the gate and pre-charged the account; blocking mid-flight would require refund handling for no security gain.
@@ -44,3 +45,4 @@ The gate has no feature flag: it takes effect for every model already on the hid
 - `service`: pure-function cases (PLG hit, PLG miss, empty group, enterprise never blocked, empty list inert).
 - `middleware`: end-to-end `Distribute()` runs proving a PLG request is rejected before channel selection, an enterprise request with the same model succeeds, and Playground requests use the database group (stale session group in both directions, missing user fails closed).
 - `controller`: PLG exclusion and enterprise retention for `/v1/models`, `/v1/models/{model}` and `/v1/available_models`.
+- `relay`: remix of a hidden-model task is rejected for PLG before the channel lock, allowed for enterprise, and allowed for PLG when the model is visible.

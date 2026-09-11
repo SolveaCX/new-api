@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
@@ -144,6 +145,17 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 				info.OriginModelName = m
 			}
 		}
+	}
+
+	// A remix is a new upstream invocation of the origin task's model, but the
+	// distributor cannot gate it there because the model is only known after
+	// this lookup. Apply the same PLG hidden-model rule the distributor uses,
+	// before the channel is locked, so a PLG caller cannot reach a hidden model
+	// through a task that was accepted before the model was hidden.
+	if service.HiddenModelBlockedForIdentity(info.UserGroup, info.OriginModelName) {
+		return service.TaskErrorWrapperLocal(
+			errors.New(i18n.T(c, i18n.MsgDistributorModelNotFound, map[string]any{"Model": info.OriginModelName})),
+			string(types.ErrorCodeModelNotFound), http.StatusNotFound)
 	}
 
 	// 锁定到原始任务的渠道（重试时复用同一渠道，轮换 key）

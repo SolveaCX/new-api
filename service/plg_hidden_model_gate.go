@@ -12,9 +12,10 @@ import (
 // PLG because every non-enterprise user is served from plg.
 //
 // Enterprise identities are never blocked here; hidden models stay callable
-// for them exactly as before. Callers use this in one place for relay requests
-// (middleware.Distribute) and in the /v1 model listing endpoints so PLG
-// clients never discover a model they cannot call.
+// for them exactly as before. Callers: middleware.Distribute for every request
+// that selects a channel, relay.ResolveOriginTask for video remixes (the model
+// is only known after the origin task is loaded), and the /v1 model listing
+// endpoints so PLG clients never discover a model they cannot call.
 func HiddenModelBlockedForIdentity(identityGroup string, modelName string) bool {
 	identityGroup = strings.TrimSpace(identityGroup)
 	if identityGroup != "" && identityGroup != modelAccessPLGGroup {
