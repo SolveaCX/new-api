@@ -72,7 +72,7 @@ CREATE TABLE usage_report_daily_model_v2 (
 
 1. **历史日**：首次被读到时一次性按 UTC 日窗口查询（SQL 全部带
    `created_at >= start AND created_at < end` 的索引范围，不扫全表），结果幂等
-   delete+insert 落 `usage_report_daily(_model)`。
+   delete+insert 落 `usage_report_daily_v2(_model_v2)`。
 2. **今日**：以 `built_at` 判断，距上次计算 ≥ 5 分钟才重算一次；管理端并发由
    进程内 mutex 串行化。即使运营 1 分钟点一次，也只有 ~1 次/5min 的当日窗口查询。
 3. 请求热路径**零改动**：本版不修改 `RecordConsumeLog` 与计费链路。
@@ -84,7 +84,7 @@ CREATE TABLE usage_report_daily_model_v2 (
 
 - **启动时**：后台预热最近 30 天（不阻塞启动，用于部署/重启后的补齐）；
 - **每天 00:00 UTC**：强制重算最近 3 天（昨日定稿 + 迟到事件回补），随后自愈窗口内缺失日期；
-- 结果：管理端读取只查 `usage_report_daily(_model)`；接口里的懒加载/后台回填仅作兜底；
+- 结果：管理端读取只查 `usage_report_daily_v2(_model_v2)`；接口里的懒加载/后台回填仅作兜底；
 - 多节点幂等（delete+insert），任务只在 master 节点运行。
 
 ## 接口
