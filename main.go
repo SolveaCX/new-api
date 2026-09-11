@@ -184,6 +184,9 @@ func main() {
 	// Codex subscription model governance task
 	controller.StartCodexModelGovernanceTask()
 
+	// PLG "Available Models" catalog change watcher (DingTalk notification)
+	service.StartPLGModelCatalogWatchTask()
+
 	service.StartBytePlusRealPersonJobs()
 
 	if common.IsMasterNode && constant.UpdateTask {

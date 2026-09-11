@@ -27,6 +27,7 @@
 | `checkin_setting.go` | 签到奖励额度范围配置 |
 | `monitor_setting.go` | 渠道监控告警阈值、测试模式（`scheduled_all` / `passive_recovery`）、DingTalk 告警（webhook URL/secret/冷却时间）、渠道类型过滤（`AutoTestChannelAllowedTypes`/`AutoTestChannelIgnoredTypes`）；`GetMonitorSetting()` 读取 `CHANNEL_TEST_FREQUENCY` 环境变量覆盖 |
 | `monitor_setting_test.go` | DingTalk 字段默认值与 `UpdateConfigFromMap` 反序列化单元测试 |
+| `plg_catalog_notify_setting.go` | `PLGCatalogNotifySetting`：plg「可用模型」目录变更钉钉通知（独立 webhook URL/secret/开关/检查间隔，最小 1 分钟）；由 `service.StartPLGModelCatalogWatchTask` 消费 |
 | `payment_setting.go` | 当前支付配置结构 |
 | `payment_setting_old.go` | 旧版支付配置兼容层（迁移过渡用） |
 | `quota_setting.go` | 新用户初始额度、邀请奖励等配置 |

@@ -434,6 +434,7 @@ func orderedMigrationModels() []migrationModel {
 		{&CodexModelGovernanceRecord{}, "CodexModelGovernanceRecord"},
 		{&CodexModelGovernanceProbeState{}, "CodexModelGovernanceProbeState"},
 		{&CodexModelGovernanceAlertCooldownRecord{}, "CodexModelGovernanceAlertCooldownRecord"},
+		{&PLGModelCatalogSnapshot{}, "PLGModelCatalogSnapshot"},
 		{&PlaygroundRecord{}, "PlaygroundRecord"},
 		{&PlaygroundRecordAsset{}, "PlaygroundRecordAsset"},
 		{&TemporaryChannelModelSpend{}, "TemporaryChannelModelSpend"},

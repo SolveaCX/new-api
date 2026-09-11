@@ -21,6 +21,7 @@ import { CodexIdentitySettingsSection } from '../integrations/codex-identity-set
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { PaymentNotificationSettingsSection } from '../integrations/payment-notification-settings-section'
+import { PLGCatalogNotificationSettingsSection } from '../integrations/plg-catalog-notification-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -138,6 +139,24 @@ const OPERATIONS_SECTIONS = [
             settings['payment_notify_setting.dingtalk_alert_webhook_url'],
           'payment_notify_setting.dingtalk_alert_secret':
             settings['payment_notify_setting.dingtalk_alert_secret'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'plg-catalog-notifications',
+    titleKey: 'PLG Catalog Notifications',
+    build: (settings: OperationsSettings) => (
+      <PLGCatalogNotificationSettingsSection
+        defaultValues={{
+          'plg_catalog_notify_setting.dingtalk_alert_enabled':
+            settings['plg_catalog_notify_setting.dingtalk_alert_enabled'],
+          'plg_catalog_notify_setting.dingtalk_alert_webhook_url':
+            settings['plg_catalog_notify_setting.dingtalk_alert_webhook_url'],
+          'plg_catalog_notify_setting.dingtalk_alert_secret':
+            settings['plg_catalog_notify_setting.dingtalk_alert_secret'],
+          'plg_catalog_notify_setting.check_interval_minutes':
+            settings['plg_catalog_notify_setting.check_interval_minutes'],
         }}
       />
     ),
