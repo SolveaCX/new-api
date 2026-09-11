@@ -170,6 +170,10 @@ func main() {
 	controller.StartAssetTaskWorker()
 	service.StartAssetModelReadinessWorker()
 
+	// Usage report pre-aggregation: warm the trailing window at startup and
+	// refresh it daily at 00:00 UTC so the admin report is table-read only.
+	service.StartUsageReportDailyTask()
+
 	// Channel upstream model update check task
 	controller.StartChannelUpstreamModelUpdateTask()
 

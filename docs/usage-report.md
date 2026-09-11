@@ -71,6 +71,13 @@ CREATE TABLE usage_report_daily_model (
    `HINCRBY usage:today:<UTC日期>:model <model> <delta>` 与计数 key，
    “今日”改为 Redis + 已落库 T-1 拼接；含开关，失败静默。先出本版再评估加。
 
+### 定时预热（master 节点）
+
+- **启动时**：后台预热最近 30 天（不阻塞启动，用于部署/重启后的补齐）；
+- **每天 00:00 UTC**：强制重算最近 3 天（昨日定稿 + 迟到事件回补），随后自愈窗口内缺失日期；
+- 结果：管理端读取只查 `usage_report_daily(_model)`；接口里的懒加载/后台回填仅作兜底；
+- 多节点幂等（delete+insert），任务只在 master 节点运行。
+
 ## 接口
 
 - `GET /api/data/usage_report?days=30[&format=csv[&dim=daily|models]]`
