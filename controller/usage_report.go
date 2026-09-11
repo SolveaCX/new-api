@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	usageReportDefaultDays = 30
-	usageReportMaxDays     = 180
-	usageReportDateLayout  = "2006-01-02"
+	usageReportDefaultDays     = 30
+	usageReportMaxDays         = 180
+	usageReportBackfillMaxDays = 7
+	usageReportDateLayout      = "2006-01-02"
 )
 
 // GetUsageReport serves the NEW user-side usage report board (usage_report_*),
@@ -50,12 +51,9 @@ func GetUsageReport(c *gin.Context) {
 	to := now.Format(usageReportDateLayout)
 	from := now.AddDate(0, 0, -(days - 1)).Format(usageReportDateLayout)
 
-	// CSV exports need a complete window: fill synchronously (rare, admin-only).
+	// CSV exports read the persisted snapshot. Backfills are handled by the
+	// offline task or the explicit admin backfill endpoint.
 	if strings.EqualFold(c.Query("format"), "csv") {
-		if err := service.EnsureUsageReportRange(days); err != nil {
-			common.ApiError(c, err)
-			return
-		}
 		dim := strings.ToLower(c.Query("dim"))
 		if dim == "models" {
 			modelRows, err := model.GetUsageReportDayModels(from, to, group)
@@ -75,12 +73,6 @@ func GetUsageReport(c *gin.Context) {
 		return
 	}
 
-	// Interactive view: never block the request on a historical backfill.
-	// Kick off the warm fill in the background and serve what is already
-	// persisted; the response carries a "filling" flag until the window is
-	// complete so the front-end can poll.
-	service.EnsureUsageReportRangeAsync(days)
-
 	dayRows, err := model.GetUsageReportDays(from, to, group)
 	if err != nil {
 		common.ApiError(c, err)
@@ -99,10 +91,9 @@ func GetUsageReport(c *gin.Context) {
 			"group":  group,
 			"days":   dayRows,
 			"models": modelRows,
-			// Combine data completeness with the runner state: if the background
-			// fill finished right between query and response the rows may still be
-			// short, so the front-end keeps polling until the window is complete.
-			"filling": len(dayRows) < days || service.UsageReportFillRunning(),
+			// This endpoint is read-only. Missing dates remain absent until the
+			// offline task or an explicit admin backfill fills them.
+			"filling": false,
 		},
 	})
 }
@@ -159,8 +150,8 @@ type usageReportBackfillResult struct {
 //
 // Params (UTC+0 dates, exactly one form):
 //   - date=YYYY-MM-DD        single day
-//   - from=YYYY-MM-DD&to=YYYY-MM-DD   inclusive range (<= 180 days)
-//   - days=N                 trailing N days ending today
+//   - from=YYYY-MM-DD&to=YYYY-MM-DD   inclusive range (<= 7 days)
+//   - days=N                 trailing N days ending today (<= 7)
 //
 // The result lists every date with ok/error so a partial failure is visible.
 func BackfillUsageReport(c *gin.Context) {
@@ -246,8 +237,8 @@ func usageReportBackfillDates(c *gin.Context) ([]string, error) {
 			return nil, fmt.Errorf("to (%s) must not be earlier than from (%s)", toStr, fromStr)
 		}
 		span := int(to.Sub(from).Hours()/24) + 1
-		if span > usageReportMaxDays {
-			return nil, fmt.Errorf("range spans %d days, max is %d", span, usageReportMaxDays)
+		if span > usageReportBackfillMaxDays {
+			return nil, fmt.Errorf("range spans %d days, max is %d", span, usageReportBackfillMaxDays)
 		}
 		dates := make([]string, 0, span)
 		for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
@@ -261,8 +252,8 @@ func usageReportBackfillDates(c *gin.Context) ([]string, error) {
 		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("days must be a positive integer")
 		}
-		if n > usageReportMaxDays {
-			n = usageReportMaxDays
+		if n > usageReportBackfillMaxDays {
+			n = usageReportBackfillMaxDays
 		}
 		dates := make([]string, 0, n)
 		for i := n - 1; i >= 0; i-- {
@@ -274,19 +265,17 @@ func usageReportBackfillDates(c *gin.Context) ([]string, error) {
 	return nil, fmt.Errorf("specify date=YYYY-MM-DD, from=&to=, or days=N")
 }
 
-// FillUsageReportMissing drives the trailing-window backfill from inside a
-// request (Cloud Run throttles CPU for idle background goroutines, which left
-// holes in production). Each call computes up to `batch` missing days and
-// returns how many units remain, so the page can loop until complete.
+// FillUsageReportMissing is an explicit admin-only backfill endpoint. Each call
+// computes a bounded batch of missing days and returns how many units remain.
 //
-// Params: days (default 30, cap 180), batch (default 2, cap 5).
+// Params: days (default 7, cap 7), batch (default 2, cap 5).
 func FillUsageReportMissing(c *gin.Context) {
 	days, _ := strconv.Atoi(c.Query("days"))
 	if days <= 0 {
-		days = usageReportDefaultDays
+		days = usageReportBackfillMaxDays
 	}
-	if days > usageReportMaxDays {
-		days = usageReportMaxDays
+	if days > usageReportBackfillMaxDays {
+		days = usageReportBackfillMaxDays
 	}
 	batch, _ := strconv.Atoi(c.Query("batch"))
 	if batch <= 0 {

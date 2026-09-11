@@ -65,16 +65,14 @@ CREATE TABLE usage_report_daily_model_v2 (
 > 新版本写入**新表** `usage_report_daily_v2` / `usage_report_daily_model_v2`。
 > 迁移只做 `CREATE TABLE IF NOT EXISTS`，**不会 ALTER / DROP 任何既有表**；
 > 旧的 `usage_report_daily(_model)` 原样保留（可后续由运维清理）。
-> 新表为空时，由启动预热 / 每日 00:00 UTC 任务 / 页面读取自动回填，无需人工干预。
+> 新表为空时，由启动预热 / 每日 00:00 UTC 任务回填；页面读取只读已落盘快照。
 ```
 
 ## 计算策略（对线上零影响）
 
-1. **历史日**：首次被读到时一次性按 UTC 日窗口查询（SQL 全部带
-   `created_at >= start AND created_at < end` 的索引范围，不扫全表），结果幂等
-   delete+insert 落 `usage_report_daily_v2(_model_v2)`。
-2. **今日**：以 `built_at` 判断，距上次计算 ≥ 5 分钟才重算一次；管理端并发由
-   进程内 mutex 串行化。即使运营 1 分钟点一次，也只有 ~1 次/5min 的当日窗口查询。
+1. **历史日**：由后台任务或显式管理员补数按 UTC 日窗口查询；已有快照不会因页面读取重复计算。
+2. **今日**：以 `built_at` 判断，距上次计算 ≥ 5 分钟才重算一次；后台任务和显式补数共用
+   Redis 分布式锁及进程内单槽闸门，同一时刻最多执行一个日期的源表聚合。
 3. 请求热路径**零改动**：本版不修改 `RecordConsumeLog` 与计费链路。
 4. （规划，未接入）Redis 分钟级计数：在 `model.RecordConsumeLog` 成功后追加
    `HINCRBY usage:today:<UTC日期>:model <model> <delta>` 与计数 key，
@@ -82,9 +80,9 @@ CREATE TABLE usage_report_daily_model_v2 (
 
 ### 定时预热（master 节点）
 
-- **启动时**：后台预热最近 30 天（不阻塞启动，用于部署/重启后的补齐）；
-- **每天 00:00 UTC**：强制重算最近 3 天（昨日定稿 + 迟到事件回补），随后自愈窗口内缺失日期；
-- 结果：管理端读取只查 `usage_report_daily_v2(_model_v2)`；接口里的懒加载/后台回填仅作兜底；
+- **启动时**：后台预热最近 7 天（不阻塞启动，用于部署/重启后的补齐）；
+- **每天 00:00 UTC**：只补最近 7 天内缺失日期，不重复重算已有历史快照；
+- 结果：管理端读取只查 `usage_report_daily_v2(_model_v2)`；
 - 多节点幂等（delete+insert），任务只在 master 节点运行。
 
 ## 接口
@@ -97,13 +95,12 @@ CREATE TABLE usage_report_daily_model_v2 (
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，
     供“用量 × 外部价目”离线核算成本）。
 - days 上限 180、默认 30。
-- `GET /api/data/usage_report_fill?days=30&batch=2`（admin）
-  - **请求驱动**的小批量回填：一次在请求内算 `batch` 个缺失/过期的
-    `(date, group)`（Cloud Run 仅请求期间分配 CPU，后台 goroutine 会被节流），
-    返回 `{filled, remaining, last_error}`；前端数据不满时每 4s 调一次
+- `GET /api/data/usage_report_fill?days=7&batch=2`（admin）
+  - 显式小批量补数入口；最多处理最近 7 天，和后台任务共用锁及单日期查询闸门，
+    返回 `{filled, remaining, last_error}`；页面不会自动调用
 - `GET /api/data/usage_report_backfill?date=YYYY-MM-DD`（或 `?from=&to=`、`?days=N`）
   - 管理员手动补数：强制重算指定 UTC 日期（幂等），返回逐日 `ok/error`；
-  - 范围上限 180 天、不允许未来日期；用于线上某天缺失/口径变更后立即补齐，
+  - 范围上限 7 天、不允许未来日期；用于线上某天缺失/口径变更后立即补齐，
     与每天 00:00 UTC 的自动任务互补。日期按 UTC+0 今天往前取 N 天。
 
 ## 前端（评审稿 v3 布局）

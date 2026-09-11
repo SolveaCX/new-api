@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -21,13 +22,93 @@ import (
 // Design (see docs/usage-report.md):
 //   - One compute per (UTC+0 day, group), stored into
 //     usage_report_daily_v2 / usage_report_daily_model_v2.
-//   - Past dates are computed once, lazily, on first read (idempotent).
+//   - Past dates are filled by bounded offline tasks and kept as immutable snapshots.
 //   - The current UTC day is recomputed at most every usageReportTodayFresh
-//     seconds from the (indexed) day slice of the log/users tables, so admin
-//     reads never scan history. A later phase will move the "today" slice to
+//     seconds by the offline task from the (indexed) day slice of the log/users
+//     tables, so admin reads never scan history. A later phase will move the "today" slice to
 //     Redis minute-level counters (documented, not yet wired to the hot path).
 
-const usageReportTodayFresh = 5 * time.Minute
+const (
+	usageReportTodayFresh         = 5 * time.Minute
+	usageReportBackfillMaxDays    = 7
+	usageReportDistributedLockKey = "new-api:usage-report:fill-lock"
+	usageReportDistributedLockTTL = 30 * time.Minute
+)
+
+func usageReportBackfillDays(days int) int {
+	if days <= 0 {
+		return 1
+	}
+	if days > usageReportBackfillMaxDays {
+		return usageReportBackfillMaxDays
+	}
+	return days
+}
+
+var (
+	ErrUsageReportFillInProgress  = errors.New("usage report fill already running")
+	ErrUsageReportLockUnavailable = errors.New("usage report distributed lock unavailable")
+	ErrUsageReportLockLost        = errors.New("usage report distributed lock lost")
+)
+
+type usageReportDistributedLock struct{ token string }
+
+func acquireUsageReportDistributedLock(ctx context.Context) (*usageReportDistributedLock, bool, error) {
+	if !common.RedisEnabled || common.RDB == nil {
+		return nil, false, ErrUsageReportLockUnavailable
+	}
+	token := common.GetUUID()
+	ok, err := common.RDB.SetNX(ctx, usageReportDistributedLockKey, token, usageReportDistributedLockTTL).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("acquire usage report distributed lock: %w", err)
+	}
+	if !ok {
+		return nil, false, nil
+	}
+	return &usageReportDistributedLock{token: token}, true, nil
+}
+
+func (l *usageReportDistributedLock) Release() {
+	if l == nil || !common.RedisEnabled || common.RDB == nil || l.token == "" {
+		return
+	}
+	const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`
+	_, _ = common.RDB.Eval(context.Background(), script, []string{usageReportDistributedLockKey}, l.token).Result()
+}
+
+func (l *usageReportDistributedLock) Renew(ctx context.Context) <-chan struct{} {
+	lost := make(chan struct{})
+	if l == nil || l.token == "" || !common.RedisEnabled || common.RDB == nil {
+		close(lost)
+		return lost
+	}
+	go func() {
+		defer close(lost)
+		ticker := time.NewTicker(usageReportDistributedLockTTL / 3)
+		defer ticker.Stop()
+		const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) else return 0 end`
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				result, err := common.RDB.Eval(ctx, script, []string{usageReportDistributedLockKey}, l.token, usageReportDistributedLockTTL.Milliseconds()).Int()
+				if err != nil || result != 1 {
+					return
+				}
+			}
+		}
+	}()
+	return lost
+}
+
+var usageReportDaySemaphore = make(chan struct{}, 1)
+
+func withUsageReportDaySlot(fn func() error) error {
+	usageReportDaySemaphore <- struct{}{}
+	defer func() { <-usageReportDaySemaphore }()
+	return fn()
+}
 
 // usageReportSchemaV is bumped whenever the daily row gains new aggregated
 // columns so existing stored rows are recomputed once (see EnsureUsageReportDate).
@@ -140,14 +221,38 @@ func utcToday(now time.Time) string {
 //   - one failing day never aborts the rest: errors are logged and skipped, and
 //     the first error is returned for the caller (CSV) to surface.
 func EnsureUsageReportRange(days int) error {
+	days = usageReportBackfillDays(days)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	distributedLock, acquired, err := acquireUsageReportDistributedLock(ctx)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return ErrUsageReportFillInProgress
+	}
+	defer distributedLock.Release()
+	leaseCtx, leaseCancel := context.WithCancel(context.Background())
+	defer leaseCancel()
+	leaseLost := distributedLock.Renew(leaseCtx)
 	if err := usageReportEnsureColumnDefaults(); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
 	var firstErr error
 	for i := 0; i < days; i++ {
+		select {
+		case <-leaseLost:
+			return ErrUsageReportLockLost
+		default:
+		}
 		date := utcToday(now.AddDate(0, 0, -i))
 		for _, group := range usageReportGroups {
+			select {
+			case <-leaseLost:
+				return ErrUsageReportLockLost
+			default:
+			}
 			started := time.Now()
 			if err := EnsureUsageReportDate(date, group); err != nil {
 				common.SysError(fmt.Sprintf("usage_report fill failed: date=%s group=%s: %s", date, group, err.Error()))
@@ -179,17 +284,25 @@ type usageReportPair struct {
 // FillUsageReportMissing computes up to `batch` still-missing (or stale) day
 // rows, newest-first, and reports how many units remain.
 //
-// Why this exists: on Cloud Run, background goroutines get CPU-throttled once
-// no request is in flight, so a long background backfill can stall and leave
-// holes (observed in production). Calling this from the report page keeps the
-// work inside a request, where CPU is guaranteed, and bounds each call so it
-// stays well under the request timeout.
+// Each call is bounded so an explicit admin backfill stays well under the
+// request timeout.
 func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
-	if err := usageReportEnsureColumnDefaults(); err != nil {
+	days = usageReportBackfillDays(days)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	distributedLock, acquired, err := acquireUsageReportDistributedLock(ctx)
+	if err != nil {
 		return nil, 0, err
 	}
-	if days <= 0 {
-		days = 30
+	if !acquired {
+		return nil, days * len(usageReportGroups), ErrUsageReportFillInProgress
+	}
+	defer distributedLock.Release()
+	leaseCtx, leaseCancel := context.WithCancel(context.Background())
+	defer leaseCancel()
+	leaseLost := distributedLock.Renew(leaseCtx)
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return nil, 0, err
 	}
 	if batch <= 0 {
 		batch = 2
@@ -234,6 +347,11 @@ func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
 	for _, pair := range needed {
 		if len(filled) >= batch {
 			break
+		}
+		select {
+		case <-leaseLost:
+			return filled, len(needed) - len(filled), ErrUsageReportLockLost
+		default:
 		}
 		if err := RecomputeUsageReportDate(pair.Date, pair.Group); err != nil {
 			if firstErr == nil {
@@ -290,7 +408,12 @@ func EnsureUsageReportDate(date string, group string) error {
 	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
 	defer lock.Unlock()
+	return withUsageReportDaySlot(func() error {
+		return ensureUsageReportDateLocked(date, group)
+	})
+}
 
+func ensureUsageReportDateLocked(date string, group string) error {
 	// Ensure legacy NULL rows are backfilled before reading, so a single-date
 	// request can self-heal even if the range-level call was never hit.
 	if err := usageReportEnsureColumnDefaults(); err != nil {
@@ -327,12 +450,28 @@ func RecomputeUsageReportDate(date string, group string) error {
 	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
 	defer lock.Unlock()
-	return computeUsageReportDate(date, group)
+	return withUsageReportDaySlot(func() error {
+		return computeUsageReportDate(date, group)
+	})
 }
 
 // RecomputeUsageReportDateAllGroups recomputes every stored group for a date
 // (used by the nightly task and the manual backfill endpoint).
 func RecomputeUsageReportDateAllGroups(date string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	distributedLock, acquired, err := acquireUsageReportDistributedLock(ctx)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return ErrUsageReportFillInProgress
+	}
+	defer distributedLock.Release()
+	return recomputeUsageReportDateAllGroups(date)
+}
+
+func recomputeUsageReportDateAllGroups(date string) error {
 	var firstErr error
 	for _, group := range usageReportGroups {
 		if err := RecomputeUsageReportDate(date, group); err != nil {

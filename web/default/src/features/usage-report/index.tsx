@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/table'
 import {
   downloadUsageReportCSV,
-  fillUsageReport,
   getUsageReport,
   usageReportQueryKeys,
   type UsageReportGroup,
@@ -137,7 +136,7 @@ export function UsageReport() {
   const [group, setGroup] = useState<UsageReportGroup>(initialGroup)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
-  const { data: res, isLoading, refetch } = useQuery({
+  const { data: res, isLoading } = useQuery({
     queryKey: usageReportQueryKeys.report(days, group),
     queryFn: () => getUsageReport(days, group),
   })
@@ -145,8 +144,6 @@ export function UsageReport() {
   const dayRows: UsageReportDayRow[] = payload
     ? [...payload.days].sort((a, b) => a.date.localeCompare(b.date))
     : []
-  const filling = Boolean(payload?.filling)
-  const incomplete = dayRows.length < days
   const modelRows: UsageReportModelRow[] = payload ? [...payload.models] : []
   const today = dayRows.length > 0 ? dayRows[dayRows.length - 1] : undefined
   const yesterday = dayRows.length > 1 ? dayRows[dayRows.length - 2] : undefined
@@ -318,33 +315,6 @@ export function UsageReport() {
     onScroll()
     return () => window.removeEventListener('scroll', onScroll)
   }, [dayRows.length])
-
-  // 轮询策略（请求驱动回填）：
-  // 数据未满时，每 4s 调一次 /usage_report_fill 在“请求内”算一小批缺失日期
-  // （Cloud Run 只对请求期间分配 CPU，后台 goroutine 会被节流），然后刷新数据。
-  // - 后台仍在回填(filling)：一直轮询；
-  // - 后台已停但数据仍不满：最多 staleRetryLimit 次后停下并提示手动重试。
-  const staleRetryLimit = 30
-  const [staleTicks, setStaleTicks] = useState(0)
-  const [fillRemaining, setFillRemaining] = useState<number | null>(null)
-  const staleStopped = incomplete && !filling && staleTicks >= staleRetryLimit
-  useEffect(() => {
-    if (!incomplete) return
-    if (!filling && staleTicks >= staleRetryLimit) return
-    const id = setTimeout(() => {
-      if (!filling) setStaleTicks((n) => n + 1)
-      void (async () => {
-        try {
-          const res = await fillUsageReport(days, 2)
-          setFillRemaining(res?.data?.remaining ?? null)
-        } catch {
-          // 保持轮询；错误会体现在数据是否补齐上
-        }
-        void refetch()
-      })()
-    }, 4000)
-    return () => clearTimeout(id)
-  }, [incomplete, filling, staleTicks, days, refetch])
 
   // 分组/天数写回 URL：刷新或把链接发给同事时保持一致
   useEffect(() => {
@@ -586,29 +556,6 @@ export function UsageReport() {
           </div>
         ) : (
           <div className='space-y-8'>
-            {filling && (
-              <div className='rounded-md bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900'>
-                ⏳ {t('正在补齐历史数据（本页每 4 秒自动算一批并刷新）')}
-                {fillRemaining != null && fillRemaining > 0 ? ` · ${t('剩余')} ${fillRemaining} ${t('项')}` : ''}
-                {' — '}
-                {t('已算好的日期先显示。')}
-              </div>
-            )}
-            {staleStopped && (
-              <div className='flex flex-wrap items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-xs leading-6 text-red-900'>
-                <span>{t('历史回填多次未能完成（当前仅部分日期有数据）。请检查服务日志，或点击重试。')}</span>
-                <Button
-                  size='sm'
-                  variant='outline'
-                  onClick={() => {
-                    setStaleTicks(0)
-                    void refetch()
-                  }}
-                >
-                  {t('重试')}
-                </Button>
-              </div>
-            )}
             <div className='bg-muted/60 flex flex-wrap gap-1 rounded-lg p-1'>
               {[
                 { id: 'funnel', label: '① 漏斗' },
