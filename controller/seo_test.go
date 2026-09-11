@@ -78,7 +78,7 @@ func TestGetRobotsTxtAllowsConsoleHostToExposeNoindexHeaders(t *testing.T) {
 		"User-agent: *",
 		"Allow: /",
 		"Disallow: /api/",
-		"Disallow: /v1/",
+		"Disallow: /v1\n",
 		"Sitemap: https://flatkey.ai/sitemap.xml",
 	} {
 		if !strings.Contains(body, expected) {

@@ -85,7 +85,11 @@ func BuildConsoleRobotsTxt() string {
 	return strings.Join([]string{
 		"User-agent: *",
 		"Allow: /",
-		"Disallow: /api",
+		// Match the API root (including queries) and descendants, not HTML
+		// routes such as /api-marketplace that must expose their noindex header.
+		"Disallow: /api$",
+		"Disallow: /api?",
+		"Disallow: /api/",
 		"Disallow: /v1",
 		"Disallow: /v1beta",
 		"Disallow: /assets",
