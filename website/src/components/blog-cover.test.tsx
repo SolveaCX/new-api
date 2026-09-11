@@ -3,6 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BlogCover, blogCoverSource, DEFAULT_BLOG_COVER } from "./blog-cover";
 
 describe("blog covers", () => {
+  test("known audit failures use a fallback before hydration", () => {
+    for (const cover of ["x", "/blog/x", "http://staging-router.flatkey.ai/api/status", "https://staging-router.flatkey.ai/api/status", "http://example.com/a.png"]) {
+      const html = renderToStaticMarkup(<BlogCover cover={cover} title="Article" />);
+      expect(html).toContain(`src="${DEFAULT_BLOG_COVER}"`);
+      expect(html).not.toContain(`src="${cover}"`);
+    }
+  });
   test("missing and malformed covers use the local branded cover", () => {
     for (const cover of [undefined, "", "  ", "javascript:alert(1)", "//example.com/a.png", 'https://example.com/a.png" onerror="alert(3)', "not-a-url"]) {
       expect(blogCoverSource(cover)).toBe(DEFAULT_BLOG_COVER);

@@ -1,20 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { publicBlogImageSource } from "@/lib/blog-images";
 
 // Keep the fallback local: an unavailable image host must not break the cover too.
 export const DEFAULT_BLOG_COVER = "/assets/blog-default-cover.svg";
 
 export function blogCoverSource(cover?: string): string {
-  const value = cover?.trim();
-  if (!value || /[<>"'\s]/.test(value)) return DEFAULT_BLOG_COVER;
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  try {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) ? value : DEFAULT_BLOG_COVER;
-  } catch {
-    return DEFAULT_BLOG_COVER;
-  }
+  return publicBlogImageSource(cover) ?? DEFAULT_BLOG_COVER;
 }
 
 export function BlogCover({ cover, title }: { cover?: string; title: string }) {
