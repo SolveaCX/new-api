@@ -335,14 +335,14 @@ export function UsageReport() {
       if (!filling) setStaleTicks((n) => n + 1)
       void (async () => {
         try {
-          const res = await fillUsageReport(days, 2)
+          const res = await fillUsageReport(days, 1)
           setFillRemaining(res?.data?.remaining ?? null)
         } catch {
           // 保持轮询；错误会体现在数据是否补齐上
         }
         void refetch()
       })()
-    }, 4000)
+    }, 10000)
     return () => clearTimeout(id)
   }, [incomplete, filling, staleTicks, days, refetch])
 
@@ -588,7 +588,7 @@ export function UsageReport() {
           <div className='space-y-8'>
             {filling && (
               <div className='rounded-md bg-amber-50 px-3 py-2 text-xs leading-6 text-amber-900'>
-                ⏳ {t('正在补齐历史数据（本页每 4 秒自动算一批并刷新）')}
+                ⏳ {t('正在补齐历史数据（每 10 秒算 1 天并刷新）')}
                 {fillRemaining != null && fillRemaining > 0 ? ` · ${t('剩余')} ${fillRemaining} ${t('项')}` : ''}
                 {' — '}
                 {t('已算好的日期先显示。')}

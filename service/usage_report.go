@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -170,6 +171,43 @@ var (
 	usageReportFilling bool
 )
 
+// ErrUsageReportBusy means another replica is already computing that day.
+var ErrUsageReportBusy = errors.New("usage report: another worker is computing this date")
+
+// usageReportPairLockKey is a per-(date, group) lock key: different days can be
+// computed in parallel by different replicas, while the same day is never
+// computed twice (which is what produced hundreds of duplicate statements).
+func usageReportPairLockKey(date string, group string) string {
+	return fmt.Sprintf("usage_report:lock:%s:%s", date, group)
+}
+
+// usageReportPairLock is a small SET+read-back lock (the repo has no SetNX
+// helper). Returns a token when acquired; an empty token means "busy".
+// When Redis is unavailable we fail open (empty token) so the feature still
+// works without Redis.
+func usageReportPairLock(date string, group string, ttl time.Duration) string {
+	key := usageReportPairLockKey(date, group)
+	token := fmt.Sprintf("%d-%d", time.Now().UnixNano(), rand.Int63())
+	if err := common.RedisSet(key, token, ttl); err != nil {
+		return ""
+	}
+	got, err := common.RedisGet(key)
+	if err != nil || got != token {
+		return ""
+	}
+	return token
+}
+
+func usageReportPairUnlock(date string, group string, token string) {
+	if token == "" {
+		return
+	}
+	key := usageReportPairLockKey(date, group)
+	if got, err := common.RedisGet(key); err == nil && got == token {
+		_ = common.RedisDel(key)
+	}
+}
+
 // usageReportPair is one (date, group) aggregation unit.
 type usageReportPair struct {
 	Date  string
@@ -235,7 +273,13 @@ func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
 		if len(filled) >= batch {
 			break
 		}
-		if err := RecomputeUsageReportDate(pair.Date, pair.Group); err != nil {
+		// RecomputeUsageReportDate takes the per-day lock itself; a busy day is
+		// simply skipped (another replica is already on it).
+		err := RecomputeUsageReportDate(pair.Date, pair.Group)
+		if err != nil {
+			if errors.Is(err, ErrUsageReportBusy) {
+				continue
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -297,6 +341,13 @@ func EnsureUsageReportDate(date string, group string) error {
 		return err
 	}
 
+	// Another replica is already computing this day: nothing to do.
+	token := usageReportPairLock(date, group, 120*time.Second)
+	if token == "" {
+		return nil
+	}
+	defer usageReportPairUnlock(date, group, token)
+
 	var row model.UsageReportDay
 	err := model.DB.Where("date = ? AND `group` = ?", date, group).First(&row).Error
 	if err != nil {
@@ -327,6 +378,12 @@ func RecomputeUsageReportDate(date string, group string) error {
 	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
 	defer lock.Unlock()
+
+	token := usageReportPairLock(date, group, 120*time.Second)
+	if token == "" {
+		return ErrUsageReportBusy
+	}
+	defer usageReportPairUnlock(date, group, token)
 	return computeUsageReportDate(date, group)
 }
 
