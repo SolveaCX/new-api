@@ -23,13 +23,11 @@ import (
 //   - One compute per (UTC+0 day, group), stored into
 //     usage_report_daily_v2 / usage_report_daily_model_v2.
 //   - Past dates are filled by bounded offline tasks and kept as immutable snapshots.
-//   - The current UTC day is recomputed at most every usageReportTodayFresh
-//     seconds by the offline task from the (indexed) day slice of the log/users
-//     tables, so admin reads never scan history. A later phase will move the "today" slice to
+//   - Existing snapshots are immutable; only an explicit manual backfill may
+//     force a replacement. Admin reads never scan history.
 //     Redis minute-level counters (documented, not yet wired to the hot path).
 
 const (
-	usageReportTodayFresh         = 5 * time.Minute
 	usageReportBackfillMaxDays    = 7
 	usageReportDistributedLockKey = "new-api:usage-report:fill-lock"
 	usageReportDistributedLockTTL = 30 * time.Minute
@@ -211,8 +209,8 @@ func utcToday(now time.Time) string {
 	return now.UTC().Format("2006-01-02")
 }
 
-// EnsureUsageReportRange ensures every UTC day in the trailing window
-// [today-(days-1) .. today] has fresh daily rows. days is capped by the caller.
+// EnsureUsageReportRange fills only missing dates in the bounded trailing
+// window [today-(days-1) .. today]. Existing snapshots are never refreshed.
 //
 // Two deliberate properties (learned from production: rows stopped at an old
 // date while newer days stayed empty):
@@ -281,7 +279,7 @@ type usageReportPair struct {
 	Group string
 }
 
-// FillUsageReportMissing computes up to `batch` still-missing (or stale) day
+// FillUsageReportMissing computes up to `batch` still-missing day
 // rows, newest-first, and reports how many units remain.
 //
 // Each call is bounded so an explicit admin backfill stays well under the
@@ -311,32 +309,23 @@ func FillUsageReportMissing(days int, batch int) ([]string, int, error) {
 	today := utcToday(now)
 	from := utcToday(now.AddDate(0, 0, -(days - 1)))
 
-	type rowState struct {
-		SchemaV int
-		BuiltAt int64
-	}
-	existing := map[string]rowState{}
+	existing := map[string]struct{}{}
 	var rows []model.UsageReportDay
 	if err := model.DB.
-		Select(fmt.Sprintf("date, %s, schema_v, built_at", model.UsageReportGroupColumn())).
+		Select(fmt.Sprintf("date, %s", model.UsageReportGroupColumn())).
 		Where("date >= ? AND date <= ?", from, today).
 		Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 	for _, r := range rows {
-		existing[r.Date+"|"+r.Group] = rowState{SchemaV: r.SchemaV, BuiltAt: r.BuiltAt}
+		existing[r.Date+"|"+r.Group] = struct{}{}
 	}
 
 	needed := make([]usageReportPair, 0, days*len(usageReportGroups))
 	for i := 0; i < days; i++ {
 		date := utcToday(now.AddDate(0, 0, -i))
 		for _, group := range usageReportGroups {
-			st, ok := existing[date+"|"+group]
-			if !ok || st.SchemaV < usageReportSchemaV {
-				needed = append(needed, usageReportPair{Date: date, Group: group})
-				continue
-			}
-			if date == today && time.Since(time.Unix(st.BuiltAt, 0)) >= usageReportTodayFresh {
+			if _, ok := existing[date+"|"+group]; !ok {
 				needed = append(needed, usageReportPair{Date: date, Group: group})
 			}
 		}
@@ -400,10 +389,9 @@ func EnsureUsageReportRangeAsync(days int) {
 	}()
 }
 
-// EnsureUsageReportDate guarantees the row for one UTC date exists and is
-// fresh enough for today. Past dates are computed once; today is refreshed at
-// most every usageReportTodayFresh seconds. Rows written by an older
-// aggregation schema (SchemaV < current) are recomputed once.
+// EnsureUsageReportDate guarantees the row for one UTC date exists. Existing
+// rows are immutable; use RecomputeUsageReportDate only for an explicit manual
+// repair.
 func EnsureUsageReportDate(date string, group string) error {
 	lock := usageReportDateLock(date + "|" + group)
 	lock.Lock()
@@ -427,15 +415,6 @@ func ensureUsageReportDateLocked(date string, group string) error {
 			return computeUsageReportDate(date, group)
 		}
 		return err
-	}
-	// One-time recompute after schema additions (cohort fields etc).
-	if row.SchemaV < usageReportSchemaV {
-		return computeUsageReportDate(date, group)
-	}
-	if date == utcToday(time.Now().UTC()) {
-		if time.Since(time.Unix(row.BuiltAt, 0)) >= usageReportTodayFresh {
-			return computeUsageReportDate(date, group)
-		}
 	}
 	return nil
 }

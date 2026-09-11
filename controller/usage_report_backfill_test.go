@@ -63,7 +63,7 @@ func TestUsageReportBackfillDatesRejectsBadInput(t *testing.T) {
 		"from=2025-08-03&to=2025-08-01", // to before from
 		"days=0",                        // non-positive
 		"days=abc",                      // not a number
-		"from=2020-01-01&to=2025-01-01", // span over the 180-day cap
+		"from=2025-08-01&to=2025-08-08", // span over the 7-day cap
 	}
 	for _, q := range cases {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
