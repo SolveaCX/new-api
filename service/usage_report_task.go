@@ -12,10 +12,7 @@ import (
 
 const (
 	// trailing window warmed at startup and kept warm by the nightly job
-	usageReportWindowDays = 30
-	// days force-recomputed at 00:00 UTC (yesterday finalises; late-arriving
-	// key/payment events from the previous days are picked up)
-	usageReportNightlyRecomputeDays = 3
+	usageReportWindowDays = 7
 )
 
 var usageReportTaskOnce sync.Once
@@ -55,13 +52,6 @@ func StartUsageReportDailyTask() {
 
 func runUsageReportDailyJob() {
 	started := time.Now()
-	now := time.Now().UTC()
-	for i := 1; i <= usageReportNightlyRecomputeDays; i++ {
-		date := utcToday(now.AddDate(0, 0, -i))
-		if err := RecomputeUsageReportDateAllGroups(date); err != nil {
-			common.SysError("usage_report nightly recompute failed for " + date + ": " + err.Error())
-		}
-	}
 	if err := EnsureUsageReportRange(usageReportWindowDays); err != nil {
 		common.SysError("usage_report nightly window fill failed: " + err.Error())
 	}

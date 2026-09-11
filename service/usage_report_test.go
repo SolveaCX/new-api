@@ -33,3 +33,12 @@ func TestUTCToday(t *testing.T) {
 		t.Errorf("utcToday(late) = %q, want 2025-08-18", got)
 	}
 }
+
+func TestUsageReportBackfillDaysCapsToRecentWindow(t *testing.T) {
+	if got := usageReportBackfillDays(30); got != usageReportBackfillMaxDays {
+		t.Fatalf("got %d days, want %d", got, usageReportBackfillMaxDays)
+	}
+	if got := usageReportBackfillDays(3); got != 3 {
+		t.Fatalf("got %d days, want 3", got)
+	}
+}
