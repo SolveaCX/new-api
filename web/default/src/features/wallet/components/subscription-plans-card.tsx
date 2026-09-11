@@ -510,11 +510,25 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
 
   const contract = selfData.contract ?? null
   const currentPlanId =
-    contract?.current_plan_id || selfData.current_entitlement?.plan_id || 0
-  const currentPlan = orderedPlans.find(
+    contract?.current_plan_id ||
+    selfData.current_entitlement?.plan_id ||
+    selfData.current_subscription?.subscription.plan_id ||
+    0
+  const listedCurrentPlan = orderedPlans.find(
     (item) => item.plan.id === currentPlanId
   )?.plan
-  const hasActivePlan = contract?.status === 'active' && !!currentPlan
+  const currentSubscriptionSnapshot = selfData.current_subscription
+  const snapshotCurrentPlan =
+    currentSubscriptionSnapshot?.subscription.plan_id === currentPlanId &&
+    currentSubscriptionSnapshot.plan.id === currentPlanId
+      ? currentSubscriptionSnapshot.plan
+      : undefined
+  const currentPlan = listedCurrentPlan ?? snapshotCurrentPlan
+  const hasActivePlan =
+    !!currentPlan &&
+    (contract?.status === 'active' ||
+      (!contract &&
+        currentSubscriptionSnapshot?.subscription.status === 'active'))
   const hasPurchasedSubscription =
     selfData.all_subscriptions.length > 0 ||
     selfData.subscriptions.length > 0 ||
