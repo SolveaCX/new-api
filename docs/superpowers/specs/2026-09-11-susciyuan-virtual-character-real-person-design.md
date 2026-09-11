@@ -100,7 +100,7 @@ Per the confirmed decision, susciyuan real-person channels enter the automatic w
 
 1. `service/real_person_provider.go` `realPersonProviderForChannel` — the `explicit` branch changes from an equality check to a `switch config.Provider`: `tokenspace_material` (unchanged), **new** `virtual_character` (returns the new provider binding; keeps the "exactly one enabled key" constraint via `enabledAssetMaterializeKeys`), `default` → unavailable.
 2. `service/real_person_provider.go` `realPersonChannelIsAutomaticCandidate` — change from "native BytePlus only" to "native BytePlus (existing conditions) **or** `realPersonProviderForChannel(channel)` succeeds". Update the test `TestRealPersonAutomaticCandidateExcludesTokenSpace` that pins the old exclusion.
-3. `service/byteplus_real_person.go` `validateRealPersonCreateCallbackRequirement` — today it unconditionally requires a callback base URL when `specificChannelID <= 0`. Since automatic routing may now select a no-callback provider, relax it to validate the callback requirement against the **selected** binding, not before selection.
+3. `service/byteplus_real_person.go` `validateRealPersonCreateCallbackRequirement` — **no change needed for Phase A.** For an admin-pinned susciyuan channel the check already returns `nil` (specific channel, `RequiresCallback()==false`). For automatic routing (`specificChannelID <= 0`) it requires a callback base URL; staging runs native BytePlus, which requires that base, so the base is configured and automatic create already passes the gate and can weighted-random-select susciyuan. A relaxation for a no-callback-base deployment is deferred: a naive pre-selection probe would draw a channel independently of the real create draw (double-draw hazard, AGENTS.md Rule 11), so it needs its own design.
 4. Guard `selectBytePlusRealPersonChannel` / `loadUsableBytePlusRealPersonChannel` (and any wrapper that errors with "channel does not use native BytePlus credentials" when `StorageCredentials == nil`) — confirm no auto-selected non-native channel reaches those native-only paths.
 
 ### Multi-node safety (AGENTS.md Rule 11)
@@ -147,12 +147,15 @@ New:
 
 Modified (Phase A):
 - `service/real_person_provider.go` (provider switch; automatic-candidate admission; generalize `TokenSpaceRealPersonChannelIsUsable`)
-- `service/byteplus_real_person.go` (relax `validateRealPersonCreateCallbackRequirement`; confirm native-only wrappers)
 - `service/byteplus_real_person_asset.go` (multipart temp-store allowlist)
 - `service/asset_reference.go` (call-site of the generalized usability check only — `legacyRealPersonAssetCanUseChannel`)
 - `service/real_person_provider_test.go` (revise the exclusion test)
 - possibly `controller/relay.go` (defensive dormant-gate widening)
-- i18n message files (8 languages) for any new error string
+
+Verified, not modified (Phase A):
+- i18n message files — the provider reuses existing `AssetMaterializeFailure` classes mapped to existing `real_person.*` keys; no new string. A task confirms this.
+- `service/byteplus_real_person.go` `validateRealPersonCreateCallbackRequirement` — unchanged (see Routing step 3).
 
 Deferred to Phase B (not in this plan):
+- `service/byteplus_real_person.go` callback relaxation for no-callback-base deployments
 - `service/asset_reference.go` real-person material → scoped-binding rewrite bridge (the `asset://<provider_asset_id>` wire leg)
