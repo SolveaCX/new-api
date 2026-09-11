@@ -181,3 +181,34 @@ func insertTokenSpaceRealPersonChannel(t *testing.T, id int, group string, abili
 		Weight:    weight,
 	}).Error)
 }
+
+func TestRealPersonProviderForChannelSelectsExplicitVirtualCharacterWithOneEnabledKey(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	channel.Status = common.ChannelStatusEnabled
+	channel.Key = "susciyuan-key"
+
+	binding, err := realPersonProviderForChannel(channel)
+	require.NoError(t, err)
+	provider, ok := binding.Provider.(virtualCharacterRealPersonProvider)
+	require.True(t, ok)
+	require.Equal(t, "susciyuan-key", provider.apiKey)
+	require.Equal(t, "https://susciyuan.com", provider.gatewayOrigin)
+	require.False(t, provider.RequiresCallback())
+	require.Nil(t, binding.StorageCredentials)
+}
+
+func TestRealPersonProviderForChannelRejectsVirtualCharacterWithMultipleEnabledKeys(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	channel.Status = common.ChannelStatusEnabled
+	channel.ChannelInfo.IsMultiKey = true
+	channel.Key = "key-one\nkey-two"
+
+	_, err := realPersonProviderForChannel(channel)
+	require.Error(t, err)
+}

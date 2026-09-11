@@ -90,21 +90,33 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 		return nil, err
 	}
 	if explicit {
-		if config.Provider != assetMaterializationProviderTokenSpaceMaterial {
-			return nil, errors.New("real person provider unavailable")
-		}
 		keys := enabledAssetMaterializeKeys(channel)
 		if len(keys) != 1 || strings.TrimSpace(keys[0].key) == "" {
-			return nil, errors.New("tokenspace real person provider requires exactly one enabled key")
+			return nil, errors.New("explicit real person provider requires exactly one enabled key")
 		}
-		return &realPersonProviderBinding{
-			Channel: channel,
-			Provider: tokenSpaceRealPersonProvider{
-				channel:       channel,
-				apiKey:        strings.TrimSpace(keys[0].key),
-				gatewayOrigin: config.GatewayOrigin,
-			},
-		}, nil
+		apiKey := strings.TrimSpace(keys[0].key)
+		switch config.Provider {
+		case assetMaterializationProviderTokenSpaceMaterial:
+			return &realPersonProviderBinding{
+				Channel: channel,
+				Provider: tokenSpaceRealPersonProvider{
+					channel:       channel,
+					apiKey:        apiKey,
+					gatewayOrigin: config.GatewayOrigin,
+				},
+			}, nil
+		case assetMaterializationProviderVirtualCharacter:
+			return &realPersonProviderBinding{
+				Channel: channel,
+				Provider: virtualCharacterRealPersonProvider{
+					channel:       channel,
+					apiKey:        apiKey,
+					gatewayOrigin: config.GatewayOrigin,
+				},
+			}, nil
+		default:
+			return nil, errors.New("real person provider unavailable")
+		}
 	}
 	if !bytePlusAssetChannelIsUsable(channel) {
 		return nil, errors.New("real person channel unavailable")
