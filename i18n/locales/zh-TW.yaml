@@ -325,6 +325,7 @@ distributor.unsupported_web_tools: "指定管道不支援伺服器端網路搜�
 distributor.affinity_channel_disabled: "管道親和性命中的管道已被禁用，已按規則停止重試，請聯絡管理員處理"
 distributor.token_no_model_access: "該令牌無權存取任何模型"
 distributor.token_model_forbidden: "該令牌無權存取模型 {{.Model}}"
+distributor.model_not_found: "模型 {{.Model}} 不存在或你無權存取"
 distributor.model_name_required: "未指定模型名稱，模型名稱不能為空"
 distributor.invalid_playground_request: "無效的playground請求，{{.Error}}"
 distributor.group_access_denied: "無權存取該分組"

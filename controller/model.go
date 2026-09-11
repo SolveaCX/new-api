@@ -176,6 +176,23 @@ type modelListGroups struct {
 	ownerGroups []string
 }
 
+// filterHiddenModelsForIdentity drops pricing-hidden models from a /v1 model
+// listing when the identity group is PLG. Enterprise identities keep the full
+// list. Order is preserved.
+func filterHiddenModelsForIdentity(identityGroup string, modelNames []string) []string {
+	if len(operation_setting.GetPricingHiddenModelPatterns()) == 0 {
+		return modelNames
+	}
+	visible := make([]string, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		if service.HiddenModelBlockedForIdentity(identityGroup, modelName) {
+			continue
+		}
+		visible = append(visible, modelName)
+	}
+	return visible
+}
+
 func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
@@ -283,6 +300,8 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	userModelNames = filterHiddenModelsForIdentity(groups.userGroup, userModelNames)
+
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
@@ -347,8 +366,12 @@ func AvailableModels(c *gin.Context) {
 		return
 	}
 
+	identityGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	availableModels := make([]dto.OpenAIModels, 0, len(access.Models))
 	for _, accessModel := range access.Models {
+		if service.HiddenModelBlockedForIdentity(identityGroup, accessModel.ID) {
+			continue
+		}
 		owner := "custom"
 		if accessModel.Vendor != nil && accessModel.Vendor.Name != "" {
 			owner = accessModel.Vendor.Name
@@ -431,7 +454,12 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
-	if aiModel, ok := openAIModelsMap[modelId]; ok {
+	aiModel, ok := openAIModelsMap[modelId]
+	if ok && service.HiddenModelBlockedForIdentity(common.GetContextKeyString(c, constant.ContextKeyUserGroup), modelId) {
+		// A hidden model must look exactly like an unknown one to a PLG caller.
+		ok = false
+	}
+	if ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
 			c.JSON(200, dto.AnthropicModel{

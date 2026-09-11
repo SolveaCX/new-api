@@ -6628,7 +6628,7 @@
     "Unknown lifecycle event": "Evento de ciclo de vida desconocido",
     "Unknown lifecycle outcome": "Resultado de ciclo de vida desconocido",
     "Hidden models": "Modelos ocultos",
-    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.": "Nombres de modelos separados por comas que se ocultarán en las páginas de precios. Admite comodines * (prefijo, sufijo o contiene). Los modelos ocultos siguen siendo totalmente accesibles a través de la API.",
+    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). PLG users cannot call hidden models through the API; enterprise users are not affected.": "Nombres de modelos separados por comas que se ocultarán en las páginas de precios. Admite comodines * (prefijo, sufijo o contiene). Los usuarios PLG no pueden llamar a los modelos ocultos a través de la API; los usuarios empresariales no se ven afectados.",
     "Website Featured": "Destacados del sitio web",
     "Loading featured models": "Cargando modelos destacados",
     "Unable to load featured models": "No se pueden cargar los modelos destacados",

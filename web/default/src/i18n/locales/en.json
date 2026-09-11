@@ -6629,7 +6629,7 @@
     "Unknown lifecycle event": "Unknown lifecycle event",
     "Unknown lifecycle outcome": "Unknown lifecycle outcome",
     "Hidden models": "Hidden models",
-    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.": "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.",
+    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). PLG users cannot call hidden models through the API; enterprise users are not affected.": "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). PLG users cannot call hidden models through the API; enterprise users are not affected.",
     "Website Featured": "Website Featured",
     "Loading featured models": "Loading featured models",
     "Unable to load featured models": "Unable to load featured models",

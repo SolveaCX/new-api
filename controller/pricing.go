@@ -49,7 +49,7 @@ func init() {
 }
 
 // filterHiddenPricingModels 按后台配置的隐藏名单过滤定价列表。
-// 只影响定价接口的展示，不影响模型可用性与实际调用。
+// 这里只管定价接口的展示；对 PLG 身份的调用拦截由 service.HiddenModelBlockedForIdentity 负责。
 func filterHiddenPricingModels(pricing []model.Pricing) []model.Pricing {
 	if len(pricing) == 0 {
 		return pricing

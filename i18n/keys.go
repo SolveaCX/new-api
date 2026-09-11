@@ -381,6 +381,7 @@ const (
 	MsgDistributorUnsupportedWebTools     = "distributor.unsupported_web_tools"
 	MsgDistributorInvalidMidjourney       = "distributor.invalid_midjourney_request"
 	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
+	MsgDistributorModelNotFound           = "distributor.model_not_found"
 )
 
 // BytePlus asset library messages

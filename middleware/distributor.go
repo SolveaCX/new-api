@@ -15,11 +15,13 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -87,6 +89,12 @@ func Distribute() func(c *gin.Context) {
 		}
 		enforceModelLimits := !shouldSelectChannel || !ok || hasAssetRefs
 		if modelRequest.Model != "" && !enforceTokenModelAccess(c, modelRequest.Model, enforceModelLimits) {
+			return
+		}
+		// Only requests that are about to invoke a model are gated. Task fetches
+		// resolve the model name from an already-accepted task and must keep
+		// working even if the model was hidden after submission.
+		if shouldSelectChannel && modelRequest.Model != "" && !enforceHiddenModelAccess(c, modelRequest.Model) {
 			return
 		}
 		assetResolution, assetErr := resolveAssetReferenceSet(c, shouldSelectChannel)
@@ -321,6 +329,41 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+// enforceHiddenModelAccess rejects PLG identities that call a model on the
+// pricing hidden-model list. Enterprise identities are never affected. The
+// message says only that the model does not exist or is not accessible, so it
+// does not disclose that the model is hidden. Returns false after aborting.
+func enforceHiddenModelAccess(c *gin.Context, requestedModel string) bool {
+	if !operation_setting.IsPricingHiddenModel(requestedModel) {
+		return true
+	}
+	if !service.HiddenModelBlockedForIdentity(resolveIdentityGroupForHiddenModelGate(c), requestedModel) {
+		return true
+	}
+	abortWithOpenAiMessage(c, http.StatusNotFound, i18n.T(c, i18n.MsgDistributorModelNotFound, map[string]any{"Model": requestedModel}), types.ErrorCodeModelNotFound)
+	return false
+}
+
+// resolveIdentityGroupForHiddenModelGate returns the user's identity group for
+// the hidden-model gate. API-token routes get it from TokenAuth, which already
+// forces plg for non-enterprise users. Playground routes carry a session copy
+// that can be stale, so the database group is authoritative there, mirroring
+// resolvePlaygroundUsingGroup. Any lookup failure yields "" which the gate
+// treats as plg, so an unknown identity fails closed.
+func resolveIdentityGroupForHiddenModelGate(c *gin.Context) string {
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/") {
+		if userID := c.GetInt("id"); userID > 0 {
+			userGroup, err := model.GetUserGroup(userID, true)
+			if err != nil {
+				logger.LogWarn(c.Request.Context(), fmt.Sprintf("hidden model gate: user %d group lookup failed, treating as plg: %s", userID, err.Error()))
+				return ""
+			}
+			return userGroup
+		}
+	}
+	return common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 }
 
 func enforceTokenModelAccess(c *gin.Context, requestedModel string, enforceModelLimits bool) bool {
