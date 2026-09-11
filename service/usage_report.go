@@ -211,6 +211,19 @@ func EnsureUsageReportDate(date string) error {
 	return nil
 }
 
+// RecomputeUsageReportDate force-recomputes one UTC day regardless of its
+// stored state. Used by the nightly task so yesterday is finalised and
+// late-arriving key/payment events are folded in.
+func RecomputeUsageReportDate(date string) error {
+	if err := usageReportEnsureColumnDefaults(); err != nil {
+		return err
+	}
+	lock := usageReportDateLock(date)
+	lock.Lock()
+	defer lock.Unlock()
+	return computeUsageReportDate(date)
+}
+
 // computeUsageReportDate aggregates one UTC day from the source tables and
 // stores it (idempotent delete + insert).
 func computeUsageReportDate(date string) error {
