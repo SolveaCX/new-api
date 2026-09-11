@@ -77,6 +77,7 @@ import {
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
+  isRedemptionRecord,
 } from '../../lib/billing'
 import {
   EMPTY_INVOICE_PROFILE,
@@ -874,6 +875,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 // Subscription purchases are mirrored into top-up history with
                 // amount=0. Render them with a friendly title and no $0 column.
                 const subscriptionRecord = isSubscriptionRecord(record)
+                const redemptionRecord = isRedemptionRecord(record)
                 const paymentCurrency =
                   record.payment_currency?.trim() || 'USD'
                 return (
@@ -916,7 +918,15 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                       {getPaymentMethodName(record.payment_method, t)}
                     </TableCell>
                     <TableCell className='text-right font-semibold tabular-nums'>
-                      {formatNumber(record.money)} {paymentCurrency}
+                      {redemptionRecord ? (
+                        <span className='text-emerald-600 dark:text-emerald-400'>
+                          +{formatQuota(record.amount)}
+                        </span>
+                      ) : (
+                        <>
+                          {formatNumber(record.money)} {paymentCurrency}
+                        </>
+                      )}
                     </TableCell>
                     <TableCell>
                       <StatusBadge

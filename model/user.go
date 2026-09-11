@@ -370,7 +370,7 @@ func GetRecallCandidates(minCalls int, maxQuota int, limit int) ([]*User, error)
 	var users []*User
 	paidUserIDs := DB.Model(&TopUp{}).
 		Select("user_id").
-		Where("status = ?", common.TopUpStatusSuccess)
+		Where("status = ? AND COALESCE(payment_provider, '') != ?", common.TopUpStatusSuccess, PaymentProviderRedemption)
 	err := DB.Model(&User{}).
 		Where(commonGroupCol+" = ?", "plg").
 		Where("request_count >= ?", minCalls).
@@ -498,7 +498,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, language 
 		}
 	}
 	if paid {
-		query = query.Where("id IN (SELECT user_id FROM top_ups WHERE status = ?)", common.TopUpStatusSuccess)
+		query = query.Where("id IN (SELECT user_id FROM top_ups WHERE status = ? AND COALESCE(payment_provider, '') != ?)", common.TopUpStatusSuccess, PaymentProviderRedemption)
 	}
 	if emailVerified != nil {
 		if *emailVerified {

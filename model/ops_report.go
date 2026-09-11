@@ -421,9 +421,9 @@ func GetOpsTopUps() ([]*OpsTopUp, error) {
 		SELECT t.user_id, t.money, t.status, t.create_time, t.payment_currency, t.bonus_tier, t.payment_provider
 		FROM top_ups t
 		INNER JOIN users u ON u.id = t.user_id
-		WHERE u.%s = ?
+		WHERE u.%s = ? AND COALESCE(t.payment_provider, '') != ?
 		ORDER BY t.create_time`, commonGroupCol)
-	err := DB.Raw(sql, "plg").Scan(&topUps).Error
+	err := DB.Raw(sql, "plg", PaymentProviderRedemption).Scan(&topUps).Error
 	return topUps, err
 }
 

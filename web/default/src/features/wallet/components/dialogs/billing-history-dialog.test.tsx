@@ -21,6 +21,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import i18n from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { isRedemptionRecord } from '../../lib/billing'
 import type { TopupRecord } from '../../types'
 import * as billingHistoryDialog from './billing-history-dialog'
 
@@ -296,6 +297,28 @@ describe('BillingHistoryPanel subscription billing records', () => {
 })
 
 describe('BillingHistoryPanel visibility', () => {
+  test('recognizes redemption history rows', () => {
+    const record: TopupRecord = {
+      id: 101,
+      user_id: 7,
+      amount: 500_000,
+      money: 0,
+      trade_no: 'REDEEM-101',
+      payment_method: 'redemption',
+      create_time: 1_800_000_000,
+      status: 'success',
+    }
+
+    expect(isRedemptionRecord(record)).toBe(true)
+    expect(
+      isRedemptionRecord({
+        ...record,
+        payment_method: 'stripe',
+        payment_provider: 'stripe',
+      })
+    ).toBe(false)
+  })
+
   test('hides expired records from non-admin history', () => {
     const getVisibleBillingRecords = (
       billingHistoryDialog as RefundableHistoryExports

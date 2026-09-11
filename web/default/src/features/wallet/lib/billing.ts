@@ -67,6 +67,23 @@ export const PAYMENT_METHOD_NAMES: Record<string, string> = {
   wxpay: 'WeChat Pay',
   waffo: 'Waffo',
   paddle: 'Paddle',
+  redemption: 'Redeem Code',
+  redemption_code: 'Redeem Code',
+  redeem: 'Redeem Code',
+}
+
+export function isRedemptionRecord(record: {
+  payment_method?: string
+  payment_provider?: string
+}): boolean {
+  return [record.payment_method, record.payment_provider].some((value) => {
+    const normalized = value?.trim().toLowerCase()
+    return (
+      normalized === 'redemption' ||
+      normalized === 'redemption_code' ||
+      normalized === 'redeem'
+    )
+  })
 }
 
 /**
@@ -76,7 +93,8 @@ export function getPaymentMethodName(
   method: string,
   t?: (key: string) => string
 ): string {
-  const name = PAYMENT_METHOD_NAMES[method] || method
+  const normalizedMethod = method.trim().toLowerCase()
+  const name = PAYMENT_METHOD_NAMES[normalizedMethod] || method
   return t ? t(name) : name
 }
 

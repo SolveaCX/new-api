@@ -50,6 +50,7 @@ const (
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodPaddle       = "paddle"
 	PaymentMethodBalance      = "balance"
+	PaymentMethodRedemption   = "redemption"
 )
 
 const (
@@ -60,6 +61,7 @@ const (
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderPaddle       = "paddle"
 	PaymentProviderBalance      = "balance"
+	PaymentProviderRedemption   = "redemption"
 )
 
 var (

@@ -227,7 +227,22 @@ func Redeem(key string, userId int) (quota int, err error) {
 		redemption.RedeemedTime = common.GetTimestamp()
 		redemption.Status = common.RedemptionCodeStatusUsed
 		redemption.UsedUserId = userId
-		err = tx.Save(redemption).Error
+		if err = tx.Save(redemption).Error; err != nil {
+			return err
+		}
+		// Keep redemption rewards visible in wallet billing history. This is a
+		// history-only row: no payment lifecycle or analytics hooks run for free credit.
+		err = tx.Create(&TopUp{
+			UserId:          userId,
+			Amount:          int64(redemption.Quota),
+			Money:           0,
+			TradeNo:         fmt.Sprintf("REDEEM-%d", redemption.Id),
+			PaymentMethod:   PaymentMethodRedemption,
+			PaymentProvider: PaymentProviderRedemption,
+			CreateTime:      redemption.RedeemedTime,
+			CompleteTime:    redemption.RedeemedTime,
+			Status:          common.TopUpStatusSuccess,
+		}).Error
 		return err
 	})
 	if err != nil {

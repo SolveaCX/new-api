@@ -122,7 +122,7 @@ func TestClaimRedemptionByPurposeIsIdempotentForConcurrentSameUser(t *testing.T)
 
 func TestClaimedRedemptionCanOnlyBeRedeemedByOwner(t *testing.T) {
 	setupLifecycleQuotaMutationTestDB(t, 1)
-	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	require.NoError(t, DB.AutoMigrate(&Redemption{}, &TopUp{}, &PaymentInvoice{}))
 	require.NoError(t, DB.Create(&User{Id: 8201, Username: "owner", AffCode: "owner", Quota: 0}).Error)
 	require.NoError(t, DB.Create(&User{Id: 8202, Username: "other", AffCode: "other", Quota: 0}).Error)
 	require.NoError(t, DB.Create(&Redemption{
@@ -150,6 +150,22 @@ func TestClaimedRedemptionCanOnlyBeRedeemedByOwner(t *testing.T) {
 	require.NoError(t, DB.First(&stored, claimed.Id).Error)
 	require.Equal(t, common.RedemptionCodeStatusUsed, stored.Status)
 	require.Equal(t, 8201, stored.UsedUserId)
+	var history TopUp
+	require.NoError(t, DB.Where("trade_no = ?", fmt.Sprintf("REDEEM-%d", claimed.Id)).First(&history).Error)
+	require.Equal(t, 8201, history.UserId)
+	require.Equal(t, int64(700), history.Amount)
+	require.Zero(t, history.Money)
+	require.Equal(t, PaymentMethodRedemption, history.PaymentMethod)
+	require.Equal(t, PaymentProviderRedemption, history.PaymentProvider)
+	require.Equal(t, common.TopUpStatusSuccess, history.Status)
+	require.Equal(t, stored.RedeemedTime, history.CreateTime)
+	require.Equal(t, stored.RedeemedTime, history.CompleteTime)
+	historyPage := &common.PageInfo{Page: 1, PageSize: 10}
+	historyRows, historyTotal, err := GetUserTopUps(8201, historyPage)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, historyTotal)
+	require.Len(t, historyRows, 1)
+	require.Equal(t, history.TradeNo, historyRows[0].TradeNo)
 
 	_, err = ClaimRedemptionByPurpose("YCPrompt", 8201)
 	require.True(t, errors.Is(err, ErrRedemptionAlreadyClaimed))
