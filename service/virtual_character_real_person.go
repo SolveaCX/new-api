@@ -1,8 +1,14 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -82,4 +88,65 @@ func virtualCharacterRealPersonAssetStatus(status string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+const virtualCharacterRealPersonResponseMaxSize = 1 << 20
+
+// virtualCharacterRealPersonDo performs one susciyuan real-person REST call.
+// It blocks redirects, caps the body, and maps transport/HTTP failures onto
+// AssetMaterializeFailure classes so the state machine's retry/terminal logic
+// (via isRealPersonDefinitiveResponse) behaves identically to TokenSpace.
+// On a 2xx whose status equals expectStatus it returns the raw body for the
+// caller to decode into its own envelope struct.
+func virtualCharacterRealPersonDo(ctx context.Context, channel *model.Channel, apiKey, gatewayOrigin, method, path string, body []byte, expectStatus int) ([]byte, error) {
+	baseClient, err := virtualCharacterAssetHTTPClientFactory(channel)
+	if err != nil || baseClient == nil {
+		return nil, ErrAssetBindingUnavailable
+	}
+	client := *baseClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return errVirtualCharacterRedirect }
+
+	var reader io.Reader
+	if len(body) > 0 {
+		reader = strings.NewReader(string(body))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(gatewayOrigin, "/")+path, reader)
+	if err != nil {
+		return nil, ErrAssetBindingUnavailable
+	}
+	req.Header.Set("Accept", "application/json")
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	response, err := client.Do(req)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || isNetTimeout(err) {
+			return nil, newAssetMaterializeFailure(AssetMaterializeErrorTimeout, 0, "", 0, "", err)
+		}
+		if errors.Is(err, errVirtualCharacterRedirect) {
+			return nil, virtualCharacterDefinitiveFailure(errVirtualCharacterRedirect)
+		}
+		return nil, virtualCharacterProcessingFailure(0, err)
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, virtualCharacterRealPersonResponseMaxSize+1))
+	if err != nil || len(raw) > virtualCharacterRealPersonResponseMaxSize {
+		return nil, virtualCharacterProcessingFailure(response.StatusCode, errVirtualCharacterProtocol)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var envelope virtualCharacterRealPersonSessionResponse
+		_ = common.Unmarshal(raw, &envelope)
+		return nil, newAssetMaterializeFailure(
+			assetMaterializeClassForHTTPStatus(response.StatusCode, strings.TrimSpace(envelope.Error.Code)),
+			response.StatusCode, strings.TrimSpace(envelope.Error.Code),
+			parseAssetMaterializeRetryAfter(response.Header.Get("Retry-After"), time.Now()), "", nil)
+	}
+	if expectStatus != 0 && response.StatusCode != expectStatus {
+		return nil, virtualCharacterProcessingFailure(response.StatusCode, errVirtualCharacterProtocol)
+	}
+	return raw, nil
 }

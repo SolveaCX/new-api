@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -34,4 +37,48 @@ func TestVirtualCharacterRealPersonAssetStatus(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestVirtualCharacterRealPersonDoBlocksRedirect(t *testing.T) {
+	redirectTarget := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+
+	_, err := virtualCharacterRealPersonDo(context.Background(), &model.Channel{}, "k", server.URL, http.MethodGet, "/v1/virtual-characters/1", nil, http.StatusOK)
+	require.Error(t, err)
+	require.Equal(t, AssetMaterializeErrorDefinitive, AssetMaterializeErrorClass(err))
+}
+
+func TestVirtualCharacterRealPersonDoMapsHTTPError(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"success":false,"error":{"code":"upstream"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+
+	_, err := virtualCharacterRealPersonDo(context.Background(), &model.Channel{}, "k", server.URL, http.MethodGet, "/v1/virtual-characters/1", nil, http.StatusOK)
+	require.Error(t, err)
+	require.Equal(t, AssetMaterializeErrorUpstream5xx, AssetMaterializeErrorClass(err))
+	require.False(t, isRealPersonDefinitiveResponse(err))
+}
+
+func TestVirtualCharacterRealPersonDoReturnsBodyOn2xx(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer secret-key", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":"abc"}}`))
+	}))
+	defer server.Close()
+	withVirtualCharacterTestClients(t, server.Client(), nil)
+
+	body, err := virtualCharacterRealPersonDo(context.Background(), &model.Channel{}, "secret-key", server.URL, http.MethodGet, "/v1/virtual-characters/validation-sessions/abc", nil, http.StatusOK)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"id":"abc"`)
 }
