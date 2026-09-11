@@ -40,6 +40,34 @@ describe("rewriteBlogHref", () => {
 });
 
 describe("sanitizeBlogHtml", () => {
+  test("uses published translations, falls back to English, and removes dead destinations without losing text", () => {
+    const html = sanitizeBlogHtml(
+      '<p><a href="/blog/translated">Translated</a> <a href="/blog/english-only?q=1#example">English</a> <a href="/blog/missing">Missing article</a> <a href="https://example.com/blog/missing">External</a> <a href="/blog/category/news">Category</a></p>',
+      "ja",
+      { local: new Set(["translated"]), english: new Set(["translated", "english-only"]) },
+    );
+    expect(html).toContain('href="/ja/blog/translated"');
+    expect(html).toContain('href="/blog/english-only?q=1#example"');
+    expect(html).not.toContain('href="/ja/blog/missing"');
+    expect(html).toContain("Missing article</a>");
+    expect(html).toContain('href="https://example.com/blog/missing"');
+    expect(html).toContain('href="/ja/blog/category/news"');
+  });
+
+  test("an unavailable catalog preserves links; a confirmed empty catalog removes dead links", () => {
+    const content = '<a href="/blog/article">Article</a>';
+    expect(sanitizeBlogHtml(content, "en")).toContain('href="/blog/article"');
+    expect(sanitizeBlogHtml(content, "en", { local: new Set(), english: new Set() })).not.toContain("href=");
+  });
+
+  test("omits placeholder and mixed-content images in server HTML while retaining valid images", () => {
+    const html = sanitizeBlogHtml('<img src="x"><img src="/blog/x"><img src="http://staging-router.flatkey.ai/api/status"><img src="http://example.com/image.png"><img src="/assets/cover.png"><img src="https://cdn.example.com/render?id=1">');
+    expect(html.match(/<img /g)).toHaveLength(2);
+    expect(html).toContain('src="/assets/cover.png"');
+    expect(html).toContain('src="https://cdn.example.com/render?id=1"');
+    expect(html).not.toContain("staging-router");
+  });
+
   test("rewrites internal marketing links during sanitization", () => {
     const html = sanitizeBlogHtml(
       '<p><a href="/pricing">Pricing</a> and <a href="https://flatkey.ai/sign-up">Get a key</a></p>',

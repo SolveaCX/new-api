@@ -2,6 +2,7 @@ import sanitizeHtml from "sanitize-html";
 import { DEFAULT_LOCALE, localizePath, stripLocale, type Locale, withIdFallback } from "@/lib/locales";
 import { APP_CONSOLE_ORIGIN, consoleUrl } from "@/lib/origins";
 import { seoIndexableLocales } from "@/lib/seo";
+import { publicBlogImageSource } from "@/lib/blog-images";
 
 const API_BASE_URL = APP_CONSOLE_ORIGIN;
 const BLOGGER_API_URL =
@@ -162,7 +163,7 @@ export function mapBloggerPost(post: BloggerPost): BlogPost {
     id: post.id,
     title: post.title,
     slug: post.slug,
-    cover: post.cover_image_url ?? undefined,
+    cover: publicBlogImageSource(post.cover_image_url),
     summary: post.excerpt ?? post.meta_description ?? undefined,
     date: post.published_at ?? post.updated_at ?? undefined,
     author: post.author_display_name ?? post.author.nickname ?? undefined,
@@ -365,7 +366,26 @@ export async function getBlogPostLocales(slug: string): Promise<Locale[]> {
   return localizedPosts.filter((locale): locale is Locale => locale !== null);
 }
 
-export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE): string {
+export type BlogLinkCatalog = {
+  local: ReadonlySet<string>;
+  english: ReadonlySet<string>;
+};
+
+export async function renderBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE): Promise<string> {
+  if (!isBloggerEnabled()) return sanitizeBlogHtml(html, locale);
+  const [local, english] = await Promise.all([
+    getAllBloggerPosts(locale),
+    locale === DEFAULT_LOCALE ? Promise.resolve([]) : getAllBloggerPosts(DEFAULT_LOCALE),
+  ]);
+  // A CMS outage is not evidence that every linked article was removed.
+  const catalog = local !== null && english !== null ? {
+    local: new Set(local.map((post) => post.slug)),
+    english: new Set(english.map((post) => post.slug)),
+  } : undefined;
+  return sanitizeBlogHtml(html, locale, catalog);
+}
+
+export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE, catalog?: BlogLinkCatalog): string {
   return ensureHeadingIds(sanitizeHtml(html, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       "img",
@@ -392,6 +412,7 @@ export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE):
       td: ["colspan", "rowspan"],
     },
     allowedSchemes: ["http", "https", "mailto"],
+    exclusiveFilter: (frame) => frame.tag === "img" && !frame.attribs.src,
     transformTags: {
       h1: (tagName, attribs) => ({
         tagName: "h2",
@@ -403,7 +424,7 @@ export function sanitizeBlogHtml(html: string, locale: Locale = DEFAULT_LOCALE):
       }),
       a: (tagName, attribs) => ({
         tagName,
-        attribs: rewriteBlogAnchorAttributes(attribs, locale),
+        attribs: rewriteBlogAnchorAttributes(attribs, locale, catalog),
       }),
     },
   }));
@@ -530,9 +551,10 @@ function stripTags(value: string): string {
 
 function rewriteBlogAnchorAttributes(
   attribs: Record<string, string>,
-  locale: Locale
+  locale: Locale,
+  catalog?: BlogLinkCatalog
 ): Record<string, string> {
-  const href = rewriteBlogHref(attribs.href, locale);
+  const href = resolvePublishedBlogHref(rewriteBlogHref(attribs.href, locale), catalog);
   const target = normalizeHtmlAttributeValue(attribs.target);
   const rel = normalizeHtmlAttributeValue(attribs.rel);
 
@@ -550,30 +572,30 @@ function rewriteBlogAnchorAttributes(
 }
 
 function rewriteBlogImageAttributes(attribs: Record<string, string>): Record<string, string> {
-  const src = normalizeHtmlAttributeValue(attribs.src);
+  const src = publicBlogImageSource(normalizeHtmlAttributeValue(attribs.src));
   const nextAttribs: Record<string, string> = { ...attribs, alt: normalizeHtmlAttributeValue(attribs.alt) ?? "" };
 
-  if (src) nextAttribs.src = canonicalizeBlogImageSrc(src);
+  if (src) nextAttribs.src = src;
   else delete nextAttribs.src;
 
   return nextAttribs;
 }
 
-function canonicalizeBlogImageSrc(src: string): string {
-  const isAbsolute = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(src) || src.startsWith("//");
-  if (!isAbsolute) return src;
-
+function resolvePublishedBlogHref(href: string | undefined, catalog?: BlogLinkCatalog): string | undefined {
+  if (!href || !catalog || href.startsWith("#")) return href;
   try {
-    const url = new URL(src, SITE_ORIGIN);
-    const hostname = url.hostname.toLowerCase();
-    if (hostname === "flatkey.ai" || hostname === "www.flatkey.ai") {
-      return `${SITE_ORIGIN}${url.pathname}${url.search}${url.hash}`;
-    }
+    const url = new URL(href, SITE_ORIGIN);
+    if (!["flatkey.ai", "www.flatkey.ai"].includes(url.hostname)) return href;
+    const match = stripLocale(url.pathname).match(/^\/blog\/([^/]+)\/?$/);
+    if (!match || match[1] === "category") return href;
+    const slug = decodeURIComponent(match[1]);
+    if (catalog.local.has(slug)) return href;
+    if (catalog.english.has(slug)) return `/blog/${encodeURIComponent(slug)}${url.search}${url.hash}`;
+    // Preserve the author’s text without emitting a known dead destination.
+    return undefined;
   } catch {
-    // Preserve malformed or external URLs for the sanitizer to handle.
+    return href;
   }
-
-  return src;
 }
 
 function localizeInternalPublicPath(pathname: string, locale: Locale): string | null {
