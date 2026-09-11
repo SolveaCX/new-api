@@ -273,3 +273,33 @@ func usageReportBackfillDates(c *gin.Context) ([]string, error) {
 
 	return nil, fmt.Errorf("specify date=YYYY-MM-DD, from=&to=, or days=N")
 }
+
+// FillUsageReportMissing drives the trailing-window backfill from inside a
+// request (Cloud Run throttles CPU for idle background goroutines, which left
+// holes in production). Each call computes up to `batch` missing days and
+// returns how many units remain, so the page can loop until complete.
+//
+// Params: days (default 30, cap 180), batch (default 2, cap 5).
+func FillUsageReportMissing(c *gin.Context) {
+	days, _ := strconv.Atoi(c.Query("days"))
+	if days <= 0 {
+		days = usageReportDefaultDays
+	}
+	if days > usageReportMaxDays {
+		days = usageReportMaxDays
+	}
+	batch, _ := strconv.Atoi(c.Query("batch"))
+	if batch <= 0 {
+		batch = 2
+	}
+	if batch > 5 {
+		batch = 5
+	}
+
+	filled, remaining, err := service.FillUsageReportMissing(days, batch)
+	data := gin.H{"filled": filled, "remaining": remaining}
+	if err != nil {
+		data["last_error"] = err.Error()
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data})
+}

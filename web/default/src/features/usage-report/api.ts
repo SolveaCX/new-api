@@ -27,6 +27,22 @@ export const usageReportQueryKeys = {
     [...usageReportQueryKeys.all, days, group] as const,
 }
 
+export interface UsageReportFillResult {
+  filled: string[]
+  remaining: number
+  last_error?: string
+}
+
+/** Ask the server to compute a small batch of missing days inside a request
+ * (Cloud Run throttles CPU for idle background work, so the page drives it). */
+export async function fillUsageReport(
+  days: number,
+  batch = 2
+): Promise<ApiResponse<UsageReportFillResult>> {
+  const res = await api.get('/api/data/usage_report_fill', { params: { days, batch } })
+  return res.data
+}
+
 export async function getUsageReport(
   days: number,
   group: UsageReportGroup

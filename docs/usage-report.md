@@ -97,6 +97,10 @@ CREATE TABLE usage_report_daily_model_v2 (
   - `format=csv`：`dim=daily`（默认，日漏斗+用量）或 `dim=models`（按日×模型，
     供“用量 × 外部价目”离线核算成本）。
 - days 上限 180、默认 30。
+- `GET /api/data/usage_report_fill?days=30&batch=2`（admin）
+  - **请求驱动**的小批量回填：一次在请求内算 `batch` 个缺失/过期的
+    `(date, group)`（Cloud Run 仅请求期间分配 CPU，后台 goroutine 会被节流），
+    返回 `{filled, remaining, last_error}`；前端数据不满时每 4s 调一次
 - `GET /api/data/usage_report_backfill?date=YYYY-MM-DD`（或 `?from=&to=`、`?days=N`）
   - 管理员手动补数：强制重算指定 UTC 日期（幂等），返回逐日 `ok/error`；
   - 范围上限 180 天、不允许未来日期；用于线上某天缺失/口径变更后立即补齐，

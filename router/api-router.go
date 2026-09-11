@@ -544,6 +544,7 @@ func SetApiRouter(router *gin.Engine) {
 		dataRoute.GET("/ops_report_landing_thumb", middleware.AdminAuth(), controller.GetOpsAdsLandingThumb)
 		dataRoute.GET("/usage_report", middleware.AdminAuth(), controller.GetUsageReport)
 		dataRoute.GET("/usage_report_backfill", middleware.AdminAuth(), controller.BackfillUsageReport)
+		dataRoute.GET("/usage_report_fill", middleware.AdminAuth(), controller.FillUsageReportMissing)
 		dataRoute.GET("/model_health", middleware.AdminAuth(), controller.GetModelHealthOverview)
 		dataRoute.GET("/model_health/detail", middleware.AdminAuth(), controller.GetModelHealthDetail)
 
