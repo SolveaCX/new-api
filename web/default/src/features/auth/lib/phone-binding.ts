@@ -6,7 +6,12 @@ type PhoneBindingUser = Pick<
 >
 
 export function shouldRequirePhoneBinding(
-  user: PhoneBindingUser | null | undefined
+  user: PhoneBindingUser | null | undefined,
+  smsVerificationEnabled = true
 ): boolean {
-  return isPlgUser(user?.group) && !(user?.phone_verified_at ?? 0)
+  return (
+    smsVerificationEnabled &&
+    isPlgUser(user?.group) &&
+    !(user?.phone_verified_at ?? 0)
+  )
 }

@@ -40,7 +40,7 @@ func apiPhoneVerificationCutoff() time.Time {
 }
 
 func apiPhoneVerificationRequired(now time.Time, userCache *model.UserBase) bool {
-	return userCache != nil &&
+	return common.SMSVerificationEnabled && userCache != nil &&
 		userCache.Group == plgGroup &&
 		userCache.PhoneVerifiedAt == 0 &&
 		!now.Before(apiPhoneVerificationCutoff())

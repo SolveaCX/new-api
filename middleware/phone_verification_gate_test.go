@@ -14,6 +14,9 @@ import (
 )
 
 func TestAPIPhoneVerificationGateOnlyAppliesToPlgUsersAfterCutoff(t *testing.T) {
+	originalSMS := common.SMSVerificationEnabled
+	common.SMSVerificationEnabled = true
+	t.Cleanup(func() { common.SMSVerificationEnabled = originalSMS })
 	cutoff := apiPhoneVerificationCutoff()
 	verifiedAt := cutoff.Unix()
 
@@ -54,6 +57,13 @@ func TestAPIPhoneVerificationGateOnlyAppliesToPlgUsersAfterCutoff(t *testing.T) 
 			require.Equal(t, tt.required, apiPhoneVerificationRequired(tt.now, tt.user))
 		})
 	}
+}
+
+func TestAPIPhoneVerificationGateDisabledWithSMSFeature(t *testing.T) {
+	original := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = original })
+	common.SMSVerificationEnabled = false
+	require.False(t, apiPhoneVerificationRequired(apiPhoneVerificationCutoff().Add(time.Hour), &model.UserBase{Group: "plg"}))
 }
 
 func TestAPIPhoneVerificationNotifyIsLocalized(t *testing.T) {

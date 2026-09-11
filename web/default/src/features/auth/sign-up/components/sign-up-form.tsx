@@ -739,6 +739,7 @@ export function SignUpForm({
                         {...field}
                         inputMode='numeric'
                         autoComplete='one-time-code'
+                        maxLength={6}
                         placeholder={t('Verification code')}
                       />
                     </FormControl>

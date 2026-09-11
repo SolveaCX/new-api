@@ -167,6 +167,49 @@ func TestVerifyCodeWithKeyNilRDBFallsBackToMemory(t *testing.T) {
 	}
 }
 
+func TestGenerateNumericVerificationCode(t *testing.T) {
+	code := GenerateNumericVerificationCode(6)
+	if len(code) != 6 {
+		t.Fatalf("code length = %d, want 6", len(code))
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			t.Fatalf("code contains non-digit %q", r)
+		}
+	}
+}
+
+func TestSMSVerificationFailsClosedWhenRedisIsEnabledButUnavailable(t *testing.T) {
+	prevEnabled, prevRDB := RedisEnabled, RDB
+	RedisEnabled, RDB = true, nil
+	t.Cleanup(func() { RedisEnabled, RDB = prevEnabled, prevRDB })
+
+	if err := RegisterSMSVerificationCode("+14155552671", "123456"); err == nil {
+		t.Fatal("expected SMS verification storage to fail without Redis")
+	}
+}
+
+func TestSMSVerificationLocksAfterRepeatedWrongCodes(t *testing.T) {
+	withRedisDisabled(t)
+	resetVerificationMap()
+	if err := RegisterSMSVerificationCode("+14155552671", "123456"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < SMSVerificationMaxAttempts; i++ {
+		verified, err := VerifySMSVerificationCode("+14155552671", "000000")
+		if err != nil || verified {
+			t.Fatalf("wrong code attempt %d: verified=%t err=%v", i+1, verified, err)
+		}
+	}
+	verified, err := VerifySMSVerificationCode("+14155552671", "123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified {
+		t.Fatal("expected code to be locked after repeated failures")
+	}
+}
+
 func TestRegistrationEmailLinkMemoryReplacesPreviousToken(t *testing.T) {
 	withRedisDisabled(t)
 	resetRegistrationEmailVerificationStore()

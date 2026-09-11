@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSendPhoneVerificationRejectsAlreadyRegisteredPhone(t *testing.T) {
+func TestSendPhoneVerificationHidesAlreadyRegisteredPhone(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
 	require.NoError(t, db.Create(&model.User{
 		Username:    "existing-phone-user",
 		Password:    "hashed-password",
@@ -33,9 +33,11 @@ func TestSendPhoneVerificationRejectsAlreadyRegisteredPhone(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/phone-verification", SendPhoneVerification)
+	router.POST("/api/phone-verification", SendPhoneVerification)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/phone-verification?phone_number=%2B86%20138-0013-8000", nil)
+	body := strings.NewReader(`{"phone_number":"+86 138-0013-8000"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/phone-verification", body)
+	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -44,13 +46,13 @@ func TestSendPhoneVerificationRejectsAlreadyRegisteredPhone(t *testing.T) {
 		Message string `json:"message"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
-	require.False(t, payload.Success)
-	require.Contains(t, payload.Message, "registered")
+	require.True(t, payload.Success)
+	require.Empty(t, payload.Message)
 }
 
 func TestRegisterRequiresPhoneVerificationCodeWhenSMSVerificationEnabled(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
 	originalRegisterEnabled := common.RegisterEnabled
 	originalPasswordRegisterEnabled := common.PasswordRegisterEnabled
 	originalEmailVerificationEnabled := common.EmailVerificationEnabled
@@ -91,7 +93,7 @@ func TestRegisterRequiresPhoneVerificationCodeWhenSMSVerificationEnabled(t *test
 
 func TestRegisterWithPhoneVerificationPersistsVerifiedPhone(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
 	originalRegisterEnabled := common.RegisterEnabled
 	originalPasswordRegisterEnabled := common.PasswordRegisterEnabled
 	originalEmailVerificationEnabled := common.EmailVerificationEnabled
@@ -133,7 +135,7 @@ func TestRegisterWithPhoneVerificationPersistsVerifiedPhone(t *testing.T) {
 
 func TestBindPhonePersistsVerifiedPhone(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
 	user := &model.User{
 		Username: "phone-bind-user",
 		Password: "hashed-password",
@@ -167,9 +169,15 @@ func TestBindPhonePersistsVerifiedPhone(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	var payload struct {
 		Success bool `json:"success"`
+		Data    struct {
+			PhoneNumber      string `json:"phone_number"`
+			PhoneVerifiedAt  int64  `json:"phone_verified_at"`
+		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
 	require.True(t, payload.Success)
+	require.Equal(t, phone, payload.Data.PhoneNumber)
+	require.NotZero(t, payload.Data.PhoneVerifiedAt)
 
 	var stored model.User
 	require.NoError(t, db.First(&stored, user.Id).Error)

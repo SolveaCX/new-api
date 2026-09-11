@@ -194,7 +194,12 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
             <Input
               id='phone-verification-code'
               value={verificationCode}
-              onChange={(event) => setVerificationCode(event.target.value)}
+              inputMode='numeric'
+              autoComplete='one-time-code'
+              maxLength={6}
+              onChange={(event) =>
+                setVerificationCode(event.target.value.replace(/\D/g, ''))
+              }
               placeholder={t('Please enter the SMS verification code')}
               disabled={binding}
             />

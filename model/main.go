@@ -292,6 +292,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := backfillUserPhoneBindings(DB); err != nil {
+		return err
+	}
 	if err := backfillUserNormalizedEmails(DB); err != nil {
 		return err
 	}
@@ -350,6 +353,7 @@ func orderedMigrationModels() []migrationModel {
 		{&Token{}, "Token"},
 		{&CliDeviceAuthorization{}, "CliDeviceAuthorization"},
 		{&User{}, "User"},
+		{&UserPhoneBinding{}, "UserPhoneBinding"},
 		{&GoogleOAuthClaim{}, "GoogleOAuthClaim"},
 		{&RecallCampaign{}, "RecallCampaign"},
 		{&RecallRecipient{}, "RecallRecipient"},
@@ -482,6 +486,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return fmt.Errorf("failed to migrate %s: %v", m.name, err)
 		}
+	}
+	if err := backfillUserPhoneBindings(DB); err != nil {
+		return err
 	}
 	if err := backfillUserNormalizedEmails(DB); err != nil {
 		return err

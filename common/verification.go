@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +34,10 @@ var verificationMap map[string]verificationValue
 var verificationMapMaxSize = 10
 var VerificationValidMinutes = 10
 
+const SMSVerificationMaxAttempts = 5
+
+var smsVerificationAttempts = map[string]int{}
+
 const (
 	registrationEmailLinkPrefix      = "registration-email-link:"
 	registrationEmailCurrentPrefix   = "registration-email-current:"
@@ -55,8 +61,127 @@ func GenerateVerificationCode(length int) string {
 	return code[:length]
 }
 
+// GenerateNumericVerificationCode returns a cryptographically random numeric
+// code. An empty result means the system random source failed.
+func GenerateNumericVerificationCode(length int) string {
+	if length <= 0 {
+		return ""
+	}
+	code := make([]byte, length)
+	for i := range code {
+		value, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return ""
+		}
+		code[i] = byte('0' + value.Int64())
+	}
+	return string(code)
+}
+
 func verificationRedisKey(key string, purpose string) string {
 	return fmt.Sprintf("verification:%s:%s", purpose, key)
+}
+
+func smsVerificationAttemptKey(key string) string {
+	return verificationRedisKey(key, SMSVerificationPurpose) + ":attempts"
+}
+
+func smsVerificationTTL() time.Duration {
+	return time.Duration(SMSVerificationValidMinutes) * time.Minute
+}
+
+// RegisterSMSVerificationCode is strict by design: production nodes must
+// share SMS credentials through Redis, while Redis-disabled mode remains
+// available for single-node development and tests.
+func RegisterSMSVerificationCode(key, code string) error {
+	if RedisEnabled {
+		if RDB == nil {
+			return errors.New("SMS verification store is unavailable")
+		}
+		ctx := context.Background()
+		_, err := RDB.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(ctx, verificationRedisKey(key, SMSVerificationPurpose), code, smsVerificationTTL())
+			pipe.Del(ctx, smsVerificationAttemptKey(key))
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("store SMS verification code: %w", err)
+		}
+		return nil
+	}
+	verificationMutex.Lock()
+	defer verificationMutex.Unlock()
+	if verificationMap == nil {
+		verificationMap = make(map[string]verificationValue)
+	}
+	verificationMap[SMSVerificationPurpose+key] = verificationValue{code: code, time: time.Now()}
+	smsVerificationAttempts[key] = 0
+	return nil
+}
+
+// VerifySMSVerificationCode validates without consuming the credential. The
+// caller consumes it only after the user/phone transaction commits.
+func VerifySMSVerificationCode(key, code string) (bool, error) {
+	if RedisEnabled {
+		if RDB == nil {
+			return false, errors.New("SMS verification store is unavailable")
+		}
+		storedCode, err := RDB.Get(context.Background(), verificationRedisKey(key, SMSVerificationPurpose)).Result()
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("read SMS verification code: %w", err)
+		}
+		if subtle.ConstantTimeCompare([]byte(code), []byte(storedCode)) == 1 {
+			return true, nil
+		}
+		attempts, incrErr := RDB.Incr(context.Background(), smsVerificationAttemptKey(key)).Result()
+		if incrErr != nil {
+			return false, fmt.Errorf("record SMS verification failure: %w", incrErr)
+		}
+		if attempts == 1 {
+			_ = RDB.Expire(context.Background(), smsVerificationAttemptKey(key), smsVerificationTTL()).Err()
+		}
+		if attempts >= SMSVerificationMaxAttempts {
+			_ = RDB.Del(context.Background(), verificationRedisKey(key, SMSVerificationPurpose), smsVerificationAttemptKey(key)).Err()
+		}
+		return false, nil
+	}
+	verificationMutex.Lock()
+	defer verificationMutex.Unlock()
+	value, ok := verificationMap[SMSVerificationPurpose+key]
+	if !ok || time.Since(value.time) >= smsVerificationTTL() {
+		delete(verificationMap, SMSVerificationPurpose+key)
+		delete(smsVerificationAttempts, key)
+		return false, nil
+	}
+	if subtle.ConstantTimeCompare([]byte(code), []byte(value.code)) == 1 {
+		return true, nil
+	}
+	smsVerificationAttempts[key]++
+	if smsVerificationAttempts[key] >= SMSVerificationMaxAttempts {
+		delete(verificationMap, SMSVerificationPurpose+key)
+		delete(smsVerificationAttempts, key)
+	}
+	return false, nil
+}
+
+func DeleteSMSVerificationCode(key string) error {
+	if RedisEnabled {
+		if RDB == nil {
+			return errors.New("SMS verification store is unavailable")
+		}
+		if err := RDB.Del(context.Background(), verificationRedisKey(key, SMSVerificationPurpose), smsVerificationAttemptKey(key)).Err(); err != nil {
+			return fmt.Errorf("delete SMS verification code: %w", err)
+		}
+		return nil
+	}
+	verificationMutex.Lock()
+	defer verificationMutex.Unlock()
+	delete(verificationMap, SMSVerificationPurpose+key)
+	delete(smsVerificationAttempts, key)
+	return nil
 }
 
 // RDB stays nil until InitRedisClient even though RedisEnabled defaults to

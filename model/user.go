@@ -122,18 +122,6 @@ func NormalizeUserEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-func IsPhoneAlreadyTaken(phone string) bool {
-	normalized, err := common.NormalizePhoneNumber(phone)
-	if err != nil || DB == nil {
-		return false
-	}
-	var count int64
-	if err := DB.Unscoped().Model(&User{}).Where("phone_number = ?", normalized).Count(&count).Error; err != nil {
-		return false
-	}
-	return count > 0
-}
-
 func (user *User) BeforeCreate(_ *gorm.DB) error {
 	user.NormalizedEmail = NormalizeUserEmail(user.Email)
 	if user.PhoneNumber != "" {
@@ -867,6 +855,11 @@ func (user *User) insertWithTx(tx *gorm.DB, inviterId int, registrationIP string
 	result := tx.Create(user)
 	if result.Error != nil {
 		return result.Error
+	}
+	if user.PhoneNumber != "" {
+		if err := reserveUserPhoneTx(tx, user.PhoneNumber, user.Id, user.PhoneVerifiedAt); err != nil {
+			return err
+		}
 	}
 
 	if err := grantInviteeRegistrationSubscriptionDiscountInTx(tx, user); err != nil {

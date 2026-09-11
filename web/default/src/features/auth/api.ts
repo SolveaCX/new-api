@@ -215,9 +215,13 @@ export async function sendPhoneVerification(
   phoneNumber: string,
   turnstile?: string
 ): Promise<ApiResponse> {
-  const res = await api.get('/api/phone-verification', {
-    params: { phone_number: phoneNumber, turnstile },
-  })
+  const res = await api.post(
+    '/api/phone-verification',
+    { phone_number: phoneNumber },
+    {
+      headers: turnstile ? { 'X-Turnstile-Token': turnstile } : undefined,
+    }
+  )
   return res.data
 }
 

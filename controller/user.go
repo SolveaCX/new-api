@@ -409,11 +409,21 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
 			return
 		}
-		if model.IsPhoneAlreadyTaken(user.PhoneNumber) {
+		taken, err := model.IsPhoneAlreadyTaken(user.PhoneNumber)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+			return
+		}
+		if taken {
 			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
 			return
 		}
-		if !verifyRegistrationPhone(&user) {
+		verified, verifyErr := verifyRegistrationPhone(&user)
+		if verifyErr != nil {
+			common.ApiErrorI18n(c, i18n.MsgUserSMSVerificationUnavailable)
+			return
+		}
+		if !verified {
 			if strings.TrimSpace(user.PhoneVerificationCode) == "" {
 				common.ApiErrorI18n(c, i18n.MsgUserPhoneVerificationRequired)
 			} else {
@@ -480,8 +490,17 @@ func Register(c *gin.Context) {
 		if grantReserved {
 			common.RollbackRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)
 		}
-		respondRegistrationEmailError(c, err)
+		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
+		} else {
+			respondRegistrationEmailError(c, err)
+		}
 		return
+	}
+	if common.SMSVerificationEnabled && cleanUser.PhoneNumber != "" {
+		if err := common.DeleteSMSVerificationCode(cleanUser.PhoneNumber); err != nil {
+			common.SysLog(fmt.Sprintf("failed to delete SMS verification: %v", err))
+		}
 	}
 	if grantReserved {
 		common.CommitRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)

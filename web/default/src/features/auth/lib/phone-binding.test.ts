@@ -17,4 +17,8 @@ describe('phone binding gate', () => {
     expect(shouldRequirePhoneBinding({ group: 'enterprise' })).toBe(false)
     expect(shouldRequirePhoneBinding(null)).toBe(false)
   })
+
+  test('does not require binding when SMS verification is disabled', () => {
+    expect(shouldRequirePhoneBinding({ group: 'plg' }, false)).toBe(false)
+  })
 })
