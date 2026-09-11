@@ -126,8 +126,14 @@ function deltaUsd(cur: number | undefined, prev: number | undefined): string {
 
 export function UsageReport() {
   const { t } = useTranslation()
-  const [days, setDays] = useState(30)
-  const [group, setGroup] = useState<UsageReportGroup>('plg')
+  // 初始状态从 URL 读取（刷新/分享链接后保持分组与天数）
+  const initialParams =
+    typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+  const initialGroup: UsageReportGroup = initialParams.get('group') === 'all' ? 'all' : 'plg'
+  const initialDaysRaw = Number(initialParams.get('days'))
+  const initialDays = DAY_OPTIONS.includes(initialDaysRaw) ? initialDaysRaw : 30
+  const [days, setDays] = useState(initialDays)
+  const [group, setGroup] = useState<UsageReportGroup>(initialGroup)
   const [modelMetric, setModelMetric] = useState<'tokens' | 'calls'>('calls')
   const [activeSec, setActiveSec] = useState('funnel')
   const { data: res, isLoading, refetch } = useQuery({
@@ -143,6 +149,7 @@ export function UsageReport() {
   const modelRows: UsageReportModelRow[] = payload ? [...payload.models] : []
   const today = dayRows.length > 0 ? dayRows[dayRows.length - 1] : undefined
   const yesterday = dayRows.length > 1 ? dayRows[dayRows.length - 2] : undefined
+  const latestDate = today ? today.date : '-'
 
   const sumDays = (pick: (r: UsageReportDayRow) => number): number =>
     dayRows.reduce((acc, r) => acc + pick(r), 0)
@@ -333,6 +340,20 @@ export function UsageReport() {
     }, 4000)
     return () => clearTimeout(id)
   }, [incomplete, filling, staleTicks, refetch])
+
+  // 分组/天数写回 URL：刷新或把链接发给同事时保持一致
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    params.set('group', group)
+    params.set('days', String(days))
+    const query = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+    )
+  }, [group, days])
 
   const jump = (id: string) => {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -612,6 +633,7 @@ export function UsageReport() {
                   <CardTitle className='flex flex-wrap items-center justify-between gap-2'>
                     {t('Daily Detail')}
                     <span className='text-muted-foreground text-xs font-normal'>
+                      {group === 'plg' ? t('PLG 分组') : t('全部分组')} · {t('数据截至')} {latestDate} (UTC+0) ·{' '}
                       {t('激活/首付列 = 该日注册的人中当天转化的(人)，恒 ≤ 注册；金额为当日实收；今日为进行中数据')}
                     </span>
                   </CardTitle>
