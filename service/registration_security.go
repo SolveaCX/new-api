@@ -51,7 +51,7 @@ func EvaluateRegistrationEmail(email string, cfg system_setting.RegistrationSecu
 			if cfg.RejectEmailDomainWithoutMX && !dnsCheck.MXRecord {
 				return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
 			}
-			if cfg.RejectEmailDomainWithoutWebsite && !dnsCheck.WebsiteReachable && !dnsCheck.MajorProviderMX {
+			if cfg.RejectEmailDomainWithoutWebsite && !dnsCheck.WebsiteReachable {
 				return RegistrationEmailDecision{}, ErrRegistrationDomainUnavailable
 			}
 		}

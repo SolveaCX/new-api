@@ -19,7 +19,7 @@ type emailDomainDNSCheck struct {
 	MXHost           string // first MX host, lowercase, trailing dot trimmed
 	ARecord          bool   // at least one A/AAAA record resolves
 	PrivateARecord   bool   // resolved A points to loopback/private/link-local (parked placeholder)
-	WebsiteReachable bool   // an HTTP(S) server answered on port 80/443
+	WebsiteReachable bool   // an HTTP(S) server returned a non-error status on port 80/443
 	MajorProviderMX  bool   // MX host belongs to a mainstream mail provider (gmail/outlook/qq/...)
 	DisposableMX     bool   // MX host matches known disposable/temp-mail infrastructure
 }
@@ -265,8 +265,13 @@ func safeEmailDomainDialContext(ctx context.Context, network, addr string) (net.
 }
 
 // emailDomainWebsiteReachable returns true if an HTTP(S) server answers on the
-// domain (any status code counts — a real site exists). TLS failure falls back
-// to plain HTTP. Connections are restricted to public IPs (SSRF hardening).
+// domain with a non-error (2xx/3xx) status. 4xx/5xx responses mean the root
+// domain is unavailable for registration. TLS failure falls back to plain HTTP.
+// Connections are restricted to public IPs (SSRF hardening).
+func emailDomainWebsiteStatusOK(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusBadRequest
+}
+
 func emailDomainWebsiteReachable(domain string) bool {
 	for _, scheme := range []string{"https", "http"} {
 		ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
@@ -280,7 +285,7 @@ func emailDomainWebsiteReachable(domain string) bool {
 		cancel()
 		if err == nil {
 			resp.Body.Close()
-			return true
+			return emailDomainWebsiteStatusOK(resp.StatusCode)
 		}
 	}
 	return false
