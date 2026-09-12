@@ -63,6 +63,8 @@ describe('Playground media model profiles', () => {
 
   test('classifies only implemented media families as image or video', () => {
     expect(resolvePlaygroundModelKind('gpt-image-2')).toBe('image')
+    expect(resolvePlaygroundModelKind('gpt-image-2.5-flare')).toBe('image')
+    expect(resolvePlaygroundModelKind('gpt-image-2.5-sunburst')).toBe('image')
     expect(resolvePlaygroundModelKind('gemini-3-pro-image-preview')).toBe(
       'image'
     )
