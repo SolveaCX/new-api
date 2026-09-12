@@ -56,3 +56,12 @@ func TestSafeEmailDomainDialContextRefusesPrivateTargets(t *testing.T) {
 	_, err = safeEmailDomainDialContext(context.Background(), "tcp", "169.254.169.254:80")
 	require.Error(t, err)
 }
+
+func TestEmailDomainWebsiteStatusRequiresSuccessfulResponse(t *testing.T) {
+	for _, status := range []int{200, 204, 301, 302, 399} {
+		require.True(t, emailDomainWebsiteStatusOK(status), status)
+	}
+	for _, status := range []int{400, 401, 403, 404, 500, 502, 503} {
+		require.False(t, emailDomainWebsiteStatusOK(status), status)
+	}
+}
