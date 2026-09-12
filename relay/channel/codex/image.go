@@ -37,7 +37,7 @@ const codexImageStreamReadLimit = 256 << 20 // 256 MiB
 
 // resolveImageCarrierModel：per-channel 覆盖 > 全局设置 > 代码默认 gpt-5.4。
 func resolveImageCarrierModel(info *relaycommon.RelayInfo) string {
-	if info != nil {
+	if info != nil && info.ChannelMeta != nil {
 		if m := strings.TrimSpace(info.ChannelSetting.ImageCarrierModel); m != "" {
 			return m
 		}

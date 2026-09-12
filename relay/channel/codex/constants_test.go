@@ -10,6 +10,8 @@ import (
 func TestModelListKeepsLegacyImageAndLatestModels(t *testing.T) {
 	require.Contains(t, ModelList, "gpt-5-codex")
 	require.Contains(t, ModelList, "gpt-image-2")
+	require.Contains(t, ModelList, "gpt-image-2.5-flare")
+	require.Contains(t, ModelList, "gpt-image-2.5-sunburst")
 	require.Contains(t, ModelList, "gpt-5.4-mini")
 	require.Contains(t, ModelList, "gpt-5.5")
 	require.Contains(t, ModelList, ratio_setting.WithCompactModelSuffix("gpt-5.5"))

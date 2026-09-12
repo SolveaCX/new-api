@@ -723,7 +723,10 @@ export function resolveMediaGenerationProfile(
     return cloneProfile(soniloVideoToMusicProfile)
   }
 
-  if (/(^|\/)gpt-image-2(?:$|[-_/])/.test(normalized)) {
+  if (
+    /(^|\/)gpt-image-2(?:$|[-_\/])/.test(normalized) ||
+    /(^|\/)gpt-image-2\.5-(?:flare|sunburst)(?:$|[-_\/])/.test(normalized)
+  ) {
     return cloneProfile(gptImageProfile)
   }
   if (normalized.includes('grok-imagine-image')) {

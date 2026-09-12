@@ -15,8 +15,14 @@ var baseModelList = []string{
 	"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 }
 
-// 图像模型:codex 后端只有一套原生图像能力,model 名仅作标签;对外暴露 gpt-image-2。
-var imageModelList = []string{"gpt-image-2"}
+// 图像模型由 Codex Responses 的 image_generation 工具承载。
+// GPT Image 2.5 在公开 API 中分为 Flare（默认/更快）和 Sunburst（更高精度）
+// 两个模型；这里保留客户端传入的模型名，让上游选择对应能力。
+var imageModelList = []string{
+	"gpt-image-2",
+	"gpt-image-2.5-flare",
+	"gpt-image-2.5-sunburst",
+}
 
 // ModelList = 文本模型(含 compact 变体) + 图像模型
 var ModelList = append(withCompactModelSuffix(baseModelList), imageModelList...)
