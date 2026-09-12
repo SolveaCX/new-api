@@ -90,21 +90,33 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 		return nil, err
 	}
 	if explicit {
-		if config.Provider != assetMaterializationProviderTokenSpaceMaterial {
-			return nil, errors.New("real person provider unavailable")
-		}
 		keys := enabledAssetMaterializeKeys(channel)
 		if len(keys) != 1 || strings.TrimSpace(keys[0].key) == "" {
-			return nil, errors.New("tokenspace real person provider requires exactly one enabled key")
+			return nil, errors.New("explicit real person provider requires exactly one enabled key")
 		}
-		return &realPersonProviderBinding{
-			Channel: channel,
-			Provider: tokenSpaceRealPersonProvider{
-				channel:       channel,
-				apiKey:        strings.TrimSpace(keys[0].key),
-				gatewayOrigin: config.GatewayOrigin,
-			},
-		}, nil
+		apiKey := strings.TrimSpace(keys[0].key)
+		switch config.Provider {
+		case assetMaterializationProviderTokenSpaceMaterial:
+			return &realPersonProviderBinding{
+				Channel: channel,
+				Provider: tokenSpaceRealPersonProvider{
+					channel:       channel,
+					apiKey:        apiKey,
+					gatewayOrigin: config.GatewayOrigin,
+				},
+			}, nil
+		case assetMaterializationProviderVirtualCharacter:
+			return &realPersonProviderBinding{
+				Channel: channel,
+				Provider: virtualCharacterRealPersonProvider{
+					channel:       channel,
+					apiKey:        apiKey,
+					gatewayOrigin: config.GatewayOrigin,
+				},
+			}, nil
+		default:
+			return nil, errors.New("real person provider unavailable")
+		}
 	}
 	if !bytePlusAssetChannelIsUsable(channel) {
 		return nil, errors.New("real person channel unavailable")
@@ -130,8 +142,10 @@ func realPersonProviderForChannel(channel *model.Channel) (*realPersonProviderBi
 	}, nil
 }
 
-// TokenSpaceRealPersonChannelIsUsable reports whether a Doubao video channel
-// is explicitly configured to own TokenSpace real-person profiles and assets.
+// TokenSpaceRealPersonChannelIsUsable reports whether a Doubao video channel is
+// configured to own explicit-provider real-person profiles and assets. It now
+// accepts any explicit provider that resolves (tokenspace_material or
+// virtual_character); the name is retained for its existing call sites.
 func TokenSpaceRealPersonChannelIsUsable(channel *model.Channel) bool {
 	if channel == nil || channel.Type != constant.ChannelTypeDoubaoVideo {
 		return false
@@ -163,15 +177,22 @@ func loadUsableRealPersonProviderBinding(channelID int, requestedGroup string) (
 }
 
 func realPersonChannelIsAutomaticCandidate(channel *model.Channel) bool {
-	if channel == nil || !bytePlusAssetChannelIsUsable(channel) {
+	if channel == nil {
 		return false
 	}
-	_, explicit, err := assetMaterializationConfigForChannel(channel)
-	if err != nil || explicit {
-		return false
+	// Native BytePlus: structured AK/SK credentials, no explicit provider.
+	if bytePlusAssetChannelIsUsable(channel) {
+		if _, explicit, err := assetMaterializationConfigForChannel(channel); err == nil && !explicit {
+			creds, err := ParseBytePlusCredentials(channel.Key)
+			if err == nil && creds.ValidateRealPersonAssets() == nil {
+				return true
+			}
+		}
 	}
-	creds, err := ParseBytePlusCredentials(channel.Key)
-	return err == nil && creds.ValidateRealPersonAssets() == nil
+	// Explicit providers (tokenspace_material, virtual_character) that resolve
+	// to a usable real-person binding also enter the weighted-random pool.
+	_, err := realPersonProviderForChannel(channel)
+	return err == nil
 }
 
 func isRealPersonDefinitiveResponse(err error) bool {

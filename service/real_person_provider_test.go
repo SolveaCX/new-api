@@ -135,7 +135,7 @@ func TestLoadUsableRealPersonProviderBindingRejectsDisabledAbility(t *testing.T)
 	require.Error(t, err)
 }
 
-func TestRealPersonAutomaticCandidateExcludesTokenSpace(t *testing.T) {
+func TestRealPersonAutomaticCandidateAdmitsExplicitProviders(t *testing.T) {
 	tokenSpace := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
 		Provider:       assetMaterializationProviderTokenSpaceMaterial,
 		GatewayBaseURL: "https://api.tokenspace.example",
@@ -143,6 +143,14 @@ func TestRealPersonAutomaticCandidateExcludesTokenSpace(t *testing.T) {
 	})
 	tokenSpace.Status = common.ChannelStatusEnabled
 	tokenSpace.Key = "tokenspace-key"
+
+	virtualCharacter := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	virtualCharacter.Status = common.ChannelStatusEnabled
+	virtualCharacter.Key = "susciyuan-key"
+
 	native := &model.Channel{
 		Id:     41,
 		Type:   constant.ChannelTypeBytePlus,
@@ -150,8 +158,29 @@ func TestRealPersonAutomaticCandidateExcludesTokenSpace(t *testing.T) {
 		Key:    structuredRealPersonKey(),
 	}
 
-	require.False(t, realPersonChannelIsAutomaticCandidate(tokenSpace))
+	require.True(t, realPersonChannelIsAutomaticCandidate(tokenSpace))
+	require.True(t, realPersonChannelIsAutomaticCandidate(virtualCharacter))
 	require.True(t, realPersonChannelIsAutomaticCandidate(native))
+}
+
+func TestRealPersonAutomaticCandidateRejectsDisabledChannel(t *testing.T) {
+	virtualCharacter := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	virtualCharacter.Status = common.ChannelStatusManuallyDisabled
+	virtualCharacter.Key = "susciyuan-key"
+	require.False(t, realPersonChannelIsAutomaticCandidate(virtualCharacter))
+}
+
+func TestTokenSpaceRealPersonChannelIsUsableAcceptsVirtualCharacter(t *testing.T) {
+	virtualCharacter := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	virtualCharacter.Status = common.ChannelStatusEnabled
+	virtualCharacter.Key = "susciyuan-key"
+	require.True(t, TokenSpaceRealPersonChannelIsUsable(virtualCharacter))
 }
 
 func insertTokenSpaceRealPersonChannel(t *testing.T, id int, group string, abilityEnabled bool) {
@@ -180,4 +209,35 @@ func insertTokenSpaceRealPersonChannel(t *testing.T, id int, group string, abili
 		Priority:  &priority,
 		Weight:    weight,
 	}).Error)
+}
+
+func TestRealPersonProviderForChannelSelectsExplicitVirtualCharacterWithOneEnabledKey(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	channel.Status = common.ChannelStatusEnabled
+	channel.Key = "susciyuan-key"
+
+	binding, err := realPersonProviderForChannel(channel)
+	require.NoError(t, err)
+	provider, ok := binding.Provider.(virtualCharacterRealPersonProvider)
+	require.True(t, ok)
+	require.Equal(t, "susciyuan-key", provider.apiKey)
+	require.Equal(t, "https://susciyuan.com", provider.gatewayOrigin)
+	require.False(t, provider.RequiresCallback())
+	require.Nil(t, binding.StorageCredentials)
+}
+
+func TestRealPersonProviderForChannelRejectsVirtualCharacterWithMultipleEnabledKeys(t *testing.T) {
+	channel := channelWithAssetMaterializationSettings(t, constant.ChannelTypeDoubaoVideo, dto.AssetMaterializationSettings{
+		Provider:       assetMaterializationProviderVirtualCharacter,
+		GatewayBaseURL: "https://susciyuan.com",
+	})
+	channel.Status = common.ChannelStatusEnabled
+	channel.ChannelInfo.IsMultiKey = true
+	channel.Key = "key-one\nkey-two"
+
+	_, err := realPersonProviderForChannel(channel)
+	require.Error(t, err)
 }
