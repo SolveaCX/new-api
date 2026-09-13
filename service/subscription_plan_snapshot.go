@@ -275,9 +275,12 @@ type CatalogMigrationSandboxConfig struct {
 	DeploymentEnvironment string
 	ServiceName           string
 	FeatureEnabled        bool
-	AllowedContractIDs    []int64
-	StripeSecret          string
-	StripePublishableKey  string
+	// ProductionEnabled is an explicit second gate for live-mode migrations.
+	// Staging migrations continue to require test credentials and an allowlist.
+	ProductionEnabled    bool
+	AllowedContractIDs   []int64
+	StripeSecret         string
+	StripePublishableKey string
 }
 
 type CatalogMigrationStripeSandboxFacts struct {
@@ -297,14 +300,22 @@ type CatalogMigrationStripeSandboxFacts struct {
 }
 
 func ValidateCatalogMigrationCommonSandbox(config CatalogMigrationSandboxConfig, contractID int64) error {
-	if strings.TrimSpace(config.DeploymentEnvironment) != "staging" {
-		return errors.New("catalog migration requires staging deployment environment")
-	}
-	if strings.TrimSpace(config.ServiceName) != "newapi-staging" {
-		return errors.New("catalog migration requires newapi-staging service")
-	}
 	if !config.FeatureEnabled {
 		return errors.New("catalog migration feature is disabled")
+	}
+	env := strings.ToLower(strings.TrimSpace(config.DeploymentEnvironment))
+	service := strings.TrimSpace(config.ServiceName)
+	switch env {
+	case "staging":
+		if service != "newapi-staging" || config.ProductionEnabled {
+			return errors.New("catalog migration staging service facts are invalid")
+		}
+	case "production":
+		if !config.ProductionEnabled || (service != "newapi-console" && service != "newapi-router") {
+			return errors.New("catalog migration production gate is not enabled")
+		}
+	default:
+		return errors.New("catalog migration deployment environment is invalid")
 	}
 	if contractID <= 0 || !containsContractID(config.AllowedContractIDs, contractID) {
 		return errors.New("catalog migration contract is not allowlisted")
@@ -318,11 +329,24 @@ func ValidateCatalogMigrationStripeSandbox(config CatalogMigrationSandboxConfig,
 	}
 	secret := strings.TrimSpace(config.StripeSecret)
 	publishable := strings.TrimSpace(config.StripePublishableKey)
-	if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(publishable, "pk_test_") {
-		return errors.New("catalog migration requires Stripe test credentials")
-	}
-	if facts.BindingLivemode || facts.SubscriptionLivemode || facts.CurrentPriceLivemode || facts.TargetPriceLivemode {
-		return errors.New("catalog migration rejects Stripe live-mode facts")
+	live := strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production")
+	if live {
+		if !strings.HasPrefix(secret, "sk_live_") && !strings.HasPrefix(secret, "rk_live_") {
+			return errors.New("production catalog migration requires Stripe live credentials")
+		}
+		if !strings.HasPrefix(publishable, "pk_live_") {
+			return errors.New("production catalog migration requires Stripe live publishable key")
+		}
+		if !facts.BindingLivemode || !facts.SubscriptionLivemode || !facts.CurrentPriceLivemode || !facts.TargetPriceLivemode {
+			return errors.New("production catalog migration requires Stripe live-mode facts")
+		}
+	} else {
+		if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(publishable, "pk_test_") {
+			return errors.New("catalog migration requires Stripe test credentials")
+		}
+		if facts.BindingLivemode || facts.SubscriptionLivemode || facts.CurrentPriceLivemode || facts.TargetPriceLivemode {
+			return errors.New("catalog migration rejects Stripe live-mode facts")
+		}
 	}
 	if !sameRequiredIdentifier(facts.BindingSubscriptionID, facts.SubscriptionID) {
 		return errors.New("catalog migration Stripe subscription mismatch")

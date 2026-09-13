@@ -370,7 +370,12 @@ func (s *stripeCatalogMigrationScheduler) freshAndValidate(ctx context.Context, 
 	if err := ValidateCatalogMigrationCommonSandbox(config, request.ContractID); err != nil {
 		return nil, nil, nil, err
 	}
-	if !catalogMigrationHasTestStripeCredentials(config) {
+	liveMode := strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production")
+	if liveMode {
+		if !catalogMigrationHasLiveStripeCredentials(config) {
+			return nil, nil, nil, errors.New("production catalog migration requires Stripe live credentials")
+		}
+	} else if !catalogMigrationHasTestStripeCredentials(config) {
 		return nil, nil, nil, errors.New("catalog migration requires Stripe test credentials")
 	}
 	var binding model.SubscriptionProviderBinding
@@ -378,7 +383,7 @@ func (s *stripeCatalogMigrationScheduler) freshAndValidate(ctx context.Context, 
 		return nil, nil, nil, errors.New("catalog migration Stripe binding is unavailable")
 	}
 	if binding.Id != request.BindingID || binding.UserId != request.UserID || binding.ContractId != request.ContractID ||
-		binding.Provider != model.PaymentProviderStripe || binding.Livemode || strings.TrimSpace(binding.ProviderStatus) != "active" ||
+		binding.Provider != model.PaymentProviderStripe || binding.Livemode != liveMode || strings.TrimSpace(binding.ProviderStatus) != "active" ||
 		binding.EndedAt != 0 || binding.CancelAtPeriodEnd || strings.TrimSpace(binding.ProviderSubscriptionId) != request.ProviderSubscriptionID ||
 		strings.TrimSpace(binding.ProviderCustomerId) != request.ProviderCustomerID || strings.TrimSpace(binding.ProviderSubscriptionItemId) != request.ProviderSubscriptionItemID ||
 		strings.TrimSpace(binding.ProviderPriceId) != request.CurrentPriceID || binding.CurrentPeriodStart != request.CurrentPeriodStart || binding.CurrentPeriodEnd != request.CurrentPeriodEnd ||
@@ -437,7 +442,7 @@ func validateFreshCatalogMigrationStripeFacts(config CatalogMigrationSandboxConf
 		customerID = sub.Customer.ID
 	}
 	if err := ValidateCatalogMigrationStripeSandbox(config, CatalogMigrationStripeSandboxFacts{
-		ContractID: request.ContractID, BindingLivemode: false, SubscriptionLivemode: sub.Livemode,
+		ContractID: request.ContractID, BindingLivemode: strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production"), SubscriptionLivemode: sub.Livemode,
 		CurrentPriceLivemode: current.Livemode, TargetPriceLivemode: target.Livemode,
 		BindingSubscriptionID: request.ProviderSubscriptionID, SubscriptionID: sub.ID,
 		BindingCustomerID: request.ProviderCustomerID, SubscriptionCustomerID: customerID,
@@ -504,7 +509,7 @@ func catalogMigrationScheduleParams(request CatalogMigrationProviderScheduleRequ
 }
 
 func catalogMigrationScheduleMetadataMatches(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest, metadata map[string]string) bool {
-	if schedule == nil || schedule.Livemode || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || len(schedule.Metadata) != len(metadata) {
+	if schedule == nil || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || len(schedule.Metadata) != len(metadata) {
 		return false
 	}
 	for key, value := range metadata {
@@ -536,7 +541,7 @@ func catalogMigrationScheduleIsUnconfiguredForRequest(schedule *stripe.Subscript
 }
 
 func catalogMigrationScheduleCreateOutcomeMatches(schedule *stripe.SubscriptionSchedule, request CatalogMigrationProviderScheduleRequest, metadata map[string]string) bool {
-	if schedule == nil || schedule.Livemode || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
+	if schedule == nil || strings.TrimSpace(schedule.ID) == "" || schedule.Subscription == nil || strings.TrimSpace(schedule.Subscription.ID) != request.ProviderSubscriptionID || !catalogMigrationScheduleIsUnconfiguredForRequest(schedule, request) {
 		return false
 	}
 	// The create call intentionally sends no metadata because Stripe rejects

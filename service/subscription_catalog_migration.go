@@ -192,11 +192,12 @@ func (s CatalogMigrationService) Apply(ctx context.Context, command CatalogMigra
 	if err != nil {
 		return CatalogMigrationOperationResult{}, fmt.Errorf("encode catalog migration manifest: %w", err)
 	}
+	liveMode := strings.EqualFold(strings.TrimSpace(s.Sandbox.DeploymentEnvironment), "production")
 	batch := model.SubscriptionCatalogMigrationBatch{
 		RequestId: command.PreviewRequest.RequestID, CohortDigest: command.CohortDigest,
 		Status: model.SubscriptionCatalogMigrationBatchStatusApplying, ManifestSnapshot: string(manifest),
 		RequestedBy: command.RequestedBy, DeploymentEnvironment: strings.TrimSpace(s.Sandbox.DeploymentEnvironment),
-		ServiceName: strings.TrimSpace(s.Sandbox.ServiceName), SandboxOnly: true, Livemode: false,
+		ServiceName: strings.TrimSpace(s.Sandbox.ServiceName), SandboxOnly: !liveMode, Livemode: liveMode,
 	}
 	if err := s.DB.WithContext(ctx).Create(&batch).Error; err != nil {
 		if existing, found, lookupErr := findCatalogMigrationBatchByRequest(ctx, s.DB, command.PreviewRequest.RequestID); lookupErr == nil && found {
@@ -453,8 +454,8 @@ func (s CatalogMigrationService) prepareStripeContract(ctx context.Context, batc
 		if fingerprintCatalogMigrationBinding(binding) != item.BindingFingerprint {
 			return model.ErrSubscriptionProviderBindingConflict
 		}
-		if !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
-			return errors.New("catalog migration requires Stripe test credentials")
+		if !catalogMigrationCredentialsMatchMode(s.Sandbox) {
+			return errors.New("catalog migration Stripe credentials do not match deployment mode")
 		}
 		if err := freezeCatalogMigrationBindingCurrentSnapshotTx(tx, &binding, item); err != nil {
 			return err
@@ -508,7 +509,7 @@ func (s CatalogMigrationService) prepareStripeContract(ctx context.Context, batc
 }
 
 func (s CatalogMigrationService) resumeStripeIntent(ctx context.Context, batch *model.SubscriptionCatalogMigrationBatch, item CatalogMigrationContractPreviewResult, expected *model.SubscriptionChangeIntent) error {
-	if s.Scheduler == nil || !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
+	if s.Scheduler == nil || (!catalogMigrationHasTestStripeCredentials(s.Sandbox) && !catalogMigrationHasLiveStripeCredentials(s.Sandbox)) {
 		return errors.New("catalog migration provider reconciliation is unavailable")
 	}
 	var prepared preparedStripeCatalogMigration
@@ -804,8 +805,8 @@ func (s CatalogMigrationService) cancelStripeIntent(ctx context.Context, batch *
 		if contract.LatestChangeIntentId != intent.Id || (strings.TrimSpace(binding.ProviderScheduleId) != "" && strings.TrimSpace(intent.ProviderScheduleId) != "" && binding.ProviderScheduleId != intent.ProviderScheduleId) || strings.TrimSpace(intent.ProviderScheduleFingerprint) == "" || !catalogMigrationPendingStateCanClear(contract, intent) {
 			return ErrSubscriptionChangeInProgress
 		}
-		if !catalogMigrationHasTestStripeCredentials(s.Sandbox) {
-			return errors.New("catalog migration requires Stripe test credentials")
+		if !catalogMigrationCredentialsMatchMode(s.Sandbox) {
+			return errors.New("catalog migration Stripe credentials do not match deployment mode")
 		}
 		var targetSnapshot RecurringPlanSnapshotV1
 		targetSnapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)

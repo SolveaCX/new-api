@@ -2480,18 +2480,22 @@ func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFac
 	if err := ValidateCatalogMigrationCommonSandbox(sandbox, contract.Id); err != nil {
 		return nil, err
 	}
-	if facts.Livemode || binding.Livemode {
-		return nil, errors.New("Stripe catalog migration rejects live-mode facts")
+	liveMode := strings.EqualFold(strings.TrimSpace(sandbox.DeploymentEnvironment), "production")
+	if facts.Livemode != liveMode || binding.Livemode != liveMode {
+		return nil, errors.New("Stripe catalog migration livemode facts drifted")
 	}
-	secret := strings.TrimSpace(sandbox.StripeSecret)
-	if (!strings.HasPrefix(secret, "sk_test_") && !strings.HasPrefix(secret, "rk_test_")) || !strings.HasPrefix(strings.TrimSpace(sandbox.StripePublishableKey), "pk_test_") {
+	if liveMode {
+		if !catalogMigrationHasLiveStripeCredentials(sandbox) {
+			return nil, errors.New("Stripe catalog migration requires live credentials")
+		}
+	} else if !catalogMigrationHasTestStripeCredentials(sandbox) {
 		return nil, errors.New("Stripe catalog migration requires test credentials")
 	}
 	var batch model.SubscriptionCatalogMigrationBatch
 	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
 		return nil, err
 	}
-	if !batch.SandboxOnly || batch.Livemode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
+	if batch.SandboxOnly == liveMode || batch.Livemode != liveMode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
 		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) || batch.Status == model.SubscriptionCatalogMigrationBatchStatusCancelled {
 		return nil, errors.New("Stripe catalog migration batch sandbox facts drifted")
 	}

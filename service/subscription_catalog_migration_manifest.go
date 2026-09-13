@@ -257,6 +257,7 @@ func catalogMigrationRuntimeSandboxConfig() CatalogMigrationSandboxConfig {
 		DeploymentEnvironment: strings.TrimSpace(os.Getenv("FLATKEY_DEPLOYMENT_ENV")),
 		ServiceName:           strings.TrimSpace(os.Getenv("K_SERVICE")),
 		FeatureEnabled:        parseCatalogMigrationBool(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED")),
+		ProductionEnabled:     parseCatalogMigrationBool(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED")),
 		AllowedContractIDs:    parseCatalogMigrationContractIDs(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST")),
 		StripeSecret:          setting.StripeApiSecret,
 		StripePublishableKey:  setting.StripePublishableKey,
@@ -394,7 +395,8 @@ func previewCatalogMigrationContract(ctx context.Context, db *gorm.DB, inventory
 		return item
 	}
 	item.BindingFingerprint = fingerprintCatalogMigrationBinding(binding)
-	if binding.Livemode || binding.CancelAtPeriodEnd || strings.TrimSpace(binding.ProviderStatus) != "active" || binding.CurrentPeriodStart != contract.CurrentPeriodStart || binding.CurrentPeriodEnd != contract.CurrentPeriodEnd {
+	liveMode := strings.EqualFold(strings.TrimSpace(sandbox.DeploymentEnvironment), "production")
+	if binding.Livemode != liveMode || binding.CancelAtPeriodEnd || strings.TrimSpace(binding.ProviderStatus) != "active" || binding.CurrentPeriodStart != contract.CurrentPeriodStart || binding.CurrentPeriodEnd != contract.CurrentPeriodEnd {
 		item.Reason = CatalogMigrationReasonProviderFactsMismatch
 		return item
 	}
@@ -410,7 +412,7 @@ func previewCatalogMigrationContract(ctx context.Context, db *gorm.DB, inventory
 		item.Reason = CatalogMigrationReasonProviderInventoryUnavailable
 		return item
 	}
-	if !catalogMigrationHasTestStripeCredentials(sandbox) {
+	if !catalogMigrationCredentialsMatchMode(sandbox) {
 		item.Reason = CatalogMigrationReasonSandboxGuardClosed
 		return item
 	}
@@ -718,6 +720,19 @@ func catalogMigrationHasTestStripeCredentials(config CatalogMigrationSandboxConf
 	secret := strings.TrimSpace(config.StripeSecret)
 	publishable := strings.TrimSpace(config.StripePublishableKey)
 	return (strings.HasPrefix(secret, "sk_test_") || strings.HasPrefix(secret, "rk_test_")) && strings.HasPrefix(publishable, "pk_test_")
+}
+
+func catalogMigrationHasLiveStripeCredentials(config CatalogMigrationSandboxConfig) bool {
+	secret := strings.TrimSpace(config.StripeSecret)
+	publishable := strings.TrimSpace(config.StripePublishableKey)
+	return (strings.HasPrefix(secret, "sk_live_") || strings.HasPrefix(secret, "rk_live_")) && strings.HasPrefix(publishable, "pk_live_")
+}
+
+func catalogMigrationCredentialsMatchMode(config CatalogMigrationSandboxConfig) bool {
+	if strings.EqualFold(strings.TrimSpace(config.DeploymentEnvironment), "production") {
+		return catalogMigrationHasLiveStripeCredentials(config)
+	}
+	return catalogMigrationHasTestStripeCredentials(config)
 }
 
 func isCatalogMigrationTerminalProviderStatus(status string) bool {

@@ -244,6 +244,15 @@ func TestCatalogMigrationSandboxGuards(t *testing.T) {
 	}
 }
 
+func TestCatalogMigrationProductionLiveGuards(t *testing.T) {
+	config := CatalogMigrationSandboxConfig{DeploymentEnvironment: "production", ServiceName: "newapi-console", FeatureEnabled: true, ProductionEnabled: true, AllowedContractIDs: []int64{17}, StripeSecret: "rk_live_catalog", StripePublishableKey: "pk_live_catalog"}
+	facts := CatalogMigrationStripeSandboxFacts{ContractID: 17, BindingLivemode: true, SubscriptionLivemode: true, CurrentPriceLivemode: true, TargetPriceLivemode: true, BindingSubscriptionID: "sub_current", SubscriptionID: "sub_current", BindingCustomerID: "cus_current", SubscriptionCustomerID: "cus_current", BindingCurrentPriceID: "price_old", SubscriptionPriceID: "price_old", ExpectedTargetPriceID: "price_new", TargetPriceID: "price_new"}
+	require.NoError(t, ValidateCatalogMigrationCommonSandbox(config, 17))
+	require.NoError(t, ValidateCatalogMigrationStripeSandbox(config, facts))
+	config.ProductionEnabled = false
+	require.Error(t, ValidateCatalogMigrationCommonSandbox(config, 17))
+}
+
 func recurringSnapshotFixture() (*model.SubscriptionPlan, *stripe.Price) {
 	plan := &model.SubscriptionPlan{
 		Id:                      5,

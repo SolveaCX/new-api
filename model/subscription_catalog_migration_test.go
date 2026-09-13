@@ -84,7 +84,7 @@ func TestSubscriptionCatalogMigrationIsRegisteredInStartupMigration(t *testing.T
 	require.True(t, DB.Migrator().HasColumn(&SubscriptionProviderBinding{}, "current_plan_snapshot"))
 }
 
-func TestSubscriptionCatalogMigrationBatchRejectsLivemode(t *testing.T) {
+func TestSubscriptionCatalogMigrationBatchRejectsInconsistentModeFacts(t *testing.T) {
 	setupSubscriptionRecurringTestDB(t)
 	migrateSubscriptionCatalogMigrationTestDB(t)
 
@@ -103,6 +103,17 @@ func TestSubscriptionCatalogMigrationBatchRejectsLivemode(t *testing.T) {
 	}
 
 	require.Error(t, DB.Create(batch).Error)
+}
+
+func TestSubscriptionCatalogMigrationBatchAcceptsConsistentProductionLivemode(t *testing.T) {
+	setupSubscriptionRecurringTestDB(t)
+	migrateSubscriptionCatalogMigrationTestDB(t)
+	batch := &SubscriptionCatalogMigrationBatch{Id: "batch-live-ok", RequestId: "operator-request-live-ok", CohortDigest: strings.Repeat("a", 64), Status: SubscriptionCatalogMigrationBatchStatusApplying, ManifestSnapshot: `{}`, RequestedBy: 1, DeploymentEnvironment: "production", ServiceName: "newapi-console", SandboxOnly: false, Livemode: true}
+	require.NoError(t, DB.Create(batch).Error)
+	var loaded SubscriptionCatalogMigrationBatch
+	require.NoError(t, DB.First(&loaded, "id = ?", batch.Id).Error)
+	require.True(t, loaded.Livemode)
+	require.False(t, loaded.SandboxOnly)
 }
 
 func TestSubscriptionChangeIntentCatalogMigrationKindSurvivesNormalization(t *testing.T) {

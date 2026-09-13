@@ -374,7 +374,8 @@ func loadReachedWalletCatalogRenewalTx(tx *gorm.DB, contract *model.UserSubscrip
 	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
 		return nil, err
 	}
-	if !batch.SandboxOnly || batch.Livemode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
+	liveMode := strings.EqualFold(strings.TrimSpace(sandbox.DeploymentEnvironment), "production")
+	if batch.SandboxOnly == liveMode || batch.Livemode != liveMode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
 		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) {
 		return nil, errors.New("wallet catalog migration sandbox facts drifted")
 	}
