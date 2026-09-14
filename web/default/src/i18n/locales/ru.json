@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "Enter": "Введите",
     "Country Registration": "Регистрация по странам",
     "Country registration rules": "Правила регистрации по странам",
     "Control which countries can register and which new accounts should be disabled immediately.": "Укажите страны, которым разрешена регистрация, и новые аккаунты для немедленного отключения.",
