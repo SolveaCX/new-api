@@ -1,5 +1,7 @@
 "use client";
 
+import { PhoneBindingPrompt } from "@/components/phone-binding-prompt";
+import type { PhoneBindingUser } from "@/lib/phone-binding";
 import Image from "next/image";
 import Link from "next/link";
 import { Check, ChevronDown, Globe2, Menu, X } from "lucide-react";
@@ -539,6 +541,7 @@ export function SiteHeader(props: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
+  const [phoneBindingUser, setPhoneBindingUser] = useState<PhoneBindingUser | null>(null);
   const [promoIndex, setPromoIndex] = useState(0);
   const [promoHovering, setPromoHovering] = useState(false);
   const [promoFocused, setPromoFocused] = useState(false);
@@ -667,6 +670,7 @@ export function SiteHeader(props: Props) {
         if (response.status === 401 || response.status === 403) {
           clearConsoleSessionHint();
           setConsoleSessionActive(false);
+          setPhoneBindingUser(null);
           return;
         }
         if (!response.ok) return;
@@ -679,6 +683,7 @@ export function SiteHeader(props: Props) {
           clearConsoleSessionHint();
         }
         setConsoleSessionActive(verified);
+        setPhoneBindingUser(verified ? payload.data ?? null : null);
       } catch {
         /* Keep the current verified state when a transient network failure prevents refresh. */
       }
@@ -1106,6 +1111,7 @@ export function SiteHeader(props: Props) {
           )}
         </div>
       </div>
+      <PhoneBindingPrompt locale={props.locale} user={phoneBindingUser} />
     </header>
   );
 }
