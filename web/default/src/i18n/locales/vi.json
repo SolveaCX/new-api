@@ -6929,14 +6929,6 @@
     "Logo is mapped automatically from the model name.": "Logo được tự động ánh xạ theo tên mô hình.",
     "Please choose a model for each slot": "Vui lòng chọn một mô hình cho mỗi vị trí",
     "Description and offer are required": "Mô tả và nội dung ưu đãi là bắt buộc",
-    "Each slot must use a different model": "Mỗi vị trí phải sử dụng một mô hình khác nhau",
-    "Link your phone number": "Liên kết số điện thoại",
-    "Add a phone number to help keep your account secure.": "Thêm số điện thoại để bảo vệ tài khoản của bạn.",
-    "Country calling code": "Mã gọi quốc tế",
-    "Phone number": "Số điện thoại",
-    "Enter your phone number": "Nhập số điện thoại",
-    "Link phone number": "Liên kết số điện thoại",
-    "Maybe later": "Để sau",
-    "Phone verification will be available soon.": "Tính năng xác minh điện thoại sẽ sớm ra mắt."
+    "Each slot must use a different model": "Mỗi vị trí phải sử dụng một mô hình khác nhau"
   }
 }
