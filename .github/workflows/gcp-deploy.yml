@@ -224,6 +224,12 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
+          if [[ -z "${SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST:-}" ]]; then
+            # An empty allowlist is a deliberate value: --update-env-vars is
+            # merge-only, so it must be written explicitly to clear any allowlist
+            # set by hand on the running service.
+            env_vars+=("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST=")
+          fi
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
@@ -414,6 +420,12 @@ jobs:
               env_vars+=("${name}=${value}")
             fi
           done
+          if [[ -z "${SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST:-}" ]]; then
+            # An empty allowlist is a deliberate value: --update-env-vars is
+            # merge-only, so it must be written explicitly to clear any allowlist
+            # set by hand on the running service.
+            env_vars+=("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST=")
+          fi
           env_args=()
           if (( ${#env_vars[@]} > 0 )); then
             IFS=,
