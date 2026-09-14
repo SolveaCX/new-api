@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "Enter": "入力",
     "Country Registration": "国別登録",
     "Country registration rules": "国別登録ルール",
     "Control which countries can register and which new accounts should be disabled immediately.": "登録を許可する国と、作成直後に無効化する新規アカウントを管理します。",
