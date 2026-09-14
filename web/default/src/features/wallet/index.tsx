@@ -496,7 +496,7 @@ export function Wallet(props: WalletProps) {
   }, [props.cardJustBound, t, fetchUser])
 
   useEffect(() => {
-    if (!topupInfo) return
+    if (!showSubscriptionPlans || !topupInfo) return
 
     const url = new URL(window.location.href)
     const transactionId = (
@@ -711,6 +711,7 @@ export function Wallet(props: WalletProps) {
     pollPaddleTopUpStatus,
     props.initialPaddleOrderId,
     props.initialPaddleTransactionId,
+    showSubscriptionPlans,
     t,
     topupInfo,
   ])
@@ -936,24 +937,26 @@ export function Wallet(props: WalletProps) {
             ) : null}
 
             <div className='flex flex-col gap-4'>
-              <TitledCard
-                className='border-border/80 shadow-sm'
-                title={t('Top-ups')}
-                description={t(
-                  'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
-                )}
-                icon={<Wallet2 className='h-4 w-4' />}
-                iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
-                action={
-                  <Button
-                    className='bg-[#0b0b0d] text-white hover:bg-[#26262a] dark:bg-[#0b0b0d] dark:hover:bg-[#26262a]'
-                    onClick={() => setTopupDialogOpen(true)}
-                  >
-                    {t('Top up')}
-                  </Button>
-                }
-                contentClassName='hidden'
-              />
+              {showSubscriptionPlans ? (
+                <TitledCard
+                  className='border-border/80 shadow-sm'
+                  title={t('Top-ups')}
+                  description={t(
+                    'Plan usage is used first. Wallet balance is used automatically after the plan runs out.'
+                  )}
+                  icon={<Wallet2 className='h-4 w-4' />}
+                  iconClassName='bg-[#f0ebfa] text-[#4c1d95] dark:bg-[#5b21b6]/25 dark:text-[#c4b5fd]'
+                  action={
+                    <Button
+                      className='bg-[#0b0b0d] text-white hover:bg-[#26262a] dark:bg-[#0b0b0d] dark:hover:bg-[#26262a]'
+                      onClick={() => setTopupDialogOpen(true)}
+                    >
+                      {t('Top up')}
+                    </Button>
+                  }
+                  contentClassName='hidden'
+                />
+              ) : null}
 
               {showSubscriptionPlans ? (
                 <div className='min-w-0'>
@@ -982,7 +985,9 @@ export function Wallet(props: WalletProps) {
               <TitledCard
                 className='border-border/80 shadow-sm'
                 title={t('Recharge History')}
-                description={t('View your top-up records and payment receipts.')}
+                description={t(
+                  'View your top-up records and payment receipts.'
+                )}
                 contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
               >
                 <div
@@ -993,7 +998,11 @@ export function Wallet(props: WalletProps) {
                     <BillingHistoryPanel
                       scrollAreaClassName='max-h-none pr-0 sm:pr-0'
                       onAvailabilityChange={handleRechargeHistoryAvailability}
-                      onResumeStripeCheckout={handleResumeStripeCheckout}
+                      onResumeStripeCheckout={
+                        showSubscriptionPlans
+                          ? handleResumeStripeCheckout
+                          : undefined
+                      }
                       onRefundSuccess={fetchUser}
                     />
                   ) : null}
@@ -1004,39 +1013,43 @@ export function Wallet(props: WalletProps) {
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <Dialog
-        open={topupDialogOpen && !checkoutDialog}
-        onOpenChange={setTopupDialogOpen}
-      >
-        <DialogContent className='sm:max-w-lg' showCloseButton>
-          <DialogHeader>
-            <DialogTitle>{t('Add to your balance')}</DialogTitle>
-          </DialogHeader>
-          <RechargeFormCard
-            topupInfo={topupInfo}
-            presetAmounts={presetAmounts}
-            selectedPreset={selectedPreset}
-            onSelectPreset={handleSelectPreset}
-            onStripeTopUp={handleStripeTopUp}
-            paymentLoadingAmount={processing ? paymentLoadingAmount : null}
-            loading={topupLoading}
-            checkoutCurrency={effectiveCheckoutCurrency}
-            onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
-            showCurrencySelector={
-              shouldShowCurrencySelector(topupInfo?.client_region) ||
-              normalizeStripeCheckoutCurrency(
-                props.initialCheckoutSearch?.currency
-              ) != null
-            }
-            recallOffers={recallOffers}
-          />
-        </DialogContent>
-      </Dialog>
+      {showSubscriptionPlans ? (
+        <>
+          <Dialog
+            open={topupDialogOpen && !checkoutDialog}
+            onOpenChange={setTopupDialogOpen}
+          >
+            <DialogContent className='sm:max-w-lg' showCloseButton>
+              <DialogHeader>
+                <DialogTitle>{t('Add to your balance')}</DialogTitle>
+              </DialogHeader>
+              <RechargeFormCard
+                topupInfo={topupInfo}
+                presetAmounts={presetAmounts}
+                selectedPreset={selectedPreset}
+                onSelectPreset={handleSelectPreset}
+                onStripeTopUp={handleStripeTopUp}
+                paymentLoadingAmount={processing ? paymentLoadingAmount : null}
+                loading={topupLoading}
+                checkoutCurrency={effectiveCheckoutCurrency}
+                onCheckoutCurrencyChange={handleCheckoutCurrencyChange}
+                showCurrencySelector={
+                  shouldShowCurrencySelector(topupInfo?.client_region) ||
+                  normalizeStripeCheckoutCurrency(
+                    props.initialCheckoutSearch?.currency
+                  ) != null
+                }
+                recallOffers={recallOffers}
+              />
+            </DialogContent>
+          </Dialog>
 
-      <StripeCheckoutDialog
-        session={checkoutDialog}
-        onOpenChange={handleCheckoutDialogOpenChange}
-      />
+          <StripeCheckoutDialog
+            session={showSubscriptionPlans ? checkoutDialog : null}
+            onOpenChange={handleCheckoutDialogOpenChange}
+          />
+        </>
+      ) : null}
 
       <Dialog open={cardBoundDialogOpen} onOpenChange={setCardBoundDialogOpen}>
         <DialogContent className='sm:max-w-md' showCloseButton>
