@@ -161,7 +161,7 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 				return PermanentPaidInvoiceError(err)
 			}
 		}
-		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot, true); err != nil {
+		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		existingPrepare, found, err := existingStripeSubscriptionDiscountInvoicePrepareTx(tx, facts)
@@ -172,7 +172,7 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 			prepare = existingPrepare
 			return nil
 		}
-		fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot)
+		fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot, plan.Id)
 		if err != nil {
 			return PermanentPaidInvoiceError(err)
 		}

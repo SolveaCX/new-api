@@ -1018,7 +1018,7 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 				return PermanentPaidInvoiceError(err)
 			}
 		}
-		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot, false); err != nil {
+		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
 		var entitlement model.UserSubscription
@@ -1921,7 +1921,7 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		// order's frozen product. Persist the target limits in the new entitlement.
 		planSnapshot = recurringInvoicePlanSnapshot{}
 	}
-	if err := validateRenewalInvoiceFactsTx(tx, commonFacts, binding, contract, plan, user, planSnapshot, false); err != nil {
+	if err := validateRenewalInvoiceFactsTx(tx, commonFacts, binding, contract, plan, user, planSnapshot); err != nil {
 		return PermanentPaidInvoiceError(err)
 	}
 	if reservation != nil {
@@ -1947,12 +1947,12 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		}
 		return nil
 	}
-	released, err := commitStripeSubscriptionDiscountInvoiceForPaidRenewalTx(tx, facts.InvoiceID)
-	if err != nil {
+	// A reservation that was already released (invoice voided then paid late,
+	// or a permanent item error before finalization) means the customer paid
+	// the undiscounted price. The grant still proceeds; only the ledger commit
+	// is skipped.
+	if _, err := commitStripeSubscriptionDiscountInvoiceForPaidRenewalTx(tx, facts.InvoiceID); err != nil {
 		return err
-	}
-	if released {
-		return PermanentPaidInvoiceError(errors.New("subscription discount invoice reservation was already released"))
 	}
 	grantInput := model.GrantEntitlementInput{
 		ContractId:           contract.Id,
@@ -2217,10 +2217,12 @@ func lockRenewalBindingFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts) (*mo
 	return &binding, &contract, &plan, &user, nil
 }
 
-func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot, amountIsSubtotalOption ...bool) error {
-	// Keep the legacy test/helper call shape source-compatible while allowing
-	// discount-invoice callers to identify subtotal validation explicitly.
-	amountIsSubtotal := len(amountIsSubtotalOption) > 0 && amountIsSubtotalOption[0]
+// validateRenewalInvoiceFactsTx proves that a Stripe renewal invoice belongs
+// to this binding/contract and bills the expected catalog price. It deliberately
+// never compares Stripe amounts with local prices: tax, customer credit
+// balance, coupons and rounding legitimately change what Stripe collects, and
+// an amount check would turn genuinely paid invoices into permanent failures.
+func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract, plan *model.SubscriptionPlan, user *model.User, planSnapshot recurringInvoicePlanSnapshot) error {
 	if binding.ContractId <= 0 || contract.Id != binding.ContractId || contract.UserId != binding.UserId {
 		return errors.New("local contract ownership mismatch")
 	}
@@ -2278,19 +2280,10 @@ func validateRenewalInvoiceFactsTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, 
 	if facts.Quantity != 1 {
 		return fmt.Errorf("Stripe subscription quantity mismatch: expected 1 got %d", facts.Quantity)
 	}
-	expectedPayment, discounted, err := stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx, facts, binding, contract, planSnapshot, expectedBaseMinor)
-	if err != nil {
+	// A reserved invitation discount must still describe this exact invoice
+	// and renewal ownership; the resulting payment amount is Stripe's to decide.
+	if _, _, err := stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx, facts, binding, contract, planSnapshot, expectedBaseMinor); err != nil {
 		return err
-	}
-	if discounted {
-		if amountIsSubtotal && facts.Amount != expectedBaseMinor {
-			return fmt.Errorf("Stripe invoice subtotal mismatch: expected %d got %d", expectedBaseMinor, facts.Amount)
-		}
-		if !amountIsSubtotal && facts.Amount != expectedPayment {
-			return fmt.Errorf("Stripe invoice discounted amount mismatch: expected %d got %d", expectedPayment, facts.Amount)
-		}
-	} else if planSnapshot.Typed != nil && facts.Amount != expectedBaseMinor {
-		return fmt.Errorf("Stripe invoice amount mismatch: expected %d got %d", expectedBaseMinor, facts.Amount)
 	}
 	return nil
 }
@@ -2320,13 +2313,13 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 		snapshot.ExpectedFinalPaymentMinor < 0 || snapshot.IncrementalItemMinor != reserve.AppliedAmountMinor {
 		return 0, true, errors.New("subscription discount invoice snapshot mismatch")
 	}
-	if snapshot.Version == 1 && planSnapshot.Typed == nil {
+	if snapshot.Version == 1 {
+		// Reservations prepared before typed renewal ownership existed keep
+		// their original (invoice-identity only) contract. There is no drain or
+		// migration for in-flight v1 reservations, so they must stay honored.
 		return snapshot.ExpectedFinalPaymentMinor, true, nil
 	}
-	if snapshot.Version != 2 {
-		return 0, true, errors.New("subscription discount invoice snapshot lacks typed renewal ownership")
-	}
-	fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot)
+	fingerprint, err := recurringInvoiceSnapshotFingerprint(planSnapshot, snapshotPlanID(planSnapshot, binding.PlanId))
 	if err != nil {
 		return 0, true, err
 	}
@@ -2337,7 +2330,7 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 		snapshot.BindingID != binding.Id || snapshot.ContractID != contract.Id || snapshot.UserID != binding.UserId ||
 		snapshot.PlanID != snapshotPlanID(planSnapshot, binding.PlanId) ||
 		strings.ToUpper(strings.TrimSpace(snapshot.Currency)) != strings.ToUpper(strings.TrimSpace(facts.Currency)) ||
-		snapshot.BasePriceMinor != baseMinor || snapshot.OriginalSubtotalMinor != baseMinor ||
+		snapshot.BasePriceMinor != baseMinor ||
 		snapshot.Quantity != facts.Quantity || snapshot.PeriodStart != facts.PeriodStart || snapshot.PeriodEnd != facts.PeriodEnd ||
 		snapshot.PlanSnapshotFingerprint != fingerprint {
 		return 0, true, errors.New("subscription discount invoice snapshot mismatch")
@@ -2345,7 +2338,11 @@ func stripeSubscriptionDiscountInvoiceExpectedPaymentMinorTx(tx *gorm.DB, facts 
 	return snapshot.ExpectedFinalPaymentMinor, true, nil
 }
 
-func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot) (string, error) {
+// recurringInvoiceSnapshotFingerprint identifies the plan facts a discount
+// reservation was prepared against. Renewals without any frozen snapshot (for
+// example a reached scheduled downgrade, which bills the target catalog plan)
+// are identified by the plan id alone.
+func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot, planID int) (string, error) {
 	if snapshot.Typed != nil {
 		return RecurringPlanSnapshotV1Fingerprint(*snapshot.Typed)
 	}
@@ -2356,7 +2353,13 @@ func recurringInvoiceSnapshotFingerprint(snapshot recurringInvoicePlanSnapshot) 
 		}
 		return fingerprintJSON(string(payload)), nil
 	}
-	return "", errors.New("renewal plan snapshot is missing")
+	if snapshot.GrantLimits != nil {
+		return fingerprintJSON(fmt.Sprintf("entitlement-limits:%d:%d", snapshot.GrantLimits.Id, snapshot.GrantLimits.PlanId)), nil
+	}
+	if planID <= 0 {
+		return "", errors.New("renewal plan snapshot is missing")
+	}
+	return fingerprintJSON(fmt.Sprintf("catalog-plan:%d", planID)), nil
 }
 
 func snapshotPlanID(snapshot recurringInvoicePlanSnapshot, fallback int) int {

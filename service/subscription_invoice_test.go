@@ -935,11 +935,13 @@ func TestReconcilePaidInvoiceCatalogMigrationAppliesTargetSnapshotAndNextCycleUs
 	require.Equal(t, legacyOrderBefore, legacyOrderAfter)
 }
 
-func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongAmountWithoutSwitch(t *testing.T) {
+func TestReconcilePaidInvoiceCatalogMigrationAcceptsStripeAdjustedAmountAndSwitches(t *testing.T) {
+	// Tax, credit balance and coupons change what Stripe collects. The cutover
+	// contract is the target price id and currency, never the amount.
 	setupSubscriptionInvoiceServiceTestDB(t)
-	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8994, 8995, 8996, "sub_catalog_wrong_amount")
+	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8994, 8995, 8996, "sub_catalog_adjusted_amount")
 	enableStripeCatalogInvoiceSandbox(t, contract.Id)
-	invoice := stripeInvoiceFixture("in_catalog_wrong_amount", binding.ProviderSubscriptionId)
+	invoice := stripeInvoiceFixture("in_catalog_adjusted_amount", binding.ProviderSubscriptionId)
 	subscription := stripeSubscriptionFixture(binding.ProviderSubscriptionId, map[string]string{})
 	setStripeInvoiceFixtureAmountAndPrice(invoice, subscription, target.BasePriceMinor-1, stripe.CurrencyUSD, target.StripePriceID)
 	invoice.Lines.Data[0].Period = &stripe.Period{Start: oldEntitlement.EndTime, End: oldEntitlement.EndTime + 2592000}
@@ -947,16 +949,16 @@ func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongAmountWithoutSwitch(t *
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
-	require.Error(t, err)
-	require.True(t, IsPermanentPaidInvoiceError(err))
-	var unchanged model.SubscriptionProviderBinding
-	require.NoError(t, model.DB.First(&unchanged, binding.Id).Error)
-	require.Equal(t, binding.PlanId, unchanged.PlanId)
-	require.Equal(t, "price_invoice_plan", unchanged.ProviderPriceId)
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	var switched model.SubscriptionProviderBinding
+	require.NoError(t, model.DB.First(&switched, binding.Id).Error)
+	require.Equal(t, target.PlanID, switched.PlanId)
+	require.Equal(t, target.StripePriceID, switched.ProviderPriceId)
 	var grants int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grants).Error)
-	require.Equal(t, int64(1), grants)
+	require.Equal(t, int64(2), grants)
 }
 
 func TestReconcilePaidInvoiceCatalogMigrationRejectsWrongCurrencyOrPriceWithoutSwitch(t *testing.T) {
@@ -1006,7 +1008,6 @@ func TestReconcilePaidInvoiceCatalogMigrationSecondCycleRejectsBillingDrift(t *t
 		currency stripe.Currency
 		priceID  string
 	}{
-		{name: "amount", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor - 1 }, currency: stripe.CurrencyUSD, priceID: "price_catalog_target"},
 		{name: "currency", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor }, currency: stripe.CurrencyEUR, priceID: "price_catalog_target"},
 		{name: "price", amount: func(snapshot RecurringPlanSnapshotV1) int64 { return snapshot.BasePriceMinor }, currency: stripe.CurrencyUSD, priceID: "price_catalog_other"},
 	}
@@ -1152,7 +1153,11 @@ func TestCatalogInvoiceReconciliationClosedSandboxMutatesNothing(t *testing.T) {
 	}
 }
 
-func TestReconcilePaidInvoiceCatalogMigrationRejectsLegacyV1DiscountSnapshot(t *testing.T) {
+func TestReconcilePaidInvoiceCatalogMigrationAcceptsLegacyV1DiscountSnapshotAndCommits(t *testing.T) {
+	// A discount reserved before this release (snapshot version 1) settles on
+	// a binding that has since gained a typed plan snapshot. The paid invoice
+	// must still grant and commit the reservation; there is no migration or
+	// drain for in-flight v1 reservations.
 	setupSubscriptionInvoiceServiceTestDB(t)
 	contract, binding, oldEntitlement, target := seedStripeCatalogInvoiceRenewal(t, 8997, 8998, 8999, "sub_catalog_v1_discount")
 	enableStripeCatalogInvoiceSandbox(t, contract.Id)
@@ -1174,12 +1179,15 @@ func TestReconcilePaidInvoiceCatalogMigrationRejectsLegacyV1DiscountSnapshot(t *
 	restore := replaceStripeInvoiceReconcilers(t, invoice, subscription)
 	defer restore()
 
-	_, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
-	require.ErrorContains(t, err, "lacks typed renewal ownership")
-	require.True(t, IsPermanentPaidInvoiceError(err))
+	result, err := ReconcilePaidInvoice(context.Background(), invoice.ID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
 	var grants int64
 	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("contract_id = ?", contract.Id).Count(&grants).Error)
-	require.Equal(t, int64(1), grants)
+	require.Equal(t, int64(2), grants)
+	var commitCount int64
+	require.NoError(t, model.DB.Model(&model.SubscriptionDiscountEntry{}).Where("terminal_reservation_key = ? AND entry_type = ?", reservationKey, model.SubscriptionDiscountEntryTypeCommit).Count(&commitCount).Error)
+	require.Equal(t, int64(1), commitCount)
 }
 
 func TestLockRenewalBindingFactsTxLocksBindingBeforeContract(t *testing.T) {
