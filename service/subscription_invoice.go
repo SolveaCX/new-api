@@ -78,6 +78,10 @@ type PaidInvoiceReconcileResult struct {
 	Entitlement           *model.UserSubscription
 	Applied               bool
 	PaymentAnalyticsEvent *model.PaymentAnalyticsEvent
+	// CatalogMigrationBatchID is set when this invoice applied a catalog
+	// cutover, so the batch summary can be refreshed after commit without an
+	// extra unindexed lookup on every paid invoice.
+	CatalogMigrationBatchID string
 }
 
 type paidInvoicePermanentError struct {
@@ -768,7 +772,6 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 		}
 	}
 	result := &PaidInvoiceReconcileResult{}
-	catalogBatchID := ""
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var existingBinding model.SubscriptionProviderBinding
 		if err := tx.Where("provider = ? AND provider_subscription_id = ?", model.PaymentProviderStripe, facts.SubscriptionID).First(&existingBinding).Error; err == nil {
@@ -913,14 +916,8 @@ func reconcilePaidInvoice(ctx context.Context, invoiceID string, reservation *mo
 	if strings.TrimSpace(facts.TradeNo) != "" {
 		deliverInviteSubscriptionRewardAfterOrderCompleted(ctx, facts.TradeNo)
 	}
-	if catalogBatchID == "" && result.Binding != nil {
-		var appliedIntent model.SubscriptionChangeIntent
-		if findErr := model.DB.Where("contract_id = ? AND provider_invoice_id = ? AND kind = ? AND status = ?", result.Binding.ContractId, facts.InvoiceID, model.SubscriptionChangeIntentKindCatalogMigration, model.SubscriptionChangeIntentStatusApplied).First(&appliedIntent).Error; findErr == nil && appliedIntent.CatalogMigrationBatchId != nil {
-			catalogBatchID = strings.TrimSpace(*appliedIntent.CatalogMigrationBatchId)
-		}
-	}
-	if catalogBatchID != "" {
-		if refreshErr := (CatalogMigrationService{DB: model.DB}).refreshBatchSummary(ctx, catalogBatchID); refreshErr != nil {
+	if result.CatalogMigrationBatchID != "" {
+		if refreshErr := (CatalogMigrationService{DB: model.DB}).refreshBatchSummary(ctx, result.CatalogMigrationBatchID); refreshErr != nil {
 			common.SysLog("failed to refresh catalog migration batch after paid invoice: " + refreshErr.Error())
 		}
 	}
@@ -2026,6 +2023,7 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	if catalog != nil {
 		contractUpdates["latest_change_intent_id"] = catalog.Intent.Id
+		result.CatalogMigrationBatchID = strings.TrimSpace(*catalog.Intent.CatalogMigrationBatchId)
 		intentUpdate := tx.Model(&model.SubscriptionChangeIntent{}).
 			Where("id = ? AND contract_id = ? AND user_id = ? AND provider_binding_id = ? AND change_version = ? AND status = ?",
 				catalog.Intent.Id, contract.Id, contract.UserId, binding.Id, catalog.Intent.ChangeVersion, catalog.Intent.Status).

@@ -115,7 +115,7 @@ type SubscriptionChangeIntent struct {
 	ProviderScheduleId          string  `json:"provider_schedule_id" gorm:"type:varchar(128);default:''"`
 	ProviderIdempotencyKey      string  `json:"provider_idempotency_key" gorm:"type:varchar(255);default:''"`
 	CatalogMigrationBatchId     *string `json:"catalog_migration_batch_id,omitempty" gorm:"type:varchar(64);uniqueIndex:ux_catalog_migration_batch_contract,priority:1"`
-	TargetPlanSnapshot          string  `json:"target_plan_snapshot" gorm:"type:longtext"`
+	TargetPlanSnapshot          string  `json:"target_plan_snapshot"`
 	ProviderScheduleFingerprint string  `json:"provider_schedule_fingerprint" gorm:"type:char(64);default:''"`
 	PreviousChangeIntentId      int64   `json:"previous_change_intent_id" gorm:"type:bigint;default:0;index"`
 

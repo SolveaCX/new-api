@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -931,7 +930,7 @@ func (s CatalogMigrationService) refreshBatchSummary(ctx context.Context, batchI
 	if err != nil {
 		return err
 	}
-	summaryJSON, err := json.Marshal(result.Summary)
+	summaryJSON, err := common.Marshal(result.Summary)
 	if err != nil {
 		return err
 	}
@@ -964,7 +963,7 @@ func encodeCatalogMigrationStoredManifest(preview CatalogMigrationPreviewResult)
 		}
 		stored.Snapshots = append(stored.Snapshots, catalogMigrationStoredContractSnapshot{ContractID: item.ContractID, CurrentPlanSnapshot: item.CurrentPlanSnapshot, TargetPlanSnapshot: item.TargetPlanSnapshot})
 	}
-	payload, err := json.Marshal(stored)
+	payload, err := common.Marshal(stored)
 	if err != nil {
 		return "", fmt.Errorf("encode catalog migration manifest: %w", err)
 	}
@@ -973,7 +972,7 @@ func encodeCatalogMigrationStoredManifest(preview CatalogMigrationPreviewResult)
 
 func decodeCatalogMigrationStoredManifest(raw string) (CatalogMigrationPreviewResult, error) {
 	var stored catalogMigrationStoredManifest
-	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+	if err := common.Unmarshal([]byte(raw), &stored); err != nil {
 		return CatalogMigrationPreviewResult{}, fmt.Errorf("decode catalog migration manifest: %w", err)
 	}
 	if stored.Version != 1 || strings.TrimSpace(stored.Preview.RequestID) == "" {

@@ -1,11 +1,13 @@
 package model
 
 import (
-	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/schema"
 )
 
 type legacySubscriptionChangeIntentBeforeCatalogMigration struct {
@@ -193,7 +195,7 @@ func TestSubscriptionProviderBindingCurrentSnapshotRoundTripsWithoutJSONExposure
 	require.NoError(t, DB.First(&stored, "id = ?", binding.Id).Error)
 	require.Equal(t, snapshot, stored.CurrentPlanSnapshot)
 
-	payload, err := json.Marshal(stored)
+	payload, err := common.Marshal(stored)
 	require.NoError(t, err)
 	require.NotContains(t, string(payload), "current_plan_snapshot")
 	require.NotContains(t, string(payload), "base_price_minor")
@@ -328,4 +330,26 @@ func TestCatalogMigrationAutoMigratePreservesLegacyRowsWithBlankNewFields(t *tes
 	require.NoError(t, DB.First(&binding, "id = ?", 3064).Error)
 	require.Equal(t, 1, binding.PlanId)
 	require.Empty(t, binding.CurrentPlanSnapshot)
+}
+
+func TestSubscriptionCatalogMigrationSnapshotColumnsUseDialectDefaultTextType(t *testing.T) {
+	// A hard-coded MySQL "longtext" type is emitted verbatim by GORM on
+	// PostgreSQL and fails AutoMigrate there (CLAUDE.md Rule 2). Leaving the
+	// type to the dialector yields longtext on MySQL and text on PostgreSQL.
+	for _, tc := range []struct {
+		model any
+		field string
+	}{
+		{model: &SubscriptionCatalogMigrationBatch{}, field: "ManifestSnapshot"},
+		{model: &SubscriptionCatalogMigrationBatch{}, field: "SummarySnapshot"},
+		{model: &SubscriptionChangeIntent{}, field: "TargetPlanSnapshot"},
+		{model: &SubscriptionProviderBinding{}, field: "CurrentPlanSnapshot"},
+	} {
+		parsed, err := schema.Parse(tc.model, &sync.Map{}, schema.NamingStrategy{})
+		require.NoError(t, err)
+		field := parsed.LookUpField(tc.field)
+		require.NotNil(t, field, tc.field)
+		require.Empty(t, field.TagSettings["TYPE"], "%s must not pin a dialect-specific column type", tc.field)
+		require.Empty(t, field.Size, "%s must not carry a size that would truncate snapshots", tc.field)
+	}
 }

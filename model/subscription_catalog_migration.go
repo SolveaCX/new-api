@@ -26,11 +26,13 @@ var ErrSubscriptionCatalogMigrationBatchImmutable = errors.New("subscription cat
 type SubscriptionCatalogMigrationBatch struct {
 	Id string `json:"id" gorm:"type:varchar(64);primaryKey"`
 
-	RequestId        string `json:"request_id" gorm:"type:varchar(128);not null;uniqueIndex:ux_subscription_catalog_migration_request"`
-	CohortDigest     string `json:"cohort_digest" gorm:"type:char(64);not null;uniqueIndex:ux_subscription_catalog_migration_digest"`
-	Status           string `json:"status" gorm:"type:varchar(32);not null;default:'applying';index"`
-	ManifestSnapshot string `json:"-" gorm:"type:longtext;not null;<-:create"`
-	SummarySnapshot  string `json:"-" gorm:"type:longtext"`
+	RequestId    string `json:"request_id" gorm:"type:varchar(128);not null;uniqueIndex:ux_subscription_catalog_migration_request"`
+	CohortDigest string `json:"cohort_digest" gorm:"type:char(64);not null;uniqueIndex:ux_subscription_catalog_migration_digest"`
+	Status       string `json:"status" gorm:"type:varchar(32);not null;default:'applying';index"`
+	// Snapshot columns leave the column type to the dialector (longtext on
+	// MySQL, text on PostgreSQL/SQLite) per CLAUDE.md Rule 2.
+	ManifestSnapshot string `json:"-" gorm:"not null;<-:create"`
+	SummarySnapshot  string `json:"-"`
 	RequestedBy      int    `json:"requested_by" gorm:"not null;index"`
 
 	// These immutable facts prove which deployment and Stripe mode prepared the

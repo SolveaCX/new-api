@@ -1,13 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -42,7 +39,7 @@ func EncodeRecurringPlanSnapshotV1(snapshot RecurringPlanSnapshotV1) (string, er
 	if err := ValidateRecurringPlanSnapshotV1(snapshot); err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(snapshot)
+	payload, err := common.Marshal(snapshot)
 	if err != nil {
 		return "", err
 	}
@@ -53,14 +50,9 @@ func DecodeRecurringPlanSnapshotV1(raw string) (RecurringPlanSnapshotV1, error) 
 	if strings.TrimSpace(raw) == "" {
 		return RecurringPlanSnapshotV1{}, errors.New("recurring plan snapshot is missing")
 	}
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	decoder.DisallowUnknownFields()
 	var snapshot RecurringPlanSnapshotV1
-	if err := decoder.Decode(&snapshot); err != nil {
+	if err := common.DecodeJsonDisallowUnknownFields(strings.NewReader(raw), &snapshot); err != nil {
 		return RecurringPlanSnapshotV1{}, fmt.Errorf("decode recurring plan snapshot: %w", err)
-	}
-	if err := requireJSONEOF(decoder); err != nil {
-		return RecurringPlanSnapshotV1{}, err
 	}
 	snapshot = normalizeRecurringPlanSnapshotV1(snapshot)
 	if err := ValidateRecurringPlanSnapshotV1(snapshot); err != nil {
@@ -227,7 +219,7 @@ func FreezeLegacyRecurringPlanSnapshotV1(order *model.SubscriptionOrder, binding
 		return RecurringPlanSnapshotV1{}, err
 	}
 	var legacy purchasePlanSnapshot
-	if strings.TrimSpace(order.PlanSnapshot) == "" || json.Unmarshal([]byte(order.PlanSnapshot), &legacy) != nil {
+	if strings.TrimSpace(order.PlanSnapshot) == "" || common.Unmarshal([]byte(order.PlanSnapshot), &legacy) != nil {
 		return RecurringPlanSnapshotV1{}, errors.New("legacy recurring order plan snapshot is invalid")
 	}
 	legacyCurrency := strings.ToUpper(strings.TrimSpace(legacy.Currency))
@@ -386,16 +378,6 @@ func validateRecurringPlanSnapshotReset(snapshot RecurringPlanSnapshotV1) error 
 		return errors.New("recurring plan snapshot reset period is invalid")
 	}
 	return nil
-}
-
-func requireJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err == io.EOF {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("decode recurring plan snapshot: %w", err)
-	}
-	return errors.New("decode recurring plan snapshot: trailing JSON value")
 }
 
 func containsContractID(allowed []int64, contractID int64) bool {

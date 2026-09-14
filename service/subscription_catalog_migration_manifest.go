@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -256,17 +255,12 @@ func catalogMigrationRuntimeSandboxConfig() CatalogMigrationSandboxConfig {
 	return CatalogMigrationSandboxConfig{
 		DeploymentEnvironment: strings.TrimSpace(os.Getenv("FLATKEY_DEPLOYMENT_ENV")),
 		ServiceName:           strings.TrimSpace(os.Getenv("K_SERVICE")),
-		FeatureEnabled:        parseCatalogMigrationBool(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED")),
-		ProductionEnabled:     parseCatalogMigrationBool(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED")),
+		FeatureEnabled:        common.GetEnvOrDefaultBool("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", false),
+		ProductionEnabled:     common.GetEnvOrDefaultBool("SUBSCRIPTION_CATALOG_MIGRATION_PRODUCTION_ENABLED", false),
 		AllowedContractIDs:    parseCatalogMigrationContractIDs(os.Getenv("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST")),
 		StripeSecret:          setting.StripeApiSecret,
 		StripePublishableKey:  setting.StripePublishableKey,
 	}
-}
-
-func parseCatalogMigrationBool(raw string) bool {
-	value, err := strconv.ParseBool(strings.TrimSpace(raw))
-	return err == nil && value
 }
 
 func parseCatalogMigrationContractIDs(raw string) []int64 {
@@ -589,8 +583,8 @@ func canonicalCatalogMigrationMappings(input []CatalogMigrationMappingExpectatio
 		if result[i].TargetPlanID != result[j].TargetPlanID {
 			return result[i].TargetPlanID < result[j].TargetPlanID
 		}
-		left, _ := json.Marshal(result[i])
-		right, _ := json.Marshal(result[j])
+		left, _ := common.Marshal(result[i])
+		right, _ := common.Marshal(result[j])
 		return string(left) < string(right)
 	})
 	return result
@@ -629,7 +623,7 @@ func catalogMigrationPreviewDigest(result CatalogMigrationPreviewResult) (string
 	sort.Slice(result.Contracts, func(i, j int) bool {
 		return result.Contracts[i].ContractID < result.Contracts[j].ContractID
 	})
-	payload, err := json.Marshal(result)
+	payload, err := common.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("encode catalog migration manifest: %w", err)
 	}
@@ -696,7 +690,7 @@ func catalogMigrationPriceFingerprintFacts(price *stripe.Price) any {
 }
 
 func fingerprintJSON(value any) string {
-	payload, _ := json.Marshal(value)
+	payload, _ := common.Marshal(value)
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:])
 }
@@ -752,13 +746,4 @@ func catalogMigrationCredentialsMatchMode(config CatalogMigrationSandboxConfig) 
 		return catalogMigrationHasLiveStripeCredentials(config)
 	}
 	return catalogMigrationHasTestStripeCredentials(config)
-}
-
-func isCatalogMigrationTerminalProviderStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "canceled", "incomplete_expired", "unpaid":
-		return true
-	default:
-		return false
-	}
 }
