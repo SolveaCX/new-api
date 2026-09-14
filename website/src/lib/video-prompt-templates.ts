@@ -152,29 +152,45 @@ const VIDEO_PROFESSION_SETS: Record<string, ProfessionMediaSet> = {
     professionVideo(6, "video-profession-06-grok-imagine-video-1-5-comic-mv.mp4"),
   ),
   "veo-3-1-generate-preview": professionMediaSet(
-    professionVideo(1, "video-profession-01-live-veo-3-1-generate-preview.mp4"),
-    professionVideo(2, "video-profession-02-veo-3-1-generate-preview.mp4"),
-    professionVideo(3, "video-profession-03-veo-3-1-generate-preview-cg-reveal.mp4"),
-    professionVideo(4, "video-profession-04-veo-3-1-generate-preview-creature-vfx.mp4"),
-    professionVideo(5, "video-profession-05-veo-3-1-generate-preview-archive-revival.mp4"),
-    professionVideo(6, "video-profession-06-veo-3-1-generate-preview-stage-vfx.mp4"),
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-01/veo-3-1-generate-preview-b3da8f70fd98.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-02/veo-3-1-generate-preview-34ba1862dd26.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-03/veo-3-1-generate-preview-77e748354424.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-04/veo-3-1-generate-preview-3523625f8e5a.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-05/veo-3-1-generate-preview-fe98a7990108.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-06/veo-3-1-generate-preview-477ed4ce48ac.mp4",
   ),
   "veo-3-1-fast-generate-preview": professionMediaSet(
-    professionVideo(1, "video-profession-01-veo-3-1-fast-generate-preview.mp4"),
-    professionVideo(2, "video-profession-02-veo-3-1-fast-generate-preview.mp4"),
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-01/veo-3-1-fast-generate-preview-ba506fe9bf2a.mp4",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-02/veo-3-1-fast-generate-preview-39dac1a00974.mp4",
     professionVideo(3, "video-profession-03-veo-3-1-fast-generate-preview-anime-previz.mp4"),
-    professionVideo(4, "video-profession-04-veo-3-1-fast-generate-preview-anime-boss.mp4"),
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-04/veo-3-1-fast-generate-preview-d5bc2f073c7e.mp4",
     professionVideo(5, "video-profession-05-veo-3-1-fast-generate-preview-anime-physics.mp4"),
-    professionVideo(6, "video-profession-06-veo-3-1-fast-generate-preview-anime-beat.mp4"),
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-06/veo-3-1-fast-generate-preview-5b11fdcb3879.mp4",
   ),
 };
 
 /**
- * Same-source first-frame posters for the H3 Seedance review batch. A poster
+ * Same-source posters for reviewed video generations. A poster
  * is optional for older reviewed sets, but when one exists it must come from
  * the exact clip rather than from a recycled industry thumbnail.
  */
 const VIDEO_PROFESSION_POSTER_SETS: Record<string, ProfessionMediaSet> = {
+  "veo-3-1-fast-generate-preview": professionMediaSet(
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-01/veo-3-1-fast-generate-preview-ba506fe9bf2a.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-02/veo-3-1-fast-generate-preview-39dac1a00974.jpg",
+    "/assets/model-fallback-audit/video-posters/film-concept-production/veo-3-1-fast-generate-preview.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-04/veo-3-1-fast-generate-preview-d5bc2f073c7e.jpg",
+    "/assets/model-fallback-audit/video-posters/creator-explainer/veo-3-1-fast-generate-preview.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-06/veo-3-1-fast-generate-preview-5b11fdcb3879.jpg",
+  ),
+  "veo-3-1-generate-preview": professionMediaSet(
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-01/veo-3-1-generate-preview-b3da8f70fd98.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-02/veo-3-1-generate-preview-34ba1862dd26.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-03/veo-3-1-generate-preview-77e748354424.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-04/veo-3-1-generate-preview-3523625f8e5a.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-05/veo-3-1-generate-preview-fe98a7990108.jpg",
+    "/assets/model-regeneration/20260914/model-showcase/video-profession-06/veo-3-1-generate-preview-477ed4ce48ac.jpg",
+  ),
   "minimax-h3": professionMediaSet(
     professionPoster(1, "minimax-h3-seedance-2-0.jpg"),
     professionPoster(2, "minimax-h3-seedance-advertising-ecommerce.jpg"),
@@ -1121,7 +1137,12 @@ export function getVideoPromptTemplateLocalFallbackPosters(modelId: string): rea
   const resolvedModelId = resolveVideoProfessionModelId(modelId);
   if (!resolvedModelId) return [];
   return VIDEO_PROFESSION_IDS.map(
-    (professionId) => `${VIDEO_LOCAL_FALLBACK_BASE}/${professionId}/${resolvedModelId}.jpg`,
+    (professionId) => {
+      const poster = VIDEO_PROFESSION_POSTER_SETS[resolvedModelId]?.[professionId];
+      return poster?.startsWith("/assets/model-regeneration/")
+        ? poster
+        : `${VIDEO_LOCAL_FALLBACK_BASE}/${professionId}/${resolvedModelId}.jpg`;
+    },
   );
 }
 

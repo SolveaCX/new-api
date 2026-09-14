@@ -3252,7 +3252,10 @@ function buildPromptLibraryItems(
           poster: template.poster || (isProfessionVideo(template.video) ? "" : (PROMPT_POSTER_FALLBACKS[template.id] ?? template.poster)),
           video: template.video,
           fallbackPoster: getVideoPromptTemplateLocalFallbackPoster(config.modelId, template.professionId),
-          fallbackVideo: VIDEO_PROMPT_TEMPLATES.find((candidate) => candidate.professionId === template.professionId)?.video,
+          // A regenerated clip must never fall back to an older generation.
+          fallbackVideo: template.video?.startsWith("/assets/model-regeneration/")
+            ? undefined
+            : VIDEO_PROMPT_TEMPLATES.find((candidate) => candidate.professionId === template.professionId)?.video,
         },
       }));
     }
