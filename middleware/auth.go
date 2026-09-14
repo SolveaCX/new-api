@@ -31,12 +31,15 @@ const plgGroup = "plg"
 
 // apiPhoneVerificationCutoff is the product cutoff in Pacific time. The
 // location is loaded at runtime so the date remains correct across DST rules.
+// 2026-09-14 02:30 PDT = 09:30 UTC = 17:30 Asia/Shanghai. From this instant,
+// every PLG user without a verified phone is rejected at the API (only while
+// SMS_VERIFICATION_ENABLED is on).
 func apiPhoneVerificationCutoff() time.Time {
 	location, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
 		location = time.FixedZone("PDT", -7*60*60)
 	}
-	return time.Date(2026, time.September, 4, 12, 0, 0, 0, location)
+	return time.Date(2026, time.September, 14, 2, 30, 0, 0, location)
 }
 
 func apiPhoneVerificationRequired(now time.Time, userCache *model.UserBase) bool {

@@ -59,6 +59,15 @@ func TestAPIPhoneVerificationGateOnlyAppliesToPlgUsersAfterCutoff(t *testing.T) 
 	}
 }
 
+// TestAPIPhoneVerificationCutoffInstant pins the exact cutoff so an accidental
+// edit of the date, hour, or zone fails loudly instead of silently moving the
+// moment production PLG traffic starts being rejected.
+func TestAPIPhoneVerificationCutoffInstant(t *testing.T) {
+	cutoff := apiPhoneVerificationCutoff()
+	require.Equal(t, time.Date(2026, time.September, 14, 9, 30, 0, 0, time.UTC).Unix(), cutoff.Unix())
+	require.Equal(t, "2026-09-14T02:30:00-07:00", cutoff.Format(time.RFC3339))
+}
+
 func TestAPIPhoneVerificationGateDisabledWithSMSFeature(t *testing.T) {
 	original := common.SMSVerificationEnabled
 	t.Cleanup(func() { common.SMSVerificationEnabled = original })
