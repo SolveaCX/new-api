@@ -33,6 +33,7 @@ import type {
   RegistrationCaptchaResponse,
   RegistrationCaptchaType,
   RegistrationCaptchaVerificationResponse,
+  PhoneVerificationStatusResponse,
 } from './types'
 
 // ============================================================================
@@ -241,6 +242,11 @@ export async function bindPhone(
     phone_number: phoneNumber,
     phone_verification_code: verificationCode,
   })
+  return res.data
+}
+
+export async function getPhoneVerificationStatus(): Promise<PhoneVerificationStatusResponse> {
+  const res = await api.get('/api/user/self/phone-status')
   return res.data
 }
 

@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Mail, Shield, Send, Link2, Unlink, Smartphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux, SiGoogle } from 'react-icons/si'
 import { toast } from 'sonner'
@@ -35,6 +36,8 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StatusBadge } from '@/components/status-badge'
+import { getPhoneVerificationStatus } from '@/features/auth/api'
+import { PhoneBindingDialog } from '@/features/auth/components/phone-binding-dialog'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
 import {
   getSelfOAuthBindings,
@@ -55,7 +58,7 @@ interface AccountBindingsTabProps {
   onUpdate: () => void
 }
 
-type DialogKey = 'email' | 'wechat' | 'telegram'
+type DialogKey = 'email' | 'phone' | 'wechat' | 'telegram'
 
 export function AccountBindingsTab({
   profile,
@@ -69,6 +72,19 @@ export function AccountBindingsTab({
     null
   )
   const [unbinding, setUnbinding] = useState(false)
+  const phoneStatusQuery = useQuery({
+    queryKey: ['profile', 'phone-verification-status', profile?.id],
+    queryFn: getPhoneVerificationStatus,
+    enabled:
+      Boolean(profile) &&
+      profile?.role !== undefined &&
+      profile.role < 10 &&
+      status?.sms_verification === true,
+    staleTime: 30_000,
+  })
+  const phoneStatus = phoneStatusQuery.data?.success
+    ? phoneStatusQuery.data.data
+    : undefined
 
   const customProviders = status?.custom_oauth_providers as
     | Array<{ id: string; name: string }>
@@ -151,7 +167,7 @@ export function AccountBindingsTab({
   const bindings: BindingItem[] = useMemo(() => {
     if (!profile || !status) return []
 
-    return [
+    const items: BindingItem[] = [
       {
         id: 'email',
         label: t('Email'),
@@ -161,6 +177,21 @@ export function AccountBindingsTab({
         isEnabled: true,
         onBind: () => dialogs.open('email'),
       },
+      ...(phoneStatus?.sms_verification_enabled
+        ? [
+            {
+              id: 'phone',
+              label: t('Phone number'),
+              icon: Smartphone,
+              value: phoneStatus.phone_number,
+              isBound: phoneStatus.phone_bound,
+              isEnabled: true,
+              onBind: () => {
+                if (!phoneStatus.phone_bound) dialogs.open('phone')
+              },
+            },
+          ]
+        : []),
       {
         id: 'wechat',
         label: t('WeChat'),
@@ -273,9 +304,10 @@ export function AccountBindingsTab({
           }
         },
       },
-    ].filter((binding) => binding.isEnabled)
+    ]
+    return items.filter((binding) => binding.isEnabled)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, status, t])
+  }, [profile, status, phoneStatus, t])
 
   if (!profile || loading) return null
 
@@ -416,6 +448,17 @@ export function AccountBindingsTab({
         }
         currentEmail={profile.email}
         onSuccess={onUpdate}
+      />
+
+      <PhoneBindingDialog
+        open={dialogs.isOpen('phone')}
+        onOpenChange={(open) =>
+          open ? dialogs.open('phone') : dialogs.close('phone')
+        }
+        onSuccess={async () => {
+          await phoneStatusQuery.refetch()
+          onUpdate()
+        }}
       />
 
       {/* WeChat Bind Dialog */}

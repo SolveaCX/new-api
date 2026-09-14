@@ -12,6 +12,7 @@ import {
   type FocusEvent,
 } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
+import { PhoneBindingPrompt } from "@/components/phone-binding-prompt";
 import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
 import { CLI_LANDING_PATH, cliLandingCopy } from "@/lib/cli-landing";
@@ -37,6 +38,7 @@ import {
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
   clearConsoleSessionHint,
+  type ConsoleCurrentUserPayload,
   isVerifiedConsoleUserPayload,
   rememberConsoleSessionHint,
 } from "@/lib/console-session-hint";
@@ -539,6 +541,8 @@ export function SiteHeader(props: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
+  const [phoneBindingUser, setPhoneBindingUser] =
+    useState<ConsoleCurrentUserPayload | null>(null);
   const [promoIndex, setPromoIndex] = useState(0);
   const [promoHovering, setPromoHovering] = useState(false);
   const [promoFocused, setPromoFocused] = useState(false);
@@ -667,6 +671,7 @@ export function SiteHeader(props: Props) {
         if (response.status === 401 || response.status === 403) {
           clearConsoleSessionHint();
           setConsoleSessionActive(false);
+          setPhoneBindingUser(null);
           return;
         }
         if (!response.ok) return;
@@ -679,6 +684,7 @@ export function SiteHeader(props: Props) {
           clearConsoleSessionHint();
         }
         setConsoleSessionActive(verified);
+        setPhoneBindingUser(verified ? payload : null);
       } catch {
         /* Keep the current verified state when a transient network failure prevents refresh. */
       }
@@ -859,17 +865,18 @@ export function SiteHeader(props: Props) {
     </span>
   ) : null;
 
-  const promoCta = activePromoLink && activePromoLinkLabel ? (
-    <>
-      {" "}
-      <span
-        className="inline-block max-w-full whitespace-nowrap font-semibold text-[#0B0B0F] underline decoration-[#6B6870] underline-offset-2 transition-[text-decoration-color,opacity] group-hover:decoration-[#0B0B0F] group-hover:opacity-100 max-[900px]:whitespace-normal"
-        data-promo-cta="true"
-      >
-        {activePromoLinkLabel}
-      </span>
-    </>
-  ) : null;
+  const promoCta =
+    activePromoLink && activePromoLinkLabel ? (
+      <>
+        {" "}
+        <span
+          className="inline-block max-w-full whitespace-nowrap font-semibold text-[#0B0B0F] underline decoration-[#6B6870] underline-offset-2 transition-[text-decoration-color,opacity] group-hover:decoration-[#0B0B0F] group-hover:opacity-100 max-[900px]:whitespace-normal"
+          data-promo-cta="true"
+        >
+          {activePromoLinkLabel}
+        </span>
+      </>
+    ) : null;
 
   const promoCopy = (
     <span className="min-w-0 flex-1 break-words text-center text-[14px] leading-[1.4] font-medium [overflow-wrap:anywhere] max-[900px]:text-[12px] max-[900px]:leading-[1.35]">
@@ -973,9 +980,7 @@ export function SiteHeader(props: Props) {
                       <span
                         className={cn(
                           "block rounded-full transition-[width,background-color] duration-200",
-                          selected
-                            ? "h-1 w-3 bg-white"
-                            : "size-1 bg-white/60",
+                          selected ? "h-1 w-3 bg-white" : "size-1 bg-white/60",
                         )}
                       />
                     </button>
@@ -1106,6 +1111,7 @@ export function SiteHeader(props: Props) {
           )}
         </div>
       </div>
+      <PhoneBindingPrompt locale={props.locale} user={phoneBindingUser} />
     </header>
   );
 }
