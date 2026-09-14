@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
+import { Mail, Shield, Send, Link2, Smartphone, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux, SiGoogle } from 'react-icons/si'
 import { toast } from 'sonner'
@@ -41,8 +41,10 @@ import {
   unbindCustomOAuth,
   type CustomOAuthBinding,
 } from '../../api'
+import { maskPhoneNumber } from '../../lib/format'
 import type { UserProfile, BindingItem } from '../../types'
 import { EmailBindDialog } from '../dialogs/email-bind-dialog'
+import { PhoneBindDialog } from '../dialogs/phone-bind-dialog'
 import { TelegramBindDialog } from '../dialogs/telegram-bind-dialog'
 import { WeChatBindDialog } from '../dialogs/wechat-bind-dialog'
 
@@ -55,7 +57,7 @@ interface AccountBindingsTabProps {
   onUpdate: () => void
 }
 
-type DialogKey = 'email' | 'wechat' | 'telegram'
+type DialogKey = 'email' | 'phone' | 'wechat' | 'telegram'
 
 export function AccountBindingsTab({
   profile,
@@ -69,6 +71,8 @@ export function AccountBindingsTab({
     null
   )
   const [unbinding, setUnbinding] = useState(false)
+  const [previewPhoneOverride, setPreviewPhoneOverride] = useState<string>()
+  const previewPhone = previewPhoneOverride ?? profile?.phone
 
   const customProviders = status?.custom_oauth_providers as
     | Array<{ id: string; name: string }>
@@ -160,6 +164,15 @@ export function AccountBindingsTab({
         isBound: Boolean(profile.email),
         isEnabled: true,
         onBind: () => dialogs.open('email'),
+      },
+      {
+        id: 'phone',
+        label: t('Phone Number'),
+        icon: Smartphone,
+        value: maskPhoneNumber(previewPhone),
+        isBound: Boolean(previewPhone),
+        isEnabled: true,
+        onBind: () => dialogs.open('phone'),
       },
       {
         id: 'wechat',
@@ -275,53 +288,58 @@ export function AccountBindingsTab({
       },
     ].filter((binding) => binding.isEnabled)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, status, t])
+  }, [profile, previewPhone, status, t])
 
   if (!profile || loading) return null
 
   return (
     <>
       <div className='grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3'>
-        {bindings.map((binding) => (
-          <div
-            key={binding.id}
-            className='flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3'
-          >
-            <div className='flex min-w-0 items-center gap-2.5 sm:gap-3'>
-              <div className='bg-muted shrink-0 rounded-md p-1.5 sm:p-2'>
-                <binding.icon className='h-4 w-4' />
-              </div>
-              <div className='min-w-0'>
-                <div className='flex items-center gap-1.5'>
-                  <p className='text-sm font-medium'>{binding.label}</p>
-                  {binding.isBound && (
-                    <StatusBadge
-                      label={t('Bound')}
-                      variant='success'
-                      copyable={false}
-                    />
-                  )}
-                </div>
-                <p className='text-muted-foreground truncate text-xs'>
-                  {binding.value || t('Not bound')}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant='outline'
-              size='sm'
-              className='h-7 shrink-0 px-2.5 text-xs'
-              onClick={binding.onBind}
-              disabled={binding.isBound && binding.id !== 'email'}
+        {bindings.map((binding) => {
+          const canChangeBinding =
+            binding.id === 'email' || binding.id === 'phone'
+          let actionLabel = t('Bind')
+          if (binding.isBound) {
+            actionLabel = canChangeBinding ? t('Change') : t('Bound')
+          }
+
+          return (
+            <div
+              key={binding.id}
+              className='flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3'
             >
-              {binding.isBound
-                ? binding.id === 'email'
-                  ? t('Change')
-                  : t('Bound')
-                : t('Bind')}
-            </Button>
-          </div>
-        ))}
+              <div className='flex min-w-0 items-center gap-2.5 sm:gap-3'>
+                <div className='bg-muted shrink-0 rounded-md p-1.5 sm:p-2'>
+                  <binding.icon className='h-4 w-4' />
+                </div>
+                <div className='min-w-0'>
+                  <div className='flex items-center gap-1.5'>
+                    <p className='text-sm font-medium'>{binding.label}</p>
+                    {binding.isBound && (
+                      <StatusBadge
+                        label={t('Bound')}
+                        variant='success'
+                        copyable={false}
+                      />
+                    )}
+                  </div>
+                  <p className='text-muted-foreground truncate text-xs'>
+                    {binding.value || t('Not bound')}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant='outline'
+                size='sm'
+                className='h-7 shrink-0 px-2.5 text-xs'
+                onClick={binding.onBind}
+                disabled={binding.isBound && !canChangeBinding}
+              >
+                {actionLabel}
+              </Button>
+            </div>
+          )
+        })}
       </div>
 
       {/* Custom OAuth Bindings */}
@@ -417,6 +435,17 @@ export function AccountBindingsTab({
         currentEmail={profile.email}
         onSuccess={onUpdate}
       />
+
+      {dialogs.isOpen('phone') && (
+        <PhoneBindDialog
+          open
+          onOpenChange={(open) =>
+            open ? dialogs.open('phone') : dialogs.close('phone')
+          }
+          currentPhone={previewPhone}
+          onPreviewChange={setPreviewPhoneOverride}
+        />
+      )}
 
       {/* WeChat Bind Dialog */}
       <WeChatBindDialog

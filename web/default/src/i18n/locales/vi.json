@@ -6937,6 +6937,18 @@
     "Enter your phone number": "Nhập số điện thoại",
     "Link phone number": "Liên kết số điện thoại",
     "Maybe later": "Để sau",
-    "Phone verification will be available soon.": "Tính năng xác minh điện thoại sẽ sớm ra mắt."
+    "Phone verification will be available soon.": "Tính năng xác minh điện thoại sẽ sớm ra mắt.",
+    "Back to verification": "Quay lại xác minh",
+    "Bind Phone": "Liên kết số điện thoại",
+    "Bind a phone number to your account.": "Liên kết một số điện thoại với tài khoản của bạn.",
+    "Change Phone": "Đổi số điện thoại",
+    "Enter the code sent to {{phone}}": "Nhập mã đã gửi đến {{phone}}",
+    "Phone Number": "Số điện thoại",
+    "Phone binding preview updated.": "Đã cập nhật bản xem trước liên kết số điện thoại.",
+    "Please enter a valid phone number": "Vui lòng nhập số điện thoại hợp lệ",
+    "Prototype only: no verification code was sent.": "Đây chỉ là bản mẫu: không có mã xác minh nào được gửi.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Đây chỉ là bản mẫu: mã xác minh không được gửi và thay đổi không được lưu.",
+    "Verify Current Phone": "Xác minh số điện thoại hiện tại",
+    "Verify your current phone before binding a new one.": "Hãy xác minh số điện thoại hiện tại trước khi liên kết số mới."
   }
 }

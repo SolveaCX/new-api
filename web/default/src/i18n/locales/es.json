@@ -6937,6 +6937,18 @@
     "Enter your phone number": "Introduce tu número de teléfono",
     "Link phone number": "Vincular teléfono",
     "Maybe later": "Más tarde",
-    "Phone verification will be available soon.": "La verificación telefónica estará disponible pronto."
+    "Phone verification will be available soon.": "La verificación telefónica estará disponible pronto.",
+    "Back to verification": "Volver a la verificación",
+    "Bind Phone": "Vincular teléfono",
+    "Bind a phone number to your account.": "Vincula un número de teléfono a tu cuenta.",
+    "Change Phone": "Cambiar teléfono",
+    "Enter the code sent to {{phone}}": "Introduce el código enviado a {{phone}}",
+    "Phone Number": "Número de teléfono",
+    "Phone binding preview updated.": "La vista previa de la vinculación se ha actualizado.",
+    "Please enter a valid phone number": "Introduce un número de teléfono válido",
+    "Prototype only: no verification code was sent.": "Solo prototipo: no se ha enviado ningún código de verificación.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Solo prototipo: los códigos no se envían y los cambios no se guardan.",
+    "Verify Current Phone": "Verificar teléfono actual",
+    "Verify your current phone before binding a new one.": "Verifica tu teléfono actual antes de vincular uno nuevo."
   }
 }

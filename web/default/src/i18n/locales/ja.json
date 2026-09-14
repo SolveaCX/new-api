@@ -6937,6 +6937,18 @@
     "Enter your phone number": "電話番号を入力",
     "Link phone number": "電話番号を登録",
     "Maybe later": "後で",
-    "Phone verification will be available soon.": "電話番号認証は近日公開予定です。"
+    "Phone verification will be available soon.": "電話番号認証は近日公開予定です。",
+    "Back to verification": "認証に戻る",
+    "Bind Phone": "電話番号を連携",
+    "Bind a phone number to your account.": "アカウントに電話番号を連携します。",
+    "Change Phone": "電話番号を変更",
+    "Enter the code sent to {{phone}}": "{{phone}} に送信されたコードを入力してください",
+    "Phone Number": "電話番号",
+    "Phone binding preview updated.": "電話番号連携のプレビューを更新しました。",
+    "Please enter a valid phone number": "有効な電話番号を入力してください",
+    "Prototype only: no verification code was sent.": "プロトタイプのため、認証コードは実際には送信されません。",
+    "Prototype only: verification codes are not sent and changes are not saved.": "これはプロトタイプです。認証コードは送信されず、変更も保存されません。",
+    "Verify Current Phone": "現在の電話番号を認証",
+    "Verify your current phone before binding a new one.": "新しい電話番号を連携する前に、現在の電話番号を認証してください。"
   }
 }
