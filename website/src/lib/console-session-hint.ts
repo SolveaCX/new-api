@@ -6,6 +6,7 @@ const HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export type ConsoleCurrentUserPayload = {
   data?: {
     id?: unknown;
+    phone_bound?: unknown;
   } | null;
   success?: unknown;
 };
