@@ -6,12 +6,6 @@ const HINT_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export type ConsoleCurrentUserPayload = {
   data?: {
     id?: unknown;
-    role?: unknown;
-    phone_bound?: unknown;
-    phone_number?: unknown;
-    phone_verified_at?: unknown;
-    verification_required?: unknown;
-    sms_verification_enabled?: unknown;
   } | null;
   success?: unknown;
 };
@@ -25,18 +19,6 @@ export function hasConsoleSessionHintCookie(cookieHeader: string): boolean {
     .split(";")
     .map((part) => part.trim())
     .some((part) => part === `${CONSOLE_SESSION_HINT_COOKIE_NAME}=1`);
-}
-
-export function shouldShowPhoneBindingPrompt(
-  payload: ConsoleCurrentUserPayload | null,
-): boolean {
-  const user = payload?.data;
-  if (!user || typeof user.id !== "number") return false;
-  if (typeof user.role !== "number" || user.role >= 10) return false;
-  if (user.verification_required === true) return true;
-  return (
-    user.sms_verification_enabled === true && user.phone_bound === false
-  );
 }
 
 export function hasConsoleSessionHintFromRequestCookieStore(
