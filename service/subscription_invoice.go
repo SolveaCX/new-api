@@ -1450,7 +1450,12 @@ func recurringPlanSnapshotFromBindingTx(tx *gorm.DB, binding *model.Subscription
 		if err != nil {
 			return recurringInvoicePlanSnapshot{}, err
 		}
-		return recurringInvoicePlanSnapshot{Typed: &snapshot, Raw: binding.CurrentPlanSnapshot}, nil
+		// A typed snapshot names the plan it was frozen for. When the binding
+		// has since moved to another plan (upgrade/downgrade executed elsewhere),
+		// the snapshot is stale and must not govern this renewal.
+		if snapshot.PlanID == binding.PlanId {
+			return recurringInvoicePlanSnapshot{Typed: &snapshot, Raw: binding.CurrentPlanSnapshot}, nil
+		}
 	}
 	if binding.InitialOrderId <= 0 {
 		return recurringInvoicePlanSnapshot{}, nil
@@ -2000,6 +2005,10 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	if catalog != nil {
 		bindingUpdates["current_plan_snapshot"] = catalog.Raw
+	} else if pendingDowngrade {
+		// The binding now bills another catalog plan; a typed snapshot frozen
+		// for the previous plan would be stale.
+		bindingUpdates["current_plan_snapshot"] = ""
 	}
 	if err := tx.Model(binding).Where("id = ?", binding.Id).Updates(bindingUpdates).Error; err != nil {
 		return err
@@ -2433,9 +2442,6 @@ func resolveRenewalPlanSnapshotTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, b
 		return recurringInvoicePlanSnapshot{}, nil, err
 	}
 	if snapshot.Typed != nil {
-		if snapshot.Typed.PlanID != binding.PlanId {
-			return recurringInvoicePlanSnapshot{}, nil, errors.New("binding current plan snapshot plan mismatch")
-		}
 		if _, err := loadRenewalSnapshotPlanTx(tx, *snapshot.Typed, false); err != nil {
 			return recurringInvoicePlanSnapshot{}, nil, err
 		}
