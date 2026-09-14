@@ -3,6 +3,7 @@ import {
   buildConsoleSessionHintCookieWrites,
   hasConsoleSessionHintFromRequestCookieStore,
   isVerifiedConsoleUserPayload,
+  shouldShowPhoneBindingPrompt,
   sharedCookieDomainForHostname,
 } from "./console-session-hint";
 
@@ -57,6 +58,33 @@ describe("console session hint", () => {
       }),
     ).toBe(false);
     expect(isVerifiedConsoleUserPayload(null)).toBe(false);
+  });
+
+  test("shows phone prompt only for non-admin users explicitly required to bind", () => {
+    expect(
+      shouldShowPhoneBindingPrompt({
+        success: true,
+        data: { id: 42, role: 1, verification_required: true },
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowPhoneBindingPrompt({
+        success: true,
+        data: { id: 42, role: 1, verification_required: false },
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowPhoneBindingPrompt({
+        success: true,
+        data: { id: 1, role: 10, verification_required: true },
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowPhoneBindingPrompt({
+        success: true,
+        data: { id: 42, verification_required: true },
+      }),
+    ).toBe(false);
   });
 
   test("shares hints only across flatkey.ai subdomains", () => {

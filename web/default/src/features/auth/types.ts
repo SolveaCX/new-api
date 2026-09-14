@@ -125,6 +125,19 @@ export interface ApiResponse {
   data?: unknown
 }
 
+export interface PhoneVerificationStatus {
+  phone_bound: boolean
+  phone_number: string
+  phone_verified_at: number
+  verification_required: boolean
+  sms_verification_enabled: boolean
+  rollout_start_at: number
+}
+
+export interface PhoneVerificationStatusResponse extends ApiResponse {
+  data?: PhoneVerificationStatus
+}
+
 export interface CliDeviceAuthorization {
   status: 'pending' | 'approved' | 'denied' | 'expired'
   client_name?: string
