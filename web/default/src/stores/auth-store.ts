@@ -32,6 +32,8 @@ export interface AuthUser {
   email?: string
   phone_number?: string
   phone_verified_at?: number
+  /** Backend decision: PLG account created at/after the rollout start and still unverified. */
+  phone_verification_required?: boolean
   role: number
   status?: number
   group?: string

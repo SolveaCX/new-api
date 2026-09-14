@@ -45,6 +45,8 @@ export interface UserProfile {
   email?: string
   phone_number?: string
   phone_verified_at?: number
+  /** Backend decision: PLG account created at/after the rollout start and still unverified. */
+  phone_verification_required?: boolean
   /** User group */
   group: string
   /** Current quota balance */

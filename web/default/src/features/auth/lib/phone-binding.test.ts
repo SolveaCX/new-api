@@ -2,23 +2,24 @@ import { describe, expect, test } from 'bun:test'
 import { shouldRequirePhoneBinding } from './phone-binding'
 
 describe('phone binding gate', () => {
-  test('requires an unverified PLG user to bind a phone', () => {
-    expect(shouldRequirePhoneBinding({ group: 'plg' })).toBe(true)
+  test('follows the backend decision', () => {
     expect(
-      shouldRequirePhoneBinding({
-        group: 'plg',
-        phone_number: '+14155550123',
-        phone_verified_at: 1,
-      })
+      shouldRequirePhoneBinding({ phone_verification_required: true })
+    ).toBe(true)
+    expect(
+      shouldRequirePhoneBinding({ phone_verification_required: false })
     ).toBe(false)
   })
 
-  test('does not require binding for other user groups', () => {
-    expect(shouldRequirePhoneBinding({ group: 'enterprise' })).toBe(false)
+  test('treats a missing field as unknown and never opens the dialog', () => {
+    expect(shouldRequirePhoneBinding({})).toBe(false)
     expect(shouldRequirePhoneBinding(null)).toBe(false)
+    expect(shouldRequirePhoneBinding(undefined)).toBe(false)
   })
 
   test('does not require binding when SMS verification is disabled', () => {
-    expect(shouldRequirePhoneBinding({ group: 'plg' }, false)).toBe(false)
+    expect(
+      shouldRequirePhoneBinding({ phone_verification_required: true }, false)
+    ).toBe(false)
   })
 })

@@ -200,6 +200,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Email:           user.Email,
 		PhoneNumber:     user.PhoneNumber,
 		PhoneVerifiedAt: user.PhoneVerifiedAt,
+		CreatedAt:       user.CreatedAt,
 		IsEnterprise:    user.IsEnterprise,
 		EmailVerifiedAt: user.EmailVerifiedAt,
 		Role:            user.Role,

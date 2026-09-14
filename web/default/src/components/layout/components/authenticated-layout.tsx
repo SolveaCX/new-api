@@ -112,6 +112,7 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
                   ...currentUser,
                   phone_number: phoneNumber,
                   phone_verified_at: phoneVerifiedAt,
+                  phone_verification_required: false,
                 }
               : currentUser
           )

@@ -3,12 +3,15 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -183,4 +186,57 @@ func TestBindPhonePersistsVerifiedPhone(t *testing.T) {
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	require.Equal(t, phone, stored.PhoneNumber)
 	require.NotZero(t, stored.PhoneVerifiedAt)
+}
+
+// GetSelf must expose the server-side decision so the console dialog follows
+// the same "new PLG accounts only" rule as the API gate.
+func TestGetSelfReportsPhoneVerificationRequiredOnlyForNewPlgAccounts(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
+	originalEnabled := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = originalEnabled })
+	common.SMSVerificationEnabled = true
+	start := model.PhoneVerificationRolloutStart().Unix()
+
+	// aff_code carries a unique index, so each fixture needs its own value.
+	oldUser := &model.User{Username: "old-plg", Password: "hashed-password", Status: common.UserStatusEnabled, Group: "plg", AffCode: "aff-old-plg"}
+	require.NoError(t, db.Create(oldUser).Error)
+	require.NoError(t, db.Model(oldUser).Update("created_at", start-3600).Error)
+	newUser := &model.User{Username: "new-plg", Password: "hashed-password", Status: common.UserStatusEnabled, Group: "plg", AffCode: "aff-new-plg"}
+	require.NoError(t, db.Create(newUser).Error)
+	require.NoError(t, db.Model(newUser).Update("created_at", start+3600).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("phone-gate-test"))))
+	// One route per fixture so the handler sees the right user id.
+	for _, id := range []int{oldUser.Id, newUser.Id} {
+		userID := id
+		router.GET("/api/user/self/"+strconv.Itoa(userID), func(c *gin.Context) {
+			c.Set("id", userID)
+			c.Set("role", common.RoleCommonUser)
+			GetSelf(c)
+		})
+	}
+	fetch := func(userID int) bool {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/user/self/"+strconv.Itoa(userID), nil)
+		router.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		var payload struct {
+			Success bool `json:"success"`
+			Data    struct {
+				PhoneVerificationRequired bool `json:"phone_verification_required"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+		require.True(t, payload.Success)
+		return payload.Data.PhoneVerificationRequired
+	}
+
+	require.False(t, fetch(oldUser.Id), "account created before rollout must not be asked to bind")
+	require.True(t, fetch(newUser.Id), "account created after rollout must bind")
+
+	require.NoError(t, db.Model(newUser).Update("phone_verified_at", start+7200).Error)
+	require.False(t, fetch(newUser.Id), "verified account is done")
 }
