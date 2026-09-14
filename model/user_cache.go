@@ -18,6 +18,8 @@ type UserBase struct {
 	Id              int    `json:"id"`
 	Group           string `json:"group"`
 	Email           string `json:"email"`
+	PhoneNumber     string `json:"phone_number"`
+	PhoneVerifiedAt int64  `json:"phone_verified_at"`
 	Quota           int    `json:"quota"`
 	Status          int    `json:"status"`
 	Username        string `json:"username"`
@@ -52,8 +54,9 @@ func (user *UserBase) GetSetting() dto.UserSetting {
 // The cache prefix is bumped whenever cached UserBase fields change.
 // v2 added IsEnterprise to UserBase.
 // v3 added EmailVerifiedAt and Role to UserBase (email-verification enforcement).
+// v4 added phone verification fields for the API phone gate.
 func getUserCacheKey(userId int) string {
-	return fmt.Sprintf("user:v3:%d", userId)
+	return fmt.Sprintf("user:v4:%d", userId)
 }
 
 // invalidateUserCache clears user cache
@@ -120,6 +123,8 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		Username:        user.Username,
 		Setting:         user.Setting,
 		Email:           user.Email,
+		PhoneNumber:     user.PhoneNumber,
+		PhoneVerifiedAt: user.PhoneVerifiedAt,
 		IsEnterprise:    user.IsEnterprise,
 		EmailVerifiedAt: user.EmailVerifiedAt,
 		Role:            user.Role,

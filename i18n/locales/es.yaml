@@ -21,6 +21,7 @@ notify.subscription_quota_warning_title: "Su cuota de suscripción se está agot
 notify.quota_warning_email: "{{.Warning}}. Su cuota restante actual es {{.Quota}}. Para evitar interrupciones del servicio, recargue a tiempo.<br/>Enlace de recarga: <a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}. Cuota restante: {{.Quota}}. Recargue a tiempo."
 notify.quota_warning_gotify: "{{.Warning}}. Su cuota restante actual es {{.Quota}}. Recargue a tiempo."
+notify.phone_verification_required_for_api: "Vincula y verifica tu número de teléfono antes de usar la API."
 
 # CLI device authorization messages
 cli.device_id_missing: "El ID del dispositivo es obligatorio"

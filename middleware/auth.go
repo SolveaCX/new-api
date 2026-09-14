@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -27,6 +28,23 @@ import (
 // plgGroup is the single group every PLG user is served from.
 // Mirrors the constant of the same name in the controller package.
 const plgGroup = "plg"
+
+// apiPhoneVerificationCutoff is the product cutoff in Pacific time. The
+// location is loaded at runtime so the date remains correct across DST rules.
+func apiPhoneVerificationCutoff() time.Time {
+	location, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		location = time.FixedZone("PDT", -7*60*60)
+	}
+	return time.Date(2026, time.September, 4, 12, 0, 0, 0, location)
+}
+
+func apiPhoneVerificationRequired(now time.Time, userCache *model.UserBase) bool {
+	return common.SMSVerificationEnabled && userCache != nil &&
+		userCache.Group == plgGroup &&
+		userCache.PhoneVerifiedAt == 0 &&
+		!now.Before(apiPhoneVerificationCutoff())
+}
 
 func userCanUseGroups(userCache *model.UserBase) bool {
 	return userCache != nil && userCache.Group != "" && userCache.Group != plgGroup
@@ -511,6 +529,12 @@ func TokenAuth() func(c *gin.Context) {
 		}
 
 		userCache.WriteContext(c)
+
+		if apiPhoneVerificationRequired(time.Now(), userCache) {
+			notify := common.TranslateMessage(c, i18n.MsgNotifyPhoneVerificationRequiredForAPI)
+			abortWithOpenAiMessageAndNotify(c, http.StatusForbidden, notify, notify, types.ErrorCodeAccessDenied)
+			return
+		}
 
 		// PLG users are always served from the plg group, ignoring any group carried on
 		// the token. Defense-in-depth: the token API already forces plg, this guarantees

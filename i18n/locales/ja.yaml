@@ -21,6 +21,7 @@ notify.subscription_quota_warning_title: "サブスクリプションの残高�
 notify.quota_warning_email: "{{.Warning}}。現在の残高は {{.Quota}} です。サービスの中断を避けるため、お早めにチャージしてください。<br/>チャージリンク：<a href='{{.Link}}'>{{.Link}}</a>"
 notify.quota_warning_bark: "{{.Warning}}。残高：{{.Quota}}。お早めにチャージしてください。"
 notify.quota_warning_gotify: "{{.Warning}}。現在の残高は {{.Quota}} です。お早めにチャージしてください。"
+notify.phone_verification_required_for_api: "APIを使用する前に、電話番号を登録して認証してください。"
 
 # CLI device authorization messages
 cli.device_id_missing: "デバイス ID は必須です"

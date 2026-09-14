@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 
@@ -23,7 +22,10 @@ func TurnstileCheck() gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			response := c.Query("turnstile")
+			response := c.GetHeader("X-Turnstile-Token")
+			if response == "" {
+				response = c.Query("turnstile")
+			}
 			if response == "" {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
@@ -48,7 +50,7 @@ func TurnstileCheck() gin.HandlerFunc {
 			}
 			defer rawRes.Body.Close()
 			var res turnstileCheckResponse
-			err = json.NewDecoder(rawRes.Body).Decode(&res)
+			err = common.DecodeJson(rawRes.Body, &res)
 			if err != nil {
 				common.SysLog(err.Error())
 				c.JSON(http.StatusOK, gin.H{
