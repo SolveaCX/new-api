@@ -181,9 +181,9 @@ func ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot RecurringPlanSna
 	if price == nil || strings.TrimSpace(price.ID) == "" {
 		return errors.New("Stripe Price is missing")
 	}
-	if price.Livemode {
-		return errors.New("Stripe Price must be test mode")
-	}
+	// Stripe mode (test vs live) is deliberately not part of the snapshot
+	// contract: production cutovers use live Prices and staging uses test
+	// Prices. Mode consistency is enforced by ValidateCatalogMigrationStripeSandbox.
 	if !price.Active || price.Deleted {
 		return errors.New("Stripe Price is inactive")
 	}

@@ -83,10 +83,10 @@ func TestRecurringPlanSnapshotV1RejectsPlanAndStripeDrift(t *testing.T) {
 		changed.UnitAmount++
 		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "amount")
 	})
-	t.Run("live", func(t *testing.T) {
+	t.Run("live mode is not a drift", func(t *testing.T) {
 		changed := *price
 		changed.Livemode = true
-		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "test mode")
+		require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed))
 	})
 	t.Run("interval", func(t *testing.T) {
 		changed := *price
@@ -95,6 +95,19 @@ func TestRecurringPlanSnapshotV1RejectsPlanAndStripeDrift(t *testing.T) {
 		changed.Recurring = &recurring
 		require.ErrorContains(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &changed), "monthly")
 	})
+}
+
+func TestRecurringPlanSnapshotV1AcceptsLiveModePrice(t *testing.T) {
+	// Production cutovers run against live Stripe Prices. Mode consistency is
+	// enforced by ValidateCatalogMigrationStripeSandbox, not by the snapshot.
+	plan, price := recurringSnapshotFixture()
+	live := *price
+	live.Livemode = true
+	snapshot, err := FreezeRecurringPlanSnapshotV1(plan, &live)
+	require.NoError(t, err)
+	require.Equal(t, plan.Id, snapshot.PlanID)
+	require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, &live))
+	require.NoError(t, ValidateRecurringPlanSnapshotV1AgainstStripePrice(snapshot, price))
 }
 
 func TestFreezeLegacyRecurringPlanSnapshotV1RequiresExactOwnershipAndMoney(t *testing.T) {
