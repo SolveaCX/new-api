@@ -125,7 +125,11 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
     <Dialog
       open={props.open}
       onOpenChange={handleOpenChange}
-      title={t('Phone number verification required')}
+      title={
+        props.required
+          ? t('Phone number verification required')
+          : t('Bind phone number')
+      }
       description={t(
         'Please bind and verify your phone number before using the console and API.'
       )}
