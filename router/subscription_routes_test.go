@@ -81,7 +81,7 @@ func TestStripeCheckoutDiscountRouteIsAuthenticatedAndCriticalLimited(t *testing
 	require.NoError(t, err)
 	routerSource := string(source)
 	require.Contains(t, routerSource, `selfRoute.Use(middleware.UserAuth())`)
-	require.Contains(t, routerSource, `selfRoute.POST("/stripe/checkout/discount", middleware.CriticalRateLimit(), controller.UpdateStripeCheckoutDiscount)`)
+	require.Contains(t, routerSource, `selfRoute.POST("/stripe/checkout/discount", middleware.CriticalRateLimit(), middleware.RequireSelfServicePayment(), controller.UpdateStripeCheckoutDiscount)`)
 }
 
 func TestSubscriptionSelfLifecycleRoutesUseLocalContractHandlers(t *testing.T) {
@@ -147,7 +147,7 @@ func TestSubscriptionSelfLifecycleRoutesAreAuthenticatedAndCriticalLimited(t *te
 	routerSource := string(source)
 	require.Contains(t, routerSource, "subscriptionRoute.Use(middleware.UserAuth())")
 	require.Contains(t, routerSource, `subscriptionRoute.POST("/self/renewal/cancel", middleware.CriticalRateLimit(), controller.CancelSubscriptionRenewal)`)
-	require.Contains(t, routerSource, `subscriptionRoute.POST("/self/renewal/resume", middleware.CriticalRateLimit(), controller.ResumeSubscriptionRenewal)`)
+	require.Contains(t, routerSource, `subscriptionRoute.POST("/self/renewal/resume", middleware.CriticalRateLimit(), middleware.RequireSelfServicePayment(), controller.ResumeSubscriptionRenewal)`)
 }
 
 func TestSubscriptionSelfOpenAPIUsesSelfSpecificSchemas(t *testing.T) {
