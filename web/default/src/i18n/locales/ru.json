@@ -6929,6 +6929,14 @@
     "Logo is mapped automatically from the model name.": "Логотип автоматически выбирается по названию модели.",
     "Please choose a model for each slot": "Выберите модель для каждого слота",
     "Description and offer are required": "Описание и текст предложения обязательны",
-    "Each slot must use a different model": "В каждом слоте должна быть своя модель"
+    "Each slot must use a different model": "В каждом слоте должна быть своя модель",
+    "Link your phone number": "Привяжите номер телефона",
+    "Add a phone number to help keep your account secure.": "Добавьте номер телефона для защиты аккаунта.",
+    "Country calling code": "Международный код",
+    "Phone number": "Номер телефона",
+    "Enter your phone number": "Введите номер телефона",
+    "Link phone number": "Привязать телефон",
+    "Maybe later": "Позже",
+    "Phone verification will be available soon.": "Подтверждение по телефону скоро станет доступно."
   }
 }

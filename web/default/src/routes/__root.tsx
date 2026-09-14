@@ -47,6 +47,7 @@ import { ThemeCustomizationProvider } from '@/context/theme-customization-provid
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
+import { PhoneBindingPrompt } from '@/features/auth/components/phone-binding-prompt'
 import {
   saveAffiliateCode,
   saveCustomerInvite,
@@ -181,6 +182,11 @@ function RootComponent() {
       <UserLanguagePreferenceSync />
       <NavigationProgress />
       <Outlet />
+      {import.meta.env.DEV &&
+        location.pathname === '/sign-in' &&
+        new URLSearchParams(window.location.search).get(
+          'phoneBindingPreview'
+        ) === '1' && <PhoneBindingPrompt />}
       <Toaster closeButton duration={5000} position='top-center' richColors />
       {import.meta.env.MODE === 'development' && (
         <>

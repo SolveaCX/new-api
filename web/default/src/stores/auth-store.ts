@@ -29,6 +29,8 @@ export interface AuthUser {
   id: number
   username: string
   display_name?: string
+  /** Provisional phone-binding UI contract; absent means unknown. */
+  phone_bound?: boolean
   email?: string
   role: number
   status?: number

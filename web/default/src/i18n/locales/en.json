@@ -6930,6 +6930,14 @@
     "Logo is mapped automatically from the model name.": "Logo is mapped automatically from the model name.",
     "Please choose a model for each slot": "Please choose a model for each slot",
     "Description and offer are required": "Description and offer are required",
-    "Each slot must use a different model": "Each slot must use a different model"
+    "Each slot must use a different model": "Each slot must use a different model",
+    "Link your phone number": "Link your phone number",
+    "Add a phone number to help keep your account secure.": "Add a phone number to help keep your account secure.",
+    "Country calling code": "Country calling code",
+    "Phone number": "Phone number",
+    "Enter your phone number": "Enter your phone number",
+    "Link phone number": "Link phone number",
+    "Maybe later": "Maybe later",
+    "Phone verification will be available soon.": "Phone verification will be available soon."
   }
 }
