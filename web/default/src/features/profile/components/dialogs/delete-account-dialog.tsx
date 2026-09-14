@@ -142,7 +142,7 @@ export function DeleteAccountDialog({
 
         <div className='space-y-2'>
           <Label htmlFor='confirmation'>
-            {t('Type')} <strong>{username}</strong> {t('to confirm')}
+            {t('Enter')} <strong>{username}</strong> {t('to confirm')}
           </Label>
           <Input
             id='confirmation'
