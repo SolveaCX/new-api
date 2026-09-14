@@ -16,19 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { LayoutProvider } from '@/context/layout-provider'
+import { useStatus } from '@/hooks/use-status'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
 import { PhoneBindingDialog } from '@/features/auth/components/phone-binding-dialog'
 import { shouldRequirePhoneBinding } from '@/features/auth/lib/phone-binding'
-import { useStatus } from '@/hooks/use-status'
 import { Onboarding } from '@/features/onboarding'
 import { exitImpersonation as exitImpersonationRequest } from '@/features/users/api'
 import { AppHeader } from './app-header'
@@ -44,8 +45,14 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const user = useAuthStore((state) => state.auth.user)
   const setUser = useAuthStore((state) => state.auth.setUser)
   const { status } = useStatus()
-  const phoneBindingRequired =
-    shouldRequirePhoneBinding(user, status?.sms_verification === true)
+  const phoneBindingRequired = shouldRequirePhoneBinding(
+    user,
+    status?.sms_verification === true
+  )
+  const [dismissedPhoneBindingUserId, setDismissedPhoneBindingUserId] =
+    useState<number | null>(null)
+  const showPhoneBinding =
+    phoneBindingRequired && dismissedPhoneBindingUserId !== user?.id
   const exitImpersonation = async () => {
     const result = await exitImpersonationRequest()
     if (!result.success || !result.data) return
@@ -102,9 +109,10 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
       </SidebarProvider>
       <Onboarding />
       <PhoneBindingDialog
-        open={phoneBindingRequired}
-        required
-        onOpenChange={() => undefined}
+        open={showPhoneBinding}
+        onOpenChange={(open) => {
+          if (!open) setDismissedPhoneBindingUserId(user?.id ?? null)
+        }}
         onSuccess={(phoneNumber, phoneVerifiedAt) => {
           setUser((currentUser) =>
             currentUser

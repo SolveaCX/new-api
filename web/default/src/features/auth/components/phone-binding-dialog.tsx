@@ -5,6 +5,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Dialog } from '@/components/dialog'
 import { Turnstile } from '@/components/turnstile'
 import { bindPhone, sendPhoneVerification } from '../api'
@@ -24,7 +32,7 @@ interface PhoneBindingDialogProps {
 
 export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
   const { t } = useTranslation()
-  const [countryCode, setCountryCode] = useState('+86')
+  const [selectedCountry, setSelectedCountry] = useState('CN')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [verificationCode, setVerificationCode] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(0)
@@ -37,6 +45,10 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
     setTurnstileToken,
     validateTurnstile,
   } = useTurnstile()
+  const selectedCountryOption =
+    PHONE_COUNTRIES.find(([country]) => country === selectedCountry) ??
+    PHONE_COUNTRIES[0]
+  const countryCode = selectedCountryOption[1]
 
   const handleSendCode = async () => {
     let fullPhone: string
@@ -162,20 +174,49 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
         <div className='space-y-2'>
           <Label htmlFor='phone-number'>{t('Phone number')}</Label>
           <div className='flex gap-2'>
-            <select
-              id='phone-country-code'
-              aria-label={t('Country code')}
-              className='border-input bg-background h-9 w-28 rounded-md border px-2 text-sm'
-              value={countryCode}
-              onChange={(event) => setCountryCode(event.target.value)}
+            <Select
+              items={PHONE_COUNTRIES.map(([country, code, flag]) => ({
+                value: country,
+                label: `${flag} ${country} ${code}`,
+              }))}
+              value={selectedCountry}
+              onValueChange={(value) => value && setSelectedCountry(value)}
               disabled={binding || sendingCode}
             >
-              {PHONE_COUNTRIES.map(([country, code, flag]) => (
-                <option key={`${country}-${code}`} value={code}>
-                  {flag} {code}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                id='phone-country-code'
+                aria-label={t('Country code')}
+                className='bg-background h-9 w-32 shrink-0 px-3'
+              >
+                <SelectValue>
+                  <span className='text-base leading-none'>
+                    {selectedCountryOption[2]}
+                  </span>
+                  <span>{selectedCountryOption[1]}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent
+                align='start'
+                alignItemWithTrigger={false}
+                className='max-h-72 min-w-56 p-1'
+              >
+                <SelectGroup>
+                  {PHONE_COUNTRIES.map(([country, code, flag]) => (
+                    <SelectItem
+                      key={country}
+                      value={country}
+                      className='py-2 pl-2'
+                    >
+                      <span className='w-6 text-base leading-none'>{flag}</span>
+                      <span className='flex-1 font-medium'>{country}</span>
+                      <span className='text-muted-foreground tabular-nums'>
+                        {code}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
             <Input
               id='phone-number'
               value={phoneNumber}

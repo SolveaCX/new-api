@@ -7,6 +7,7 @@ export type ConsoleCurrentUserPayload = {
   data?: {
     id?: unknown;
     phone_bound?: unknown;
+    role?: unknown;
   } | null;
   success?: unknown;
 };
