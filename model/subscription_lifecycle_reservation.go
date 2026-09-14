@@ -563,6 +563,14 @@ func EnsureNoActiveSubscriptionProviderLifecycleReservationTx(tx *gorm.DB, bindi
 	return nil
 }
 
+// SubscriptionProviderLifecycleReservationIsActive reports whether a binding
+// currently holds a live lifecycle lease. A consumed reservation keeps its
+// token/action as an inactive tombstone (until=0) and an expired one keeps
+// all three fields; neither blocks a new owner.
+func SubscriptionProviderLifecycleReservationIsActive(binding *SubscriptionProviderBinding, now int64) bool {
+	return subscriptionProviderLifecycleReservationIsActive(binding, now)
+}
+
 func subscriptionProviderLifecycleReservationIsActive(binding *SubscriptionProviderBinding, now int64) bool {
 	return binding != nil &&
 		strings.TrimSpace(binding.LifecycleReservationToken) != "" &&

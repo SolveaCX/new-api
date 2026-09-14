@@ -400,7 +400,7 @@ func previewCatalogMigrationContract(ctx context.Context, db *gorm.DB, inventory
 		item.Reason = CatalogMigrationReasonProviderFactsMismatch
 		return item
 	}
-	if strings.TrimSpace(binding.LifecycleReservationToken) != "" || binding.LifecycleReservationUntil > 0 {
+	if model.SubscriptionProviderLifecycleReservationIsActive(&binding, model.GetDBTimestampTx(db.WithContext(ctx))) {
 		item.Reason = CatalogMigrationReasonProviderLifecycleBusy
 		return item
 	}
