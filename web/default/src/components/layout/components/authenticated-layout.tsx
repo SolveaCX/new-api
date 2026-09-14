@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -27,7 +29,11 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
 import { PhoneBindingDialog } from '@/features/auth/components/phone-binding-dialog'
-import { shouldRequirePhoneBinding } from '@/features/auth/lib/phone-binding'
+import { getPhoneVerificationStatus } from '@/features/auth/api'
+import {
+  shouldRequirePhoneBinding,
+  shouldSuggestPhoneBinding,
+} from '@/features/auth/lib/phone-binding'
 import { useStatus } from '@/hooks/use-status'
 import { Onboarding } from '@/features/onboarding'
 import { exitImpersonation as exitImpersonationRequest } from '@/features/users/api'
@@ -46,6 +52,25 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const { status } = useStatus()
   const phoneBindingRequired =
     shouldRequirePhoneBinding(user, status?.sms_verification === true)
+  const phoneStatusQuery = useQuery({
+    queryKey: ['auth', 'phone-verification-status', user?.id],
+    queryFn: getPhoneVerificationStatus,
+    enabled:
+      Boolean(user) &&
+      (user?.role ?? 10) < 10 &&
+      status?.sms_verification === true,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const phoneStatus = phoneStatusQuery.data?.success
+    ? phoneStatusQuery.data.data
+    : undefined
+  const phoneBindingSuggested = shouldSuggestPhoneBinding(user, phoneStatus)
+  const [dismissedPhoneBindingUserId, setDismissedPhoneBindingUserId] =
+    useState<number | null>(null)
+  const showPhoneBinding =
+    phoneBindingRequired ||
+    (phoneBindingSuggested && dismissedPhoneBindingUserId !== user?.id)
   const exitImpersonation = async () => {
     const result = await exitImpersonationRequest()
     if (!result.success || !result.data) return
@@ -102,10 +127,16 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
       </SidebarProvider>
       <Onboarding />
       <PhoneBindingDialog
-        open={phoneBindingRequired}
-        required
-        onOpenChange={() => undefined}
+        open={showPhoneBinding}
+        required={phoneBindingRequired}
+        onOpenChange={(open) => {
+          if (!open && !phoneBindingRequired) {
+            setDismissedPhoneBindingUserId(user?.id ?? null)
+          }
+        }}
         onSuccess={(phoneNumber, phoneVerifiedAt) => {
+          setDismissedPhoneBindingUserId(user?.id ?? null)
+          void phoneStatusQuery.refetch()
           setUser((currentUser) =>
             currentUser
               ? {

@@ -1,6 +1,7 @@
 import type { AuthUser } from '@/stores/auth-store'
+import type { PhoneVerificationStatus } from '../types'
 
-type PhoneBindingUser = Pick<AuthUser, 'phone_verification_required'>
+type PhoneBindingUser = Pick<AuthUser, 'phone_verification_required' | 'role'>
 
 /**
  * Whether the blocking phone-binding dialog must be shown.
@@ -17,4 +18,20 @@ export function shouldRequirePhoneBinding(
   smsVerificationEnabled = true
 ): boolean {
   return smsVerificationEnabled && user?.phone_verification_required === true
+}
+
+/**
+ * Whether an optional phone-binding prompt should be shown. Unlike the
+ * blocking gate, this applies to every unbound non-admin account.
+ */
+export function shouldSuggestPhoneBinding(
+  user: PhoneBindingUser | null | undefined,
+  status: PhoneVerificationStatus | null | undefined
+): boolean {
+  return (
+    typeof user?.role === 'number' &&
+    user.role < 10 &&
+    status?.sms_verification_enabled === true &&
+    status.phone_bound === false
+  )
 }

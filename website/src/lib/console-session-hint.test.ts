@@ -60,7 +60,7 @@ describe("console session hint", () => {
     expect(isVerifiedConsoleUserPayload(null)).toBe(false);
   });
 
-  test("shows phone prompt only for non-admin users explicitly required to bind", () => {
+  test("shows phone prompt for every unbound non-admin user", () => {
     expect(
       shouldShowPhoneBindingPrompt({
         success: true,
@@ -70,7 +70,25 @@ describe("console session hint", () => {
     expect(
       shouldShowPhoneBindingPrompt({
         success: true,
-        data: { id: 42, role: 1, verification_required: false },
+        data: {
+          id: 42,
+          role: 1,
+          phone_bound: false,
+          verification_required: false,
+          sms_verification_enabled: true,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowPhoneBindingPrompt({
+        success: true,
+        data: {
+          id: 42,
+          role: 1,
+          phone_bound: true,
+          verification_required: false,
+          sms_verification_enabled: true,
+        },
       }),
     ).toBe(false);
     expect(

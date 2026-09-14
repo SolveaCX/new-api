@@ -6939,6 +6939,7 @@
     "Phone number": "Numéro de téléphone",
     "Phone number verification required": "Vérification du numéro de téléphone requise",
     "Please bind and verify your phone number before using the console and API.": "Associez et vérifiez votre numéro de téléphone avant d’utiliser la console et l’API.",
+    "Bind and verify your phone number to improve account security.": "Associez et vérifiez votre numéro de téléphone pour renforcer la sécurité de votre compte.",
     "Bind phone number": "Associer le numéro de téléphone",
     "Phone number bound successfully": "Numéro de téléphone associé",
     "Failed to bind phone number": "Échec de l’association du numéro de téléphone",

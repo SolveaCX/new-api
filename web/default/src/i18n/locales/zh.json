@@ -6939,6 +6939,7 @@
     "Phone number": "手机号",
     "Phone number verification required": "需要验证手机号",
     "Please bind and verify your phone number before using the console and API.": "使用控制台和 API 前，请先绑定并验证手机号。",
+    "Bind and verify your phone number to improve account security.": "绑定并验证手机号，以提升账户安全性。",
     "Bind phone number": "绑定手机号",
     "Phone number bound successfully": "手机号绑定成功",
     "Failed to bind phone number": "手机号绑定失败",
