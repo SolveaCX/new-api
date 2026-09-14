@@ -6930,14 +6930,6 @@
     "Logo is mapped automatically from the model name.": "Logo 将根据模型名称自动匹配。",
     "Please choose a model for each slot": "请为每个位置选择一个模型",
     "Description and offer are required": "描述和优惠文案不能为空",
-    "Each slot must use a different model": "每个位置必须使用不同的模型",
-    "Link your phone number": "绑定手机号",
-    "Add a phone number to help keep your account secure.": "添加手机号，帮助保障你的账号安全。",
-    "Country calling code": "国际区号",
-    "Phone number": "手机号",
-    "Enter your phone number": "请输入手机号",
-    "Link phone number": "绑定手机号",
-    "Maybe later": "暂时跳过",
-    "Phone verification will be available soon.": "手机验证即将开放。"
+    "Each slot must use a different model": "每个位置必须使用不同的模型"
   }
 }

@@ -26,7 +26,6 @@ import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AnimatedOutlet } from '@/components/page-transition'
 import { SkipToMain } from '@/components/skip-to-main'
-import { PhoneBindingPrompt } from '@/features/auth/components/phone-binding-prompt'
 import { Onboarding } from '@/features/onboarding'
 import { exitImpersonation as exitImpersonationRequest } from '@/features/users/api'
 import { AppHeader } from './app-header'
@@ -96,7 +95,6 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
         </div>
       </SidebarProvider>
       <Onboarding />
-      <PhoneBindingPrompt />
     </LayoutProvider>
   )
 }

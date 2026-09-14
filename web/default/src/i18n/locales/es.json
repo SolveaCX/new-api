@@ -6929,14 +6929,6 @@
     "Logo is mapped automatically from the model name.": "El logotipo se asigna automáticamente según el nombre del modelo.",
     "Please choose a model for each slot": "Elige un modelo para cada espacio",
     "Description and offer are required": "La descripción y la oferta son obligatorias",
-    "Each slot must use a different model": "Cada espacio debe usar un modelo diferente",
-    "Link your phone number": "Vincula tu número de teléfono",
-    "Add a phone number to help keep your account secure.": "Añade un número de teléfono para proteger tu cuenta.",
-    "Country calling code": "Prefijo internacional",
-    "Phone number": "Número de teléfono",
-    "Enter your phone number": "Introduce tu número de teléfono",
-    "Link phone number": "Vincular teléfono",
-    "Maybe later": "Más tarde",
-    "Phone verification will be available soon.": "La verificación telefónica estará disponible pronto."
+    "Each slot must use a different model": "Cada espacio debe usar un modelo diferente"
   }
 }
