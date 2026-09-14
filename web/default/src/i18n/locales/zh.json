@@ -6933,6 +6933,18 @@
     "Please enter a valid phone number": "请输入有效的手机号",
     "Please enter the SMS verification code": "请输入短信验证码",
     "SMS verification code": "短信验证码",
-    "SMS verification code sent": "短信验证码已发送"
+    "SMS verification code sent": "短信验证码已发送",
+    "Enter your phone number": "请输入手机号",
+    "Back to verification": "返回验证",
+    "Bind Phone": "绑定手机号",
+    "Bind a phone number to your account.": "为您的账户绑定手机号。",
+    "Change Phone": "更换手机号",
+    "Enter the code sent to {{phone}}": "请输入发送至 {{phone}} 的验证码",
+    "Phone Number": "手机号码",
+    "Phone binding preview updated.": "手机号绑定预览已更新。",
+    "Prototype only: no verification code was sent.": "当前为交互原型，未实际发送验证码。",
+    "Prototype only: verification codes are not sent and changes are not saved.": "当前为交互原型：验证码不会实际发送，修改也不会保存。",
+    "Verify Current Phone": "验证当前手机号",
+    "Verify your current phone before binding a new one.": "绑定新手机号前，请先验证当前手机号。"
   }
 }

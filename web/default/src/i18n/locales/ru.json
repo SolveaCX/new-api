@@ -6933,6 +6933,18 @@
     "Please enter a valid phone number": "Введите действительный номер телефона",
     "Please enter the SMS verification code": "Введите код подтверждения из SMS",
     "SMS verification code": "Код подтверждения по SMS",
-    "SMS verification code sent": "Код подтверждения по SMS отправлен"
+    "SMS verification code sent": "Код подтверждения по SMS отправлен",
+    "Enter your phone number": "Введите номер телефона",
+    "Back to verification": "Вернуться к проверке",
+    "Bind Phone": "Привязать телефон",
+    "Bind a phone number to your account.": "Привяжите номер телефона к своей учётной записи.",
+    "Change Phone": "Изменить телефон",
+    "Enter the code sent to {{phone}}": "Введите код, отправленный на {{phone}}",
+    "Phone Number": "Номер телефона",
+    "Phone binding preview updated.": "Предпросмотр привязки телефона обновлён.",
+    "Prototype only: no verification code was sent.": "Это прототип: код подтверждения не был отправлен.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Это прототип: коды не отправляются, а изменения не сохраняются.",
+    "Verify Current Phone": "Подтвердить текущий телефон",
+    "Verify your current phone before binding a new one.": "Подтвердите текущий телефон перед привязкой нового."
   }
 }

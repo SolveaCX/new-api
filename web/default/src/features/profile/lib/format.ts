@@ -57,3 +57,17 @@ export function getUserInitials(user?: UserProfile): string {
   }
   return name.slice(0, 2).toUpperCase()
 }
+
+/**
+ * Mask a phone number while retaining enough digits for recognition.
+ */
+export function maskPhoneNumber(phone?: string): string {
+  if (!phone) return ''
+
+  const compactPhone = phone.replace(/[\s-]/g, '')
+  const countryCode = compactPhone.startsWith('+86') ? '+86 ' : ''
+  const localPhone = countryCode ? compactPhone.slice(3) : compactPhone
+
+  if (localPhone.length < 7) return '****'
+  return `${countryCode}${localPhone.slice(0, 3)}****${localPhone.slice(-4)}`
+}

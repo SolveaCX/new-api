@@ -6933,6 +6933,18 @@
     "Please enter a valid phone number": "Saisissez un numéro de téléphone valide",
     "Please enter the SMS verification code": "Saisissez le code de vérification SMS",
     "SMS verification code": "Code de vérification SMS",
-    "SMS verification code sent": "Code de vérification SMS envoyé"
+    "SMS verification code sent": "Code de vérification SMS envoyé",
+    "Enter your phone number": "Saisissez votre numéro",
+    "Back to verification": "Retour à la vérification",
+    "Bind Phone": "Associer un téléphone",
+    "Bind a phone number to your account.": "Associez un numéro de téléphone à votre compte.",
+    "Change Phone": "Modifier le téléphone",
+    "Enter the code sent to {{phone}}": "Saisissez le code envoyé au {{phone}}",
+    "Phone Number": "Numéro de téléphone",
+    "Phone binding preview updated.": "L’aperçu de l’association du téléphone a été mis à jour.",
+    "Prototype only: no verification code was sent.": "Prototype uniquement : aucun code de vérification n’a été envoyé.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Prototype uniquement : les codes ne sont pas envoyés et les modifications ne sont pas enregistrées.",
+    "Verify Current Phone": "Vérifier le téléphone actuel",
+    "Verify your current phone before binding a new one.": "Vérifiez votre téléphone actuel avant d’en associer un nouveau."
   }
 }

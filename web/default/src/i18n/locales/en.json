@@ -6933,6 +6933,18 @@
     "Please enter a valid phone number": "Please enter a valid phone number",
     "Please enter the SMS verification code": "Please enter the SMS verification code",
     "SMS verification code": "SMS verification code",
-    "SMS verification code sent": "SMS verification code sent"
+    "SMS verification code sent": "SMS verification code sent",
+    "Enter your phone number": "Enter your phone number",
+    "Back to verification": "Back to verification",
+    "Bind Phone": "Bind Phone",
+    "Bind a phone number to your account.": "Bind a phone number to your account.",
+    "Change Phone": "Change Phone",
+    "Enter the code sent to {{phone}}": "Enter the code sent to {{phone}}",
+    "Phone Number": "Phone Number",
+    "Phone binding preview updated.": "Phone binding preview updated.",
+    "Prototype only: no verification code was sent.": "Prototype only: no verification code was sent.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Prototype only: verification codes are not sent and changes are not saved.",
+    "Verify Current Phone": "Verify Current Phone",
+    "Verify your current phone before binding a new one.": "Verify your current phone before binding a new one."
   }
 }

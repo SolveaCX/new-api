@@ -6933,6 +6933,18 @@
     "Please enter a valid phone number": "Vui lòng nhập số điện thoại hợp lệ",
     "Please enter the SMS verification code": "Vui lòng nhập mã xác minh SMS",
     "SMS verification code": "Mã xác minh SMS",
-    "SMS verification code sent": "Đã gửi mã xác minh SMS"
+    "SMS verification code sent": "Đã gửi mã xác minh SMS",
+    "Enter your phone number": "Nhập số điện thoại",
+    "Back to verification": "Quay lại xác minh",
+    "Bind Phone": "Liên kết số điện thoại",
+    "Bind a phone number to your account.": "Liên kết một số điện thoại với tài khoản của bạn.",
+    "Change Phone": "Đổi số điện thoại",
+    "Enter the code sent to {{phone}}": "Nhập mã đã gửi đến {{phone}}",
+    "Phone Number": "Số điện thoại",
+    "Phone binding preview updated.": "Đã cập nhật bản xem trước liên kết số điện thoại.",
+    "Prototype only: no verification code was sent.": "Đây chỉ là bản mẫu: không có mã xác minh nào được gửi.",
+    "Prototype only: verification codes are not sent and changes are not saved.": "Đây chỉ là bản mẫu: mã xác minh không được gửi và thay đổi không được lưu.",
+    "Verify Current Phone": "Xác minh số điện thoại hiện tại",
+    "Verify your current phone before binding a new one.": "Hãy xác minh số điện thoại hiện tại trước khi liên kết số mới."
   }
 }
