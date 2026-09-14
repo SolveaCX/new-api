@@ -3,8 +3,18 @@ import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select'
 import { Dialog } from '@/components/dialog'
 import { Turnstile } from '@/components/turnstile'
 import { bindPhone, sendPhoneVerification } from '../api'
@@ -130,19 +140,30 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
           ? t('Phone number verification required')
           : t('Bind phone number')
       }
-      description={t(
-        'Please bind and verify your phone number before using the console and API.'
-      )}
+      description={
+        props.required
+          ? t(
+              'Please bind and verify your phone number before using the console and API.'
+            )
+          : t(
+              'Bind and verify your phone number to improve account security.'
+            )
+      }
       showCloseButton={!props.required}
-      contentClassName='sm:max-w-md'
+      contentClassName='rounded-2xl sm:max-w-[480px]'
       contentHeight='auto'
-      bodyClassName='space-y-4'
+      headerClassName='gap-1.5'
+      titleClassName='text-xl'
+      descriptionClassName='max-w-sm leading-5'
+      bodyClassName='flex flex-col gap-5'
+      footerClassName='border-border/70 border-t bg-muted/30'
       footer={
         <>
           {!props.required && (
             <Button
               type='button'
               variant='outline'
+              className='min-w-24 rounded-lg'
               onClick={() => handleOpenChange(false)}
               disabled={binding || sendingCode}
             >
@@ -151,51 +172,55 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
           )}
           <Button
             type='button'
+            className='min-w-40 rounded-lg'
             onClick={handleBind}
             disabled={
               binding || sendingCode || !phoneNumber || !verificationCode
             }
           >
-            {binding && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {binding && <Loader2 data-icon='inline-start' className='animate-spin' />}
             {binding ? t('Binding...') : t('Bind phone number')}
           </Button>
         </>
       }
     >
-      <div className='space-y-4 py-4'>
-        <div className='space-y-2'>
-          <Label htmlFor='phone-number'>{t('Phone number')}</Label>
+      <FieldGroup className='gap-4 py-2'>
+        <Field>
+          <FieldLabel htmlFor='phone-number'>{t('Phone number')}</FieldLabel>
           <div className='flex gap-2'>
-            <select
+            <NativeSelect
               id='phone-country-code'
               aria-label={t('Country code')}
-              className='border-input bg-background h-9 w-28 rounded-md border px-2 text-sm'
+              className='w-28 shrink-0 [&_[data-slot=native-select]]:h-10'
               value={countryCode}
               onChange={(event) => setCountryCode(event.target.value)}
               disabled={binding || sendingCode}
             >
               {PHONE_COUNTRIES.map(([country, code, flag]) => (
-                <option key={`${country}-${code}`} value={code}>
+                <NativeSelectOption key={`${country}-${code}`} value={code}>
                   {flag} {code}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
+            </NativeSelect>
             <Input
               id='phone-number'
+              className='h-10'
+              inputMode='tel'
+              autoComplete='tel-national'
               value={phoneNumber}
               onChange={(event) => setPhoneNumber(event.target.value)}
               placeholder={t('Enter phone number')}
               disabled={binding || sendingCode}
             />
           </div>
-        </div>
+        </Field>
 
-        <div className='space-y-2'>
-          <Label htmlFor='phone-verification-code'>
+        <Field>
+          <FieldLabel htmlFor='phone-verification-code'>
             {t('SMS verification code')}
-          </Label>
-          <div className='flex gap-2'>
-            <Input
+          </FieldLabel>
+          <InputGroup className='h-10'>
+            <InputGroupInput
               id='phone-verification-code'
               value={verificationCode}
               inputMode='numeric'
@@ -207,28 +232,31 @@ export function PhoneBindingDialog(props: PhoneBindingDialogProps) {
               placeholder={t('Please enter the SMS verification code')}
               disabled={binding}
             />
-            <Button
-              type='button'
-              variant='outline'
-              className='shrink-0'
-              onClick={handleSendCode}
-              disabled={
-                binding || sendingCode || secondsLeft > 0 || !phoneNumber
-              }
-            >
-              {secondsLeft > 0 ? `${secondsLeft}s` : t('Send code')}
-            </Button>
-          </div>
-        </div>
+            <InputGroupAddon align='inline-end'>
+              <InputGroupButton
+                variant='secondary'
+                size='sm'
+                onClick={handleSendCode}
+                disabled={
+                  binding || sendingCode || secondsLeft > 0 || !phoneNumber
+                }
+              >
+                {secondsLeft > 0 ? `${secondsLeft}s` : t('Send code')}
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+        </Field>
 
         {isTurnstileEnabled && (
-          <Turnstile
-            siteKey={turnstileSiteKey}
-            onVerify={setTurnstileToken}
-            onExpire={() => setTurnstileToken('')}
-          />
+          <div className='bg-muted/30 flex min-h-[76px] items-center justify-center overflow-hidden rounded-xl border p-1.5'>
+            <Turnstile
+              siteKey={turnstileSiteKey}
+              onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken('')}
+            />
+          </div>
         )}
-      </div>
+      </FieldGroup>
     </Dialog>
   )
 }

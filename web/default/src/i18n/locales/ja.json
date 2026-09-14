@@ -6939,6 +6939,7 @@
     "Phone number": "電話番号",
     "Phone number verification required": "電話番号の認証が必要です",
     "Please bind and verify your phone number before using the console and API.": "コンソールとAPIを使用する前に、電話番号を登録して認証してください。",
+    "Bind and verify your phone number to improve account security.": "電話番号を登録して認証し、アカウントのセキュリティを強化しましょう。",
     "Bind phone number": "電話番号を登録",
     "Phone number bound successfully": "電話番号を登録しました",
     "Failed to bind phone number": "電話番号の登録に失敗しました",

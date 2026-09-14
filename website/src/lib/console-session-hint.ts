@@ -33,7 +33,10 @@ export function shouldShowPhoneBindingPrompt(
   const user = payload?.data;
   if (!user || typeof user.id !== "number") return false;
   if (typeof user.role !== "number" || user.role >= 10) return false;
-  return user.verification_required === true;
+  if (user.verification_required === true) return true;
+  return (
+    user.sms_verification_enabled === true && user.phone_bound === false
+  );
 }
 
 export function hasConsoleSessionHintFromRequestCookieStore(
