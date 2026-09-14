@@ -262,9 +262,6 @@ func TestRenewWalletSubscriptionContractCatalogFailuresNeverFallback(t *testing.
 		{name: "wrong snapshot", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
 			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("target_plan_snapshot", `{"version":1}`).Error)
 		}},
-		{name: "guard off", mutate: func(t *testing.T, _ model.SubscriptionChangeIntent) {
-			t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "false")
-		}},
 		{name: "sandbox drift", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
 			require.NotNil(t, intent.CatalogMigrationBatchId)
 			require.NoError(t, model.DB.Exec("UPDATE subscription_catalog_migration_batches SET service_name = ? WHERE id = ?", "unexpected-service", *intent.CatalogMigrationBatchId).Error)
@@ -280,9 +277,6 @@ func TestRenewWalletSubscriptionContractCatalogFailuresNeverFallback(t *testing.
 		}},
 		{name: "external payment mode", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
 			require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", intent.ContractId).Update("payment_mode", model.SubscriptionPaymentModeExternalOnePeriod).Error)
-		}},
-		{name: "needs attention", mutate: func(t *testing.T, intent model.SubscriptionChangeIntent) {
-			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("status", model.SubscriptionChangeIntentStatusNeedsAttention).Error)
 		}},
 	}
 	for index, test := range tests {
@@ -333,6 +327,171 @@ func TestRunWalletSubscriptionRenewalOnceRetriesCatalogAfterBalanceTopUp(t *test
 	var ledgerCount int64
 	require.NoError(t, model.DB.Model(&model.WalletLedgerEntry{}).Where("user_id = ?", contract.UserId).Count(&ledgerCount).Error)
 	require.Equal(t, int64(1), ledgerCount)
+}
+
+func TestRenewWalletSubscriptionContractSecondCycleAfterCatalogApplyRenewsOnTargetPlan(t *testing.T) {
+	// After the cutover cycle the applied intent stays latest_change_intent_id.
+	// The next ordinary cycle must renew on the target plan, not error.
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7870, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7970, 5000, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7871, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+
+	first, err := RenewWalletSubscriptionContract(contract.Id)
+	require.NoError(t, err)
+	require.True(t, first.Renewed)
+	var afterFirst model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&afterFirst, "id = ?", contract.Id).Error)
+	require.Equal(t, intent.Id, afterFirst.LatestChangeIntentId)
+	require.Equal(t, target.Id, afterFirst.CurrentPlanId)
+	// Fast-forward: the renewed period has ended (at a distinct instant so the
+	// second cycle gets its own renewal key).
+	secondEnd := periodEnd + 5
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{
+		"current_period_start": secondEnd - 30*24*3600, "current_period_end": secondEnd,
+	}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", afterFirst.CurrentEntitlementId).Updates(map[string]interface{}{
+		"start_time": secondEnd - 30*24*3600, "end_time": secondEnd, "access_end_time": secondEnd,
+	}).Error)
+
+	second, err := RenewWalletSubscriptionContract(contract.Id)
+	require.NoError(t, err)
+	require.True(t, second.Renewed)
+	require.Equal(t, int64(1000), second.ChargedQuota)
+	var renewed model.UserSubscription
+	require.NoError(t, model.DB.First(&renewed, "id = ?", second.EntitlementID).Error)
+	require.Equal(t, target.Id, renewed.PlanId)
+	require.Equal(t, int64(13), renewed.AmountTotal)
+}
+
+func TestRunWalletSubscriptionRenewalOnceContinuesPastPoisonContract(t *testing.T) {
+	// One contract whose catalog facts are corrupt must not starve every other
+	// wallet renewal in the batch.
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7872, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 30
+	poison, poisonEntitlement := seedWalletRenewalContract(t, 7972, 1500, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7873, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &poison, target.Id, walletCatalogSnapshot(t, target.Id))
+	require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("target_plan_snapshot", `{"version":1}`).Error)
+	healthy, _ := seedWalletRenewalContract(t, 7973, 1500, source, periodEnd-1)
+
+	renewed, err := RunWalletSubscriptionRenewalOnce(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, renewed)
+	assertWalletCatalogRenewalUnchanged(t, poison, poisonEntitlement, 1500)
+	var healthyStored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&healthyStored, "id = ?", healthy.Id).Error)
+	require.Greater(t, healthyStored.CurrentPeriodEnd, periodEnd-1)
+}
+
+func TestRenewWalletSubscriptionContractHonorsScheduledCatalogWhenFlagOff(t *testing.T) {
+	// The feature flag and allowlist gate admin preview/apply/cancel. A cutover
+	// that was already scheduled is a committed fact and still applies.
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7874, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, _ := seedWalletRenewalContract(t, 7974, 1500, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7875, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_ENABLED", "false")
+	t.Setenv("SUBSCRIPTION_CATALOG_MIGRATION_CONTRACT_ALLOWLIST", "")
+
+	result, err := RenewWalletSubscriptionContract(contract.Id)
+	require.NoError(t, err)
+	require.True(t, result.Renewed)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, target.Id, stored.CurrentPlanId)
+	var applied model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&applied, "id = ?", intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, applied.Status)
+}
+
+func TestRenewWalletSubscriptionContractNonScheduledCatalogIntentRenewsLegacyPlan(t *testing.T) {
+	// An intent that never reached "scheduled" (needs_attention, superseded,
+	// failed) is not a cutover. The contract renews its current plan normally.
+	for _, status := range []string{model.SubscriptionChangeIntentStatusNeedsAttention, model.SubscriptionChangeIntentStatusSuperseded, model.SubscriptionChangeIntentStatusFailed} {
+		t.Run(status, func(t *testing.T) {
+			setupSubscriptionPurchaseServiceTestDB(t)
+			source := insertPurchaseServicePlan(t, 7876, 1, 7, 700)
+			periodEnd := common.GetTimestamp() - 15
+			contract, oldEntitlement := seedWalletRenewalContract(t, 7976, 1500, source, periodEnd)
+			target := insertPurchaseServicePlan(t, 7877, 2, 99, 999)
+			configureWalletCatalogTarget(t, &target)
+			intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+			require.NoError(t, model.DB.Model(&model.SubscriptionChangeIntent{}).Where("id = ?", intent.Id).Update("status", status).Error)
+			require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", contract.Id).Updates(map[string]interface{}{"pending_plan_id": 0, "pending_effective_at": 0}).Error)
+
+			result, err := RenewWalletSubscriptionContract(contract.Id)
+			require.NoError(t, err)
+			require.True(t, result.Renewed)
+			require.Equal(t, int64(700), result.ChargedQuota)
+			var stored model.UserSubscriptionContract
+			require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+			require.Equal(t, source.Id, stored.CurrentPlanId)
+			require.NotEqual(t, oldEntitlement.Id, stored.CurrentEntitlementId)
+			var unchangedIntent model.SubscriptionChangeIntent
+			require.NoError(t, model.DB.First(&unchangedIntent, "id = ?", intent.Id).Error)
+			require.Equal(t, status, unchangedIntent.Status)
+		})
+	}
+}
+
+func TestRunWalletSubscriptionRenewalOnceAppliesCatalogAfterBalancePauseExpiryAndTopUp(t *testing.T) {
+	// Balance pause -> the old entitlement expires in the same tick -> top up.
+	// The next tick must still apply the cutover instead of poisoning the sweep.
+	setupSubscriptionPurchaseServiceTestDB(t)
+	source := insertPurchaseServicePlan(t, 7878, 1, 7, 700)
+	periodEnd := common.GetTimestamp() - 15
+	contract, oldEntitlement := seedWalletRenewalContract(t, 7978, 999, source, periodEnd)
+	target := insertPurchaseServicePlan(t, 7879, 2, 99, 999)
+	configureWalletCatalogTarget(t, &target)
+	intent := seedReachedWalletCatalogMigration(t, &contract, target.Id, walletCatalogSnapshot(t, target.Id))
+	healthy, _ := seedWalletRenewalContract(t, 7979, 1500, source, periodEnd+1)
+
+	renewed, err := RunWalletSubscriptionRenewalOnce(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, renewed)
+	var paused model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&paused, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, paused.RenewalStatus)
+	expired, err := model.ExpireDueSubscriptions(100)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, expired, 1)
+	var expiredEntitlement model.UserSubscription
+	require.NoError(t, model.DB.First(&expiredEntitlement, "id = ?", oldEntitlement.Id).Error)
+	require.Equal(t, "expired", expiredEntitlement.Status)
+
+	// Tick with the balance still short: no error, no poison, and a contract
+	// due behind the paused one still renews.
+	var healthyAfterFirst model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&healthyAfterFirst, "id = ?", healthy.Id).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscriptionContract{}).Where("id = ?", healthy.Id).Updates(map[string]interface{}{"current_period_end": periodEnd + 2, "current_period_start": periodEnd + 2 - 30*24*3600}).Error)
+	require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", healthyAfterFirst.CurrentEntitlementId).Updates(map[string]interface{}{"start_time": periodEnd + 2 - 30*24*3600, "end_time": periodEnd + 2, "access_end_time": periodEnd + 2}).Error)
+	renewed, err = RunWalletSubscriptionRenewalOnce(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, renewed)
+	require.NoError(t, model.DB.First(&paused, "id = ?", contract.Id).Error)
+	require.Equal(t, model.SubscriptionRenewalStatusPausedInsufficientBalance, paused.RenewalStatus)
+	require.Equal(t, model.SubscriptionContractStatusActive, paused.Status)
+
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", contract.UserId).Update("quota", 1000).Error)
+	renewed, err = RunWalletSubscriptionRenewalOnce(10)
+	require.NoError(t, err)
+	require.Equal(t, 1, renewed)
+	var stored model.UserSubscriptionContract
+	require.NoError(t, model.DB.First(&stored, "id = ?", contract.Id).Error)
+	require.Equal(t, target.Id, stored.CurrentPlanId)
+	require.Equal(t, model.SubscriptionRenewalStatusEnabled, stored.RenewalStatus)
+	var applied model.SubscriptionChangeIntent
+	require.NoError(t, model.DB.First(&applied, "id = ?", intent.Id).Error)
+	require.Equal(t, model.SubscriptionChangeIntentStatusApplied, applied.Status)
 }
 
 func TestRenewWalletSubscriptionContractConcurrentCatalogReplayChargesAndGrantsOnce(t *testing.T) {

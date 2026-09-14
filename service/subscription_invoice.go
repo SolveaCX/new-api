@@ -1010,13 +1010,14 @@ func ReconcileFailedInvoice(ctx context.Context, invoiceID string) error {
 		}
 		planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, facts, binding, contract, plan, pendingDowngrade)
 		if err != nil {
-			return PermanentPaidInvoiceError(err)
+			return catalogRenewalResolutionError(err)
 		}
 		if catalog != nil {
 			plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
 			if err != nil {
 				return PermanentPaidInvoiceError(err)
 			}
+			applyCatalogRenewalPendingFacts(contract, catalog)
 		}
 		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)
@@ -1913,13 +1914,14 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 	}
 	planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, commonFacts, binding, contract, plan, pendingDowngrade)
 	if err != nil {
-		return PermanentPaidInvoiceError(err)
+		return catalogRenewalResolutionError(err)
 	}
 	if catalog != nil {
 		plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
 		if err != nil {
 			return PermanentPaidInvoiceError(err)
 		}
+		applyCatalogRenewalPendingFacts(contract, catalog)
 	}
 	if pendingDowngrade {
 		// This is a real change to another plan, not a renewal of the original
@@ -2026,7 +2028,7 @@ func reconcilePaidInvoiceRenewalTx(tx *gorm.DB, facts paidInvoiceFacts, result *
 		contractUpdates["latest_change_intent_id"] = catalog.Intent.Id
 		intentUpdate := tx.Model(&model.SubscriptionChangeIntent{}).
 			Where("id = ? AND contract_id = ? AND user_id = ? AND provider_binding_id = ? AND change_version = ? AND status = ?",
-				catalog.Intent.Id, contract.Id, contract.UserId, binding.Id, catalog.Intent.ChangeVersion, model.SubscriptionChangeIntentStatusScheduled).
+				catalog.Intent.Id, contract.Id, contract.UserId, binding.Id, catalog.Intent.ChangeVersion, catalog.Intent.Status).
 			Updates(map[string]interface{}{
 				"status":              model.SubscriptionChangeIntentStatusApplied,
 				"provider_invoice_id": facts.InvoiceID,
@@ -2437,14 +2439,11 @@ func resolveRenewalPlanSnapshotTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, b
 	if pendingDowngrade {
 		return recurringInvoicePlanSnapshot{}, nil, nil
 	}
+	// An ordinary renewal grants from the frozen snapshot; the current catalog
+	// row may have been edited since and must not be able to block it.
 	snapshot, err := recurringPlanSnapshotFromBindingTx(tx, binding)
 	if err != nil {
 		return recurringInvoicePlanSnapshot{}, nil, err
-	}
-	if snapshot.Typed != nil {
-		if _, err := loadRenewalSnapshotPlanTx(tx, *snapshot.Typed, false); err != nil {
-			return recurringInvoicePlanSnapshot{}, nil, err
-		}
 	}
 	return snapshot, nil, nil
 }
@@ -2465,6 +2464,24 @@ func loadRenewalSnapshotPlanTx(tx *gorm.DB, snapshot RecurringPlanSnapshotV1, re
 	return &plan, nil
 }
 
+// catalogRenewalRuntimeError marks a boundary failure caused by the running
+// process (wrong service, environment or Stripe credentials for the batch).
+// Such failures must be retried on another node/deploy, never acknowledged as
+// permanent: the customer already paid.
+type catalogRenewalRuntimeError struct{ err error }
+
+func (e catalogRenewalRuntimeError) Error() string { return e.err.Error() }
+func (e catalogRenewalRuntimeError) Unwrap() error { return e.err }
+
+// loadReachedStripeCatalogRenewalTx resolves whether this paid renewal is the
+// boundary at which a scheduled catalog cutover applies.
+//
+// Only an intent in status "scheduled" is a cutover. An intent in
+// compensation_required/needs_attention applies only when the invoice
+// already bills the target price (Stripe executed the schedule and the local
+// finalize was lost); otherwise Stripe kept billing the legacy price and this
+// is an ordinary renewal. Applied, superseded, failed and any other status
+// mean "no cutover here" and never block the renewal.
 func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFacts, binding *model.SubscriptionProviderBinding, contract *model.UserSubscriptionContract) (*catalogRenewalResolution, error) {
 	if contract.LatestChangeIntentId <= 0 {
 		return nil, nil
@@ -2476,37 +2493,12 @@ func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFac
 	if intent.Kind != model.SubscriptionChangeIntentKindCatalogMigration {
 		return nil, nil
 	}
-	if intent.Status == model.SubscriptionChangeIntentStatusApplied {
+	if !catalogMigrationIntentCanReachBoundary(intent.Status) {
 		return nil, nil
 	}
-	if intent.Status != model.SubscriptionChangeIntentStatusScheduled || intent.ContractId != contract.Id || intent.UserId != contract.UserId ||
-		intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId <= 0 || intent.ToPlanId != contract.PendingPlanId ||
-		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd ||
+	if intent.ContractId != contract.Id || intent.UserId != contract.UserId || intent.ToPlanId <= 0 ||
 		intent.PaymentMode != model.SubscriptionPaymentModeStripeRecurring || intent.ProviderBindingId != binding.Id || intent.CatalogMigrationBatchId == nil {
 		return nil, errors.New("Stripe catalog migration intent facts drifted")
-	}
-	sandbox := catalogMigrationRuntimeSandboxConfig()
-	if err := ValidateCatalogMigrationCommonSandbox(sandbox, contract.Id); err != nil {
-		return nil, err
-	}
-	liveMode := strings.EqualFold(strings.TrimSpace(sandbox.DeploymentEnvironment), "production")
-	if facts.Livemode != liveMode || binding.Livemode != liveMode {
-		return nil, errors.New("Stripe catalog migration livemode facts drifted")
-	}
-	if liveMode {
-		if !catalogMigrationHasLiveStripeCredentials(sandbox) {
-			return nil, errors.New("Stripe catalog migration requires live credentials")
-		}
-	} else if !catalogMigrationHasTestStripeCredentials(sandbox) {
-		return nil, errors.New("Stripe catalog migration requires test credentials")
-	}
-	var batch model.SubscriptionCatalogMigrationBatch
-	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
-		return nil, err
-	}
-	if batch.SandboxOnly == liveMode || batch.Livemode != liveMode || batch.DeploymentEnvironment != strings.TrimSpace(sandbox.DeploymentEnvironment) ||
-		batch.ServiceName != strings.TrimSpace(sandbox.ServiceName) || batch.Status == model.SubscriptionCatalogMigrationBatchStatusCancelled {
-		return nil, errors.New("Stripe catalog migration batch sandbox facts drifted")
 	}
 	snapshot, err := DecodeRecurringPlanSnapshotV1(intent.TargetPlanSnapshot)
 	if err != nil {
@@ -2515,15 +2507,74 @@ func loadReachedStripeCatalogRenewalTx(tx *gorm.DB, facts stripeInvoiceCommonFac
 	if snapshot.PlanID != intent.ToPlanId {
 		return nil, errors.New("Stripe catalog migration target snapshot plan drifted")
 	}
+	if intent.Status != model.SubscriptionChangeIntentStatusScheduled {
+		// Provider outcome unknown locally: the invoice price is the proof.
+		if strings.TrimSpace(facts.PriceID) != strings.TrimSpace(snapshot.StripePriceID) {
+			return nil, nil
+		}
+	} else if intent.FromPlanId != contract.CurrentPlanId || intent.ToPlanId != contract.PendingPlanId ||
+		intent.EffectiveAt != contract.PendingEffectiveAt || intent.EffectiveAt != contract.CurrentPeriodEnd {
+		return nil, errors.New("Stripe catalog migration intent facts drifted")
+	}
+	if facts.PeriodStart < intent.EffectiveAt {
+		return nil, nil
+	}
 	if strings.TrimSpace(binding.ProviderSubscriptionId) != strings.TrimSpace(facts.SubscriptionID) ||
 		strings.TrimSpace(binding.ProviderSubscriptionItemId) != strings.TrimSpace(facts.SubscriptionItemID) ||
 		strings.TrimSpace(binding.ProviderCustomerId) != strings.TrimSpace(facts.CustomerID) || contract.CurrentProviderBindingId != binding.Id {
 		return nil, errors.New("Stripe catalog migration ownership facts drifted")
 	}
-	if facts.PeriodStart < intent.EffectiveAt {
-		return nil, nil
+	var batch model.SubscriptionCatalogMigrationBatch
+	if err := subscriptionCommandLock(tx).Where("id = ?", strings.TrimSpace(*intent.CatalogMigrationBatchId)).First(&batch).Error; err != nil {
+		return nil, err
+	}
+	sandbox := catalogMigrationRuntimeSandboxConfig()
+	if err := validateCatalogMigrationBatchRuntimeFacts(sandbox, &batch); err != nil {
+		return nil, catalogRenewalRuntimeError{err: err}
+	}
+	if !catalogMigrationCredentialsMatchMode(sandbox) {
+		return nil, catalogRenewalRuntimeError{err: errors.New("catalog migration Stripe credentials do not match deployment mode")}
+	}
+	if facts.Livemode != batch.Livemode || binding.Livemode != batch.Livemode {
+		return nil, errors.New("Stripe catalog migration livemode facts drifted")
 	}
 	return &catalogRenewalResolution{Intent: &intent, Snapshot: snapshot, Raw: intent.TargetPlanSnapshot}, nil
+}
+
+// applyCatalogRenewalPendingFacts makes a resolved cutover the reached pending
+// plan for validation purposes. A "scheduled" intent already has these facts
+// on the contract; an intent whose provider finalize was lost
+// (compensation_required/needs_attention) never got them, yet the invoice
+// billing the target price proves the cutover happened.
+func applyCatalogRenewalPendingFacts(contract *model.UserSubscriptionContract, catalog *catalogRenewalResolution) {
+	if contract == nil || catalog == nil || catalog.Intent == nil {
+		return
+	}
+	contract.PendingPlanId = catalog.Intent.ToPlanId
+	contract.PendingEffectiveAt = catalog.Intent.EffectiveAt
+}
+
+// catalogMigrationIntentCanReachBoundary reports whether an intent status can
+// still turn into an applied cutover at a renewal boundary.
+func catalogMigrationIntentCanReachBoundary(status string) bool {
+	switch status {
+	case model.SubscriptionChangeIntentStatusScheduled,
+		model.SubscriptionChangeIntentStatusCompensationRequired,
+		model.SubscriptionChangeIntentStatusNeedsAttention:
+		return true
+	default:
+		return false
+	}
+}
+
+// catalogRenewalResolutionError classifies a boundary resolution failure for
+// webhook handling: runtime drift is retryable, everything else is permanent.
+func catalogRenewalResolutionError(err error) error {
+	var runtime catalogRenewalRuntimeError
+	if errors.As(err, &runtime) {
+		return err
+	}
+	return PermanentPaidInvoiceError(err)
 }
 
 func providerSnapshotFromPaidInvoice(facts paidInvoiceFacts, invoiceID string) model.ProviderSubscriptionSnapshot {

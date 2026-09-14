@@ -153,13 +153,14 @@ func buildStripeSubscriptionDiscountInvoicePrepareTx(facts stripeInvoiceCommonFa
 		}
 		planSnapshot, catalog, err := resolveRenewalPlanSnapshotTx(tx, facts, binding, contract, plan, pendingDowngrade)
 		if err != nil {
-			return PermanentPaidInvoiceError(err)
+			return catalogRenewalResolutionError(err)
 		}
 		if catalog != nil {
 			plan, err = loadRenewalSnapshotPlanTx(tx, catalog.Snapshot, true)
 			if err != nil {
 				return PermanentPaidInvoiceError(err)
 			}
+			applyCatalogRenewalPendingFacts(contract, catalog)
 		}
 		if err := validateRenewalInvoiceFactsTx(tx, facts, binding, contract, plan, user, planSnapshot); err != nil {
 			return PermanentPaidInvoiceError(err)

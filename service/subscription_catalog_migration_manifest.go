@@ -716,6 +716,25 @@ func priceID(price *stripe.Price) string {
 	return strings.TrimSpace(price.ID)
 }
 
+// validateCatalogMigrationBatchRuntimeFacts proves that the process reaching a
+// renewal boundary is the same deployment/service/Stripe mode that prepared
+// the batch. It deliberately ignores the feature flag and the contract
+// allowlist: those gate admin preview/apply/cancel, while a scheduled cutover
+// is a committed fact that renewals must honor even after the flag is closed.
+func validateCatalogMigrationBatchRuntimeFacts(config CatalogMigrationSandboxConfig, batch *model.SubscriptionCatalogMigrationBatch) error {
+	if batch == nil {
+		return errors.New("catalog migration batch is missing")
+	}
+	env := strings.TrimSpace(config.DeploymentEnvironment)
+	service := strings.TrimSpace(config.ServiceName)
+	liveMode := strings.EqualFold(env, "production")
+	if batch.SandboxOnly == liveMode || batch.Livemode != liveMode ||
+		!strings.EqualFold(batch.DeploymentEnvironment, env) || batch.ServiceName != service {
+		return errors.New("catalog migration batch runtime facts drifted")
+	}
+	return nil
+}
+
 func catalogMigrationHasTestStripeCredentials(config CatalogMigrationSandboxConfig) bool {
 	secret := strings.TrimSpace(config.StripeSecret)
 	publishable := strings.TrimSpace(config.StripePublishableKey)
