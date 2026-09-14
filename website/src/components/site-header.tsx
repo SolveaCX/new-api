@@ -12,7 +12,6 @@ import {
   type FocusEvent,
 } from "react";
 import { FlatkeyBrandLogo } from "@/components/flatkey-brand-logo";
-import { PhoneBindingPrompt } from "@/components/phone-binding-prompt";
 import { useSiteConfig } from "@/components/site-config-provider";
 import { buildLanguagePreferenceCookieWrites } from "@/lib/language-routing";
 import { CLI_LANDING_PATH, cliLandingCopy } from "@/lib/cli-landing";
@@ -38,7 +37,6 @@ import {
 import { TOOLS_LANDING_PATH, toolsLandingCopy } from "@/lib/tools-landing";
 import {
   clearConsoleSessionHint,
-  type ConsoleCurrentUserPayload,
   isVerifiedConsoleUserPayload,
   rememberConsoleSessionHint,
 } from "@/lib/console-session-hint";
@@ -541,8 +539,6 @@ export function SiteHeader(props: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mobileMenuId = useId();
   const [consoleSessionActive, setConsoleSessionActive] = useState(false);
-  const [phoneBindingUser, setPhoneBindingUser] =
-    useState<ConsoleCurrentUserPayload | null>(null);
   const [promoIndex, setPromoIndex] = useState(0);
   const [promoHovering, setPromoHovering] = useState(false);
   const [promoFocused, setPromoFocused] = useState(false);
@@ -671,7 +667,6 @@ export function SiteHeader(props: Props) {
         if (response.status === 401 || response.status === 403) {
           clearConsoleSessionHint();
           setConsoleSessionActive(false);
-          setPhoneBindingUser(null);
           return;
         }
         if (!response.ok) return;
@@ -684,7 +679,6 @@ export function SiteHeader(props: Props) {
           clearConsoleSessionHint();
         }
         setConsoleSessionActive(verified);
-        setPhoneBindingUser(verified ? payload : null);
       } catch {
         /* Keep the current verified state when a transient network failure prevents refresh. */
       }
@@ -1111,7 +1105,6 @@ export function SiteHeader(props: Props) {
           )}
         </div>
       </div>
-      <PhoneBindingPrompt locale={props.locale} user={phoneBindingUser} />
     </header>
   );
 }
