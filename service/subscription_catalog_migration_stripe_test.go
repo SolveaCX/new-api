@@ -98,6 +98,30 @@ func (f *fakeCatalogMigrationStripeProvider) ReleaseSchedule(_ context.Context, 
 	return &stripe.SubscriptionSchedule{ID: id, Status: stripe.SubscriptionScheduleStatusReleased}, nil
 }
 
+func TestCatalogMigrationNextMonthlyPeriodEndClampsToMonthEnd(t *testing.T) {
+	cases := []struct {
+		name string
+		from string
+		want string
+	}{
+		{name: "jan 31 -> feb 28", from: "2026-01-31T10:20:30Z", want: "2026-02-28T10:20:30Z"},
+		{name: "mar 31 -> apr 30", from: "2026-03-31T00:00:00Z", want: "2026-04-30T00:00:00Z"},
+		{name: "may 31 -> jun 30", from: "2026-05-31T23:59:59Z", want: "2026-06-30T23:59:59Z"},
+		{name: "jan 15 -> feb 15", from: "2026-01-15T08:00:00Z", want: "2026-02-15T08:00:00Z"},
+		{name: "dec 31 -> jan 31", from: "2026-12-31T12:00:00Z", want: "2027-01-31T12:00:00Z"},
+		{name: "leap jan 31 -> feb 29", from: "2028-01-31T12:00:00Z", want: "2028-02-29T12:00:00Z"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			from, err := time.Parse(time.RFC3339, tc.from)
+			require.NoError(t, err)
+			want, err := time.Parse(time.RFC3339, tc.want)
+			require.NoError(t, err)
+			require.Equal(t, want.Unix(), catalogMigrationNextMonthlyPeriodEnd(from.Unix()))
+		})
+	}
+}
+
 func TestStripeCatalogMigrationSchedulerBuildsExactOwnedTwoPhaseSchedule(t *testing.T) {
 	scheduler, provider, request := setupStripeCatalogMigrationSchedulerTest(t)
 	result, err := scheduler.ScheduleCatalogMigration(context.Background(), request)
@@ -115,7 +139,7 @@ func TestStripeCatalogMigrationSchedulerBuildsExactOwnedTwoPhaseSchedule(t *test
 	require.Equal(t, request.CurrentPeriodEnd, stripe.Int64Value(provider.updateParams.Phases[0].EndDate))
 	require.Equal(t, request.CurrentPriceID, stripe.StringValue(provider.updateParams.Phases[0].Items[0].Price))
 	require.Equal(t, request.CurrentPeriodEnd, stripe.Int64Value(provider.updateParams.Phases[1].StartDate))
-	require.Equal(t, time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix(), stripe.Int64Value(provider.updateParams.Phases[1].EndDate))
+	require.Equal(t, catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd), stripe.Int64Value(provider.updateParams.Phases[1].EndDate))
 	require.Equal(t, request.TargetPriceID, stripe.StringValue(provider.updateParams.Phases[1].Items[0].Price))
 	require.Equal(t, request.BatchID, provider.updateParams.Metadata[catalogMigrationMetadataBatch])
 	require.Equal(t, request.ExpectedOwnershipFingerprint, provider.updateParams.Metadata[catalogMigrationMetadataOwnership])

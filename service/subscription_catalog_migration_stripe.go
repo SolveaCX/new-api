@@ -498,8 +498,24 @@ func catalogMigrationScheduleMetadata(request CatalogMigrationProviderScheduleRe
 	}
 }
 
+// catalogMigrationNextMonthlyPeriodEnd returns the end of the one-month
+// period that starts at the given instant, clamped to the last day of the
+// following month. Go's AddDate normalizes Jan 31 + 1 month to Mar 3, which
+// would write a longer-than-monthly phase and never match Stripe's own
+// month-end anchoring on the ownership re-check.
+func catalogMigrationNextMonthlyPeriodEnd(periodStart int64) int64 {
+	start := time.Unix(periodStart, 0).UTC()
+	year, month, day := start.Date()
+	firstOfNext := time.Date(year, month+1, 1, 0, 0, 0, 0, time.UTC)
+	lastDayOfNext := firstOfNext.AddDate(0, 1, -1).Day()
+	if day > lastDayOfNext {
+		day = lastDayOfNext
+	}
+	return time.Date(firstOfNext.Year(), firstOfNext.Month(), day, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), time.UTC).Unix()
+}
+
 func catalogMigrationScheduleParams(request CatalogMigrationProviderScheduleRequest, metadata map[string]string, target *stripe.Price) *stripe.SubscriptionScheduleParams {
-	targetEnd := time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix()
+	targetEnd := catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd)
 	params := &stripe.SubscriptionScheduleParams{EndBehavior: stripe.String(string(stripe.SubscriptionScheduleEndBehaviorRelease)), Metadata: metadata, ProrationBehavior: stripe.String("none")}
 	params.Phases = []*stripe.SubscriptionSchedulePhaseParams{
 		{StartDate: stripe.Int64(request.CurrentPeriodStart), EndDate: stripe.Int64(request.CurrentPeriodEnd), ProrationBehavior: stripe.String("none"), Items: []*stripe.SubscriptionSchedulePhaseItemParams{{Price: stripe.String(request.CurrentPriceID), Quantity: stripe.Int64(1)}}},
@@ -524,7 +540,7 @@ func catalogMigrationScheduleExactlyOwned(schedule *stripe.SubscriptionSchedule,
 	if !catalogMigrationScheduleMetadataMatches(schedule, request, metadata) || schedule.EndBehavior != stripe.SubscriptionScheduleEndBehaviorRelease || (schedule.Status != stripe.SubscriptionScheduleStatusActive && schedule.Status != stripe.SubscriptionScheduleStatusNotStarted) || len(schedule.Phases) != 2 {
 		return false
 	}
-	targetEnd := time.Unix(request.CurrentPeriodEnd, 0).UTC().AddDate(0, 1, 0).Unix()
+	targetEnd := catalogMigrationNextMonthlyPeriodEnd(request.CurrentPeriodEnd)
 	return catalogMigrationSchedulePhaseMatches(schedule.Phases[0], request.CurrentPeriodStart, request.CurrentPeriodEnd, request.CurrentPriceID) &&
 		catalogMigrationSchedulePhaseMatches(schedule.Phases[1], request.CurrentPeriodEnd, targetEnd, request.TargetPriceID)
 }
