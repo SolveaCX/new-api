@@ -74,7 +74,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image.png`,
     `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-pro.png`,
     `${GAME_UI_EQUIPMENT_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${GAME_UI_EQUIPMENT_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/game-ui-equipment/nano-banana-pro-preview-1f5e9cc665bc.webp",
   ],
   "social-ad": [
     `${SPORTS_BROADCAST_CDN_BASE}/gpt-image-2.png`,
@@ -85,7 +85,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image.png`,
     `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-pro.png`,
     `${SPORTS_BROADCAST_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${SPORTS_BROADCAST_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/sports-broadcast/nano-banana-pro-preview-23c7a87307eb.webp",
   ],
   "catalog-variant": [
     `${BRAND_TVC_ECOMMERCE_CDN_BASE}/gpt-image-2.png`,
@@ -96,7 +96,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image.png`,
     `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-pro.png`,
     `${BRAND_TVC_ECOMMERCE_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/brand-tvc-ecommerce/nano-banana-pro-preview-4c8c242975f6.webp",
   ],
   "editorial-portrait": [
     `${CINEMATIC_STORYBOARD_CDN_BASE}/gpt-image-2.png`,
@@ -107,7 +107,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image.png`,
     `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-pro.png`,
     `${CINEMATIC_STORYBOARD_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${CINEMATIC_STORYBOARD_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/cinematic-storyboard/nano-banana-pro-preview-f54c957b5ca8.webp",
   ],
   "product-ui": [
     `${COMEDY_PHYSICAL_CDN_BASE}/gpt-image-2.png`,
@@ -118,7 +118,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image.png`,
     `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-pro.png`,
     `${COMEDY_PHYSICAL_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${COMEDY_PHYSICAL_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/comedy-physical/nano-banana-pro-preview-f6e6efedddda.webp",
   ],
   "food-editorial": [
     `${HISTORICAL_REVIVAL_CDN_BASE}/gpt-image-2.png`,
@@ -129,7 +129,7 @@ const IMAGE_TEMPLATE_POSTER_VARIANTS: Record<string, readonly string[]> = {
     `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image.png`,
     `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-pro.png`,
     `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-quality.png`,
-    `${HISTORICAL_REVIVAL_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/historical-revival/nano-banana-pro-preview-ff8e4385f6a4.webp",
   ],
 };
 
@@ -204,12 +204,12 @@ const IMAGE_MODEL_POSTER_SETS: Record<string, readonly string[]> = {
     `${HISTORICAL_REVIVAL_CDN_BASE}/grok-imagine-image-quality.png`,
   ],
   "nano-banana-pro-preview": [
-    `${GAME_UI_EQUIPMENT_CDN_BASE}/nano-banana-pro-preview.png`,
-    `${SPORTS_BROADCAST_CDN_BASE}/nano-banana-pro-preview.png`,
-    `${BRAND_TVC_ECOMMERCE_CDN_BASE}/nano-banana-pro-preview.png`,
-    `${CINEMATIC_STORYBOARD_CDN_BASE}/nano-banana-pro-preview.png`,
-    `${COMEDY_PHYSICAL_CDN_BASE}/nano-banana-pro-preview.png`,
-    `${HISTORICAL_REVIVAL_CDN_BASE}/nano-banana-pro-preview.png`,
+    "/assets/model-regeneration/20260914/images/game-ui-equipment/nano-banana-pro-preview-1f5e9cc665bc.webp",
+    "/assets/model-regeneration/20260914/images/sports-broadcast/nano-banana-pro-preview-23c7a87307eb.webp",
+    "/assets/model-regeneration/20260914/images/brand-tvc-ecommerce/nano-banana-pro-preview-4c8c242975f6.webp",
+    "/assets/model-regeneration/20260914/images/cinematic-storyboard/nano-banana-pro-preview-f54c957b5ca8.webp",
+    "/assets/model-regeneration/20260914/images/comedy-physical/nano-banana-pro-preview-f6e6efedddda.webp",
+    "/assets/model-regeneration/20260914/images/historical-revival/nano-banana-pro-preview-ff8e4385f6a4.webp",
   ],
 };
 
@@ -254,7 +254,7 @@ const IMAGE_PLAYGROUND_SELECTED_POSTERS: Record<string, string> = {
   "grok-imagine-image": `${SELECTED_PLAYGROUND_ASSET_BASE}/gta-6-livestream-gameplay-screenshot.jpg`,
   "grok-imagine-image-pro": `${SELECTED_PLAYGROUND_ASSET_BASE}/pet-brand.png`,
   "grok-imagine-image-quality": `${SELECTED_PLAYGROUND_ASSET_BASE}/book-cover.png`,
-  "nano-banana-pro-preview": `${SELECTED_PLAYGROUND_ASSET_BASE}/real-estate-interior.png`,
+  "nano-banana-pro-preview": "/assets/model-regeneration/20260914/images/playground/nano-banana-pro-preview-cca1fd365052.webp",
 };
 
 /**
@@ -897,15 +897,19 @@ export function getImagePromptTemplateFallbackPosters(modelId = ""): string[] {
 
 /**
  * Return packaged fallbacks for the same model and workflow lane as each
- * reviewed CDN poster. These files are derived from the corresponding CDN
- * output and are only used after the remote object fails; they must never
- * replace the primary CDN URL in the initial render.
+ * reviewed poster. Regenerated examples already use packaged, versioned assets;
+ * their fallback stays on the same output instead of a thumbnail from an older run.
  */
 export function getImagePromptTemplateLocalFallbackPosters(modelId = ""): string[] {
   const resolvedModelId = resolveImagePosterModelId(modelId);
   if (!resolvedModelId) return [];
   return IMAGE_PROMPT_LOCAL_FALLBACK_LANES.map(
-    (lane) => `/assets/model-fallback-audit/images/${lane}/${resolvedModelId}.webp`,
+    (lane, index) => {
+      const primary = IMAGE_MODEL_POSTER_SETS[resolvedModelId]?.[index];
+      return primary?.startsWith("/assets/model-regeneration/")
+        ? primary
+        : `/assets/model-fallback-audit/images/${lane}/${resolvedModelId}.webp`;
+    },
   );
 }
 
