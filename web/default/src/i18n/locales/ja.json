@@ -5294,6 +5294,7 @@
     "Leave empty to keep current": "現在の値を維持する場合は空欄のまま",
     "Priority must be an integer": "優先度は整数で入力してください",
     "Weight must be a non-negative integer": "重みは 0 以上の整数で入力してください",
+    "Usage Report": "Usage Report",
     "Ops Daily Report": "運営日報",
     "Registrations": "登録",
     "Activated": "アクティベート",
@@ -6929,6 +6930,20 @@
     "Logo is mapped automatically from the model name.": "ロゴはモデル名から自動的に割り当てられます。",
     "Please choose a model for each slot": "各スロットのモデルを選択してください",
     "Description and offer are required": "説明とオファーは必須です",
-    "Each slot must use a different model": "各スロットには異なるモデルを指定してください"
+    "Each slot must use a different model": "各スロットには異なるモデルを指定してください",
+    "Comma-separated model names to hide from the pricing pages. Supports * wildcards (prefix, suffix, or contains). Hidden models remain fully callable via the API.": "価格ページに表示しないモデル名をカンマ区切りで指定します。* のワイルドカード（前方一致・後方一致・部分一致）に対応します。非表示のモデルも API からは通常どおり呼び出せます。",
+    "Country code": "国番号",
+    "Enter phone number": "電話番号を入力",
+    "Failed to send SMS verification code": "SMS認証コードの送信に失敗しました",
+    "Phone number": "電話番号",
+    "Phone number verification required": "電話番号の認証が必要です",
+    "Please bind and verify your phone number before using the console and API.": "コンソールとAPIを使用する前に、電話番号を登録して認証してください。",
+    "Bind phone number": "電話番号を登録",
+    "Phone number bound successfully": "電話番号を登録しました",
+    "Failed to bind phone number": "電話番号の登録に失敗しました",
+    "Please enter a valid phone number": "有効な電話番号を入力してください",
+    "Please enter the SMS verification code": "SMS認証コードを入力してください",
+    "SMS verification code": "SMS認証コード",
+    "SMS verification code sent": "SMS認証コードを送信しました"
   }
 }

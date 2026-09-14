@@ -512,6 +512,15 @@ func TokenAuth() func(c *gin.Context) {
 
 		userCache.WriteContext(c)
 
+		// Phone gate: only PLG accounts created at/after the rollout start
+		// (model.PhoneVerificationRolloutStart) and still unverified. Older
+		// accounts are exempt. Rule lives in model so console and API agree.
+		if userCache.PhoneVerificationRequired() {
+			notify := common.TranslateMessage(c, i18n.MsgNotifyPhoneVerificationRequiredForAPI)
+			abortWithOpenAiMessageAndNotify(c, http.StatusForbidden, notify, notify, types.ErrorCodeAccessDenied)
+			return
+		}
+
 		// PLG users are always served from the plg group, ignoring any group carried on
 		// the token. Defense-in-depth: the token API already forces plg, this guarantees
 		// it even for old or manually inserted tokens.

@@ -417,6 +417,35 @@ func Register(c *gin.Context) {
 		}
 		user.EmailVerifiedAt = common.GetTimestamp()
 	}
+	if common.SMSVerificationEnabled {
+		if err := normalizeRegistrationPhone(&user); err != nil {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneInvalid)
+			return
+		}
+		taken, err := model.IsPhoneAlreadyTaken(user.PhoneNumber)
+		if err != nil {
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+			return
+		}
+		if taken {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
+			return
+		}
+		verified, verifyErr := verifyRegistrationPhone(&user)
+		if verifyErr != nil {
+			common.ApiErrorI18n(c, i18n.MsgUserSMSVerificationUnavailable)
+			return
+		}
+		if !verified {
+			if strings.TrimSpace(user.PhoneVerificationCode) == "" {
+				common.ApiErrorI18n(c, i18n.MsgUserPhoneVerificationRequired)
+			} else {
+				common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
+			}
+			return
+		}
+		user.PhoneVerifiedAt = common.GetTimestamp()
+	}
 	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -436,9 +465,11 @@ func Register(c *gin.Context) {
 		InviterId:                      inviterId,
 		Role:                           common.RoleCommonUser, // 明确设置角色为普通用户
 		Status:                         common.UserStatusEnabled,
-		RegistrationCountry:           registrationCountry,
+		RegistrationCountry:            registrationCountry,
 		AdsAttribution:                 sanitizeAdsAttribution(user.AdsAttribution),
 		EmailVerifiedAt:                user.EmailVerifiedAt,
+		PhoneNumber:                    user.PhoneNumber,
+		PhoneVerifiedAt:                user.PhoneVerifiedAt,
 		CustomerReferralInviteCode:     customerInvite.Code,
 		CustomerReferralSourcePlatform: customerInvite.Platform,
 		IsFluere:                       isFluere,
@@ -481,8 +512,17 @@ func Register(c *gin.Context) {
 		if grantReserved {
 			common.RollbackRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)
 		}
-		respondRegistrationEmailError(c, err)
+		if errors.Is(err, model.ErrPhoneAlreadyTaken) {
+			common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
+		} else {
+			respondRegistrationEmailError(c, err)
+		}
 		return
+	}
+	if common.SMSVerificationEnabled && cleanUser.PhoneNumber != "" {
+		if err := common.DeleteSMSVerificationCode(cleanUser.PhoneNumber); err != nil {
+			common.SysLog(fmt.Sprintf("failed to delete SMS verification: %v", err))
+		}
 	}
 	if grantReserved {
 		common.CommitRegistrationEmailGrantReservation(registrationEmailGrant, user.Email, registrationEmailReservationOwner)
@@ -772,35 +812,40 @@ func GetSelf(c *gin.Context) {
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
-		"id":                   user.Id,
-		"username":             user.Username,
-		"display_name":         user.DisplayName,
-		"role":                 user.Role,
-		"status":               user.Status,
-		"email":                user.Email,
-		"github_id":            user.GitHubId,
-		"discord_id":           user.DiscordId,
-		"oidc_id":              user.OidcId,
-		"google_id":            user.GoogleId,
-		"wechat_id":            user.WeChatId,
-		"telegram_id":          user.TelegramId,
-		"group":                user.Group,
-		"quota":                user.Quota,
-		"used_quota":           user.UsedQuota,
-		"request_count":        user.RequestCount,
-		"aff_code":             user.AffCode,
-		"aff_count":            user.AffCount,
-		"aff_quota":            user.AffQuota,
-		"aff_history_quota":    user.AffHistoryQuota,
-		"inviter_id":           user.InviterId,
-		"linux_do_id":          user.LinuxDOId,
-		"setting":              user.Setting,
-		"stripe_customer":      user.StripeCustomer,
-		"stripe_card_bound":    user.StripeCardBound,
-		"new_user_bonus_given": user.NewUserBonusGiven,
-		"is_enterprise":        user.IsEnterprise,
-		"sidebar_modules":      userSetting.SidebarModules, // 正确提取sidebar_modules字段
-		"permissions":          permissions,                // 新增权限字段
+		"id":                user.Id,
+		"username":          user.Username,
+		"display_name":      user.DisplayName,
+		"role":              user.Role,
+		"status":            user.Status,
+		"email":             user.Email,
+		"phone_number":      user.PhoneNumber,
+		"phone_verified_at": user.PhoneVerifiedAt,
+		// Server-side decision so the console dialog and the API gate can never
+		// disagree (only PLG accounts created at/after the rollout start).
+		"phone_verification_required": model.PhoneVerificationRequiredForAccount(user.Group, user.PhoneVerifiedAt, user.CreatedAt),
+		"github_id":                   user.GitHubId,
+		"discord_id":                  user.DiscordId,
+		"oidc_id":                     user.OidcId,
+		"google_id":                   user.GoogleId,
+		"wechat_id":                   user.WeChatId,
+		"telegram_id":                 user.TelegramId,
+		"group":                       user.Group,
+		"quota":                       user.Quota,
+		"used_quota":                  user.UsedQuota,
+		"request_count":               user.RequestCount,
+		"aff_code":                    user.AffCode,
+		"aff_count":                   user.AffCount,
+		"aff_quota":                   user.AffQuota,
+		"aff_history_quota":           user.AffHistoryQuota,
+		"inviter_id":                  user.InviterId,
+		"linux_do_id":                 user.LinuxDOId,
+		"setting":                     user.Setting,
+		"stripe_customer":             user.StripeCustomer,
+		"stripe_card_bound":           user.StripeCardBound,
+		"new_user_bonus_given":        user.NewUserBonusGiven,
+		"is_enterprise":               user.IsEnterprise,
+		"sidebar_modules":             userSetting.SidebarModules, // 正确提取sidebar_modules字段
+		"permissions":                 permissions,                // 新增权限字段
 	}
 	// Admin impersonation is deliberately surfaced to the client so the UI can
 	// keep an unmistakable exit affordance visible while the session is scoped
