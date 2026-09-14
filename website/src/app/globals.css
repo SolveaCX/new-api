@@ -8041,3 +8041,94 @@ html:has(.model-prototype) {
     padding: 28px 18px 18px;
   }
 }
+
+/* Editorial prompt cards: compact previews with accessible full shot briefs. */
+.model-prototype .media-prompt {
+  min-width: 0;
+  margin-bottom: 16px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.model-prototype .media-prompt-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0 0 14px;
+}
+.model-prototype .media-prompt:has(details[open]) .media-prompt-excerpt {
+  display: none;
+}
+.model-prototype .media-prompt-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e8e5ef;
+  border-radius: 8px;
+  background: #faf9fc;
+  color: #65508b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  list-style: none;
+}
+.model-prototype .media-prompt-details > summary::-webkit-details-marker { display: none; }
+.model-prototype .media-prompt-details > summary:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 3px;
+}
+.model-prototype .media-prompt-collapse { display: none; }
+.model-prototype .media-prompt-details[open] .media-prompt-expand { display: none; }
+.model-prototype .media-prompt-details[open] .media-prompt-collapse { display: inline; }
+.model-prototype .media-prompt-details[open] .media-prompt-chevron { transform: rotate(180deg); }
+.model-prototype .media-prompt-sections {
+  display: grid;
+  gap: 20px;
+  padding: 20px 2px 4px;
+  overflow-wrap: anywhere;
+}
+.model-prototype .media-prompt-section h4 {
+  margin: 0 0 7px;
+  color: #7c639e;
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.model-prototype .media-prompt-section p { margin: 0; }
+.model-prototype .media-prompt-timeline {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0 0 4px;
+  padding: 0 0 0 15px;
+  border-left: 2px solid #e9e2f3;
+  list-style: none;
+}
+.model-prototype .media-prompt-timeline li { position: relative; }
+.model-prototype .media-prompt-time {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: #65508b;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.model-prototype .media-prompt-time::before {
+  position: absolute;
+  top: 7px;
+  left: -20px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b8a0d5;
+  content: "";
+}
+.model-prototype .prompt-library .prompt-grid { align-items: start; }
+.model-prototype .prompt-library .prompt-card {
+  height: auto !important;
+  align-self: start;
+}

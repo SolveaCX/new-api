@@ -26,6 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import Image from "next/image";
+import { MediaPromptDisplay } from "@/components/media-prompt-display";
 import { optimizedPreviewSrc } from "@/lib/optimized-preview";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
@@ -3179,7 +3180,7 @@ function PromptLibrarySection(props: {
                 <div className="prompt-badge">{item.label}</div>
               </div>
               <div className="prompt-body">
-                <p className="prompt-text">{item.prompt}</p>
+                <MediaPromptDisplay prompt={item.prompt} locale={props.locale} />
                 <div className="prompt-actions">
                   <button
                     type="button"
