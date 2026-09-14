@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -66,11 +65,7 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
     ? phoneStatusQuery.data.data
     : undefined
   const phoneBindingSuggested = shouldSuggestPhoneBinding(user, phoneStatus)
-  const [dismissedPhoneBindingUserId, setDismissedPhoneBindingUserId] =
-    useState<number | null>(null)
-  const showPhoneBinding =
-    phoneBindingRequired ||
-    (phoneBindingSuggested && dismissedPhoneBindingUserId !== user?.id)
+  const phoneBindingEnforced = phoneBindingRequired || phoneBindingSuggested
   const exitImpersonation = async () => {
     const result = await exitImpersonationRequest()
     if (!result.success || !result.data) return
@@ -127,15 +122,10 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
       </SidebarProvider>
       <Onboarding />
       <PhoneBindingDialog
-        open={showPhoneBinding}
-        required={phoneBindingRequired}
-        onOpenChange={(open) => {
-          if (!open && !phoneBindingRequired) {
-            setDismissedPhoneBindingUserId(user?.id ?? null)
-          }
-        }}
+        open={phoneBindingEnforced}
+        required={phoneBindingEnforced}
+        onOpenChange={() => undefined}
         onSuccess={(phoneNumber, phoneVerifiedAt) => {
-          setDismissedPhoneBindingUserId(user?.id ?? null)
           void phoneStatusQuery.refetch()
           setUser((currentUser) =>
             currentUser
