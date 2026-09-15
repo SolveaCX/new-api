@@ -19,8 +19,8 @@ type sendPhoneVerificationRequest struct {
 }
 
 // SendPhoneVerification sends an SMS code without creating or authenticating
-// an account. Existing numbers receive the same success response to prevent
-// account enumeration.
+// an account. Existing numbers are rejected so the caller can choose another
+// number before attempting registration or binding.
 func SendPhoneVerification(c *gin.Context) {
 	if !common.SMSVerificationEnabled {
 		common.ApiErrorI18n(c, i18n.MsgFeatureDisabled)
@@ -44,7 +44,7 @@ func SendPhoneVerification(c *gin.Context) {
 		return
 	}
 	if taken {
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+		common.ApiErrorI18n(c, i18n.MsgUserPhoneAlreadyRegistered)
 		return
 	}
 
