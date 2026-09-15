@@ -215,8 +215,11 @@ type TaskBillingContext struct {
 // TaskSubscriptionWindow is the serialized subscription window guard snapshot
 // used to settle or refund the exact Redis buckets reserved at submission.
 type TaskSubscriptionWindow struct {
-	SubId                     int              `json:"sub_id"`
-	SubStart                  int64            `json:"sub_start"`
+	SubId    int   `json:"sub_id"`
+	SubStart int64 `json:"sub_start"`
+	// AccessEnd clamps the weekly cycle for async settles; zero (older
+	// persisted snapshots) keeps the natural 7-day boundary.
+	AccessEnd                 int64            `json:"access_end,omitempty"`
 	Limit5h                   int64            `json:"limit_5h"`
 	LimitWeek                 int64            `json:"limit_week"`
 	BucketHeld                map[string]int64 `json:"bucket_held,omitempty"` // 5h 桶 key → 持有量

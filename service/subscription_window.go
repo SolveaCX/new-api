@@ -129,6 +129,7 @@ return 1
 type subscriptionWindowGuard struct {
 	subId     int
 	subStart  int64
+	accessEnd int64
 	limit5h   int64
 	limitWeek int64
 	// mu serializes all state access: settle adjustments run on the request
@@ -156,6 +157,22 @@ func subscriptionWindowWeekKey(subId int, idx int64) string {
 	return fmt.Sprintf("sub:win:w:%d:%d", subId, idx)
 }
 
+// subscriptionWindowWeekResetAt returns the end of the weekly cycle covering
+// now: the next 7-day anchor, clamped to the moment access stops. A monthly
+// subscription does not divide evenly into 7-day cycles, so its last cycle is
+// truncated. Without the clamp that final cycle would point past the end of the
+// subscription and promise a reset that never happens — renewal issues a new
+// entitlement with its own counters. The final cycle keeps the full weekly
+// allowance; only its deadline moves. accessEnd <= 0 (legacy rows) or an end
+// that precedes the cycle leaves the natural boundary untouched.
+func subscriptionWindowWeekResetAt(subStart, accessEnd int64, idx int64) int64 {
+	natural := subStart + (idx+1)*subscriptionWindowWeekSeconds
+	if accessEnd > 0 && accessEnd < natural {
+		return accessEnd
+	}
+	return natural
+}
+
 func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (weekKey string, bucketKeys []string, weekExpireAt int64) {
 	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
 	identity := info.WindowIdentity()
@@ -164,7 +181,9 @@ func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (week
 	if base <= 0 {
 		base = 0
 	}
-	weekExpireAt = base + (idx+1)*subscriptionWindowWeekSeconds + 3600
+	// +1h keeps the counter alive just past the boundary so late settles and
+	// refunds still land on the key they debited.
+	weekExpireAt = subscriptionWindowWeekResetAt(base, info.AccessEndTime, idx) + 3600
 
 	currentBucket := now / subscriptionWindowBucketSeconds * subscriptionWindowBucketSeconds
 	bucketKeys = make([]string, 0, subscriptionWindowBucketCount)
@@ -189,7 +208,7 @@ func GetSubscriptionWindowUsage(info *model.SubscriptionWindowInfo) Subscription
 	weekKey, bucketKeys, _ := subscriptionWindowKeys(info, now)
 	usage.Window5hResetAt = (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
 	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
-	usage.WindowWeekResetAt = info.SubscriptionStart + (idx+1)*subscriptionWindowWeekSeconds
+	usage.WindowWeekResetAt = subscriptionWindowWeekResetAt(info.SubscriptionStart, info.AccessEndTime, idx)
 
 	if !common.RedisEnabled || common.RDB == nil {
 		return usage
@@ -261,6 +280,7 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 		guard := &subscriptionWindowGuard{
 			subId:      info.WindowIdentity(),
 			subStart:   info.SubscriptionStart,
+			accessEnd:  info.AccessEndTime,
 			limit5h:    info.Window5hAmount,
 			limitWeek:  info.WindowWeekAmount,
 			reserved:   weightedAmount,
@@ -278,7 +298,7 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 	}
 	if which == 2 {
 		idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
-		resetAt := info.SubscriptionStart + (idx+1)*subscriptionWindowWeekSeconds
+		resetAt := subscriptionWindowWeekResetAt(info.SubscriptionStart, info.AccessEndTime, idx)
 		return nil, &subscriptionWindowExceededError{Window: "week", ResetAt: resetAt}
 	}
 	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
@@ -334,6 +354,7 @@ func (g *subscriptionWindowGuard) Snapshot() *model.TaskSubscriptionWindow {
 	snap := &model.TaskSubscriptionWindow{
 		SubId:     g.subId,
 		SubStart:  g.subStart,
+		AccessEnd: g.accessEnd,
 		Limit5h:   g.limit5h,
 		LimitWeek: g.limitWeek,
 	}
@@ -383,6 +404,7 @@ func AdjustSubscriptionWindowFromSnapshot(snap *model.TaskSubscriptionWindow, de
 	guard := &subscriptionWindowGuard{
 		subId:      snap.SubId,
 		subStart:   snap.SubStart,
+		accessEnd:  snap.AccessEnd,
 		limit5h:    snap.Limit5h,
 		limitWeek:  snap.LimitWeek,
 		reserved:   reserved,
@@ -488,7 +510,7 @@ func AdjustSubscriptionWindowFromSnapshotOnce(snap *model.TaskSubscriptionWindow
 				key:        subscriptionWindowWeekKey(snap.SubId, idx),
 				delta:      delta,
 				expireMode: "at",
-				expireAt:   base + (idx+1)*subscriptionWindowWeekSeconds + 3600,
+				expireAt:   subscriptionWindowWeekResetAt(base, snap.AccessEnd, idx) + 3600,
 			})
 		}
 	} else {
@@ -582,7 +604,7 @@ func (g *subscriptionWindowGuard) apply(delta int64) error {
 				base = 0
 			}
 			pipe.IncrBy(ctx, weekKey, delta)
-			pipe.ExpireAt(ctx, weekKey, time.Unix(base+(idx+1)*subscriptionWindowWeekSeconds+3600, 0))
+			pipe.ExpireAt(ctx, weekKey, time.Unix(subscriptionWindowWeekResetAt(base, g.accessEnd, idx)+3600, 0))
 			changes = append(changes, heldChange{g.weekHeld, weekKey, delta})
 		}
 	} else {
