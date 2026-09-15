@@ -173,6 +173,20 @@ func subscriptionWindowWeekResetAt(subStart, accessEnd int64, idx int64) int64 {
 	return natural
 }
 
+// subscriptionWindow5hResetAt returns when the 5h window next frees capacity:
+// the next bucket rotation, clamped to the moment access stops. The rotation is
+// at most one bucket away, so the overshoot is far smaller than the weekly
+// window's — but the promise is equally false, because once the subscription
+// ends no usage ages out of a window the user can still spend against.
+// accessEnd <= 0 (legacy rows) leaves the rotation untouched.
+func subscriptionWindow5hResetAt(accessEnd, now int64) int64 {
+	rotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+	if accessEnd > 0 && accessEnd < rotation {
+		return accessEnd
+	}
+	return rotation
+}
+
 func subscriptionWindowKeys(info *model.SubscriptionWindowInfo, now int64) (weekKey string, bucketKeys []string, weekExpireAt int64) {
 	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
 	identity := info.WindowIdentity()
@@ -206,7 +220,7 @@ func GetSubscriptionWindowUsage(info *model.SubscriptionWindowInfo) Subscription
 
 	now := common.GetTimestamp()
 	weekKey, bucketKeys, _ := subscriptionWindowKeys(info, now)
-	usage.Window5hResetAt = (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+	usage.Window5hResetAt = subscriptionWindow5hResetAt(info.AccessEndTime, now)
 	idx := subscriptionWindowWeekIndex(info.SubscriptionStart, now)
 	usage.WindowWeekResetAt = subscriptionWindowWeekResetAt(info.SubscriptionStart, info.AccessEndTime, idx)
 
@@ -301,8 +315,7 @@ func reserveSubscriptionWindows(info *model.SubscriptionWindowInfo, weightedAmou
 		resetAt := subscriptionWindowWeekResetAt(info.SubscriptionStart, info.AccessEndTime, idx)
 		return nil, &subscriptionWindowExceededError{Window: "week", ResetAt: resetAt}
 	}
-	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
-	return nil, &subscriptionWindowExceededError{Window: "5h", ResetAt: nextRotation}
+	return nil, &subscriptionWindowExceededError{Window: "5h", ResetAt: subscriptionWindow5hResetAt(info.AccessEndTime, now)}
 }
 
 // Adjust writes a settle delta (positive or negative) back to the window
