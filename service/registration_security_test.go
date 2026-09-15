@@ -155,11 +155,11 @@ func TestRegistrationSecurityDNSMissingWebsitePolicy(t *testing.T) {
 	_, err = EvaluateRegistrationEmail("user@withweb.example", cfg, nil)
 	require.NoError(t, err)
 
-	// major-provider MX exempts from the website requirement (email-only domain)
+	// A major-provider MX does not exempt a domain whose root website is unavailable.
 	restore = stubDNSChecker(emailDomainDNSCheck{MXRecord: true, MXHost: "alt1.gmail-smtp-in.l.google.com", MajorProviderMX: true})
 	defer restore()
 	_, err = EvaluateRegistrationEmail("user@corp.example", cfg, nil)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrRegistrationDomainUnavailable)
 }
 
 func TestRegistrationSecurityDNSDisabledByDefaultInPolicy(t *testing.T) {
