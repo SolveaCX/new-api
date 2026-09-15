@@ -19,6 +19,38 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Historical usage log messages localized at display time
+  'Admin top-up: {{amount}}, payment amount: {{payment}}',
+  'Automatic top-up: {{amount}}, payment amount: {{payment}}',
+  'Subscription purchase: {{plan}}, payment amount: {{amount}}, payment method: {{method}}',
+  'Balance subscription purchase: {{plan}}, payment amount: {{amount}}, deducted quota: {{quota}}',
+  'Online top-up: {{amount}}, payment amount: {{payment}}',
+  'Stripe top-up: {{amount}}, payment amount: {{payment}}',
+  'Creem top-up: {{amount}}, payment amount: {{payment}}',
+  'Waffo top-up: {{amount}}, payment amount: {{payment}}',
+  'Waffo Pancake top-up: {{amount}}, payment amount: {{payment}}',
+  'Paddle top-up: {{amount}}, payment amount: {{payment}}',
+  'No available payment method found',
+  'Payment declined or authentication required',
+  'Payment not completed',
+  'Admin increased user quota by {{amount}}',
+  'Admin decreased user quota by {{amount}}',
+  'Admin changed user quota from {{previous}} to {{amount}}',
+  "Admin forcibly disabled the user's 2FA",
+  'Rented compute node {{node}} ({{gpu}}) for {{hours}} hours, charged {{amount}}',
+  'Video async task {{taskId}} failed, refund {{amount}}',
+  'New user free plan: {{plan}}, {{amount}} quota, valid for 1 month',
+  'Subscription referral reward: {{amount}} credited to package discount balance',
+  'Referral reward limit reached; no reward granted for this invitation',
+  'Viewed channel key information (channel ID: {{id}})',
+  'Security verification succeeded (method: {{method}})',
+  'Started 2FA setup',
+  '2FA enabled successfully',
+  '2FA disabled',
+  '2FA backup codes regenerated',
+  'Automatic charge failed: attempted to charge {{amount}} ({{reason}}). Please check or update your payment method.',
+  'Automatic charge of {{amount}} succeeded but quota credit failed (payment ID {{id}}). We will process it shortly; contact support if the quota does not arrive.',
+
   // Activity email translation status
   'recall.translation_status.ready',
   'recall.translation_status.stale',

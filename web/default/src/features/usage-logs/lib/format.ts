@@ -298,13 +298,279 @@ const SYSTEM_REWARD_PREFIXES: Array<{ zh: string; key: string }> = [
     key: 'Referral reward limit reached; no inviter reward granted',
   },
   { zh: '用户签到，获得额度', key: 'Check-in reward {{amount}}' },
+  {
+    zh: '管理员增加用户额度',
+    key: 'Admin increased user quota by {{amount}}',
+  },
+  {
+    zh: '管理员减少用户额度',
+    key: 'Admin decreased user quota by {{amount}}',
+  },
 ]
+
+const TOPUP_PREFIXES: Array<{ zh: string; key: string }> = [
+  {
+    zh: '管理员补单成功',
+    key: 'Admin top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: '使用在线充值成功',
+    key: 'Online top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: 'Stripe充值成功',
+    key: 'Stripe top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: '使用Stripe充值成功',
+    key: 'Stripe top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: '使用Creem充值成功',
+    key: 'Creem top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: 'Creem充值成功',
+    key: 'Creem top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: 'Waffo Pancake充值成功',
+    key: 'Waffo Pancake top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: 'Waffo充值成功',
+    key: 'Waffo top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: 'Paddle充值成功',
+    key: 'Paddle top-up: {{amount}}, payment amount: {{payment}}',
+  },
+  {
+    zh: '自动扣费充值成功',
+    key: 'Automatic top-up: {{amount}}, payment amount: {{payment}}',
+  },
+]
+
+const SYSTEM_AUDIT_KEYS = {
+  freePlan: 'New user free plan: {{plan}}, {{amount}} quota, valid for 1 month',
+  inviteSubscription:
+    'Subscription referral reward: {{amount}} credited to package discount balance',
+  inviteLimit:
+    'Referral reward limit reached; no reward granted for this invitation',
+  channelKey: 'Viewed channel key information (channel ID: {{id}})',
+  securityVerification: 'Security verification succeeded (method: {{method}})',
+  twoFaSetup: 'Started 2FA setup',
+  twoFaEnabled: '2FA enabled successfully',
+  twoFaDisabled: '2FA disabled',
+  twoFaBackupCodes: '2FA backup codes regenerated',
+  autoChargeFailed:
+    'Automatic charge failed: attempted to charge {{amount}} ({{reason}}). Please check or update your payment method.',
+  autoChargeCreditFailed:
+    'Automatic charge of {{amount}} succeeded but quota credit failed (payment ID {{id}}). We will process it shortly; contact support if the quota does not arrive.',
+} as const
+
+const AUTO_CHARGE_FAILURE_REASONS = new Map([
+  ['未找到可用的支付方式', 'No available payment method found'],
+  ['扣款被拒绝或需要验证', 'Payment declined or authentication required'],
+  ['扣款未完成', 'Payment not completed'],
+])
+
+const SUBSCRIPTION_TOPUP_PREFIXES: Array<{
+  zh: string
+  key: string
+  fields: 'payment' | 'quota'
+}> = [
+  {
+    zh: '订阅购买成功',
+    key: 'Subscription purchase: {{plan}}, payment amount: {{amount}}, payment method: {{method}}',
+    fields: 'payment',
+  },
+  {
+    zh: '使用余额购买订阅成功',
+    key: 'Balance subscription purchase: {{plan}}, payment amount: {{amount}}, deducted quota: {{quota}}',
+    fields: 'quota',
+  },
+]
+
+function stripLogQuotaUnit(amount: string): string {
+  return amount
+    .trim()
+    .replace(/\s*(?:点)?额度$/, '')
+    .trim()
+}
+
+function localizeTopupContent(
+  content: string,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | null {
+  for (const { zh, key } of TOPUP_PREFIXES) {
+    if (!content.startsWith(zh)) continue
+    const rest = content
+      .slice(zh.length)
+      .replace(/^[，,：:]\s*/, '')
+      .trim()
+    const match = rest.match(
+      /^充值(?:金额|额度)\s*[:：]?\s*(.+?)\s*[，,]\s*支付金额\s*[:：]?\s*(.+)$/
+    )
+    if (!match) return null
+    return t(key, {
+      amount: stripLogQuotaUnit(match[1]),
+      payment: match[2].trim(),
+    })
+  }
+  return null
+}
+
+function localizeSubscriptionTopupContent(
+  content: string,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | null {
+  for (const { zh, key, fields } of SUBSCRIPTION_TOPUP_PREFIXES) {
+    if (!content.startsWith(zh)) continue
+    const rest = content
+      .slice(zh.length)
+      .replace(/^[，,：:]\s*/, '')
+      .trim()
+    if (fields === 'payment') {
+      const match = rest.match(
+        /^套餐\s*[:：]?\s*(.+?)\s*[，,]\s*支付金额\s*[:：]?\s*(.+?)\s*[，,]\s*支付方式\s*[:：]?\s*(.+)$/
+      )
+      if (!match) return null
+      return t(key, {
+        plan: match[1].trim(),
+        amount: match[2].trim(),
+        method: match[3].trim(),
+      })
+    }
+    const match = rest.match(
+      /^套餐\s*[:：]?\s*(.+?)\s*[，,]\s*支付金额\s*[:：]?\s*(.+?)\s*[，,]\s*扣除额度\s*[:：]?\s*(.+)$/
+    )
+    if (!match) return null
+    return t(key, {
+      plan: match[1].trim(),
+      amount: match[2].trim(),
+      quota: stripLogQuotaUnit(match[3]),
+    })
+  }
+  return null
+}
 
 export function localizeSystemRewardContent(
   content: string | undefined | null,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): string | null {
   if (!content) return null
+
+  const computeRentalMatch = content.match(
+    /^rented compute node (.+) \((.+)\) for (\d+) hours, charged (.+)$/
+  )
+  if (computeRentalMatch) {
+    return t(
+      'Rented compute node {{node}} ({{gpu}}) for {{hours}} hours, charged {{amount}}',
+      {
+        node: computeRentalMatch[1],
+        gpu: computeRentalMatch[2],
+        hours: computeRentalMatch[3],
+        amount: stripLogQuotaUnit(computeRentalMatch[4]),
+      }
+    )
+  }
+
+  const videoRefundMatch = content.match(
+    /^Video async task failed (\S+), refund (.+)$/
+  )
+  if (videoRefundMatch) {
+    return t('Video async task {{taskId}} failed, refund {{amount}}', {
+      taskId: videoRefundMatch[1],
+      amount: stripLogQuotaUnit(videoRefundMatch[2]),
+    })
+  }
+
+  const adminQuotaOverrideMatch = content.match(
+    /^管理员覆盖用户额度从\s+(.+?)\s+为\s+(.+)$/
+  )
+  if (adminQuotaOverrideMatch) {
+    return t('Admin changed user quota from {{previous}} to {{amount}}', {
+      previous: stripLogQuotaUnit(adminQuotaOverrideMatch[1]),
+      amount: stripLogQuotaUnit(adminQuotaOverrideMatch[2]),
+    })
+  }
+
+  const freePlanMatch = content.match(
+    /^新用户获得\s+(.+?)\s+免费套餐（\$([^）]+)\s+等值额度，1\s*个月有效）$/
+  )
+  if (freePlanMatch) {
+    return t(SYSTEM_AUDIT_KEYS.freePlan, {
+      plan: freePlanMatch[1].trim(),
+      amount: `$${freePlanMatch[2].trim()}`,
+    })
+  }
+
+  const inviteSubscriptionMatch = content.match(
+    /^邀请好友订阅成功，奖励\s+(.+?)\s+已进入套餐抵扣账户$/
+  )
+  if (inviteSubscriptionMatch) {
+    return t(SYSTEM_AUDIT_KEYS.inviteSubscription, {
+      amount: stripLogQuotaUnit(inviteSubscriptionMatch[1]),
+    })
+  }
+  if (
+    content === '已达到邀请奖励上限，本次邀请不再获得奖励' ||
+    content === '已达到邀请奖励上限，不再获得邀请者奖励'
+  ) {
+    return t(SYSTEM_AUDIT_KEYS.inviteLimit)
+  }
+
+  const channelKeyMatch = content.match(
+    /^查看渠道密钥信息\s*\(渠道ID:\s*(\d+)\)$/
+  )
+  if (channelKeyMatch) {
+    return t(SYSTEM_AUDIT_KEYS.channelKey, { id: channelKeyMatch[1] })
+  }
+
+  const securityMatch = content.match(
+    /^通用安全验证成功\s*\(验证方式:\s*(.+?)\)$/
+  )
+  if (securityMatch) {
+    return t(SYSTEM_AUDIT_KEYS.securityVerification, {
+      method: securityMatch[1].trim(),
+    })
+  }
+
+  const fixedSystemMessages: Array<[string, string]> = [
+    ['开始设置两步验证', SYSTEM_AUDIT_KEYS.twoFaSetup],
+    ['成功启用两步验证', SYSTEM_AUDIT_KEYS.twoFaEnabled],
+    ['禁用两步验证', SYSTEM_AUDIT_KEYS.twoFaDisabled],
+    ['重新生成两步验证备用码', SYSTEM_AUDIT_KEYS.twoFaBackupCodes],
+    [
+      '管理员强制禁用了用户的两步验证',
+      "Admin forcibly disabled the user's 2FA",
+    ],
+  ]
+  const fixedMessage = fixedSystemMessages.find(([zh]) => content === zh)
+  if (fixedMessage) return t(fixedMessage[1])
+
+  const autoChargeFailedMatch = content.match(
+    /^自动扣费失败：尝试为您的绑定卡扣款\s+(.+?)\s+失败（(.+?)），请检查或更新您的支付方式以免影响使用。$/
+  )
+  if (autoChargeFailedMatch) {
+    const reason = autoChargeFailedMatch[2].trim()
+    const reasonKey = AUTO_CHARGE_FAILURE_REASONS.get(reason)
+    return t(SYSTEM_AUDIT_KEYS.autoChargeFailed, {
+      amount: autoChargeFailedMatch[1].trim(),
+      reason: reasonKey ? t(reasonKey) : reason,
+    })
+  }
+
+  const autoChargeCreditFailedMatch = content.match(
+    /^自动扣费已成功扣款\s+(.+?)，但额度入账失败（支付单号\s+(.+?)），我们将尽快为您处理，如未到账请联系客服。$/
+  )
+  if (autoChargeCreditFailedMatch) {
+    return t(SYSTEM_AUDIT_KEYS.autoChargeCreditFailed, {
+      amount: autoChargeCreditFailedMatch[1].trim(),
+      id: autoChargeCreditFailedMatch[2].trim(),
+    })
+  }
 
   const redemptionMatch = content.match(
     /^Redemption code top-up:\s+(.+?)\s+\(ID:\s*(\d+)\)$/
@@ -334,6 +600,18 @@ export function localizeSystemRewardContent(
     }
   }
   return null
+}
+
+/** Localize historical Chinese type=1 top-up audit messages. */
+export function localizeTopupLogContent(
+  content: string | undefined | null,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | null {
+  if (!content) return null
+  return (
+    localizeTopupContent(content, t) ??
+    localizeSubscriptionTopupContent(content, t)
+  )
 }
 
 /**
