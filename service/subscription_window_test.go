@@ -315,3 +315,135 @@ func TestGuardReleaseIdempotent(t *testing.T) {
 		t.Fatal("double release must not create extra capacity")
 	}
 }
+
+// --- weekly window must not schedule a cycle past the subscription's end ---
+
+// TestSubscriptionWindowKeysClampWeekExpiryToAccessEnd pins the core fix: the
+// weekly cycle boundary is min(next 7-day anchor, access end). Without the
+// clamp a subscription ending mid-cycle advertises a reset that never arrives
+// (renewal creates a new entitlement with its own counters).
+func TestSubscriptionWindowKeysClampWeekExpiryToAccessEnd(t *testing.T) {
+	const week = int64(subscriptionWindowWeekSeconds)
+	start := int64(1_700_000_000)
+	// Subscription ends 2 days into cycle 4 (a 30-day month over 7-day cycles).
+	accessEnd := start + 4*week + 2*24*3600
+	// "now" sits inside that final, truncated cycle.
+	now := start + 4*week + 24*3600
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 77,
+		SubscriptionStart:  start,
+		AccessEndTime:      accessEnd,
+		WindowWeekAmount:   100,
+	}
+	_, _, expireAt := subscriptionWindowKeys(info, now)
+
+	// Unclamped behaviour would be start+5*week+3600, i.e. 5 days past the end.
+	if unclamped := start + 5*week + 3600; expireAt == unclamped {
+		t.Fatalf("week expiry ignored access end: got %d (unclamped)", expireAt)
+	}
+	if want := accessEnd + 3600; expireAt != want {
+		t.Fatalf("week expiry = %d, want %d (access end + 1h grace)", expireAt, want)
+	}
+}
+
+// TestSubscriptionWindowUsageResetAtClampedToAccessEnd covers the value users
+// actually see: the advertised weekly reset must never be later than the point
+// the subscription stops working.
+func TestSubscriptionWindowUsageResetAtClampedToAccessEnd(t *testing.T) {
+	const week = int64(subscriptionWindowWeekSeconds)
+	now := common.GetTimestamp()
+	start := now - 4*week - 24*3600 // one day into cycle 4
+	accessEnd := now + 24*3600      // subscription ends tomorrow
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 78,
+		SubscriptionStart:  start,
+		AccessEndTime:      accessEnd,
+		WindowWeekAmount:   100,
+	}
+	usage := GetSubscriptionWindowUsage(info)
+	if usage.WindowWeekResetAt != accessEnd {
+		t.Fatalf("WindowWeekResetAt = %d, want %d (clamped to access end)", usage.WindowWeekResetAt, accessEnd)
+	}
+	if usage.WindowWeekResetAt <= now {
+		t.Fatalf("reset must stay in the future, got %d (now %d)", usage.WindowWeekResetAt, now)
+	}
+}
+
+// TestSubscriptionWindowKeysUnclampedWhenEndIsFar guards against over-clamping:
+// a cycle that finishes well before the subscription ends keeps its natural
+// 7-day boundary.
+func TestSubscriptionWindowKeysUnclampedWhenEndIsFar(t *testing.T) {
+	const week = int64(subscriptionWindowWeekSeconds)
+	start := int64(1_700_000_000)
+	now := start + 24*3600 // cycle 0
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 79,
+		SubscriptionStart:  start,
+		AccessEndTime:      start + 30*24*3600, // ends far beyond cycle 0
+		WindowWeekAmount:   100,
+	}
+	_, _, expireAt := subscriptionWindowKeys(info, now)
+	if want := start + week + 3600; expireAt != want {
+		t.Fatalf("week expiry = %d, want natural boundary %d", expireAt, want)
+	}
+}
+
+// TestSubscriptionWindowKeysZeroAccessEndKeepsNaturalBoundary keeps legacy rows
+// (access_end_time defaults to 0) on the pre-fix behaviour instead of clamping
+// them to the epoch, which would expire every counter immediately.
+func TestSubscriptionWindowKeysZeroAccessEndKeepsNaturalBoundary(t *testing.T) {
+	const week = int64(subscriptionWindowWeekSeconds)
+	start := int64(1_700_000_000)
+	now := start + 24*3600
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 80,
+		SubscriptionStart:  start,
+		AccessEndTime:      0, // legacy row
+		WindowWeekAmount:   100,
+	}
+	_, _, expireAt := subscriptionWindowKeys(info, now)
+	if want := start + week + 3600; expireAt != want {
+		t.Fatalf("legacy zero access-end must keep natural boundary: got %d, want %d", expireAt, want)
+	}
+	if expireAt <= now {
+		t.Fatalf("legacy week expiry must stay in the future, got %d (now %d)", expireAt, now)
+	}
+}
+
+// TestReserveSubscriptionWindowsWeekRejectionResetAtClamped checks the rejection
+// path end-to-end: the ResetAt carried by the error (and rendered into the
+// "resets in about N hours" message) must respect the subscription's end.
+func TestReserveSubscriptionWindowsWeekRejectionResetAtClamped(t *testing.T) {
+	const week = int64(subscriptionWindowWeekSeconds)
+	setupWindowTestRedis(t)
+
+	now := common.GetTimestamp()
+	start := now - 4*week - 24*3600
+	accessEnd := now + 12*3600
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 81,
+		SubscriptionStart:  start,
+		AccessEndTime:      accessEnd,
+		WindowWeekAmount:   10,
+	}
+	if _, err := reserveSubscriptionWindows(info, 10); err != nil {
+		t.Fatalf("first reservation should fit the weekly limit: %v", err)
+	}
+	_, err := reserveSubscriptionWindows(info, 1)
+	if err == nil {
+		t.Fatal("expected weekly window rejection")
+	}
+	var winErr *subscriptionWindowExceededError
+	if !errors.As(err, &winErr) {
+		t.Fatalf("expected subscriptionWindowExceededError, got %T", err)
+	}
+	if winErr.Window != "week" {
+		t.Fatalf("expected week window rejection, got %q", winErr.Window)
+	}
+	if winErr.ResetAt != accessEnd {
+		t.Fatalf("rejection ResetAt = %d, want %d (clamped to access end)", winErr.ResetAt, accessEnd)
+	}
+}
