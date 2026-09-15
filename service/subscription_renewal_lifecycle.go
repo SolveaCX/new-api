@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -55,6 +56,15 @@ func updateCurrentSubscriptionRenewal(userID int, fromStatus string, toStatus st
 	}
 	if strings.TrimSpace(precondition.ExpectedRenewalStatus) != fromStatus {
 		return nil, errors.New("subscription renewal precondition conflict")
+	}
+	if toStatus == model.SubscriptionRenewalStatusCancelledByUser {
+		version, superseded, err := supersedeCatalogMigrationForUserAction(context.Background(), userID, 0)
+		if err != nil {
+			return nil, err
+		}
+		if superseded {
+			precondition.ExpectedChangeVersion = version
+		}
 	}
 	var result *SubscriptionRenewalLifecycleResult
 	var stripeBinding *model.SubscriptionProviderBinding
