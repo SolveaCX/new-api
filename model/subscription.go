@@ -1643,8 +1643,14 @@ type SubscriptionWindowInfo struct {
 	ContractId         int64
 	WindowScopeVersion int16
 	SubscriptionStart  int64
-	Window5hAmount     int64
-	WindowWeekAmount   int64
+	// AccessEndTime is the moment access actually stops (grace period included).
+	// The weekly cycle is clamped to it so a subscription ending mid-cycle never
+	// advertises — or waits for — a reset that cannot arrive: renewal issues a new
+	// entitlement whose counters are separate. Zero means legacy/unknown and
+	// leaves the natural 7-day boundary untouched.
+	AccessEndTime    int64
+	Window5hAmount   int64
+	WindowWeekAmount int64
 }
 
 func (i *SubscriptionWindowInfo) WindowIdentity() int {
@@ -1781,11 +1787,18 @@ func subscriptionWindowInfoForSub(sub *UserSubscription) (*SubscriptionWindowInf
 			anchor = contract.CreatedAt
 		}
 	}
+	// Entitlements written before access_end_time existed leave it at zero; the
+	// period end is the best available stand-in for when access stops.
+	accessEnd := sub.AccessEndTime
+	if accessEnd <= 0 {
+		accessEnd = sub.EndTime
+	}
 	return &SubscriptionWindowInfo{
 		UserSubscriptionId: sub.Id,
 		ContractId:         sub.ContractId,
 		WindowScopeVersion: sub.WindowScopeVersion,
 		SubscriptionStart:  anchor,
+		AccessEndTime:      accessEnd,
 		Window5hAmount:     window5hAmount,
 		WindowWeekAmount:   windowWeekAmount,
 	}, nil
