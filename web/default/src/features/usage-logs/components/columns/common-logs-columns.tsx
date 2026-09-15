@@ -46,6 +46,7 @@ import {
   getTieredBillingSummary,
   hasAnyCacheTokens,
   localizeSystemRewardContent,
+  localizeTopupLogContent,
   parseLogOther,
   isViolationFeeLog,
 } from '../../lib/format'
@@ -757,7 +758,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const primary = segments[0]
         const hasMore = segments.length > 1
         const fallbackContent =
-          localizeSystemRewardContent(log.content, t) ?? log.content
+          (log.type === 1 && localizeTopupLogContent(log.content, t)) ||
+          localizeSystemRewardContent(log.content, t) ||
+          log.content
 
         return (
           <>

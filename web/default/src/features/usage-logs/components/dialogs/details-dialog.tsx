@@ -51,6 +51,7 @@ import {
   hasAnyCacheTokens,
   isViolationFeeLog,
   localizeSystemRewardContent,
+  localizeTopupLogContent,
   getFirstResponseTimeColor,
   getResponseTimeColor,
 } from '../../lib/format'
@@ -412,7 +413,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details =
-    localizeSystemRewardContent(props.log.content, t) ?? props.log.content ?? ''
+    (props.log.type === 1 && localizeTopupLogContent(props.log.content, t)) ||
+    localizeSystemRewardContent(props.log.content, t) ||
+    props.log.content ||
+    ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
 
