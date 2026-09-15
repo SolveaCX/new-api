@@ -55,4 +55,46 @@ describe('phone binding gate', () => {
       )
     ).toBe(false)
   })
+
+  test('stops suggesting once the user has dismissed the prompt', () => {
+    const unboundStatus = {
+      phone_bound: false,
+      phone_number: '',
+      phone_verified_at: 0,
+      verification_required: false,
+      sms_verification_enabled: true,
+      rollout_start_at: 0,
+    }
+
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, phone_verification_required: false },
+        unboundStatus,
+        true
+      )
+    ).toBe(false)
+  })
+
+  test('keeps the blocking gate immune to dismissal', () => {
+    const requiredStatus = {
+      phone_bound: false,
+      phone_number: '',
+      phone_verified_at: 0,
+      verification_required: true,
+      sms_verification_enabled: true,
+      rollout_start_at: 0,
+    }
+
+    // A dismissed suggestion must never unblock an account the backend gates.
+    expect(
+      shouldRequirePhoneBinding({ phone_verification_required: true })
+    ).toBe(true)
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, phone_verification_required: true },
+        requiredStatus,
+        true
+      )
+    ).toBe(false)
+  })
 })
