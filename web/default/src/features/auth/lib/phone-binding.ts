@@ -22,13 +22,21 @@ export function shouldRequirePhoneBinding(
 
 /**
  * Whether an optional phone-binding prompt should be shown. Unlike the
- * blocking gate, this applies to every unbound non-admin account.
+ * blocking gate, this applies to every unbound non-admin account — including
+ * accounts the rollout exempts — so it must stay dismissible: `dismissed`
+ * carries the per-user flag from `phone-binding-dismissal.ts`.
+ *
+ * This only ever suppresses the *suggestion*. An account the backend gates
+ * still opens the blocking dialog through `shouldRequirePhoneBinding`, which
+ * takes no dismissal input, so a stored flag can never unblock it.
  */
 export function shouldSuggestPhoneBinding(
   user: PhoneBindingUser | null | undefined,
-  status: PhoneVerificationStatus | null | undefined
+  status: PhoneVerificationStatus | null | undefined,
+  dismissed = false
 ): boolean {
   return (
+    !dismissed &&
     typeof user?.role === 'number' &&
     user.role < 10 &&
     status?.sms_verification_enabled === true &&
