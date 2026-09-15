@@ -447,3 +447,104 @@ func TestReserveSubscriptionWindowsWeekRejectionResetAtClamped(t *testing.T) {
 		t.Fatalf("rejection ResetAt = %d, want %d (clamped to access end)", winErr.ResetAt, accessEnd)
 	}
 }
+
+// --- the 5h window must not outlive the subscription either ---
+
+// TestSubscriptionWindow5hResetAtClampedToAccessEnd pins the displayed 5h reset
+// to the subscription end. The bucket rotation is at most 30 minutes out, so the
+// overshoot is far smaller than the weekly window's, but the promise is equally
+// false: once access stops, no capacity ages back in.
+func TestSubscriptionWindow5hResetAtClampedToAccessEnd(t *testing.T) {
+	now := common.GetTimestamp()
+	// Subscription ends before the next bucket rotation.
+	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+	accessEnd := nextRotation - 60
+	if accessEnd <= now {
+		t.Skip("clock sits within a minute of the rotation; skip this tick")
+	}
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 91,
+		SubscriptionStart:  now - 3600,
+		AccessEndTime:      accessEnd,
+		Window5hAmount:     100,
+	}
+	usage := GetSubscriptionWindowUsage(info)
+	if usage.Window5hResetAt != accessEnd {
+		t.Fatalf("Window5hResetAt = %d, want %d (clamped to access end)", usage.Window5hResetAt, accessEnd)
+	}
+}
+
+// TestSubscriptionWindow5hResetAtUnclampedWhenEndIsFar guards the common case:
+// a subscription with time left keeps the natural bucket rotation.
+func TestSubscriptionWindow5hResetAtUnclampedWhenEndIsFar(t *testing.T) {
+	now := common.GetTimestamp()
+	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 92,
+		SubscriptionStart:  now - 3600,
+		AccessEndTime:      now + 30*24*3600,
+		Window5hAmount:     100,
+	}
+	usage := GetSubscriptionWindowUsage(info)
+	if usage.Window5hResetAt != nextRotation {
+		t.Fatalf("Window5hResetAt = %d, want natural rotation %d", usage.Window5hResetAt, nextRotation)
+	}
+}
+
+// TestSubscriptionWindow5hResetAtZeroAccessEndKeepsRotation keeps legacy rows
+// (access_end_time absent) on the pre-fix behaviour.
+func TestSubscriptionWindow5hResetAtZeroAccessEndKeepsRotation(t *testing.T) {
+	now := common.GetTimestamp()
+	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 93,
+		SubscriptionStart:  now - 3600,
+		AccessEndTime:      0,
+		Window5hAmount:     100,
+	}
+	usage := GetSubscriptionWindowUsage(info)
+	if usage.Window5hResetAt != nextRotation {
+		t.Fatalf("legacy zero access-end must keep rotation: got %d, want %d", usage.Window5hResetAt, nextRotation)
+	}
+}
+
+// TestReserveSubscriptionWindows5hRejectionResetAtClamped covers the rejection
+// path: the "frees up in about N minutes" message must not outrun the
+// subscription either.
+func TestReserveSubscriptionWindows5hRejectionResetAtClamped(t *testing.T) {
+	setupWindowTestRedis(t)
+
+	now := common.GetTimestamp()
+	nextRotation := (now/subscriptionWindowBucketSeconds + 1) * subscriptionWindowBucketSeconds
+	accessEnd := nextRotation - 60
+	if accessEnd <= now {
+		t.Skip("clock sits within a minute of the rotation; skip this tick")
+	}
+
+	info := &model.SubscriptionWindowInfo{
+		UserSubscriptionId: 94,
+		SubscriptionStart:  now - 3600,
+		AccessEndTime:      accessEnd,
+		Window5hAmount:     10,
+	}
+	if _, err := reserveSubscriptionWindows(info, 10); err != nil {
+		t.Fatalf("first reservation should fit the 5h limit: %v", err)
+	}
+	_, err := reserveSubscriptionWindows(info, 1)
+	if err == nil {
+		t.Fatal("expected 5h window rejection")
+	}
+	var winErr *subscriptionWindowExceededError
+	if !errors.As(err, &winErr) {
+		t.Fatalf("expected subscriptionWindowExceededError, got %T", err)
+	}
+	if winErr.Window != "5h" {
+		t.Fatalf("expected 5h window rejection, got %q", winErr.Window)
+	}
+	if winErr.ResetAt != accessEnd {
+		t.Fatalf("rejection ResetAt = %d, want %d (clamped to access end)", winErr.ResetAt, accessEnd)
+	}
+}
