@@ -23,6 +23,9 @@ notify.quota_warning_bark: "{{.Warning}}。残高：{{.Quota}}。お早めにチ
 notify.quota_warning_gotify: "{{.Warning}}。現在の残高は {{.Quota}} です。お早めにチャージしてください。"
 notify.phone_verification_required_for_api: "APIを使用する前に、電話番号を登録して認証してください。"
 
+# Phone verification messages
+user.phone_already_registered: "この電話番号はすでに登録されています"
+
 # CLI device authorization messages
 cli.device_id_missing: "デバイス ID は必須です"
 cli.device_metadata_too_long: "CLI デバイスのメタデータが長すぎます"

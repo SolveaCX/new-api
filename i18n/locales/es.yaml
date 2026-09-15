@@ -23,6 +23,9 @@ notify.quota_warning_bark: "{{.Warning}}. Cuota restante: {{.Quota}}. Recargue a
 notify.quota_warning_gotify: "{{.Warning}}. Su cuota restante actual es {{.Quota}}. Recargue a tiempo."
 notify.phone_verification_required_for_api: "Vincula y verifica tu número de teléfono antes de usar la API."
 
+# Phone verification messages
+user.phone_already_registered: "Este número de teléfono ya está registrado"
+
 # CLI device authorization messages
 cli.device_id_missing: "El ID del dispositivo es obligatorio"
 cli.device_metadata_too_long: "Los metadatos del dispositivo CLI son demasiado largos"

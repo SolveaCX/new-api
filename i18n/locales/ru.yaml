@@ -23,6 +23,9 @@ notify.quota_warning_bark: "{{.Warning}}. Остаток квоты: {{.Quota}}.
 notify.quota_warning_gotify: "{{.Warning}}. Ваш текущий остаток квоты: {{.Quota}}. Пополните вовремя."
 notify.phone_verification_required_for_api: "Привяжите и подтвердите номер телефона перед использованием API."
 
+# Phone verification messages
+user.phone_already_registered: "Этот номер телефона уже зарегистрирован"
+
 # CLI device authorization messages
 cli.device_id_missing: "Требуется ID устройства"
 cli.device_metadata_too_long: "Метаданные CLI-устройства слишком длинные"

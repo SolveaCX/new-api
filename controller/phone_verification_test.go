@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSendPhoneVerificationHidesAlreadyRegisteredPhone(t *testing.T) {
+func TestSendPhoneVerificationRejectsAlreadyRegisteredPhone(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserPhoneBinding{}))
 	require.NoError(t, db.Create(&model.User{
@@ -41,6 +41,7 @@ func TestSendPhoneVerificationHidesAlreadyRegisteredPhone(t *testing.T) {
 	body := strings.NewReader(`{"phone_number":"+86 138-0013-8000"}`)
 	request := httptest.NewRequest(http.MethodPost, "/api/phone-verification", body)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept-Language", "zh-CN")
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -49,8 +50,8 @@ func TestSendPhoneVerificationHidesAlreadyRegisteredPhone(t *testing.T) {
 		Message string `json:"message"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
-	require.True(t, payload.Success)
-	require.Empty(t, payload.Message)
+	require.False(t, payload.Success)
+	require.NotEmpty(t, payload.Message)
 }
 
 func TestRegisterRequiresPhoneVerificationCodeWhenSMSVerificationEnabled(t *testing.T) {
