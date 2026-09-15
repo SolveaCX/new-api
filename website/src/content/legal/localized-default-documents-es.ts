@@ -1,13 +1,15 @@
 export const ES_DEFAULT_LEGAL_DOCUMENTS = {
   terms: `# Acuerdo de usuario de flatkey.ai
 
-Última actualización: 31 de agosto de 2026
+Última actualización: 14 de septiembre de 2026
 
 ## 1. Alcance del servicio
 
 flatkey.ai proporciona un gateway API de IA, saldo prepago, enrutamiento de modelos, medición de uso, controles de cuenta, facturación y funciones relacionadas. Al crear una cuenta, comprar saldo o usar el servicio, aceptas este Acuerdo y las políticas vinculadas.
 
 ## 2. Cuentas y administración
+
+Para proteger las cuentas y el servicio, podemos exigir un número de teléfono válido o una verificación telefónica cuando sea razonablemente necesario para la seguridad de la cuenta o la prevención de abusos. No puedes proporcionar datos de contacto falsos, usar sin autorización el número de otra persona ni eludir o falsificar una verificación.
 
 Debes proporcionar información precisa y mantener segura tu cuenta, tus claves API y tus métodos de autenticación. Los administradores de una organización pueden invitar miembros, configurar permisos, presupuestos, modelos, registros, claves y ajustes de seguridad.
 
@@ -51,13 +53,15 @@ Para preguntas sobre este Acuerdo, pedidos, facturación, reembolsos, cumplimien
 `,
   privacy: `# Política de privacidad de flatkey.ai
 
-Última actualización: 4 de junio de 2026
+Última actualización: 14 de septiembre de 2026
 
 ## 1. Alcance
 
 Esta Política explica cómo flatkey.ai recopila, usa, comparte, conserva y protege información relacionada con cuentas, organizaciones, compras, recargas, entrega, acceso API, enrutamiento de modelos, registros de uso, facturación, reembolsos, soporte y seguridad.
 
 ## 2. Información que recopilamos
+
+Podemos recopilar tu número de teléfono y los datos de verificación relacionados cuando los proporcionas para verificar la cuenta o cuando los exigimos para proteger las cuentas y el servicio. Usamos esta información para verificar la titularidad de la cuenta, detectar y prevenir fraude, registros masivos, cuentas compartidas y otros abusos, investigar incidentes de seguridad y aplicar esta Política y el Acuerdo de usuario. Cuando sea necesario, podemos compartir el número y las señales de verificación con proveedores de autenticación, verificación, antifraude, seguridad e infraestructura, y conservarlos solo durante el tiempo necesario para el servicio, la seguridad, las obligaciones legales, las auditorías, las disputas y la prevención de abusos.
 
 Podemos recopilar información que proporcionas, como nombre, correo electrónico, credenciales, empresa, rol, miembros del equipo, dirección de facturación, datos fiscales, información de invoice, pedidos, mensajes de soporte, solicitudes de reembolso, ajustes del panel y comunicaciones.
 

@@ -21,7 +21,7 @@ import type { LegalDocumentKind } from './default-documents'
 export const PT_DEFAULT_LEGAL_DOCUMENTS: Record<LegalDocumentKind, string> = {
   terms: `# Contrato do usuário flatkey.ai
 
-Última atualização: 31 de agosto de 2026
+Última atualização: 14 de setembro de 2026
 
 Este Contrato de Usuário ("Contrato") se aplica aos serviços flatkey.ai fornecidos por VOC AI INC ("VOC AI", "nós", "nos" ou "nosso") por meio de flatkey.ai, o painel, APIs, páginas de checkout, documentação e canais de suporte (os "Serviços"). Ao registrar uma conta, criar uma organização, adicionar saldo de conta pré-paga, gerar ou usar uma chave API, ligar para o modelo APIs, acessar o painel ou usar os Serviços de outra forma, você concorda com este Contrato, nossa Política de Privacidade, Política de Reembolso, documentação, páginas de preços e quaisquer regras complementares aplicáveis.
 
@@ -34,6 +34,8 @@ flatkey.ai é um acesso AI API, roteamento de modelo, medição de uso, painel e
 flatkey.ai não é o modelo em si. Não garantimos que qualquer modelo específico, API, preço, janela de contexto, limite de taxa, disponibilidade regional, comportamento de saída, regra de processamento de dados ou política de terceiros permanecerão disponíveis ou inalterados. Podemos adicionar, remover, restringir ou modificar modelos, recursos, preços e regras de uso com base nas necessidades do produto, alterações de custos, requisitos de segurança, obrigações de conformidade, requisitos do fornecedor de modelo ou alterações em serviços de terceiros.
 
 ## 2. Elegibilidade, contas e organizações
+
+Para proteger contas e Serviços, podemos exigir um número de telefone válido ou verificação por telefone quando isso for razoavelmente necessário para a segurança da conta ou prevenção de abusos. Você não deve fornecer informações de contato falsas, usar o número de outra pessoa sem autorização, nem contornar ou falsificar uma verificação.
 
 Você deve ter pelo menos 13 anos. Se você tiver menos de 18 anos, deverá ter permissão de seus pais ou responsável legal. Se você usar os Serviços em nome de uma empresa, organização ou outra entidade, você declara ter autoridade para aceitar este Contrato em nome dessa entidade.
 
@@ -182,7 +184,7 @@ Para dúvidas sobre este Contrato, pedidos, cobrança, reembolsos, conformidade,
 Todos os conteúdos acima estarão sujeitos à versão em inglês.`,
   privacy: `# Política de Privacidade flatkey.ai
 
-Última atualização: 4 de junho de 2026
+Última atualização: 14 de setembro de 2026
 
 Esta Política de Privacidade explica como VOC AI INC ("VOC AI", "nós", "nos" ou "nosso") coleta, usa, compartilha, retém e protege informações quando você acessa ou usa flatkey.ai, serviços flatkey.ai, sites relacionados, painéis, APIs, páginas de checkout, documentação e canais de suporte.
 
@@ -193,6 +195,8 @@ Entidade operacional: VOC AI INC, 160 E Tasman Drive, Suite 202, San Jose, CA 95
 Esta Política se aplica ao registro de conta, gerenciamento de organização, compras, recargas, entrega, acesso API, roteamento de modelo, registros de uso, cobrança, reembolsos, suporte, análise de segurança e serviços digitais relacionados que fornecemos. Serviços de modelo de terceiros, provedores de serviços de pagamento, carteiras, bancos, redes de cartões, serviços em nuvem, ferramentas analíticas ou outros sites processam informações de acordo com suas próprias políticas e termos de privacidade. Esta Política não substitui políticas de terceiros.
 
 ## 2. Informações que coletamos
+
+Podemos coletar seu número de telefone e dados de verificação relacionados quando você os fornece para verificar a conta ou quando os exigimos para proteger contas e Serviços. Usamos essas informações para verificar a titularidade da conta, detectar e prevenir fraude, registros em massa, compartilhamento de contas e outros abusos, investigar incidentes de segurança e aplicar esta Política e o Contrato do Usuário. Quando necessário, podemos compartilhar o número e os sinais de verificação com provedores de autenticação, verificação, antifraude, segurança e infraestrutura, e mantê-los apenas pelo tempo necessário para prestação do serviço, segurança, obrigações legais, auditoria, disputas e prevenção de abusos.
 
 Podemos coletar informações que você fornece diretamente, incluindo nome, endereço de e-mail, senha ou informações de autenticação, nome da empresa, função, membros da equipe, endereço de cobrança, informações comerciais, identificação fiscal, informações de IVA/GST, informações de fatura, informações de pedidos, mensagens de suporte, solicitações de reembolso, materiais de conformidade, configurações do painel e comunicações conosco.
 
