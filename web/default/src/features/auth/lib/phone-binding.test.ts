@@ -38,20 +38,70 @@ describe('phone binding gate', () => {
 
     expect(
       shouldSuggestPhoneBinding(
-        { role: 1, phone_verification_required: false },
+        { role: 1, group: 'plg', phone_verification_required: false },
         unboundStatus
       )
     ).toBe(true)
     expect(
       shouldSuggestPhoneBinding(
-        { role: 10, phone_verification_required: false },
+        { role: 10, group: 'plg', phone_verification_required: false },
         unboundStatus
       )
     ).toBe(false)
     expect(
       shouldSuggestPhoneBinding(
-        { role: 1, phone_verification_required: false },
+        { role: 1, group: 'plg', phone_verification_required: false },
         { ...unboundStatus, phone_bound: true }
+      )
+    ).toBe(false)
+  })
+
+  test('leaves non-PLG accounts alone entirely', () => {
+    const unboundStatus = {
+      phone_bound: false,
+      phone_number: '',
+      phone_verified_at: 0,
+      verification_required: false,
+      sms_verification_enabled: true,
+      rollout_start_at: 0,
+    }
+
+    // Enterprise and other non-PLG groups are outside the rollout: they must
+    // not even see the dismissible suggestion.
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, group: 'enterprise', phone_verification_required: false },
+        unboundStatus
+      )
+    ).toBe(false)
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, group: 'default', phone_verification_required: false },
+        unboundStatus
+      )
+    ).toBe(false)
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, group: 'plg', phone_verification_required: false },
+        unboundStatus
+      )
+    ).toBe(true)
+  })
+
+  test('treats a missing group as unknown and never suggests', () => {
+    const unboundStatus = {
+      phone_bound: false,
+      phone_number: '',
+      phone_verified_at: 0,
+      verification_required: false,
+      sms_verification_enabled: true,
+      rollout_start_at: 0,
+    }
+
+    expect(
+      shouldSuggestPhoneBinding(
+        { role: 1, phone_verification_required: false },
+        unboundStatus
       )
     ).toBe(false)
   })
@@ -68,7 +118,7 @@ describe('phone binding gate', () => {
 
     expect(
       shouldSuggestPhoneBinding(
-        { role: 1, phone_verification_required: false },
+        { role: 1, group: 'plg', phone_verification_required: false },
         unboundStatus,
         true
       )
@@ -91,7 +141,7 @@ describe('phone binding gate', () => {
     ).toBe(true)
     expect(
       shouldSuggestPhoneBinding(
-        { role: 1, phone_verification_required: true },
+        { role: 1, group: 'plg', phone_verification_required: true },
         requiredStatus,
         true
       )

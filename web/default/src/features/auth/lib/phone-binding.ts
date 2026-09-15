@@ -1,7 +1,17 @@
 import type { AuthUser } from '@/stores/auth-store'
 import type { PhoneVerificationStatus } from '../types'
 
-type PhoneBindingUser = Pick<AuthUser, 'phone_verification_required' | 'role'>
+type PhoneBindingUser = Pick<
+  AuthUser,
+  'phone_verification_required' | 'role' | 'group'
+>
+
+/**
+ * The only group the phone-verification rollout covers, mirroring
+ * `plgUserGroup` in `model/user.go`. Enterprise and every other group are
+ * outside it and must not be prompted at all.
+ */
+const PLG_GROUP = 'plg'
 
 /**
  * Whether the blocking phone-binding dialog must be shown.
@@ -22,9 +32,14 @@ export function shouldRequirePhoneBinding(
 
 /**
  * Whether an optional phone-binding prompt should be shown. Unlike the
- * blocking gate, this applies to every unbound non-admin account — including
- * accounts the rollout exempts — so it must stay dismissible: `dismissed`
- * carries the per-user flag from `phone-binding-dismissal.ts`.
+ * blocking gate, this reaches unbound PLG accounts the rollout exempts by
+ * creation date, so it must stay dismissible: `dismissed` carries the per-user
+ * flag from `phone-binding-dismissal.ts`.
+ *
+ * The group check matches the backend rule, which only ever subjects PLG
+ * accounts to phone verification — enterprise and other groups are never
+ * prompted, not even with a dismissible dialog. A missing group is an unknown
+ * state and never prompts.
  *
  * This only ever suppresses the *suggestion*. An account the backend gates
  * still opens the blocking dialog through `shouldRequirePhoneBinding`, which
@@ -37,7 +52,8 @@ export function shouldSuggestPhoneBinding(
 ): boolean {
   return (
     !dismissed &&
-    typeof user?.role === 'number' &&
+    user?.group === PLG_GROUP &&
+    typeof user.role === 'number' &&
     user.role < 10 &&
     status?.sms_verification_enabled === true &&
     status.phone_bound === false

@@ -61,8 +61,10 @@ export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const phoneStatusQuery = useQuery({
     queryKey: ['auth', 'phone-verification-status', user?.id],
     queryFn: getPhoneVerificationStatus,
+    // Only PLG non-admins can ever be prompted, so no one else pays for the
+    // status round-trip.
     enabled:
-      Boolean(user) &&
+      user?.group === 'plg' &&
       (user?.role ?? 10) < 10 &&
       status?.sms_verification === true,
     staleTime: 30_000,
