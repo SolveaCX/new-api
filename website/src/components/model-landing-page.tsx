@@ -26,6 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import Image from "next/image";
+import { getShowcaseGeneratorLabel } from "@/lib/showcase-generation";
 import { MediaPromptDisplay } from "@/components/media-prompt-display";
 import { optimizedPreviewSrc } from "@/lib/optimized-preview";
 import Link from "next/link";
@@ -2106,13 +2107,14 @@ function OutputPreview(props: {
   const localVideoExample = originalVideoExample ?? (props.fallbackVideo?.video && !isRemoteMedia(props.fallbackVideo.video)
     ? props.fallbackVideo
     : MEDIA_EXAMPLES.video.find((example) => example.video && !isRemoteMedia(example.video)));
-  const videoFallbackSrc = videoExample?.video && localVideoExample?.video !== videoExample.video
+  const videoFallbackSrc = videoExample?.video && !videoExample.video.startsWith("/assets/model-regeneration/") && localVideoExample?.video !== videoExample.video
     ? localVideoExample?.video
     : undefined;
   const videoFallbackPoster = props.kind === "video"
     ? getVideoPromptTemplateLocalFallbackPoster(props.modelId, videoExample?.professionId) ?? props.fallbackVideo?.fallbackPoster ?? localVideoExample?.poster
     : undefined;
   const imageExample = props.kind === "image" ? getImagePlaygroundExample(props.modelId, props.locale) : undefined;
+  const generatorLabel = getShowcaseGeneratorLabel(videoExample?.video ?? imageExample?.poster);
   const field = (name: string, fallback: string | number | boolean) => props.fieldValues[name] ?? fallback;
   const rows = props.kind === "video"
     ? [
@@ -2190,6 +2192,9 @@ function OutputPreview(props: {
           </span>
         )}
       </div>
+      {generatorLabel ? (
+        <p className="mx-8 mt-2 text-xs font-medium text-[#74717d] max-[900px]:mx-[22px] max-[620px]:mx-4">{props.t("Generated with {{model}}", { model: generatorLabel })}</p>
+      ) : null}
       <div className="summary">
         <h3>{props.t("Request summary")}</h3>
         <dl className="summary-list">
@@ -2279,7 +2284,7 @@ function GeneratedExamplesCarousel(props: {
         ) : null}
       </div>
       <figcaption className="px-4 py-3 text-xs font-bold text-[#4b4a52]">
-        {props.t("Generated with {{model}}", { model: props.modelName })} #{activeIndex + 1}
+        {props.t("Generated with {{model}}", { model: getShowcaseGeneratorLabel(activeExample.video ?? activeExample.poster) ?? props.modelName })} #{activeIndex + 1}
       </figcaption>
       {hasMultiple ? (
         <div className="grid grid-cols-3 gap-2 border-t border-black/10 bg-[#fbfaff] p-3">
@@ -3132,6 +3137,7 @@ function PromptLibrarySection(props: {
             // cards. Do not paint an older local poster behind them while the
             // CDN clip is loading; the same clip is also used by the
             // playground preview below.
+            const generatorLabel = getShowcaseGeneratorLabel(item.example.video ?? item.example.poster);
             const usesGeneratedVideo = isProfessionVideo(item.example.video);
             const posterFallback = item.example.fallbackPoster ?? (usesGeneratedVideo ? "" : getPromptPosterFallback(item));
             const posterSource = failedPosters[item.example.poster]
@@ -3180,6 +3186,9 @@ function PromptLibrarySection(props: {
                 <div className="prompt-badge">{item.label}</div>
               </div>
               <div className="prompt-body">
+                {generatorLabel ? (
+                  <p className="mb-3 text-xs font-medium text-[#74717d]">{props.t("Generated with {{model}}", { model: generatorLabel })}</p>
+                ) : null}
                 <MediaPromptDisplay prompt={item.prompt} locale={props.locale} />
                 <div className="prompt-actions">
                   <button
