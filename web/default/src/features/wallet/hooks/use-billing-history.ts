@@ -50,7 +50,8 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const [pageSize, setPageSize] = useState(initialPageSize)
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState<TopupStatus | 'all'>('all')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [requestingInvoice, setRequestingInvoice] = useState(false)
 
@@ -59,6 +60,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
    */
   const fetchBillingHistory = useCallback(async () => {
     setLoading(true)
+    setError(false)
     try {
       const response = isAdmin
         ? await getAllBillingHistory(
@@ -78,6 +80,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
             ? i18next.t(response.message)
             : i18next.t('Failed to load billing history')
         )
+        setError(true)
         setRecords([])
         setTotal(0)
       }
@@ -85,6 +88,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch billing history:', error)
       toast.error(i18next.t('Failed to load billing history'))
+      setError(true)
       setRecords([])
       setTotal(0)
     } finally {
@@ -214,6 +218,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     keyword,
     status,
     loading,
+    error,
     completing,
     requestingInvoice,
     isAdmin,

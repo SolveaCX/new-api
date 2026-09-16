@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "Saisissez un numéro de téléphone valide",
     "Please enter the SMS verification code": "Saisissez le code de vérification SMS",
     "SMS verification code": "Code de vérification SMS",
-    "SMS verification code sent": "Code de vérification SMS envoyé"
+    "SMS verification code sent": "Code de vérification SMS envoyé",
+    "No recharge history yet": "Aucune recharge pour le moment",
+    "Your top-ups and payment receipts will appear here.": "Vos recharges et reçus de paiement apparaîtront ici.",
+    "Built for teams scaling AI in production.": "Pour les équipes qui déploient l’IA à grande échelle.",
+    "Let’s build your plan": "Construisons votre offre",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "Indiquez votre volume prévu, vos modèles préférés et vos besoins de facturation. Nous vous aiderons à trouver la bonne configuration.",
+    "Usage & budget": "Usage et budget",
+    "Model preferences": "Modèles préférés",
+    "Billing requirements": "Besoins de facturation"
   }
 }

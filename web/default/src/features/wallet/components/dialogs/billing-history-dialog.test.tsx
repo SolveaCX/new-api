@@ -319,7 +319,7 @@ describe('BillingHistoryPanel visibility', () => {
     ).toBe(false)
   })
 
-  test('hides expired records from non-admin history', () => {
+  test('hides failed records for everyone and expired records for non-admins', () => {
     const getVisibleBillingRecords = (
       billingHistoryDialog as RefundableHistoryExports
     ).getVisibleBillingRecords
@@ -327,13 +327,64 @@ describe('BillingHistoryPanel visibility', () => {
     if (!getVisibleBillingRecords) return
 
     const records: TopupRecord[] = [
-      { id: 1, user_id: 1, amount: 1, money: 1, trade_no: 'success', payment_method: 'stripe', create_time: 1, status: 'success' },
-      { id: 2, user_id: 1, amount: 1, money: 1, trade_no: 'expired', payment_method: 'stripe', create_time: 1, status: 'expired' },
+      {
+        id: 1,
+        user_id: 1,
+        amount: 1,
+        money: 1,
+        trade_no: 'success',
+        payment_method: 'stripe',
+        create_time: 1,
+        status: 'success',
+      },
+      {
+        id: 2,
+        user_id: 1,
+        amount: 1,
+        money: 1,
+        trade_no: 'expired',
+        payment_method: 'stripe',
+        create_time: 1,
+        status: 'expired',
+      },
+      {
+        id: 3,
+        user_id: 1,
+        amount: 1,
+        money: 1,
+        trade_no: 'failed',
+        payment_method: 'stripe',
+        create_time: 1,
+        status: 'failed',
+      },
     ]
 
-    expect(getVisibleBillingRecords(records, false).map((record) => record.status)).toEqual([
-      'success',
-    ])
+    expect(
+      getVisibleBillingRecords(records, false).map((record) => record.status)
+    ).toEqual(['success'])
     expect(getVisibleBillingRecords(records, true)).toHaveLength(2)
+  })
+})
+
+describe('Billing history empty states', () => {
+  test('explains where future recharge records appear', () => {
+    const html = renderWithI18n(<billingHistoryDialog.BillingHistoryEmpty />)
+    expect(html).toContain('No recharge history yet')
+    expect(html).toContain(
+      'Your top-ups and payment receipts will appear here.'
+    )
+    expect(html).not.toContain('Clear filters')
+  })
+  test('keeps search recovery available when no records match', () => {
+    const html = renderWithI18n(
+      <billingHistoryDialog.BillingHistoryEmpty
+        searching
+        onClearSearch={() => undefined}
+      />
+    )
+    expect(html).toContain('No billing records found')
+    expect(html).toContain('Try adjusting your search')
+    expect(html).toContain('Clear filters')
+    expect(html).not.toContain('No recharge history yet')
   })
 })

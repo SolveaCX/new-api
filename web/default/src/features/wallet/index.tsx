@@ -41,7 +41,10 @@ import { consumePendingPostLoginRedirect } from '@/features/auth/lib/storage'
 import { getCardStatus } from '@/features/onboarding/api'
 import { RecallClaimProvider } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
 import { getPaddleTopUpStatus, isApiSuccess, resumeStripeTopup } from './api'
-import { BillingHistoryPanel } from './components/dialogs/billing-history-dialog'
+import {
+  BillingHistoryPanel,
+  BillingHistoryEmpty,
+} from './components/dialogs/billing-history-dialog'
 import { StripeCheckoutDialog } from './components/dialogs/stripe-checkout-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
@@ -187,7 +190,6 @@ export function Wallet(props: WalletProps) {
     number | null
   >(null)
   const [topupDialogOpen, setTopupDialogOpen] = useState(false)
-  const [hasRechargeHistory, setHasRechargeHistory] = useState(false)
   const [paddleCheckoutNotice, setPaddleCheckoutNotice] =
     useState<PaddleCheckoutNotice | null>(null)
   const handledPaddleTransactionRef = useRef<string | null>(null)
@@ -848,11 +850,6 @@ export function Wallet(props: WalletProps) {
         .join(', ')
     : ''
 
-  const handleRechargeHistoryAvailability = useCallback(
-    (available: boolean) => setHasRechargeHistory(available),
-    [setHasRechargeHistory]
-  )
-
   return (
     <>
       <SectionPageLayout>
@@ -988,16 +985,14 @@ export function Wallet(props: WalletProps) {
                 description={t(
                   'View your top-up records and payment receipts.'
                 )}
-                contentClassName={hasRechargeHistory ? 'space-y-4' : 'hidden'}
+                contentClassName='space-y-4'
               >
-                <div
-                  id='wallet-billing-history'
-                  className={hasRechargeHistory ? 'scroll-mt-4' : 'hidden'}
-                >
-                  {!mockPreview ? (
+                <div id='wallet-billing-history' className='scroll-mt-4'>
+                  {mockPreview ? (
+                    <BillingHistoryEmpty />
+                  ) : (
                     <BillingHistoryPanel
                       scrollAreaClassName='max-h-none pr-0 sm:pr-0'
-                      onAvailabilityChange={handleRechargeHistoryAvailability}
                       onResumeStripeCheckout={
                         showSubscriptionPlans
                           ? handleResumeStripeCheckout
@@ -1005,7 +1000,7 @@ export function Wallet(props: WalletProps) {
                       }
                       onRefundSuccess={fetchUser}
                     />
-                  ) : null}
+                  )}
                 </div>
               </TitledCard>
             </div>

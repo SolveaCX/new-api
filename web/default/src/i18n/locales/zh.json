@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "请输入有效的手机号",
     "Please enter the SMS verification code": "请输入短信验证码",
     "SMS verification code": "短信验证码",
-    "SMS verification code sent": "短信验证码已发送"
+    "SMS verification code sent": "短信验证码已发送",
+    "No recharge history yet": "暂无充值记录",
+    "Your top-ups and payment receipts will appear here.": "你的充值记录和付款凭证将显示在这里。",
+    "Built for teams scaling AI in production.": "为规模化应用 AI 的团队而打造。",
+    "Let’s build your plan": "定制适合你的方案",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "告诉我们你的预期用量、偏好模型和账单需求，我们将协助你选择合适的方案。",
+    "Usage & budget": "用量与预算",
+    "Model preferences": "模型偏好",
+    "Billing requirements": "账单需求"
   }
 }

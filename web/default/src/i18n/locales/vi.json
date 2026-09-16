@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "Vui lòng nhập số điện thoại hợp lệ",
     "Please enter the SMS verification code": "Vui lòng nhập mã xác minh SMS",
     "SMS verification code": "Mã xác minh SMS",
-    "SMS verification code sent": "Đã gửi mã xác minh SMS"
+    "SMS verification code sent": "Đã gửi mã xác minh SMS",
+    "No recharge history yet": "Chưa có lịch sử nạp tiền",
+    "Your top-ups and payment receipts will appear here.": "Các lần nạp tiền và biên lai thanh toán sẽ xuất hiện tại đây.",
+    "Built for teams scaling AI in production.": "Dành cho các nhóm mở rộng ứng dụng AI trong thực tế.",
+    "Let’s build your plan": "Cùng xây dựng gói phù hợp",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "Cho chúng tôi biết mức sử dụng dự kiến, mô hình ưu tiên và nhu cầu thanh toán. Chúng tôi sẽ giúp bạn chọn cấu hình phù hợp.",
+    "Usage & budget": "Mức sử dụng và ngân sách",
+    "Model preferences": "Mô hình ưu tiên",
+    "Billing requirements": "Yêu cầu thanh toán"
   }
 }

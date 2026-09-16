@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "Please enter a valid phone number",
     "Please enter the SMS verification code": "Please enter the SMS verification code",
     "SMS verification code": "SMS verification code",
-    "SMS verification code sent": "SMS verification code sent"
+    "SMS verification code sent": "SMS verification code sent",
+    "No recharge history yet": "No recharge history yet",
+    "Your top-ups and payment receipts will appear here.": "Your top-ups and payment receipts will appear here.",
+    "Built for teams scaling AI in production.": "Built for teams scaling AI in production.",
+    "Let’s build your plan": "Let’s build your plan",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.",
+    "Usage & budget": "Usage & budget",
+    "Model preferences": "Model preferences",
+    "Billing requirements": "Billing requirements"
   }
 }

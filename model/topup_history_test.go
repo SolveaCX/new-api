@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUserTopUpHistoryHidesExpiredOrders(t *testing.T) {
+func TestUserTopUpHistoryHidesUnsuccessfulOrders(t *testing.T) {
 	setupTopUpLifecycleTestDB(t, 1)
 	require.NoError(t, DB.AutoMigrate(&PaymentInvoice{}))
 
@@ -33,14 +33,13 @@ func TestUserTopUpHistoryHidesExpiredOrders(t *testing.T) {
 	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
 	topUps, total, err := GetUserTopUps(user.Id, pageInfo)
 	require.NoError(t, err)
-	require.EqualValues(t, 3, total)
-	require.Len(t, topUps, 3)
+	require.EqualValues(t, 2, total)
+	require.Len(t, topUps, 2)
 	require.Equal(t, common.TopUpStatusSuccess, topUps[0].Status)
-	require.Equal(t, common.TopUpStatusFailed, topUps[1].Status)
-	require.Equal(t, common.TopUpStatusPending, topUps[2].Status)
+	require.Equal(t, common.TopUpStatusPending, topUps[1].Status)
 }
 
-func TestSearchUserTopUpHistoryHidesExpiredOrders(t *testing.T) {
+func TestSearchUserTopUpHistoryHidesUnsuccessfulOrders(t *testing.T) {
 	setupTopUpLifecycleTestDB(t, 1)
 	require.NoError(t, DB.AutoMigrate(&PaymentInvoice{}))
 
@@ -49,6 +48,7 @@ func TestSearchUserTopUpHistoryHidesExpiredOrders(t *testing.T) {
 	for index, status := range []string{
 		common.TopUpStatusPending,
 		common.TopUpStatusExpired,
+		common.TopUpStatusFailed,
 		common.TopUpStatusSuccess,
 	} {
 		insertTopUpLifecycleOrder(
@@ -80,6 +80,7 @@ func TestAllTopUpHistoryCanFilterByStatus(t *testing.T) {
 	for index, status := range []string{
 		common.TopUpStatusPending,
 		common.TopUpStatusExpired,
+		common.TopUpStatusFailed,
 		common.TopUpStatusSuccess,
 	} {
 		insertTopUpLifecycleOrder(
@@ -133,4 +134,34 @@ func TestUserTopUpHistoryIncludesRecordsOlderThanThirtyDays(t *testing.T) {
 	require.EqualValues(t, 1, searchTotal)
 	require.Len(t, searchResults, 1)
 	require.Equal(t, "history-old-success", searchResults[0].TradeNo)
+}
+
+func TestTopUpHistoryExcludesFailedBeforePagination(t *testing.T) {
+	setupTopUpLifecycleTestDB(t, 1)
+	require.NoError(t, DB.AutoMigrate(&PaymentInvoice{}))
+	user := createLifecycleQuotaTestUser(t, "history-pagination", 0, 100)
+	for _, status := range []string{common.TopUpStatusSuccess, common.TopUpStatusPending, common.TopUpStatusFailed} {
+		insertTopUpLifecycleOrder(t, user.Id, "pagination-"+status, PaymentProviderStripe, status, common.GetTimestamp(), 0)
+	}
+	for _, search := range []bool{false, true} {
+		for page := 1; page <= 2; page++ {
+			pageInfo := &common.PageInfo{Page: page, PageSize: 1}
+			var rows []*TopUp
+			var total int64
+			var err error
+			if search {
+				rows, total, err = SearchAllTopUps("%pagination%", pageInfo, "", true)
+			} else {
+				rows, total, err = GetAllTopUps(pageInfo, "", true)
+			}
+			require.NoError(t, err)
+			require.EqualValues(t, 2, total)
+			require.Len(t, rows, 1)
+			require.NotEqual(t, common.TopUpStatusFailed, rows[0].Status)
+		}
+	}
+	rows, total, err := GetAllTopUps(&common.PageInfo{Page: 1, PageSize: 10}, common.TopUpStatusFailed)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, rows, 1)
 }
