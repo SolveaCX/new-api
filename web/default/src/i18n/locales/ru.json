@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "Введите действительный номер телефона",
     "Please enter the SMS verification code": "Введите код подтверждения из SMS",
     "SMS verification code": "Код подтверждения по SMS",
-    "SMS verification code sent": "Код подтверждения по SMS отправлен"
+    "SMS verification code sent": "Код подтверждения по SMS отправлен",
+    "No recharge history yet": "Пополнений пока нет",
+    "Your top-ups and payment receipts will appear here.": "Здесь появятся ваши пополнения и платёжные квитанции.",
+    "Built for teams scaling AI in production.": "Для команд, расширяющих применение ИИ в рабочих проектах.",
+    "Let’s build your plan": "Подберём ваш план",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "Расскажите об ожидаемом объёме использования, предпочитаемых моделях и требованиях к оплате. Мы поможем подобрать подходящее решение.",
+    "Usage & budget": "Объём и бюджет",
+    "Model preferences": "Предпочитаемые модели",
+    "Billing requirements": "Требования к оплате"
   }
 }

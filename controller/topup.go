@@ -670,9 +670,9 @@ func GetAllTopUps(c *gin.Context) {
 		err    error
 	)
 	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo, status)
+		topups, total, err = model.SearchAllTopUps(keyword, pageInfo, status, c.Query("exclude_failed") == "true")
 	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo, status)
+		topups, total, err = model.GetAllTopUps(pageInfo, status, c.Query("exclude_failed") == "true")
 	}
 	if err != nil {
 		common.ApiError(c, err)

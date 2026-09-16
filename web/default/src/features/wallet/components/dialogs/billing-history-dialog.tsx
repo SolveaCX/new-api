@@ -37,6 +37,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -246,16 +255,16 @@ export function isPendingStripeRecord(record: TopupRecord): boolean {
   )
 }
 
-// Keep the user-facing history safe if an older backend returns expired rows.
-// The server also excludes them for non-admin users.
+// Keep history safe while frontend and backend deployments roll out independently.
 // eslint-disable-next-line react-refresh/only-export-components
 export function getVisibleBillingRecords(
   records: TopupRecord[],
   isAdmin: boolean
 ): TopupRecord[] {
-  return isAdmin
-    ? records
-    : records.filter((record) => record.status !== 'expired')
+  return records.filter(
+    (record) =>
+      record.status !== 'failed' && (isAdmin || record.status !== 'expired')
+  )
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -509,6 +518,39 @@ export function RefundableTermsManager({
   )
 }
 
+export function BillingHistoryEmpty(props: {
+  searching?: boolean
+  onClearSearch?: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Empty className='bg-muted/20 min-h-56 border py-10' role='status'>
+      <EmptyHeader>
+        <EmptyMedia variant='icon' className='size-12'>
+          <FileText aria-hidden='true' />
+        </EmptyMedia>
+        <EmptyTitle>
+          {props.searching
+            ? t('No billing records found')
+            : t('No recharge history yet')}
+        </EmptyTitle>
+        <EmptyDescription>
+          {props.searching
+            ? t('Try adjusting your search')
+            : t('Your top-ups and payment receipts will appear here.')}
+        </EmptyDescription>
+      </EmptyHeader>
+      {props.searching && props.onClearSearch ? (
+        <EmptyContent>
+          <Button variant='outline' size='sm' onClick={props.onClearSearch}>
+            {t('Clear filters')}
+          </Button>
+        </EmptyContent>
+      ) : null}
+    </Empty>
+  )
+}
+
 export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
   const { onAvailabilityChange, scrollAreaClassName } = props
   const { t } = useTranslation()
@@ -520,6 +562,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
     keyword,
     status,
     loading,
+    error,
     completing,
     requestingInvoice,
     isAdmin,
@@ -623,10 +666,6 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
     }
   }, [invoiceTradeNo, t])
 
-  if (!loading && !refundableTermsLoading && !billingHistoryAvailable) {
-    return null
-  }
-
   const handleConfirmTermRefund = (
     term: RefundableSubscriptionTerm
   ): Promise<boolean> =>
@@ -695,9 +734,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
         {props.showInlineHeader ? (
           <div className='flex items-start justify-between gap-3'>
             <div>
-              <h3 className='text-sm font-semibold'>
-                {t('Recharge History')}
-              </h3>
+              <h3 className='text-sm font-semibold'>{t('Recharge History')}</h3>
               <p className='text-muted-foreground mt-0.5 text-xs'>
                 {t('View your top-up records and payment receipts.')}
               </p>
@@ -710,9 +747,7 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
               aria-label={t('Refresh')}
               onClick={() => void refreshLatest()}
             >
-              <RefreshCw
-                className={cn('h-4 w-4', loading && 'animate-spin')}
-              />
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
             </Button>
           </div>
         ) : null}
@@ -747,7 +782,6 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 { value: 'all', label: t('Status') },
                 { value: 'success', label: t('Success') },
                 { value: 'pending', label: t('Pending') },
-                { value: 'failed', label: t('Failed') },
                 { value: 'expired', label: t('Expired') },
               ]}
               value={status}
@@ -763,7 +797,6 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                   <SelectItem value='all'>{t('Status')}</SelectItem>
                   <SelectItem value='success'>{t('Success')}</SelectItem>
                   <SelectItem value='pending'>{t('Pending')}</SelectItem>
-                  <SelectItem value='failed'>{t('Failed')}</SelectItem>
                   <SelectItem value='expired'>{t('Expired')}</SelectItem>
                 </SelectGroup>
               </SelectContent>
@@ -821,17 +854,27 @@ export function BillingHistoryPanel(props: BillingHistoryPanelProps) {
                 </div>
               ))}
             </div>
+          ) : error ? (
+            <Alert variant='destructive'>
+              <AlertTitle>{t('Failed to load billing history')}</AlertTitle>
+              <AlertDescription>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void refreshLatest()}
+                >
+                  {t('Retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
           ) : visibleRecords.length === 0 ? (
-            <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
-              <p className='text-sm font-medium'>
-                {t('No billing records found')}
-              </p>
-              <p className='mt-1 text-xs'>
-                {keyword
-                  ? t('Try adjusting your search')
-                  : t('Your transaction history will appear here')}
-              </p>
-            </div>
+            <BillingHistoryEmpty
+              searching={!!keyword || status !== 'all'}
+              onClearSearch={() => {
+                handleSearch('')
+                handleStatusChange('all')
+              }}
+            />
           ) : (
             <div className='overflow-hidden rounded-lg border'>
               <Table className='min-w-[760px]'>

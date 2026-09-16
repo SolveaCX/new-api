@@ -6946,6 +6946,14 @@
     "Please enter a valid phone number": "有効な電話番号を入力してください",
     "Please enter the SMS verification code": "SMS認証コードを入力してください",
     "SMS verification code": "SMS認証コード",
-    "SMS verification code sent": "SMS認証コードを送信しました"
+    "SMS verification code sent": "SMS認証コードを送信しました",
+    "No recharge history yet": "チャージ履歴はまだありません",
+    "Your top-ups and payment receipts will appear here.": "チャージ履歴と支払いの領収書がここに表示されます。",
+    "Built for teams scaling AI in production.": "本番環境で AI の活用を拡大するチーム向け。",
+    "Let’s build your plan": "チームに合うプランを一緒に",
+    "Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.": "想定利用量、希望するモデル、請求に関するご要望をお知らせください。最適な構成をご提案します。",
+    "Usage & budget": "利用量と予算",
+    "Model preferences": "希望するモデル",
+    "Billing requirements": "請求要件"
   }
 }

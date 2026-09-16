@@ -344,6 +344,7 @@ export async function getAllBillingHistory(
   const params = new URLSearchParams({
     p: page.toString(),
     page_size: pageSize.toString(),
+    exclude_failed: 'true',
   })
   if (keyword) {
     params.append('keyword', keyword)

@@ -1105,9 +1105,7 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
                 {t('Enterprise teams')}
               </p>
               <h3 className='mt-2 max-w-2xl text-xl font-semibold tracking-tight sm:text-2xl'>
-                {t(
-                  'Contact sales for higher monthly usage and greater discounts.'
-                )}
+                {t('Built for teams scaling AI in production.')}
               </h3>
               <div className='text-muted-foreground mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 dark:text-slate-300'>
                 {[
@@ -1137,24 +1135,24 @@ export function SubscriptionPlansCard(props: SubscriptionPlansCardProps) {
             </div>
             <div className='border-primary/15 flex flex-col justify-center border-t p-4 sm:p-5 lg:border-t-0 lg:border-l'>
               <p className='text-foreground text-3xl font-semibold tracking-tight sm:text-4xl dark:text-white'>
-                {t('Enterprise')}
+                {t('Let’s build your plan')}
               </p>
               <p className='text-muted-foreground mt-2 text-sm leading-5 dark:text-slate-300'>
                 {t(
-                  'Contact sales for higher monthly usage and greater discounts.'
+                  'Tell us your expected usage, preferred models, and billing needs. We’ll help you find the right setup.'
                 )}
               </p>
               <div className='mt-4 flex flex-wrap gap-2'>
                 {[
-                  'Custom monthly usage',
-                  'Team procurement support',
-                  'Custom routing discounts',
+                  t('Usage & budget'),
+                  t('Model preferences'),
+                  t('Billing requirements'),
                 ].map((feature) => (
                   <span
                     key={feature}
                     className='border-primary/20 bg-primary/5 text-primary rounded-full border px-3 py-1.5 text-xs dark:border-violet-300/20 dark:bg-violet-300/10 dark:text-violet-100'
                   >
-                    {t(feature)}
+                    {feature}
                   </span>
                 ))}
               </div>
