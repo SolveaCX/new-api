@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -178,4 +179,51 @@ func TestImageHelperGrokRetryDecisionSkipsMalformedDoResponse(t *testing.T) {
 	if types.IsSkipRetryError(sanitizeGrokImageDoResponseError(other, upstreamErr)) {
 		t.Fatal("unrelated image channels must keep existing malformed-response retry behavior")
 	}
+}
+
+// A client-supplied `n` flows straight into the quota multiplier chain
+// (image_handler -> PriceData.OtherRatios -> text_quota), so an unbounded
+// value multiplies the bill by that factor. Production incident 2026-09-13:
+// n=4294967295 (uint32 max) on gpt-image-2 produced a single request billed at
+// $37,795,712 while the upstream only ever generated one image.
+//
+// n=0 is the mirror image of the same gap: AddOtherRatio silently drops any
+// ratio <= 0, so the multiplier never lands and the request bills as if n=1
+// even though the value is meaningless and gets forwarded upstream as-is.
+func TestValidateImageN(t *testing.T) {
+	ptr := func(v uint) *uint { return &v }
+
+	t.Run("rejects the uint32-max value seen in the 2026-09-13 incident", func(t *testing.T) {
+		err := validateImageN(&dto.ImageRequest{N: ptr(4294967295)})
+		if err == nil {
+			t.Fatal("expected n=4294967295 to be rejected, got nil error")
+		}
+		if got := err.StatusCode; got != http.StatusBadRequest {
+			t.Fatalf("expected HTTP 400, got %d", got)
+		}
+	})
+
+	t.Run("rejects zero because it silently bills as one", func(t *testing.T) {
+		if err := validateImageN(&dto.ImageRequest{N: ptr(0)}); err == nil {
+			t.Fatal("expected n=0 to be rejected, got nil error")
+		}
+	})
+
+	t.Run("rejects the first value past the cap", func(t *testing.T) {
+		if err := validateImageN(&dto.ImageRequest{N: ptr(maxImageN + 1)}); err == nil {
+			t.Fatalf("expected n=%d to be rejected, got nil error", maxImageN+1)
+		}
+	})
+
+	t.Run("accepts the boundary values and an absent n", func(t *testing.T) {
+		for _, n := range []*uint{nil, ptr(1), ptr(maxImageN)} {
+			if err := validateImageN(&dto.ImageRequest{N: n}); err != nil {
+				label := "nil"
+				if n != nil {
+					label = strconv.FormatUint(uint64(*n), 10)
+				}
+				t.Fatalf("expected n=%s to be accepted, got %v", label, err)
+			}
+		}
+	})
 }

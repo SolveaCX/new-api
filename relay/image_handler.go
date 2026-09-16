@@ -23,6 +23,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// maxImageN caps the client-supplied image count. OpenAI's own images API
+// allows at most 10, and every upstream this gateway fronts is at or below
+// that, so the cap doubles as a billing guard: `n` is applied as a straight
+// multiplier on the request price (see the OtherRatios wiring below), which
+// means an unbounded value multiplies the bill by that factor.
+const maxImageN = 10
+
+// validateImageN rejects image counts that cannot be billed faithfully.
+//
+// Both ends of the range are load-bearing:
+//   - Too large: `n` reaches the quota multiplier chain unchecked. On
+//     2026-09-13 a client sent n=4294967295 (uint32 max) to gpt-image-2 and a
+//     single request was billed 18,897,856,098,000 quota ($37,795,712) while
+//     the upstream generated one image for one image's worth of cost.
+//   - Zero: PriceData.AddOtherRatio drops any ratio <= 0, so n=0 never lands
+//     as a multiplier and the request bills as if n=1, while the zero is still
+//     forwarded upstream where each provider interprets it differently.
+func validateImageN(request *dto.ImageRequest) *types.NewAPIError {
+	if request == nil || request.N == nil {
+		return nil
+	}
+	if n := *request.N; n < 1 || n > maxImageN {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("invalid n: %d, must be between 1 and %d", n, maxImageN),
+			types.ErrorCodeInvalidRequest,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
+	return nil
+}
+
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
 
@@ -34,6 +66,10 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	request, err := common.DeepCopy(imageReq)
 	if err != nil {
 		return types.NewError(fmt.Errorf("failed to copy request to ImageRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+
+	if nErr := validateImageN(request); nErr != nil {
+		return nErr
 	}
 
 	err = helper.ModelMappedHelper(c, info, request)
