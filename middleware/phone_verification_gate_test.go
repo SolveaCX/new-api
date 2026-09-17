@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -65,4 +66,25 @@ func TestAbortWithOpenAIMessageAndNotifyAddsTopLevelNotify(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, recorder.Code)
 	require.JSONEq(t, `{"error":{"message":"绑定手机号后使用 API (request id: req-phone-gate)","type":"new_api_error","code":""},"notify":"请先绑定并验证手机号后再使用 API。"}`, recorder.Body.String())
+}
+
+func TestPhoneVerificationReminderEligibleHonoursToggleAndRule(t *testing.T) {
+	originalSMS := common.SMSVerificationEnabled
+	originalToggle := operation_setting.GetPhoneVerificationSetting().APIReminderEnabled
+	t.Cleanup(func() {
+		common.SMSVerificationEnabled = originalSMS
+		operation_setting.GetPhoneVerificationSetting().APIReminderEnabled = originalToggle
+	})
+	common.SMSVerificationEnabled = true
+	start := model.PhoneVerificationRolloutStart().Unix()
+	legacy := &model.UserBase{Group: "plg", CreatedAt: start - 1}
+
+	operation_setting.GetPhoneVerificationSetting().APIReminderEnabled = false
+	require.False(t, phoneVerificationReminderEligible(legacy))
+
+	operation_setting.GetPhoneVerificationSetting().APIReminderEnabled = true
+	require.True(t, phoneVerificationReminderEligible(legacy))
+	require.False(t, phoneVerificationReminderEligible(&model.UserBase{Group: "plg", CreatedAt: start}))
+	require.False(t, phoneVerificationReminderEligible(&model.UserBase{Group: "enterprise", CreatedAt: start - 1}))
+	require.False(t, phoneVerificationReminderEligible(nil))
 }
