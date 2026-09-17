@@ -267,3 +267,6 @@ export function CareersPage({ locale, pathname }: { locale: Locale; pathname: st
     </SiteShell>
   );
 }
+
+// Restore the existing detail routes without replacing staging’s careers overview.
+export { CareersDetailPage } from "./careers-detail-page";

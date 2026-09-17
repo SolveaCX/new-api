@@ -16,7 +16,7 @@ func GetWebsiteModelAccess(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	service.FilterHiddenModelsFromUserAccess(access)
+	filterHiddenModelsFromUserAccess(access)
 	c.Header("Cache-Control", "no-store")
 	common.ApiSuccess(c, access)
 }
