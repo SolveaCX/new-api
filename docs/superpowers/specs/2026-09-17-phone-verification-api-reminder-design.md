@@ -56,10 +56,10 @@ Turning it off is the rollback.
    the request is parsed, the relay format, streaming flag, model name and user
    id are known, and nothing has been charged.
 
-   The function returns `true` when it wrote the reminder response; `Relay`
-   then releases any channel-concurrency lease the distributor may already
-   hold and returns. It returns `false` in every other case and the request
-   continues untouched.
+   The function returns `true` when it wrote the reminder response and
+   `Relay` returns immediately; the distributor's deferred release frees any
+   channel-concurrency lease it already holds. It returns `false` in every
+   other case and the request continues untouched.
 
 The Playground runs `Relay` under `UserAuth`, not `TokenAuth`, so the context
 key is never set there and the Playground is never intercepted.
@@ -100,12 +100,13 @@ pipeline on the spot:
 
 - OpenAI chat: `response_format.type` is `json_object` or `json_schema`, or
   `tool_choice` is `"required"` or an object naming a tool.
-- Claude: `tool_choice.type` is `any` or `tool`.
+- Claude: `tool_choice.type` is `any` or `tool`, or `output_format` is set.
 - Responses: `text.format.type` is `json_object` or `json_schema`, or
   `tool_choice` is `"required"` or an object.
 - Gemini: `generationConfig.responseMimeType` is `application/json`,
   `responseSchema` or `responseJsonSchema` is set, or
-  `toolConfig.functionCallingConfig.mode` is `ANY`.
+  `toolConfig.functionCallingConfig.mode` is `ANY`. Batch bodies (`requests`)
+  are not text generation and are skipped too.
 
 Requests that merely *offer* tools (`tool_choice` auto/none) are reminded like
 plain chat; the model may or may not have called a tool anyway.
