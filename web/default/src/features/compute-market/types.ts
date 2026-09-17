@@ -49,6 +49,7 @@ export interface ComputeRFQ {
   matching_deadline: number
   extensions: number
   accepted_bid_id: number
+  featured: boolean
   created_time: number
   updated_time: number
 }

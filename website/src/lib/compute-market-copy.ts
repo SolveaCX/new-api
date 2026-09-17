@@ -87,6 +87,7 @@ const en: ComputeMarketCopy = {
     perHour: "/h",
     liveNote: "New requests appear at the top · anonymous nicknames · hover for details",
     allLabel: "Open the full marketplace in the console →",
+    featured: "Featured",
   },
   home: {
     kicker: "COMPUTE · LIVE DEMAND BOARD",
@@ -147,6 +148,7 @@ const zh: ComputeMarketCopy = {
     perHour: "/h",
     liveNote: "新需求自动置顶 · 匿名昵称 · 悬停查看说明",
     allLabel: "在控制台查看全部需求 →",
+    featured: "精选",
   },
   home: {
     kicker: "COMPUTE · 实时需求板",

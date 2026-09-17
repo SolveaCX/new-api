@@ -54,6 +54,7 @@ const rfq: ComputeRFQ = {
   matching_deadline: 0,
   extensions: 0,
   accepted_bid_id: 0,
+  featured: false,
   created_time: 0,
   updated_time: 0,
 }

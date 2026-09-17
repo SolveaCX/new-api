@@ -139,18 +139,34 @@ const startFreeLabelByLocale: Record<Locale, string> = withIdFallback({
 
 const navGroupLabelByLocale: Record<
   Locale,
-  { menu: string; products: string; resources: string }
+  { menu: string; products: string; resources: string; compute: string }
 > = withIdFallback({
-  en: { products: "Product", resources: "Resource", menu: "Menu" },
-  zh: { products: "产品", resources: "资源", menu: "菜单" },
-  es: { products: "Producto", resources: "Recursos", menu: "Menu" },
-  fr: { products: "Produit", resources: "Ressources", menu: "Menu" },
-  pt: { products: "Produto", resources: "Recursos", menu: "Menu" },
-  ru: { products: "Продукт", resources: "Ресурсы", menu: "Меню" },
-  ja: { products: "プロダクト", resources: "リソース", menu: "メニュー" },
-  vi: { products: "Sản phẩm", resources: "Tài nguyên", menu: "Menu" },
-  de: { products: "Produkt", resources: "Ressourcen", menu: "Menu" },
-  id: { products: "Produk", resources: "Sumber daya", menu: "Menu" },
+  en: { products: "Product", resources: "Resource", compute: "Compute", menu: "Menu" },
+  zh: { products: "产品", resources: "资源", compute: "算力", menu: "菜单" },
+  es: { products: "Producto", resources: "Recursos", compute: "Cómputo", menu: "Menu" },
+  fr: { products: "Produit", resources: "Ressources", compute: "Calcul", menu: "Menu" },
+  pt: { products: "Produto", resources: "Recursos", compute: "Computação", menu: "Menu" },
+  ru: { products: "Продукт", resources: "Ресурсы", compute: "Вычисления", menu: "Меню" },
+  ja: { products: "プロダクト", resources: "リソース", compute: "コンピュート", menu: "メニュー" },
+  vi: { products: "Sản phẩm", resources: "Tài nguyên", compute: "Tính toán", menu: "Menu" },
+  de: { products: "Produkt", resources: "Ressourcen", compute: "Compute", menu: "Menu" },
+  id: { products: "Produk", resources: "Sumber daya", compute: "Komputasi", menu: "Menu" },
+});
+
+const computeNavByLocale: Record<
+  Locale,
+  { overview: string; marketplace: string; post: string; supplier: string }
+> = withIdFallback({
+  en: { overview: "Overview", marketplace: "Marketplace · live requests", post: "Post a compute request", supplier: "Become a supplier" },
+  zh: { overview: "算力市场概览", marketplace: "Marketplace · 实时需求", post: "发布算力需求", supplier: "成为供给方" },
+  es: { overview: "Resumen", marketplace: "Marketplace · solicitudes en vivo", post: "Publicar una solicitud", supplier: "Ser proveedor" },
+  fr: { overview: "Aperçu", marketplace: "Marketplace · demandes en direct", post: "Publier une demande", supplier: "Devenir fournisseur" },
+  pt: { overview: "Visão geral", marketplace: "Marketplace · pedidos ao vivo", post: "Publicar um pedido", supplier: "Tornar-se fornecedor" },
+  ru: { overview: "Обзор", marketplace: "Маркетплейс · запросы", post: "Опубликовать запрос", supplier: "Стать поставщиком" },
+  ja: { overview: "概要", marketplace: "マーケットプレイス · リクエスト", post: "リクエストを投稿", supplier: "サプライヤーになる" },
+  vi: { overview: "Tổng quan", marketplace: "Marketplace · yêu cầu trực tiếp", post: "Đăng yêu cầu", supplier: "Trở thành nhà cung cấp" },
+  de: { overview: "Überblick", marketplace: "Marketplace · Live-Anfragen", post: "Anfrage veröffentlichen", supplier: "Anbieter werden" },
+  id: { overview: "Ikhtisar", marketplace: "Marketplace · permintaan langsung", post: "Kirim permintaan", supplier: "Jadi penyedia" },
 });
 
 const languagePanelLabelByLocale: Record<Locale, string> = withIdFallback({
@@ -288,6 +304,8 @@ type Props = {
 
 type NavItem = {
   external?: boolean;
+  /** Absolute URL rendered as a plain same-tab anchor (e.g. console deep links). */
+  absolute?: boolean;
   href: string;
   label: string;
   publicPath?: boolean;
@@ -594,7 +612,6 @@ export function SiteHeader(props: Props) {
       { href: "/models", label: copy.nav.modelPricing, publicPath: true },
       { href: TOOLS_LANDING_PATH, label: toolsCopy.navLabel, publicPath: true },
       { href: "/playground", label: legacyLabels.playground, publicPath: true },
-      { href: "/compute", label: legacyLabels.compute, publicPath: true },
     ],
     [copy.nav.modelPricing, legacyLabels, toolsCopy.navLabel],
   );
@@ -631,6 +648,17 @@ export function SiteHeader(props: Props) {
       legacyLabels.usecases,
       props.locale,
     ],
+  );
+  const computeCopy =
+    computeNavByLocale[props.locale] ?? computeNavByLocale.en;
+  const computeItems = useMemo<NavItem[]>(
+    () => [
+      { href: "/compute", label: computeCopy.overview, publicPath: true },
+      { absolute: true, href: consoleUrl("/compute/market", "?tab=supply"), label: computeCopy.marketplace },
+      { absolute: true, href: consoleUrl("/compute/market", "?tab=post"), label: computeCopy.post },
+      { absolute: true, href: consoleUrl("/compute/market", "?tab=supplier"), label: computeCopy.supplier },
+    ],
+    [computeCopy],
   );
   const topLevelItems = [
     { href: CLI_LANDING_PATH, label: cliCopy.navLabel, publicPath: true },
@@ -715,6 +743,13 @@ export function SiteHeader(props: Props) {
       </>
     );
 
+    if (item.absolute) {
+      return (
+        <a key={item.href} className={className} href={item.href}>
+          {children}
+        </a>
+      );
+    }
     return item.external ? (
       <a
         key={item.href}
@@ -745,6 +780,13 @@ export function SiteHeader(props: Props) {
       item.publicPath && currentPath === hrefPath && !item.href.includes("#");
     const className = cn(mobileNavRowClass, active && mobileNavActiveClass);
 
+    if (item.absolute) {
+      return (
+        <a key={item.href} className={className} href={item.href}>
+          {item.label}
+        </a>
+      );
+    }
     return item.external ? (
       <a
         key={item.href}
@@ -998,6 +1040,7 @@ export function SiteHeader(props: Props) {
         <div className="hidden min-w-0 flex-1 items-center gap-0 min-[901px]:flex min-[1120px]:gap-0.5">
           {renderNavGroup(groupLabels.products, productItems)}
           {renderNavGroup(groupLabels.resources, resourceItems)}
+          {renderNavGroup(groupLabels.compute, computeItems)}
           {topLevelItems.map((item) => renderNavLink(item))}
         </div>
 
@@ -1093,6 +1136,7 @@ export function SiteHeader(props: Props) {
         <div className={mobileMenuSurfaceClass}>
           {renderMobileGroup(groupLabels.products, productItems)}
           {renderMobileGroup(groupLabels.resources, resourceItems)}
+          {renderMobileGroup(groupLabels.compute, computeItems)}
           {topLevelItems.map((item) => renderMobileNavLink(item))}
           {!props.hideLanguageSwitcher && (
             <HeaderLanguageMenu

@@ -508,6 +508,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			computeMarketAdminRoute.GET("/suppliers", controller.ListComputeSuppliers)
 			computeMarketAdminRoute.POST("/suppliers/:user_id/level", controller.SetComputeSupplierLevel)
+			computeMarketAdminRoute.POST("/rfqs/:id/featured", controller.SetComputeRFQFeatured)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

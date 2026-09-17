@@ -8339,3 +8339,6 @@ html:has(.model-prototype) {
 .cm-board-foot{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid #0b0b0f14;font-size:13px}
 .cm-board-foot span{color:#83838e;font-family:ui-monospace,Menlo,monospace}
 .cm-board-foot a{color:#5b21b6;font-weight:700;text-decoration:none}
+.cm-featured{display:inline-block;margin-left:6px;background:#0b0b0f;color:#c8ff4d;border-radius:999px;padding:2px 7px;font:800 10px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;vertical-align:1px}
+.cm-chip-featured{border-color:#0b0b0f;box-shadow:0 0 0 2px #c8ff4d inset}
+.cm-table tr:has(.cm-featured) td{background:#fbfaff}

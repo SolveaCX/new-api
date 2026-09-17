@@ -573,3 +573,29 @@ func SetComputeSupplierLevel(c *gin.Context) {
 	model.RecordLog(c.GetInt("id"), model.LogTypeManage, fmt.Sprintf("set compute supplier level of user %d to %d", userId, req.Level))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"user_id": userId, "level": req.Level}})
 }
+
+// SetComputeRFQFeatured (AdminAuth) pins/unpins a request at the top of the marketplace.
+func SetComputeRFQFeatured(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiErrorMsg(c, "invalid request id")
+		return
+	}
+	var req struct {
+		Featured bool `json:"featured"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.SetComputeRFQFeatured(id, req.Featured); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ApiErrorMsg(c, "request not found")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordLog(c.GetInt("id"), model.LogTypeManage, fmt.Sprintf("set compute request %d featured=%v", id, req.Featured))
+	common.ApiSuccess(c, gin.H{"id": id, "featured": req.Featured})
+}
