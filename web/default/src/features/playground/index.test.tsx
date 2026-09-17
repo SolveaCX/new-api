@@ -109,8 +109,17 @@ spyOn(reactQueryModule, 'useQuery').mockImplementation((({
 }: {
   queryKey: string[]
 }) =>
-  queryKey[0] === 'playground-models'
-    ? { data: modelsQueryData, isLoading: isModelsQueryLoading }
+  queryKey[0] === 'playground-model-catalog'
+    ? {
+        data: modelsQueryData?.map((id) => ({
+          id,
+          tags: '',
+          display_weight: 0,
+          supported_endpoint_types: ['openai'],
+          availability_status: 'available',
+        })),
+        isLoading: isModelsQueryLoading,
+      }
     : { data: undefined }) as never)
 
 spyOn(reactRouterModule, 'useNavigate').mockImplementation(
@@ -595,12 +604,10 @@ describe('Playground model landing handoff', () => {
       },
     ]
 
-    spyOn(playgroundApiModule, 'getPlaygroundConversation').mockResolvedValue(
-      {
-        conversation_id: 'conversation-saved',
-        messages: snapshotMessages,
-      } as never
-    )
+    spyOn(playgroundApiModule, 'getPlaygroundConversation').mockResolvedValue({
+      conversation_id: 'conversation-saved',
+      messages: snapshotMessages,
+    } as never)
     const hydrateSpy = spyOn(
       playgroundLibModule,
       'hydratePlaygroundMessages'

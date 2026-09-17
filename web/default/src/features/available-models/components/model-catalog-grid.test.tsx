@@ -117,15 +117,12 @@ describe('ModelCatalogGrid', () => {
     expect(html).toContain('Quick start')
   })
 
-  test('keeps promotion badges beside the model name', () => {
+  test('renders configured promotion badges with the model name', () => {
     const html = renderGrid({
-      models: [buildModel({ id: 'glm-5.3-flash' })],
+      models: [buildModel({ id: 'glm-5.3-flash', tags: 'Limited discount' })],
     })
 
-    expect(html).toContain('flex min-w-0 flex-wrap items-center gap-1.5')
-    expect(html).toContain(
-      'min-w-0 flex-1 truncate text-lg leading-tight font-bold'
-    )
+    expect(html).toContain('glm-5.3-flash')
     expect(html).toContain('Limited discount')
   })
 

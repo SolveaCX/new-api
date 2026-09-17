@@ -95,3 +95,66 @@ test('keeps available models absent from pricing instead of silently shrinking t
   expect(result.models.map(model => model.model_name)).toEqual(['catalog-only']);
   expect(Number.isNaN(result.models[0].model_ratio)).toBe(true);
 });
+
+for (const authenticated of [false, true]) {
+  test(`preserves pricing and directory fields when merging the ${authenticated ? 'authenticated' : 'public'} catalog`, async () => {
+    const metadata = {
+      author: 'Author', providers: ['Provider'], modalities: ['text', 'image'],
+      context_tokens: 128000, series: 'Series', categories: ['coding'],
+      released_at: '2026-01-01', distillable: false, popularity_rank: 3,
+    };
+    const priceRow = {
+      model_name: 'model', id: 12, icon: 'icon', vendor_id: 4,
+      vendor_description: 'Vendor description', quota_type: 0,
+      model_ratio: 2, completion_ratio: 3, model_price: 0.1,
+      cache_ratio: 0.2, create_cache_ratio: 1.25, image_ratio: 2,
+      audio_ratio: 4, audio_completion_ratio: 5, enable_groups: ['plg'],
+      group_ratio: { plg: 0.8 }, group_model_ratio: { plg: 0.6 },
+      billing_mode: 'tiered', billing_expr: 'p * 2', pricing_version: 'v1',
+      featured_order: 2, featured_config: { display_name: 'Featured', tags: 'hero' },
+      directory_metadata: metadata, availability_reason: 'healthy',
+      availability_detected_at: 123, availability_checked_at: 456,
+    };
+    const display = { billing_kind: 'token', prices: { input: { configured: 4, plg: 2.4 } } };
+    const extras = {
+      vendors: [{ id: 4, name: 'Vendor', icon: 'icon' }],
+      group_ratio: { plg: 0.8 }, group_model_ratio: { plg: { model: 0.6 } },
+      usable_group: { plg: 'Public' }, supported_endpoint: { openai: { path: '/v1/chat/completions' } },
+      auto_groups: ['plg'],
+    };
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('analytics-self')) return Response.json({ success: true, data: { id: 7 } });
+      if (url.includes('model-access')) return Response.json({ success: true, data: {
+        scope_mode: 'fixed_account', groups: [], account_model_ids: ['model'], models: [{
+          id: 'model', description: 'Catalog description', tags: 'HOT,Custom', display_weight: 9,
+          vendor: { id: 4, name: 'Vendor', icon: 'icon' },
+          supported_endpoint_types: ['openai', 'image-generation'], availability_status: 'available',
+        }],
+      } });
+      return Response.json({ success: true, data: [priceRow], ...extras,
+        ...(url.includes('/website/pricing') ? { display_pricing: { model: display } } : {}),
+      });
+    }) as typeof fetch;
+    const result = await getAvailableModelPricingData(authenticated ? 'session=fixture' : '');
+    expect(result.models).toHaveLength(1);
+    expect(result.models[0]).toMatchObject({ ...priceRow, display_pricing: display,
+      description: 'Catalog description', tags: 'HOT,Custom', display_weight: 9,
+      vendor_name: 'Vendor', vendor_icon: 'icon',
+      supported_endpoint_types: ['openai', 'image-generation'], availability_status: 'available',
+    });
+    expect(result).toMatchObject({ vendors: extras.vendors, groupRatio: extras.group_ratio,
+      groupModelRatio: extras.group_model_ratio, usableGroup: extras.usable_group,
+      supportedEndpoint: extras.supported_endpoint, autoGroups: extras.auto_groups });
+  });
+}
+
+test('selectable scope excludes metadata belonging only to other groups', async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => String(input).includes('model-access')
+    ? Response.json({ success: true, data: {
+      scope_mode: 'selectable', create_default_scope: 'selected',
+      groups: [{ id: 'other', model_ids: ['other'] }, { id: 'selected', model_ids: ['selected'] }],
+      models: ['selected', 'other'].map(id => ({ id, availability_status: 'available', supported_endpoint_types: ['openai'] })),
+    } }) : Response.json({ success: true, data: [] })) as typeof fetch;
+  expect((await getAvailableModelPricingData()).models.map(model => model.model_name)).toEqual(['selected']);
+});
