@@ -35,8 +35,8 @@ const defaultCopy = {
     title: "Dedicated inference GPUs, by the hour.",
     description:
       "Move from shared per-token routing to dedicated capacity when workloads need predictable throughput, enterprise review and unified billing.",
-    primary: "Join the waitlist",
-    secondary: "Talk to sales",
+    primary: "Post a compute request",
+    secondary: "Become a supplier",
     stats: [
       { value: "$1.79/hr", label: "H100 market-floor target" },
       { value: "SLA", label: "Signed operating terms" },
@@ -247,8 +247,8 @@ const zhCopy = {
     eyebrow: "Flatkey Compute",
     title: "按小时使用专属推理 GPU。",
     description: "当工作负载需要稳定吞吐、企业评审和统一账单时，从共享的按 token 路由平滑切到专属算力。",
-    primary: "加入候补名单",
-    secondary: "联系销售",
+    primary: "发布算力需求单",
+    secondary: "成为供给方",
     stats: [
       { value: "$1.79/hr", label: "H100 目标底价" },
       { value: "SLA", label: "签署运营条款" },

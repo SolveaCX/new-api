@@ -101,6 +101,7 @@ import { Route as AuthenticatedSystemSettingsContentIndexRouteImport } from './r
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
 import { Route as AuthenticatedComputeNodesIndexRouteImport } from './routes/_authenticated/compute/nodes/index'
+import { Route as AuthenticatedComputeMarketIndexRouteImport } from './routes/_authenticated/compute/market/index'
 import { Route as LocalePricingModelIdIndexRouteImport } from './routes/$locale/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsSiteSectionRouteImport } from './routes/_authenticated/system-settings/site/$section'
 import { Route as AuthenticatedSystemSettingsSecuritySectionRouteImport } from './routes/_authenticated/system-settings/security/$section'
@@ -109,6 +110,7 @@ import { Route as AuthenticatedSystemSettingsModelsSectionRouteImport } from './
 import { Route as AuthenticatedSystemSettingsContentSectionRouteImport } from './routes/_authenticated/system-settings/content/$section'
 import { Route as AuthenticatedSystemSettingsBillingSectionRouteImport } from './routes/_authenticated/system-settings/billing/$section'
 import { Route as AuthenticatedSystemSettingsAuthSectionRouteImport } from './routes/_authenticated/system-settings/auth/$section'
+import { Route as AuthenticatedComputeMarketRfqIdRouteImport } from './routes/_authenticated/compute/market/$rfqId'
 import { Route as LocaleBlogCategorySlugRouteImport } from './routes/$locale/blog/category/$slug'
 
 const UserAgreementRoute = UserAgreementRouteImport.update({
@@ -604,6 +606,12 @@ const AuthenticatedComputeNodesIndexRoute =
     path: '/compute/nodes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedComputeMarketIndexRoute =
+  AuthenticatedComputeMarketIndexRouteImport.update({
+    id: '/compute/market/',
+    path: '/compute/market/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LocalePricingModelIdIndexRoute =
   LocalePricingModelIdIndexRouteImport.update({
     id: '/$locale/pricing/$modelId/',
@@ -651,6 +659,12 @@ const AuthenticatedSystemSettingsAuthSectionRoute =
     id: '/auth/$section',
     path: '/auth/$section',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
+  } as any)
+const AuthenticatedComputeMarketRfqIdRoute =
+  AuthenticatedComputeMarketRfqIdRouteImport.update({
+    id: '/compute/market/$rfqId',
+    path: '/compute/market/$rfqId',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const LocaleBlogCategorySlugRoute = LocaleBlogCategorySlugRouteImport.update({
   id: '/$locale/blog/category/$slug',
@@ -742,6 +756,7 @@ export interface FileRoutesByFullPath {
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/$locale/blog/category/$slug': typeof LocaleBlogCategorySlugRoute
+  '/compute/market/$rfqId': typeof AuthenticatedComputeMarketRfqIdRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -750,6 +765,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/compute/market/': typeof AuthenticatedComputeMarketIndexRoute
   '/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -842,6 +858,7 @@ export interface FileRoutesByTo {
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId': typeof PricingModelIdIndexRoute
   '/$locale/blog/category/$slug': typeof LocaleBlogCategorySlugRoute
+  '/compute/market/$rfqId': typeof AuthenticatedComputeMarketRfqIdRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -850,6 +867,7 @@ export interface FileRoutesByTo {
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId': typeof LocalePricingModelIdIndexRoute
+  '/compute/market': typeof AuthenticatedComputeMarketIndexRoute
   '/compute/nodes': typeof AuthenticatedComputeNodesIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -946,6 +964,7 @@ export interface FileRoutesById {
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/$locale/blog/category/$slug': typeof LocaleBlogCategorySlugRoute
+  '/_authenticated/compute/market/$rfqId': typeof AuthenticatedComputeMarketRfqIdRoute
   '/_authenticated/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/_authenticated/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/_authenticated/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -954,6 +973,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
   '/$locale/pricing/$modelId/': typeof LocalePricingModelIdIndexRoute
+  '/_authenticated/compute/market/': typeof AuthenticatedComputeMarketIndexRoute
   '/_authenticated/compute/nodes/': typeof AuthenticatedComputeNodesIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
@@ -1049,6 +1069,7 @@ export interface FileRouteTypes {
     | '/wallet/'
     | '/pricing/$modelId/'
     | '/$locale/blog/category/$slug'
+    | '/compute/market/$rfqId'
     | '/system-settings/auth/$section'
     | '/system-settings/billing/$section'
     | '/system-settings/content/$section'
@@ -1057,6 +1078,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/compute/market/'
     | '/compute/nodes/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
@@ -1149,6 +1171,7 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/pricing/$modelId'
     | '/$locale/blog/category/$slug'
+    | '/compute/market/$rfqId'
     | '/system-settings/auth/$section'
     | '/system-settings/billing/$section'
     | '/system-settings/content/$section'
@@ -1157,6 +1180,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
     | '/$locale/pricing/$modelId'
+    | '/compute/market'
     | '/compute/nodes'
     | '/system-settings/auth'
     | '/system-settings/billing'
@@ -1252,6 +1276,7 @@ export interface FileRouteTypes {
     | '/_authenticated/wallet/'
     | '/pricing/$modelId/'
     | '/$locale/blog/category/$slug'
+    | '/_authenticated/compute/market/$rfqId'
     | '/_authenticated/system-settings/auth/$section'
     | '/_authenticated/system-settings/billing/$section'
     | '/_authenticated/system-settings/content/$section'
@@ -1260,6 +1285,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
     | '/$locale/pricing/$modelId/'
+    | '/_authenticated/compute/market/'
     | '/_authenticated/compute/nodes/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
@@ -1964,6 +1990,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedComputeNodesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/compute/market/': {
+      id: '/_authenticated/compute/market/'
+      path: '/compute/market'
+      fullPath: '/compute/market/'
+      preLoaderRoute: typeof AuthenticatedComputeMarketIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/$locale/pricing/$modelId/': {
       id: '/$locale/pricing/$modelId/'
       path: '/$locale/pricing/$modelId'
@@ -2019,6 +2052,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/system-settings/auth/$section'
       preLoaderRoute: typeof AuthenticatedSystemSettingsAuthSectionRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
+    '/_authenticated/compute/market/$rfqId': {
+      id: '/_authenticated/compute/market/$rfqId'
+      path: '/compute/market/$rfqId'
+      fullPath: '/compute/market/$rfqId'
+      preLoaderRoute: typeof AuthenticatedComputeMarketRfqIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/$locale/blog/category/$slug': {
       id: '/$locale/blog/category/$slug'
@@ -2147,6 +2187,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageReportIndexRoute: typeof AuthenticatedUsageReportIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedComputeMarketRfqIdRoute: typeof AuthenticatedComputeMarketRfqIdRoute
+  AuthenticatedComputeMarketIndexRoute: typeof AuthenticatedComputeMarketIndexRoute
   AuthenticatedComputeNodesIndexRoute: typeof AuthenticatedComputeNodesIndexRoute
 }
 
@@ -2188,6 +2230,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageReportIndexRoute: AuthenticatedUsageReportIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedComputeMarketRfqIdRoute: AuthenticatedComputeMarketRfqIdRoute,
+  AuthenticatedComputeMarketIndexRoute: AuthenticatedComputeMarketIndexRoute,
   AuthenticatedComputeNodesIndexRoute: AuthenticatedComputeNodesIndexRoute,
 }
 

@@ -12,12 +12,16 @@ type Props = {
 };
 
 function primaryHref(pageKey: StaticFeaturePageKey) {
-  if (pageKey === "compute" || pageKey === "status" || pageKey === "playground" || pageKey === "docs") return consoleUrl("/dashboard");
+  // Compute Market: buyers post a request in the console (post tab).
+  if (pageKey === "compute") return consoleUrl("/compute/market", "?tab=post");
+  if (pageKey === "status" || pageKey === "playground" || pageKey === "docs") return consoleUrl("/dashboard");
   return consoleUrl("/sign-up");
 }
 
 function secondaryHref(pageKey: StaticFeaturePageKey, locale: Locale) {
-  if (pageKey === "compute" || pageKey === "status" || pageKey === "topup") return localizePath("/contact", locale);
+  // Compute Market: suppliers register in the console (supplier tab).
+  if (pageKey === "compute") return consoleUrl("/compute/market", "?tab=supplier");
+  if (pageKey === "status" || pageKey === "topup") return localizePath("/contact", locale);
   if (pageKey === "docs" || pageKey === "model") return localizePath("/models", locale);
   if (pageKey === "usecases") return localizePath("/tools", locale);
   return localizePath("/pricing", locale);
@@ -25,7 +29,7 @@ function secondaryHref(pageKey: StaticFeaturePageKey, locale: Locale) {
 
 export function StaticFeaturePage(props: Props) {
   const content = getStaticFeaturePage(props.pageKey, props.locale);
-  const showPrimaryAction = props.pageKey !== "compute";
+  const showPrimaryAction = true;
 
   return (
     <SiteShell locale={props.locale} pathname={content.pathname}>
@@ -48,12 +52,21 @@ export function StaticFeaturePage(props: Props) {
                   <ArrowRight className="size-4" />
                 </a>
               )}
-              <Link
-                href={secondaryHref(props.pageKey, props.locale)}
-                className="inline-flex h-12 min-w-40 items-center justify-center rounded-lg bg-white px-5 text-sm font-bold text-[#0B0B0F] shadow-[inset_0_0_0_1px_#0B0B0F14]"
-              >
-                {content.secondary}
-              </Link>
+              {props.pageKey === "compute" ? (
+                <a
+                  href={secondaryHref(props.pageKey, props.locale)}
+                  className="inline-flex h-12 min-w-40 items-center justify-center rounded-lg bg-white px-5 text-sm font-bold text-[#0B0B0F] shadow-[inset_0_0_0_1px_#0B0B0F14]"
+                >
+                  {content.secondary}
+                </a>
+              ) : (
+                <Link
+                  href={secondaryHref(props.pageKey, props.locale)}
+                  className="inline-flex h-12 min-w-40 items-center justify-center rounded-lg bg-white px-5 text-sm font-bold text-[#0B0B0F] shadow-[inset_0_0_0_1px_#0B0B0F14]"
+                >
+                  {content.secondary}
+                </Link>
+              )}
             </div>
           </div>
         </section>
