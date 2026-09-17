@@ -504,7 +504,7 @@ function getGroupRatio(model: PricingModel, group: string, fallbackGroupRatio: R
   return 1;
 }
 
-function attachPricingPayloadData(model: PricingModel, displayPricing: Record<string, ModelDisplayPricing>): PricingModel {
+export function attachPricingPayloadData(model: PricingModel, displayPricing: Record<string, ModelDisplayPricing>): PricingModel {
   const parsed = displayPricing[model.model_name];
   const directoryMetadata = parseModelDirectoryMetadata(model.directory_metadata);
   return {
