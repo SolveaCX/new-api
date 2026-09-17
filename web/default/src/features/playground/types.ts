@@ -249,6 +249,8 @@ export interface ModelOption {
   price?: number
   releaseDate?: string
   featuredOrder?: number
+  tags?: string
+  displayWeight?: number
 }
 
 export interface GroupOption {

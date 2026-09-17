@@ -11,16 +11,18 @@ test('directory membership and health come from the public catalog, preserving p
     requests.push(url);
     const payload = url.includes('/model-access')
       ? { success: true, data: { models: [
-        { id: 'healthy', availability_status: 'available', supported_endpoint_types: ['openai'] },
+        { id: 'healthy', tags: 'HOT,Custom', availability_status: 'available', supported_endpoint_types: ['openai'] },
         { id: 'failed', availability_status: 'temporary_failure', supported_endpoint_types: [] },
         { id: 'legacy', availability_status: 'unknown', supported_endpoint_types: ['gemini'] },
       ] } }
-      : { success: true, data: ['legacy', 'private', 'failed', 'healthy'].map(model_name => ({ model_name, model_ratio: 2, completion_ratio: 1, quota_type: 0 })) };
+      : { success: true, data: ['legacy', 'private', 'failed', 'healthy'].map(model_name => ({ model_name, tags: 'Old tag', model_ratio: 2, completion_ratio: 1, quota_type: 0 })) };
     return Response.json(payload);
   }) as typeof fetch;
   const result = await getAvailableModelPricingData();
   expect(result.models.map(model => model.model_name)).toEqual(['legacy', 'healthy']);
   expect(result.models[1].model_ratio).toBe(2);
+  expect(result.models[1].tags).toBe('HOT,Custom');
+  expect(result.models[0].tags).toBe('');
   expect(result.models[1].supported_endpoint_types).toEqual(['openai']);
   expect(requests.some(url => url.endsWith('/api/website/model-access'))).toBe(true);
   expect(requests.some(url => url.endsWith('/api/website/pricing?group=plg'))).toBe(true);

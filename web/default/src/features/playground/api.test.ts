@@ -45,6 +45,7 @@ const {
   getPlaygroundAttachmentPreview,
   getCurrentPlaygroundRecord,
   getUserModels: fetchUserModels,
+  getPlaygroundModelCatalog,
   fetchPlaygroundVideoToMusicTask,
   sendMediaGeneration,
   savePlaygroundRecord,
@@ -141,6 +142,34 @@ describe('Playground model API', () => {
     expect(get).toHaveBeenCalledWith(
       '/api/user/model-access?view=available_models'
     )
+  })
+
+  test('preserves catalog tags and display weight, including an explicit clear', async () => {
+    const models = [
+      {
+        id: 'tagged',
+        availability_status: 'available',
+        tags: 'HOT,Custom',
+        display_weight: 42,
+      },
+      {
+        id: 'cleared',
+        availability_status: 'available',
+        tags: '',
+        display_weight: 0,
+      },
+    ]
+    get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          scope_mode: 'fixed_account',
+          account_model_ids: ['tagged', 'cleared'],
+          models,
+        },
+      },
+    })
+    await expect(getPlaygroundModelCatalog()).resolves.toEqual(models)
   })
 
   test('uses the fixed account catalog regardless of a stale selected group', async () => {

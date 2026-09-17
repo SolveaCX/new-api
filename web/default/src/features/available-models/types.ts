@@ -30,6 +30,8 @@ export type ModelAccessModel = {
   id: string
   allowlist_match_key: string
   description?: string
+  tags?: string
+  display_weight?: number
   vendor: ModelAccessVendor | null
   supported_endpoint_types: string[]
   availability_status: ModelAvailabilityStatus | 'unknown'
