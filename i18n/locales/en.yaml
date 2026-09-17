@@ -104,6 +104,7 @@ user.email_verification_required_for_api: "Your account email has not been verif
 user.verification_code_error: "Verification code is incorrect or has expired"
 user.phone_verification_required: "SMS verification is enabled, please enter your phone number and verification code"
 notify.phone_verification_required_for_api: "Please bind and verify your phone number before using the API."
+notify.phone_verification_reminder_for_api: "[{{.SystemName}} notice] Your account has not bound a phone number yet. Please sign in to the console and bind one: {{.Link}} . This request was not forwarded to the model and was not billed; simply send it again. This notice appears at most once every 24 hours."
 user.phone_invalid: "Please enter a valid phone number with country code"
 user.phone_already_registered: "This phone number is already registered"
 user.sms_verification_unavailable: "SMS verification is temporarily unavailable, please try again later"

@@ -22,6 +22,7 @@ notify.quota_warning_email: "{{.Warning}}. Votre quota restant actuel est de {{.
 notify.quota_warning_bark: "{{.Warning}}. Quota restant : {{.Quota}}. Veuillez recharger à temps."
 notify.quota_warning_gotify: "{{.Warning}}. Votre quota restant actuel est de {{.Quota}}. Veuillez recharger à temps."
 notify.phone_verification_required_for_api: "Associez et vérifiez votre numéro de téléphone avant d’utiliser l’API."
+notify.phone_verification_reminder_for_api: "[Avis {{.SystemName}}] Votre compte n’a pas encore de numéro de téléphone associé. Connectez-vous à la console pour en associer un : {{.Link}} . Cette requête n’a pas été transmise au modèle et n’a pas été facturée ; renvoyez-la simplement. Cet avis apparaît au plus une fois toutes les 24 heures."
 
 # CLI device authorization messages
 cli.device_id_missing: "L'ID de l'appareil est requis"

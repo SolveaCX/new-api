@@ -22,6 +22,7 @@ notify.quota_warning_email: "{{.Warning}}. Hạn mức còn lại hiện tại c
 notify.quota_warning_bark: "{{.Warning}}. Hạn mức còn lại: {{.Quota}}. Vui lòng nạp thêm kịp thời."
 notify.quota_warning_gotify: "{{.Warning}}. Hạn mức còn lại hiện tại của bạn là {{.Quota}}. Vui lòng nạp thêm kịp thời."
 notify.phone_verification_required_for_api: "Vui lòng liên kết và xác minh số điện thoại trước khi sử dụng API."
+notify.phone_verification_reminder_for_api: "[Thông báo từ {{.SystemName}}] Tài khoản của bạn chưa liên kết số điện thoại. Vui lòng đăng nhập bảng điều khiển và liên kết: {{.Link}} . Yêu cầu này chưa được chuyển tới mô hình và không bị tính phí; bạn chỉ cần gửi lại. Thông báo này xuất hiện tối đa một lần mỗi 24 giờ."
 
 # CLI device authorization messages
 cli.device_id_missing: "Bắt buộc có ID thiết bị"
