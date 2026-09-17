@@ -29,7 +29,7 @@ export const LOCALIZED_DEFAULT_LEGAL_DOCUMENTS: Record<
   zh: {
     terms: `# flatkey.ai 用户协议
 
-最后更新时间：2026 年 8 月 31 日
+最后更新时间：2026 年 9 月 14 日
 
 本用户协议（“协议”）适用于 VOC AI INC（“VOC AI”、“我们”或“我们的”）通过 flatkey.ai、仪表板、API、结帐页面、文档和支持渠道（“服务”）提供的 flatkey.ai 服务。通过注册帐户、创建组织、添加预付帐户余额、生成或使用 API 密钥、调用模型 API、访问仪表板或以其他方式使用服务，即表示您同意本协议、我们的隐私政策、退款政策、文档、定价页面以及任何适用的补充规则。
 
@@ -42,6 +42,8 @@ flatkey.ai 是一种 AI API 访问、模型路由、使用计量、仪表板和�
 flatkey.ai 并不是模型本身。我们不保证任何特定模型、API、价格、上下文窗口、速率限制、区域可用性、输出行为、数据处理规则或第三方政策将保持可用或不变。我们可能会根据产品需求、成本变化、安全要求、合规义务、模型提供商要求或第三方服务的变更来添加、删除、限制或修改模型、功能、价格和使用规则。
 
 ## 2. 资格、账户和组织
+
+为保护账户和服务，在账户安全或防止滥用确有必要时，我们可能要求提供有效手机号或完成手机验证。您不得提供虚假联系信息、未经授权使用他人手机号，或绕过、伪造验证要求。
 
 您必须年满 13 岁。如果您未满 18 岁，您必须获得父母或法定监护人的许可。如果您代表公司、组织或其他实体使用服务，则您声明您有权代表该实体接受本协议。
 
@@ -194,7 +196,7 @@ flatkey.ai 帐户、API 密钥、帐户余额、服务积分、模型访问功�
 以上内容均以英文版本为准。`,
     privacy: `# flatkey.ai 隐私政策
 
-最后更新时间：2026 年 6 月 4 日
+最后更新时间：2026 年 9 月 14 日
 
 本隐私政策解释了当您访问或使用 flatkey.ai、flatkey.ai 服务、相关网站、仪表板、API、结账页面、文档和支持渠道时，VOC AI INC（“VOC AI”、“我们”、“我们”或“我们的”）如何收集、使用、共享、保留和保护信息。
 
@@ -205,6 +207,8 @@ flatkey.ai 帐户、API 密钥、帐户余额、服务积分、模型访问功�
 本政策适用于我们提供的账户注册、组织管理、购买、充值、交付、API 访问、模型路由、使用记录、计费、退款、支持、安全审查以及相关数字服务。第三方模型服务、支付服务提供商、钱包、银行、卡网络、云服务、分析工具或其他网站根据自己的隐私政策和条款处理信息。本政策不取代第三方政策。
 
 ## 2. 我们收集的信息
+
+我们可能在您主动提供手机号进行账户验证时，或为保护账户和服务而要求验证时，收集您的手机号及相关验证数据。我们使用这些信息验证账户归属，检测和防止欺诈、批量注册、账户共享及其他滥用，调查安全事件，并执行本政策和用户协议。为实现这些目的所需时，我们可能向身份验证、验证、反欺诈、安全和基础设施服务提供商共享手机号及相关验证信号；仅在提供服务、安全、法律、审计、争议处理和防滥用所需期间保留。
 
 我们可能会收集您直接提供的信息，包括姓名、电子邮件地址、密码或身份验证信息、公司名称、角色、团队成员、帐单地址、业务信息、税号、增值税/商品及服务税信息、发票信息、订单信息、支持消息、退款请求、合规材料、仪表板设置以及与我们的通信。
 
@@ -453,7 +457,7 @@ flatkey.ai 会将请求路由至第三方模型提供商，并依赖云、网络
   fr: {
     terms: `# Contrat d'utilisation de flatkey.ai
 
-Dernière mise à jour : 4 juin 2026
+Dernière mise à jour : 14 septembre 2026
 
 Le présent Contrat d'utilisation (« Contrat ») s'applique aux services flatkey.ai fournis par VOC AI INC (« VOC AI », « nous », « notre » ou « notre ») via flatkey.ai, le tableau de bord, les API, les pages de paiement, la documentation et les canaux d'assistance (les « Services »).En enregistrant un compte, en créant une organisation, en ajoutant le solde d'un compte prépayé, en générant ou en utilisant une clé API, en appelant des API de modèle, en accédant au tableau de bord ou en utilisant les Services, vous acceptez le présent Accord, notre Politique de confidentialité, notre Politique de remboursement, la documentation, les pages de tarification et toute règle supplémentaire applicable.
 
@@ -466,6 +470,8 @@ flatkey.ai est un service d'accès à l'API IA, de routage de modèles, de mesur
 flatkey.ai n'est pas le modèle lui-même.Nous ne garantissons pas qu'un modèle, une API, un prix, une fenêtre de contexte, une limite de débit, une disponibilité régionale, un comportement de sortie, une règle de traitement des données ou une politique de tiers particuliers resteront disponibles ou inchangés.Nous pouvons ajouter, supprimer, restreindre ou modifier des modèles, des fonctionnalités, des prix et des règles d'utilisation en fonction des besoins du produit, des changements de coûts, des exigences de sécurité, des obligations de conformité, des exigences du fournisseur de modèles ou des modifications apportées aux services tiers.
 
 ## 2. Éligibilité, comptes et organisations
+
+Pour protéger les comptes et les Services, nous pouvons exiger un numéro de téléphone valide ou une vérification téléphonique lorsque cela est raisonnablement nécessaire pour la sécurité du compte ou la prévention des abus. Vous ne devez pas fournir de fausses coordonnées, utiliser sans autorisation le numéro d'une autre personne, ni contourner ou falsifier une vérification.
 
 Vous devez avoir au moins 13 ans.Si vous avez moins de 18 ans, vous devez avoir l'autorisation de votre parent ou tuteur légal.Si vous utilisez les Services au nom d'une entreprise, d'une organisation ou d'une autre entité, vous déclarez que vous avez le pouvoir d'accepter le présent Contrat au nom de cette entité.
 
@@ -615,7 +621,7 @@ Pour toute question concernant le présent Contrat, les commandes, la facturatio
 Tous les contenus ci-dessus sont soumis à la version anglaise.`,
     privacy: `# Politique de confidentialité de flatkey.ai
 
-Dernière mise à jour : 4 juin 2026
+Dernière mise à jour : 14 septembre 2026
 
 Cette politique de confidentialité explique comment VOC AI INC (« VOC AI », « nous », « notre » ou « notre ») collecte, utilise, partage, conserve et protège les informations lorsque vous accédez ou utilisez flatkey.ai, les services flatkey.ai, les sites Web, tableaux de bord, API, pages de paiement, documentation et canaux d'assistance associés.
 
@@ -626,6 +632,8 @@ Entité opérationnelle : VOC AI INC, 160 E Tasman Drive, Suite 202, San Jose, 
 Cette politique s'applique à l'enregistrement du compte, à la gestion de l'organisation, aux achats, aux recharges, à la livraison, à l'accès aux API, au routage des modèles, aux enregistrements d'utilisation, à la facturation, aux remboursements, à l'assistance, à l'examen de sécurité et aux services numériques associés que nous fournissons.Les services modèles tiers, les prestataires de services de paiement, les portefeuilles, les banques, les réseaux de cartes, les services cloud, les outils d'analyse ou d'autres sites Web traitent les informations selon leurs propres politiques et conditions de confidentialité.Cette politique ne remplace pas les politiques de tiers.
 
 ## 2. Informations que nous collectons
+
+Nous pouvons collecter votre numéro de téléphone et les données de vérification associées lorsque vous les fournissez pour vérifier un compte ou lorsque nous les exigeons pour protéger les comptes et les Services. Nous les utilisons pour vérifier la propriété du compte, détecter et prévenir la fraude, les inscriptions massives, le partage de compte et autres abus, enquêter sur les incidents de sécurité et faire respecter la présente Politique et le Contrat d'utilisation. Lorsque cela est nécessaire, nous pouvons partager ces données avec des fournisseurs d'authentification, de vérification, de lutte contre la fraude, de sécurité ou d'infrastructure, et les conserver uniquement pendant la durée nécessaire au service, à la sécurité, aux obligations légales, aux audits, aux litiges et à la prévention des abus.
 
 Nous pouvons collecter les informations que vous fournissez directement, notamment votre nom, votre adresse e-mail, votre mot de passe ou vos informations d'authentification, le nom de l'entreprise, votre rôle, les membres de l'équipe, l'adresse de facturation, les informations professionnelles, le numéro d'identification fiscale, les informations sur la TVA/TPS, les informations sur la facture, les informations sur la commande, les messages d'assistance, les demandes de remboursement, les documents de conformité, les paramètres du tableau de bord et les communications avec nous.
 
@@ -874,7 +882,7 @@ Tous les contenus ci-dessus sont soumis à la version anglaise.`,
   ja: {
     terms: `# flatkey.ai ユーザー同意書
 
-最終更新日: 2026 年 6 月 4 日
+最終更新日: 2026 年 9 月 14 日
 
 このユーザー契約 (「契約」) は、VOC AI株式会社 (「VOC AI」、「当社」、「当社」) が flatkey.ai、ダッシュボード、API、チェックアウト ページ、ドキュメント、サポート チャネルを通じて提供する flatkey.ai サービス (「サービス」) に適用されます。アカウントの登録、組織の作成、プリペイド アカウント残高の追加、API キーの生成または使用、モデル API の呼び出し、ダッシュボードへのアクセス、またはその他のサービスの使用により、お客様は、本契約、当社のプライバシー ポリシー、返金ポリシー、ドキュメント、価格設定ページ、および該当する補足規則に同意したものとみなされます。
 
@@ -887,6 +895,8 @@ flatkey.ai は、AI API アクセス、モデル ルーティング、使用量�
 flatkey.ai はモデルそのものではありません。当社は、特定のモデル、API、価格、コンテキスト ウィンドウ、レート制限、地域での利用可能性、出力動作、データ処理ルール、またはサードパーティ ポリシーが引き続き利用可能であること、または変更されないことを保証しません。当社は、製品のニーズ、コストの変更、セキュリティ要件、コンプライアンス義務、モデルプロバイダーの要件、またはサードパーティサービスの変更に基づいて、モデル、機能、価格、および使用ルールを追加、削除、制限、または変更する場合があります。
 
 ## 2. 資格、アカウント、組織
+
+アカウントとサービスを保護するため、アカウントの安全確保または不正利用の防止に合理的に必要な場合、有効な電話番号の提供または電話認証を求めることがあります。虚偽の連絡先情報の提供、他人の番号の無断使用、認証要件の回避または偽装は禁止されています。
 
 13 歳以上である必要があります。18 歳未満の場合は、親または法定後見人の許可が必要です。あなたが会社、組織、またはその他の団体を代表して本サービスを使用する場合、あなたはその団体を代表して本契約に同意する権限を持っていることを表明するものとします。
 
@@ -1036,7 +1046,7 @@ Web サイト、ダッシュボード、ソフトウェア、API、ドキュメ�
 上記内容はすべて英語版に準拠するものとします。`,
     privacy: `# flatkey.ai プライバシー ポリシー
 
-最終更新日: 2026 年 6 月 4 日
+最終更新日: 2026 年 9 月 14 日
 
 このプライバシー ポリシーでは、お客様が flatkey.ai、flatkey.ai サービス、関連 Web サイト、ダッシュボード、API、チェックアウト ページ、ドキュメント、サポート チャネルにアクセスまたは使用する際に、VOC AI株式会社 (「VOC AI」、「当社」、「当社」) がどのように情報を収集、使用、共有、保持、保護するかについて説明します。
 
@@ -1047,6 +1057,8 @@ Web サイト、ダッシュボード、ソフトウェア、API、ドキュメ�
 このポリシーは、アカウント登録、組織管理、購入、チャージ、配信、API アクセス、モデル ルーティング、使用記録、請求、返金、サポート、セキュリティ レビュー、および当社が提供する関連デジタル サービスに適用されます。サードパーティ モデル サービス、決済サービス プロバイダー、ウォレット、銀行、カード ネットワーク、クラウド サービス、分析ツール、またはその他の Web サイトは、独自のプライバシー ポリシーと規約に基づいて情報を処理します。このポリシーはサードパーティのポリシーに代わるものではありません。
 
 ## 2. 当社が収集する情報
+
+アカウント認証のために提供された場合、またはアカウントとサービスを保護するために必要な場合、電話番号と関連する認証データを収集することがあります。これらは、アカウント所有者の確認、詐欺・大量登録・アカウント共有その他の不正利用の検知と防止、セキュリティインシデントの調査、ならびに本ポリシーとユーザー同意書の執行に使用します。必要に応じて、認証、本人確認、詐欺対策、セキュリティ、インフラのサービス提供者と電話番号や認証シグナルを共有し、サービス提供、安全、法令、監査、紛争、不正利用防止に必要な期間のみ保持します。
 
 当社は、名前、電子メール アドレス、パスワードまたは認証情報、会社名、役割、チーム メンバー、請求先住所、ビジネス情報、納税者番号、VAT/GST 情報、請求書情報、注文情報、サポート メッセージ、返金リクエスト、コンプライアンス資料、ダッシュボード設定、当社との通信など、お客様が直接提供した情報を収集する場合があります。
 
@@ -1295,7 +1307,7 @@ flatkey.ai はリクエストを第三者モデル プロバイダーにルー�
   ru: {
     terms: `# Пользовательское соглашение flatkey.ai
 
-Последнее обновление: 4 июня 2026 г.
+Последнее обновление: 14 сентября 2026 г.
 
 Настоящее Пользовательское соглашение («Соглашение») применяется к услугам flatkey.ai, предоставляемым VOC AI INC («VOC AI», «мы», «нас» или «наш») через flatkey.ai, панель управления, API, страницы оформления заказа, документацию и каналы поддержки («Услуги»).Регистрируя учетную запись, создавая организацию, добавляя предоплаченный баланс счета, генерируя или используя ключ API, вызывая API модели, получая доступ к информационной панели или иным образом используя Услуги, вы соглашаетесь с настоящим Соглашением, нашей Политикой конфиденциальности, Политикой возврата средств, документацией, страницами с ценами и любыми применимыми дополнительными правилами.
 
@@ -1308,6 +1320,8 @@ flatkey.ai — это доступ к AI API, маршрутизация мод�
 flatkey.ai — это не сама модель.Мы не гарантируем, что какая-либо конкретная модель, API, цена, контекстное окно, ограничение скорости, региональная доступность, поведение вывода, правило обработки данных или сторонняя политика останутся доступными или неизмененными.Мы можем добавлять, удалять, ограничивать или изменять модели, функции, цены и правила использования в зависимости от потребностей продукта, изменений стоимости, требований безопасности, обязательств по обеспечению соответствия, требований поставщика моделей или изменений в сторонних услугах.
 
 ## 2. Право на участие, счета и организации
+
+Для защиты аккаунтов и Сервисов мы можем потребовать действующий номер телефона или телефонную проверку, если это обоснованно необходимо для безопасности аккаунта или предотвращения злоупотреблений. Нельзя предоставлять ложные контактные данные, использовать чужой номер без разрешения, обходить или подделывать требования проверки.
 
 Вам должно быть не менее 13 лет.Если вам меньше 18 лет, вам необходимо получить разрешение от вашего родителя или законного опекуна.Если вы используете Услуги от имени компании, организации или другого лица, вы подтверждаете, что у вас есть полномочия принять настоящее Соглашение от имени этого лица.
 
@@ -1457,7 +1471,7 @@ flatkey.ai — это не сама модель.Мы не гарантируе�
 Все вышеперечисленное содержимое подлежит английской версии.`,
     privacy: `# Политика конфиденциальности flatkey.ai
 
-Последнее обновление: 4 июня 2026 г.
+Последнее обновление: 14 сентября 2026 г.
 
 В настоящей Политике конфиденциальности объясняется, как VOC AI INC («VOC AI», «мы», «нас» или «наш») собирает, использует, передает, сохраняет и защищает информацию, когда вы получаете доступ или используете flatkey.ai, услуги flatkey.ai, связанные веб-сайты, информационные панели, API, страницы оформления заказа, документацию и каналы поддержки.
 
@@ -1468,6 +1482,8 @@ flatkey.ai — это не сама модель.Мы не гарантируе�
 Настоящая Политика применяется к регистрации учетной записи, управлению организацией, покупкам, пополнениям, доставке, доступу к API, маршрутизации моделей, записям об использовании, выставлению счетов, возвратам средств, поддержке, проверке безопасности и сопутствующим цифровым услугам, которые мы предоставляем.Сторонние модельные сервисы, поставщики платежных услуг, кошельки, банки, карточные сети, облачные сервисы, инструменты аналитики или другие веб-сайты обрабатывают информацию в соответствии со своими собственными политиками и условиями конфиденциальности.Настоящая Политика не заменяет политики третьих сторон.
 
 ## 2. Информация, которую мы собираем
+
+Мы можем собирать ваш номер телефона и связанные с ним данные проверки, когда вы предоставляете их для подтверждения аккаунта или когда они нужны для защиты аккаунтов и Сервисов. Мы используем их для подтверждения владельца аккаунта, выявления и предотвращения мошенничества, массовых регистраций, совместного использования аккаунтов и других злоупотреблений, расследования инцидентов безопасности и соблюдения настоящей Политики и Пользовательского соглашения. При необходимости мы можем передавать номер и сигналы проверки поставщикам аутентификации, проверки, защиты от мошенничества, безопасности и инфраструктуры и хранить их только в течение срока, необходимого для обслуживания, безопасности, требований закона, аудита, споров и предотвращения злоупотреблений.
 
 Мы можем собирать информацию, которую вы предоставляете напрямую, включая имя, адрес электронной почты, пароль или аутентификационную информацию, название компании, роль, членов команды, платежный адрес, бизнес-информацию, налоговый идентификатор, информацию НДС/GST, информацию о счетах, информацию о заказе, сообщения поддержки, запросы на возврат средств, материалы по обеспечению соответствия, настройки информационной панели и общение с нами.
 
@@ -1716,7 +1732,7 @@ flatkey.ai маршрутизирует запросы к сторонним п�
   vi: {
     terms: `# Thỏa thuận người dùng flatkey.ai
 
-Cập nhật lần cuối: ngày 4 tháng 6 năm 2026
+Cập nhật lần cuối: ngày 14 tháng 9 năm 2026
 
 Thỏa thuận người dùng này ("Thỏa thuận") áp dụng cho các dịch vụ flatkey.ai do VOC AI INC ("VOC AI", "chúng tôi" hoặc "của chúng tôi") cung cấp thông qua flatkey.ai, bảng điều khiển, API, trang thanh toán, tài liệu và kênh hỗ trợ ("Dịch vụ").Bằng cách đăng ký tài khoản, tạo tổ chức, thêm số dư tài khoản trả trước, tạo hoặc sử dụng khóa API, gọi API mô hình, truy cập trang tổng quan hoặc sử dụng Dịch vụ, bạn đồng ý với Thỏa thuận này, Chính sách quyền riêng tư, Chính sách hoàn tiền, tài liệu, trang định giá và mọi quy tắc bổ sung hiện hành của chúng tôi.
 
@@ -1729,6 +1745,8 @@ flatkey.ai là dịch vụ truy cập API AI, định tuyến mô hình, đo m�
 Bản thân flatkey.ai không phải là mô hình.Chúng tôi không đảm bảo rằng bất kỳ mô hình, API, giá, khung ngữ cảnh, giới hạn tốc độ, tình trạng sẵn có theo khu vực, hành vi đầu ra, quy tắc xử lý dữ liệu hoặc chính sách bên thứ ba cụ thể nào sẽ vẫn có sẵn hoặc không thay đổi.Chúng tôi có thể thêm, xóa, hạn chế hoặc sửa đổi mẫu mã, tính năng, giá cả và quy tắc sử dụng dựa trên nhu cầu sản phẩm, thay đổi về chi phí, yêu cầu bảo mật, nghĩa vụ tuân thủ, yêu cầu của nhà cung cấp mẫu hoặc thay đổi đối với dịch vụ của bên thứ ba.
 
 ## 2. Tính đủ điều kiện, tài khoản và tổ chức
+
+Để bảo vệ tài khoản và Dịch vụ, chúng tôi có thể yêu cầu số điện thoại hợp lệ hoặc xác minh qua điện thoại khi điều đó hợp lý và cần thiết cho bảo mật tài khoản hoặc phòng chống lạm dụng. Bạn không được cung cấp thông tin liên hệ giả, sử dụng số của người khác khi chưa được phép, hoặc né tránh hay làm giả yêu cầu xác minh.
 
 Bạn phải ít nhất 13 tuổi.Nếu bạn dưới 18 tuổi, bạn phải có sự cho phép của cha mẹ hoặc người giám hộ hợp pháp.Nếu bạn sử dụng Dịch vụ thay mặt cho một công ty, tổ chức hoặc tổ chức khác, bạn tuyên bố rằng bạn có quyền chấp nhận Thỏa thuận này thay mặt cho tổ chức đó.
 
@@ -1878,7 +1896,7 @@ Nếu có câu hỏi về Thỏa thuận này, đơn đặt hàng, thanh toán, 
 Tất cả các nội dung trên sẽ có phiên bản tiếng Anh.`,
     privacy: `# Chính sách quyền riêng tư của flatkey.ai
 
-Cập nhật lần cuối: ngày 4 tháng 6 năm 2026
+Cập nhật lần cuối: ngày 14 tháng 9 năm 2026
 
 Chính sách quyền riêng tư này giải thích cách VOC AI INC ("VOC AI", "chúng tôi" hoặc "của chúng tôi") thu thập, sử dụng, chia sẻ, lưu giữ và bảo vệ thông tin khi bạn truy cập hoặc sử dụng flatkey.ai, các dịch vụ flatkey.ai, các trang web, trang tổng quan, API, trang thanh toán, tài liệu và kênh hỗ trợ có liên quan.
 
@@ -1889,6 +1907,8 @@ Chính sách quyền riêng tư này giải thích cách VOC AI INC ("VOC AI", "
 Chính sách này áp dụng cho việc đăng ký tài khoản, quản lý tổ chức, mua hàng, nạp tiền, phân phối, truy cập API, định tuyến mô hình, hồ sơ sử dụng, thanh toán, hoàn tiền, hỗ trợ, đánh giá bảo mật và các dịch vụ kỹ thuật số liên quan mà chúng tôi cung cấp.Dịch vụ mô hình bên thứ ba, nhà cung cấp dịch vụ thanh toán, ví, ngân hàng, mạng thẻ, dịch vụ đám mây, công cụ phân tích hoặc các trang web khác xử lý thông tin theo chính sách và điều khoản về quyền riêng tư của họ.Chính sách này không thay thế các chính sách của bên thứ ba.
 
 ## 2. Thông tin chúng tôi thu thập
+
+Chúng tôi có thể thu thập số điện thoại và dữ liệu xác minh liên quan khi bạn cung cấp để xác minh tài khoản hoặc khi cần để bảo vệ tài khoản và Dịch vụ. Chúng tôi sử dụng thông tin này để xác minh chủ tài khoản, phát hiện và ngăn chặn gian lận, đăng ký hàng loạt, chia sẻ tài khoản và hành vi lạm dụng khác, điều tra sự cố bảo mật, cũng như thực thi Chính sách này và Thỏa thuận người dùng. Khi cần cho các mục đích đó, chúng tôi có thể chia sẻ số điện thoại và tín hiệu xác minh với nhà cung cấp dịch vụ xác thực, xác minh, chống gian lận, bảo mật và hạ tầng; chỉ lưu giữ trong thời gian cần thiết cho việc cung cấp dịch vụ, bảo mật, pháp luật, kiểm toán, tranh chấp và phòng chống lạm dụng.
 
 Chúng tôi có thể thu thập thông tin bạn cung cấp trực tiếp, bao gồm tên, địa chỉ email, mật khẩu hoặc thông tin xác thực, tên công ty, vai trò, thành viên nhóm, địa chỉ thanh toán, thông tin doanh nghiệp, ID thuế, thông tin VAT/GST, thông tin hóa đơn, thông tin đặt hàng, thông báo hỗ trợ, yêu cầu hoàn tiền, tài liệu tuân thủ, cài đặt trang tổng quan và thông tin liên lạc với chúng tôi.
 

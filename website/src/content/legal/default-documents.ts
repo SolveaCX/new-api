@@ -22,7 +22,7 @@ import { PT_DEFAULT_LEGAL_DOCUMENTS } from './localized-default-documents-pt'
 
 export const DEFAULT_TERMS_OF_SERVICE = `# flatkey.ai User Agreement
 
-Last Updated: August 31, 2026
+Last Updated: September 14, 2026
 
 This User Agreement ("Agreement") applies to the flatkey.ai services provided by VOC AI INC ("VOC AI," "we," "us," or "our") through flatkey.ai, the dashboard, APIs, checkout pages, documentation, and support channels (the "Services"). By registering an account, creating an organization, adding prepaid account balance, generating or using an API key, calling model APIs, accessing the dashboard, or otherwise using the Services, you agree to this Agreement, our Privacy Policy, Refund Policy, documentation, pricing pages, and any applicable supplemental rules.
 
@@ -39,6 +39,8 @@ flatkey.ai is not the model itself. We do not guarantee that any particular mode
 You must be at least 13 years old. If you are under 18, you must have permission from your parent or legal guardian. If you use the Services on behalf of a company, organization, or other entity, you represent that you have authority to accept this Agreement on behalf of that entity.
 
 You must provide truthful, accurate, complete, and current account, business, billing, tax, and contact information. You are responsible for administrators, members, applications, API keys, access credentials, requests, integrations, payment methods, and balance usage under your account.
+
+To protect accounts and the Services, we may require a valid phone number or phone verification when reasonably needed for account security or abuse prevention. You must not provide false contact information, use another person's number without authorization, or bypass or falsify a verification requirement.
 
 Organization administrators may invite team members and configure permissions, budgets, models, logs, keys, and security settings. Administrator configurations may affect organization members and end users of your application. You must ensure that your team members and end users comply with this Agreement, our documentation, and applicable model provider terms.
 
@@ -188,7 +190,7 @@ All of the above contents shall be subject to the English version.`
 
 export const DEFAULT_PRIVACY_POLICY = `# flatkey.ai Privacy Policy
 
-Last Updated: June 4, 2026
+Last Updated: September 14, 2026
 
 This Privacy Policy explains how VOC AI INC ("VOC AI," "we," "us," or "our") collects, uses, shares, retains, and protects information when you access or use flatkey.ai, related flatkey.ai services, websites, dashboards, APIs, checkout pages, documentation, and support channels.
 
@@ -201,6 +203,8 @@ This Policy applies to account registration, organization management, purchases,
 ## 2. Information We Collect
 
 We may collect information you provide directly, including name, email address, password or authentication information, company name, role, team members, billing address, business information, tax ID, VAT/GST information, invoice information, order information, support messages, refund requests, compliance materials, dashboard settings, and communications with us.
+
+We may collect your phone number and related verification data when you provide it for account verification or when we require it to protect accounts and the Services. We use this information to verify account ownership, detect and prevent fraud, bulk registrations, account sharing, and other abuse, investigate security incidents, and enforce this Policy and the User Agreement. We may share the phone number and related verification signals with authentication, verification, anti-fraud, security, and infrastructure providers when needed for these purposes, and retain them only as long as needed for service delivery, security, legal, audit, dispute, and abuse-prevention needs.
 
 When you use the Services, we may process information relating to service delivery and use, including order number, payment ID, delivery status, balance, credit records, API key name, request ID, timestamp, service selection, model selection, Inputs, Outputs, files, images, code, prompts, usage, deduction amount, price, latency, error logs, routing information, and security events.
 
