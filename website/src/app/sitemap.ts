@@ -4,7 +4,8 @@ import { getCachedSitemapData } from "./sitemap-data";
 import { CLI_IMAGE_PATH, CLI_LANDING_PATH, CLI_VIDEO_PATH, HIGGSFIELD_ALTERNATIVE_PATH } from "@/lib/cli-landing";
 import { LOCALES, type Locale, localeLanguageTag, localizePath } from "@/lib/locales";
 import { getMarketPathnames } from "@/lib/market-landing";
-import { getModelLandingConfigForPricingModel, getModelLandingPathnames } from "@/lib/model-landing";
+import { getModelLandingConfigForPricingModel, getModelLandingConfigs, getModelLandingPathnames } from "@/lib/model-landing";
+import { getPromptDetailPathnames } from "@/lib/prompt-detail-data";
 import { seriesForModels } from "@/lib/model-directory-meta";
 import { seoIndexableLocales } from "@/lib/seo";
 import { getSkagLandingLocales, SKAG_LANDING_SLUGS, skagLandingPath } from "@/lib/skag-landing";
@@ -116,6 +117,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (REDIRECT_MODEL_LANDING_PATHS.has(canonicalPath) || landingPaths.has(canonicalPath)) return [];
       return entry(canonicalPath, 0.6, "daily");
     });
+  const promptDetailEntries = getPromptDetailPathnames([
+    ...getModelLandingConfigs().filter((config) => config.slug !== "seedance-api"),
+    ...pricing.models.map(getModelLandingConfigForPricingModel),
+  ]).flatMap((pathname) => entry(pathname, 0.64, "monthly"));
   // Market acquisition pages are single-locale (no i18n alternates by design).
   const marketEntries = getMarketPathnames().map((pathname) => ({
     url: `${base}${pathname}`,
@@ -181,6 +186,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...skagLandingEntries,
     ...toolsAdLandingEntries,
     ...cliMediaDetailEntries,
+    ...promptDetailEntries,
     ...modelPublicEntries,
     ...seriesEntries,
     ...categoryEntries,
