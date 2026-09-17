@@ -147,6 +147,8 @@ export interface OpsRegisteredUserRow {
   consumed_usd: number
   requests: number
   paid_usd: number
+  topup_usd: number
+  subscription_usd: number
   last_active_at: number
 }
 
