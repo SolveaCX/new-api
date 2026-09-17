@@ -57,3 +57,38 @@ func (user *UserBase) PhoneVerificationRequired() bool {
 	}
 	return PhoneVerificationRequiredForAccount(user.Group, user.PhoneVerifiedAt, user.CreatedAt)
 }
+
+// PhoneVerificationReminderEligibleForAccount answers "should THIS account be
+// reminded, through the API, to bind a phone?". It is the complement of the
+// gate for accounts that can bind but are never forced to:
+//
+//   - feature flag SMS_VERIFICATION_ENABLED must be on, otherwise there is
+//     nothing to bind;
+//   - only PLG accounts are subject to it;
+//   - an account with a verified phone is done;
+//   - accounts the gate already blocks (created at or after the rollout
+//     start) are never reminded: they get the 403 instead.
+//
+// Whether the reminder is actually served is decided by the operator toggle
+// and the 24h claim, both outside this package.
+func PhoneVerificationReminderEligibleForAccount(group string, phoneVerifiedAt int64, createdAt int64) bool {
+	if !common.SMSVerificationEnabled {
+		return false
+	}
+	if group != plgUserGroup {
+		return false
+	}
+	if phoneVerifiedAt != 0 {
+		return false
+	}
+	return !PhoneVerificationRequiredForAccount(group, phoneVerifiedAt, createdAt)
+}
+
+// PhoneVerificationReminderEligible is the UserBase convenience wrapper used by
+// the token-auth middleware.
+func (user *UserBase) PhoneVerificationReminderEligible() bool {
+	if user == nil {
+		return false
+	}
+	return PhoneVerificationReminderEligibleForAccount(user.Group, user.PhoneVerifiedAt, user.CreatedAt)
+}
