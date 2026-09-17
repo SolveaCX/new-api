@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -532,4 +533,23 @@ func TestPhoneVerificationReminderLinkFollowsTheme(t *testing.T) {
 
 	common.SetTheme("classic")
 	require.Equal(t, "http://localhost:3000/console/personal", phoneVerificationReminderLink())
+}
+
+// A client that is already gone when the stream write starts must not burn a
+// mislabelled response: nothing is written, the notice header is removed and
+// the request falls through to the normal relay path.
+func TestMaybeServePhoneVerificationReminderDropsNoticeHeaderWhenNothingWasWritten(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	stubPhoneReminderClaim(t, true, nil)
+	c, rec := newPhoneReminderRelayContext(t, "/v1/chat/completions", true)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = c.Request.WithContext(cancelled)
+	info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatOpenAI, RelayMode: relayconstant.RelayModeChatCompletions, IsStream: true, OriginModelName: "gpt-x", UserId: 4242}
+	request := chatReq(t, `{"model":"gpt-x","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+
+	require.False(t, maybeServePhoneVerificationReminder(c, types.RelayFormatOpenAI, info, request))
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Body.String())
+	require.Empty(t, c.Writer.Header().Get(phoneVerificationNoticeHeader))
 }

@@ -395,7 +395,13 @@ func maybeServePhoneVerificationReminder(c *gin.Context, relayFormat types.Relay
 	}
 	if err := writePhoneVerificationReminder(c, kind, info.IsStream, info.OriginModelName, phoneVerificationReminderText(c)); err != nil {
 		logger.LogError(c, fmt.Sprintf("phone verification reminder write failed for user %d: %s", info.UserId, err.Error()))
-		return c.Writer.Written()
+		if c.Writer.Written() {
+			return true
+		}
+		// Nothing reached the client: drop the notice header so the normal
+		// relay response that follows is not mislabelled as a reminder.
+		c.Writer.Header().Del(phoneVerificationNoticeHeader)
+		return false
 	}
 	logger.LogInfo(c, fmt.Sprintf("phone verification reminder served: user_id=%d model=%s format=%s stream=%t", info.UserId, info.OriginModelName, relayFormat, info.IsStream))
 	return true
