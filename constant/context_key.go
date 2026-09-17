@@ -92,4 +92,8 @@ const (
 	// ContextKeyRequestSamplingEligible marks user-facing text LLM relay
 	// requests that may be considered for optional request-parameter sampling.
 	ContextKeyRequestSamplingEligible ContextKey = "request_sampling_eligible"
+
+	// ContextKeySessionStoreCapture carries request-scoped transcript metadata
+	// until the relay handler has fully finished writing its response.
+	ContextKeySessionStoreCapture ContextKey = "session_store_capture"
 )
