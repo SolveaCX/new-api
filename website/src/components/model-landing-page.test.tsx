@@ -13,7 +13,7 @@ import {
 } from "@/lib/model-landing";
 import type { PricingModel } from "@/lib/pricing";
 import type { RankingsData } from "@/lib/rankings-live";
-import { getImagePlaygroundExample } from "@/lib/image-prompt-templates";
+import { getImagePlaygroundExample, getImagePromptTemplates } from "@/lib/image-prompt-templates";
 import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
 
 const gptFamilyModels: PricingModel[] = [
@@ -902,7 +902,7 @@ describe("ModelLandingPage", () => {
     expect(imageHtml).toContain('type="number" min="1" max="10"');
     expect(imageHtml).toContain('class="h-9 w-full min-w-0 appearance-none');
     expect(imageHtml).toContain("resize-y");
-    expect((imageHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
+    expect((imageHtml.match(/class="prompt-card prompt-card-linked"/g) ?? []).length).toBe(6);
     expect(videoHtml).toContain('data-model-kind="video"');
     expect(videoHtml).toContain('id="prompt-library"');
     expect(videoHtml).toContain("Prompt library");
@@ -925,7 +925,9 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("Upload or drag and drop");
     expect(videoHtml).toContain("0 / 30");
     expect(videoHtml).toContain("0 / 10");
-    expect((videoHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
+    expect((videoHtml.match(/class="prompt-card prompt-card-linked"/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/>Copy Prompt<\/button>/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/>Create similar</g) ?? []).length).toBe(6);
   });
 
   test("binds MiniMax-H3's six profession cards to the reviewed Seedance media", () => {
@@ -934,7 +936,7 @@ describe("ModelLandingPage", () => {
     );
     const promptLibraryHtml = html.slice(html.indexOf('id="prompt-library"'));
 
-    expect((promptLibraryHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/class="prompt-card prompt-card-linked"/g) ?? []).length).toBe(6);
     expect(promptLibraryHtml).toContain("微短剧与漫剧创作者");
     for (const card of getVideoPromptTemplates("minimax-h3", "zh")) {
       expect(promptLibraryHtml).toContain(card.video);
@@ -943,16 +945,19 @@ describe("ModelLandingPage", () => {
     expect(promptLibraryHtml).not.toContain("/assets/cli/product-reveal.mp4");
   });
 
-  test("sends prompt-library make-one-like-this actions to the console overview", () => {
+  test("routes every image prompt card to its editable detail page", () => {
     const html = renderToStaticMarkup(
       <ModelLandingPage config={GPT_IMAGE_2_CONFIG} locale="zh" liveModels={[]} />
     );
 
-    expect(hrefBeforeText(html, "做一个类似的")).toBe(
-      "https://console.flatkey.ai/dashboard/overview",
-    );
     const promptLibraryHtml = html.slice(html.indexOf('id="prompt-library"'));
-    expect((promptLibraryHtml.match(/href="https:\/\/console\.flatkey\.ai\/dashboard\/overview"/g) ?? []).length).toBe(6);
+    for (const card of getImagePromptTemplates("gpt-image-2", "zh")) {
+      expect(promptLibraryHtml).toContain(`/zh/models/gpt-image-2/prompts/${card.id}`);
+    }
+    expect((promptLibraryHtml.match(/class="dark-button prompt-detail-action"/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/>复制提示词<\/button>/g) ?? []).length).toBe(6);
+    expect((promptLibraryHtml.match(/>生成同款</g) ?? []).length).toBe(6);
+    expect(promptLibraryHtml).not.toContain('href="https://console.flatkey.ai/dashboard/overview"');
     expect(promptLibraryHtml).not.toContain('href="#workbench"');
   });
 

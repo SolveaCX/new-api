@@ -28,6 +28,7 @@ import {
 import Image from "next/image";
 import { getShowcaseGeneratorLabel } from "@/lib/showcase-generation";
 import { MediaPromptDisplay } from "@/components/media-prompt-display";
+import { getPromptDetailCopy, promptDetailPath, promptExcerpt } from "@/lib/prompt-detail";
 import { optimizedPreviewSrc } from "@/lib/optimized-preview";
 import Link from "next/link";
 import { DailyHealthBars } from "@/components/home-health-bars";
@@ -1471,7 +1472,7 @@ function ModelLandingBreadcrumb(props: {
   );
 }
 
-function MediaPromptEditor(props: {
+export function MediaPromptEditor(props: {
   generator: NonNullable<ModelConfig["generator"]>;
   modelId: string;
   locale: Locale;
@@ -2215,7 +2216,7 @@ function GeneratedExamplesCarousel(props: {
           {activeExample.video ? (
             <CdnFallbackVideo
               key={activeExample.video}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
               autoPlay
               controls
               loop
@@ -3059,6 +3060,7 @@ function ModelWhyIcon(props: { "aria-hidden"?: boolean }) {
 
 type PromptLibraryItem = {
   key: string;
+  detailId?: string;
   label: string;
   prompt: string;
   example: MediaExample;
@@ -3098,7 +3100,7 @@ function getPromptPosterFallback(item: PromptLibraryItem): string {
  * they become visible. This keeps the page responsive without substituting an
  * older poster for a reviewed generated clip.
  */
-function PromptLibraryVideo(props: {
+export function PromptLibraryVideo(props: {
   src: string;
   fallbackSrc?: string;
   poster?: string;
@@ -3217,6 +3219,7 @@ function PromptLibrarySection(props: {
   const kind = props.config.generator?.kind;
   if (kind !== "image" && kind !== "video") return null;
   const items = buildPromptLibraryItems(props.config, props.examples, props.t, props.locale);
+  const detailCopy = getPromptDetailCopy(props.locale);
   const isPrototypeContent = Boolean(props.config.landingContent?.promptLibrary);
 
   return (
@@ -3242,20 +3245,24 @@ function PromptLibrarySection(props: {
             const posterSource = failedPosters[item.example.poster]
               ? posterFallback
               : item.example.poster;
+            const detailHref = item.detailId
+              ? promptDetailPath(props.config.slug, item.detailId, props.locale)
+              : null;
             return (
-            <article key={item.key} className="prompt-card">
+            <article key={item.key} className={`prompt-card${detailHref ? " prompt-card-linked" : ""}`}>
               <div
                 className="prompt-media"
                 style={{
-                  ...(posterFallback ? { backgroundImage: `url("${posterFallback}")` } : {}),
+                  ...(posterFallback && !item.example.video ? { backgroundImage: `url("${posterFallback}")` } : {}),
                   backgroundPosition: "center",
                   backgroundSize: "cover",
+                  ...(item.example.video ? { backgroundColor: "#10131a" } : {}),
                 }}
               >
                 {item.example.video ? (
                   <PromptLibraryVideo
                     key={item.example.video}
-                    className="prompt-image h-full w-full object-cover"
+                    className="prompt-image prompt-video h-full w-full"
                     src={item.example.video}
                     locale={props.locale}
                     fallbackSrc={item.example.fallbackVideo}
@@ -3283,31 +3290,54 @@ function PromptLibrarySection(props: {
                     unoptimized
                   />
                 )}
+                {detailHref ? <a className="prompt-media-hit-area" href={detailHref} aria-label={`${detailCopy.open}: ${item.label}`} /> : null}
                 <div className="prompt-badge">{item.label}</div>
               </div>
               <div className="prompt-body">
                 {generatorLabel ? (
                   <p className="mb-3 text-xs font-medium text-[#74717d]">{props.t("Generated with {{model}}", { model: generatorLabel })}</p>
                 ) : null}
-                <MediaPromptDisplay prompt={item.prompt} locale={props.locale} />
+                {detailHref ? (
+                  <p className="prompt-card-summary" lang="en">{promptExcerpt(item.prompt)}</p>
+                ) : (
+                  <MediaPromptDisplay prompt={item.prompt} locale={props.locale} />
+                )}
                 <div className="prompt-actions">
-                  <button
-                    type="button"
-                    onClick={() => void copyPrompt(item.key, item.prompt)}
-                    className="outline-button"
-                    aria-live="polite"
-                    data-copy-status={copyFeedback?.key === item.key ? copyFeedback.status : undefined}
-                  >
-                    {copyFeedback?.key === item.key
-                      ? props.t(copyFeedback.status === "copied" ? "Copied" : "Copy failed")
-                      : props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
-                  </button>
-                  <a
-                    href={consoleUrl("/dashboard/overview")}
-                    className="dark-button"
-                  >
-                    {props.t("Make one like this")}
-                  </a>
+                  {detailHref ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void copyPrompt(item.key, item.prompt)}
+                        className="outline-button"
+                        aria-live="polite"
+                        data-copy-status={copyFeedback?.key === item.key ? copyFeedback.status : undefined}
+                      >
+                        {copyFeedback?.key === item.key
+                          ? props.t(copyFeedback.status === "copied" ? "Copied" : "Copy failed")
+                          : props.t("Copy Prompt")}
+                      </button>
+                      <a href={detailHref} className="dark-button prompt-detail-action">
+                        {detailCopy.open}<ArrowRight size={15} aria-hidden="true" />
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void copyPrompt(item.key, item.prompt)}
+                        className="outline-button"
+                        aria-live="polite"
+                        data-copy-status={copyFeedback?.key === item.key ? copyFeedback.status : undefined}
+                      >
+                        {copyFeedback?.key === item.key
+                          ? props.t(copyFeedback.status === "copied" ? "Copied" : "Copy failed")
+                          : props.t(isPrototypeContent ? "Copy Prompt" : "Copy request")}
+                      </button>
+                      <a href={consoleUrl("/dashboard/overview")} className="dark-button">
+                        {props.t("Make one like this")}
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
             </article>
@@ -3332,6 +3362,7 @@ function buildPromptLibraryItems(
     if (templates.length > 0) {
       return templates.slice(0, 6).map((template, index) => ({
         key: template.id,
+        detailId: template.id,
         label: t(template.label),
         prompt: template.prompt,
         alt: t(template.label),
@@ -3352,6 +3383,7 @@ function buildPromptLibraryItems(
         // template id is retained inside the template for serialized prompts,
         // but must not be used as the media join key.
         key: template.professionId,
+        detailId: template.professionId,
         label: t(template.label),
         prompt: template.prompt,
         alt: t(template.label),
