@@ -13,9 +13,11 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -452,4 +454,71 @@ func TestRelayCallsPhoneVerificationReminderBeforeBilling(t *testing.T) {
 	require.Less(t, strings.Index(text, "IsModelOfficiallyUnsupported(relayInfo.OriginModelName)"), hook)
 	require.Less(t, hook, strings.Index(text, "needSensitiveCheck := setting.ShouldCheckPromptSensitive()"))
 	require.Less(t, hook, strings.Index(text, "service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)"))
+}
+
+// TestRelayServesPhoneVerificationReminderWithoutBillingOrUpstream drives the
+// real controller.Relay: an eligible legacy PLG account gets the synthesized
+// reminder as a 200, the wallet is untouched and no channel is used. The
+// "claim lost -> relay normally" branch is covered by the unit tests above;
+// exercising it here would need a full fake upstream.
+func TestRelayServesPhoneVerificationReminderWithoutBillingOrUpstream(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	restoreDB := useControllerAssetTaskDBForTest(t)
+	defer restoreDB()
+	restorePricing := useControllerAssetTaskPricingForTest(t)
+	defer restorePricing()
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"gpt-reminder-test":1}`))
+	model.InitChannelCache()
+
+	seedControllerRelayUserToken(t, 7, 11, 10000, 10000)
+	const startingQuota = 10000
+
+	oldRedisEnabled := common.RedisEnabled
+	oldRDB := common.RDB
+	common.RedisEnabled = false
+	common.RDB = nil
+	t.Cleanup(func() {
+		common.RedisEnabled = oldRedisEnabled
+		common.RDB = oldRDB
+	})
+	claims := 0
+	originalClaim := claimPhoneVerificationReminder
+	claimPhoneVerificationReminder = func(userId int) (bool, error) {
+		claims++
+		require.Equal(t, 7, userId)
+		return true, nil
+	}
+	t.Cleanup(func() { claimPhoneVerificationReminder = originalClaim })
+
+	newContext := func() (*gin.Context, *httptest.ResponseRecorder) {
+		c, rec := newControllerRelayTaskContext(`{"model":"gpt-reminder-test","messages":[{"role":"user","content":"hi"}]}`)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-reminder-test","messages":[{"role":"user","content":"hi"}]}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		common.SetContextKey(c, constant.ContextKeyUserId, 7)
+		c.Set("id", 7)
+		common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyTokenId, 11)
+		common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-task-token-11")
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyUserQuota, startingQuota)
+		common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{BillingPreference: "wallet_only", Language: "en"})
+		common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-reminder-test")
+		common.SetContextKey(c, constant.ContextKeyPhoneVerificationReminderEligible, true)
+		c.Set("token_name", "task-token")
+		return c, rec
+	}
+
+	c, rec := newContext()
+	Relay(c, types.RelayFormatOpenAI)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, phoneVerificationNoticeValue, rec.Header().Get(phoneVerificationNoticeHeader))
+	var resp dto.OpenAITextResponse
+	require.NoError(t, common.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "gpt-reminder-test", resp.Model)
+	require.Contains(t, resp.Choices[0].Message.StringContent(), "has not bound a phone number")
+	require.Equal(t, startingQuota, getControllerUserQuota(t, 7), "reminder must not bill the wallet")
+	require.Empty(t, c.GetStringSlice("use_channel"), "reminder must not touch any channel")
+	require.Equal(t, 1, claims)
 }
