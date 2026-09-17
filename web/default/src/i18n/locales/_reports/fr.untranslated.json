@@ -54,5 +54,12 @@
   "You and the supplier each sign a back-to-back contract with flatkey.": "You and the supplier each sign a back-to-back contract with flatkey.",
   "auctions typically settle at 75–85% of the ceiling": "auctions typically settle at 75–85% of the ceiling",
   "e.g. We need 20 B300 nodes in Japan from Nov 1 for one year, budget $3.5–5 per GPU-hour, bare metal with IB 400G, SOC 2, data must stay in Japan.": "e.g. We need 20 B300 nodes in Japan from Nov 1 for one year, budget $3.5–5 per GPU-hour, bare metal with IB 400G, SOC 2, data must stay in Japan.",
-  "released to the supplier only after acceptance and monthly SLA": "released to the supplier only after acceptance and monthly SLA"
+  "released to the supplier only after acceptance and monthly SLA": "released to the supplier only after acceptance and monthly SLA",
+  "Accept any eligible bid at any time; after the close you pick from the lowest 3.": "Accept any eligible bid at any time; after the close you pick from the lowest 3.",
+  "Browse freely. To bid, register as a supplier and verify one node — free.": "Browse freely. To bid, register as a supplier and verify one node — free.",
+  "Buyers are anonymous. Company and contact become visible after a match.": "Buyers are anonymous. Company and contact become visible after a match.",
+  "Matched. flatkey will prepare the contract and escrow.": "Matched. flatkey will prepare the contract and escrow.",
+  "No bids yet. The first bid is seen first.": "No bids yet. The first bid is seen first.",
+  "Register as a supplier and verify one node (free). Bids are public and binding.": "Register as a supplier and verify one node (free). Bids are public and binding.",
+  "Want to bid on this request?": "Want to bid on this request?"
 }

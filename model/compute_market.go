@@ -236,6 +236,21 @@ func ListOpenComputeRFQs(viewerUserId int) ([]*ComputeRFQ, error) {
 	return rfqs, nil
 }
 
+// ListRecentlyMatchedComputeRFQs returns requests matched/contracted/live
+// since the given timestamp (for the marketplace "matched this week" strip).
+func ListRecentlyMatchedComputeRFQs(viewerUserId int, since int64) ([]*ComputeRFQ, error) {
+	var rfqs []*ComputeRFQ
+	err := DB.Where("status in ? and updated_time >= ?", []string{ComputeRFQStatusMatched, ComputeRFQStatusContracted, ComputeRFQStatusLive}, since).
+		Order("updated_time desc").Limit(50).Find(&rfqs).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rfqs {
+		r.decorate(viewerUserId)
+	}
+	return rfqs, nil
+}
+
 // ListComputeBidsByRFQ returns all bids on an RFQ ordered by price, with
 // aliases, eligibility rank and the viewer's own bid flagged.
 func ListComputeBidsByRFQ(rfqId int, viewerUserId int) ([]*ComputeBid, error) {

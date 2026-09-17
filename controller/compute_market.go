@@ -224,6 +224,16 @@ func ListOpenComputeRFQs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// ?include_recent=1 appends requests matched in the last 7 days so the
+	// marketplace can show settled prices next to open ones.
+	if c.Query("include_recent") == "1" {
+		recent, err := model.ListRecentlyMatchedComputeRFQs(userId, common.GetTimestamp()-7*24*3600)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		rfqs = append(rfqs, recent...)
+	}
 	items := make([]gin.H, 0, len(rfqs))
 	for _, r := range rfqs {
 		bids, err := model.ListComputeBidsByRFQ(r.Id, userId)
@@ -233,7 +243,7 @@ func ListOpenComputeRFQs(c *gin.Context) {
 		}
 		var mine *model.ComputeBid
 		for _, b := range bids {
-			if b.Mine && b.Status == model.ComputeBidStatusLive {
+			if b.Mine && (b.Status == model.ComputeBidStatusLive || b.Status == model.ComputeBidStatusAccepted) {
 				mine = b
 			}
 		}
@@ -242,9 +252,10 @@ func ListOpenComputeRFQs(c *gin.Context) {
 			"bid_count":    countLiveBids(bids),
 			"lowest_price": model.LowestEligibleComputeBidPrice(bids),
 			"my_bid":       mine,
+			"accepted_bid": findBid(bids, r.AcceptedBidId),
 		})
 	}
-	common.ApiSuccess(c, gin.H{"items": items})
+	common.ApiSuccess(c, gin.H{"items": items, "now": common.GetTimestamp()})
 }
 
 func loadRFQ(c *gin.Context) (*model.ComputeRFQ, bool) {

@@ -11,6 +11,10 @@ import { consoleUrl } from "@/lib/origins";
 import { OnlineStaticShell } from "./online-static-shell";
 import { ModelStripCarousel } from "./model-strip-carousel";
 import { IntelligenceVideo } from "./intelligence-video";
+import { ComputeDemandBoard } from "./compute-demand-board";
+import { COMPUTE_MARKET_SUPPLIER_URL, COMPUTE_MARKET_SUPPLY_URL } from "./compute-market-page";
+import { formatUsdCompact, generateDemandSnapshot, summarizeDemand } from "@/lib/compute-demand";
+import { getComputeMarketCopy } from "@/lib/compute-market-copy";
 
 const providers = [
   ["logos/claude.svg", "Claude", "reasoning + coding"],
@@ -829,6 +833,9 @@ type OnlineHomePageProps = {
 export async function OnlineHomePage(props: OnlineHomePageProps) {
   const copy = getOnlineStaticCopy(props.locale);
   const home = getHomeCopy(props.locale);
+  const cm = getComputeMarketCopy(props.locale);
+  const demandRows = generateDemandSnapshot(40, 7);
+  const demandStats = summarizeDemand(demandRows);
   const t = (key: string, fallback: string) =>
     getOnlineStaticText(props.locale, key, fallback);
   const ht = (key: string, fallback: string) =>
@@ -1514,6 +1521,51 @@ export async function OnlineHomePage(props: OnlineHomePageProps) {
               </p>
             </article>
           </div>
+        </div>
+      </section>
+      <section className="cm-home" id="compute-market">
+        <div className="cm-home-in">
+          <div className="cm-kick">{cm.home.kicker}</div>
+          <h2>{cm.home.title}</h2>
+          <p className="cm-sub">{cm.home.body}</p>
+          <div className="cm-stats">
+            <div>
+              <b>{formatUsdCompact(demandStats.openValue)}</b>
+              <span>{cm.home.statOpen}</span>
+            </div>
+            <div>
+              <b>{demandStats.matching}</b>
+              <span>{cm.home.statMatching}</span>
+            </div>
+            <div>
+              <b>{demandStats.bids}</b>
+              <span>{cm.home.statBids}</span>
+            </div>
+            <div>
+              <b>{demandStats.matched}</b>
+              <span>{cm.home.statMatched}</span>
+            </div>
+          </div>
+          <ComputeDemandBoard
+            rows={demandRows}
+            variant="ticker"
+            copy={cm.board}
+            bidHref={COMPUTE_MARKET_SUPPLY_URL}
+            joinHref={COMPUTE_MARKET_SUPPLIER_URL}
+            liveIntervalMs={0}
+            seed={7}
+          />
+          <div className="cm-ctas">
+            <a className="cm-btn cm-btn-dark" href={localizePath("/compute", props.locale)}>
+              {cm.home.ctaAll}
+            </a>
+            <a className="cm-btn cm-btn-light" href={COMPUTE_MARKET_SUPPLIER_URL}>
+              {cm.home.ctaSupply}
+            </a>
+          </div>
+          <p className="cm-note" style={{ marginTop: 12 }}>
+            {cm.home.note}
+          </p>
         </div>
       </section>
       <section className="rel" id="reliability">

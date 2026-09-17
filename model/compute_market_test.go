@@ -266,3 +266,23 @@ func TestComputeMarketCancelAndSupplier(t *testing.T) {
 		_ = err
 	}
 }
+
+func TestListRecentlyMatchedComputeRFQs(t *testing.T) {
+	setupComputeMarketTestDB(t)
+	rfq := newTestRFQ(t, 30, 4.0)
+	if _, err := PlaceComputeBid(rfq, 31, 3.0, "", 0, "{}", "", true); err != nil {
+		t.Fatal(err)
+	}
+	bids, _ := ListComputeBidsByRFQ(rfq.Id, 30)
+	if _, err := AcceptComputeBid(rfq, bids[0].Id, 30); err != nil {
+		t.Fatal(err)
+	}
+	recent, err := ListRecentlyMatchedComputeRFQs(31, common.GetTimestamp()-60)
+	if err != nil || len(recent) != 1 || recent[0].Status != ComputeRFQStatusMatched || recent[0].Mine {
+		t.Fatalf("recent = %v %+v", err, recent)
+	}
+	old, _ := ListRecentlyMatchedComputeRFQs(31, common.GetTimestamp()+60)
+	if len(old) != 0 {
+		t.Fatalf("expected no rows after since, got %d", len(old))
+	}
+}

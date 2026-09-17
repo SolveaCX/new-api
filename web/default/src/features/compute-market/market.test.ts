@@ -19,6 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { describe, expect, test } from 'bun:test'
 import {
   annualValue,
+  filterMarketplace,
+  marketplaceStats,
+  paginate,
   applyDraft,
   canAcceptBid,
   emptyRFQForm,
@@ -139,5 +142,82 @@ describe('compute market helpers', () => {
     expect(reqs).toContain('region:JP')
     expect(reqs).toContain('compliance:SOC 2')
     expect(reqs).toContain('delivery:bare_metal')
+  })
+
+  test('marketplace stats, filters and pagination', () => {
+    const now = 1_000_000
+    const items = [
+      {
+        rfq: {
+          ...rfq,
+          id: 1,
+          status: 'matching' as const,
+          matching_deadline: now + 600,
+        },
+        bid_count: 2,
+        lowest_price: 3.8,
+        my_bid: null,
+      },
+      {
+        rfq: {
+          ...rfq,
+          id: 2,
+          status: 'matching' as const,
+          matching_deadline: now + 7200,
+          gpu_model: 'H100',
+        },
+        bid_count: 0,
+        lowest_price: 0,
+        my_bid: bid(9, 3),
+      },
+      {
+        rfq: { ...rfq, id: 3, status: 'matched' as const },
+        bid_count: 4,
+        lowest_price: 4.1,
+        my_bid: null,
+      },
+    ]
+    const stats = marketplaceStats(items, now)
+    expect(stats.matching).toBe(2)
+    expect(stats.endingSoon).toBe(1)
+    expect(stats.bids).toBe(2)
+    expect(stats.matchedRecently).toBe(1)
+    expect(stats.openValue).toBe(annualValue(rfq, 3.8) + annualValue(rfq, 5))
+    expect(
+      filterMarketplace(items, {
+        gpu: 'H100',
+        status: 'all',
+        query: '',
+        now,
+      }).map((i) => i.rfq.id)
+    ).toEqual([2])
+    expect(
+      filterMarketplace(items, {
+        gpu: 'all',
+        status: 'ending',
+        query: '',
+        now,
+      }).map((i) => i.rfq.id)
+    ).toEqual([1])
+    expect(
+      filterMarketplace(items, {
+        gpu: 'all',
+        status: 'mine',
+        query: '',
+        now,
+      }).map((i) => i.rfq.id)
+    ).toEqual([1, 2, 3])
+    expect(
+      filterMarketplace(
+        items.map((i) => ({ ...i, rfq: { ...i.rfq, mine: false } })),
+        { gpu: 'all', status: 'mine', query: '', now }
+      ).map((i) => i.rfq.id)
+    ).toEqual([2])
+    expect(
+      filterMarketplace(items, { gpu: 'all', status: 'all', query: 'jp', now })
+        .length
+    ).toBe(3)
+    const pg = paginate([1, 2, 3, 4, 5], 9, 2)
+    expect(pg).toEqual({ pages: 3, current: 3, slice: [5] })
   })
 })

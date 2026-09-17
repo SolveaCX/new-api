@@ -60,8 +60,10 @@ export function listMyRFQs() {
   return unwrap<{ items: MyRFQItem[] }>(api.get(`${BASE}/rfqs`))
 }
 
-export function listOpenRFQs() {
-  return unwrap<{ items: OpenRFQItem[] }>(api.get(`${BASE}/rfqs/open`))
+export function listOpenRFQs(includeRecent = false) {
+  return unwrap<{ items: OpenRFQItem[]; now: number }>(
+    api.get(`${BASE}/rfqs/open${includeRecent ? '?include_recent=1' : ''}`)
+  )
 }
 
 export function getRFQ(id: number) {
