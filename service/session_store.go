@@ -26,7 +26,6 @@ import (
 const (
 	sessionStoreQueueSize          = 256
 	sessionStoreWorkerCount        = 4
-	sessionStoreUploadAttempts     = 3
 	sessionStoreUploadTimeout      = 15 * time.Second
 	sessionStoreMaxTranscriptBytes = 10 * 1024 * 1024
 	sessionStoreMaxBodyBytes       = sessionStoreMaxTranscriptBytes
@@ -266,19 +265,11 @@ func startSessionStoreWorkers() {
 }
 
 func deliverSessionStorePayload(payload sessionStorePayload) {
-	var lastErr error
-	for attempt := 1; attempt <= sessionStoreUploadAttempts; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), sessionStoreUploadTimeout)
-		lastErr = uploadSessionStorePayload(ctx, payload)
-		cancel()
-		if lastErr == nil {
-			return
-		}
-		if attempt < sessionStoreUploadAttempts {
-			time.Sleep(time.Duration(attempt*attempt) * 250 * time.Millisecond)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), sessionStoreUploadTimeout)
+	defer cancel()
+	if err := uploadSessionStorePayload(ctx, payload); err != nil {
+		common.SysError(fmt.Sprintf("session store upload failed; dropping transcript request_id=%s: %v", payload.RequestID, err))
 	}
-	common.SysError(fmt.Sprintf("session store upload failed after %d attempts request_id=%s: %v", sessionStoreUploadAttempts, payload.RequestID, lastErr))
 }
 
 func uploadSessionStorePayload(ctx context.Context, payload sessionStorePayload) error {

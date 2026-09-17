@@ -188,3 +188,41 @@ func TestUploadSessionStorePayloadMultipartContract(t *testing.T) {
 		t.Fatal("session store server did not receive multipart upload")
 	}
 }
+
+func TestDeliverSessionStorePayloadAttemptsOnce(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		statusCode int
+		err        error
+	}{
+		{name: "success", statusCode: http.StatusCreated},
+		{name: "server failure", statusCode: http.StatusServiceUnavailable},
+		{name: "network failure", err: io.ErrUnexpectedEOF},
+		{name: "timeout", err: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			originalClient := sessionStoreHTTPClient
+			t.Cleanup(func() { sessionStoreHTTPClient = originalClient })
+			attempts := 0
+			sessionStoreHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				if test.err != nil {
+					return nil, test.err
+				}
+				return &http.Response{
+					StatusCode: test.statusCode,
+					Body:       io.NopCloser(strings.NewReader("session store response")),
+					Header:     make(http.Header),
+				}, nil
+			})}
+
+			deliverSessionStorePayload(sessionStorePayload{
+				Endpoint:  "http://session-store.test/v1/sessions",
+				TenantID:  "flatkey-test",
+				RequestID: "single-attempt-" + test.name,
+			})
+
+			require.Equal(t, 1, attempts, "session uploads must not retry after a failure")
+		})
+	}
+}
