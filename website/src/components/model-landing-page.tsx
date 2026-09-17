@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -2172,6 +2172,7 @@ function OutputPreview(props: {
           <VideoPreviewMedia
             key={videoExample.video}
             src={videoExample.video}
+            locale={props.locale}
             poster={videoExample.poster || videoFallbackPoster || undefined}
             fallbackSrc={videoFallbackSrc}
             fallbackPoster={videoFallbackPoster}
@@ -2530,15 +2531,86 @@ function ModelTabIcon({ name }: { name: ModelTabIconName }) {
   return MODEL_TAB_ICONS[name];
 }
 
+const VIDEO_PLAY_LABELS: Record<Locale, string> = {
+  en: "Play video",
+  zh: "播放视频",
+  es: "Reproducir vídeo",
+  fr: "Lire la vidéo",
+  pt: "Reproduzir vídeo",
+  ru: "Воспроизвести видео",
+  ja: "動画を再生",
+  vi: "Phát video",
+  de: "Video abspielen",
+  id: "Putar video",
+};
+
+function useVideoPlaybackRecovery(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  shouldPlay: boolean,
+  source: string,
+) {
+  const [showPlayButton, setShowPlayButton] = useState(false);
+
+  useEffect(() => {
+    if (!shouldPlay) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const timeout = window.setTimeout(() => {
+      if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        setShowPlayButton(true);
+      }
+    }, 3000);
+    void video.play().catch(() => setShowPlayButton(true));
+    return () => window.clearTimeout(timeout);
+  }, [shouldPlay, source, videoRef]);
+
+  const retryPlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = true;
+    if (video.readyState === HTMLMediaElement.HAVE_NOTHING) video.load();
+    void video.play().catch(() => setShowPlayButton(true));
+  };
+
+  return {
+    showPlayButton,
+    retryPlay,
+    onPlaying: () => setShowPlayButton(false),
+    onStalled: () => setShowPlayButton(true),
+    onPause: () => {
+      if (shouldPlay) setShowPlayButton(true);
+    },
+  };
+}
+
+function VideoPlayButton(props: { locale: Locale; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/20 text-white transition-colors hover:bg-black/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-white"
+      aria-label={VIDEO_PLAY_LABELS[props.locale]}
+      title={VIDEO_PLAY_LABELS[props.locale]}
+      onClick={props.onClick}
+    >
+      <span className="flex size-12 items-center justify-center rounded-full border border-white/70 bg-black/65 shadow-lg transition-transform hover:scale-110">
+        <Play className="ml-0.5 size-5 fill-current" aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
 function VideoPreviewMedia(props: {
   src: string;
   poster?: string;
   fallbackSrc?: string;
   fallbackPoster?: string;
   alt: string;
+  locale: Locale;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [currentSrc, setCurrentSrc] = useState(props.src);
   const [hasFailed, setHasFailed] = useState(false);
+  const { showPlayButton, retryPlay, onPlaying, onPause, onStalled } = useVideoPlaybackRecovery(videoRef, true, currentSrc);
 
   if (hasFailed && props.fallbackPoster) {
     return (
@@ -2554,27 +2626,34 @@ function VideoPreviewMedia(props: {
   }
 
   return (
-    <video
-      key={currentSrc}
-      className="preview-media"
-      src={currentSrc}
-      // Reviewed profession clips provide a same-source first frame;
-      // use it immediately so the preview never flashes a blank panel
-      // while the remote video is buffering.
-      poster={currentSrc === props.fallbackSrc ? props.fallbackPoster ?? props.poster : props.poster}
-      autoPlay
-      muted
-      loop
-      playsInline
-      onError={() => {
-        if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
-          setCurrentSrc(props.fallbackSrc);
-          return;
-        }
-        setHasFailed(true);
-      }}
-      aria-label={props.alt}
-    />
+    <>
+      <video
+        ref={videoRef}
+        key={currentSrc}
+        className="preview-media"
+        src={currentSrc}
+        // Reviewed profession clips provide a same-source first frame;
+        // use it immediately so the preview never flashes a blank panel
+        // while the remote video is buffering.
+        poster={currentSrc === props.fallbackSrc ? props.fallbackPoster ?? props.poster : props.poster}
+        autoPlay
+        muted
+        loop
+        playsInline
+        onPlaying={onPlaying}
+        onPause={onPause}
+        onStalled={onStalled}
+        onError={() => {
+          if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
+            setCurrentSrc(props.fallbackSrc);
+            return;
+          }
+          setHasFailed(true);
+        }}
+        aria-label={props.alt}
+      />
+      {showPlayButton && <VideoPlayButton locale={props.locale} onClick={retryPlay} />}
+    </>
   );
 }
 
@@ -3040,11 +3119,13 @@ function PromptLibraryVideo(props: {
   fallbackPoster?: string;
   priority: boolean;
   className: string;
+  locale: Locale;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVisible, setIsVisible] = useState(props.priority);
   const [currentSrc, setCurrentSrc] = useState(props.src);
   const [hasFailed, setHasFailed] = useState(false);
+  const { showPlayButton, retryPlay, onPlaying, onPause, onStalled } = useVideoPlaybackRecovery(videoRef, isVisible, currentSrc);
 
   useEffect(() => {
     if (props.priority || isVisible) return;
@@ -3066,12 +3147,6 @@ function PromptLibraryVideo(props: {
     return () => observer.disconnect();
   }, [isVisible, props.priority]);
 
-  useEffect(() => {
-    if (!isVisible) return;
-    const playPromise = videoRef.current?.play();
-    playPromise?.catch(() => undefined);
-  }, [isVisible]);
-
   if (hasFailed && props.fallbackPoster) {
     return (
       <Image
@@ -3086,25 +3161,31 @@ function PromptLibraryVideo(props: {
   }
 
   return (
-    <video
-      ref={videoRef}
-      key={currentSrc}
-      className={props.className}
-      src={currentSrc}
-      poster={currentSrc === props.fallbackSrc ? props.fallbackPoster || props.poster : props.poster || props.fallbackPoster}
-      muted
-      loop
-      autoPlay={isVisible}
-      playsInline
-      preload={isVisible ? "auto" : "none"}
-      onError={() => {
-        if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
-          setCurrentSrc(props.fallbackSrc);
-          return;
-        }
-        setHasFailed(true);
-      }}
-    />
+    <>
+      <video
+        ref={videoRef}
+        key={currentSrc}
+        className={props.className}
+        src={currentSrc}
+        poster={currentSrc === props.fallbackSrc ? props.fallbackPoster || props.poster : props.poster || props.fallbackPoster}
+        muted
+        loop
+        autoPlay={isVisible}
+        playsInline
+        preload={isVisible ? "auto" : "none"}
+        onPlaying={onPlaying}
+        onPause={onPause}
+        onStalled={onStalled}
+        onError={() => {
+          if (props.fallbackSrc && currentSrc !== props.fallbackSrc) {
+            setCurrentSrc(props.fallbackSrc);
+            return;
+          }
+          setHasFailed(true);
+        }}
+      />
+      {isVisible && showPlayButton && <VideoPlayButton locale={props.locale} onClick={retryPlay} />}
+    </>
   );
 }
 
@@ -3190,6 +3271,7 @@ function PromptLibrarySection(props: {
                     key={item.example.video}
                     className="prompt-image h-full w-full object-cover"
                     src={item.example.video}
+                    locale={props.locale}
                     fallbackSrc={item.example.fallbackVideo}
                     poster={item.example.poster || posterFallback || undefined}
                     fallbackPoster={posterFallback || undefined}
