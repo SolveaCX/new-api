@@ -536,6 +536,43 @@ export const SEEDANCE_CONFIG: ModelConfig = {
   ],
 };
 
+// These variants have reviewed video examples even when the public pricing
+// catalog has no current row for them. Keep their detail URLs available without
+// borrowing the base Seedance price or claiming current availability.
+function seedanceVariantConfig(modelId: "seedance-2.0-fast" | "seedance-2.0-mini"): ModelConfig {
+  return {
+    ...SEEDANCE_CONFIG,
+    slug: modelId,
+    modelIds: [modelId, modelId.replace("2.0", "2-0")],
+    displayName: modelId,
+    modelId,
+    generator: {
+      ...SEEDANCE_CONFIG.generator!,
+      storageKey: `flatkey:model-generator-draft:${modelId}`,
+    },
+    officialName: "ByteDance",
+    officialPrice: "Pricing data unavailable",
+    flatkeyPrice: "Pricing data unavailable",
+    estFlatkey: "Pricing data unavailable",
+    estOfficial: "Pricing data unavailable",
+    rows: [{ label: "Request price", flatkey: "Pricing data unavailable", official: "Pricing data unavailable" }],
+    seo: {
+      title: `${modelId} video examples and API request draft | Flatkey`,
+      description: `Explore ${modelId} video examples and draft a request. Check the live Flatkey catalog for current pricing and availability.`,
+    },
+    landingContent: {
+      hero: { description: "The public page stores prompt settings locally before sending the user into Flatkey." },
+      faq: [{
+        question: "What limits apply?",
+        answer: "Rate limits and available model IDs depend on your account and current upstream availability.",
+      }],
+    },
+  };
+}
+
+export const SEEDANCE_FAST_CONFIG = seedanceVariantConfig("seedance-2.0-fast");
+export const SEEDANCE_MINI_CONFIG = seedanceVariantConfig("seedance-2.0-mini");
+
 /**
  * Seedance 2.5 is a separate public model family from the legacy 2.0
  * landing. Keep its contract explicit here so a live `seedance-2.5` pricing
@@ -1583,6 +1620,9 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   [MINIMAX_H3_CONFIG.slug]: MINIMAX_H3_CONFIG,
   [QWEN_CONFIG.slug]: QWEN_CONFIG,
   [SEEDANCE_25_CONFIG.slug]: SEEDANCE_25_CONFIG,
+  // Resolve exact variants before the broader Seedance 2.0 family prefix.
+  [SEEDANCE_FAST_CONFIG.slug]: SEEDANCE_FAST_CONFIG,
+  [SEEDANCE_MINI_CONFIG.slug]: SEEDANCE_MINI_CONFIG,
   [SEEDANCE_CONFIG.slug]: SEEDANCE_CONFIG,
   [SONILO_VIDEO_TO_MUSIC_CONFIG.slug]: SONILO_VIDEO_TO_MUSIC_CONFIG,
 };

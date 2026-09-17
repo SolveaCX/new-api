@@ -27,8 +27,24 @@ import {
 } from "./model-landing";
 import { LOCALES } from "./locales";
 import type { PricingModel } from "./pricing";
+import { getVideoPromptTemplates } from "./video-prompt-templates";
 
 describe("model landing configuration", () => {
+  test("keeps Seedance Fast and Mini detail pages available without live catalog rows", () => {
+    for (const modelId of ["seedance-2.0-fast", "seedance-2.0-mini"]) {
+      const config = getModelLandingConfig(modelId);
+      expect(config?.modelId).toBe(modelId);
+      expect(config?.generator?.kind).toBe("video");
+      expect(config?.flatkeyPrice).toBe("Pricing data unavailable");
+      expect(getModelLandingConfigForModel(modelId)?.slug).toBe(modelId);
+      expect(getModelLandingPathnames()).toContain(`/models/${modelId}`);
+      expect(getVideoPromptTemplates(modelId)).toHaveLength(6);
+      for (const locale of LOCALES.filter((item) => item !== "en")) {
+        expect(getLocalizedModelLandingSeo(config!, locale).title).toContain(modelId);
+      }
+    }
+  });
+
   test("keeps refreshed detail-shell labels translated for every locale", () => {
     for (const locale of LOCALES) {
       const getStarted = modelLandingCopy(locale, "Get started");
@@ -278,6 +294,8 @@ describe("model landing configuration", () => {
       "/models/minimax-h3",
       "/models/qwen-api",
       "/models/seedance-2.5",
+      "/models/seedance-2.0-fast",
+      "/models/seedance-2.0-mini",
       "/models/seedance-api",
       "/models/sonilo-video-to-music",
     ]);
