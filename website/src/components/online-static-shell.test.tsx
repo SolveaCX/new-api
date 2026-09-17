@@ -14,6 +14,9 @@ describe("OnlineStaticShell", () => {
 
     expect(html).toContain("Product");
     expect(html).toContain("Resource");
+    expect(html).toContain("Compute");
+    expect(html).toContain("Marketplace · live requests");
+    expect(html).toContain("/compute/market?tab=supply");
     expect(html).toContain("Models");
     expect(html).toContain("Pricing");
     expect(html).toContain("<footer");
