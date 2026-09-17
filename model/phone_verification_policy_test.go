@@ -71,3 +71,52 @@ func TestUserBasePhoneVerificationRequiredHandlesNilAndCarriesCreatedAt(t *testi
 	require.Equal(t, start+5, user.ToBaseUser().CreatedAt)
 	require.True(t, user.ToBaseUser().PhoneVerificationRequired())
 }
+
+func TestPhoneVerificationReminderEligibleForAccountOnlyTargetsLegacyUnverifiedPlgAccounts(t *testing.T) {
+	original := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = original })
+	common.SMSVerificationEnabled = true
+	start := PhoneVerificationRolloutStart().Unix()
+
+	tests := []struct {
+		name            string
+		group           string
+		phoneVerifiedAt int64
+		createdAt       int64
+		eligible        bool
+	}{
+		{name: "legacy plg account created before rollout", group: "plg", createdAt: start - 1, eligible: true},
+		{name: "legacy plg account created months ago", group: "plg", createdAt: start - 90*86400, eligible: true},
+		{name: "legacy plg account without created_at", group: "plg", createdAt: 0, eligible: true},
+		{name: "new plg account is gated, not reminded", group: "plg", createdAt: start, eligible: false},
+		{name: "new plg account created later is gated, not reminded", group: "plg", createdAt: start + 86400, eligible: false},
+		{name: "legacy plg account with verified phone", group: "plg", phoneVerifiedAt: start - 10, createdAt: start - 100, eligible: false},
+		{name: "legacy enterprise account", group: "enterprise", createdAt: start - 100, eligible: false},
+		{name: "legacy account with empty group", group: "", createdAt: start - 100, eligible: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.eligible, PhoneVerificationReminderEligibleForAccount(tt.group, tt.phoneVerifiedAt, tt.createdAt))
+		})
+	}
+}
+
+func TestPhoneVerificationReminderEligibleForAccountIsOffWhenFeatureDisabled(t *testing.T) {
+	original := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = original })
+	common.SMSVerificationEnabled = false
+	require.False(t, PhoneVerificationReminderEligibleForAccount("plg", 0, PhoneVerificationRolloutStart().Unix()-60))
+}
+
+func TestUserBasePhoneVerificationReminderEligibleHandlesNil(t *testing.T) {
+	original := common.SMSVerificationEnabled
+	t.Cleanup(func() { common.SMSVerificationEnabled = original })
+	common.SMSVerificationEnabled = true
+	start := PhoneVerificationRolloutStart().Unix()
+
+	var nilUser *UserBase
+	require.False(t, nilUser.PhoneVerificationReminderEligible())
+	require.True(t, (&UserBase{Group: "plg", CreatedAt: start - 1}).PhoneVerificationReminderEligible())
+	require.False(t, (&UserBase{Group: "plg", CreatedAt: start}).PhoneVerificationReminderEligible())
+	require.False(t, (&UserBase{Group: "plg", CreatedAt: start - 1, PhoneVerifiedAt: start}).PhoneVerificationReminderEligible())
+}
