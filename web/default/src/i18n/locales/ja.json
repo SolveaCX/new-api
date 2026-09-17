@@ -5630,7 +5630,6 @@
     "View models supported by each access group and compatible endpoint.": "各アクセスグループでサポートされるモデルと互換エンドポイントを確認します。",
     "Endpoint not specified": "エンドポイント未指定",
     "{{count}} models available": "利用可能なモデル：{{count}} 件",
-    "Callable Models": "呼び出し可能なモデル",
     "Callable model scope": "呼び出し可能なモデル範囲",
     "{{count}} callable models": "呼び出し可能なモデル：{{count}} 件",
     "0 callable": "呼び出し可能なモデルは 0 件",

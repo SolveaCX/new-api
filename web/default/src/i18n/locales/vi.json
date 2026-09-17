@@ -5630,7 +5630,6 @@
     "View models supported by each access group and compatible endpoint.": "Xem các mô hình được từng nhóm truy cập hỗ trợ và các điểm cuối tương thích.",
     "Endpoint not specified": "Chưa chỉ định điểm cuối",
     "{{count}} models available": "Có {{count}} mô hình khả dụng",
-    "Callable Models": "Mô hình có thể gọi",
     "Callable model scope": "Phạm vi mô hình có thể gọi",
     "{{count}} callable models": "{{count}} mô hình có thể gọi",
     "0 callable": "0 mô hình có thể gọi",

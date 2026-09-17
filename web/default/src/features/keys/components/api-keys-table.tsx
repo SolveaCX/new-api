@@ -63,7 +63,7 @@ import {
 import { getBatchGroupOptions } from '../lib/api-key-batch-group'
 import { type ApiKey, type ApiKeyStats } from '../types'
 import { ApiKeyStatistics } from './api-key-statistics'
-import { ApiKeyCell, ModelLimitsCell } from './api-keys-cells'
+import { ApiKeyCell } from './api-keys-cells'
 import { useApiKeysColumns } from './api-keys-columns'
 import { useApiKeys } from './api-keys-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
@@ -191,13 +191,6 @@ function ApiKeysMobileList({
                   </span>
                 </span>
               )}
-            </div>
-
-            <div className='flex items-center justify-between gap-2 text-xs'>
-              <span className='text-muted-foreground'>
-                {t('Callable Models')}
-              </span>
-              <ModelLimitsCell apiKey={apiKey} />
             </div>
           </div>
         )
