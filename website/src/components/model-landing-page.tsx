@@ -831,25 +831,11 @@ function FlatkeyModelDetailPage(props: {
                   href={related.href}
                   className="related-card group"
                 >
-                  {related.asset ? (
-                    <RelatedModelCover
-                      src={related.asset}
-                      alt={related.name}
-                      sizes="(min-width: 901px) 25vw, (min-width: 621px) 50vw, 100vw"
-                    />
-                  ) : null}
-                  {!related.asset ? (
-                    <div className="related-card-top">
-                      <HomeModelLogo
-                        modelName={related.name}
-                        vendor={related.description}
-                        fallback={related.name.charAt(0)}
-                        surfaceSize={34}
-                        imageSize={22}
-                      />
-                      <ArrowRight className="related-arrow" />
-                    </div>
-                  ) : null}
+                  <RelatedModelCover
+                    src={related.asset ?? ""}
+                    alt={related.name}
+                    sizes="(min-width: 1101px) 25vw, (min-width: 621px) 50vw, 100vw"
+                  />
                   <div className="related-copy">
                     <strong>{related.name}</strong>
                     <span>{props.t(related.description)}</span>
@@ -4485,7 +4471,7 @@ function RelatedModelCover({ src: _src, alt, sizes }: { src: string; alt: string
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/flatkey-lockup-light.svg"
-        alt="flatkey.ai"
+        alt="Flatkey"
         className="related-card-brand"
         loading="lazy"
       />
