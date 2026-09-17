@@ -202,3 +202,71 @@ export function hardRequirementsFor(rfq: ComputeRFQ): string[] {
   if (rfq.delivery) reqs.push(`delivery:${rfq.delivery}`)
   return reqs
 }
+
+/** Marketplace KPI strip computed from the open board response. */
+export function marketplaceStats(
+  items: { rfq: ComputeRFQ; bid_count: number; lowest_price: number }[],
+  now: number
+) {
+  const open = items.filter((i) => isOpenStatus(i.rfq.status))
+  return {
+    openValue: open.reduce(
+      (s, i) => s + annualValue(i.rfq, i.lowest_price || i.rfq.price_ceiling),
+      0
+    ),
+    matching: open.length,
+    bids: open.reduce((s, i) => s + i.bid_count, 0),
+    endingSoon: open.filter(
+      (i) => i.rfq.status === 'matching' && i.rfq.matching_deadline - now < 3600
+    ).length,
+    matchedRecently: items.filter((i) => !isOpenStatus(i.rfq.status)).length,
+  }
+}
+
+export type MarketplaceStatusFilter =
+  | 'all'
+  | 'matching'
+  | 'ending'
+  | 'matched'
+  | 'mine'
+
+export function filterMarketplace<
+  T extends { rfq: ComputeRFQ; my_bid: ComputeBid | null },
+>(
+  items: T[],
+  opts: {
+    gpu: string
+    status: MarketplaceStatusFilter
+    query: string
+    now: number
+  }
+): T[] {
+  const q = opts.query.trim().toLowerCase()
+  return items.filter(({ rfq, my_bid }) => {
+    if (opts.gpu !== 'all' && rfq.gpu_model !== opts.gpu) return false
+    if (opts.status === 'matching' && !isOpenStatus(rfq.status)) return false
+    if (
+      opts.status === 'ending' &&
+      !(rfq.status === 'matching' && rfq.matching_deadline - opts.now < 3600)
+    )
+      return false
+    if (opts.status === 'matched' && isOpenStatus(rfq.status)) return false
+    if (opts.status === 'mine' && !my_bid && !rfq.mine) return false
+    if (q) {
+      const hay =
+        `${rfq.code} ${rfq.gpu_model} ${rfq.regions} ${rfq.buyer_alias} ${rfq.delivery} ${rfq.interconnect}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+}
+
+export function paginate<T>(items: T[], page: number, perPage: number) {
+  const pages = Math.max(1, Math.ceil(items.length / perPage))
+  const current = Math.min(Math.max(1, page), pages)
+  return {
+    pages,
+    current,
+    slice: items.slice((current - 1) * perPage, current * perPage),
+  }
+}

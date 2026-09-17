@@ -136,6 +136,7 @@ export interface OpenRFQItem {
   bid_count: number
   lowest_price: number
   my_bid: ComputeBid | null
+  accepted_bid: ComputeBid | null
 }
 
 export interface RFQDetail {

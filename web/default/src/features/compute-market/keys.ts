@@ -23,9 +23,15 @@ export const rfqQueryKey = (id: number) =>
   ['compute-market', 'rfq', id] as const
 
 export const COMPUTE_MARKET_TABS = [
+  'market',
   'requests',
   'post',
-  'supply',
   'supplier',
 ] as const
 export type ComputeMarketTab = (typeof COMPUTE_MARKET_TABS)[number]
+
+/** Legacy/website aliases for tab ids. */
+export const COMPUTE_MARKET_TAB_ALIASES: Record<string, ComputeMarketTab> = {
+  supply: 'market',
+  board: 'market',
+}

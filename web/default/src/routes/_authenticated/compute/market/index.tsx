@@ -20,13 +20,15 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ComputeMarket } from '@/features/compute-market'
 import {
   COMPUTE_MARKET_TABS,
+  COMPUTE_MARKET_TAB_ALIASES,
   type ComputeMarketTab,
 } from '@/features/compute-market/keys'
 
 function validateSearch(search: Record<string, unknown>): {
   tab?: ComputeMarketTab
 } {
-  const tab = typeof search.tab === 'string' ? search.tab : ''
+  const raw = typeof search.tab === 'string' ? search.tab : ''
+  const tab = COMPUTE_MARKET_TAB_ALIASES[raw] ?? raw
   return (COMPUTE_MARKET_TABS as readonly string[]).includes(tab)
     ? { tab: tab as ComputeMarketTab }
     : {}
@@ -42,5 +44,5 @@ export const Route = createFileRoute('/_authenticated/compute/market/')({
 
 function ComputeMarketRoute() {
   const { tab } = Route.useSearch()
-  return <ComputeMarket tab={tab ?? 'requests'} />
+  return <ComputeMarket tab={tab ?? 'market'} />
 }

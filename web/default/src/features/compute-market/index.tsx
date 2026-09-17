@@ -20,9 +20,9 @@ import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
+import { Marketplace } from './components/marketplace'
 import { MyRequests } from './components/my-requests'
 import { RFQForm } from './components/rfq-form'
-import { SupplierBoard } from './components/supplier-board'
 import { SupplierProfile } from './components/supplier-profile'
 import type { ComputeMarketTab } from './keys'
 
@@ -41,19 +41,19 @@ export function ComputeMarket({ tab }: { tab: ComputeMarketTab }) {
           className='gap-4'
         >
           <TabsList>
+            <TabsTrigger value='market'>{t('Marketplace')}</TabsTrigger>
             <TabsTrigger value='requests'>{t('My requests')}</TabsTrigger>
             <TabsTrigger value='post'>{t('Post a request')}</TabsTrigger>
-            <TabsTrigger value='supply'>{t('Supply board')}</TabsTrigger>
             <TabsTrigger value='supplier'>{t('Supplier profile')}</TabsTrigger>
           </TabsList>
+          <TabsContent value='market'>
+            <Marketplace onRegister={() => go('supplier')} />
+          </TabsContent>
           <TabsContent value='requests'>
             <MyRequests onPost={() => go('post')} />
           </TabsContent>
           <TabsContent value='post'>
             <RFQForm />
-          </TabsContent>
-          <TabsContent value='supply'>
-            <SupplierBoard onRegister={() => go('supplier')} />
           </TabsContent>
           <TabsContent value='supplier'>
             <SupplierProfile />
