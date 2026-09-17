@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { ArrowRight, Ban, Boxes, CheckCircle2, Code2, DollarSign, Gauge, KeyRound, Mail, Wallet } from "lucide-react";
 import { withIdFallback } from "@/lib/locales";
 import { SiteShell } from "@/components/site-shell";
@@ -951,7 +952,7 @@ export async function PricingPage(props: PricingPageProps) {
 }
 
 export async function ModelsPage(props: PricingPageProps) {
-  const pricing = await getAvailableModelPricingData();
+  const pricing = await getAvailableModelPricingData((await headers()).get("cookie") ?? "");
   const allModels = enrichVendorNames(pricing.models, pricing.vendors, pricing.groupRatio, pricing.groupModelRatio, pricing.usableGroup);
   const copy = pricingCopy(props.locale);
 
