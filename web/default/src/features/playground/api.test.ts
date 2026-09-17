@@ -121,21 +121,49 @@ describe('Playground model API', () => {
     get.mockClear()
   })
 
-  test('asks the backend to exclude administratively hidden models', async () => {
+  test('uses the available catalog and hides failed probes and other scopes', async () => {
     get.mockResolvedValueOnce({
       data: {
         success: true,
-        data: ['gpt-4o', ' seedance-2.5 ', null],
+        data: {
+          scope_mode: 'selectable_group',
+          groups: [{ id: 'plg', model_ids: ['gpt-4o', 'failed', 'legacy'] }],
+          models: [
+            { id: 'gpt-4o', availability_status: 'available' },
+            { id: 'failed', availability_status: 'temporary_failure' },
+            { id: 'legacy', availability_status: 'unknown' },
+            { id: 'private-model', availability_status: 'available' },
+          ],
+        },
       },
     })
+    await expect(fetchUserModels('plg')).resolves.toEqual(['gpt-4o', 'legacy'])
+    expect(get).toHaveBeenCalledWith(
+      '/api/user/model-access?view=available_models'
+    )
+  })
 
-    await expect(fetchUserModels('plg')).resolves.toEqual([
-      'gpt-4o',
-      'seedance-2.5',
-    ])
-    expect(get).toHaveBeenCalledWith('/api/user/models', {
-      params: { group: 'plg', exclude_hidden: true },
+  test('uses the fixed account catalog regardless of a stale selected group', async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          scope_mode: 'fixed_account',
+          account_model_ids: ['public-model'],
+          models: [{ id: 'public-model', availability_status: 'available' }],
+        },
+      },
     })
+    await expect(fetchUserModels('old-group')).resolves.toEqual([
+      'public-model',
+    ])
+  })
+
+  test('does not fall back to the old model list on catalog errors', async () => {
+    get.mockResolvedValueOnce({
+      data: { success: false, message: 'catalog unavailable' },
+    })
+    await expect(fetchUserModels('plg')).rejects.toThrow('catalog unavailable')
   })
 })
 

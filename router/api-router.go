@@ -73,6 +73,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
 		apiRouter.GET("/website/pricing", controller.GetWebsitePricing)
+		apiRouter.GET("/website/model-access", controller.GetWebsiteModelAccess)
 		apiRouter.GET("/website/pricing/v2", controller.GetWebsitePricingV2)
 		apiRouter.GET("/website/model-usage", controller.GetWebsiteModelUsage)
 		dataToolRoute := apiRouter.Group("/data-tools")
