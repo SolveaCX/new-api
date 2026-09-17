@@ -66,7 +66,7 @@ describe("video profession prompt templates", () => {
       ],
       "seedance-2.0-pro": [
         /courier.*floating.*envelope.*rain/i,
-        /rooftop.*parcel.*golden.*trail/i,
+        /coral.*bottle.*unscrews.*pours.*ice/i,
         /caped.*rooftop.*glowing.*lantern/i,
         /inventor.*orange cube.*robot/i,
         /desert explorer.*bronze.*disk.*blue/i,
