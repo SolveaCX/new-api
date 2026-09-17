@@ -96,4 +96,10 @@ const (
 	// ContextKeySessionStoreCapture carries request-scoped transcript metadata
 	// until the relay handler has fully finished writing its response.
 	ContextKeySessionStoreCapture ContextKey = "session_store_capture"
+
+	// ContextKeyPhoneVerificationReminderEligible is set by TokenAuth when the
+	// caller is a legacy PLG account without a verified phone and the operator
+	// enabled the API reminder. controller.Relay reads it to decide whether to
+	// answer the request with the synthesized "bind your phone" reply.
+	ContextKeyPhoneVerificationReminderEligible ContextKey = "phone_verification_reminder_eligible"
 )

@@ -32,6 +32,13 @@ func userCanUseGroups(userCache *model.UserBase) bool {
 	return userCache != nil && userCache.Group != "" && userCache.Group != plgGroup
 }
 
+// phoneVerificationReminderEligible combines the operator toggle with the
+// per-account rule. It runs only after the phone gate passed, so a gated
+// account can never be flagged for a reminder.
+func phoneVerificationReminderEligible(userCache *model.UserBase) bool {
+	return operation_setting.PhoneVerificationAPIReminderEnabled() && userCache.PhoneVerificationReminderEligible()
+}
+
 func resolveTokenGroupsForUser(userCache *model.UserBase, token *model.Token) (string, string, model.Token) {
 	userGroup := ""
 	if userCache != nil {
@@ -519,6 +526,14 @@ func TokenAuth() func(c *gin.Context) {
 			notify := common.TranslateMessage(c, i18n.MsgNotifyPhoneVerificationRequiredForAPI)
 			abortWithOpenAiMessageAndNotify(c, http.StatusForbidden, notify, notify, types.ErrorCodeAccessDenied)
 			return
+		}
+
+		// Legacy PLG accounts are exempt from the gate; flag them so the relay
+		// can serve the once-per-24h "bind your phone" reminder instead of the
+		// model reply. Reading the flag, claiming the slot and rendering all
+		// happen in controller.Relay.
+		if phoneVerificationReminderEligible(userCache) {
+			common.SetContextKey(c, constant.ContextKeyPhoneVerificationReminderEligible, true)
 		}
 
 		// PLG users are always served from the plg group, ignoring any group carried on
