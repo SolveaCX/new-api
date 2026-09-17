@@ -14,6 +14,7 @@ import {
 import type { PricingModel } from "@/lib/pricing";
 import type { RankingsData } from "@/lib/rankings-live";
 import { getImagePlaygroundExample } from "@/lib/image-prompt-templates";
+import { getVideoPromptTemplates } from "@/lib/video-prompt-templates";
 
 const gptFamilyModels: PricingModel[] = [
   {
@@ -907,12 +908,11 @@ describe("ModelLandingPage", () => {
     expect(videoHtml).toContain("Prompt library");
     expect(videoHtml).toContain("/v1/videos");
     expect(videoHtml).toContain('class="preview-media"');
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/video-profession-01-manga-seedance-2-5.mp4");
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-02/video-profession-02-seedance-2-5-tvc-kettle.mp4");
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-03/video-profession-03-seedance-2-5-sci-fi-set-extension.mp4");
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-04/video-profession-04-seedance-2-5-open-world-trailer.mp4");
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-05/video-profession-05-seedance-2-5-space-science-explainer.mp4");
-    expect(videoHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/video-profession-06-seedance-2-5-stage-projection.mp4");
+    for (const card of getVideoPromptTemplates("seedance-2.5", "en")) {
+      expect(card.video).toMatch(/^https:\/\/cdn\.shulex-voc\.com\/flatkey\/model-showcase\//);
+      expect(videoHtml).toContain(card.video);
+      expect(videoHtml).toContain(card.poster);
+    }
     const promptLibraryHtml = videoHtml.slice(videoHtml.indexOf('id="prompt-library"'));
     expect(promptLibraryHtml).toContain('preload="auto"');
     expect(promptLibraryHtml).toContain('preload="none"');
@@ -936,9 +936,10 @@ describe("ModelLandingPage", () => {
 
     expect((promptLibraryHtml.match(/class="prompt-card"/g) ?? []).length).toBe(6);
     expect(promptLibraryHtml).toContain("微短剧与漫剧创作者");
-    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.mp4");
-    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-01/minimax-h3-seedance-2-0.jpg");
-    expect(promptLibraryHtml).toContain("https://cdn.shulex-voc.com/flatkey/model-showcase/video-profession-06/minimax-h3-seedance-music-visual-art.mp4");
+    for (const card of getVideoPromptTemplates("minimax-h3", "zh")) {
+      expect(promptLibraryHtml).toContain(card.video);
+      expect(promptLibraryHtml).toContain(card.poster);
+    }
     expect(promptLibraryHtml).not.toContain("/assets/cli/product-reveal.mp4");
   });
 
